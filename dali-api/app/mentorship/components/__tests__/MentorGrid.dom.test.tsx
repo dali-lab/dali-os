@@ -45,14 +45,14 @@ afterEach(() => {
   container.remove();
 });
 
-function render(group: GridMentorGroup, termForms: TermForms) {
+function render(group: GridMentorGroup, termForms: TermForms, weeks: number[] = []) {
   const Stub = createRoutesStub([
     {
       path: "/",
       Component: () =>
         createElement(MentorGrid, {
           group,
-          weeks: [],
+          weeks,
           currentWeek: null,
           termId: "t1",
           highlightMissing: false,
@@ -63,52 +63,59 @@ function render(group: GridMentorGroup, termForms: TermForms) {
   act(() => root.render(createElement(Stub)));
 }
 
-describe("MentorGrid week 5 form card", () => {
+describe("MentorGrid cards", () => {
   const sub = { submittedAt: "2026-10-14T00:00:00Z", rows: [{ key: "k", label: "Q", value: "answer" }] };
+  const linked = (fill: (d: ReturnType<typeof emptyDomainTermForms>) => void) =>
+    forms({
+      dev: (d) => {
+        d.mentor.form = { id: "f1", name: "Dev mentor" };
+        d.mentee.form = { id: "f2", name: "Dev mentee" };
+        fill(d);
+      },
+    });
+  const twoMentees = () => ({
+    mentor: person("m1", "Mo"),
+    rows: [row("a", "Ada", "dev", "DEV"), row("b", "Zed", "dev", "DEV")],
+  });
+  const week5 = (menteeId: string): GridMenteeRow => ({
+    ...row(menteeId, menteeId === "a" ? "Ada" : "Zed", "dev", "DEV"),
+    cells: [5].map((week) => ({ week, weekOfIso: "2026-10-05T00:00:00Z", state: "future" as const, noteId: null, vibe: null, canCreate: false })),
+  });
+  const formPills = () =>
+    [...container.querySelectorAll("button")].filter((b) => b.getAttribute("aria-label")?.startsWith("Open Week 5 forms"));
 
-  it("is one card per mentor section listing the mentor and every mentee with their own status", () => {
-    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV"), row("b", "Zed", "dev", "DEV")] };
-    render(
-      group,
-      forms({
-        dev: (d) => {
-          d.mentee.form = { id: "f1", name: "Dev mentee" };
-          d.mentor.form = { id: "f2", name: "Dev mentor" };
-          d.mentee.responses.a = sub;
-        },
-      }),
-    );
-    expect(container.textContent!.match(/Week 5 Form/g)).toHaveLength(1);
-    const items = [...container.querySelectorAll("li")].map((li) => li.textContent);
-    expect(items).toHaveLength(3);
-    expect(items[0]).toContain("not submitted"); // mentor
-    expect(items[1]).toContain("Mentee, submitted"); // Ada
-    expect(items[2]).toContain("not submitted"); // Zed
+  it("collapses and re-expands a mentor group, open by default", () => {
+    render(twoMentees(), forms({}));
+    expect(container.textContent).toContain("Ada");
+    const toggle = container.querySelector("button[aria-expanded]") as HTMLButtonElement;
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    act(() => toggle.click());
+    expect(container.textContent).not.toContain("Ada");
+    act(() => toggle.click());
+    expect(container.textContent).toContain("Ada");
   });
 
-  it("hides the card when none of the mentees' domains link a form", () => {
-    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV")] };
-    render(group, forms({ design: (d) => (d.mentee.form = { id: "f1", name: "Design mentee" }) }));
-    expect(container.textContent).not.toContain("Week 5 Form");
+  it("shows one check-in bubble per mentee, only when a form is linked", () => {
+    const group = { mentor: person("m1", "Mo"), rows: [week5("a"), week5("b")] };
+    render(group, linked(() => {}), [5]);
+    expect(formPills()).toHaveLength(2);
+    act(() => root.unmount());
+    root = createRoot(container);
+    render(group, forms({ design: (d) => (d.mentee.form = { id: "f", name: "x" }) }), [5]);
+    expect(formPills()).toHaveLength(0);
   });
 
-  it("opens every form in one modal from the single action", () => {
-    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV"), row("b", "Zed", "dev", "DEV")] };
-    render(
-      group,
-      forms({
-        dev: (d) => {
-          d.mentor.form = { id: "f1", name: "Dev mentor" };
-          d.mentee.form = { id: "f2", name: "Dev mentee" };
-          d.mentor.responses.m1 = sub;
-          d.mentee.responses.a = sub;
-          d.mentee.responses.b = sub;
-        },
-      }),
-    );
-    const btn = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("View all"))!;
-    act(() => btn.click());
-    expect(document.body.querySelectorAll('section[aria-label="Mentee Form"]')).toHaveLength(2);
+  it("opens the shared mentor form with that mentee's own, side by side, with statuses", () => {
+    const group = { mentor: person("m1", "Mo"), rows: [week5("a"), week5("b")] };
+    render(group, linked((d) => {
+      d.mentor.responses.m1 = sub;
+      d.mentee.responses.a = sub;
+    }));
+    act(() => formPills()[1].click());
     expect(document.body.querySelectorAll('section[aria-label="Mentor Form"]')).toHaveLength(1);
+    expect(document.body.querySelectorAll('section[aria-label="Mentee Form"]')).toHaveLength(1);
+    const text = document.body.textContent!;
+    expect(text).toContain("Submitted"); // the mentor
+    expect(text).toContain("Not submitted"); // Zed
   });
 });

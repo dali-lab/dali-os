@@ -26,7 +26,7 @@ import {
 import { isCore, currentTerm } from "~/lib/roles";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
-import { MentorGrid } from "../components/MentorGrid";
+import { MentorGridTable } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
 import { BackLink } from "../components/BackLink";
 import { Select, Tooltip } from "~/components/ui/floating";
@@ -583,26 +583,23 @@ export default function MentorshipBrowse() {
             : "No mentorship pairs match these filters."}
         </EmptyState>
       ) : (
-        groups.map((group) => (
-          <MentorGrid
-            key={group.mentor.id}
-            group={group}
-            weeks={data.grid.weeks}
-            currentWeek={data.grid.currentWeek}
-            termId={data.filters.termId}
-            highlightMissing={data.isCore}
-            termForms={data.termForms ?? undefined}
-            nudge={
-              canNudge
-                ? {
-                    count: unfilledById.get(group.mentor.id) ?? 0,
-                    busy: nudgingId === group.mentor.id,
-                    onNudge: () => nudgeMentor(group.mentor.id),
-                  }
-                : undefined
-            }
-          />
-        ))
+        <MentorGridTable
+          groups={groups}
+          weeks={data.grid.weeks}
+          currentWeek={data.grid.currentWeek}
+          termId={data.filters.termId}
+          highlightMissing={data.isCore}
+          termForms={data.termForms ?? undefined}
+          nudgeFor={
+            canNudge
+              ? (group) => ({
+                  count: unfilledById.get(group.mentor.id) ?? 0,
+                  busy: nudgingId === group.mentor.id,
+                  onNudge: () => nudgeMentor(group.mentor.id),
+                })
+              : undefined
+          }
+        />
       )}
     </main>
   );

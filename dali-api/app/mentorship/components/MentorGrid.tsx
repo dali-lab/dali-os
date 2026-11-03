@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
-import { Plus, Send, Trash2 } from "lucide-react";
+import { FileText, Plus, Send, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
@@ -12,8 +12,8 @@ import type {
   GridMentorGroup,
   GridPerson,
 } from "../lib/mentor-grid.server";
-import { domainTermForms, type TermForms } from "../lib/term-forms";
-import { WeekFormsCard } from "./TermFormStatus";
+import { domainTermForms, type DomainTermForms, type TermForms } from "../lib/term-forms";
+import { WeekFormsDialog, type WeekFormSide } from "./TermFormStatus";
 import { MentorNoteOverlay } from "./MentorNoteOverlay";
 
 // Core-only inline editing (behind the mentorship-manage flag). When present,
@@ -30,253 +30,342 @@ export type MentorGridEdit = {
 };
 
 // Every week column is exactly this wide, header and cells alike.
-const WEEK_COL = "2.25rem";
-
+const WEEK_COL = "2.5rem";
+const IDENTITY_COL = "17rem";
+// The check-in whose forms the Form pills open.
+const FORM_WEEK = 5;
+// An unfilled week (no note, or a note with no rating): the upcoming-week ring, but solid.
+const UNFILLED = "border border-border text-muted-foreground/70";
 function fullName(u: GridPerson) {
   return `${u.firstName} ${u.lastName}`.trim();
 }
 
-// One mentor's card: their mentees down the rows, weeks across the columns.
-// `heading` overrides the mentor's name (the hub shows a single group where the
-// viewer is the mentor, so it labels the section "My mentees" instead).
-// `highlightMissing` flags due-but-unwritten weeks in red — reserved for
-// core/admin oversight; for a plain mentor the gaps read neutrally.
-// Core-only Slack nudge for this mentor.
-// Shown only when the mentor has at least one unfilled note.
+// Core-only Slack nudge for a mentor. Shown only when the mentor has at least
+// one unfilled note.
 export type MentorGridNudge = {
   count: number;
   busy: boolean;
   onNudge: () => void;
 };
 
+type GridProps = {
+  weeks: number[];
+  currentWeek: number | null;
+  termId: string;
+  // Flags due-but-unwritten weeks in red — reserved for core/admin oversight.
+  highlightMissing: boolean;
+  // Overrides the mentor's name in the group header (the hub shows one group
+  // where the viewer is the mentor, so it reads "My mentees").
+  heading?: string;
+  edit?: MentorGridEdit;
+  termForms?: TermForms;
+};
+
+// One mentor on their own — the hub's "My mentees".
 export function MentorGrid({
   group,
+  nudge,
+  ...rest
+}: GridProps & { group: GridMentorGroup; nudge?: MentorGridNudge }) {
+  return <MentorGridTable groups={[group]} nudgeFor={() => nudge} {...rest} />;
+}
+
+// Mentor cards: one soft card per mentor (collapsible, open by default) with a
+// compact row per mentee. Every card uses the same column template, so the week
+// numbers and circles line up in every row of every card.
+export function MentorGridTable({
+  groups,
+  nudgeFor,
   weeks,
   currentWeek,
   termId,
   highlightMissing,
   heading,
   edit,
-  nudge,
   termForms,
-}: {
-  group: GridMentorGroup;
-  weeks: number[];
-  currentWeek: number | null;
-  termId: string;
-  highlightMissing: boolean;
-  heading?: string;
-  edit?: MentorGridEdit;
-  nudge?: MentorGridNudge;
-  termForms?: TermForms;
+}: GridProps & {
+  groups: GridMentorGroup[];
+  nudgeFor?: (group: GridMentorGroup) => MentorGridNudge | undefined;
 }) {
   const formsFor = (domainId: string) => (termForms ? domainTermForms(termForms, domainId) : null);
-  // The week 5 section appears when any of this mentor's domains links a form.
-  const showForms = group.rows.some((r) => {
-    const f = formsFor(r.domainId);
-    return f?.mentee.form || f?.mentor.form;
-  });
-  // The mentor answers one form per domain; show the first that has a response
-  // (else the first linked), since the card carries a single mentor entry.
-  const mentorSlots = group.rows.flatMap((r) => {
-    const slot = formsFor(r.domainId)?.mentor;
-    return slot?.form ? [slot] : [];
-  });
-  const mentorSlot =
-    mentorSlots.find((sl) => sl.responses[group.mentor.id]) ?? mentorSlots[0];
-  const { panel, panelPad } = useOsChrome();
-  // The note open in the overlay; the grid stays mounted behind it.
+  const showForms = groups.some((g) =>
+    g.rows.some((r) => {
+      const f = formsFor(r.domainId);
+      return f?.mentee.form || f?.mentor.form;
+    }),
+  );
+  // The note open in the overlay; the cards stay mounted behind it.
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
-  // Header and every mentee row share this one template, so each week number
-  // sits in the same fixed-width column as its circle — in every row, in every
-  // mentor card — and the week 5 section / edit column only ever extend it to
-  // the right.
+  // One template for every row of every card: identity, exactly ten equal
+  // compact week columns, then (when forms are linked) a rightmost column for
+  // the Form pills that takes the remaining width.
   const columns = [
-    "15rem",
-    // The track stretches to fill the panel; the 2.25rem floor keeps a circle
-    // and its number in a clean column on narrow screens.
-    `repeat(${Math.max(weeks.length, 1)}, minmax(${WEEK_COL}, 1fr))`,
+    IDENTITY_COL,
+    // Ten equal week columns; the Week 5 check-in bubble takes one more of the
+    // same width right after week 5, so it reads as part of the timeline.
+    ...(weeks.length === 0
+      ? [WEEK_COL]
+      : weeks.flatMap((w) => [WEEK_COL, ...(showForms && w === FORM_WEEK ? [WEEK_COL] : [])])),
     edit ? "auto" : null,
   ]
     .filter(Boolean)
     .join(" ");
-  const nudgeEl =
-    nudge && nudge.count > 0 ? (
-      <Tooltip content={`Slack-DM ${fullName(group.mentor)} about their ${nudge.count} unfilled note${nudge.count === 1 ? "" : "s"}`}>
+  return (
+    <div className="flex flex-col gap-6">
+      {groups.map((group) => (
+        <MentorGroup
+          key={group.mentor.id}
+          group={group}
+          weeks={weeks}
+          heading={heading}
+          nudge={nudgeFor?.(group)}
+          columns={columns}
+          currentWeek={currentWeek}
+          termId={termId}
+          highlightMissing={highlightMissing}
+          edit={edit}
+          formsFor={formsFor}
+          showForms={showForms}
+          onOpenNote={(id) => {
+            // Dev-preview notes have nothing to load.
+            if (!id.startsWith("mock-")) setOpenNoteId(id);
+          }}
+        />
+      ))}
+      <MentorNoteOverlay noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
+    </div>
+  );
+}
+
+function MentorGroup({
+  group,
+  weeks,
+  heading,
+  nudge,
+  columns,
+  currentWeek,
+  termId,
+  highlightMissing,
+  edit,
+  formsFor,
+  showForms,
+  onOpenNote,
+}: {
+  group: GridMentorGroup;
+  weeks: number[];
+  heading?: string;
+  nudge?: MentorGridNudge;
+  columns: string;
+  currentWeek: number | null;
+  termId: string;
+  highlightMissing: boolean;
+  edit?: MentorGridEdit;
+  formsFor: (domainId: string) => DomainTermForms | null;
+  showForms: boolean;
+  onOpenNote: (noteId: string) => void;
+}) {
+  const { panel } = useOsChrome();
+  const [open, setOpen] = useState(true);
+  const [dialog, setDialog] = useState<WeekFormSide[] | null>(null);
+  const mentorName = fullName(group.mentor);
+
+  // The mentor answers one form per domain; every Form pill in the card shares
+  // one mentor entry — the first with a response, else the first linked.
+  const mentorSlots = group.rows.flatMap((r) => {
+    const slot = formsFor(r.domainId)?.mentor;
+    return slot?.form ? [slot] : [];
+  });
+  const mentorSlot = mentorSlots.find((sl) => sl.responses[group.mentor.id]) ?? mentorSlots[0];
+  const mentorSide: WeekFormSide = {
+    role: "mentor",
+    personId: group.mentor.id,
+    photoUrl: group.mentor.photoUrl,
+    personName: mentorName,
+    formName: mentorSlot?.form?.name ?? null,
+    response: mentorSlot?.responses[group.mentor.id],
+  };
+  const menteeSide = (row: GridMenteeRow): WeekFormSide => {
+    const slot = formsFor(row.domainId)?.mentee;
+    return {
+      role: "mentee",
+      personId: row.menteeId,
+      photoUrl: row.mentee.photoUrl,
+      personName: fullName(row.mentee),
+      formName: slot?.form?.name ?? null,
+      response: slot?.responses[row.menteeId],
+    };
+  };
+
+  return (
+    <section className={cn(panel, "flex flex-col px-5 py-3")}>
+      <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={nudge.onNudge}
-          disabled={nudge.busy}
-          className="os-edit-btn shrink-0 !gap-1 !px-2 !py-0.5 !text-xs disabled:opacity-50"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex min-w-0 items-center gap-2 text-left"
         >
-          <Send className="w-3 h-3 text-os-grey" aria-hidden />
-          {nudge.busy ? "Sending…" : "Nudge"}
+          {heading ? (
+            <span className="font-medium text-foreground">{heading}</span>
+          ) : (
+            <>
+              <Avatar photoUrl={group.mentor.photoUrl} name={mentorName} size="sm" userId={group.mentor.id} />
+              <span className="truncate font-medium text-foreground">{mentorName}</span>
+            </>
+          )}
         </button>
-      </Tooltip>
-    ) : null;
-  return (
-    <section className={cn(panel, panelPad, "flex flex-col gap-2")}>
-      {heading && <h2 className="font-medium text-foreground">{heading}</h2>}
-      <div className="overflow-x-auto">
-        <div className="flex w-full min-w-[44rem] items-start gap-4">
-          <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 self-stretch">
-          <div role="table" className="flex flex-col">
+        {nudge && nudge.count > 0 && (
+          <Tooltip content={`Slack-DM ${mentorName} about their ${nudge.count} unfilled note${nudge.count === 1 ? "" : "s"}`}>
+            <button
+              type="button"
+              onClick={nudge.onNudge}
+              disabled={nudge.busy}
+              className="os-edit-btn ml-auto shrink-0 !gap-1.5 !px-4 !py-1.5 !text-xs disabled:opacity-50"
+            >
+              <Send className="h-3.5 w-3.5 text-os-grey" aria-hidden />
+              {nudge.busy ? "Sending…" : "Nudge"}
+            </button>
+          </Tooltip>
+        )}
+      </div>
+      {open && (
+        <div className="overflow-x-auto">
+          <div role="table" className="min-w-max pt-1">
             {edit && (
               <div
                 role="row"
-                className="grid items-end gap-x-1 pb-1"
+                className="grid items-end gap-x-1 pt-1 text-[11px] font-medium text-muted-foreground"
                 style={{ gridTemplateColumns: columns }}
               >
                 <span role="columnheader"><span className="sr-only">Mentee</span></span>
                 {weeks.map((w) => (
-                  <span key={w} role="columnheader" className="sr-only">Week {w}</span>
+                  <Fragment key={w}>
+                    <span role="columnheader" className="sr-only">Week {w}</span>
+                    {showForms && w === FORM_WEEK && <span />}
+                  </Fragment>
                 ))}
-                <span role="columnheader" className="pl-3 text-left font-medium text-muted-foreground">
-                  Mentor
-                </span>
+                <span role="columnheader" className="pl-3">Mentor</span>
               </div>
             )}
-            {group.rows.map((row, i) => (
-              <div
-                key={row.key}
-                role="row"
-                className={cn(
-                  "grid items-center gap-x-1 py-2",
-                  // Several mentees: a hairline keeps each pair a unit.
-                  i > 0 && "border-t border-os-container/60",
-                )}
-                style={{ gridTemplateColumns: columns }}
-              >
-                {/* Mentee photo, name, and project (wraps rather than truncating). */}
-                <div role="cell" className="flex items-center gap-3 pr-3 min-w-0">
-                  <Avatar photoUrl={row.mentee.photoUrl} name={fullName(row.mentee)} size="sm" className="shrink-0" />
-                  <div className="flex flex-col leading-tight min-w-0">
-                    <span className="font-medium text-foreground truncate" title={fullName(row.mentee)}>
-                      {fullName(row.mentee)}
-                    </span>
-                    {/* Wraps instead of truncating, so the project is never cut off. */}
-                    <span className="text-xs text-muted-foreground">
-                      {row.projectName} · {row.domainCode}
-                    </span>
-                  </div>
-                </div>
-                {row.cells.map((cell) => (
-                  <div key={cell.week} role="cell" className="flex flex-col items-center gap-1">
-                    {/* The week number rides directly above its circle. */}
-                    <span
-                      className={cn(
-                        "text-[11px] leading-none",
-                        cell.week === currentWeek
-                          ? "font-bold text-foreground"
-                          : "font-medium text-muted-foreground",
-                      )}
-                    >
-                      <Tooltip
-                        content={cell.week === currentWeek ? `Week ${cell.week} (current term week)` : `Week ${cell.week}`}
-                      >
-                        <span>{cell.week}</span>
-                      </Tooltip>
-                    </span>
-                    <GridCellView
-                      cell={cell}
-                      row={row}
-                      termId={termId}
-                      highlightMissing={highlightMissing}
-                      onOpenNote={(id) => {
-                        // Dev-preview notes have nothing to load.
-                        if (!id.startsWith("mock-")) setOpenNoteId(id);
-                      }}
-                    />
-                  </div>
-                ))}
-                {edit && (
-                  <div role="cell" className="pl-3 whitespace-nowrap">
-                    <div className="inline-flex items-center gap-2">
-                      <Select
-                        ariaLabel={`Reassign ${fullName(row.mentee)}'s mentor`}
-                        value={group.mentor.id}
-                        onChange={(v) => {
-                          if (v && v !== group.mentor.id) edit.onReassign(row, v);
-                        }}
-                        options={[
-                          { value: group.mentor.id, label: fullName(group.mentor) },
-                          ...edit
-                            .mentorOptionsFor(row)
-                            .filter((o) => o.value !== group.mentor.id),
-                        ]}
-                        buttonClassName="min-w-[9rem] text-xs"
-                      />
-                      {row.manual && (
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                          manual
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => edit.onRemove(row)}
-                        disabled={edit.busy}
-                        className="text-muted-foreground hover:text-destructive disabled:opacity-50"
-                        title="Remove pairing"
-                      >
-                        <Trash2 className="w-4 h-4" aria-hidden />
-                        <span className="sr-only">Remove {fullName(row.mentee)} pairing</span>
-                      </button>
+            {group.rows.map((row, i) => {
+              const side = menteeSide(row);
+              return (
+                <div
+                  key={row.key}
+                  role="row"
+                  className={cn(
+                    "grid items-center gap-x-1 py-2",
+                    i > 0 && "border-t border-os-container/40",
+                  )}
+                  style={{ gridTemplateColumns: columns }}
+                >
+                  <div role="cell" className="flex min-w-0 items-center gap-3 pr-3">
+                    <Avatar photoUrl={row.mentee.photoUrl} name={fullName(row.mentee)} size="sm" className="shrink-0" />
+                    <div className="flex min-w-0 flex-col leading-tight">
+                      <span className="truncate font-medium text-foreground" title={fullName(row.mentee)}>
+                        {fullName(row.mentee)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {row.projectName} · {row.domainCode}
+                      </span>
                     </div>
                   </div>
-                )}
-              </div>
-            ))}
-          </div>
-          {/* Whose box this is: the mentor, bottom-left, in quiet grey. */}
-          {(!heading || nudgeEl) && (
-            <div className="flex items-center gap-3">
-              {!heading && (
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Avatar
-                    photoUrl={group.mentor.photoUrl}
-                    name={fullName(group.mentor)}
-                    size="xs"
-                    userId={group.mentor.id}
-                  />
-                  {fullName(group.mentor)}
+                  {row.cells.map((cell) => (
+                    <Fragment key={cell.week}>
+                      <div role="cell" className="flex justify-center">
+                        <GridCellView
+                          cell={cell}
+                          row={row}
+                          termId={termId}
+                          highlightMissing={highlightMissing}
+                          isCurrent={cell.week === currentWeek}
+                          onOpenNote={onOpenNote}
+                        />
+                      </div>
+                      {showForms && cell.week === FORM_WEEK && (
+                        <div role="cell" className="flex justify-center">
+                          <FormBubble
+                            mentor={Boolean(mentorSide.response)}
+                            mentee={Boolean(side.response)}
+                            label={`Week ${FORM_WEEK} checkin · Mentor ${mentorSide.response ? "submitted" : "not submitted"}, Mentee ${side.response ? "submitted" : "not submitted"}`}
+                            ariaLabel={`Open Week ${FORM_WEEK} forms — ${mentorName} and ${fullName(row.mentee)}`}
+                            onClick={() => setDialog([mentorSide, side])}
+                          />
+                        </div>
+                      )}
+                    </Fragment>
+                  ))}
+                  {edit && (
+                    <div role="cell" className="pl-3 whitespace-nowrap">
+                      <div className="inline-flex items-center gap-2">
+                        <Select
+                          ariaLabel={`Reassign ${fullName(row.mentee)}'s mentor`}
+                          value={group.mentor.id}
+                          onChange={(v) => {
+                            if (v && v !== group.mentor.id) edit.onReassign(row, v);
+                          }}
+                          options={[
+                            { value: group.mentor.id, label: mentorName },
+                            ...edit.mentorOptionsFor(row).filter((o) => o.value !== group.mentor.id),
+                          ]}
+                          buttonClassName="min-w-[9rem] text-xs"
+                        />
+                        {row.manual && (
+                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">manual</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => edit.onRemove(row)}
+                          disabled={edit.busy}
+                          className="text-muted-foreground hover:text-destructive disabled:opacity-50"
+                          title="Remove pairing"
+                        >
+                          <Trash2 className="w-4 h-4" aria-hidden />
+                          <span className="sr-only">Remove {fullName(row.mentee)} pairing</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
-              {nudgeEl}
-            </div>
-          )}
+              );
+            })}
           </div>
-          {showForms && (
-            // Every action lives in this right-hand column; the left holds content only.
-            <div className="shrink-0 self-stretch border-l border-os-container/60 pl-4">
-              {(
-                <WeekFormsCard
-                  mentor={{
-                    role: "mentor",
-                    personId: group.mentor.id,
-                    photoUrl: group.mentor.photoUrl,
-                    personName: fullName(group.mentor),
-                    formName: mentorSlot?.form?.name ?? null,
-                    response: mentorSlot?.responses[group.mentor.id],
-                  }}
-                  mentees={group.rows.map((row) => {
-                    const slot = formsFor(row.domainId)?.mentee;
-                    return {
-                      role: "mentee" as const,
-                      personId: row.menteeId,
-                      photoUrl: row.mentee.photoUrl,
-                      personName: fullName(row.mentee),
-                      formName: slot?.form?.name ?? null,
-                      response: slot?.responses[row.menteeId],
-                    };
-                  })}
-                />
-              )}
-            </div>
-          )}
         </div>
-      </div>
-      <MentorNoteOverlay noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
+      )}
+      <WeekFormsDialog open={dialog != null} onClose={() => setDialog(null)} sides={dialog ?? []} />
     </section>
+  );
+}
+
+// The Week 5 check-in as a bubble in the timeline: left half = the mentor's
+// form, right half = the mentee's. Both halves filled = both submitted, one
+// half = only that person has, empty = neither.
+function FormBubble({
+  mentor,
+  mentee,
+  label,
+  ariaLabel,
+  onClick,
+}: {
+  mentor: boolean;
+  mentee: boolean;
+  label: string;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip content={label}>
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={ariaLabel}
+        className="relative inline-flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-border transition hover:ring-2 hover:ring-border hover:ring-offset-1"
+      >
+        <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1/2", mentor && "bg-[#9fe0a8]")} />
+        <span aria-hidden className={cn("absolute inset-y-0 right-0 w-1/2", mentee && "bg-[#9fe0a8]")} />
+        <FileText aria-hidden className="relative h-3 w-3 text-black/40" />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -289,18 +378,26 @@ function GridCellView({
   row,
   termId,
   highlightMissing,
+  isCurrent,
   onOpenNote,
 }: {
   cell: GridCell;
   row: GridMenteeRow;
   termId: string;
   highlightMissing: boolean;
+  isCurrent: boolean;
   onOpenNote: (noteId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
 
   const base =
     "inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] transition";
+  // The week number rides faintly inside its circle; currentWeek reads bolder.
+  const num = (
+    <span aria-hidden className={cn("leading-none", isCurrent && "font-bold")}>
+      {cell.week}
+    </span>
+  );
 
   // Submitted: open the existing note, colored by its vibe.
   if (cell.state === "submitted") {
@@ -308,10 +405,8 @@ function GridCellView({
     // oversight, flag it (amber dashed) like a missing cell so the grid matches
     // the "Not filled in" filter; otherwise it's a neutral gray dot.
     const cls = cell.vibe
-      ? `${VIBE_META[cell.vibe].dot} text-white`
-      : highlightMissing
-      ? "border border-dashed border-os-amber text-os-amber"
-      : "bg-muted-foreground/40 text-white";
+      ? `${VIBE_META[cell.vibe].dot} text-black/35`
+      : UNFILLED;
     const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "no rating yet";
     const vibeDesc = cell.vibe === "Good"
       ? "Mentor marked this week as going well."
@@ -336,6 +431,7 @@ function GridCellView({
           }}
           className={`${base} ${cls} hover:ring-2 hover:ring-offset-1 hover:ring-border`}
         >
+          {num}
           <span className="sr-only">Open note</span>
         </a>
       </Tooltip>
@@ -348,7 +444,7 @@ function GridCellView({
   const style =
     // The earlier look, with the two empty states swapped: a missed (due, no
     // note) week is the filled grey "–" dot; an upcoming week is the dashed outline.
-    missing ? "bg-muted text-muted-foreground" : "border border-dashed border-border text-muted-foreground";
+    missing ? UNFILLED : "border border-dashed border-border text-muted-foreground/50";
   const hover =
     "hover:bg-muted/60";
 
@@ -358,7 +454,9 @@ function GridCellView({
       <Tooltip
         content={`Week ${cell.week} · ${missing ? "no note written yet" : "not yet due"}`}
       >
-        <span className={`${base} ${style}`}>{missing ? "–" : ""}</span>
+        <span className={`${base} ${style}`}>
+          {num}
+        </span>
       </Tooltip>
     );
   }
@@ -394,9 +492,10 @@ function GridCellView({
         type="button"
         onClick={openNote}
         disabled={busy}
-        className={`${base} ${style} ${hover}`}
+        className={`group ${base} ${style} ${hover}`}
       >
-        <Plus className="h-3 w-3 text-foreground" aria-hidden />
+        <span className="group-hover:hidden">{num}</span>
+        <Plus className="hidden h-3 w-3 text-foreground group-hover:block" aria-hidden />
         <span className="sr-only">Open note for week {cell.week}</span>
       </button>
     </Tooltip>

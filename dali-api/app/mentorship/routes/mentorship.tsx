@@ -18,6 +18,8 @@ import {
   type MentorGridResult,
 } from "../lib/mentor-grid.server";
 import { MentorGrid } from "../components/MentorGrid";
+import type { TermForms } from "../lib/term-forms";
+import { loadTermForms } from "../lib/term-forms.server";
 import { EmptyState } from "../components/EmptyState";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -39,6 +41,8 @@ type LoaderData = {
   termCode: string | null;
   // The viewer's own mentees for that term, as a weekly grid.
   grid: MentorGridResult;
+  // Core only, like the notes browser: mentees' answers may be about their mentor.
+  termForms: TermForms | null;
   // Core-only oversight: mentors missing a note for the current week. Only
   // meaningful (and only computed) while in-term — 0 during a break.
   behindCount: number;
@@ -90,12 +94,21 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const nextTerm = phase.state === "break" ? phase.next : null;
 
+  const termForms =
+    userIsCore && gridTerm
+      ? await loadTermForms(
+          gridTerm,
+          grid.mentors.flatMap((m) => [m.mentor.id, ...m.rows.map((r) => r.menteeId)]),
+        )
+      : null;
+
   const data: LoaderData = {
     isCore: userIsCore,
     phase: phase.state,
     termId: gridTerm?.id ?? null,
     termCode: gridTerm?.code ?? null,
     grid,
+    termForms,
     behindCount,
     breakLabel: nextTerm ? interimLabel(nextTerm.season) : null,
     nextTermCode: nextTerm?.code ?? null,
@@ -202,6 +215,7 @@ export default function MentorshipHub() {
           termId={data.termId ?? ""}
           highlightMissing={data.isCore && data.phase === "in-term"}
           heading="My mentees"
+          termForms={data.termForms ?? undefined}
         />
       )}
 
