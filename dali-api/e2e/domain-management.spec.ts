@@ -4,17 +4,14 @@ const ADMIN_EMAIL = 'admin@dali.dartmouth.edu';
 
 // Domains are managed from Roles & domains at /core/access, in its
 // "Manage domains" dialog; /core/access/domains and /admin/domains redirect
-// here. It renders inside the workspace iframe, seeded with the area label.
+// here.
 const ACCESS_URL = '/core/access';
-const accessFrame = (page: import('@playwright/test').Page) =>
-  page.frameLocator('iframe[title="Core"]');
 
 async function openManageDomains(page: import('@playwright/test').Page) {
-  const frame = accessFrame(page);
-  await frame.getByRole('button', { name: 'Manage domains' }).click();
-  const dialog = frame.getByRole('dialog', { name: 'Manage domains' });
+  await page.getByRole('button', { name: 'Manage domains' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Manage domains' });
   await expect(dialog).toBeVisible();
-  return { frame, dialog };
+  return { dialog };
 }
 
 test.describe('admin domain management', () => {
@@ -28,13 +25,13 @@ test.describe('admin domain management', () => {
   });
 
   test('admin can create a new domain and then delete it', async ({ page }) => {
-    // First hit to this iframe route can cold-compile its client bundle, so
+    // First hit to this route can cold-compile its client bundle, so
     // hydration (which wires the form's onChange) may lag well past the default.
     test.slow();
     const name = `E2E Domain ${Date.now()}`;
 
     await page.goto(ACCESS_URL);
-    const { frame, dialog } = await openManageDomains(page);
+    const { dialog } = await openManageDomains(page);
 
     // A fill can land before React has wired the input's onChange (so the
     // button stays disabled). Re-fill until the button enables, then submit.
@@ -51,7 +48,7 @@ test.describe('admin domain management', () => {
 
     await row.getByRole('button', { name: `Delete ${name}` }).click();
     // The confirm opens over the Manage domains dialog, so pick it by name.
-    await frame
+    await page
       .getByRole('dialog', { name: `Delete ${name}?` })
       .getByRole('button', { name: 'Delete domain', exact: true })
       .click();

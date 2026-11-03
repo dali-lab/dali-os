@@ -87,9 +87,7 @@ export function PageBar({
 }) {
   const { actionsRef, presenceRef } = usePageBarTargetSetters()
   const labels = starLabels(star)
-  const desktopTabs = useFeatureFlag('desktop-tabs')
   const browserDesktop = useIsBrowserDesktopCandidate()
-  const showOpenInApp = desktopTabs && browserDesktop
   const openInApp = useOpenCurrentPageInDesktop()
 
   return (
@@ -107,7 +105,7 @@ export function PageBar({
             inset inside 32px hit areas) doesn't read as extra left padding;
             empty:ml-0 keeps the trail in place when the nav doesn't render. */}
         <div className="-ml-2 hidden empty:ml-0 md:block">
-          <TablessHistoryNav tabless tabs={tabs} />
+          <TablessHistoryNav tabs={tabs} />
         </div>
         {(areaKey || icon) && <AreaTile areaKey={areaKey ?? 'default'} size={22} icon={icon} />}
         <DisplayedPage>
@@ -137,7 +135,7 @@ export function PageBar({
         <OverflowMenu
           shellItems={
             <>
-              {showOpenInApp && (
+              {browserDesktop && (
                 <Menu.Item icon={<AppWindow className="h-3.5 w-3.5" />} onSelect={openInApp}>
                   Open in desktop app
                 </Menu.Item>

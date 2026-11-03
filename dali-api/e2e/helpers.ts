@@ -38,8 +38,8 @@ export async function assertNoHorizontalOverflow(
     `[${routeLabel}] outer document scrollWidth (${outerScrollWidth}px) exceeds viewport (${viewportWidth}px)`,
   );
 
-  // Check child frames defensively — mobile is tabless (no iframes) but a
-  // route might embed one (e.g. a video or third-party widget).
+  // Check child frames defensively: a route might embed one (e.g. a video or
+  // third-party widget).
   for (const frame of page.frames()) {
     if (frame === page.mainFrame()) continue;
     const frameScrollWidth = await frame

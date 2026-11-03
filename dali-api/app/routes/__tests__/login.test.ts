@@ -78,9 +78,7 @@ describe("GET /login loader routing", () => {
   it("renders the login page for an unauthenticated visitor", async () => {
     mockRequireAuth.mockResolvedValue({ ok: false } as any);
     const result = await loader({ request: loaderRequest() } as any);
-    // Signed out, so the v2 auth dress can only follow the flag's everyone
-    // switch — off here, since the test DB has no flag rows.
-    expect(result).toEqual({ authV2: false });
+    expect(result).toBeNull();
     expect(mockMemberFind).not.toHaveBeenCalled();
   });
 

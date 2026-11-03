@@ -15,7 +15,6 @@ import { Select } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { OTHER_ANSWER_MAX_LENGTH } from "~/lib/form-answers";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -394,16 +393,11 @@ function ReferenceProjectCard({
               {card.sowPageId && (
                 // Not a real <a>: inside the desktop app's single webview a
                 // target="_blank" click has no window to open into and silently
-                // does nothing. requestOpenTabIfEmbedded opens it as a workspace
-                // tab when embedded in one (web); otherwise this just navigates,
-                // same as every other internal link in the app (see workspace-link.ts).
+                // does nothing, so this navigates in place.
                 <button
                   type="button"
                   onClick={() => {
-                    const url = `/documents/${card.sowPageId}`;
-                    if (!requestOpenTabIfEmbedded(url, `${option.label} — SOW`)) {
-                      window.location.href = url;
-                    }
+                    window.location.href = `/documents/${card.sowPageId}`;
                   }}
                   className="self-start inline-flex items-center gap-1.5 mt-0.5 text-xs font-medium px-2.5 py-1 rounded-full border border-os-accent/40 text-os-accent hover:bg-os-accent/10"
                 >

@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFetcher } from "react-router";
 import { cn } from "~/lib/cn";
-import { readTablessPreference, setTablessPreference } from "~/lib/tabless";
-import { readFocusPreference, setFocusPreference } from "~/lib/focus-mode";
 import {
   readEmojiSuggestionsPreference,
   setEmojiSuggestionsPreference,
@@ -11,7 +9,6 @@ import { Toggle } from "~/components/ui/Toggle";
 import { useToast } from "~/components/ui/toast";
 import { SettingRow } from "~/components/settings/SettingsSection";
 import { TabsPreview } from "~/components/settings/TabsPreview";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useDesktopVersion } from "~/lib/desktop";
 import { useIsBrowserDesktopCandidate } from "~/lib/desktop-candidate";
 import { buttonClasses } from "~/components/ui/Button";
@@ -23,32 +20,16 @@ const TAB_MODES = [
   { tabs: false, label: "No tabs" },
 ] as const;
 
-const OPEN_MODES = [
-  { tabless: true, label: "Single page", help: "Each link replaces the current page." },
-  { tabless: false, label: "Tabbed workspace", help: "Pages open as tabs you can switch between." },
-] as const;
-
-// Both cookie-backed prefs change the server-rendered shell, so applying one
-// reloads the top window. In tab mode this renders inside a workspace iframe,
-// so reload the parent, not the frame.
+// The tab-strip pref changes the server-rendered shell, so applying it reloads.
 function reloadSettings() {
-  let top: Window = window;
-  try {
-    top = window.top ?? window;
-  } catch {
-    // Cross-origin ancestor: fall back to this window.
-  }
-  top.location.replace("/settings/general");
+  window.location.replace("/settings/general");
 }
 
 export function WorkspaceSettingsBlock() {
   // Render defaults on the server, then correct to the cookie-backed values on
   // mount to avoid a hydration mismatch.
-  const [tabless, setTabless] = useState(true);
-  const [focus, setFocus] = useState(false);
   const [emoji, setEmoji] = useState(false);
   const toast = useToast();
-  const desktopTabs = useFeatureFlag("desktop-tabs");
   const inDesktopApp = useDesktopVersion() !== null;
   const inBrowser = useIsBrowserDesktopCandidate();
   const [showTabs, setShowTabs] = useState(true);
@@ -57,21 +38,12 @@ export function WorkspaceSettingsBlock() {
   useEffect(() => {
     setShowTabs(tabsPreferred(readTabStripCookie()));
     setOpenInApp(readOpenInAppCookie());
-    setTabless(readTablessPreference());
-    setFocus(readFocusPreference());
     setEmoji(readEmojiSuggestionsPreference());
   }, []);
 
-  function chooseTabless(next: boolean) {
-    if (next === tabless) return;
-    setTablessPreference(next);
-    setTabless(next);
-    reloadSettings();
-  }
-
   return (
     <div className="rounded-os-card bg-os-card divide-y divide-os-container/70">
-      {desktopTabs && inDesktopApp && (
+      {inDesktopApp && (
         <div className="flex flex-col gap-3 px-6 py-5">
           <div>
             <p className="text-[15px] text-foreground">Tabs</p>
@@ -105,7 +77,7 @@ export function WorkspaceSettingsBlock() {
           </div>
         </div>
       )}
-      {desktopTabs && inBrowser && (
+      {inBrowser && (
         <div className="flex items-center gap-5 px-6 py-4">
           <TabsPreview tabs className="hidden w-40 shrink-0 sm:flex" />
           <div className="min-w-0 flex-1">
@@ -117,7 +89,7 @@ export function WorkspaceSettingsBlock() {
           </a>
         </div>
       )}
-      {desktopTabs && inBrowser && (
+      {inBrowser && (
         <SettingRow
           label="Open links in the desktop app"
           help="Links you open in this browser go to the app. Saved on this browser."
@@ -133,56 +105,6 @@ export function WorkspaceSettingsBlock() {
             />
           }
         />
-      )}
-      {!desktopTabs && (
-        <>
-          <div className="flex flex-col gap-3 px-6 py-5">
-            <div>
-              <p className="text-[15px] text-foreground">Opening pages</p>
-              <p className="mt-0.5 text-sm text-os-grey">Changing this reloads DALI OS.</p>
-            </div>
-            <div role="radiogroup" aria-label="Opening pages" className="grid gap-3 sm:grid-cols-2">
-              {OPEN_MODES.map((o) => {
-                const active = o.tabless === tabless;
-                return (
-                  <button
-                    key={o.label}
-                    type="button"
-                    role="radio"
-                    aria-checked={active}
-                    onClick={() => chooseTabless(o.tabless)}
-                    className={cn(
-                      "flex flex-col gap-3 rounded-os-item border-2 bg-os-well p-3 text-left transition-colors",
-                      active ? "border-os-accent" : "border-transparent hover:border-os-container-hi",
-                    )}
-                  >
-                    <TabsPreview tabs={!o.tabless} />
-                    <span>
-                      <span className="block text-sm text-foreground">{o.label}</span>
-                      <span className="mt-0.5 block text-sm text-os-grey">{o.help}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <SettingRow
-            label="Focus mode"
-            help="Hide the sidebar. Use ⌘K to get around, or the floating button to bring it back. Reloads DALI OS."
-            control={
-              <Toggle
-                tone="os"
-                aria-label="Focus mode"
-                checked={focus}
-                onChange={(e) => {
-                  setFocusPreference(e.target.checked);
-                  setFocus(e.target.checked);
-                  reloadSettings();
-                }}
-              />
-            }
-          />
-        </>
       )}
       <SettingRow
         label="Emoji suggestions"

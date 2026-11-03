@@ -13,7 +13,7 @@ describe("isFocusRequest", () => {
   });
 
   it("is false when the focus cookie is absent", () => {
-    expect(isFocusRequest(req("__dali_sid=abc; dali_tabless=1"))).toBe(false);
+    expect(isFocusRequest(req("__dali_sid=abc; theme=dark"))).toBe(false);
   });
 
   it("is true when the focus cookie is set to 1", () => {

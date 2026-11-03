@@ -1261,9 +1261,10 @@ describe("DriveBrowser drag: dropping on a drive", () => {
       ["education", "lucide-graduation-cap"],
     ])("draws the %s drive with its own icon", async (id, iconClass) => {
       await mountScopeList();
-      const icon = byTestId(`drive-scope-${id}`).querySelector("svg");
+      const tile = byTestId(`drive-scope-${id}`).querySelector("[data-area-tile]");
+      expect(tile).not.toBeNull();
+      const icon = tile?.querySelector("svg");
       expect(icon?.getAttribute("class")).toContain(iconClass);
-      expect(icon?.getAttribute("class")).toContain("text-accent-coral/80");
       expect(icon?.getAttribute("class")).not.toContain("lucide-folder ");
     });
 

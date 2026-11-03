@@ -16,7 +16,6 @@ import {
   X,
 } from "lucide-react";
 import { fullName } from "~/lib/display";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
 import {
   EventComposer,
@@ -114,7 +113,7 @@ export const handle = {
   areaSubnav: true,
   docKey: "calendar",
   docTitle: "Calendar",
-  // Fill the shell pane (iframe or tabless column) so the grid stretches to
+  // Fill the shell pane so the grid stretches to
   // the edges and hours scroll inside it instead of the page.
   fitViewport: true,
   flushPane: true,

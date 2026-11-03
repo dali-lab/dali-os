@@ -6,18 +6,9 @@ import { buttonClasses, type ButtonSize } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 
-// Tell the shell's sidebar task poller that the task list changed. Inside a
-// TabWorkspace iframe the poller lives in the parent, so relay via postMessage;
-// the shell re-dispatches it as a same-window event (see Layout.tsx).
+// Tell the shell's task poller that the task list changed.
 export function notifyTasksChanged() {
-  if (window.self !== window.top) {
-    window.parent.postMessage(
-      { type: "dali:tasksChanged" },
-      window.location.origin,
-    );
-  } else {
-    window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
-  }
+  window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
 }
 
 type Answer = "accepted" | "declined" | "tentative";

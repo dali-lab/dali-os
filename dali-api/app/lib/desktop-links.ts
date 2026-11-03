@@ -13,21 +13,20 @@
 // which hands any cross-origin URL to the system browser and then CANCELS the
 // in-webview navigation — the page stays exactly where it was. So a link the
 // webview can't open in a tab becomes a navigation the shell turns into a
-// browser hand-off, and an in-app link becomes a real workspace tab via the
-// `dali:openTab` message the embedded pages already use.
+// browser hand-off, and an in-app link becomes a desktop tab when the tab strip
+// is on.
 //
 // Browsers keep their own tabs: none of this installs unless we're in the shell.
 
 import { desktopVersion } from "~/lib/desktop";
-import { requestOpenTabIfEmbedded, workspacePath } from "~/components/workspace-link";
 import { tabActions, tabsActive } from "~/lib/desktop-tabs-store";
 
 export type DesktopLinkAction =
   /** Not ours to redirect — let the webview do whatever it would have done. */
   | { kind: "default" }
-  /** In-app URL, and we're in a workspace tab: ask the shell for another tab. */
+  /** In-app URL while desktop tabs are on: open another tab. */
   | { kind: "tab"; url: string }
-  /** In-app URL with no workspace to open into: go there in this window. */
+  /** In-app URL with no tab strip to open into: go there in this window. */
   | { kind: "navigate"; url: string }
   /** Off-site URL: navigate the top frame so the shell hands it to the OS. */
   | { kind: "handOff"; url: string };
@@ -40,12 +39,12 @@ const HAND_OFF_SCHEMES = new Set(["mailto:", "tel:", "sms:", "facetime:"]);
 /**
  * What the shell should do with a link that asked for a new tab. Pure, so the
  * decision is testable without a webview: `base` resolves relative hrefs,
- * `origin` is the app's own origin, `embedded` is true inside a workspace tab
- * or while desktop tabs are on (either way a new tab is ours to open).
+ * `origin` is the app's own origin, `tabs` is true while desktop tabs are on
+ * (a new tab is then ours to open).
  */
 export function resolveDesktopLink(
   href: string,
-  ctx: { origin: string; base: string; embedded: boolean },
+  ctx: { origin: string; base: string; tabs: boolean },
 ): DesktopLinkAction {
   let url: URL;
   try {
@@ -55,33 +54,26 @@ export function resolveDesktopLink(
   }
   if (url.protocol === "http:" || url.protocol === "https:") {
     if (url.origin !== ctx.origin) return { kind: "handOff", url: url.href };
-    return ctx.embedded ? { kind: "tab", url: url.href } : { kind: "navigate", url: url.href };
+    return ctx.tabs ? { kind: "tab", url: url.href } : { kind: "navigate", url: url.href };
   }
   if (HAND_OFF_SCHEMES.has(url.protocol)) return { kind: "handOff", url: url.href };
   return { kind: "default" };
 }
 
 function currentContext() {
-  let embedded = false;
-  try {
-    embedded = window.self !== window.top;
-  } catch {
-    embedded = true; // cross-origin top — treat as embedded, never navigate it
-  }
-  return { origin: window.location.origin, base: window.location.href, embedded: embedded || tabsActive() };
+  return { origin: window.location.origin, base: window.location.href, tabs: tabsActive() };
 }
 
 /** Carry out a resolved action. Returns false for `default`, so callers can
  *  fall through to the behaviour they would otherwise have had. */
 function perform(action: DesktopLinkAction, label: string): boolean {
   switch (action.kind) {
-    case "tab":
-      if (tabsActive()) {
-        const url = workspacePath(action.url, window.location.origin);
-        tabActions.open({ url, label: label || url });
-        return true;
-      }
-      return requestOpenTabIfEmbedded(action.url, label || action.url);
+    case "tab": {
+      const { pathname, search, hash } = new URL(action.url);
+      const url = pathname + search + hash;
+      tabActions.open({ url, label: label || url });
+      return true;
+    }
     case "navigate":
       window.location.assign(action.url);
       return true;
@@ -103,9 +95,8 @@ function perform(action: DesktopLinkAction, label: string): boolean {
 }
 
 /**
- * Route new-tab requests through the shell. Call once per document (every
- * workspace iframe is its own document, so every one installs its own). A no-op
- * outside the desktop app, and idempotent.
+ * Route new-tab requests through the shell. Call once per document. A no-op outside the
+ * desktop app, and idempotent.
  */
 export function installDesktopLinkHandling(): void {
   if (typeof window === "undefined") return;

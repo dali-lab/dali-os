@@ -13,15 +13,15 @@ import { activeTab } from "~/lib/desktop-tabs";
 import { tabActions } from "~/lib/desktop-tabs-store";
 import { useDesktopTabsState } from "~/components/DesktopTabs";
 
-// The arrows are a stand-in for OS/browser chrome tabless mode doesn't have.
+// The arrows are a stand-in for OS/browser chrome the shell doesn't have.
 // The desktop shell has no such chrome (a bare WKWebView), so it needs them;
 // an ordinary browser tab already has its own back/forward buttons. False
 // until the client effect resolves so SSR markup matches first paint.
-export function useShowTablessHistoryNav(tabless: boolean): boolean {
+export function useShowTablessHistoryNav(): boolean {
   const [show, setShow] = useState(false);
   useEffect(() => {
-    setShow(tabless && desktopVersion() !== null);
-  }, [tabless]);
+    setShow(desktopVersion() !== null);
+  }, []);
   return show;
 }
 
@@ -111,8 +111,8 @@ export function useTablessHistoryShortcuts(enabled: boolean, tabs: boolean) {
 // Back/forward buttons + right-click history dropdown, sitting at the left of
 // the os top bar ahead of the favorites star. Renders nothing on web (no
 // desktop shell) or in tab mode.
-export function TablessHistoryNav({ tabless, tabs }: { tabless: boolean; tabs: boolean }) {
-  if (!useShowTablessHistoryNav(tabless)) return null;
+export function TablessHistoryNav({ tabs }: { tabs: boolean }) {
+  if (!useShowTablessHistoryNav()) return null;
   return <HistoryNavButtons tabs={tabs} />;
 }
 

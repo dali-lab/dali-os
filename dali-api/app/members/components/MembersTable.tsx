@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { fullName } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { LoadMore } from "~/components/ui/Pager";
@@ -65,9 +64,7 @@ export function MembersTable({
             <tr
               key={m.id}
               onClick={() => {
-                const url = `/members/${m.id}`;
-                const label = fullName(m) || "Member";
-                if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
+                navigate(`/members/${m.id}`);
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >

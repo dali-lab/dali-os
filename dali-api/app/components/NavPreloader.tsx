@@ -65,8 +65,7 @@ function whenIdle(fn: () => void): () => void {
  * Warms the sidebar's Favorites and Recent destinations once the shell is idle,
  * so opening one from the navbar renders from cache instead of a cold fetch.
  * Each target renders React Router's <PrefetchPageLinks>, which preloads that
- * route's modules and (in tabless mode) its loader data; in tab mode the module
- * preloads still land, since every workspace iframe shares this document's cache.
+ * route's modules and its loader data.
  *
  * Prefetched loaders MUST NOT treat the hit as a page open — see
  * isPrefetchRequest and the recordRouteVisit/recordPageVisit guards, without

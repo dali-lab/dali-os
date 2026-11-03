@@ -13,6 +13,7 @@ import { Mail } from "lucide-react";
 import { DEFAULT_AREA_TINT } from "~/lib/nav-areas";
 import { adoptDesktopSession, resetLiveSession } from "~/components/meeting-recorder/live-session";
 
+vi.mock("~/lib/desktop-candidate", () => ({ useIsBrowserDesktopCandidate: () => false }));
 vi.mock("~/components/page-docs/PageDocButton", () => ({
   PageDocButton: () => createElement("button", { type: "button", "aria-label": "Open this page's guide" }),
 }));

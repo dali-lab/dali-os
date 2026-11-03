@@ -4,7 +4,6 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 import { WorkspaceSettingsBlock } from "~/components/settings/WorkspaceSettingsBlock";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ToastProvider } from "~/components/ui/toast";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -12,16 +11,12 @@ import { ToastProvider } from "~/components/ui/toast";
 let container: HTMLDivElement;
 let root: Root;
 
-async function mount(flags: Record<string, boolean>) {
+async function mount() {
   const Stub = createRoutesStub([
     {
       path: "*",
       Component: () =>
-        createElement(
-          ToastProvider,
-          null,
-          createElement(FeatureFlagsProvider, { flags, children: createElement(WorkspaceSettingsBlock) }),
-        ),
+        createElement(ToastProvider, null, createElement(WorkspaceSettingsBlock)),
     },
   ]);
   container = document.createElement("div");
@@ -50,17 +45,17 @@ describe("WorkspaceSettingsBlock Tabs row", () => {
     document.cookie = "dali_tabstrip=; Max-Age=0; Path=/";
   });
 
-  it("browser with desktop-tabs: shows what tabs look like beside the download link", async () => {
-    await mount({ "desktop-tabs": true });
+  it("browser: shows what tabs look like beside the download link", async () => {
+    await mount();
     expect(container.textContent).toContain("Tabs are in the desktop app.");
     expect(container.querySelector('a[href="/download"]')?.textContent).toBe("Download");
     expect(container.querySelector('[data-tabs-preview="on"] [data-preview-tabs]')).not.toBeNull();
     expect(radios()).toHaveLength(0);
   });
 
-  it("desktop app with desktop-tabs: picks between previewed Tabs and No tabs cards", async () => {
+  it("desktop app: picks between previewed Tabs and No tabs cards", async () => {
     (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
-    await mount({ "desktop-tabs": true });
+    await mount();
     expect(container.textContent).not.toContain("Tabs are in the desktop app.");
     expect(radios().map((r) => r.textContent)).toEqual(["Tabs", "No tabs"]);
     expect(radios()[0]!.getAttribute("aria-checked")).toBe("true");
@@ -70,7 +65,7 @@ describe("WorkspaceSettingsBlock Tabs row", () => {
 
   it("desktop app: choosing No tabs saves it for this device", async () => {
     (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
-    await mount({ "desktop-tabs": true });
+    await mount();
     await act(async () => {
       radios()[1]!.click();
     });
@@ -78,15 +73,9 @@ describe("WorkspaceSettingsBlock Tabs row", () => {
     expect(radios()[1]!.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("flag off: no Tabs row in a browser", async () => {
-    await mount({});
-    expect(container.textContent).not.toContain("Tabs are in the desktop app.");
-    expect(container.querySelector('a[href="/download"]')).toBeNull();
-  });
-
   it("mobile: no Tabs row", async () => {
     vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone) Mobile");
-    await mount({ "desktop-tabs": true });
+    await mount();
     expect(container.textContent).not.toContain("Tabs are in the desktop app.");
   });
 });
@@ -98,14 +87,14 @@ describe("WorkspaceSettingsBlock open links row", () => {
     document.cookie = "dali_open_in_app=; Max-Age=0; Path=/";
   });
 
-  it("browser with desktop-tabs: renders the toggle with its help text", async () => {
-    await mount({ "desktop-tabs": true });
+  it("browser: renders the toggle with its help text", async () => {
+    await mount();
     expect(toggle()).not.toBeNull();
     expect(container.textContent).toContain("Links you open in this browser go to the app. Saved on this browser.");
   });
 
   it("writes the cookie when toggled", async () => {
-    await mount({ "desktop-tabs": true });
+    await mount();
     await act(async () => {
       toggle()!.click();
     });
@@ -119,44 +108,19 @@ describe("WorkspaceSettingsBlock open links row", () => {
 
   it("reflects an existing cookie", async () => {
     document.cookie = "dali_open_in_app=1; Path=/";
-    await mount({ "desktop-tabs": true });
+    await mount();
     expect(toggle()!.checked).toBe(true);
-  });
-
-  it("is absent with the flag off", async () => {
-    await mount({});
-    expect(toggle()).toBeNull();
   });
 
   it("is absent inside the desktop app", async () => {
     (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
-    await mount({ "desktop-tabs": true });
+    await mount();
     expect(toggle()).toBeNull();
   });
 
   it("is absent on mobile", async () => {
     vi.spyOn(window.navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Mobile");
-    await mount({ "desktop-tabs": true });
+    await mount();
     expect(toggle()).toBeNull();
-  });
-});
-
-describe("WorkspaceSettingsBlock Opening pages row", () => {
-  const radios = () =>
-    Array.from(container.querySelectorAll<HTMLButtonElement>('[role="radiogroup"][aria-label="Opening pages"] [role="radio"]'));
-
-  it("previews a page with no tabs for Single page and with tabs for Tabbed workspace", async () => {
-    await mount({});
-    const [single, tabbed] = radios();
-    expect(single!.textContent).toContain("Single page");
-    expect(single!.querySelector('[data-tabs-preview="off"]')).not.toBeNull();
-    expect(single!.querySelector("[data-preview-tabs]")).toBeNull();
-    expect(tabbed!.textContent).toContain("Tabbed workspace");
-    expect(tabbed!.querySelector('[data-tabs-preview="on"] [data-preview-tabs]')).not.toBeNull();
-  });
-
-  it("is absent with desktop-tabs on", async () => {
-    await mount({ "desktop-tabs": true });
-    expect(radios()).toHaveLength(0);
   });
 });

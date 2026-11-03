@@ -563,8 +563,7 @@ export function DocumentEditor({
         // Refresh the tab title elsewhere on the page.
         revalidator.revalidate();
         // Tell the page around this editor (a project hub with the doc in its
-        // side panel, or in a sibling iframe tab via the shell's relay). At
-        // the top level window.parent is this window.
+        // side panel). At the top level window.parent is this window.
         if (typeof window !== "undefined") {
           window.parent.postMessage(
             { type: "dali:documentTitleChanged", pageId, title: trimmed },
@@ -579,7 +578,7 @@ export function DocumentEditor({
 
   // FIX 5: Set the h1 DOM text once on mount and when pageId changes (cross-tab
   // navigation). When NOT focused, also accept external title updates (e.g. from
-  // postMessage relay). Never write to the DOM while the user is typing — doing
+  // message). Never write to the DOM while the user is typing — doing
   // so resets the caret to offset 0.
   useLayoutEffect(() => {
     if (titleRef.current) {

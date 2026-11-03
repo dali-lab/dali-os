@@ -27,8 +27,6 @@ import {
   CalendarRange,
   PanelLeftClose,
   PanelLeftOpen,
-  PanelTop,
-  Square,
   Compass,
   LogOut,
   CornerDownLeft,
@@ -40,7 +38,6 @@ import {
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
 import { createSearchCache } from "~/lib/search-cache";
-import { setTablessPreference } from "~/lib/tabless";
 import { setFocusPreference } from "~/lib/focus-mode";
 import { COPY_PAGE_LINK_EVENT } from "~/lib/page-link";
 import type { SearchResult, SearchResultType } from "~/lib/search";
@@ -57,8 +54,6 @@ export type CommandPaletteRoles = RoleFlags;
 interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
-  /** Current workspace mode — drives the "switch mode" command + how results open. */
-  tabless: boolean;
   /** Whether the sidebar is hidden — drives the focus-mode command. */
   focusMode: boolean;
   /** Omitted only by the portal shell, where the viewer holds no lab role and
@@ -72,7 +67,7 @@ interface CommandPaletteProps {
   portalNav?: PortalNavItem[];
   /** Set only in a desktop browser with the app available; adds the open and download commands. */
   onOpenInDesktop?: () => void;
-  /** Open a result. `toSide` = ⌘/Ctrl+Enter (split pane in tab mode, new browser tab in tabless). */
+  /** Open a result. `toSide` = ⌘/Ctrl+Enter (side panel, background desktop tab, or a new browser tab). */
   onOpen: (url: string, label: string, toSide: boolean) => void;
 }
 
@@ -171,7 +166,7 @@ export const paletteSearchCache = createSearchCache<SearchResult>({
   debounceMs: 150,
 });
 
-export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen, onOpenInDesktop }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen, onOpenInDesktop }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   // The query `results` belong to. Compared against the live query during
@@ -286,19 +281,6 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
 
     const commands: PaletteItem[] = [
       {
-        id: "cmd-workspace",
-        title: tabless ? "Switch to tabbed workspace" : "Switch to single-page mode",
-        subtitle: "Command",
-        icon: tabless ? PanelTop : Square,
-        action: {
-          kind: "run",
-          run: () => {
-            setTablessPreference(!tabless);
-            window.location.reload();
-          },
-        },
-      },
-      {
         id: "cmd-focus",
         title: focusMode ? "Show sidebar" : "Hide sidebar (focus mode)",
         subtitle: "Command",
@@ -386,7 +368,7 @@ export function CommandPalette({ open, onClose, tabless, focusMode, roles = NO_R
       admin: admin.filter(match),
       commands: commands.filter(match),
     };
-  }, [roles, flags, portalNav, tabless, focusMode, query, onOpenInDesktop]);
+  }, [roles, flags, portalNav, focusMode, query, onOpenInDesktop]);
 
   const sections = useMemo(() => {
     const out: { key: string; label: string; items: PaletteItem[] }[] = [];

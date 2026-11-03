@@ -440,9 +440,8 @@ const ALL_AREAS: NavArea[] = [
   ...areasFor({ community: true, "onboarding-journeys": true }),
 ];
 
-// These matchers are handed a live URL, not a bare pathname: in tab mode the
-// sidebar tracks the focused tab, whose url keeps its query string (layout.tsx
-// cleanUrl), and favorites are stored as `pathname + search`
+// These matchers are handed a live URL, not a bare pathname: the sidebar
+// keeps the query string, and favorites are stored as `pathname + search`
 // (the topbar star). An area and its sub-tab are a function of the path
 // alone, so trim the query/hash before matching — otherwise
 // /projects/staffing?term=25F matches no sub-tab and drops the sidebar back to
@@ -563,7 +562,7 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
 // sub-tab claims the exact filtered url: Core ▸ Agreements lives at
 // /drive?type=agreement but belongs to Core, so the Drive pin must NOT light up
 // there. Handed a live url (pathname + search) like the other matchers, so the
-// query is visible in tabless mode too (there `location.pathname` drops it).
+// query is visible (`location.pathname` alone drops it).
 export function isPinnedActive(
   path: string,
   href: string,

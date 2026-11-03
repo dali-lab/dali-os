@@ -2348,13 +2348,14 @@ html.light .area-tile-ring,
   box-shadow: none;
 }
 
-/* ── v2 design (desktop-tabs flag) ───────────────────────────────────────────
- * The sidebar redesign's scale and dress, applied only when the layout marks
- * the document with data-v2 on <html> (set server-side from the desktop-tabs
- * flag; see root.tsx). Everything above states the pre-redesign design; this
- * block restates each knob at the v2 values, so a flag-off document renders
- * exactly as before. */
-html[data-v2] {
+/* ── v2 design ───────────────────────────────────────────────────────────────
+ * The sidebar redesign's scale and dress, applied to every document. The
+ * selectors read `html:root` rather than bare `:root` to keep the (0,1,1)
+ * specificity they had when keyed on a data attribute: that is what lets them
+ * beat the base rules above and the `.dark .x` rules without a reorder.
+ * Everything above states the earlier values; this block restates each knob at
+ * the v2 ones. */
+html:root {
   /* 15/16 scale: every rem-based utility (text, padding, gaps, heights)
      renders at 15/16 of its nominal size. */
   font-size: 15px;
@@ -2365,8 +2366,8 @@ html[data-v2] {
 
 /* dali.os type system under v2: Plus Jakarta Sans headings over Mulish body —
    the base-layer h1–h6 rule picks this remap up inside the shell. */
-html[data-v2] .os-shell,
-html[data-v2].os-shell {
+html:root .os-shell,
+html:root.os-shell {
   --font-heading: var(--font-os-logo);
 }
 
@@ -2382,74 +2383,74 @@ html[data-v2].os-shell {
    on <html> (not just .os-shell) so portaled content resolves it even before
    the os-shell mirror mounts; the .os-shell forms refine it with the page's
    own mode tone. */
-html[data-v2] {
+html:root {
   --os-accent-ink: #8fb6f2;
 }
-html.light[data-v2] {
+html.light:root {
   --os-accent-ink: #2f5fb5;
 }
-html[data-v2] .os-shell,
-html[data-v2].os-shell {
+html:root .os-shell,
+html:root.os-shell {
   /* A step lighter than the raw mode tint: 70% tint over white, hover lighter
      still. */
   --color-os-accent: color-mix(in srgb, var(--mode-accent, #8fb6f2) 70%, white);
   --color-os-accent-hover: color-mix(in srgb, var(--mode-accent, #8fb6f2) 55%, white);
   --os-accent-ink: var(--mode-accent, #8fb6f2);
 }
-html.light[data-v2] .os-shell,
-html.light[data-v2].os-shell {
+html.light:root .os-shell,
+html.light:root.os-shell {
   --os-accent-ink: var(--mode-accent-ink, #2f5fb5);
 }
 /* Accent-as-ink utilities all read from the ink half: text (See all, inline
    links, the RSVP chips), borders, and the thin selection washes — at 15% of
    the pale wash a selected chip or today-column tint all but vanished. */
-html[data-v2] .text-os-accent {
+html:root .text-os-accent {
   color: var(--os-accent-ink);
 }
-html[data-v2] .text-os-accent\/80 {
+html:root .text-os-accent\/80 {
   color: color-mix(in srgb, var(--os-accent-ink) 80%, transparent);
 }
-html[data-v2] .border-os-accent {
+html:root .border-os-accent {
   border-color: var(--os-accent-ink);
 }
-html[data-v2] .border-os-accent\/30 {
+html:root .border-os-accent\/30 {
   border-color: color-mix(in srgb, var(--os-accent-ink) 30%, transparent);
 }
-html[data-v2] .border-os-accent\/35 {
+html:root .border-os-accent\/35 {
   border-color: color-mix(in srgb, var(--os-accent-ink) 35%, transparent);
 }
-html[data-v2] .border-os-accent\/40 {
+html:root .border-os-accent\/40 {
   border-color: color-mix(in srgb, var(--os-accent-ink) 40%, transparent);
 }
-html[data-v2] .border-os-accent\/50 {
+html:root .border-os-accent\/50 {
   border-color: color-mix(in srgb, var(--os-accent-ink) 50%, transparent);
 }
-html[data-v2] .border-os-accent\/60 {
+html:root .border-os-accent\/60 {
   border-color: color-mix(in srgb, var(--os-accent-ink) 60%, transparent);
 }
-html[data-v2] .bg-os-accent\/5 {
+html:root .bg-os-accent\/5 {
   background-color: color-mix(in srgb, var(--os-accent-ink) 5%, transparent);
 }
-html[data-v2] .bg-os-accent\/10 {
+html:root .bg-os-accent\/10 {
   background-color: color-mix(in srgb, var(--os-accent-ink) 10%, transparent);
 }
-html[data-v2] .bg-os-accent\/15 {
+html:root .bg-os-accent\/15 {
   background-color: color-mix(in srgb, var(--os-accent-ink) 15%, transparent);
 }
-html[data-v2] .bg-os-accent\/20 {
+html:root .bg-os-accent\/20 {
   background-color: color-mix(in srgb, var(--os-accent-ink) 20%, transparent);
 }
-html[data-v2] .bg-os-accent\/25 {
+html:root .bg-os-accent\/25 {
   background-color: color-mix(in srgb, var(--os-accent-ink) 25%, transparent);
 }
 /* Accent-filled controls written as utilities (Add event, the composer's Save,
    the mini-month's today pill): on light the v2 accent is a pale wash, and the
    page-background ink that read on the old deep accent disappears into it. The
    label takes a deep shade of the mode ink instead — the .os-btn-tint recipe. */
-html.light[data-v2] .bg-os-accent.text-os-bg {
+html.light:root .bg-os-accent.text-os-bg {
   color: color-mix(in srgb, var(--os-accent-ink) 70%, black);
 }
-html.light[data-v2] .os-btn-primary {
+html.light:root .os-btn-primary {
   color: color-mix(in srgb, var(--os-accent-ink) 70%, black);
 }
 
@@ -2457,19 +2458,19 @@ html.light[data-v2] .os-btn-primary {
    its own strings): the old 36px heading dress renders as the v2 title — the
    text-2xl size, bold, in the shell body face. Spared: responsive display
    headings (banners) and the brand-dressed heroes (certificates). */
-html[data-v2] .font-heading.text-4xl:not(.md\:text-5xl):not(.text-dark-blue) {
+html:root .font-heading.text-4xl:not(.md\:text-5xl):not(.text-dark-blue) {
   font-family: var(--font-os);
   font-size: var(--text-2xl);
   line-height: var(--tw-leading, var(--text-2xl--line-height));
   font-weight: 700;
 }
-html[data-v2] .font-heading.text-\[19px\] {
+html:root .font-heading.text-\[19px\] {
   font-size: var(--text-base);
   line-height: var(--tw-leading, var(--text-base--line-height));
 }
 /* Hero titles written at a literal 32px (project, member profile) take the
    same v2 title dress as the 36px page headings above. */
-html[data-v2] .font-heading.text-\[32px\] {
+html:root .font-heading.text-\[32px\] {
   font-family: var(--font-os);
   font-size: var(--text-2xl);
   line-height: var(--tw-leading, var(--text-2xl--line-height));
@@ -2477,141 +2478,141 @@ html[data-v2] .font-heading.text-\[32px\] {
 }
 
 /* Controls, one notch down and squared to the 8px corner. */
-html[data-v2] .os-add-btn {
+html:root .os-add-btn {
   padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
 }
-html[data-v2] .os-edit-btn {
+html:root .os-edit-btn {
   padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
 }
-html[data-v2] .os-btn-primary {
+html:root .os-btn-primary {
   padding: 6px 16px;
   border-radius: 8px;
   font-size: 13px;
 }
-html[data-v2] .os-btn-primary--sm {
+html:root .os-btn-primary--sm {
   font-size: 12px;
 }
 /* The --sm variants, restated at this layer's specificity so the full-size v2
    dress above doesn't swallow them. */
-html[data-v2] .os-add-btn--sm,
-html[data-v2] .os-edit-btn--sm {
+html:root .os-add-btn--sm,
+html:root .os-edit-btn--sm {
   padding: 4px 10px;
   font-size: 12px;
 }
-html[data-v2] .os-btn-ghost {
+html:root .os-btn-ghost {
   padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
 }
 /* The segmented pill's md segments (section tab bars), one notch down. */
-html[data-v2] .os-seg-item-md {
+html:root .os-seg-item-md {
   padding: 6px 14px;
   font-size: 13px;
 }
 /* …and the whole switcher squares from a capsule to the control corner, like
    the sidebar rows. */
-html[data-v2] .os-seg-track {
+html:root .os-seg-track {
   border-radius: 10px;
 }
-html[data-v2] .os-seg-item {
+html:root .os-seg-item {
   border-radius: 8px;
 }
-html[data-v2] .os-type-badge {
+html:root .os-type-badge {
   border-radius: 6px;
 }
-html[data-v2] .os-sprint-chip {
+html:root .os-sprint-chip {
   border-radius: 8px;
 }
-html[data-v2] .os-shell .os-label-chip {
+html:root .os-shell .os-label-chip {
   border-radius: 6px;
 }
-html[data-v2] .os-item-row {
+html:root .os-item-row {
   border-radius: 8px;
 }
-html[data-v2] .os-modal-card {
+html:root .os-modal-card {
   padding: 20px;
 }
-html[data-v2] .os-shell .os-modal-title {
+html:root .os-shell .os-modal-title {
   font-size: 20px;
 }
-html[data-v2] .os-shell .dali-btn {
+html:root .os-shell .dali-btn {
   border-radius: 8px;
   font-size: 13px;
   /* Fixed control heights (sidebar scale): md buttons 36px, the smaller sizes
      32px, instead of padding-derived heights. */
   height: 32px;
 }
-html[data-v2] .os-shell .dali-btn--size-md {
+html:root .os-shell .dali-btn--size-md {
   height: 36px;
 }
 /* Filled-accent buttons sit on the pale wash in both modes, so the os-bg
    numeral (white in light) vanishes — the label flips to a near-black ink
    warmed by the area's own hue. */
-html[data-v2] .os-shell .dali-btn--primary,
-html[data-v2].os-shell .dali-btn--primary {
+html:root .os-shell .dali-btn--primary,
+html:root.os-shell .dali-btn--primary {
   color: color-mix(in srgb, var(--mode-accent-ink, #2f5fb5) 55%, black);
 }
 /* Task/notification card CTAs (Open task, Confirm, RSVP): a small chip, well
    under the 32px control height — the cards are dense and the CTA is not the
    page's lead action. */
-html[data-v2] .os-shell .os-cta,
-html[data-v2].os-shell .os-cta {
+html:root .os-shell .os-cta,
+html:root.os-shell .os-cta {
   height: 26px;
   min-height: 26px;
   padding-inline: 10px;
 }
 /* Task/notification cards, one notch tighter. */
-html[data-v2] .os-shell .os-task-card {
+html:root .os-shell .os-task-card {
   padding: 12px 14px;
 }
 /* The sidebar rows' soft white highlight, shared by every hover state. */
-html[data-v2] .os-shell .dali-btn--secondary:hover {
+html:root .os-shell .dali-btn--secondary:hover {
   background: var(--color-os-hover);
 }
-html[data-v2] .os-shell .dali-btn--ghost:hover {
+html:root .os-shell .dali-btn--ghost:hover {
   background: var(--color-os-hover);
 }
 
 /* Fields: 8px corner, tighter metrics, 13px type. */
-html[data-v2] .os-shell .os-form input[type="text"],
-html[data-v2] .os-shell .os-form input[type="date"],
-html[data-v2] .os-shell .os-form input[type="email"],
-html[data-v2] .os-shell .os-form input[type="url"],
-html[data-v2] .os-shell .os-form input[type="number"],
-html[data-v2] .os-shell .os-form input[type="tel"],
-html[data-v2] .os-shell .os-form select,
-html[data-v2] .os-shell .os-form textarea,
-html[data-v2] .os-shell .os-form button[aria-haspopup="listbox"],
-html[data-v2] .os-shell .os-form button[aria-haspopup="menu"],
-html[data-v2] .os-shell .os-form button[aria-haspopup="dialog"] {
+html:root .os-shell .os-form input[type="text"],
+html:root .os-shell .os-form input[type="date"],
+html:root .os-shell .os-form input[type="email"],
+html:root .os-shell .os-form input[type="url"],
+html:root .os-shell .os-form input[type="number"],
+html:root .os-shell .os-form input[type="tel"],
+html:root .os-shell .os-form select,
+html:root .os-shell .os-form textarea,
+html:root .os-shell .os-form button[aria-haspopup="listbox"],
+html:root .os-shell .os-form button[aria-haspopup="menu"],
+html:root .os-shell .os-form button[aria-haspopup="dialog"] {
   border-radius: 8px;
   padding: 8px 12px;
   font-size: 13px;
 }
-html[data-v2] .os-shell .os-form [data-time-field] {
+html:root .os-shell .os-form [data-time-field] {
   border-radius: 8px;
 }
-html[data-v2] .os-shell .os-form [data-time-field] input[type="text"] {
+html:root .os-shell .os-form [data-time-field] input[type="text"] {
   border-radius: 0;
   padding: 8px 4px 8px 12px;
 }
-html[data-v2] .os-shell .os-form [data-time-field] button {
+html:root .os-shell .os-form [data-time-field] button {
   padding-right: 12px;
 }
-html[data-v2] .os-shell .os-form-readonly .os-live input[type="text"],
-html[data-v2] .os-shell .os-form-readonly .os-live textarea {
+html:root .os-shell .os-form-readonly .os-live input[type="text"],
+html:root .os-shell .os-form-readonly .os-live textarea {
   border-radius: 8px;
   padding: 8px 12px !important;
 }
 
 /* Labels in the sidebar design: 14px semibold, sentence case. */
-html[data-v2] .os-shell .os-form dt,
-html[data-v2] .os-shell .os-form label > span:first-child,
-html[data-v2] .os-field-label {
+html:root .os-shell .os-form dt,
+html:root .os-shell .os-form label > span:first-child,
+html:root .os-field-label {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: normal;
@@ -2624,8 +2625,8 @@ html[data-v2] .os-field-label {
    while the full-strength edge on every card carries the colour down the
    column. Read only through osStatusAccent(), so the hiring views that share
    --os-status-* keep their bands. */
-html[data-v2] .os-shell,
-html[data-v2].os-shell {
+html:root .os-shell,
+html:root.os-shell {
   --os-status-backlog-header:   color-mix(in srgb, var(--os-status-backlog-edge) 40%, var(--color-os-card));
   --os-status-todo-header:      color-mix(in srgb, var(--os-status-todo-edge) 22%, var(--color-os-card));
   --os-status-progress-header:  color-mix(in srgb, var(--os-status-progress-edge) 22%, var(--color-os-card));
@@ -2641,8 +2642,8 @@ html[data-v2].os-shell {
   /* The backlog edge is the grey of its own header and vanishes as a dot. */
   --os-status-backlog-dot:          #9a9aa8;
 }
-html.light[data-v2] .os-shell,
-html.light[data-v2].os-shell {
+html.light:root .os-shell,
+html.light:root.os-shell {
   --os-status-backlog-header:   color-mix(in srgb, var(--os-status-backlog-fill) 40%, var(--color-os-card));
   --os-status-todo-header:      color-mix(in srgb, var(--os-status-todo-fill) 28%, var(--color-os-card));
   --os-status-progress-header:  color-mix(in srgb, var(--os-status-progress-fill) 28%, var(--color-os-card));
@@ -2655,7 +2656,7 @@ html.light[data-v2].os-shell {
   --os-status-done-header-ink:      var(--os-status-done-ink);
   --os-status-backlog-dot:          var(--os-status-backlog-edge);
 }
-html[data-v2] .os-board-title::before {
+html:root .os-board-title::before {
   content: "";
   display: inline-block;
   width: 8px;

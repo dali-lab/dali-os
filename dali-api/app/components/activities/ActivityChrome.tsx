@@ -1,8 +1,6 @@
 // On-page activity chrome (specs/activities.md §7.5). The mechanic's scattered
 // codes/clues for the CURRENT route. Mounted inside pageContent (layout.tsx) —
-// NOT the shell — because in tab mode the routed page renders in an iframe and
-// that's where on-page codes belong. In tabless mode both the page and this live
-// in one document. The "an activity is live" bar + surface modal are the shell's
+// NOT the shell — because that's where on-page codes belong. The "an activity is live" bar + surface modal are the shell's
 // job and live in ActivityLauncher (mounted next to DesktopBanner).
 //
 // Reads the live-for-me list from the provider and renders nothing when it's

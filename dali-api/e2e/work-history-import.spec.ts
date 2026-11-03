@@ -13,11 +13,9 @@ const EMAIL = 'priya.raman@dali.dartmouth.edu';
 const COMPANIES = ['E2E Import Alpha', 'E2E Import Beta', 'E2E Import Gamma'];
 
 test.describe('Work history import', () => {
-  test.beforeEach(async ({ page, baseURL, loginAs }) => {
+  test.beforeEach(async ({ loginAs }) => {
     await deleteWorkExperiences(EMAIL, COMPANIES);
     await setFeatureFlag('work-history-import', true);
-    // Tabless (the app default) renders the profile in the page itself, not a workspace iframe.
-    await page.context().addCookies([{ name: 'dali_tabless', value: '1', url: baseURL! }]);
     await loginAs({ daliEmail: EMAIL });
   });
 

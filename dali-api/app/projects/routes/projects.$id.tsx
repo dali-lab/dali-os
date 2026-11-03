@@ -161,43 +161,6 @@ export const handle = {
   favoriteRoute: true,
 };
 
-// Open a project document as a split-screen tab. This page renders inside a
-// TabWorkspace iframe, so we ask the parent shell to open /documents/:id in a
-// second pane beside the project (dali:openTabToSide → Layout). When somehow
-// rendered standalone (no iframe), fall back to a normal same-tab navigation.
-// Document panes this page asked the shell to open, so switching subtabs can
-// retract them (see closeOpenedDocumentTabs). Module-scoped because the open
-// calls happen deep in the Overview tree, and the iframe reloads — dropping
-// this set — whenever the page itself goes away.
-const openedDocumentUrls = new Set<string>();
-
-function openDocumentTab(pageId: string, label: string) {
-  const url = `/documents/${pageId}`;
-  if (typeof window !== "undefined" && window.self !== window.top) {
-    openedDocumentUrls.add(url);
-    window.parent.postMessage(
-      { type: "dali:openTabToSide", url, label },
-      window.location.origin,
-    );
-  } else if (typeof window !== "undefined") {
-    window.location.assign(url);
-  }
-}
-
-// Documents are reachable only from Overview, so a doc pane left open while the
-// user reads Board or Planning is orphaned UI next to content it has nothing to
-// do with. Retract on subtab change; the shell no-ops for any the user already
-// closed, and keeps the rest reopenable via mod+shift+T.
-function closeOpenedDocumentTabs() {
-  if (typeof window === "undefined" || window.self === window.top) return;
-  for (const url of openedDocumentUrls) {
-    window.parent.postMessage(
-      { type: "dali:closeTab", url },
-      window.location.origin,
-    );
-  }
-  openedDocumentUrls.clear();
-}
 
 const STATUSES = ["Active", "Paused", "Archived"] as const;
 type ProjectStatus = (typeof STATUSES)[number];
@@ -1809,7 +1772,6 @@ export default function ProjectDetail() {
   // the board — its own tab classically, folded into Progress under os. Either
   // way this hops to it and sets ?task= in one go.
   const openTaskFromTimeline = (taskId: string) => {
-    closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
         prev.set("tab", "progress");
@@ -1827,7 +1789,6 @@ export default function ProjectDetail() {
   // this for the same reason.
   const setTab = (next: Tab | OsTab) => {
     if (next === tab) return;
-    closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
@@ -4562,7 +4523,7 @@ function ProjectDriveTab({
   const onOpenItem = useCallback(
     (item: DriveItem) => {
       if (!item.href) return;
-      if (onOpenBeside && item.type === "doc") onOpenBeside({ href: item.href });
+      if (item.type === "doc") onOpenBeside({ href: item.href });
       else navigate(item.href);
     },
     [navigate, onOpenBeside],
@@ -4940,8 +4901,7 @@ function DocumentsBlock({
 }) {
   const openBeside = useOpenBeside();
   const openDocument = (id: string, title: string) => {
-    if (openBeside) openBeside({ href: `/documents/${id}` });
-    else openDocumentTab(id, title);
+    openBeside({ href: `/documents/${id}` });
   };
   const dialog = useDialog();
   const toast = useToast();
@@ -4986,11 +4946,10 @@ function DocumentsBlock({
     });
   }
 
-  // A document's title is edited in its own split-screen tab, which has its
-  // own loader — it can't touch this route's data directly. The shell relays
-  // a `dali:documentTitleChanged` postMessage to every open tab (see
-  // DocumentEditor's onTitleChange + Layout.tsx); revalidate here so the row
-  // label updates without waiting for the user to leave and reopen the doc.
+  // A document's title is edited in the side panel, which has its own loader —
+  // it can't touch this route's data directly. DocumentEditor posts a
+  // `dali:documentTitleChanged` message; revalidate here so the row label
+  // updates without waiting for the user to leave and reopen the doc.
   useEffect(() => {
     const knownIds = new Set(
       documents.flatMap((d) => [d.id, ...d.children.map((c) => c.id)]),

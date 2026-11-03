@@ -49,7 +49,7 @@ function counting(): boolean {
 
 type ActiveView = { id: string; timer: ViewTimer };
 
-export function PageViewReporter({ enabled }: { enabled: boolean }) {
+export function PageViewReporter() {
   const { pathname } = useLocation();
   const previousPath = useRef<string | null>(null);
   const active = useRef<ActiveView | null>(null);
@@ -65,8 +65,6 @@ export function PageViewReporter({ enabled }: { enabled: boolean }) {
   }
 
   useEffect(() => {
-    if (!enabled) return;
-
     const id = crypto.randomUUID();
     active.current = { id, timer: startTimer(Date.now(), counting()) };
     beacon({
@@ -94,7 +92,7 @@ export function PageViewReporter({ enabled }: { enabled: boolean }) {
       flush();
       active.current = null;
     };
-  }, [pathname, enabled]);
+  }, [pathname]);
 
   return null;
 }

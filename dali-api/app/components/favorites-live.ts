@@ -5,8 +5,6 @@ import { isNavbarRoute } from "~/lib/navbar-routes";
 import type { FavoritePage } from "~/lib/user-pages.server";
 
 // Same-window event meaning "a star just landed, the shell's list is stale".
-// The shell relays the cross-frame postMessage of the same name into it, so a
-// star clicked inside a workspace iframe reaches the header — see useShellNav.
 export const FAVORITES_CHANGED_EVENT = "dali:favoritesChanged";
 
 // Cancelable: the shell calls preventDefault when it handles Cmd/Ctrl+D, so the
@@ -17,14 +15,7 @@ export const TOGGLE_FAVORITE_EVENT = "dali:toggleFavorite";
 /** Page side: call after a favorite write succeeds. */
 export function notifyFavoritesChanged() {
   if (typeof window === "undefined") return;
-  if (window.self !== window.top) {
-    window.parent.postMessage(
-      { type: FAVORITES_CHANGED_EVENT },
-      window.location.origin,
-    );
-  } else {
-    window.dispatchEvent(new Event(FAVORITES_CHANGED_EVENT));
-  }
+  window.dispatchEvent(new Event(FAVORITES_CHANGED_EVENT));
 }
 
 export type FavoriteTarget = { pageId: string } | { href: string; label: string };

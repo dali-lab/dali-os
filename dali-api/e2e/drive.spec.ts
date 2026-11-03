@@ -33,9 +33,6 @@ import type { Page, Locator } from '@playwright/test';
 //
 // The Drive is the app's only document/forms surface — the old /documents and
 // /forms hubs have been removed.
-//
-// ?embed=1: standalone route render (no TabWorkspace iframe shell). Required for
-// dnd-kit drag tests — same pattern as kanban-drag.spec.ts.
 
 const DRIVE_USER = 'admin@dali.dartmouth.edu';
 
@@ -50,7 +47,7 @@ test.describe('Drive hub', () => {
   test('(A) Drive root lists drives with breadcrumb + filter chips; no New menu at root; every member has Drive nav', async ({
     page,
   }) => {
-    await page.goto('/drive?embed=1');
+    await page.goto('/drive');
     await page.waitForLoadState('networkidle');
 
     // The browser surface is present, and the page names the location you are
@@ -75,10 +72,7 @@ test.describe('Drive hub', () => {
     const reviewerCtx = await page.context().browser()!.newContext();
     const reviewerPage = await reviewerCtx.newPage();
     const baseURL = page.url().replace(/\/drive.*/, '');
-    await reviewerCtx.addCookies([
-      { name: 'dali_tabless', value: '0', url: baseURL },
-      { name: 'dali_pk_prompt', value: '1', url: baseURL },
-    ]);
+    await reviewerCtx.addCookies([{ name: 'dali_pk_prompt', value: '1', url: baseURL }]);
 
     await reviewerPage.goto(`${baseURL}/dev-login-as?daliEmail=reviewer1@dali.dartmouth.edu`);
     await reviewerPage.waitForLoadState('networkidle');
@@ -103,7 +97,7 @@ test.describe('Drive hub', () => {
     expect(createRes.ok(), `Create lab doc failed: ${await createRes.text()}`).toBe(true);
     const { id: docId } = await createRes.json() as { id: string };
 
-    await page.goto('/drive?scope=lab&embed=1');
+    await page.goto('/drive?scope=lab');
     await page.waitForLoadState('networkidle');
 
     // The contextual New menu is present. No crumb assertion here: at a
@@ -148,7 +142,7 @@ test.describe('Drive hub', () => {
     expect(moveRes.ok(), `Move failed: ${await moveRes.text()}`).toBe(true);
 
     // From the root, double-click the Lab drive to enter it.
-    await page.goto('/drive?embed=1');
+    await page.goto('/drive');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('drive-scope-lab').dblclick();
 
@@ -178,7 +172,7 @@ test.describe('Drive hub', () => {
     expect(docRes.ok(), `Create doc failed: ${await docRes.text()}`).toBe(true);
     const { id: docId } = await docRes.json() as { id: string };
 
-    await page.goto('/drive?embed=1');
+    await page.goto('/drive');
     await page.waitForLoadState('networkidle');
 
     await page.getByTestId('drive-search').fill(`searchable ${stamp}`);
@@ -204,13 +198,13 @@ test.describe('Drive hub', () => {
     const { id: docId } = await docRes.json() as { id: string };
 
     // Forms filter: the doc is hidden.
-    await page.goto('/drive?scope=lab&type=form&embed=1');
+    await page.goto('/drive?scope=lab&type=form');
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('drive-browser')).toBeVisible();
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toHaveCount(0);
 
     // Documents filter: the doc is shown.
-    await page.goto('/drive?scope=lab&type=doc&embed=1');
+    await page.goto('/drive?scope=lab&type=doc');
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId(`drive-item-doc-${docId}`)).toBeVisible();
   });
@@ -224,7 +218,7 @@ test.describe('Drive hub', () => {
     expect(createRes.ok(), `Create doc failed: ${await createRes.text()}`).toBe(true);
     const { id: docId } = await createRes.json() as { id: string };
 
-    await page.goto('/drive?scope=lab&embed=1');
+    await page.goto('/drive?scope=lab');
     await page.waitForLoadState('networkidle');
 
     const row = page.getByTestId(`drive-item-doc-${docId}`);
@@ -245,7 +239,7 @@ test.describe('Drive hub', () => {
   // ── Test G: My Drive create via naming prompt ───────────────────────────────
   test('(G) My Drive scope creates a document via the naming prompt and reveals it in place', async ({ page }) => {
     const stamp = Date.now();
-    await page.goto('/drive?scope=mine&embed=1');
+    await page.goto('/drive?scope=mine');
     await page.waitForLoadState('networkidle');
 
     await page.getByTestId('drive-new-menu-mine').click();
@@ -264,14 +258,14 @@ test.describe('Drive hub', () => {
   // ── Test H: Core drive auto-provisions for Core members ─────────────────────
   test('(H) Core drive is listed at root for a Core member and accepts a new doc', async ({ page }) => {
     const stamp = Date.now();
-    await page.goto('/drive?embed=1');
+    await page.goto('/drive');
     await page.waitForLoadState('networkidle');
 
     // Core drive row is present at the root for the Core admin.
     await expect(page.getByTestId('drive-scope-core')).toBeVisible();
 
     // Enter it and create a doc via its own New menu.
-    await page.goto('/drive?scope=core&embed=1');
+    await page.goto('/drive?scope=core');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('drive-new-menu-core').click();
     await expect(page.getByTestId('drive-new-upload-core')).toBeVisible();
@@ -290,7 +284,7 @@ test.describe('Drive hub', () => {
   test('(I) New→Agreement creates an agreement and navigates to /documents/agreement/', async ({
     page,
   }) => {
-    await page.goto('/drive?scope=core&embed=1');
+    await page.goto('/drive?scope=core');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('drive-new-menu-core').click();
     await expect(page.getByTestId('drive-new-agreement')).toBeVisible();
@@ -333,7 +327,7 @@ test.describe('Drive hub', () => {
     // The folder band and the doc row both have to be on screen for one drag,
     // and earlier attempts leave their rows in this listing.
     await page.setViewportSize({ width: 1280, height: 1800 });
-    await page.goto('/drive?scope=lab&embed=1');
+    await page.goto('/drive?scope=lab');
     await page.waitForLoadState('networkidle');
 
     const docRow = page.getByTestId(`drive-item-doc-${docId}`);
@@ -357,7 +351,7 @@ test.describe('Drive hub', () => {
     expect(moveRes.ok(), `Move failed: ${await moveRes.text()}`).toBe(true);
 
     // The doc leaves the Lab top level (now inside the folder). Navigate in.
-    await page.goto('/drive?embed=1');
+    await page.goto('/drive');
     await page.waitForLoadState('networkidle');
     await page.getByTestId('drive-scope-lab').dblclick();
     await page.getByTestId(`drive-item-folder-${folderId}`).dblclick();
@@ -373,7 +367,7 @@ test.describe('Drive hub', () => {
     const { id: idA } = await a.json() as { id: string };
     const { id: idB } = await b.json() as { id: string };
 
-    await page.goto('/drive?scope=lab&embed=1');
+    await page.goto('/drive?scope=lab');
     await page.waitForLoadState('networkidle');
 
     await page.getByTestId(`drive-item-doc-${idA}`).click({ modifiers: ['ControlOrMeta'] });
@@ -390,7 +384,7 @@ test.describe('Drive hub', () => {
     const res = await page.request.post('/api/lab-documents', { data: { title: `E2E view ${stamp}`, kind: 'FreeForm' } });
     expect(res.ok(), 'create doc failed').toBe(true);
 
-    await page.goto('/drive?scope=lab&embed=1');
+    await page.goto('/drive?scope=lab');
     await page.waitForLoadState('networkidle');
 
     // List view is default → the sortable Name header is present.
@@ -411,7 +405,7 @@ test.describe('Drive hub', () => {
   // nothing and takes no room over the listing. The details rail is gone, so no
   // toggle sits on the toolbar.
   test('(M) Action strip is absent at rest and the details rail is gone', async ({ page }) => {
-    await page.goto('/drive?scope=lab&embed=1');
+    await page.goto('/drive?scope=lab');
     await page.waitForLoadState('networkidle');
 
     // Nothing selected → neither the strip nor the bulk bar is on the page.

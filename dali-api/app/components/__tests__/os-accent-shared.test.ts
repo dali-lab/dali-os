@@ -7,7 +7,6 @@ const read = (p: string) => readFileSync(resolve(__dirname, "../..", p), "utf8")
 const FILES = [
   "components/editor/ManagedEditorShell.tsx",
   "components/collab/VersionHistoryPanel.tsx",
-  "components/TabWorkspace.tsx",
   "components/TagPicker.tsx",
   "components/PhotoCropModal.tsx",
   "components/FilePreview.tsx",

@@ -20,7 +20,6 @@ import {
   captureProjectTemplate,
   instantiateProjectTemplate,
 } from "~/lib/project-templates.server";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { timed } from "~/lib/server-timing";
@@ -608,7 +607,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   const navigate = useNavigate();
   const open = (p: ProjectRow) => {
     const url = `/projects/${p.id}`;
-    if (!requestOpenTabIfEmbedded(url, p.name)) navigate(url);
+    navigate(url);
   };
   return (
     <div className="overflow-x-auto">

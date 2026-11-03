@@ -29,7 +29,7 @@ import type { NavArea, SubTab } from '~/lib/nav-areas'
 import type { UpcomingMeeting } from '~/lib/upcoming-meetings.server'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
 import type { FavoritePage } from '~/lib/user-pages.server'
-import type { OpenTabRequest } from '~/components/TabWorkspace'
+import type { OpenTabRequest } from '~/lib/desktop-tabs'
 
 type TabClickProps = (req: OpenTabRequest) => Record<string, unknown>
 
