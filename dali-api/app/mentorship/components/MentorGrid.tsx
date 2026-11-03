@@ -12,8 +12,8 @@ import type {
   GridMentorGroup,
   GridPerson,
 } from "../lib/mentor-grid.server";
-import { domainTermForms, type TermForms, type TermFormSlot } from "../lib/term-forms";
-import { TermFormStatus } from "./TermFormStatus";
+import { domainTermForms, type TermForms } from "../lib/term-forms";
+import { WeekFormsCard } from "./TermFormStatus";
 import { MentorNoteOverlay } from "./MentorNoteOverlay";
 
 // Core-only inline editing (behind the mentorship-manage flag). When present,
@@ -28,6 +28,9 @@ export type MentorGridEdit = {
   onReassign: (row: GridMenteeRow, mentorUserId: string) => void;
   onRemove: (row: GridMenteeRow) => void;
 };
+
+// Every week column is exactly this wide, header and cells alike.
+const WEEK_COL = "2.25rem";
 
 function fullName(u: GridPerson) {
   return `${u.firstName} ${u.lastName}`.trim();
@@ -68,142 +71,126 @@ export function MentorGrid({
   termForms?: TermForms;
 }) {
   const formsFor = (domainId: string) => (termForms ? domainTermForms(termForms, domainId) : null);
-  const showMenteeForms = group.rows.some((r) => formsFor(r.domainId)?.mentee.form);
-  // A mentor fills their domain's form; one per domain if they mentor across domains.
-  const mentorForms = [...new Map(group.rows.map((r) => [r.domainId, r.domainCode])).entries()]
-    .flatMap(([domainId, domainCode]) => {
-      const slot = formsFor(domainId)?.mentor;
-      return slot?.form ? [{ domainId, domainCode, form: slot.form, responses: slot.responses }] : [];
-    });
-  const { panel, panelPad, heading: headingClass } = useOsChrome();
+  // The week 5 section appears when any of this mentor's domains links a form.
+  const showForms = group.rows.some((r) => {
+    const f = formsFor(r.domainId);
+    return f?.mentee.form || f?.mentor.form;
+  });
+  // The mentor answers one form per domain; show the first that has a response
+  // (else the first linked), since the card carries a single mentor entry.
+  const mentorSlots = group.rows.flatMap((r) => {
+    const slot = formsFor(r.domainId)?.mentor;
+    return slot?.form ? [slot] : [];
+  });
+  const mentorSlot =
+    mentorSlots.find((sl) => sl.responses[group.mentor.id]) ?? mentorSlots[0];
+  const { panel, panelPad } = useOsChrome();
   // The note open in the overlay; the grid stays mounted behind it.
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  // Header and every mentee row share this one template, so each week number
+  // sits in the same fixed-width column as its circle — in every row, in every
+  // mentor card — and the week 5 section / edit column only ever extend it to
+  // the right.
+  const columns = [
+    "15rem",
+    // The track stretches to fill the panel; the 2.25rem floor keeps a circle
+    // and its number in a clean column on narrow screens.
+    `repeat(${Math.max(weeks.length, 1)}, minmax(${WEEK_COL}, 1fr))`,
+    edit ? "auto" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const nudgeEl =
+    nudge && nudge.count > 0 ? (
+      <Tooltip content={`Slack-DM ${fullName(group.mentor)} about their ${nudge.count} unfilled note${nudge.count === 1 ? "" : "s"}`}>
+        <button
+          type="button"
+          onClick={nudge.onNudge}
+          disabled={nudge.busy}
+          className="os-edit-btn shrink-0 !gap-1 !px-2 !py-0.5 !text-xs disabled:opacity-50"
+        >
+          <Send className="w-3 h-3 text-os-grey" aria-hidden />
+          {nudge.busy ? "Sending…" : "Nudge"}
+        </button>
+      </Tooltip>
+    ) : null;
   return (
-    <section className={cn(panel, panelPad, "flex flex-col gap-3")}>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className={headingClass}>
-          {heading ?? (
-            <>
-              <Avatar
-                photoUrl={group.mentor.photoUrl}
-                name={fullName(group.mentor)}
-                size="xs"
-                userId={group.mentor.id}
-              />
-              {fullName(group.mentor)}
-            </>
-          )}
-          {mentorForms.map(({ domainId, domainCode, form, responses }) => (
-            <span key={domainId} className="inline-flex items-center gap-1.5">
-              {mentorForms.length > 1 && (
-                <span className="text-xs font-normal text-muted-foreground">{domainCode}</span>
-              )}
-              <TermFormStatus
-                response={responses[group.mentor.id]}
-                formName={form.name}
-                personName={fullName(group.mentor)}
-              />
-            </span>
-          ))}
-        </h2>
-        {nudge && nudge.count > 0 && (
-          <Tooltip content={`Slack-DM ${fullName(group.mentor)} about their ${nudge.count} unfilled note${nudge.count === 1 ? "" : "s"}`}>
-            <button
-              type="button"
-              onClick={nudge.onNudge}
-              disabled={nudge.busy}
-              className="os-edit-btn shrink-0 disabled:opacity-50"
-            >
-              <Send className="w-3.5 h-3.5 text-os-grey" aria-hidden />
-              {nudge.busy ? "Sending…" : "Nudge"}
-            </button>
-          </Tooltip>
-        )}
-      </div>
+    <section className={cn(panel, panelPad, "flex flex-col gap-2")}>
+      {heading && <h2 className="font-medium text-foreground">{heading}</h2>}
       <div className="overflow-x-auto">
-        <table className="border-separate border-spacing-1 text-sm">
-          <thead>
-            <tr>
-              <th className="pr-3 pb-1">
-                <span className="sr-only">Mentee</span>
-              </th>
-              {weeks.map((w) => (
-                <th
-                  key={w}
-                  className={cn(
-                    "w-9 text-center text-[11px] font-medium pb-1",
-                    w === currentWeek
-                      ? "text-os-accent"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  <Tooltip
-                    content={w === currentWeek ? `Week ${w} (current term week)` : `Week ${w}`}
-                  >
-                    <span>{w}</span>
-                  </Tooltip>
-                </th>
-              ))}
-              {showMenteeForms && (
-                <th className="pl-3 text-left font-medium text-muted-foreground pb-1 whitespace-nowrap">
-                  Week 5 form
-                </th>
-              )}
-              {edit && (
-                <th className="pl-3 text-left font-medium text-muted-foreground pb-1">
+        <div className="flex w-full min-w-[44rem] items-start gap-4">
+          <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 self-stretch">
+          <div role="table" className="flex flex-col">
+            {edit && (
+              <div
+                role="row"
+                className="grid items-end gap-x-1 pb-1"
+                style={{ gridTemplateColumns: columns }}
+              >
+                <span role="columnheader"><span className="sr-only">Mentee</span></span>
+                {weeks.map((w) => (
+                  <span key={w} role="columnheader" className="sr-only">Week {w}</span>
+                ))}
+                <span role="columnheader" className="pl-3 text-left font-medium text-muted-foreground">
                   Mentor
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody>
-            {group.rows.map((row) => (
-              <tr key={row.key}>
-                {/* Fixed-width identity cell: avatar left, name stacked over
-                    project · domain. Stacking (not inline) keeps the name and
-                    the project text starting at the same x on every row, so the
-                    column reads as a column regardless of how long either is. */}
-                <td className="pr-3 py-2 align-middle">
-                  <div className="flex flex-col items-start gap-1.5 w-40 max-w-[10rem]">
-                    <Avatar
-                      photoUrl={row.mentee.photoUrl}
-                      name={fullName(row.mentee)}
-                      size="sm"
-                    />
-                    <div className="flex flex-col leading-tight min-w-0 w-full">
-                      <span
-                        className="font-medium text-foreground truncate"
-                        title={fullName(row.mentee)}
-                      >
-                        {fullName(row.mentee)}
-                      </span>
-                      <span
-                        className="text-xs text-muted-foreground truncate"
-                        title={`${row.projectName} · ${row.domainCode}`}
-                      >
-                        {row.projectName} · {row.domainCode}
-                      </span>
-                    </div>
+                </span>
+              </div>
+            )}
+            {group.rows.map((row, i) => (
+              <div
+                key={row.key}
+                role="row"
+                className={cn(
+                  "grid items-center gap-x-1 py-2",
+                  // Several mentees: a hairline keeps each pair a unit.
+                  i > 0 && "border-t border-os-container/60",
+                )}
+                style={{ gridTemplateColumns: columns }}
+              >
+                {/* Mentee photo, name, and project (wraps rather than truncating). */}
+                <div role="cell" className="flex items-center gap-3 pr-3 min-w-0">
+                  <Avatar photoUrl={row.mentee.photoUrl} name={fullName(row.mentee)} size="sm" className="shrink-0" />
+                  <div className="flex flex-col leading-tight min-w-0">
+                    <span className="font-medium text-foreground truncate" title={fullName(row.mentee)}>
+                      {fullName(row.mentee)}
+                    </span>
+                    {/* Wraps instead of truncating, so the project is never cut off. */}
+                    <span className="text-xs text-muted-foreground">
+                      {row.projectName} · {row.domainCode}
+                    </span>
                   </div>
-                </td>
+                </div>
                 {row.cells.map((cell) => (
-                  <td key={cell.week} className="text-center">
+                  <div key={cell.week} role="cell" className="flex flex-col items-center gap-1">
+                    {/* The week number rides directly above its circle. */}
+                    <span
+                      className={cn(
+                        "text-[11px] leading-none",
+                        cell.week === currentWeek
+                          ? "font-bold text-foreground"
+                          : "font-medium text-muted-foreground",
+                      )}
+                    >
+                      <Tooltip
+                        content={cell.week === currentWeek ? `Week ${cell.week} (current term week)` : `Week ${cell.week}`}
+                      >
+                        <span>{cell.week}</span>
+                      </Tooltip>
+                    </span>
                     <GridCellView
                       cell={cell}
                       row={row}
                       termId={termId}
                       highlightMissing={highlightMissing}
-                      onOpenNote={setOpenNoteId}
+                      onOpenNote={(id) => {
+                        // Dev-preview notes have nothing to load.
+                        if (!id.startsWith("mock-")) setOpenNoteId(id);
+                      }}
                     />
-                  </td>
+                  </div>
                 ))}
-                {showMenteeForms && (
-                  <td className="pl-3">
-                    <MenteeFormStatus slot={formsFor(row.domainId)?.mentee} row={row} />
-                  </td>
-                )}
                 {edit && (
-                  <td className="pl-3 whitespace-nowrap">
+                  <div role="cell" className="pl-3 whitespace-nowrap">
                     <div className="inline-flex items-center gap-2">
                       <Select
                         ariaLabel={`Reassign ${fullName(row.mentee)}'s mentor`}
@@ -232,17 +219,61 @@ export function MentorGrid({
                         title="Remove pairing"
                       >
                         <Trash2 className="w-4 h-4" aria-hidden />
-                        <span className="sr-only">
-                          Remove {fullName(row.mentee)} pairing
-                        </span>
+                        <span className="sr-only">Remove {fullName(row.mentee)} pairing</span>
                       </button>
                     </div>
-                  </td>
+                  </div>
                 )}
-              </tr>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+          {/* Whose box this is: the mentor, bottom-left, in quiet grey. */}
+          {(!heading || nudgeEl) && (
+            <div className="flex items-center gap-3">
+              {!heading && (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Avatar
+                    photoUrl={group.mentor.photoUrl}
+                    name={fullName(group.mentor)}
+                    size="xs"
+                    userId={group.mentor.id}
+                  />
+                  {fullName(group.mentor)}
+                </div>
+              )}
+              {nudgeEl}
+            </div>
+          )}
+          </div>
+          {showForms && (
+            // Every action lives in this right-hand column; the left holds content only.
+            <div className="shrink-0 self-stretch border-l border-os-container/60 pl-4">
+              {(
+                <WeekFormsCard
+                  mentor={{
+                    role: "mentor",
+                    personId: group.mentor.id,
+                    photoUrl: group.mentor.photoUrl,
+                    personName: fullName(group.mentor),
+                    formName: mentorSlot?.form?.name ?? null,
+                    response: mentorSlot?.responses[group.mentor.id],
+                  }}
+                  mentees={group.rows.map((row) => {
+                    const slot = formsFor(row.domainId)?.mentee;
+                    return {
+                      role: "mentee" as const,
+                      personId: row.menteeId,
+                      photoUrl: row.mentee.photoUrl,
+                      personName: fullName(row.mentee),
+                      formName: slot?.form?.name ?? null,
+                      response: slot?.responses[row.menteeId],
+                    };
+                  })}
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
       <MentorNoteOverlay noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
     </section>
@@ -315,13 +346,11 @@ function GridCellView({
   // is a neutral, still-actionable slot.
   const missing = cell.state === "missing";
   const style =
-    missing && highlightMissing
-      ? "border border-dashed border-destructive text-destructive"
-      : missing
-      ? "border border-dashed border-border text-muted-foreground"
-      : "bg-muted text-muted-foreground";
+    // The earlier look, with the two empty states swapped: a missed (due, no
+    // note) week is the filled grey "–" dot; an upcoming week is the dashed outline.
+    missing ? "bg-muted text-muted-foreground" : "border border-dashed border-border text-muted-foreground";
   const hover =
-    missing && highlightMissing ? "hover:bg-destructive/10" : "hover:bg-muted/60";
+    "hover:bg-muted/60";
 
   // A non-mentor viewer has nothing to open.
   if (!cell.canCreate) {
@@ -329,9 +358,7 @@ function GridCellView({
       <Tooltip
         content={`Week ${cell.week} · ${missing ? "no note written yet" : "not yet due"}`}
       >
-        <span className={`${base} ${style}`}>
-          {missing ? "" : "–"}
-        </span>
+        <span className={`${base} ${style}`}>{missing ? "–" : ""}</span>
       </Tooltip>
     );
   }
@@ -369,26 +396,9 @@ function GridCellView({
         disabled={busy}
         className={`${base} ${style} ${hover}`}
       >
-        <Plus className="h-3 w-3" aria-hidden />
+        <Plus className="h-3 w-3 text-foreground" aria-hidden />
         <span className="sr-only">Open note for week {cell.week}</span>
       </button>
     </Tooltip>
-  );
-}
-
-function MenteeFormStatus({
-  slot,
-  row,
-}: {
-  slot: TermFormSlot | undefined;
-  row: GridMenteeRow;
-}) {
-  if (!slot?.form) return null;
-  return (
-    <TermFormStatus
-      response={slot.responses[row.menteeId]}
-      formName={slot.form.name}
-      personName={fullName(row.mentee)}
-    />
   );
 }

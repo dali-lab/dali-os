@@ -10,6 +10,7 @@ import { canViewMentorship, canViewMentorNote } from "../lib/visibility";
 import { ensureMentorNotePage } from "../lib/pair-notebook.server";
 import { readMentorNoteBlocks } from "../lib/note-body.server";
 import { weekNumberInTerm } from "../lib/week";
+import { BackLink } from "../components/BackLink";
 import { MentorNoteView, type MentorNoteData } from "../components/MentorNoteView";
 
 function fullName(u: { firstName: string; lastName: string }) {
@@ -108,7 +109,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export default function MentorNoteEditor() {
   const data = useLoaderData() as MentorNoteData;
   return (
-    <main className="w-full min-w-0">
+    <main className="flex w-full min-w-0 flex-col gap-4">
+      <BackLink to="/mentorship/browse">Back to Mentorship Notes</BackLink>
       <MentorNoteView data={data} />
     </main>
   );

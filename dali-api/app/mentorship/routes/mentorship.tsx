@@ -2,8 +2,7 @@ import { Link, redirect, useLoaderData } from "react-router";
 import {
   AlertCircle,
   CalendarClock,
-  ChevronRight,
-  FileText,
+  ArrowRight,
 } from "lucide-react";
 import type { Route } from "./+types/mentorship";
 import { requireAuth, isNonMember } from "~/lib/auth";
@@ -166,7 +165,7 @@ function formatDate(iso: string): string {
 
 export default function MentorshipHub() {
   const data = useLoaderData() as LoaderData;
-  const { pageTitle, panel, panelPad } = useOsChrome();
+  const { pageTitle } = useOsChrome();
   const group = data.grid.mentors[0] ?? null;
   // Core-only oversight framing. Every mentor sees the notes link; only Core
   // sees it dressed as a warning (and only while a term is running).
@@ -189,17 +188,30 @@ export default function MentorshipHub() {
         <p className="text-sm text-muted-foreground">{subtitle}</p>
       </header>
 
+      {!data.grid.termSelected ? (
+        <EmptyState>There's no active term right now.</EmptyState>
+      ) : !group || group.rows.length === 0 ? (
+        <EmptyState>
+          You aren't currently paired with any mentees this term.
+        </EmptyState>
+      ) : (
+        <MentorGrid
+          group={group}
+          weeks={data.grid.weeks}
+          currentWeek={data.grid.currentWeek}
+          termId={data.termId ?? ""}
+          highlightMissing={data.isCore && data.phase === "in-term"}
+          heading="My mentees"
+        />
+      )}
+
       {/* One row into the lab-wide notes view. Every mentor gets the link;
           the line beside it carries whatever context applies — Core's
           missing-note warning while a term runs, or the interim notice between
           terms, when no note is due. */}
       {(data.phase === "break" || data.termId) && (
         <section
-          className={cn(
-            panel,
-            panelPad,
-            "flex items-center justify-between gap-3",
-          )}
+          className="flex items-center gap-2"
         >
           <div className="flex items-center gap-2 text-sm">
             {data.phase === "break" ? (
@@ -233,10 +245,7 @@ export default function MentorshipHub() {
                 </span>
               </>
             ) : (
-              <>
-                <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-                <span>Weekly notes from every mentor in the lab.</span>
-              </>
+              <span>Weekly notes from every mentor in the lab.</span>
             )}
           </div>
           {data.termId && (
@@ -247,27 +256,11 @@ export default function MentorshipHub() {
                 behind ? "text-os-accent" : "text-muted-foreground",
               )}
             >
-              View <ChevronRight className="w-4 h-4" />
+              <ArrowRight className="w-4 h-4" aria-hidden />
+              <span className="sr-only">View</span>
             </Link>
           )}
         </section>
-      )}
-
-      {!data.grid.termSelected ? (
-        <EmptyState>There's no active term right now.</EmptyState>
-      ) : !group || group.rows.length === 0 ? (
-        <EmptyState>
-          You aren't currently paired with any mentees this term.
-        </EmptyState>
-      ) : (
-        <MentorGrid
-          group={group}
-          weeks={data.grid.weeks}
-          currentWeek={data.grid.currentWeek}
-          termId={data.termId ?? ""}
-          highlightMissing={data.isCore && data.phase === "in-term"}
-          heading="My mentees"
-        />
       )}
     </main>
   );

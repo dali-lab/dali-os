@@ -11,7 +11,6 @@ import { canViewForms, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { Avatar } from "~/components/ui/Avatar";
-import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useConfirmSubmit } from "~/components/ui/dialog";
@@ -982,12 +981,12 @@ function ExpandedMemberCard({
             {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
               <span className="text-muted-foreground text-xs">—</span>
             ) : (
-              <RolePills
-                coreTitles={member.coreTitles}
-                domainRoles={member.domainRoles}
-                size="sm"
-                showLevel
-              />
+              <span className="text-xs italic text-muted-foreground">
+                {[
+                  ...member.coreTitles,
+                  ...member.domainRoles.map((r) => (r.level ? `${r.domainName} · ${r.level}` : r.domainName)),
+                ].join(", ")}
+              </span>
             )}
           </div>
         </div>

@@ -63,55 +63,52 @@ function render(group: GridMentorGroup, termForms: TermForms) {
   act(() => root.render(createElement(Stub)));
 }
 
-const cellFor = (name: string) =>
-  [...container.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes(name))!
-    .lastElementChild!.textContent;
+describe("MentorGrid week 5 form card", () => {
+  const sub = { submittedAt: "2026-10-14T00:00:00Z", rows: [{ key: "k", label: "Q", value: "answer" }] };
 
-describe("MentorGrid week 5 forms", () => {
-  it("shows each mentee the form linked to their own domain", () => {
-    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV"), row("b", "Bo", "design", "DES")] };
+  it("is one card per mentor section listing the mentor and every mentee with their own status", () => {
+    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV"), row("b", "Zed", "dev", "DEV")] };
     render(
       group,
       forms({
         dev: (d) => {
           d.mentee.form = { id: "f1", name: "Dev mentee" };
-          d.mentee.responses.a = { submittedAt: "2026-10-14T00:00:00Z", rows: [] };
+          d.mentor.form = { id: "f2", name: "Dev mentor" };
+          d.mentee.responses.a = sub;
         },
       }),
     );
-    expect(container.textContent).toContain("Week 5 form");
-    expect(cellFor("Ada")).toBe("Submitted");
-    expect(cellFor("Bo")).toBe("");
+    expect(container.textContent!.match(/Week 5 Form/g)).toHaveLength(1);
+    const items = [...container.querySelectorAll("li")].map((li) => li.textContent);
+    expect(items).toHaveLength(3);
+    expect(items[0]).toContain("not submitted"); // mentor
+    expect(items[1]).toContain("Mentee, submitted"); // Ada
+    expect(items[2]).toContain("not submitted"); // Zed
   });
 
-  it("hides the column when none of the mentees' domains link a form", () => {
+  it("hides the card when none of the mentees' domains link a form", () => {
     const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV")] };
     render(group, forms({ design: (d) => (d.mentee.form = { id: "f1", name: "Design mentee" }) }));
-    expect(container.textContent).not.toContain("Week 5 form");
+    expect(container.textContent).not.toContain("Week 5 Form");
   });
 
-  it("shows the mentor one status per domain they mentor in, labelled when there are several", () => {
-    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV"), row("b", "Bo", "design", "DES")] };
+  it("opens every form in one modal from the single action", () => {
+    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV"), row("b", "Zed", "dev", "DEV")] };
     render(
       group,
       forms({
         dev: (d) => {
           d.mentor.form = { id: "f1", name: "Dev mentor" };
-          d.mentor.responses.m1 = { submittedAt: "2026-10-14T00:00:00Z", rows: [] };
+          d.mentee.form = { id: "f2", name: "Dev mentee" };
+          d.mentor.responses.m1 = sub;
+          d.mentee.responses.a = sub;
+          d.mentee.responses.b = sub;
         },
-        design: (d) => (d.mentor.form = { id: "f2", name: "Design mentor" }),
       }),
     );
-    const heading = container.querySelector("h2")!.textContent;
-    expect(heading).toContain("DEVSubmitted");
-    expect(heading).toContain("DESNot submitted");
-  });
-
-  it("leaves the domain label off when the mentor has one domain", () => {
-    const group = { mentor: person("m1", "Mo"), rows: [row("a", "Ada", "dev", "DEV")] };
-    render(group, forms({ dev: (d) => (d.mentor.form = { id: "f1", name: "Dev mentor" }) }));
-    const heading = container.querySelector("h2")!.textContent;
-    expect(heading).toContain("Not submitted");
-    expect(heading).not.toContain("DEV");
+    const btn = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("View all"))!;
+    act(() => btn.click());
+    expect(document.body.querySelectorAll('section[aria-label="Mentee Form"]')).toHaveLength(2);
+    expect(document.body.querySelectorAll('section[aria-label="Mentor Form"]')).toHaveLength(1);
   });
 });

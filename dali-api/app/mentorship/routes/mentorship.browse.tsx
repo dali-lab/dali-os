@@ -28,6 +28,7 @@ import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
 import { MentorGrid } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
+import { BackLink } from "../components/BackLink";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -36,6 +37,7 @@ import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 import { buildGrid, type MentorGridResult } from "../lib/mentor-grid.server";
 import { isUnfilled } from "../lib/grid-cell";
+import { buildMockMentorship } from "../lib/mock-grid";
 import {
   ColumnFilters,
   useColumnFilters,
@@ -200,7 +202,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // a selected term there's no week axis, so we render an empty-state prompt.
   // Project/domain/status narrowing happens in the browser (the filter bar),
   // so the grid loads the viewer's full term scope.
-  const grid: LoaderData["grid"] = selectedTerm
+  // Dev only: fake mentor/mentee pairs are appended after the real ones so the
+  // layout can be judged at scale (`?mock=0` turns it off). Nothing is read
+  // from or written to the database for them.
+  const mock =
+    process.env.NODE_ENV !== "production" && url.searchParams.get("mock") !== "0"
+      ? buildMockMentorship()
+      : null;
+  const realGrid: LoaderData["grid"] = selectedTerm
     ? await buildGrid({
         term: selectedTerm,
         viewerId: auth.user.sub,
@@ -208,6 +217,18 @@ export async function loader({ request }: Route.LoaderArgs) {
         noteScope,
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
+  const grid: LoaderData["grid"] = mock
+    ? {
+        weeks: realGrid.termSelected ? realGrid.weeks : mock.grid.weeks,
+        currentWeek: realGrid.termSelected ? realGrid.currentWeek : mock.grid.currentWeek,
+        termSelected: true,
+        mentors: [
+          ...realGrid.mentors,
+          // The real viewer's own pair already stands in for the mock admin.
+          ...mock.grid.mentors.filter((m) => m.mentor.id !== "mock-admin" || realGrid.mentors.length === 0),
+        ],
+      }
+    : realGrid;
 
   // Who's behind on notes, computed over the full term scope (before the
   // filter-bar/search view lenses) so it matches what the nudge action
@@ -230,12 +251,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const viewerIsCore = await isCore(auth.user.sub);
   const people = grid.mentors.flatMap((m) => [m.mentor.id, ...m.rows.map((r) => r.menteeId)]);
-  const [termForms, formOptions] = viewerIsCore
+  const [realTermForms, formOptions] = viewerIsCore
     ? await Promise.all([
-        selectedTerm ? loadTermForms(selectedTerm, [...new Set(people)]) : {},
+        selectedTerm
+          ? loadTermForms(selectedTerm, [...new Set(people.filter((id) => !id.startsWith("mock-")))])
+          : {},
         listSelectableForms(),
       ])
     : [null, []];
+  const termForms = mock ? { ...(realTermForms ?? {}), ...mock.termForms } : realTermForms;
 
   const data: LoaderData = {
     filters,
@@ -429,12 +453,14 @@ export default function MentorshipBrowse() {
     if (typeof window === "undefined") return;
     const sp = new URLSearchParams(params);
     sp.delete("embed");
+    sp.delete("mock");
     const search = sp.toString();
     if (search) window.localStorage.setItem(FILTERS_STORAGE_KEY, search);
   }, [params]);
 
   return (
     <main className="flex flex-col gap-6">
+      <BackLink to="/mentorship">Back to Mentorship</BackLink>
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className={pageTitle}>Mentorship notes</h1>
         <div className="flex items-center gap-2 ml-auto">
