@@ -6,6 +6,9 @@ import {
   useActionData,
   useLoaderData,
 } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/core.partners.directory";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -54,6 +57,11 @@ import {
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
+
+// Search and filters run in the browser; the loader reads no params.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, []);
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -338,8 +346,8 @@ export default function PartnersDirectory() {
   const { rows } = useLoaderData<typeof loader>();
   const os = useOsChrome();
   const [creating, setCreating] = useState<CreateKind | null>(null);
-  const [query, setQuery] = useState("");
-  const columnFilters = useColumnFilters(FILTER_COLUMNS);
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, [], { inUrl: true });
   const filterRows = useMemo(() => rows.map((r) => ({ cells: directoryRowCells(r) })), [rows]);
   const [sort, setSort] = usePersistedState<DirectorySort>(
     "dali:partners:directory:sort",

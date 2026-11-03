@@ -6,6 +6,9 @@ import {
   useLoaderData,
   useSearchParams,
 } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/members";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -64,6 +67,12 @@ const FILTER_COLUMNS: FilterColumn[] = [
 
 function parseStatus(raw: string | null): MemberStatus {
   return raw === "alumni" ? "alumni" : "active";
+}
+
+// Search and the filter builder run in the browser. ?status= scopes the
+// loader; the old ?domain= / ?project= / ?class= links only seed filters.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["status", "domain", "project", "class"]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -244,9 +253,9 @@ export default function MembersList() {
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
 
-  const columnFilters = useColumnFilters(FILTER_COLUMNS, initialFilters);
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, initialFilters, { inUrl: true });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

@@ -9,6 +9,7 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
 import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
@@ -376,7 +377,7 @@ export default function ProjectsListPage() {
     setNewIconEmoji(null);
     setCreating(true);
   };
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
   // An old ?public= link (from the Drive templates gallery era of this filter)
@@ -407,7 +408,7 @@ export default function ProjectsListPage() {
     [rows],
   );
 
-  const columnFilters = useColumnFilters(columns, initialFilters);
+  const columnFilters = useColumnFilters(columns, initialFilters, { inUrl: true });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

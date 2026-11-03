@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/core.partners.referrals";
 import { useFilteredList } from "~/hooks/useFilteredList";
 import { requireAuth, isNonMember } from "~/lib/auth";
@@ -45,6 +48,11 @@ export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 // Read-only database of received referral submissions for the current cycle.
 // Core only, like the rest of the Partner CRM. Members fill whichever generic
 // form a manager bound to this cycle's "referrals" slot (see form-slots).
+// Search and filters run in the browser; only the term changes what the loader reads.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -273,9 +281,11 @@ function Loaded({
     () => searchParams.get("settings") === "1",
   );
 
-  const columnFilters = useColumnFilters(data.tableColumns);
+  const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
+  const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
 
-  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
+  const { filtered } = useFilteredList(data.submissions, {
+    search,
     searchFields: (s) => [s.name, s.email],
     predicates: [columnFilters.predicate],
     deps: [columnFilters.active],
