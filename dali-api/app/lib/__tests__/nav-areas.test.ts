@@ -229,6 +229,7 @@ describe("Admin area", () => {
       "Messaging",
       "Insights",
       "Platform",
+      "Rooms",
       "Onboarding",
     ]);
   });
@@ -276,6 +277,7 @@ describe("areaForPath", () => {
     expect(areaForPath("/core/agreements", REGROUP)?.key).toBe("core");
     expect(areaForPath("/core/agreements/abc123", REGROUP)?.key).toBe("core");
     expect(areaForPath("/admin/messaging/senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/rooms", REGROUP)?.key).toBe("admin");
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 
@@ -516,10 +518,10 @@ describe("pinnedNavItems", () => {
   it("puts Room booking in the calendar header, not the pinned rail", () => {
     expect(pinnedNavItems().map((i) => i.href)).not.toContain("/rooms");
     expect(ROOM_BOOKING_NAV_ITEM.href).toBe("/rooms");
-    // Booking is not a General sub-tab; Core keeps room management.
     const areas = areasFor();
     expect(areas.find((a) => a.key === "projects")!.subtabs.map((t) => t.href)).not.toContain("/rooms");
-    expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).toContain("/core/rooms");
+    expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).not.toContain("/core/rooms");
+    expect(areas.find((a) => a.key === "admin")!.subtabs.map((t) => t.href)).toContain("/admin/rooms");
   });
 });
 

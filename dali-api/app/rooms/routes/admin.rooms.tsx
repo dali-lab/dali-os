@@ -1,4 +1,4 @@
-// Core ▸ Rooms. The bookable DALI rooms and the iPad door displays. Each iPad
+// Admin ▸ Rooms. The bookable DALI rooms and the iPad door displays. Each iPad
 // hangs between two doors and shows both rooms: it's listed under its own room
 // and names the second, and the second room lists it read-only. A display is paired by minting a single-use setup code
 // here and typing it into the iPad, which redeems it for its own token (see
@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { Archive, ArchiveRestore, Pencil, Plus, Tablet, Trash2 } from "lucide-react";
 import { z } from "zod";
-import type { Route } from "./+types/core.rooms";
+import type { Route } from "./+types/admin.rooms";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -19,7 +19,7 @@ import { formatUserCode } from "~/lib/pairing";
 import { createDisplaySetupCode } from "~/lib/room-display.server";
 import { getActiveDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
-import { coreHandle } from "~/core/coreNav";
+import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { useOsChrome } from "~/components/os-chrome";
 import { Select } from "~/components/ui/floating";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
@@ -30,9 +30,9 @@ import { useToast } from "~/components/ui/toast";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { timeAgo } from "~/components/infra/format";
 
-export const handle = coreHandle("rooms");
+export const handle = adminHandle("rooms");
 
-export const meta: Route.MetaFunction = () => [{ title: "Rooms · Core · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Rooms · Admin · DALI OS" }];
 
 async function requireCoreRooms(request: Request) {
   const auth = await requireAuth(request);
@@ -277,7 +277,7 @@ type LoaderDisplay = LoaderRoom["displays"][number];
 type DisplayTarget = { room: LoaderRoom; display: LoaderDisplay | null };
 type SetupResult = { label: string; code: string; expiresAt: string };
 
-export default function CoreRoomsPage() {
+export default function AdminRoomsPage() {
   const { rooms, activeScan } = useLoaderData<typeof loader>();
   const chrome = useOsChrome();
   const [editing, setEditing] = useState<LoaderRoom | "new" | null>(null);
@@ -286,18 +286,15 @@ export default function CoreRoomsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className={chrome.pageTitle}>Rooms</h1>
-          <p className={`mt-2 ${chrome.bodyText}`}>
-            Bookable DALI rooms and the iPad displays outside them.
-          </p>
-        </div>
-        <button type="button" className="os-add-btn" onClick={() => setEditing("new")}>
-          <Plus className="h-4 w-4" aria-hidden />
-          Add room
-        </button>
-      </div>
+      <AdminSectionHeader
+        section="rooms"
+        actions={
+          <button type="button" className="os-add-btn" onClick={() => setEditing("new")}>
+            <Plus className="h-4 w-4" aria-hidden />
+            Add room
+          </button>
+        }
+      />
 
       {activeScan && <ActiveScanBanner scan={activeScan} />}
 
