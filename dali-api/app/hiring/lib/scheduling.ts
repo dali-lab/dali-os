@@ -7,7 +7,7 @@ import { getZonedParts, getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
 import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
 import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
 import type { SlotBlocker } from "~/hiring/lib/slot-blockers";
-import { isSingleDomainPool } from "~/hiring/lib/interviewer-pool";
+import { isSingleDomainPool, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -448,16 +448,16 @@ async function assignInterviewersWithTx(
   return interview;
 }
 
-// ─── freeUserIdsByInterview ──────────────────────────────────────────────────
+// ─── availabilityByInterview ─────────────────────────────────────────────────
 //
-// For each interview, the members of its round's roster the scheduler would
-// treat as free at that time. Backs the leads' Reassign list.
+// For each interview, where each member of its round's roster stands at that
+// time, by userId. Backs the leads' Reassign list.
 
-export async function freeUserIdsByInterview(
+export async function availabilityByInterview(
   cycleId: string,
   roundId: string,
   interviews: { id: string; startTime: Date; endTime: Date }[],
-): Promise<Map<string, string[]>> {
+): Promise<Map<string, Record<string, InterviewerAvailability>>> {
   const [config, roster] = await Promise.all([
     prisma.interviewConfig.findUnique({
       where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId: roundId } },
@@ -484,16 +484,19 @@ export async function freeUserIdsByInterview(
     bookedIntervals: memberIntervals.get(r.userId) ?? [],
   }));
 
+  const availabilityAt = (check: InterviewerFreeCheck, start: Date, end: Date): InterviewerAvailability => {
+    if (check.bookedIntervals.some((b) => b.start < end && b.end > start)) return "booked";
+    if (isInterviewerFree(check, start, end)) return "free";
+    const calendar = calendars.get(check.userId);
+    return calendar?.hasCalendar || calendar?.hasWorkingHours ? "busy" : "no-calendar";
+  };
+
   return new Map(
     interviews.map((interview) => [
       interview.id,
-      [
-        ...new Set(
-          checks
-            .filter((c) => isInterviewerFree(c, interview.startTime, interview.endTime))
-            .map((c) => c.userId),
-        ),
-      ],
+      Object.fromEntries(
+        checks.map((c) => [c.userId, availabilityAt(c, interview.startTime, interview.endTime)]),
+      ),
     ]),
   );
 }

@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { hasCycleAccess } from "~/lib/roles";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-import { freeUserIdsByInterview } from "~/hiring/lib/scheduling";
+import { availabilityByInterview } from "~/hiring/lib/scheduling";
 import { applicantCancelledInterview } from "~/hiring/lib/domain-application-status";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -117,14 +117,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const now = new Date();
   const reassignable = interviews.filter((i) => i.status === "Scheduled" && i.startTime > now);
-  const free = reassignable.length
-    ? await freeUserIdsByInterview(params.cycleId!, roundId, reassignable)
-    : new Map<string, string[]>();
+  const availability = reassignable.length
+    ? await availabilityByInterview(params.cycleId!, roundId, reassignable)
+    : new Map();
 
   return withCors(
     request,
     Response.json({
-      interviews: interviews.map((i) => ({ ...i, freeUserIds: free.get(i.id) ?? [] })),
+      interviews: interviews.map((i) => ({ ...i, availability: availability.get(i.id) ?? {} })),
       pending,
     }),
   );

@@ -78,7 +78,7 @@ import {
 import { pendingForHiringLead } from "~/hiring/lib/decision-pills";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { reassignCandidates } from "~/hiring/lib/interviewer-pool";
+import { canOverrideAvailability, seatEligible, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
@@ -162,12 +162,20 @@ interface CycleReviewer {
   domain: { id: string; name: string }
 }
 
+const AVAILABILITY_ORDER: InterviewerAvailability[] = ['free', 'busy', 'no-calendar', 'booked']
+const AVAILABILITY_NOTE: Record<InterviewerAvailability, string | undefined> = {
+  free: undefined,
+  busy: 'Busy on their calendar',
+  'no-calendar': 'No calendar set up',
+  booked: 'Has another interview then',
+}
+
 interface InterviewRow {
   id: string
   startTime: string
   endTime: string
   status: string
-  freeUserIds: string[]
+  availability: Record<string, InterviewerAvailability>
   room: { id: string; name: string } | null
   zoomJoinUrl: string | null
   videoUrl: string | null
@@ -2794,13 +2802,17 @@ export default function HiringLeadCycleDetails() {
             toast.error(body.error ?? 'Failed to update location')
           }
         }
-        async function reassign(interview: any, a: any, value: string) {
-          if (!value) return
+        async function reassign(interview: any, a: any, to: { id: string; name: string; availability: InterviewerAvailability }) {
+          const override = canOverrideAvailability(to.availability)
           if (
             !(await dialog.confirm({
-              title: 'Reassign interviewer?',
-              description: `Emails the removed interviewer and the replacement interviewer about the change.`,
-              confirmLabel: 'Reassign',
+              title: override ? `Assign ${to.name} anyway?` : 'Reassign interviewer?',
+              description: override
+                ? `${to.availability === 'busy'
+                    ? `${to.name}'s calendar shows a conflict at this time.`
+                    : `${to.name} has no calendar or working hours set up, so DALI OS can't tell if they're free.`} Check with them first. Emails the removed interviewer and ${to.name} about the change.`
+                : 'Emails the removed interviewer and the replacement interviewer about the change.',
+              confirmLabel: override ? 'Assign anyway' : 'Reassign',
               tone: 'destructive',
             }))
           )
@@ -2808,7 +2820,7 @@ export default function HiringLeadCycleDetails() {
           const res = await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
             method: 'POST', credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
+            body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: to.id, ...(override && { override: true }) }),
           })
           if (!res.ok) {
             const body = await res.json().catch(() => ({}))
@@ -2997,14 +3009,24 @@ export default function HiringLeadCycleDetails() {
                               ? `${m.firstName} ${m.lastName}`
                               : m.daliEmail ?? '?'
                             const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
-                            const candidates = reassignCandidates(interviewers as any[], {
+                            const candidates = seatEligible(interviewers as any[], {
                               role: a.role,
                               applicantDomainId: interview.domainApplication.domainId,
                               seatedUserIds: interview.assignments
                                 .filter((s: any) => s.status === 'Active')
                                 .map((s: any) => s.cycleInterviewer.userId),
-                              freeUserIds: interview.freeUserIds,
                             })
+                              .map((i: any) => {
+                                const im = i.user
+                                return {
+                                  id: i.id as string,
+                                  name: im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id,
+                                  availability: (interview.availability[i.userId] ?? 'no-calendar') as InterviewerAvailability,
+                                }
+                              })
+                              .sort((x, y) => AVAILABILITY_ORDER.indexOf(x.availability) - AVAILABILITY_ORDER.indexOf(y.availability))
+                            const anyFree = candidates.some((c) => c.availability === 'free')
+                            const anyAssignable = candidates.some((c) => c.availability !== 'booked')
                             return (
                               <span key={a.id} className="inline-flex items-center gap-2">
                                 <span className="text-foreground">{name}</span>
@@ -3012,15 +3034,19 @@ export default function HiringLeadCycleDetails() {
                                 {editable && (
                                   <Select
                                     value=""
-                                    onChange={(value) => reassign(interview, a, value)}
-                                    placeholder={candidates.length > 0 ? 'Reassign' : 'No one free'}
-                                    disabled={candidates.length === 0}
+                                    onChange={(value) => {
+                                      const to = candidates.find((c) => c.id === value)
+                                      if (to) reassign(interview, a, to)
+                                    }}
+                                    placeholder={anyFree ? 'Reassign' : anyAssignable ? 'No one free' : 'No one available'}
+                                    disabled={!anyAssignable}
                                     ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    options={candidates.map((i: any): SelectOption => {
-                                      const im = i.user
-                                      const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                      return { value: i.id, label: iName }
-                                    })}
+                                    options={candidates.map((c): SelectOption => ({
+                                      value: c.id,
+                                      label: c.name,
+                                      description: AVAILABILITY_NOTE[c.availability],
+                                      disabled: c.availability === 'booked',
+                                    }))}
                                     buttonClassName={smallTrigger}
                                   />
                                 )}
