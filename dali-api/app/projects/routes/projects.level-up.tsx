@@ -2,7 +2,10 @@ import { useMemo, useState, useEffect } from "react";
 import { buttonClasses } from "~/components/ui/Button";
 import { redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.level-up";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { useFilteredList } from "~/hooks/useFilteredList";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseFormDataJson } from "~/lib/safe-json";
@@ -55,6 +58,12 @@ function parseLevel(raw: string): Level | null {
   if (s === "p2" || s === "doer") return "P2";
   if (s === "p3" || s === "mentor") return "P3";
   return null;
+}
+
+// Search, domain and column filters live in the URL but filter client side;
+// only the term changes what the loader reads.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -468,10 +477,12 @@ function Loaded({ data }: { data: LoadedData }) {
     targetLevel: Level;
   } | null>(null);
 
-  const [domainId, setDomainId] = useState("");
-  const columnFilters = useColumnFilters(data.tableColumns);
+  const [domainId, setDomainId] = useSearchParamState("domain");
+  const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
+  const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
 
-  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
+  const { filtered } = useFilteredList(data.submissions, {
+    search,
     searchFields: (s) => [s.name, s.email],
     predicates: [
       (s) => !domainId || s.domainIds.includes(domainId),

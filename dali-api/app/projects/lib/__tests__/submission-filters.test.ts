@@ -6,7 +6,9 @@ import {
   columnResponses,
   filterValues,
   matchesFilters,
+  readFilterParams,
   toggleFilterValue,
+  writeFilterParams,
   type ColumnFilter,
 } from "../submission-filters";
 
@@ -152,5 +154,41 @@ describe("columnResponses", () => {
   it("puts responses missing from the order after it, sorted", () => {
     const projects = [{ cells: { term: ["25W", "Zeta", "Alpha"] } }];
     expect(columnResponses(projects, "term", ["25W"])).toEqual(["25W", "Alpha", "Zeta"]);
+  });
+});
+
+describe("readFilterParams / writeFilterParams", () => {
+  it("reads one filter per f.<column> param, keeping every repeated value", () => {
+    const params = new URLSearchParams("f.domain=Design&term=t1&f.domain=Eng&f.status=Yes");
+    expect(readFilterParams(params)).toEqual([
+      { columnKey: "domain", values: ["Design", "Eng"] },
+      { columnKey: "status", values: ["Yes"] },
+    ]);
+  });
+
+  it("ignores params without the prefix and empty values", () => {
+    expect(readFilterParams(new URLSearchParams("q=ada&domain=d1&f.status="))).toEqual([]);
+  });
+
+  it("writes filters as repeated params and keeps every other param", () => {
+    const next = writeFilterParams(new URLSearchParams("term=t1&q=ada"), [
+      { columnKey: "domain", values: ["Design", "Eng"] },
+    ]);
+    expect(next.toString()).toBe("term=t1&q=ada&f.domain=Design&f.domain=Eng");
+  });
+
+  it("replaces filters already in the URL, so a removed column disappears", () => {
+    const next = writeFilterParams(new URLSearchParams("f.status=Yes&term=t1"), [
+      { columnKey: "domain", values: ["Eng"] },
+    ]);
+    expect(next.toString()).toBe("term=t1&f.domain=Eng");
+    expect(writeFilterParams(next, []).toString()).toBe("term=t1");
+  });
+
+  it("round-trips column keys and values with URL-special characters", () => {
+    const filters: ColumnFilter[] = [
+      { columnKey: "q:why & how", values: ["Yes, & more", "50% = half"] },
+    ];
+    expect(readFilterParams(writeFilterParams(new URLSearchParams(), filters))).toEqual(filters);
   });
 });

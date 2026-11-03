@@ -3,6 +3,8 @@ import { useMemo, useState, type DependencyList } from "react";
 export interface UseFilteredListOptions<T> {
   /** Initial value for the internal search string. Defaults to "". */
   initialSearch?: string;
+  /** A search string the caller owns (e.g. one kept in the URL). Replaces the internal one. */
+  search?: string;
   /**
    * Pull the searchable strings out of a row. Nullish entries are skipped.
    * The query is matched (case-insensitive substring) against the
@@ -54,7 +56,8 @@ export function useFilteredList<T>(
   options: UseFilteredListOptions<T> = {},
 ): UseFilteredListResult<T> {
   const { initialSearch = "", searchFields, predicates } = options;
-  const [search, setSearch] = useState(initialSearch);
+  const [internalSearch, setSearch] = useState(initialSearch);
+  const search = options.search ?? internalSearch;
 
   const filtered = useMemo(
     () => filterRows(rows, search, searchFields, predicates),

@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { createRoutesStub } from "react-router";
+import { createRoutesStub, useLocation } from "react-router";
 
 const prisma = vi.hoisted(() => ({
   term: { findMany: vi.fn() },
@@ -76,12 +76,17 @@ const BINDING = {
   gateAudience: null,
   gateAudienceGroupId: null,
 };
-const row = (userId: string, name: string, domainIds: string[]) => ({
+const row = (
+  userId: string,
+  name: string,
+  domainIds: string[],
+  cells: Record<string, string> = {},
+) => ({
   userId,
   name,
   email: `${userId}@example.edu`,
   domainIds,
-  cells: {},
+  cells,
   detailFields: [],
 });
 
@@ -93,13 +98,21 @@ const BOARDS = [
 
 let container: HTMLDivElement;
 let root: Root;
+let search = "";
+
+function LocationProbe() {
+  search = useLocation().search;
+  return null;
+}
 
 async function mount(board: (typeof BOARDS)[number], entry: string = board.path) {
   const Stub = createRoutesStub([
     {
       path: board.path,
       loader: board.route.loader as never,
-      Component: board.route.default as never,
+      shouldRevalidate: board.route.shouldRevalidate as never,
+      Component: () =>
+        createElement("div", null, createElement(board.route.default as never), createElement(LocationProbe)),
     },
   ]);
   container = document.createElement("div");
@@ -253,6 +266,19 @@ describe.each(BOARDS)("$name domain filter", (board) => {
     await pick("Design", domainPicker);
     expect(vi.mocked(buildSubmissionView).mock.calls.length).toBe(loads);
   });
+
+  it("saves the picked domain in the URL", async () => {
+    await mount(board);
+    await pick("Engineering", domainPicker);
+    expect(new URLSearchParams(search).get("domain")).toBe("d-eng");
+  });
+
+  it("opens on the domain in the URL", async () => {
+    await mount(board, `${board.path}?domain=d-eng`);
+    expect(domainPicker()?.textContent).toContain("Engineering");
+    expect(text()).not.toContain("Ada Example");
+    expect(text()).toContain("Grace Example");
+  });
 });
 
 describe("Level Up row links", () => {
@@ -284,5 +310,71 @@ describe("Level Up row links", () => {
   it("carry All terms to the member's page", async () => {
     await mount(levelUpBoard, `${levelUpBoard.path}?term=${ALL_TERMS}`);
     expect(memberLink()?.getAttribute("href")).toBe("/projects/level-up/ada?term=all");
+  });
+});
+
+describe.each(BOARDS)("$name search and column filters in the URL", (board) => {
+  beforeEach(() => {
+    vi.mocked(getSlotBinding).mockResolvedValue(BINDING as never);
+    vi.mocked(buildSubmissionView).mockResolvedValue({
+      rows: [
+        row("ada", "Ada Example", ["d-design"], { status: "Yes" }),
+        row("grace", "Grace Example", ["d-eng"], { status: "No" }),
+      ],
+      tableColumns: [{ key: "status", label: "Status" }],
+    } as never);
+  });
+
+  const searchBox = () =>
+    document.querySelector<HTMLInputElement>("input[aria-label='Search submissions']")!;
+
+  async function type(value: string) {
+    const input = searchBox();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      setter.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  it("opens on the search in the URL", async () => {
+    await mount(board, `${board.path}?q=grace`);
+    expect(searchBox().value).toBe("grace");
+    expect(text()).not.toContain("Ada Example");
+    expect(text()).toContain("Grace Example");
+  });
+
+  it("filters as you type and saves the search once typing stops, without reloading", async () => {
+    await mount(board);
+    const loads = vi.mocked(buildSubmissionView).mock.calls.length;
+    vi.useFakeTimers();
+    try {
+      await type("grace");
+      expect(text()).not.toContain("Ada Example");
+      expect(new URLSearchParams(search).get("q")).toBeNull();
+      await act(async () => vi.advanceTimersByTime(300));
+    } finally {
+      vi.useRealTimers();
+    }
+    await act(async () => {});
+    expect(new URLSearchParams(search).get("q")).toBe("grace");
+    expect(vi.mocked(buildSubmissionView).mock.calls.length).toBe(loads);
+  });
+
+  it("opens on the column filters in the URL", async () => {
+    await mount(board, `${board.path}?f.status=Yes`);
+    expect(text()).toContain("Ada Example");
+    expect(text()).not.toContain("Grace Example");
+  });
+
+  it("keeps search, domain and filters when the term changes", async () => {
+    await mount(board, `${board.path}?q=a&domain=d-design&f.status=Yes`);
+    await pick("26S");
+    const params = new URLSearchParams(search);
+    expect(params.get("term")).toBe("t-26s");
+    expect(params.get("q")).toBe("a");
+    expect(params.get("domain")).toBe("d-design");
+    expect(params.getAll("f.status")).toEqual(["Yes"]);
+    expect(ensureStaffingCycle).toHaveBeenLastCalledWith("t-26s", "26S");
   });
 });

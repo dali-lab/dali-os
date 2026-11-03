@@ -65,6 +65,35 @@ export function toggleFilterValue(
   return filters.map((f) => (f.columnKey === columnKey ? { columnKey, values } : f));
 }
 
+const FILTER_PARAM_PREFIX = "f.";
+
+// One repeated param per filtered column (`?f.domain=Design&f.domain=Eng`), so
+// any column key or value survives without an escaping scheme of our own.
+export function readFilterParams(params: URLSearchParams): ColumnFilter[] {
+  const filters: ColumnFilter[] = [];
+  for (const name of new Set(params.keys())) {
+    if (!name.startsWith(FILTER_PARAM_PREFIX)) continue;
+    const values = params.getAll(name).filter((v) => v !== "");
+    if (values.length === 0) continue;
+    filters.push({ columnKey: name.slice(FILTER_PARAM_PREFIX.length), values });
+  }
+  return filters;
+}
+
+export function writeFilterParams(
+  params: URLSearchParams,
+  filters: readonly ColumnFilter[],
+): URLSearchParams {
+  const next = new URLSearchParams();
+  for (const [name, value] of params) {
+    if (!name.startsWith(FILTER_PARAM_PREFIX)) next.append(name, value);
+  }
+  for (const f of filters) {
+    for (const v of f.values) next.append(FILTER_PARAM_PREFIX + f.columnKey, v);
+  }
+  return next;
+}
+
 export function clearFilterColumn(
   filters: readonly ColumnFilter[],
   columnKey: string,

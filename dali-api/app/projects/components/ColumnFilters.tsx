@@ -12,6 +12,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { useSearchParams } from "react-router";
 import { Check, ChevronDown, ChevronRight, ListFilter, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/Button";
@@ -25,7 +26,9 @@ import {
   columnResponses,
   filterValues,
   matchesFilters,
+  readFilterParams,
   toggleFilterValue,
+  writeFilterParams,
   type ColumnFilter,
   type FilterCells,
 } from "../lib/submission-filters";
@@ -41,9 +44,27 @@ export type FilterColumn = {
 };
 
 // Filter state for a board plus the row predicate to hand useFilteredList
-// (put `active` in its `deps`).
-export function useColumnFilters(columns: { key: string }[], initial: ColumnFilter[] = []) {
-  const [filters, setFilters] = useState<ColumnFilter[]>(initial);
+// (put `active` in its `deps`). With inUrl the filters live in `f.*` search
+// params, so the view survives reload and the back button.
+export function useColumnFilters(
+  columns: { key: string }[],
+  initial: ColumnFilter[] = [],
+  { inUrl = false }: { inUrl?: boolean } = {},
+) {
+  const [localFilters, setLocalFilters] = useState<ColumnFilter[]>(initial);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlFilters = useMemo(() => readFilterParams(searchParams), [searchParams]);
+  const filters = inUrl ? urlFilters : localFilters;
+  const setFilters = useCallback(
+    (next: ColumnFilter[]) => {
+      if (!inUrl) return setLocalFilters(next);
+      setSearchParams((prev) => writeFilterParams(prev, next), {
+        replace: true,
+        preventScrollReset: true,
+      });
+    },
+    [inUrl, setSearchParams],
+  );
   const active = useMemo(
     () => applicableFilters(filters, columns.map((c) => c.key)),
     [filters, columns],
