@@ -37,6 +37,28 @@ export async function encodeGalleryImage(
   return null;
 }
 
+export function scaledGalleryCopy(
+  bitmap: ImageBitmap,
+  width: number,
+  height: number,
+  kind: keyof typeof QUALITY,
+): Promise<File | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx?.drawImage(bitmap, 0, 0, width, height);
+  return encodeGalleryImage((type, quality) => {
+    // JPEG has no alpha, so transparent areas would otherwise encode as black.
+    if (type === "image/jpeg" && ctx) {
+      ctx.globalCompositeOperation = "destination-over";
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, width, height);
+    }
+    return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+  }, kind);
+}
+
 /** The display copy's size, or null when the original is already small enough to show. */
 export function galleryDisplaySize(
   width: number,

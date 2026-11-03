@@ -105,7 +105,7 @@ function LocalDoc(props: ResolvedProps) {
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
   const toast = useToast();
-  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
+  const uploadFile = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   // Normalized once per (schema, content) pair; the editor is recreated on
   // schema/dictionary change anyway, so this rides the same memo.
   // Read-only embeds also drop the trailing blank line an author left; there
@@ -161,7 +161,7 @@ function CollabDocInner(
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
   const toast = useToast();
-  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
+  const uploadFile = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   const threadStore = useThreadStore(props.comments);
 
   const editor = useCreateBlockNote(

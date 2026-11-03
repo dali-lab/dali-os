@@ -6,6 +6,7 @@ import {
   DocEditor,
   IMAGE_UPLOAD_ACCEPT,
   uploadEditorImage,
+  uploadErrorMessage,
   type DocEditorInstance,
   type DocSyncState,
 } from "~/components/doc";
@@ -214,9 +215,9 @@ export default function BlogWritePage() {
     if (!file) return;
     setUploading(true);
     try {
-      submit({ intent: "cover", url: await uploadEditorImage(file) });
-    } catch {
-      toast.error("Upload failed.");
+      submit({ intent: "cover", url: await uploadEditorImage(file, toast.info) });
+    } catch (err) {
+      toast.error(uploadErrorMessage(err));
     } finally {
       setUploading(false);
     }
