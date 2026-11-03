@@ -31,9 +31,11 @@ import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
 import { MentorGrid } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { Tooltip } from "~/components/ui/floating";
+import { TermFilter } from "~/components/TermFilter";
+import { browseTermId } from "../lib/browse-term";
+import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
@@ -81,7 +83,7 @@ type LoaderData = {
   initialFilters: ColumnFilter[];
   options: {
     domains: FilterOption[];
-    terms: FilterOption[];
+    terms: TermOption[];
   };
   grid: MentorGridResult;
   // Mentors with at least one unfilled note in the current term/project/domain
@@ -107,6 +109,7 @@ function pickFilter(value: string | null): string {
 // loader or seed it.
 export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
   return skipClientOnlySearchChange(args, [
+    "term",
     "termId",
     "menteeId",
     "mentorId",
@@ -125,11 +128,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  // Term defaults to the current term when the URL doesn't pin one (first load).
-  // An explicit `termId=` (the "Any" option) clears it back to unfiltered.
-  const termParam = url.searchParams.get("termId");
   const current = await currentTerm(request);
-  const defaultTerm = termParam === null ? current : null;
   // A person search used to be two id-valued pickers, and the Members profile
   // still links here with ?menteeId=<id>. Both id params are accepted as a
   // seed for the search box so those links keep landing on the right person.
@@ -146,7 +145,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     query:
       url.searchParams.get("q") ??
       (seeded ? `${seeded.firstName} ${seeded.lastName}`.trim() : ""),
-    termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
+    termId: browseTermId(url.searchParams, current?.id ?? null),
   };
   const projectParam = pickFilter(url.searchParams.get("projectId"));
   const domainParam = pickFilter(url.searchParams.get("domainId"));
@@ -189,13 +188,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: d.id,
       label: `${d.displayName} (${d.code})`,
     })),
-    // Mentorship keeps its own single-term grid + "Any term" escape hatch (the
-    // grid's week axis needs exactly one term), so it isn't the shared
-    // TermFilter — but it labels the current term the same way for consistency.
-    terms: terms.map((t) => ({
-      id: t.id,
-      label: t.id === current?.id ? `${t.code} (current)` : t.code,
-    })),
+    terms: terms.map((t) => ({ id: t.id, code: t.code, isCurrent: t.id === current?.id })),
   };
 
   const linkedProject = projectsWithPairs.find((p) => p.id === projectParam);
@@ -494,19 +487,10 @@ export default function MentorshipBrowse() {
               Templates
             </button>
           )}
-          <Select
-            ariaLabel="Filter by term"
-            value={data.filters.termId}
-            onChange={(v) => {
-              const next = new URLSearchParams(params);
-              next.set("termId", v);
-              navigate(`/mentorship/browse?${next.toString()}`);
-            }}
-            options={[
-              { value: "", label: "Any term" },
-              ...data.options.terms.map((o) => ({ value: o.id, label: o.label })),
-            ]}
-            buttonClassName={cn(filterPillClass(), "sm:w-40")}
+          <TermFilter
+            terms={data.options.terms}
+            selected={data.filters.termId || ALL_TERMS}
+            clearOnChange={["termId"]}
           />
         </div>
       </header>

@@ -25,7 +25,7 @@ const PAGES: {
     name: "Mentorship browse",
     path: "/mentorship/browse",
     shouldRevalidate: mentorship.shouldRevalidate,
-    loaderParams: ["termId", "menteeId", "mentorId", "projectId", "domainId", "status"],
+    loaderParams: ["term", "termId", "menteeId", "mentorId", "projectId", "domainId", "status"],
   },
 ];
 

@@ -1,12 +1,11 @@
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.partners.renewals";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { Select } from "~/components/ui/floating";
-import { filterPillClass } from "~/components/ui/floating/styles";
+import { TermFilter } from "~/components/TermFilter";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { RenewalsBoard } from "../components/RenewalsBoard";
@@ -44,12 +43,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentTerm(request),
     prisma.domain.findMany({ where: { active: true }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true } }),
   ]);
+  // Older links carry the term code rather than its id.
   const wanted = new URL(request.url).searchParams.get("term");
   const picked =
-    terms.find((t) => t.code === wanted) ?? terms.find((t) => t.id === current?.id) ?? terms.at(-1) ?? null;
+    terms.find((t) => t.id === wanted) ??
+    terms.find((t) => t.code === wanted) ??
+    terms.find((t) => t.id === current?.id) ??
+    terms.at(-1) ??
+    null;
+  const termOptions = [...terms]
+    .reverse()
+    .map((t) => ({ id: t.id, code: t.code, isCurrent: t.id === current?.id }));
   if (!picked) {
     return {
       terms,
+      termOptions,
       picked: null as TermRef | null,
       decisionTerm: null as TermRef | null,
       cards: [] as RenewalCardModel[],
@@ -63,6 +71,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   return {
     terms,
+    termOptions,
     picked,
     decisionTerm,
     cards,
@@ -140,9 +149,8 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function PartnersRenewals() {
   const data = useLoaderData<typeof loader>();
-  const [, setSearchParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const { terms, picked, decisionTerm, cards, domains, coreMembers } = data;
+  const { terms, termOptions, picked, decisionTerm, cards, domains, coreMembers } = data;
 
   return (
     <div className="flex flex-col gap-4">
@@ -157,14 +165,12 @@ export default function PartnersRenewals() {
         />
         <div className="flex-1" />
         {picked && (
-          <Select
-            ariaLabel="Active in term"
-            value={picked.code}
-            onChange={(code) =>
-              setSearchParams({ term: code }, { replace: true, preventScrollReset: true })
-            }
-            options={[...terms].reverse().map((t) => ({ value: t.code, label: `Active in ${t.code}` }))}
-            buttonClassName={filterPillClass()}
+          <TermFilter
+            terms={termOptions}
+            selected={picked.id}
+            includeAll={false}
+            replace
+            formatLabel={(label) => `Active in ${label}`}
           />
         )}
       </div>

@@ -33,7 +33,7 @@ function notesHref(
     domainId,
     q: fullName(mentee),
   });
-  if (termId) params.set("termId", termId);
+  if (termId) params.set("term", termId);
   return `/mentorship/browse?${params.toString()}`;
 }
 
