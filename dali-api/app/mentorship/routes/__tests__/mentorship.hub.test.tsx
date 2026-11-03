@@ -68,7 +68,7 @@ describe("mentorship hub notes link", () => {
     await act(async () => {});
 
     expect(notesLink()?.getAttribute("href")).toBe(
-      "/mentorship/browse?termId=t1",
+      "/mentorship/browse?term=t1",
     );
     expect(container.textContent).not.toContain("missing a note this week");
   });
@@ -78,7 +78,7 @@ describe("mentorship hub notes link", () => {
     await act(async () => {});
 
     expect(notesLink()?.getAttribute("href")).toBe(
-      "/mentorship/browse?termId=t1",
+      "/mentorship/browse?term=t1",
     );
     expect(container.textContent).toContain("31");
     expect(container.textContent).toContain("missing a note this week");

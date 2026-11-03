@@ -15,6 +15,8 @@ import * as banners from "~/core/routes/core.communications.banners";
 import * as planning from "~/partners/routes/core.partners.planning";
 import * as payrollExport from "~/admin/routes/admin.payroll-export";
 import * as notifications from "~/routes/notifications";
+import * as partnersRenewals from "~/partners/routes/core.partners.renewals";
+import * as applications from "~/hiring/routes/applications";
 
 type ShouldRevalidate = (args: ShouldRevalidateFunctionArgs) => boolean;
 
@@ -26,13 +28,15 @@ const PAGES: {
 }[] = [
   { name: "Partners board", path: "/core/partners", shouldRevalidate: partnersBoard.shouldRevalidate, loaderParams: [] },
   { name: "Partners directory", path: "/core/partners/directory", shouldRevalidate: partnersDirectory.shouldRevalidate, loaderParams: [] },
+  { name: "Renewals", path: "/core/partners/renewals", shouldRevalidate: partnersRenewals.shouldRevalidate, loaderParams: ["term"] },
+  { name: "Applications", path: "/hiring/applications", shouldRevalidate: applications.shouldRevalidate, loaderParams: ["cycle"] },
   { name: "Referrals", path: "/core/partners/referrals", shouldRevalidate: partnersReferrals.shouldRevalidate, loaderParams: ["term"] },
   { name: "Members", path: "/members", shouldRevalidate: members.shouldRevalidate, loaderParams: ["status", "domain", "project", "class"] },
   {
     name: "Mentorship browse",
     path: "/mentorship/browse",
     shouldRevalidate: mentorship.shouldRevalidate,
-    loaderParams: ["termId", "menteeId", "mentorId", "projectId", "domainId", "status"],
+    loaderParams: ["term", "termId", "menteeId", "mentorId", "projectId", "domainId", "status"],
   },
   { name: "Infrastructure", path: "/admin/infrastructure", shouldRevalidate: infrastructure.shouldRevalidate, loaderParams: ["term"] },
   { name: "Announcements", path: "/admin/announcements", shouldRevalidate: announcements.shouldRevalidate, loaderParams: [] },
@@ -64,6 +68,9 @@ describe.each(PAGES)("$name shouldRevalidate", (page) => {
 
   it("skips a tab, view or status switch the loader doesn't read", () => {
     for (const param of ["tab", "view", "status", "group", "role"].filter((p) => !page.loaderParams.includes(p))) {
+  it("skips sort, display and other client-side view params", () => {
+    const viewParams = ["sort", "dir", "paused", "rejected", "stage", "pie", "status", "domain", "event", "engagement"];
+    for (const param of viewParams.filter((p) => !page.loaderParams.includes(p))) {
       expect(check(page, "", `?${param}=x`)).toBe(false);
     }
   });

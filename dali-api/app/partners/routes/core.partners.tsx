@@ -14,9 +14,9 @@ import { PartnerApplicationModal } from "../components/PartnerApplicationModal";
 import {
   ACTIVITY_OPTIONS,
   columnFiltersFromParams,
-  DEFAULT_BOARD_PREFS,
   filterPartnerCards,
-  isBoardPrefs,
+  boardPrefsFromParams,
+  writeBoardPrefsParams,
   partnerCardCells,
   partnerFiltersFromColumns,
   SOURCE_OPTIONS,
@@ -24,7 +24,7 @@ import {
   type PartnerCardModel,
 } from "../lib/partner-board";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { usePersistedState } from "~/hooks/usePersistedState";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
 import {
   ColumnFilters,
   useColumnFilters,
@@ -173,11 +173,14 @@ export default function PartnersApplications() {
   const openCard = openId ? cards.find((c) => c.id === openId) ?? null : null;
 
   const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
-  const [prefs, setPrefs] = usePersistedState<PartnerBoardPrefs>(
-    "dali:partnerboard:prefs",
-    DEFAULT_BOARD_PREFS,
-    isBoardPrefs,
-  );
+  // Opening the board bare reopens its last filters and display options.
+  useRememberedSearch("dali:partnerboard:view", { transient: ["application", "settings"] });
+  const prefs = boardPrefsFromParams(searchParams);
+  const setPrefs = (next: PartnerBoardPrefs) =>
+    setSearchParams((prev) => writeBoardPrefsParams(prev, next), {
+      replace: true,
+      preventScrollReset: true,
+    });
 
   const columns = useMemo<FilterColumn[]>(
     () => [
