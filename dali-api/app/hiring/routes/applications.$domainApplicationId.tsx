@@ -42,7 +42,6 @@ import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { EducationEngagementPanel } from "~/education/components/EducationEngagementPanel";
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { ApplicationEventsPanel } from "~/hiring/components/ApplicationEventsPanel";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
 import { domainApplicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
@@ -524,10 +523,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const emailEngagement = await getApplicantEmailEngagement(da.application.user.id, { blinded });
 
-  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, roles, request);
-  const hiringEventEngagement = applicationEventsEnabled
-    ? await getHiringEventEngagement(da.application.user.id)
-    : [];
+  const hiringEventEngagement = await getHiringEventEngagement(da.application.user.id);
 
   return {
     applicantName:

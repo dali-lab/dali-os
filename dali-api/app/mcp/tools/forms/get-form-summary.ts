@@ -1,5 +1,5 @@
 // MCP tool: get_form_summary — per-question results for one form version.
-// Scope: mcp:read; edit access on the form, behind form-upgrades.
+// Scope: mcp:read; edit access on the form.
 
 import { canBuildForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit } from "~/forms/lib/forms-data";
@@ -10,7 +10,6 @@ import {
   type McpCtx,
   type McpTool,
 } from "../../registry";
-import { requireFormUpgrades } from "./require-form-upgrades";
 
 export const GET_FORM_SUMMARY_TOOL = {
   name: "get_form_summary",
@@ -44,7 +43,6 @@ export async function runGetFormSummary(ctx: McpCtx, args: Args) {
   if (!(await canBuildForm(ctx.user.id, args.formId))) {
     throw new McpForbiddenError("You do not have edit access to this form");
   }
-  await requireFormUpgrades(ctx);
 
   const form = await loadFormForEdit(args.formId);
   if (!form) throw new McpNotFoundError(`Form not found: ${args.formId}`);

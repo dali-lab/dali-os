@@ -6,12 +6,10 @@ import { createRoot, type Root } from "react-dom/client";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const submit = vi.fn();
-const flags = new Set<string>();
 vi.mock("react-router", () => ({
   Link: ({ children }: { children: React.ReactNode }) => children,
   useFetcher: () => ({ submit, data: undefined, formData: undefined, Form: "form" }),
 }));
-vi.mock("~/components/FeatureFlags", () => ({ useFeatureFlag: (key: string) => flags.has(key) }));
 vi.mock("~/components/os-chrome", () => ({
   useOsChrome: () => ({ heading: "" }),
   modalCardClass: () => "",
@@ -80,35 +78,18 @@ const checkbox = () =>
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
-  flags.clear();
   submit.mockClear();
 });
 
 describe("After submitting settings", () => {
-  it("is hidden while the flag is off and nothing is saved", () => {
-    mount();
-    expect(text()).not.toContain("After submitting");
-  });
-
-  it("shows when the flag is on", () => {
-    flags.add("form-upgrades");
+  it("shows the confirmation message and receipt settings", () => {
     mount();
     expect(text()).toContain("After submitting");
     expect(text()).toContain("Confirmation message");
     expect(text()).toContain("Email people a copy of their response");
   });
 
-  it("stays visible for a form with a saved receipt setting or message, flag off", () => {
-    mount({ sendReceipt: true });
-    expect(text()).toContain("After submitting");
-    act(() => root.unmount());
-    container.remove();
-    mount({ confirmationMessage: MESSAGE });
-    expect(text()).toContain("After submitting");
-  });
-
   it("doesn't save per keystroke, only when Save message is pressed", () => {
-    flags.add("form-upgrades");
     mount();
     act(() => emitChange(MESSAGE));
     act(() => emitChange([...MESSAGE, ...MESSAGE]));
@@ -130,14 +111,12 @@ describe("After submitting settings", () => {
   });
 
   it("toggling the receipt saves it", () => {
-    flags.add("form-upgrades");
     mount();
     act(() => checkbox()!.click());
     expect(submit.mock.calls[0][0].sendReceipt).toBe("true");
   });
 
   it("explains the public receipt only on public forms", () => {
-    flags.add("form-upgrades");
     mount({ hasEmailQuestion: true });
     expect(text()).not.toContain("who aren't signed in");
     act(() => root.unmount());
@@ -149,7 +128,6 @@ describe("After submitting settings", () => {
   });
 
   it("prompts for an Email question on a public form without one", () => {
-    flags.add("form-upgrades");
     mount({ audience: "Public", hasEmailQuestion: false });
     expect(text()).toContain("Add an Email question so people who aren't signed in get a copy too.");
     expect(text()).not.toContain("short note");

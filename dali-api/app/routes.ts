@@ -948,10 +948,10 @@ export default [
   // — not wired into existing auth flows yet.
   route("api/auth/*", "routes/api.auth.$.ts"),
 
-  // Meeting-note recording: transcript in, notes Markdown out. Behind the
-  // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
+  // Meeting-note recording: transcript in, notes Markdown out. Same provider
+  // gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
-  // Enhance (specs/meeting-notes-model.md §2): same flag/permission/budget as
+  // Enhance (specs/meeting-notes-model.md §2): same permission/budget as
   // Write notes above, merges the model's plan against the note's typed
   // blocks instead of appending a fixed summary.
   route("api/ai/meeting-notes/enhance", "routes/api.ai.meeting-notes.enhance.ts"),

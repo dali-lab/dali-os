@@ -16,7 +16,7 @@ afterEach(() => {
   container.remove()
 })
 
-function openMenu(props: { allowCheckbox?: boolean; allowNewTypes?: boolean } = {}) {
+function openMenu(props: { allowCheckbox?: boolean } = {}) {
   const onAdd = vi.fn()
   container = document.createElement('div')
   document.body.appendChild(container)
@@ -24,7 +24,7 @@ function openMenu(props: { allowCheckbox?: boolean; allowNewTypes?: boolean } = 
   act(() =>
     root.render(
       <MemoryRouter>
-        <AddComponentMenu allowCheckbox allowNewTypes {...props} onAdd={onAdd} />
+        <AddComponentMenu allowCheckbox {...props} onAdd={onAdd} />
       </MemoryRouter>,
     ),
   )
@@ -38,15 +38,10 @@ describe('AddComponentMenu', () => {
     const { onAdd, rows, labels } = openMenu()
     expect(labels).toContain('Short answer')
     expect(labels).toContain('Page break')
+    expect(labels).toContain('Multiple choice')
+    expect(labels).toContain('1 to 5 scale')
     act(() => rows.find((r) => r.textContent === 'Dropdown')!.click())
     expect(onAdd).toHaveBeenCalledWith('select')
-  })
-
-  it('hides flagged types when the flag is off', () => {
-    const { labels } = openMenu({ allowNewTypes: false })
-    expect(labels).not.toContain('Multiple choice')
-    expect(labels).not.toContain('1 to 5 scale')
-    expect(labels).toContain('Dropdown')
   })
 
   it('hides checkboxes on forms that disallow them', () => {

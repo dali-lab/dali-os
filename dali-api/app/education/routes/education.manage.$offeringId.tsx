@@ -1099,7 +1099,7 @@ export default function ManageOffering() {
           <button
             key={t.key}
             type="button"
-            onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
+            onClick={() => setSearchParams({ tab: t.key }, { replace: true, preventScrollReset: true })}
             style={
               tab === t.key
                 ? { borderBottomColor: "var(--color-os-accent)" }

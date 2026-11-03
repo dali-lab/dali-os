@@ -5,10 +5,8 @@ import { cn } from '~/lib/cn'
 import { collapseMiddle } from '~/lib/collapse-middle'
 import { Menu } from "~/components/ui/floating";
 import { OS_MENU_ITEM_CLASS } from "~/components/ui/floating/styles";
-import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { stripAppTitle } from '~/lib/page-title'
 
 export type Crumb = {
@@ -404,10 +402,9 @@ export function resolveTrail(
 export function Breadcrumbs() {
   const matches = useMatches()
   const { pathname, search } = useLocation()
-  const favoritesBar = useFeatureFlag('favorites-bar')
   const trail = resolveTrail(matches as MatchLike[], pathname, search)
   if (!trail) return null
-  const { crumbs, action, favoriteRoute } = trail
+  const { crumbs, action } = trail
 
   // Home / single-segment pages get no trail (but still show a page action).
   if (crumbs.length <= 1) {
@@ -422,7 +419,6 @@ export function Breadcrumbs() {
           className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
         >
           {trailEntries(crumbs).map((c, i, entries) => {
-            const leaf = i === entries.length - 1
             if (Array.isArray(c)) {
               return (
                 <span key={i} className="flex items-center gap-1">
@@ -444,7 +440,6 @@ export function Breadcrumbs() {
                 ) : (
                   <span className="text-foreground font-medium">{c.label}</span>
                 )}
-                {favoriteRoute && leaf && !favoritesBar && <FavoriteRouteButton inline />}
               </span>
             )
           })}

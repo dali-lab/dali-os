@@ -8,11 +8,12 @@ import {
   directoryRowCells,
   directoryRowHref,
   filterDirectoryRows,
-  isDirectorySort,
+  directorySortFromParams,
   nextDirectorySort,
   orgInitials,
   partnerDirectoryCsvRows,
   sortDirectoryRows,
+  writeDirectorySortParams,
 } from "../partner-directory";
 import type {
   PartnerContactDirectoryRow,
@@ -300,12 +301,22 @@ describe("nextDirectorySort", () => {
   });
 });
 
-describe("isDirectorySort", () => {
-  it("accepts valid sorts and rejects junk", () => {
-    expect(isDirectorySort({ key: "name", dir: "asc" })).toBe(true);
-    expect(isDirectorySort({ key: "size", dir: "asc" })).toBe(false);
-    expect(isDirectorySort(null)).toBe(false);
-    expect(isDirectorySort("name")).toBe(false);
+describe("directory sort params", () => {
+  const params = (s: string) => new URLSearchParams(s);
+
+  it("defaults to most recent activity when the URL names no valid sort", () => {
+    expect(directorySortFromParams(params(""))).toEqual(DEFAULT_DIRECTORY_SORT);
+    expect(directorySortFromParams(params("sort=size&dir=asc"))).toEqual(DEFAULT_DIRECTORY_SORT);
+  });
+
+  it("reads a valid sort", () => {
+    expect(directorySortFromParams(params("sort=name&dir=desc"))).toEqual({ key: "name", dir: "desc" });
+  });
+
+  it("writes a sort and leaves the default out of the URL", () => {
+    const named = writeDirectorySortParams(params("q=acme"), { key: "name", dir: "asc" });
+    expect(named.toString()).toBe("q=acme&sort=name&dir=asc");
+    expect(writeDirectorySortParams(named, DEFAULT_DIRECTORY_SORT).toString()).toBe("q=acme");
   });
 });
 

@@ -25,6 +25,7 @@ import {
   clearFilterColumn,
   columnResponses,
   filterValues,
+  hasFilterParams,
   matchesFilters,
   readFilterParams,
   toggleFilterValue,
@@ -45,7 +46,8 @@ export type FilterColumn = {
 
 // Filter state for a board plus the row predicate to hand useFilteredList
 // (put `active` in its `deps`). With inUrl the filters live in `f.*` search
-// params, so the view survives reload and the back button.
+// params, so the view survives reload and the back button; `initial` applies
+// while the URL says nothing about filters.
 export function useColumnFilters(
   columns: { key: string }[],
   initial: ColumnFilter[] = [],
@@ -53,17 +55,21 @@ export function useColumnFilters(
 ) {
   const [localFilters, setLocalFilters] = useState<ColumnFilter[]>(initial);
   const [searchParams, setSearchParams] = useSearchParams();
-  const urlFilters = useMemo(() => readFilterParams(searchParams), [searchParams]);
-  const filters = inUrl ? urlFilters : localFilters;
+  const urlFilters = useMemo(
+    () => (hasFilterParams(searchParams) ? readFilterParams(searchParams) : null),
+    [searchParams],
+  );
+  const filters = inUrl ? (urlFilters ?? initial) : localFilters;
+  const hasDefaults = initial.length > 0;
   const setFilters = useCallback(
     (next: ColumnFilter[]) => {
       if (!inUrl) return setLocalFilters(next);
-      setSearchParams((prev) => writeFilterParams(prev, next), {
+      setSearchParams((prev) => writeFilterParams(prev, next, { markEmpty: hasDefaults }), {
         replace: true,
         preventScrollReset: true,
       });
     },
-    [inUrl, setSearchParams],
+    [inUrl, hasDefaults, setSearchParams],
   );
   const active = useMemo(
     () => applicableFilters(filters, columns.map((c) => c.key)),

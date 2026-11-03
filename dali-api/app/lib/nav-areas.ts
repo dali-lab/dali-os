@@ -431,7 +431,7 @@ function areasForViewer(
 export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/rooms", icon: DoorOpen };
 
 // Both area sets at once. isAreaSubtabPath and the icon map are read from places
-// with no flag context — the favorites star (FavoriteRouteButton), the
+// with no flag context — the topbar favorites star, the
 // favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side. Both
 // the legacy (NAV_AREAS) and current (areasFor) regrouped sets are included so a
 // favorite saved under the old nav still resolves its area and icon.
@@ -443,7 +443,7 @@ const ALL_AREAS: NavArea[] = [
 // These matchers are handed a live URL, not a bare pathname: in tab mode the
 // sidebar tracks the focused tab, whose url keeps its query string (layout.tsx
 // cleanUrl), and favorites are stored as `pathname + search`
-// (FavoriteRouteButton). An area and its sub-tab are a function of the path
+// (the topbar star). An area and its sub-tab are a function of the path
 // alone, so trim the query/hash before matching — otherwise
 // /projects/staffing?term=25F matches no sub-tab and drops the sidebar back to
 // the bare area.

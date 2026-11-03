@@ -42,7 +42,6 @@ export const CORE_CLUSTERS: NavCluster[] = [
         to: "/core/communications/listserv",
         icon: Mails,
         description: "Submit emails for the campus listserv. The outreach lead reviews and sends them.",
-        flag: "listserv",
       },
       {
         key: "banners",

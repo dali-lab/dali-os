@@ -5,8 +5,6 @@ import type { Route } from "./+types/events.check-in.$eventId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";
 import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 import { formatSessionWhen } from "~/lib/display";
@@ -33,11 +31,6 @@ const KIND_LABELS: Record<string, string> = {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("application-events", auth.user.sub, roles, request))) {
-    throw new Response("Not found", { status: 404 });
-  }
 
   const event = await prisma.hiringEvent.findUnique({
     where: { id: params.eventId! },

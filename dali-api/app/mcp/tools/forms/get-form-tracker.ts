@@ -1,10 +1,9 @@
 // MCP tool: get_form_tracker — who is expected to respond and who hasn't.
-// Scope: mcp:read; edit access on the form, behind form-upgrades.
+// Scope: mcp:read; edit access on the form.
 
 import { canBuildForm } from "~/forms/lib/form-access.server";
 import { loadTrackerList } from "~/forms/lib/form-tracker.server";
 import { McpForbiddenError, type McpCtx, type McpTool } from "../../registry";
-import { requireFormUpgrades } from "./require-form-upgrades";
 
 export const GET_FORM_TRACKER_TOOL = {
   name: "get_form_tracker",
@@ -30,7 +29,6 @@ export async function runGetFormTracker(ctx: McpCtx, args: Args) {
   if (!(await canBuildForm(ctx.user.id, args.formId))) {
     throw new McpForbiddenError("You do not have edit access to this form");
   }
-  await requireFormUpgrades(ctx);
 
   const list = await loadTrackerList(args.formId);
   return {

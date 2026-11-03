@@ -203,7 +203,7 @@ export const DEFAULT_FILTERS: PartnerFilters = {
   showRejectedPastTerms: false,
 };
 
-/** Per-user board display preferences, edited in Partner settings. */
+/** Board display options, edited in Partner settings and kept in the URL. */
 export type PartnerBoardPrefs = {
   sort: PartnerCardSort;
   showPaused: boolean;
@@ -216,14 +216,26 @@ export const DEFAULT_BOARD_PREFS: PartnerBoardPrefs = {
   showRejectedPastTerms: false,
 };
 
-export function isBoardPrefs(v: unknown): v is PartnerBoardPrefs {
-  if (!v || typeof v !== "object") return false;
-  const o = v as Record<string, unknown>;
-  return (
-    isCardSort(o.sort) &&
-    typeof o.showPaused === "boolean" &&
-    typeof o.showRejectedPastTerms === "boolean"
-  );
+// In the URL only where they differ from the defaults: `sort=<card sort>`,
+// `paused=hide`, `rejected=show`.
+export function boardPrefsFromParams(params: URLSearchParams): PartnerBoardPrefs {
+  const sort = params.get("sort");
+  return {
+    sort: isCardSort(sort) ? sort : DEFAULT_BOARD_PREFS.sort,
+    showPaused: params.get("paused") !== "hide",
+    showRejectedPastTerms: params.get("rejected") === "show",
+  };
+}
+
+export function writeBoardPrefsParams(prev: URLSearchParams, prefs: PartnerBoardPrefs): URLSearchParams {
+  const params = new URLSearchParams(prev);
+  if (prefs.sort === DEFAULT_BOARD_PREFS.sort) params.delete("sort");
+  else params.set("sort", prefs.sort);
+  if (prefs.showPaused) params.delete("paused");
+  else params.set("paused", "hide");
+  if (prefs.showRejectedPastTerms) params.set("rejected", "show");
+  else params.delete("rejected");
+  return params;
 }
 
 export function partnerFiltersFromColumns(

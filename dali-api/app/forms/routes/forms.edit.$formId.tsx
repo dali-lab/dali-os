@@ -24,17 +24,11 @@ import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   loadTrackerCounts,
   loadTrackerList,
   sendFormReminder,
 } from "~/forms/lib/form-tracker.server";
-
-async function trackerEnabled(userId: string, request: Request) {
-  return isFeatureEnabled("form-upgrades", userId, await getUserRoles(userId, request), request);
-}
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
@@ -99,8 +93,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  const trackerOn = await trackerEnabled(auth.user.sub, request);
-  if (trackerOn && url.searchParams.get("tracker") === "list") {
+  if (url.searchParams.get("tracker") === "list") {
     return Response.json({ list: await loadTrackerList(params.formId) });
   }
 
@@ -132,7 +125,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         ) ?? form.versions[form.versions.length - 1])
       : undefined;
   const summaryActive =
-    trackerOn && resultsVersion != null && url.searchParams.get("show") !== "responses";
+    resultsVersion != null && url.searchParams.get("show") !== "responses";
   const summary =
     summaryActive && resultsVersion
       ? await loadVersionSummary(form.id, resultsVersion, {
@@ -146,8 +139,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slot: url.searchParams.get("slot") ?? "",
       })
     : null;
-  const tracker =
-    trackerOn && resultsVersion ? await loadTrackerCounts(params.formId) : null;
+  const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;
 
   return {
     results,
@@ -196,14 +188,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   if (intent === "delete-form-response") {
-    const flagOn = await isFeatureEnabled(
-      "form-upgrades",
-      auth.user.sub,
-      await getUserRoles(auth.user.sub, request),
-      request,
-    );
     const submissionId = formData.get("submissionId");
-    if (!flagOn || typeof submissionId !== "string" || !submissionId) {
+    if (typeof submissionId !== "string" || !submissionId) {
       return Response.json({ error: "Invalid input" }, { status: 400 });
     }
     const deleted = await deleteFormResponse({
@@ -219,7 +205,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "send-form-reminder") {
     const message = formData.get("message");
-    if (!(await trackerEnabled(auth.user.sub, request)) || typeof message !== "string") {
+    if (typeof message !== "string") {
       return Response.json({ error: "Invalid input" }, { status: 400 });
     }
     const sent = await sendFormReminder({

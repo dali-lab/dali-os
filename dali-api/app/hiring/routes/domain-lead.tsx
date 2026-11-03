@@ -1583,7 +1583,7 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
       if (!value) sp.delete(key);
       else sp.set(key, value);
       return sp;
-    }, { preventScrollReset: true });
+    }, { replace: true, preventScrollReset: true });
   };
   const setFilter = (next: "all" | "finalize") => updateParam("app_filter", next === "all" ? null : next);
   const setQuery = (next: string) => updateParam("q", next.trim() === "" ? null : next);

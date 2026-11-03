@@ -98,12 +98,12 @@ export function useLiveSession(): LiveSession | null {
 }
 
 /** Refreshes once per page load, for whichever surface mounts first. */
-export function useLiveSessionBoot(enabled: boolean) {
+export function useLiveSessionBoot() {
   useEffect(() => {
-    if (!enabled || bootRefreshed) return;
+    if (bootRefreshed) return;
     bootRefreshed = true;
     void refreshLiveSession();
-  }, [enabled]);
+  }, []);
 }
 
 function currentPage() {

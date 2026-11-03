@@ -1,27 +1,27 @@
-import { useEffect, useMemo, useState } from "react";
-import { usePersistedState } from "~/hooks/usePersistedState";
+import { useMemo, useState } from "react";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   applicationColumns,
   visibleSort,
-  DEFAULT_SORT,
-  EMPTY_FILTERS,
+  CYCLE_SCOPED_PARAMS,
   ENGAGEMENT_FILTERS,
-  withFilterDefaults,
-  isApplicationFilters,
-  isApplicationSort,
+  filtersFromParams,
   sortApplications,
+  sortFromParams,
+  writeViewParams,
   type ApplicationFilters,
   type ApplicationSort,
 } from "~/hiring/lib/application-filters";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
 import { SlidersHorizontal } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/applications";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db.server";
 import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { Popover, Select } from "~/components/ui/floating";
@@ -62,6 +62,11 @@ export const meta: Route.MetaFunction = () => [
 //   • Reviewers: only the domains they're a CycleReviewer for, and only the
 //     cycles they're assigned on.
 // Read-only — rows link to the read-only detail page.
+// Search, filters and sort run in the browser; only the cycle scopes the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["cycle"]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -78,7 +83,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
   const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
-  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, roles, request);
 
   // Hard gate: a user with no hiring role at all (not Core/Admin/DomainLead and
   // a reviewer/interviewer on no cycle) has no business here — send them home
@@ -275,24 +279,20 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: { applicantUserId: true },
             distinct: ["applicantUserId"],
           }),
-          applicationEventsEnabled
-            ? prisma.hiringEventAttendance.findMany({
-                where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
-                select: { userId: true, eventId: true },
-              })
-            : Promise.resolve([]),
+          prisma.hiringEventAttendance.findMany({
+            where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
+            select: { userId: true, eventId: true },
+          }),
         ])
       : Promise.resolve([[], new Map<string, EngagementSummary>(), [], []] as const),
   ]);
-  const eventOptions = applicationEventsEnabled
-    ? (
-        await prisma.hiringEvent.findMany({
-          where: { applicationCycleId: selected.id },
-          orderBy: { startsAt: "asc" },
-          select: { id: true, title: true, startsAt: true },
-        })
-      ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }))
-    : [];
+  const eventOptions = (
+    await prisma.hiringEvent.findMany({
+      where: { applicationCycleId: selected.id },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, title: true, startsAt: true },
+    })
+  ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }));
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
   const attendedEventIdsByUser = new Map<string, string[]>();
@@ -386,45 +386,21 @@ export default function ApplicationsDatabase() {
   const { pageTitle, panel } = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCycleId = data.gate === "ok" ? data.selectedCycleId : null;
-  // Filters are remembered per cycle so opening an applicant and coming back
-  // (or returning days later) lands on the same view. An empty list means
-  // "all"; a cycle with nothing stored starts clean.
-  const [filters, setFilters] = usePersistedState<ApplicationFilters>(
-    `dali:applications:filters:${selectedCycleId ?? "none"}`,
-    EMPTY_FILTERS,
-    isApplicationFilters,
-  );
-  const { domainIds, statuses, stage, engagement, eventIds, pieIncludesInProgress, query } =
-    withFilterDefaults(filters);
-  const patch = (next: Partial<ApplicationFilters>) => setFilters((prev) => ({ ...prev, ...next }));
+  // Opening an applicant and coming back (or returning days later from the
+  // sidebar) lands on the same cycle and view.
+  useRememberedSearch("dali:applications:view");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
+  const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
+  const { domainIds, statuses, stage, engagement, eventIds, pieIncludesInProgress } = filters;
+  const patch = (next: Partial<ApplicationFilters> & { sort?: ApplicationSort }) =>
+    setSearchParams((prev) => writeViewParams(prev, next), {
+      replace: true,
+      preventScrollReset: true,
+    });
   const setDomainIds = (f: (prev: string[]) => string[]) => patch({ domainIds: f(domainIds) });
   const setStatuses = (f: (prev: string[]) => string[]) => patch({ statuses: f(statuses) });
   const setStage = (next: string | null | ((prev: string | null) => string | null)) =>
     patch({ stage: typeof next === "function" ? next(stage) : next });
-  const setQuery = (next: string) => patch({ query: next });
-
-  // The last cycle viewed is remembered too: landing on the page without
-  // ?cycle= reopens it instead of the newest cycle.
-  const [lastCycleId, setLastCycleId] = usePersistedState<string | null>(
-    "dali:applications:cycle",
-    null,
-    (v): v is string | null => v === null || typeof v === "string",
-  );
-  const cycleIds = data.gate === "ok" ? data.cycles.map((c) => c.id) : [];
-  useEffect(() => {
-    if (!selectedCycleId) return;
-    if (searchParams.get("cycle")) {
-      if (lastCycleId !== selectedCycleId) setLastCycleId(selectedCycleId);
-      return;
-    }
-    if (lastCycleId && lastCycleId !== selectedCycleId && cycleIds.includes(lastCycleId)) {
-      const next = new URLSearchParams(searchParams);
-      next.set("cycle", lastCycleId);
-      setSearchParams(next, { replace: true });
-    }
-    // Runs when the cycle or the stored preference changes, not on every param edit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCycleId, lastCycleId]);
 
   const rows = data.gate === "ok" ? data.rows : [];
   // A remembered domain that this viewer can no longer see (reassigned, or a
@@ -451,11 +427,8 @@ export default function ApplicationsDatabase() {
       return true;
     });
   }, [rows, activeDomainIds, statuses, engagement, activeEventIds, query]);
-  const [sort, setSort] = usePersistedState<ApplicationSort>(
-    "dali:applications:sort",
-    DEFAULT_SORT,
-    isApplicationSort,
-  );
+  const sort = sortFromParams(searchParams);
+  const setSort = (next: ApplicationSort) => patch({ sort: next });
   const columns = applicationColumns(data.gate === "ok" ? data.selectedCycleStatus : "");
   const activeSort = visibleSort(sort, columns);
   const filteredRows = useMemo(
@@ -518,9 +491,9 @@ export default function ApplicationsDatabase() {
           ariaLabel="Cycle"
           value={data.selectedCycleId}
           onChange={(cycleId) => {
-            setLastCycleId(cycleId);
             const next = new URLSearchParams(searchParams);
             next.set("cycle", cycleId);
+            for (const key of CYCLE_SCOPED_PARAMS) next.delete(key);
             setSearchParams(next);
           }}
           options={data.cycles.map((c) => ({ value: c.id, label: `${c.name} · ${c.status}` }))}
@@ -675,7 +648,7 @@ export default function ApplicationsDatabase() {
             columns={columns}
             activeSort={activeSort}
             onSort={setSort}
-            resetKey={JSON.stringify([selectedCycleId, filters, activeSort])}
+            resetKey={JSON.stringify([selectedCycleId, filters, query, activeSort])}
           />
         )}
       </div>
