@@ -464,11 +464,9 @@ export async function sendReassignmentEmails(
       }
     }
 
-    // REQUEST(update) to everyone STILL on the interview: applicant +
-    // unchanged interviewers + the newly-added interviewer. Same SEQUENCE
-    // for all so unchanged participants' calendars accept the update and
-    // re-render the guest list (departed interviewer removed). The new
-    // interviewer's calendar treats this UID as a fresh event and adds it.
+    // The applicant's own event lists only them as a guest and its time and
+    // place don't change, so a reassignment is invisible to them and they get
+    // no email. Later reschedules bump SEQUENCE past this one regardless.
     //
     // getInterviewerRecipients reads InterviewAssignment.status="Active",
     // which the reassign endpoint has already updated by the time we run:
@@ -496,29 +494,10 @@ export async function sendReassignmentEmails(
       organizer: ORGANIZER,
       sequence,
     } as const;
-    const applicantIcs = buildInviteIcs({ ...updateCommon, attendees: applicantAttendee });
     const interviewerIcs = buildInviteIcs({
       ...updateCommon,
       attendees: [...applicantAttendee, ...interviewerAttendees],
     });
-
-    if (applicant) {
-      const rendered = await renderSlot(
-        "InterviewConfirmedApplicant",
-        { firstName: applicant.firstName, ...baseVars },
-      );
-      if (rendered) {
-        enqueues.push(enqueueOutbound({
-          channel: "email",
-          purpose: "Hiring",
-          target: applicant.email,
-          subject: rendered.subject,
-          bodyHtml: rendered.html,
-          ics: applicantIcs,
-          eventType: "hiring.interview.reassignment",
-        }).then((r) => r.id));
-      }
-    }
 
     for (const interviewer of currentInterviewers) {
       const vars = { firstName: interviewer.firstName, ...baseVars };
