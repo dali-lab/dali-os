@@ -3,7 +3,6 @@ import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "
 import QRCode from "qrcode";
 import { pageOpenHref } from "~/lib/page-href";
 import { Shapes, Trash2, UserCheck } from "lucide-react";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -728,11 +727,10 @@ function DocumentPage() {
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
-  const recordingEnabled = useFeatureFlag("ai-meeting-notes");
   const recordingAllowed = attendance?.recordingPolicy !== "Disabled";
   const hasTranscriptParam = Boolean(searchParams.get("transcript"));
   const [recordAutoOpen, setRecordAutoOpen] = useState(searchParams.get("record") === "1");
-  const recordingMountEnabled = recordingEnabled && recordingAllowed && (canEdit || hasTranscriptParam);
+  const recordingMountEnabled = recordingAllowed && (canEdit || hasTranscriptParam);
   // DocumentEditor is the only component that measures the ≥ 1150px check;
   // the top-bar Record button needs it too, to answer a live recording with
   // a Popover instead of toggling the rail on a narrow canvas
@@ -797,7 +795,6 @@ function DocumentPage() {
             canEdit={canEdit}
             canComment={canComment}
             canManageAccess={canManageAccess}
-            favorited={favorited}
             workspaceType={workspaceType}
             workspaceId={workspaceId}
             tags={tags}
@@ -857,13 +854,12 @@ function DocumentPage() {
               {rec && <EnhanceBlockActions rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
               {rec && <ActionItemChips rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
               {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
-              {attendance && recordingEnabled && recordingAllowed && (
+              {attendance && recordingAllowed && (
                 <RecordPromptBanner
                   meetingId={attendance.meetingId}
                   occurrenceStart={attendance.occurrenceStart}
                   windowEndIso={attendance.windowEndIso}
                   canEdit={canEdit}
-                  recordingEnabled={recordingEnabled}
                   recordPromptEnabled={attendance.recordPromptEnabled}
                   hasActiveRecording={hasActiveRecording}
                   canDontSuggest={attendance.canDontSuggestRecording}

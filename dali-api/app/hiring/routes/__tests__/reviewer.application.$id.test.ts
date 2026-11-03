@@ -11,7 +11,6 @@ vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
   applicationBlindLabel: vi.fn(),
 }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn(async () => false) }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({
   getApplicantEmailEngagement: vi.fn(async () => null),
 }));
@@ -25,8 +24,7 @@ vi.mock("~/lib/user-pages.server", () => ({ recordRouteVisit: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { hasCycleAccess, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { hasCycleAccess } from "~/lib/roles";
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
 import { logAuditEvent } from "~/lib/audit";
 import { logApplicationView } from "~/hiring/lib/application-view-audit.server";
@@ -125,12 +123,6 @@ beforeEach(() => {
   } as any);
   vi.mocked(hasCycleAccess).mockResolvedValue(true);
   vi.mocked(requirePageSignedOrRedirect).mockResolvedValue(null);
-  vi.mocked(getUserRoles).mockResolvedValue({
-    isCore: false,
-    isAdmin: false,
-    isDomainLead: false,
-    isInterviewer: false,
-  } as any);
 });
 
 describe("reviewer.application.$id loader — domain scoping", () => {
@@ -524,15 +516,7 @@ describe("reviewer.application.$id loader — application events engagement", ()
     ]);
   });
 
-  it("defaults to an empty list and skips the lookup when the flag is off", async () => {
-    const result: any = await callLoader();
-
-    expect(getHiringEventEngagement).not.toHaveBeenCalled();
-    expect(result.hiringEventEngagement).toEqual([]);
-  });
-
-  it("fetches the applicant's event attendance when the flag is on", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+  it("fetches the applicant's event attendance", async () => {
     vi.mocked(getHiringEventEngagement).mockResolvedValue([
       {
         eventId: "evt-1",

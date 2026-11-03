@@ -1,7 +1,6 @@
-import { expect, setFeatureFlag, test } from './lib/demo';
+import { expect, test } from './lib/demo';
 
 test('feature requests, mentions and Slack-style reactions', async ({ page, stage, loginAs }) => {
-  await setFeatureFlag('os-feedback', true);
   await loginAs({ daliEmail: 'jordan.taylor@dali.dartmouth.edu' });
   await expect(async () => {
     await page.goto('/feedback');

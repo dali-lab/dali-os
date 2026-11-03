@@ -21,7 +21,6 @@ import type { Route } from "./+types/applications";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db.server";
 import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { Popover, Select } from "~/components/ui/floating";
@@ -78,7 +77,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
   const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
-  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, roles, request);
 
   // Hard gate: a user with no hiring role at all (not Core/Admin/DomainLead and
   // a reviewer/interviewer on no cycle) has no business here — send them home
@@ -275,24 +273,20 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: { applicantUserId: true },
             distinct: ["applicantUserId"],
           }),
-          applicationEventsEnabled
-            ? prisma.hiringEventAttendance.findMany({
-                where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
-                select: { userId: true, eventId: true },
-              })
-            : Promise.resolve([]),
+          prisma.hiringEventAttendance.findMany({
+            where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
+            select: { userId: true, eventId: true },
+          }),
         ])
       : Promise.resolve([[], new Map<string, EngagementSummary>(), [], []] as const),
   ]);
-  const eventOptions = applicationEventsEnabled
-    ? (
-        await prisma.hiringEvent.findMany({
-          where: { applicationCycleId: selected.id },
-          orderBy: { startsAt: "asc" },
-          select: { id: true, title: true, startsAt: true },
-        })
-      ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }))
-    : [];
+  const eventOptions = (
+    await prisma.hiringEvent.findMany({
+      where: { applicationCycleId: selected.id },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, title: true, startsAt: true },
+    })
+  ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }));
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
   const attendedEventIdsByUser = new Map<string, string[]>();

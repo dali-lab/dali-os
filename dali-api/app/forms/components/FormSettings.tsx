@@ -8,7 +8,6 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
@@ -171,11 +170,6 @@ function FormSettingsFields({
   const canEdit = pendingSettings
     ? pending!.get("allowResponseEdit") === "true"
     : allowResponseEdit;
-  const upgrades = useFeatureFlag("form-upgrades");
-  const editSettingOffered = upgrades || allowResponseEdit;
-  const remindOffered = upgrades || remindBeforeClose;
-  const afterSubmittingOffered =
-    upgrades || sendReceipt || !isEmptyBlocks(confirmationMessage);
   const receipt = pendingSettings
     ? pending!.get("sendReceipt") === "true"
     : sendReceipt;
@@ -225,10 +219,10 @@ function FormSettingsFields({
         id: formId,
         oneResponsePerMember: String(nextOneResponse),
         allowResponseEdit: String(nextOneResponse && nextCanEdit),
-        ...(remindOffered ? { remindBeforeClose: String(nextRemind) } : {}),
+        remindBeforeClose: String(nextRemind),
         notifyOnSubmission: String(nextNotify),
         listed: String(nextListed),
-        ...(afterSubmittingOffered ? { sendReceipt: String(receipt) } : {}),
+        sendReceipt: String(receipt),
         ...extra,
       },
       { method: "post" },
@@ -256,7 +250,7 @@ function FormSettingsFields({
           onChange={(e) => saveSettings(e.target.checked, notify, isListed)}
           label="One response per member"
         />
-        {oneResponse && editSettingOffered && (
+        {oneResponse && (
           <div className="pl-[26px]">
             <Checkbox
               checked={canEdit}
@@ -297,21 +291,19 @@ function FormSettingsFields({
             ariaLabel="Closes at"
           />
         </label>
-        {remindOffered && (
-          <div className="flex flex-col gap-1">
-            <Checkbox
-              checked={remind && hasCloseTime}
-              disabled={!hasCloseTime}
-              onChange={(e) =>
-                saveSettings(oneResponse, notify, isListed, canEdit, e.target.checked)
-              }
-              label="Remind people 1 day before closing"
-            />
-            {!hasCloseTime && (
-              <p className="pl-[26px] text-xs text-os-grey">Set a close time to use this.</p>
-            )}
-          </div>
-        )}
+        <div className="flex flex-col gap-1">
+          <Checkbox
+            checked={remind && hasCloseTime}
+            disabled={!hasCloseTime}
+            onChange={(e) =>
+              saveSettings(oneResponse, notify, isListed, canEdit, e.target.checked)
+            }
+            label="Remind people 1 day before closing"
+          />
+          {!hasCloseTime && (
+            <p className="pl-[26px] text-xs text-os-grey">Set a close time to use this.</p>
+          )}
+        </div>
         {windowDirty && (
           <Button
             variant="secondary"
@@ -324,57 +316,55 @@ function FormSettingsFields({
         )}
       </div>
 
-      {afterSubmittingOffered && (
-        <div className="flex flex-col gap-2">
-          <span className={heading}>After submitting</span>
-          <div className="flex flex-col gap-1">
-            <span id="confirmation-message-label" className="text-xs text-muted-foreground">
-              Confirmation message
-            </span>
-            <DocEditor
-              features="notes"
-              density="compact"
-              initialContent={Array.isArray(confirmationMessage) ? confirmationMessage : undefined}
-              onChange={(blocks) => {
-                setDraftMessage(blocks);
-                setMessageDirty(true);
-              }}
-              placeholder="Shown after someone submits. Add links or next steps."
-              className="rounded-os-item bg-os-well py-2"
-            />
-            {messageDirty && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={saveMessage}
-                className="self-start mt-1"
-              >
-                Save message
-              </Button>
-            )}
-          </div>
-          <Checkbox
-            checked={receipt}
-            onChange={(e) =>
-              saveSettings(oneResponse, notify, isListed, canEdit, remind, {
-                sendReceipt: String(e.target.checked),
-              })
-            }
-            label="Email people a copy of their response"
+      <div className="flex flex-col gap-2">
+        <span className={heading}>After submitting</span>
+        <div className="flex flex-col gap-1">
+          <span id="confirmation-message-label" className="text-xs text-muted-foreground">
+            Confirmation message
+          </span>
+          <DocEditor
+            features="notes"
+            density="compact"
+            initialContent={Array.isArray(confirmationMessage) ? confirmationMessage : undefined}
+            onChange={(blocks) => {
+              setDraftMessage(blocks);
+              setMessageDirty(true);
+            }}
+            placeholder="Shown after someone submits. Add links or next steps."
+            className="rounded-os-item bg-os-well py-2"
           />
-          {isPublic && (
-            <p
-              className={`pl-[26px] text-xs ${
-                hasEmailQuestion ? "text-os-grey" : "text-amber-700"
-              }`}
+          {messageDirty && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={saveMessage}
+              className="self-start mt-1"
             >
-              {hasEmailQuestion
-                ? "People who aren't signed in get a short note at the first Email question, without their answers."
-                : "Add an Email question so people who aren't signed in get a copy too."}
-            </p>
+              Save message
+            </Button>
           )}
         </div>
-      )}
+        <Checkbox
+          checked={receipt}
+          onChange={(e) =>
+            saveSettings(oneResponse, notify, isListed, canEdit, remind, {
+              sendReceipt: String(e.target.checked),
+            })
+          }
+          label="Email people a copy of their response"
+        />
+        {isPublic && (
+          <p
+            className={`pl-[26px] text-xs ${
+              hasEmailQuestion ? "text-os-grey" : "text-amber-700"
+            }`}
+          >
+            {hasEmailQuestion
+              ? "People who aren't signed in get a short note at the first Email question, without their answers."
+              : "Add an Email question so people who aren't signed in get a copy too."}
+          </p>
+        )}
+      </div>
 
       <p className="text-sm text-os-grey">Who can fill this form is set under Share.</p>
 

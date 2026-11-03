@@ -12,7 +12,6 @@ vi.mock("~/components/doc", () => ({
     createElement("div", null, JSON.stringify(initialContent ?? null)),
 }));
 
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { stripPattern } from "~/forms/lib/tile-strip";
 import type { Question } from "~/types";
@@ -40,26 +39,21 @@ const submit = () =>
   });
 
 function mount({
-  blocks,
   questions = [question()],
   iconEmoji = null,
   confirmationMessage,
-}: { blocks: boolean; questions?: Question[]; iconEmoji?: string | null; confirmationMessage?: unknown }) {
+}: { questions?: Question[]; iconEmoji?: string | null; confirmationMessage?: unknown } = {}) {
   act(() => {
     root.render(
-      createElement(
-        FeatureFlagsProvider,
-        { flags: { "form-blocks": blocks }, children: null },
-        createElement(FormPreviewModal, {
-          formId,
-          formName: "Winter Demo Day RSVP",
-          iconEmoji,
-          description: null,
-          confirmationMessage,
-          questions,
-          onClose: () => {},
-        }),
-      ),
+      createElement(FormPreviewModal, {
+        formId,
+        formName: "Winter Demo Day RSVP",
+        iconEmoji,
+        description: null,
+        confirmationMessage,
+        questions,
+        onClose: () => {},
+      }),
     );
   });
 }
@@ -78,9 +72,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("FormPreviewModal with form-blocks on", () => {
+describe("FormPreviewModal", () => {
   it("shows the form's own tile strip and the dali.os wordmark, like the fill page", () => {
-    mount({ blocks: true });
+    mount();
     expect(strip()?.dataset.phase).toBe("idle");
     expect(tileCount()).toBe(stripPattern(formId).filter(Boolean).length);
     expect(text()).toContain("dali.os");
@@ -89,7 +83,7 @@ describe("FormPreviewModal with form-blocks on", () => {
   });
 
   it("folds into one block and shows the confirmation without submitting anything", async () => {
-    mount({ blocks: true });
+    mount();
     await submit();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(strip()?.dataset.phase).toBe("settled");
@@ -98,7 +92,7 @@ describe("FormPreviewModal with form-blocks on", () => {
   });
 
   it("enforces required questions the way respondents will see it", async () => {
-    mount({ blocks: true, questions: [question(true)] });
+    mount({ questions: [question(true)] });
     await submit();
     expect(strip()?.dataset.phase).toBe("idle");
     expect(text()).toContain("\"Your name\" is required.");
@@ -106,25 +100,14 @@ describe("FormPreviewModal with form-blocks on", () => {
 });
 
 describe("FormPreviewModal icon", () => {
-  it.each([true, false])("shows the form's emoji beside its title (form-blocks %s)", (blocks) => {
-    mount({ blocks, iconEmoji: "📋" });
+  it("shows the form's emoji beside its title", () => {
+    mount({ iconEmoji: "📋" });
     expect(text()).toContain("📋");
   });
 });
 
-describe("FormPreviewModal with form-blocks off", () => {
-  it("keeps the plain card with the D badge and no strip", async () => {
-    mount({ blocks: false });
-    expect(strip()).toBeNull();
-    expect(text()).toContain("DALI OS");
-    await submit();
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(text()).toContain("Submitted");
-  });
-});
-
 it("says there are no questions yet for an empty form", () => {
-  mount({ blocks: true, questions: [] });
+  mount({ questions: [] });
   expect(strip()).toBeNull();
   expect(text()).toContain("No questions yet.");
 });
@@ -132,7 +115,6 @@ it("says there are no questions yet for an empty form", () => {
 describe("FormPreviewModal confirmation message", () => {
   it("shows the saved confirmation message on the done screen", async () => {
     mount({
-      blocks: false,
       confirmationMessage: [{ type: "paragraph", content: [{ type: "text", text: "See you at demo day" }] }],
     });
     await submit();

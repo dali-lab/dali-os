@@ -30,7 +30,7 @@ describe("areaForPath", () => {
   });
 
   it("still resolves an area hub that carries a query string", () => {
-    // A favorited hub is stored as `pathname + search` (FavoriteRouteButton),
+    // A favorited hub is stored as `pathname + search` (the topbar star),
     // and in tab mode the sidebar matches the focused tab's url — which keeps
     // its query. Without trimming it, the hub matched no area and the sidebar
     // fell back to the last-visited area (Projects by default).

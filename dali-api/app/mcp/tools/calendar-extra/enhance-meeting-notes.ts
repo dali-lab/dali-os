@@ -17,8 +17,6 @@
 // NEVER log the transcript, the note's text, or the model's raw response.
 
 import { prisma } from "~/lib/db.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
 import { getCollabServer } from "~/collab/server";
@@ -92,10 +90,6 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
   const rec = await prisma.meetingRecording.findUnique({ where: { id: input.recordingId } });
   if (!rec) throw new McpNotFoundError("Recording not found");
 
-  const roles = await getUserRoles(callerId, ctx.request);
-  if (!(await isFeatureEnabled("ai-meeting-notes", callerId, roles, ctx.request))) {
-    throw new McpForbiddenError("Not available");
-  }
   if (!(await canRecordInto(callerId, rec.documentName))) {
     throw new McpForbiddenError("Forbidden");
   }

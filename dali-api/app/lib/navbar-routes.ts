@@ -1,6 +1,6 @@
 // Sidebar destinations and their hub subtabs — not star-able as routes.
-// Documents use FavoriteStar; DB detail pages (project, person, partner org)
-// use FavoriteRouteButton on the breadcrumb.
+// Pages star from the topbar star; DB detail pages (project, person, partner
+// org) opt in with handle.favoriteRoute.
 
 const NAVBAR_PATHS = new Set([
   "/",

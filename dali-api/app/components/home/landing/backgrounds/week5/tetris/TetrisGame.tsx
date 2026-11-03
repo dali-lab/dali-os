@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { useLeaderboard } from '~/hooks/useLeaderboard'
 import Leaderboard from './Leaderboard'
 import TetrisBoard, { NextQueue } from './TetrisBoard'
@@ -18,8 +17,7 @@ type TetrisExtra = { lines: number; level: number }
 export default function TetrisGame({ onPhaseChange }: { onPhaseChange?: (playing: boolean) => void }) {
   const { game, phase, start, quit, togglePause, act } = useTetris()
   const idle = phase === 'idle'
-  const scoresEnabled = useFeatureFlag('landing-leaderboard')
-  const board = useLeaderboard<TetrisExtra>('/api/landing/tetris-scores', scoresEnabled)
+  const board = useLeaderboard<TetrisExtra>('/api/landing/tetris-scores')
   const { submit, clearPersonalBest } = board
 
   // Report the run once it is over, and only once: `phase` is derived from a
@@ -31,10 +29,10 @@ export default function TetrisGame({ onPhaseChange }: { onPhaseChange?: (playing
       reported.current = false
       return
     }
-    if (reported.current || !scoresEnabled) return
+    if (reported.current) return
     reported.current = true
     void submit({ score: game.score, lines: game.lines, level: game.level })
-  }, [phase, scoresEnabled, submit, game])
+  }, [phase, submit, game])
 
   // Let the page know whether to keep showing the decorative board behind us. In an effect
   // rather than in the render body: telling a parent to re-render while this one is still
@@ -66,7 +64,7 @@ export default function TetrisGame({ onPhaseChange }: { onPhaseChange?: (playing
               to another font for them, which shows up as a row of boxes. */}
           <span className="t-play-sub" aria-hidden="true">1 player - arrows to move</span>
         </button>
-        {scoresEnabled && <Leaderboard board={board} limit={5} />}
+        <Leaderboard board={board} limit={5} />
       </div>
     )
   }
@@ -92,12 +90,8 @@ export default function TetrisGame({ onPhaseChange }: { onPhaseChange?: (playing
               {game.score.toLocaleString()}
               <span> points</span>
             </p>
-            {scoresEnabled && (
-              <>
-                {board.personalBest && <p className="t-overlay-best">New personal best</p>}
-                <Leaderboard board={board} />
-              </>
-            )}
+            {board.personalBest && <p className="t-overlay-best">New personal best</p>}
+            <Leaderboard board={board} />
             <div className="t-overlay-actions">
               <button type="button" className="t-button" onClick={playAgain}>
                 Play again

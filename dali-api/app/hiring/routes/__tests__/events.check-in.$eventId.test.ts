@@ -5,13 +5,9 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({
   redirectToLogin: vi.fn(() => new Response(null, { status: 302, headers: { Location: "/login" } })),
 }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader } from "~/hiring/routes/events.check-in.$eventId";
 
 const EVENT_ID = "evt-1";
@@ -54,8 +50,6 @@ beforeEach(() => {
     ok: true,
     user: { sub: USER_ID, email: "applicant@dartmouth.edu", type: "dartmouth" },
   } as never);
-  vi.mocked(getUserRoles).mockResolvedValue({} as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
 });
 
 describe("loader /hiring/events/check-in/:eventId", () => {
@@ -63,12 +57,6 @@ describe("loader /hiring/events/check-in/:eventId", () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
     const res = (await run()) as Response;
     expect(res.status).toBe(302);
-  });
-
-  it("404s when the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    await expect(run()).rejects.toMatchObject({ status: 404 });
-    expect(mockPrisma.hiringEvent.findUnique).not.toHaveBeenCalled();
   });
 
   it("404s when the event doesn't exist", async () => {

@@ -632,7 +632,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "meeting-record-prompts",
     description:
-      "Notifies a meeting's organizer shortly before it starts, offering to record it (bell, desktop banner, Slack DM per preference). Skips when the series opted out, the project disabled recording, the organizer lacks the ai-meeting-notes flag, a recording already exists for the occurrence, or the meeting has no note to record into.",
+      "Notifies a meeting's organizer shortly before it starts, offering to record it (bell, desktop banner, Slack DM per preference). Skips when the series opted out, the project disabled recording, a recording already exists for the occurrence, or the meeting has no note to record into.",
     intervalMinutes: 1,
     settings: [
       {
@@ -649,7 +649,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "meeting-notes-nudge",
     description:
-      "Nudges a meeting recording's owner once its transcript is ready, when it hasn't been inserted into the note. Skips recordings with no scheduled meeting, before the configured delay past the occurrence's end, or for a recorder without the ai-meeting-notes flag.",
+      "Nudges a meeting recording's owner once its transcript is ready, when it hasn't been inserted into the note. Skips recordings with no scheduled meeting, before the configured delay past the occurrence's end.",
     intervalMinutes: 5,
     settings: [
       {

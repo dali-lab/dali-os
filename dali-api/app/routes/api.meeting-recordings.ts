@@ -1,7 +1,7 @@
 // POST /api/meeting-recordings — start a recording for a collaborative
 // document. Creates the MeetingRecording row and returns the dalios:// link
 // the page hands to the desktop app (browsers record in-page instead).
-// Gated on the `ai-meeting-notes` flag and on write access to the document's
+// Gated on write access to the document's
 // collab room (the same check the collab server applies).
 //
 // Also accepts `scheduledMeetingId` (+ optional `occurrenceStart`) in place
@@ -13,8 +13,6 @@ import type { Route } from "./+types/api.meeting-recordings";
 import { requireAuth } from "~/lib/auth";
 import { isAiEnabled } from "~/lib/ai.server";
 import { isTranscriptionEnabled } from "~/lib/transcription/provider";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import { pageDocName } from "~/collab/roomName";
 import { logAuditEvent } from "~/lib/audit";
@@ -49,11 +47,6 @@ export async function action({ request }: Route.ActionArgs) {
   };
   if (occurrenceStartRaw && Number.isNaN(occurrenceStart?.getTime())) {
     return Response.json({ error: "Invalid occurrenceStart" }, { status: 400 });
-  }
-
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request))) {
-    return Response.json({ error: "Not available" }, { status: 403 });
   }
 
   if (scheduledMeetingId) {

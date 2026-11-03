@@ -6,7 +6,6 @@ import { runFormsAction } from "~/forms/lib/forms-data";
 import { canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { sendFormReminder } from "~/forms/lib/form-tracker.server";
-import { requireFormUpgrades } from "./require-form-upgrades";
 import {
   requireForAction,
   McpForbiddenError,
@@ -19,7 +18,7 @@ import {
 export const MANAGE_FORM_TOOL = {
   name: "manage_form",
   description:
-    "Create, version, publish, configure, or delete a form, delete a response, or remind people who haven't responded. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete · delete_response · send_reminder. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access. set_settings changes only the settings you pass. delete_response is permanent and lets the person fill the form again. send_reminder is limited to one per form every 24 hours. allowResponseEdit, remindBeforeClose, sendReceipt, confirmationMessage, delete_response and send_reminder need the form-upgrades flag.",
+    "Create, version, publish, configure, or delete a form, delete a response, or remind people who haven't responded. Actions: create · save_version · save_draft · publish · unpublish · set_window · set_audience · set_settings · rename · move · duplicate · delete · delete_response · send_reminder. Needs edit access on the form (create: on the folder). set_audience sets the form page's general access. set_settings changes only the settings you pass. delete_response is permanent and lets the person fill the form again. send_reminder is limited to one per form every 24 hours.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -201,7 +200,6 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
   if (!allowed) throw new McpForbiddenError("You do not have edit access to this form");
 
   if (args.action === "delete_response") {
-    await requireFormUpgrades(ctx);
     return unwrap(
       await deleteFormResponse({
         formId: args.formId!,
@@ -213,7 +211,6 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
   }
 
   if (args.action === "send_reminder") {
-    await requireFormUpgrades(ctx);
     return unwrap(
       await sendFormReminder({
         formId: args.formId!,
@@ -225,17 +222,16 @@ export async function runManageForm(ctx: McpCtx, args: Args) {
   }
 
   if (args.action === "set_settings") {
-    const upgraded = [
+    const anySetting = [
       args.allowResponseEdit,
       args.remindBeforeClose,
       args.sendReceipt,
       args.confirmationMessage,
+      args.oneResponsePerMember,
+      args.notifyOnSubmission,
+      args.listed,
     ].some((v) => v !== undefined);
-    const anySetting =
-      upgraded ||
-      [args.oneResponsePerMember, args.notifyOnSubmission, args.listed].some((v) => v !== undefined);
     if (!anySetting) throw new McpInvalidError("action 'set_settings' needs at least one setting");
-    if (upgraded) await requireFormUpgrades(ctx);
   }
 
   const intent = ACTION_INTENT[args.action];

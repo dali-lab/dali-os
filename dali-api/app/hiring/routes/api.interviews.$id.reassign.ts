@@ -5,8 +5,8 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { parseJson, idSchema } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-import { reassignCandidates } from "~/hiring/lib/interviewer-pool";
-import { freeUserIdsByInterview } from "~/hiring/lib/scheduling";
+import { canOverrideAvailability, seatEligible } from "~/hiring/lib/interviewer-pool";
+import { availabilityByInterview } from "~/hiring/lib/scheduling";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
@@ -15,6 +15,7 @@ import { logAuditEvent } from "~/lib/audit";
 const ReassignSchema = z.object({
   assignmentId: idSchema,
   newCycleInterviewerId: idSchema,
+  override: z.boolean().optional(),
 });
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -31,7 +32,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const body = await parseJson(request, ReassignSchema);
   if (body instanceof Response) return body;
-  const { assignmentId, newCycleInterviewerId } = body;
+  const { assignmentId, newCycleInterviewerId, override = false } = body;
 
   const assignment = await prisma.interviewAssignment.findUnique({
     where: { id: assignmentId },
@@ -64,20 +65,27 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { interviewId: interview.id, status: "Active" },
     select: { cycleInterviewer: { select: { userId: true } } },
   });
-  const eligible = reassignCandidates(roster, {
+  const eligible = seatEligible(roster, {
     role: assignment.role,
     applicantDomainId: interview.domainApplication.domainId,
     seatedUserIds: seated.map((s) => s.cycleInterviewer.userId),
-    freeUserIds: roster.map((r) => r.userId),
   });
   if (!eligible.some((r) => r.id === newCycleInterviewerId)) {
     return Response.json({ error: "This interviewer can't take this seat" }, { status: 400 });
   }
 
   // Calendars are read here, outside the transaction (see assignInterviewers).
-  const free = await freeUserIdsByInterview(interview.applicationCycleId, interview.interviewRoundId, [interview]);
-  if (!free.get(interview.id)?.includes(newCI.userId)) {
-    return Response.json({ error: "This interviewer isn't free at this time" }, { status: 409 });
+  const availability =
+    (await availabilityByInterview(interview.applicationCycleId, interview.interviewRoundId, [interview]))
+      .get(interview.id)?.[newCI.userId] ?? "no-calendar";
+  if (availability === "booked") {
+    return Response.json(
+      { error: "This interviewer is already assigned to another interview at this time" },
+      { status: 409 },
+    );
+  }
+  if (availability !== "free" && !(override && canOverrideAvailability(availability))) {
+    return Response.json({ error: "This interviewer isn't free at this time", availability }, { status: 409 });
   }
 
   // Conflict check + reassign in one serializable transaction to prevent
@@ -165,6 +173,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       newCycleInterviewerId,
       oldAssignmentId: assignmentId,
       newAssignmentId,
+      ...(availability !== "free" && { calendarOverride: availability }),
     },
     request,
   });

@@ -11,7 +11,6 @@ import type {
 import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { FormTracker } from "~/forms/components/FormTracker";
 import { ExportCsvLink, ResultsViewToggle, setResultsTab } from "~/forms/components/ResultsControls";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
@@ -125,8 +124,6 @@ export function VersionResults({
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
   const [openId, setOpenId] = useState<string | null>(null);
-  const upgrades = useFeatureFlag("form-upgrades");
-  const canDelete = upgrades;
 
   // Filters start over at the first page; every other param (view, version) stays.
   function updateParams(changes: Record<string, string>) {
@@ -165,7 +162,7 @@ export function VersionResults({
   const selected = responses.find((r) => r.id === openId) ?? null;
   const hasSlotColumn = slotOptions.length > 0;
   const trackerLine = tracker && <FormTracker formId={formId} counts={tracker} />;
-  const viewToggle = upgrades && (
+  const viewToggle = (
     <ResultsViewToggle
       value="responses"
       onChange={(tab) =>
@@ -361,7 +358,7 @@ export function VersionResults({
               onClose={() => setOpenId(null)}
             />
             <ResponseDetailBody response={selected} />
-            {canDelete && <ResponseDelete response={selected} />}
+            <ResponseDelete response={selected} />
           </>
         )}
       </Modal>

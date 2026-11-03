@@ -225,30 +225,27 @@ export function LayoutOS({
     window.addEventListener(COPY_PAGE_LINK_EVENT, onCopy)
     return () => window.removeEventListener(COPY_PAGE_LINK_EVENT, onCopy)
   }, [copyCurrentPageLink])
-  const favoritesBar = useFeatureFlag('favorites-bar')
-  const starEnabled = favoritesBar || shellV2
-  const starUrl = starEnabled
-    ? stripHash(cleanTabUrl(!tabless && focusedTabUrl !== null ? focusedTabUrl : location.pathname + location.search))
-    : null
+  const starUrl = stripHash(
+    cleanTabUrl(!tabless && focusedTabUrl !== null ? focusedTabUrl : location.pathname + location.search),
+  )
   // Titles are "<page> · DALI OS"; keep the page part.
   const starLabel =
     (!tabless && focusedTabLabel) ||
     (typeof document !== 'undefined' ? document.title.split(' · ')[0] : '') ||
     starUrl ||
     ''
-  const pageStar = useCurrentPageFavorite(starUrl, starLabel, starEnabled)
+  const pageStar = useCurrentPageFavorite(starUrl, starLabel, true)
   const toggleStarRef = useRef(pageStar)
   toggleStarRef.current = pageStar
 
   useEffect(() => {
-    if (!starEnabled) return
     const onToggle = (e: Event) => {
       e.preventDefault()
       if (toggleStarRef.current.canToggle) void toggleStarRef.current.toggle()
     }
     window.addEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
     return () => window.removeEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
-  }, [starEnabled])
+  }, [])
 
   // Tab mode: the focused tab's frame reports its page guide over the guide
   // bridge, since only that document knows the route's docKey.
@@ -377,7 +374,6 @@ export function LayoutOS({
     community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
   }
-  const feedbackEnabled = useFeatureFlag('os-feedback')
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
@@ -894,7 +890,7 @@ export function LayoutOS({
         ) : (
           <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
             <Star className="h-4 w-4 flex-shrink-0 text-os-accent" aria-hidden />
-            {favoritesBar && onFavoritesChange ? (
+            {onFavoritesChange ? (
               <FavoritesBar
                 favorites={favorites}
                 onChange={onFavoritesChange}
@@ -922,28 +918,26 @@ export function LayoutOS({
 
       <div className="flex flex-shrink-0 items-center gap-3">
         <RecordingPill />
-        {favoritesBar && (
-          <Tooltip
-            content={
-              pageStar.inSidebar
-                ? 'Already in the sidebar'
-                : pageStar.favorited
-                  ? 'Remove this page from favorites'
-                  : 'Add this page to favorites'
-            }
+        <Tooltip
+          content={
+            pageStar.inSidebar
+              ? 'Already in the sidebar'
+              : pageStar.favorited
+                ? 'Remove this page from favorites'
+                : 'Add this page to favorites'
+          }
+        >
+          <button
+            type="button"
+            disabled={!pageStar.canToggle}
+            onClick={() => void pageStar.toggle()}
+            aria-label={pageStar.favorited ? 'Remove this page from favorites' : 'Add this page to favorites'}
+            aria-pressed={pageStar.favorited}
+            className={cn('os-topbar-btn disabled:opacity-40', pageStar.favorited && 'text-os-accent')}
           >
-            <button
-              type="button"
-              disabled={!pageStar.canToggle}
-              onClick={() => void pageStar.toggle()}
-              aria-label={pageStar.favorited ? 'Remove this page from favorites' : 'Add this page to favorites'}
-              aria-pressed={pageStar.favorited}
-              className={cn('os-topbar-btn disabled:opacity-40', pageStar.favorited && 'text-os-accent')}
-            >
-              <Star className={cn('h-5 w-5', pageStar.favorited && 'fill-current')} />
-            </button>
-          </Tooltip>
-        )}
+            <Star className={cn('h-5 w-5', pageStar.favorited && 'fill-current')} />
+          </button>
+        </Tooltip>
         <Tooltip content="Copy link to this page">
           <button
             type="button"
@@ -1274,12 +1268,10 @@ export function LayoutOS({
         </div>
       )}
 
-      {feedbackEnabled && (
-        <FeedbackButton
-          pagePath={path}
-          onOpenFeed={() => openInWorkspace({ url: '/feedback', label: 'Feedback' })}
-        />
-      )}
+      <FeedbackButton
+        pagePath={path}
+        onOpenFeed={() => openInWorkspace({ url: '/feedback', label: 'Feedback' })}
+      />
 
       <CommandPalette
         open={paletteOpen}

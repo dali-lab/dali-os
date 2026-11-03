@@ -65,6 +65,17 @@ export function isQuestionArray(x: unknown): x is Question[] {
   );
 }
 
+// Answers are keyed by question, so a repeated key is never a second
+// question: it's a copy left by concurrent builder edits. Keep the first.
+export function dropRepeatedKeys(questions: Question[]): Question[] {
+  const seen = new Set<string>();
+  return questions.filter((q) => {
+    if (seen.has(q.key)) return false;
+    seen.add(q.key);
+    return true;
+  });
+}
+
 // Parse + validate a version's question set to the same standard "Save as
 // version" enforces (≥1 question, every question labelled, reference sources
 // resolved). Shared by save-version and update-version so an in-place edit is
@@ -84,6 +95,7 @@ export function validateVersionQuestions(
   }
   if (!isQuestionArray(questions) || questions.length === 0)
     return { error: "Add at least one valid question.", status: 400 };
+  questions = dropRepeatedKeys(questions);
   for (const q of questions) {
     if (q.type === "info" && !hasInfoBody(q.data.body))
       return { error: "Every text block needs some text.", status: 400 };
@@ -605,7 +617,7 @@ export async function runFormsAction(
       await prisma.form.update({
         where: { id: input.id },
         data: {
-          draftQuestions: questions as object,
+          draftQuestions: dropRepeatedKeys(questions) as object,
           draftIntro: input.description?.trim() || null,
         },
       });

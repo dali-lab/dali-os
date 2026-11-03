@@ -1,7 +1,7 @@
 // Wire contract between the mobile app and dali-api (/api/mobile/*, /api/meeting-recordings/*).
 // Every route takes `Authorization: Bearer <token>` (device-pairing token) and returns
 // JSON. Errors are `{ error: string }` with a 4xx/5xx status. Dates are ISO strings.
-// All routes 404 `{ error: "Not found" }` when the `mobile-app` feature flag is off for the user.
+// All routes 404 `{ error: "Not found" }` for anyone who is not a lab member.
 
 export type Presence = 'active' | 'away' | 'offline';
 export type TaskStatus = 'Backlog' | 'Todo' | 'InProgress' | 'InReview' | 'Done' | 'Cancelled';

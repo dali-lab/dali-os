@@ -27,7 +27,6 @@ import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth"
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { useDialog } from "~/components/ui/dialog";
@@ -150,7 +149,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const isOrganizerOrCore = auth.user.sub === meeting.organizerId || roles.isCore;
   // Switching every door display to this event is the organizer's or Core's
   // call.
-  const [attendance, projectMember, activeScan, recording, recordingEnabled] = await Promise.all([
+  const [attendance, projectMember, activeScan, recording] = await Promise.all([
     ensureOccurrenceRoster(meeting, occurrence.originalStart).then(() =>
       prisma.meetingAttendance.findMany({
         where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart },
@@ -186,7 +185,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               })
             : null,
       })),
-    isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request),
   ]);
   const { row: activeRecordingRow, liveUser: liveRecordingUser } = recording;
 
@@ -329,7 +327,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       proposedStartIso: p.proposedStart.toISOString(),
       proposerName: fullName(p.proposedBy),
     })),
-    recordingEnabled,
     recordingPolicy: meeting.project?.recordingPolicy ?? "Allowed",
     recordPromptEnabled: meeting.recordPrompt,
     canDontSuggestRecording: auth.user.sub === meeting.organizerId || roles.isCore,
@@ -745,13 +742,12 @@ export default function CalendarMeetingPage() {
     // Full-bleed and left-aligned: the app shell already supplies the page
     // gutters, so this surface only owns its vertical rhythm.
     <div className="flex w-full flex-col items-stretch gap-10 pb-10 text-left">
-      {d.notePageId && d.recordingEnabled && d.recordingPolicy !== "Disabled" && (
+      {d.notePageId && d.recordingPolicy !== "Disabled" && (
         <RecordPromptBanner
           meetingId={d.meetingId}
           occurrenceStart={d.occurrenceStart}
           windowEndIso={d.windowEndIso}
           canEdit={d.canAddNote}
-          recordingEnabled={d.recordingEnabled}
           recordPromptEnabled={d.recordPromptEnabled}
           hasActiveRecording={d.activeRecording !== null}
           canDontSuggest={d.canDontSuggestRecording}
