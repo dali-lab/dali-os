@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useLocation, useSearchParams } from "react-router";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import {
   SIDE_PARAM,
   formatSidePanel,
@@ -76,27 +75,24 @@ export function useKeepSidePanel() {
   }, [location]);
 }
 
-/** Opens a document item in the side panel behind `desktop-tabs`; undefined when the flag is off. */
-export function useOpenBeside(): ((item: { href: string }) => void) | undefined {
-  const enabled = useFeatureFlag("desktop-tabs");
+/** Opens a document item in the side panel. */
+export function useOpenBeside(): (item: { href: string }) => void {
   const { open } = useSidePanel();
-  return useMemo(() => {
-    if (!enabled) return undefined;
-    return (item: { href: string }) => {
+  return useMemo(
+    () => (item: { href: string }) => {
       const target = sidePanelForUrl(item.href);
       if (target) open(target);
-    };
-  }, [enabled, open]);
+    },
+    [open],
+  );
 }
 
 /** Option-clicking any link to a document opens it beside instead of navigating. */
 export function useAltClickOpensBeside() {
-  const enabled = useFeatureFlag("desktop-tabs");
   const { open } = useSidePanel();
   const openRef = useRef(open);
   openRef.current = open;
   useEffect(() => {
-    if (!enabled) return;
     const onClick = (e: MouseEvent) => {
       if (!e.altKey || e.metaKey || e.ctrlKey || e.button !== 0) return;
       const link = e.target instanceof Element ? e.target.closest<HTMLAnchorElement>("a[href]") : null;
@@ -111,5 +107,5 @@ export function useAltClickOpensBeside() {
     };
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
-  }, [enabled]);
+  }, []);
 }

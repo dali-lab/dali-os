@@ -56,8 +56,8 @@ describe("app.css v2 header tokens", () => {
   }
 
   it.each([
-    ["dark", "html[data-v2] .os-shell,\nhtml[data-v2].os-shell {"],
-    ["light", "html.light[data-v2] .os-shell,\nhtml.light[data-v2].os-shell {"],
+    ["dark", "html:root .os-shell,\nhtml:root.os-shell {"],
+    ["light", "html.light:root .os-shell,\nhtml.light:root.os-shell {"],
   ])("defines a header tint for every status in %s", (_mode, selector) => {
     const body = block(selector);
     for (const token of TOKENS) {

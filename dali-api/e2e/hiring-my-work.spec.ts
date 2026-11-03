@@ -1,19 +1,18 @@
 import { test, expect } from './fixtures';
 
 // /hiring is My work: the viewer's reviews, interviews and live delibs mirror.
-// ?embed=1 renders the page without the shell.
 
 test.describe('hiring my work', () => {
   test('a reviewer lands on their review queue', async ({ page, loginAs }) => {
     await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
-    await page.goto('/hiring?embed=1');
+    await page.goto('/hiring');
     await expect(page.getByRole('heading', { name: 'My work', exact: true })).toBeVisible();
     await expect(page.getByText(/^Pending$|assigned applications yet/).first()).toBeVisible({ timeout: 10_000 });
   });
 
   test('old Reviews URL redirects into My work', async ({ page, loginAs }) => {
     await loginAs({ daliEmail: 'reviewer1@dali.dartmouth.edu' });
-    await page.goto('/hiring/reviewer?embed=1');
+    await page.goto('/hiring/reviewer');
     await expect(page).toHaveURL(/\/hiring\?.*view=reviews/);
   });
 

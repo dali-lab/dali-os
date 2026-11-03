@@ -1,14 +1,13 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { redirect, useLoaderData, useLocation, useMatches, useNavigate, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
+import { redirect, useLoaderData, useLocation, useMatches, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
 import { areaForPath, areaInk, areaTint } from '~/lib/nav-areas'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
-import { PageDocProvider, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
+import { PageDocProvider } from '~/components/page-docs/PageDocButton'
 import { useLiveFavorites } from '~/components/favorites-live'
 import { LaunchWelcome } from '~/components/LaunchWelcome'
 import { BannerHost } from '~/components/banners/BannerHost'
-import { workspacePath } from '~/components/workspace-link'
 import { NavPreloader } from '~/components/NavPreloader'
 import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
@@ -16,7 +15,6 @@ import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
 import { getActiveCycles } from '~/hiring/lib/cycles'
 import { resolvePhotoUrl } from '~/lib/photo'
-import { isTablessRequest } from '~/lib/tabless'
 import { PageViewReporter } from '~/components/PageViewReporter'
 import { isFocusRequest } from '~/lib/focus-mode'
 import { isValidTimezone, resolveUserTimeZone } from '~/lib/timezone'
@@ -44,7 +42,6 @@ import { InstructorChrome } from '~/components/InstructorChrome'
 import { timed } from '~/lib/server-timing'
 import { educationPortalTwin } from '~/education/lib/portal-twin'
 import { publicDocRedirectForPath } from '~/lib/public-doc.server'
-import { cleanTabUrl } from '~/lib/page-link'
 import { tabStripHintFromRequest, tabsSnapshotFromRequest } from '~/lib/desktop-tabs-pref'
 import { SidePanelHost } from '~/components/side-panel/SidePanel'
 import type { Route } from './+types/layout'
@@ -238,16 +235,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   const fetchDest = request.headers.get('sec-fetch-dest')
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
-  // Tabless mode: render pages directly in the shell instead of the tabbed
-  // workspace. Cookie-backed so this SSR branch is decided per-request.
-  // Desktop tabs sit on the tabless shell, so the flag always takes it.
-  const desktopTabs = flags['desktop-tabs'] === true
-  const tabless = desktopTabs || isTablessRequest(request)
-  const tabStripHint = desktopTabs && tabStripHintFromRequest(request)
+  const tabStripHint = tabStripHintFromRequest(request)
   const tabsSnapshot = tabStripHint ? tabsSnapshotFromRequest(request) : null
 
-  // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Independent
-  // of tabless; also cookie-backed so there's no flash of the sidebar.
+  // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Cookie-backed
+  // so there's no flash of the sidebar.
   const focus = isFocusRequest(request)
 
   // Per-user display timezone, threaded to every descendant via
@@ -264,7 +256,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed: !!me?.desktopHintDismissedAt }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed: !!me?.desktopHintDismissedAt }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -298,7 +290,7 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabless, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
 
   // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
   // for the education-management routes they're allowed into. Rendered before the
@@ -309,7 +301,7 @@ export default function AppLayoutRoute() {
   if (instructorChrome) {
     return (
       <FeatureFlagsProvider flags={flags}>
-        <PageViewReporter enabled />
+        <PageViewReporter />
         <InstructorChrome
           impersonating={impersonating}
           impersonationAllowsWrites={impersonationWrites}
@@ -323,24 +315,21 @@ export default function AppLayoutRoute() {
   const location = useLocation()
   const navigationType = useNavigationType()
   const matches = useMatches()
-  const navigate = useNavigate()
-  // Two subnav signals: `areaSubnav` (always renders a row, e.g. calendar) and
-  // `areaPills` (the flag-gated in-page pill row). The pill row only exists when
-  // the sidebar redesign is OFF, so its flush top spacing is only reserved then.
   // Mirror the os-shell class to <html> so portals that escape the shell div
-  // keep the palette. In the tab-mode iframe this is the only place that runs it.
+  // keep the palette. The embedded document has no LayoutOS, so this is the
+  // only place that runs it there.
   useOsShellRoot(true)
-  const { fitViewport } = paneFlags(matches, location)
+  const { fitViewport } = paneFlags(matches)
   // Starring a page is a fetcher write, which shouldRevalidate below keeps out
   // of this loader — so the shells read the list through this instead, and a
   // new favorite reaches the header without a reload.
   const [liveFavorites, setLiveFavorites] = useLiveFavorites(favorites)
 
-  // After a client-side navigation inside the workspace iframe, the loader
-  // re-runs via fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` —
-  // and `?embed=1` is stripped from the URL by the navigation. Both server
-  // signals go stale, so we also check on the client: if our window isn't the
-  // top window, we're embedded. Initialized post-mount to avoid a hydration
+  // After a client-side navigation inside an iframe, the loader re-runs via
+  // fetch — which carries `Sec-Fetch-Dest: empty`, not `iframe` — and `?embed=1`
+  // is stripped from the URL by the navigation. Both server signals go stale,
+  // so we also check on the client: if our window isn't the top window, we're
+  // embedded. Initialized post-mount to avoid a hydration
   // mismatch (the initial document load is correctly resolved by the loader).
   const [isClientEmbedded, setIsClientEmbedded] = useState(false)
   useEffect(() => {
@@ -354,75 +343,9 @@ export default function AppLayoutRoute() {
 
   const embedded = isEmbedded || isClientEmbedded || searchParams.get('embed') === '1'
 
-  // When embedded, keep the parent workspace in sync with this iframe on every
-  // in-iframe navigation:
-  //  - `dali:tabNavigated` updates the tab's stored URL (with `embed=1`
-  //    stripped, matching how tabs are stored) so the sidebar highlight tracks
-  //    the current page and a reload restores it. The iframe src is pinned to
-  //    its mount seed, so this never reloads the frame.
-  //  - `dali:setTabLabel` refreshes the tab label from document.title, keyed by
-  //    the iframe's RAW location (still carrying `embed=1` on first load). A
-  //    sidebar-opened section root is stored without `embed`, so its raw URL
-  //    won't match and its friendly sidebar label ("Cycles", "Domain", …) is
-  //    preserved; only a deeper client-side navigation (where `embed` has been
-  //    dropped from the URL) matches and refines the label.
-  // setTimeout gives React Router a tick to write the title from meta.
-  useEffect(() => {
-    if (!embedded) return
-    if (typeof window === 'undefined') return
-
-    const cleanUrl = cleanTabUrl(location)
-
-    window.parent.postMessage(
-      { type: 'dali:tabNavigated', url: cleanUrl },
-      window.location.origin,
-    )
-
-    const id = window.setTimeout(() => {
-      const raw = document.title
-      const label = raw.replace(/\s*·\s*DALI OS\s*$/, '').trim() || raw
-      if (!label) return
-      window.parent.postMessage(
-        {
-          type: 'dali:setTabLabel',
-          url: window.location.pathname + window.location.search,
-          label,
-        },
-        window.location.origin,
-      )
-    }, 50)
-    return () => window.clearTimeout(id)
-  }, [embedded, location.pathname, location.search, location.hash])
-
-  // When embedded, accept `dali:navigate` from the parent TabWorkspace —
-  // that's how the per-tab back/forward arrows drive in-iframe navigation.
-  // Going through react-router's navigate() keeps the embedded layout's
-  // navigation flow consistent (loaders re-run, etc.) and our own
-  // `dali:tabNavigated` post just above is what tells the parent the move
-  // landed (parent recognises it as a back/forward via a pending-op ref).
-  useEffect(() => {
-    if (!embedded) return
-    if (typeof window === 'undefined') return
-    function onMsg(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return
-      const d = e.data
-      if (!d || d.type !== 'dali:navigate' || typeof d.url !== 'string') return
-      // navigate() treats an absolute url as a relative path, so a stored full
-      // url (an older persisted tab) would land on a 404.
-      navigate(workspacePath(d.url, window.location.origin))
-    }
-    window.addEventListener('message', onMsg)
-    return () => window.removeEventListener('message', onMsg)
-  }, [embedded, navigate])
-
-  // Scroll restoration WITHIN an embedded tab. React Router's <ScrollRestoration>
-  // doesn't reliably restore the iframe window's scroll on in-tab back/forward
-  // (the iframe is its own document and RR's key tracking gets lost across the
-  // shell↔iframe boundary), so we persist scrollY per history entry ourselves.
-  // Keyed by location.key (stable per history entry) in sessionStorage, scoped
-  // to this document, so navigating into a nested page and back restores where
-  // you were. Runs in both embedded and standalone documents — harmless either
-  // way, and standalone deep links benefit too.
+  // React Router's <ScrollRestoration> doesn't reliably restore the window's
+  // scroll on back/forward here, so we persist scrollY per history entry
+  // ourselves, keyed by location.key (stable per history entry) in sessionStorage.
   const SCROLL_KEY_PREFIX = "dali:scroll:";
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -465,35 +388,24 @@ export default function AppLayoutRoute() {
     };
   }, [location.key, navigationType]);
 
-  // Where every routed page actually renders — inside a TabWorkspace iframe
-  // (tab mode) or directly in the shell's main column (tabless mode). The
-  // breadcrumb trail lives here either way: it picks up each detail route's
-  // `handle.breadcrumb` for the dynamic leaf crumb.
-  const shellV2 = flags['desktop-tabs'] === true && tabless && !embedded
   const pageContent = (
     <TabKeepAlive>
-      <RoutedPage shellV2={shellV2} />
+      <RoutedPage />
     </TabKeepAlive>
   )
 
-  // Skip the sidebar shell when rendered inside a TabWorkspace iframe. Each
-  // iframe runs this loader, so the flag map is present in every document.
-  // The iframe document has no LayoutOS to set the mode-accent vars, so this
+  // Skip the sidebar shell when embedded (the mobile app's editor WebView loads
+  // `?embed=1`). There is no LayoutOS to set the mode-accent vars, so this
   // shell div states them itself from the page's own mode.
-  const embeddedArea =
-    embedded && flags['desktop-tabs'] === true
-      ? areaForPath(`${location.pathname}${location.search}`, flags)
-      : undefined
+  const embeddedArea = embedded
+    ? areaForPath(`${location.pathname}${location.search}`, flags)
+    : undefined
   if (embedded) {
     return (
       <FeatureFlagsProvider flags={flags}>
-        <PageViewReporter enabled />
+        <PageViewReporter />
         <ActivitiesProvider activities={activeActivities}>
         <PageDocProvider>
-          {/* The shell above this iframe carries the Guide CTA in its top bar,
-              reached over the guide bridge — so the page-row copy stands down
-              here exactly as it does in tabless mode. */}
-          <ShellGuideProvider>
           <div
             className={cn(
               // clip, not hidden: `overflow-x: hidden` turns the wrapper into a
@@ -524,39 +436,31 @@ export default function AppLayoutRoute() {
           >
             {pageContent}
           </div>
-          {/* The shell above shows app-open banners; a tab shows its own page's. */}
           <BannerHost scope="page" />
-          </ShellGuideProvider>
         </PageDocProvider>
         </ActivitiesProvider>
       </FeatureFlagsProvider>
     )
   }
 
-  const tablessChild = tabless ? (
-    <div className={cn('flex-1 overflow-x-clip', fitViewport && 'flex min-h-0 flex-col')}>
-      {flags['desktop-tabs'] ? <SidePanelHost>{pageContent}</SidePanelHost> : pageContent}
-    </div>
-  ) : undefined
-
   return (
     <FeatureFlagsProvider flags={flags}>
-      <PageViewReporter enabled={tabless} />
+      <PageViewReporter />
       <ActivitiesProvider activities={activeActivities}>
-      {/* Above Layout, not inside pageContent: the tabless desktop nav row
-          renders the Guide CTA from the shell, outside the routed page. */}
+      {/* Above Layout, not inside pageContent: the desktop nav row renders the
+          Guide CTA from the shell, outside the routed page. */}
       <PageDocProvider>
         <LayoutOS fitViewport={fitViewport} user={user} photoUrl={photoUrl} isCore={isCore} isAdmin={isAdmin} isDomainLead={isDomainLead} canViewForms={canViewForms} canViewStaffing={canViewStaffing} isInterviewer={isInterviewer} hasHiringAccess={hasHiringAccess} hasActiveHiringAccess={hasActiveHiringAccess} isInstructor={isInstructor} isLabMentor={isLabMentorFlag} isAlumni={isAlumni} isNewMember={isNewMember} favorites={liveFavorites} onFavoritesChange={setLiveFavorites} impersonating={impersonating} impersonationAllowsWrites={impersonationWrites} focusMode={focus} hasUnseenReleaseNotes={hasUnseenReleaseNotes} desktopHintDismissed={desktopHintDismissed} tabStripHint={tabStripHint} tabsSnapshot={tabsSnapshot}>
-          {tablessChild}
+          <div className={cn('flex-1 overflow-x-clip', fitViewport && 'flex min-h-0 flex-col')}>
+            <SidePanelHost>{pageContent}</SidePanelHost>
+          </div>
         </LayoutOS>
       </PageDocProvider>
-      {/* Warms the sidebar's Favorites/Recent destinations once the shell is
-          idle. Mounted here, not in Layout, so it runs under both shells and
-          exactly once per document — the embedded branch returns above, so a
-          workspace iframe never starts a second round of prefetches. */}
+      {/* Mounted here, not in Layout, so it runs once per document; the
+          embedded branch returns above and never starts prefetches. */}
       <NavPreloader favorites={favorites} recents={recents} />
-      <BannerHost scope={tabless ? "all" : "open"} />
-      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} tabless={tabless} />
+      <BannerHost scope="all" />
+      <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>
     </FeatureFlagsProvider>

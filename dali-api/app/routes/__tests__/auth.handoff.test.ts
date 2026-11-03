@@ -18,13 +18,10 @@ vi.mock("~/lib/betterauth-cookie.server", () => ({
 }));
 
 import { loader } from "~/routes/auth.handoff";
-import { TABLESS_COOKIE } from "~/lib/tabless";
 
-function req(cookie?: string, code = "handoff-code") {
+function req(code = "handoff-code") {
   const params = new URLSearchParams({ code });
-  return new Request(`http://localhost/auth/handoff?${params}`, {
-    headers: cookie ? { Cookie: cookie } : {},
-  });
+  return new Request(`http://localhost/auth/handoff?${params}`);
 }
 
 beforeEach(() => {
@@ -34,26 +31,6 @@ beforeEach(() => {
 });
 
 describe("GET /auth/handoff", () => {
-  it("plants no tabless preference — a fresh desktop pairing rides the tabless default", async () => {
-    const res = await loader({ request: req(), params: {}, context: {} } as any);
-    const setCookies = res.headers.getSetCookie
-      ? res.headers.getSetCookie()
-      : [...res.headers.entries()].filter(([k]) => k === "set-cookie").map(([, v]) => v);
-    expect(setCookies.some((c) => c.startsWith(`${TABLESS_COOKIE}=`))).toBe(false);
-  });
-
-  it("leaves a device's existing preference untouched", async () => {
-    const res = await loader({
-      request: req(`${TABLESS_COOKIE}=0`),
-      params: {},
-      context: {},
-    } as any);
-    const setCookies = res.headers.getSetCookie
-      ? res.headers.getSetCookie()
-      : [...res.headers.entries()].filter(([k]) => k === "set-cookie").map(([, v]) => v);
-    expect(setCookies.some((c) => c.startsWith(`${TABLESS_COOKIE}=`))).toBe(false);
-  });
-
   const withNext = (next: string) =>
     new Request(`http://localhost/auth/handoff?${new URLSearchParams({ code: "handoff-code", next })}`);
   const load = (request: Request) => loader({ request, params: {}, context: {} } as any) as Promise<Response>;

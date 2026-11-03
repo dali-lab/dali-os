@@ -40,7 +40,6 @@ describe("interactive chrome uses the os accent", () => {
     "components/settings/CalendarSettingsBlock.tsx",
     "components/doc/schema/mention.tsx",
     "components/NavigationProgress.tsx",
-    "components/TabWorkspace.tsx",
     "routes/attendance.tsx",
     "partners/routes/partner.home.tsx",
   ])("%s uses no brand teal, green or yellow", (file) => {

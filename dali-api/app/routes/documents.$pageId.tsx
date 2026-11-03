@@ -21,7 +21,6 @@ import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { isProjectMember } from "~/lib/roles";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
@@ -361,10 +360,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // The Direction I shell's page bar shows a plain document's place in the
   // Drive; notes already carry theirs in noteLocation.
-  const docLocation =
-    !noteLocation && (await isFeatureEnabled("desktop-tabs", auth.user.sub, roles, request))
-      ? await pageItemLocation(page, auth.user.sub, request)
-      : null;
+  const docLocation = !noteLocation ? await pageItemLocation(page, auth.user.sub, request) : null;
 
   let attendance:
     | {

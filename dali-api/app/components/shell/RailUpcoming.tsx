@@ -4,7 +4,7 @@ import { CORAL_FOLDER } from '~/components/drive/glyphs'
 import { useUserTimeZone } from '~/hooks/useUserTimeZone'
 import { upcomingWhen } from '~/components/shell/rail-model'
 import type { UpcomingMeeting } from '~/lib/upcoming-meetings.server'
-import type { OpenTabRequest } from '~/components/TabWorkspace'
+import type { OpenTabRequest } from '~/lib/desktop-tabs'
 
 export const UPCOMING_REFRESH_MS = 5 * 60_000
 export const UPCOMING_TICK_MS = 30_000

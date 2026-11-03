@@ -1,6 +1,5 @@
 // Onboarding IS the "Welcome to DALI! 👋" profile form, rendered INLINE here —
-// no cross-URL redirect, so the embedded workspace tab's URL (/onboarding)
-// matches its content (avoids the tab-identity race that surfaced other pages).
+// no cross-URL redirect.
 // Submitting the form writes the member's profile, stamps DALIMember.onboardedAt,
 // and clears the onboarding task (see submitMemberForm in public-form.ts).
 // Everything else happens in earlier provisioning (DALI email, Slack invite) or

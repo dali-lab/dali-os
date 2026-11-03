@@ -1,4 +1,4 @@
-// A single app-lifetime store for the tabless back/forward history stack.
+// A single app-lifetime store for the back/forward history stack.
 //
 // The stack must outlive the component that renders the arrows: those hosts
 // (Layout's standalone bar, AreaPillNav/UnderlineTabButtons' inline arrows)

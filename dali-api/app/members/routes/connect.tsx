@@ -16,7 +16,6 @@ import { Avatar } from "~/components/ui/Avatar";
 import { Segmented, type SegmentedOption } from "~/components/ui/Segmented";
 import { Button } from "~/components/ui/Button";
 import { Toggle } from "~/components/ui/Toggle";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { ConnectMap } from "~/members/components/ConnectMap";
 import { PlaceList } from "~/members/components/PlaceList";
 import { groupByPlace, profileCompleteness, type ConnectAlum } from "~/members/lib/connect";
@@ -324,7 +323,7 @@ function EventList({ events }: { events: UpcomingEvent[] }) {
           <button
             type="button"
             onClick={() => {
-              if (!requestOpenTabIfEmbedded(e.href, e.title)) navigate(e.href);
+              navigate(e.href);
             }}
             className="flex w-full items-center gap-4 rounded-os-item bg-os-container p-3 text-left transition-colors hover:bg-os-hover"
           >
@@ -384,7 +383,7 @@ function OpenToRow({ row, initial }: { row: (typeof OPEN_TO_ROWS)[number]; initi
 function ViewerProfile({ viewer }: { viewer: ViewerCard }) {
   const navigate = useNavigate();
   const open = () => {
-    if (!requestOpenTabIfEmbedded("/profile", "Profile")) navigate("/profile");
+    navigate("/profile");
   };
   const { percent, hint } = viewer.completeness;
   return (
@@ -471,7 +470,7 @@ function Leaderboard({ entries }: { entries: LeaderboardEntry[] }) {
                 <button
                   type="button"
                   onClick={() => {
-                    if (!requestOpenTabIfEmbedded(url, e.name)) navigate(url);
+                    navigate(url);
                   }}
                   className="flex w-full items-center gap-3 rounded-os-item px-2 py-2.5 text-left transition-colors hover:bg-os-container"
                 >

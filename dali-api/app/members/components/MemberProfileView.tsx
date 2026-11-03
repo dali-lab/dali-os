@@ -5,7 +5,6 @@ import {
   Link,
   useFetcher,
   useLocation,
-  useNavigation,
   useRevalidator,
   useSearchParams,
   useSubmit,
@@ -105,15 +104,6 @@ function isTab(x: string | null): x is Tab {
   return (TABS as readonly string[]).includes(x ?? "");
 }
 
-function openNoteLegacy(pageId: string, label: string) {
-  const url = `/documents/${pageId}`;
-  if (window.self !== window.top) {
-    window.parent.postMessage({ type: "dali:openTabToSide", url, label }, window.location.origin);
-  } else {
-    window.location.assign(url);
-  }
-}
-
 export function MemberProfileView({
   data,
   actionError,
@@ -155,32 +145,6 @@ export function MemberProfileView({
     canSeeGroups,
   } = data;
 
-  // /members/:id renders inside a TabWorkspace iframe; a successful save only
-  // revalidates the iframe's loaders, not the parent shell. Tell the parent
-  // so it can refresh the sidebar avatar. On /profile this is a no-op since
-  // window.parent === window.
-  const navigation = useNavigation();
-  const wasSubmitting = useRef(false);
-  useEffect(() => {
-    if (navigation.state === "submitting") {
-      wasSubmitting.current = true;
-      return;
-    }
-    if (navigation.state === "idle" && wasSubmitting.current) {
-      wasSubmitting.current = false;
-      if (
-        !actionError &&
-        typeof window !== "undefined" &&
-        window.parent !== window
-      ) {
-        window.parent.postMessage(
-          { type: "dali:profileUpdated" },
-          window.location.origin,
-        );
-      }
-    }
-  }, [navigation.state, actionError]);
-
   const hasEducation =
     !!data.education &&
     (data.education.attended.length > 0 ||
@@ -217,8 +181,7 @@ export function MemberProfileView({
 
   const openBeside = useOpenBeside();
   function openNote(note: { id: string; title: string }) {
-    if (openBeside) openBeside({ href: `/documents/${note.id}` });
-    else openNoteLegacy(note.id, note.title);
+    openBeside({ href: `/documents/${note.id}` });
   }
 
   // Live "last active" for this member's header (respects their hide-activity

@@ -1,7 +1,6 @@
-import { type MouseEvent, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { Link } from "react-router";
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight } from "lucide-react";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { LoadMore } from "~/components/ui/Pager";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { cn } from "~/lib/cn";
@@ -61,15 +60,10 @@ function SortableTh({
   );
 }
 
-function RowLink({ to, label, children }: { to: string; label: string; children: ReactNode }) {
-  const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
-    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-    if (requestOpenTabIfEmbedded(to, label)) e.preventDefault();
-  };
+function RowLink({ to, children }: { to: string; children: ReactNode }) {
   return (
     <Link
       to={to}
-      onClick={onClick}
       className="flex min-w-0 items-center gap-3 after:absolute after:inset-0 after:content-[''] focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-os-accent"
     >
       {children}
@@ -116,7 +110,7 @@ export function DirectoryTable({
             return (
               <tr key={`${r.kind}-${r.id}`} className={DIRECTORY_ROW_CLASS}>
                 <td className={TD}>
-                  <RowLink to={directoryRowHref(r)} label={r.name}>
+                  <RowLink to={directoryRowHref(r)}>
                     {r.kind === "person" ? (
                       <ContactAvatar contact={r} />
                     ) : (

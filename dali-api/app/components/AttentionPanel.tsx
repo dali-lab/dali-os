@@ -23,7 +23,6 @@ import { SegmentedTabButtons } from "~/components/AreaPillNav";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
 import { LoadMore, type LoadMoreProps } from "~/components/ui/Pager";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { cn } from "~/lib/cn";
 import { projectWorkMeta, type ProjectWorkItem } from "~/lib/project-work";
 import { EVENT_TYPES, isEventType } from "~/lib/notification-events";
@@ -61,8 +60,7 @@ export type AttentionNotification = {
 };
 
 // How the panel opens a link. The shell passes its workspace opener so a task
-// lands in a real tab; omitted, the link navigates (or asks the parent shell
-// for a tab when rendered inside a TabWorkspace iframe).
+// lands in a real tab; omitted, the link navigates.
 export type OpenLink = (url: string, label: string) => void;
 
 function openTarget(
@@ -71,14 +69,9 @@ function openTarget(
   label: string,
   onOpen?: OpenLink,
 ) {
-  if (onOpen) {
-    e.preventDefault();
-    onOpen(link, label);
-    return;
-  }
-  if (link.startsWith("/") && requestOpenTabIfEmbedded(link, label)) {
-    e.preventDefault();
-  }
+  if (!onOpen) return;
+  e.preventDefault();
+  onOpen(link, label);
 }
 
 function formatDeadline(iso: string): string {

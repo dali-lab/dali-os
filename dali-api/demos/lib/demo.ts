@@ -138,7 +138,7 @@ export class Stage {
 }
 
 export const test = base.extend<{ stage: Stage }>({
-  page: async ({ page, baseURL }, use, testInfo) => {
+  page: async ({ page }, use, testInfo) => {
     await writeFile(testInfo.outputPath(DEMO_NAME_FILE), demoBaseName(testInfo.file));
     await page.addInitScript(CURSOR_SCRIPT);
     // Keep in sync with DISMISS_KEY in app/components/DesktopBanner.tsx.
@@ -149,8 +149,6 @@ export const test = base.extend<{ stage: Stage }>({
         /* localStorage unavailable */
       }
     });
-    // e2e fixtures pin the tabbed shell; real users get the plain page.
-    if (baseURL) await page.context().addCookies([{ name: 'dali_tabless', value: '1', url: baseURL }]);
     await use(page);
   },
   stage: async ({ page }, use) => {

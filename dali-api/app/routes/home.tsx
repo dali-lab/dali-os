@@ -244,18 +244,8 @@ function HomeSearch() {
   // show a pending state instead of flashing "No matches" before the first hit.
   const isSearching = trimmed.length >= MIN_QUERY_LENGTH && resultsQuery !== trimmed;
 
-  // Home renders inside the workspace iframe, so a result opens as a workspace
-  // tab rather than navigating this view away — same rule as every other link
-  // on this page.
   const openResult = (r: SearchResult) => {
-    if (window.self !== window.top) {
-      window.parent.postMessage(
-        { type: "dali:openTab", url: r.url, label: r.title },
-        window.location.origin,
-      );
-    } else {
-      window.location.assign(r.url);
-    }
+    window.location.assign(r.url);
     setOpen(false);
   };
 

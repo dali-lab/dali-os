@@ -5,7 +5,6 @@ import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { cn } from "~/lib/cn";
 import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator, useSubmit } from "react-router";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
 import { prisma } from "~/lib/db.server";
@@ -1103,9 +1102,7 @@ function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForm
                   // page — same target as the Reviews table.
                   const openReview = (row: any) => {
                     if (!row.daId) return;
-                    const url = `/hiring/domain-lead/application/${row.daId}`;
-                    const label = row.name || 'Applicant';
-                    if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
+                    navigate(`/hiring/domain-lead/application/${row.daId}`);
                   };
                   if (rows.length === 0) return null;
                   return (
@@ -1839,11 +1836,6 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                   {daId ? (
                     <Link
                       to={`/hiring/domain-lead/application/${daId}`}
-                      onClick={(e) => {
-                        const url = `/hiring/domain-lead/application/${daId}`
-                        const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
-                        if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                      }}
                       className="text-foreground hover:text-os-accent"
                     >
                       {app.user.firstName} {app.user.lastName}
@@ -1931,11 +1923,6 @@ function ApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycl
                 {daId ? (
                   <Link
                     to={`/hiring/domain-lead/application/${daId}`}
-                    onClick={(e) => {
-                      const url = `/hiring/domain-lead/application/${daId}`
-                      const label = `${app.user.firstName ?? ''} ${app.user.lastName ?? ''}`.trim() || 'Applicant'
-                      if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-                    }}
                     className="font-medium text-foreground hover:text-os-accent"
                   >
                     {app.user.firstName} {app.user.lastName}

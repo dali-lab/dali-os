@@ -16,7 +16,7 @@ const hit = (title: string) => ({ type: "project", id: title, title, url: `/proj
 function mount(open: boolean) {
   act(() =>
     root.render(
-      createElement(CommandPalette, { open, onClose: () => {}, tabless: false, focusMode: false, onOpen: () => {} }),
+      createElement(CommandPalette, { open, onClose: () => {}, focusMode: false, onOpen: () => {} }),
     ),
   );
 }

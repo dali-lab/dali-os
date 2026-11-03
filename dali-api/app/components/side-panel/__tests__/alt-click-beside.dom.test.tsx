@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation } from "react-router";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { useAltClickOpensBeside } from "~/components/side-panel/use-side-panel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -25,16 +24,14 @@ function Probe() {
   );
 }
 
-function mount(enabled: boolean) {
+function mount() {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   act(() =>
     root.render(
       <MemoryRouter>
-        <FeatureFlagsProvider flags={{ "desktop-tabs": enabled }}>
-          <Probe />
-        </FeatureFlagsProvider>
+        <Probe />
       </MemoryRouter>,
     ),
   );
@@ -58,14 +55,14 @@ afterEach(() => {
 
 describe("option-click on a document link", () => {
   it("opens the document beside and cancels the navigation", () => {
-    mount(true);
+    mount();
     const event = click(docLink(), { altKey: true });
     expect(search()).toBe("?side=doc%3Aabc");
     expect(event.defaultPrevented).toBe(true);
   });
 
   it("works from an element inside the link", () => {
-    mount(true);
+    mount();
     click(container.querySelector("#inner")!, { altKey: true });
     expect(search()).toBe("?side=doc%3Aabc");
   });
@@ -76,25 +73,18 @@ describe("option-click on a document link", () => {
     ["ctrl", { ctrlKey: true }],
     ["alt with meta", { altKey: true, metaKey: true }],
   ])("leaves a %s click alone", (_name, init) => {
-    mount(true);
+    mount();
     const event = click(docLink(), init);
     expect(search()).toBe("");
     expect(event.defaultPrevented).toBe(false);
   });
 
   it("leaves links that are not documents alone", () => {
-    mount(true);
+    mount();
     const project = click(container.querySelector("a[href='/projects/abc']")!, { altKey: true });
     const external = click(container.querySelector("a[href^='https://example.com']")!, { altKey: true });
     expect(search()).toBe("");
     expect(project.defaultPrevented).toBe(false);
     expect(external.defaultPrevented).toBe(false);
-  });
-
-  it("is not installed with desktop-tabs off", () => {
-    mount(false);
-    const event = click(docLink(), { altKey: true });
-    expect(search()).toBe("");
-    expect(event.defaultPrevented).toBe(false);
   });
 });

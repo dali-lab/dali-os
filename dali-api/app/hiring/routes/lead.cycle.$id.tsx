@@ -76,7 +76,6 @@ import {
 } from "~/hiring/lib/email-variables";
 import { pendingForHiringLead } from "~/hiring/lib/decision-pills";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { canOverrideAvailability, seatEligible, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
@@ -2851,11 +2850,6 @@ export default function HiringLeadCycleDetails() {
         const applicantLink = (daId: string, u: { firstName?: string | null; lastName?: string | null }) => (
           <Link
             to={`/hiring/applications/${daId}`}
-            onClick={(e) => {
-              const url = `/hiring/applications/${daId}`
-              const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
-              if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-            }}
             className="truncate text-sm font-semibold text-foreground hover:underline"
           >
             {u.firstName} {u.lastName}

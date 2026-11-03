@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 /**
  * Mobile UX audit @mobile. Loads every internal route under a Pixel 7 UA
- * (Android / tabless shell), screenshots full-page, and flags routes whose
+ * (Android), screenshots full-page, and flags routes whose
  * document or any iframe overflows the viewport horizontally.
  *
  * The mobile project in playwright.config.ts drives this spec:
