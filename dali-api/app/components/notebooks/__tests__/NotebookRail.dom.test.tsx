@@ -23,9 +23,9 @@ const notebook: NotebookView = {
   projectId: null,
   nextNotes: [],
   tabs: [
-    { id: "nb1", label: "Oct 6", meeting: "Weekly sync", isNote: true, week: null },
-    { id: "p2", label: "Oct 13", meeting: "Weekly sync", isNote: true, week: null },
-    { id: "p3", label: "Agenda", meeting: null, isNote: false, week: null },
+    { id: "nb1", label: "Oct 6", meeting: "Weekly sync", isNote: true, week: null, date: null },
+    { id: "p2", label: "Oct 13", meeting: "Weekly sync", isNote: true, week: null, date: null },
+    { id: "p3", label: "Agenda", meeting: null, isNote: false, week: null, date: null },
   ],
 };
 
@@ -405,10 +405,10 @@ describe("NotebookRail tab list", () => {
 describe("NotebookRail week dividers", () => {
   const dividers = () => [...nav().querySelectorAll("[data-testid='notebook-rail-week']")];
   const weeks = [
-    { id: "nb1", label: "Oct 23", meeting: null, isNote: true, week: "Week 7" },
-    { id: "p2", label: "Oct 20", meeting: null, isNote: true, week: "Week 7" },
-    { id: "p3", label: "Oct 16", meeting: null, isNote: true, week: "Week 6" },
-    { id: "p4", label: "Oct 6", meeting: null, isNote: true, week: "Week 5" },
+    { id: "nb1", label: "Oct 23", meeting: null, isNote: true, week: "Week 7", date: null },
+    { id: "p2", label: "Oct 20", meeting: null, isNote: true, week: "Week 7", date: null },
+    { id: "p3", label: "Oct 16", meeting: null, isNote: true, week: "Week 6", date: null },
+    { id: "p4", label: "Oct 6", meeting: null, isNote: true, week: "Week 5", date: null },
   ];
 
   it("labels each run of tabs from the same week once, in the order the tabs come", async () => {
@@ -424,7 +424,7 @@ describe("NotebookRail week dividers", () => {
 
   it("draws no divider for undated tabs", async () => {
     await rail({
-      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null }, ...weeks.slice(0, 1)],
+      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null, date: null }, ...weeks.slice(0, 1)],
     });
     expect(dividers().map((d) => d.textContent)).toEqual(["Week 7"]);
   });
@@ -443,7 +443,7 @@ describe("NotebookRail week dividers", () => {
 
   it("spaces the first divider when undated tabs sit above it", async () => {
     await rail({
-      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null }, ...weeks],
+      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null, date: null }, ...weeks],
     });
     expect(spaced()).toEqual([true, true, true]);
   });
