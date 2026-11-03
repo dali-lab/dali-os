@@ -20,10 +20,11 @@ import { AlertTriangle, Download, Plus, Trash2 } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
 import { Segmented } from "~/components/ui/Segmented";
-import { Select, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
+import { Popover, Tooltip, InfoTip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { TermFilter } from "~/components/TermFilter";
 import { ALL_LEVELS, isLevel } from "~/lib/level";
 import {
   buildPayrollRows,
@@ -400,24 +401,12 @@ export default function PayrollExport() {
         section="payroll"
         actions={
           <>
-            <Select
-              value={selectedTermId}
-              ariaLabel="Term"
-              options={terms.map((t) => ({
-                value: t.id,
-                label: t.isCurrent ? `${t.code} (current)` : t.code,
-              }))}
-              // Submit the picked value explicitly: the form's DOM still holds
-              // the old value in the same tick.
-              onChange={(value) => {
-                const params = new URLSearchParams(searchParams);
-                params.set("term", value);
-                // Domain pills come from the term's assignments, so a term
-                // switch drops the role filter to avoid stale ids.
-                params.delete("domain");
-                params.delete("level");
-                submit(params, { method: "get" });
-              }}
+            <TermFilter
+              terms={terms}
+              selected={selectedTermId}
+              includeAll={false}
+              replace
+              clearOnChange={["domain", "level"]}
               buttonClassName={cn(actionBtn(), "justify-between")}
             />
             <TechnigalaPicker options={addOptions} onPick={addTechnigala} />

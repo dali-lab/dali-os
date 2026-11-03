@@ -241,7 +241,7 @@ export default function MentorshipHub() {
           </div>
           {data.termId && (
             <Link
-              to={`/mentorship/browse?termId=${data.termId}`}
+              to={`/mentorship/browse?term=${data.termId}`}
               className={cn(
                 "text-sm hover:underline inline-flex items-center gap-1 shrink-0",
                 behind ? "text-os-accent" : "text-muted-foreground",
