@@ -2,8 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 const requireMobileUser = vi.fn();
-const getUserRoles = vi.fn();
-const isFeatureEnabled = vi.fn();
 const isTranscriptionEnabled = vi.fn();
 const createNote = vi.fn();
 const readDocAsBlocks = vi.fn();
@@ -18,8 +16,6 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/mobile-auth.server")>()),
   requireMobileUser: (...a: unknown[]) => requireMobileUser(...a),
 }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: (...a: unknown[]) => getUserRoles(...a) }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: (...a: unknown[]) => isFeatureEnabled(...a) }));
 vi.mock("~/lib/transcription/provider", () => ({ isTranscriptionEnabled: () => isTranscriptionEnabled() }));
 vi.mock("~/members/lib/personal-notes-actions.server", () => ({ createNote: (...a: unknown[]) => createNote(...a) }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: (...a: unknown[]) => readDocAsBlocks(...a) }));
@@ -73,8 +69,6 @@ const recording = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   vi.clearAllMocks();
   requireMobileUser.mockResolvedValue({ ok: true, userId: "u1" });
-  getUserRoles.mockResolvedValue({ isLabMember: true });
-  isFeatureEnabled.mockResolvedValue(true);
   isTranscriptionEnabled.mockReturnValue(true);
   mockPrisma.page.findMany.mockResolvedValue([]);
   canReadRecording.mockResolvedValue("owner");
@@ -160,11 +154,8 @@ describe("GET /api/mobile/notes", () => {
     );
   });
 
-  it.each([
-    ["the AI notes flag is off", () => isFeatureEnabled.mockResolvedValue(false)],
-    ["transcription isn't configured", () => isTranscriptionEnabled.mockReturnValue(false)],
-  ])("says recording is off when %s", async (_label, arrange) => {
-    arrange();
+  it("says recording is off when transcription isn't configured", async () => {
+    isTranscriptionEnabled.mockReturnValue(false);
     mockPrisma.meetingRecording.findMany.mockResolvedValue([]);
     const res = (await listLoader({ request: new Request("https://os.example/api/mobile/notes") } as never)) as Response;
     expect((await res.json()).recordingEnabled).toBe(false);
@@ -256,7 +247,7 @@ describe("POST /api/mobile/notes (a page to take notes in)", () => {
   });
 
   it("creates a typed note even when recording is off for the member", async () => {
-    isFeatureEnabled.mockResolvedValue(false);
+    isTranscriptionEnabled.mockReturnValue(false);
     createNote.mockResolvedValue({ id: "pg9" });
     const res = (await quickNote({ request: post("/api/mobile/notes", { title: "x" }) } as never)) as Response;
     expect(res.status).toBe(201);

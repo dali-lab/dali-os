@@ -26,8 +26,6 @@ vi.mock("~/forms/lib/form-tracker.server", () => ({
   loadTrackerList: vi.fn(),
   sendFormReminder: vi.fn(),
 }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
 vi.mock("~/forms/components/FormDetail", () => ({ FormDetail: () => null }));
 vi.mock("~/components/PageIcon", () => ({ PageIcon: () => null }));
@@ -43,7 +41,6 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadTrackerCounts, loadTrackerList, sendFormReminder } from "~/forms/lib/form-tracker.server";
 import { loader, action, handle } from "~/forms/routes/forms.edit.$formId";
 
@@ -79,7 +76,7 @@ describe("forms.edit loader results paging", () => {
       workspaceType: "Project",
     } as never);
     vi.mocked(loadVersionResponses).mockResolvedValue({ versionId: "v2" } as never);
-    const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&page=3&q=ada&slot=Tue");
+    const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&show=responses&page=3&q=ada&slot=Tue");
     await loader({ request: req, params: { formId: "f1" } } as never);
     expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", { page: 3, q: "ada", slot: "Tue" });
   });
@@ -91,7 +88,7 @@ describe("forms.edit loader results paging", () => {
       versions: [{ id: "v2", versionNumber: 2 }],
       workspaceType: "Project",
     } as never);
-    const req = new Request("http://os.test/forms/edit/f1?view=results&page=-4");
+    const req = new Request("http://os.test/forms/edit/f1?view=results&show=responses&page=-4");
     await loader({ request: req, params: { formId: "f1" } } as never);
     expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", { page: 1, q: "", slot: "" });
   });
@@ -205,7 +202,6 @@ describe("forms.edit action delete-form-response", () => {
   };
 
   beforeEach(() => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     vi.mocked(deleteFormResponse).mockResolvedValue({ ok: true });
   });
 
@@ -226,12 +222,6 @@ describe("forms.edit action delete-form-response", () => {
     expect(deleteFormResponse).not.toHaveBeenCalled();
   });
 
-  it("does nothing while the form-upgrades flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect((await del()).status).toBe(400);
-    expect(deleteFormResponse).not.toHaveBeenCalled();
-  });
-
   it("needs a submission id", async () => {
     expect((await del({})).status).toBe(400);
     expect(deleteFormResponse).not.toHaveBeenCalled();
@@ -246,8 +236,6 @@ describe("forms.edit action delete-form-response", () => {
 });
 
 describe("forms.edit tracker", () => {
-  const flagOn = (on: boolean) =>
-    vi.mocked(isFeatureEnabled).mockImplementation(async (key) => (key === "form-upgrades" ? on : false));
   const resultsRequest = new Request("http://os.test/forms/edit/f1?view=results&version=1");
   const withVersion = () =>
     vi.mocked(loadFormForEdit).mockResolvedValue({
@@ -257,8 +245,7 @@ describe("forms.edit tracker", () => {
       workspaceType: "Project",
     } as never);
 
-  it("loads the counts on Results when the flag is on", async () => {
-    flagOn(true);
+  it("loads the counts on Results", async () => {
     withVersion();
     vi.mocked(loadTrackerCounts).mockResolvedValue({ expected: 71, responded: 58 });
     const data = await loader({ request: resultsRequest, params: { formId: "f1" } } as never);
@@ -266,23 +253,13 @@ describe("forms.edit tracker", () => {
     expect(loadTrackerCounts).toHaveBeenCalledWith("f1");
   });
 
-  it("skips the tracker when the flag is off", async () => {
-    flagOn(false);
-    withVersion();
-    const data = await loader({ request: resultsRequest, params: { formId: "f1" } } as never);
-    expect((data as any).tracker).toBeNull();
-    expect(loadTrackerCounts).not.toHaveBeenCalled();
-  });
-
   it("does not count on the questions view", async () => {
-    flagOn(true);
     withVersion();
     await run();
     expect(loadTrackerCounts).not.toHaveBeenCalled();
   });
 
-  it("serves the name list only for the list request, to a builder, with the flag on", async () => {
-    flagOn(true);
+  it("serves the name list only for the list request, to a builder", async () => {
     vi.mocked(loadTrackerList).mockResolvedValue({ expected: 2 } as never);
     const res = await loader({
       request: new Request("http://os.test/forms/edit/f1?tracker=list"),
@@ -292,17 +269,7 @@ describe("forms.edit tracker", () => {
     expect(loadFormForEdit).not.toHaveBeenCalled();
   });
 
-  it("does not serve the list with the flag off", async () => {
-    flagOn(false);
-    await loader({
-      request: new Request("http://os.test/forms/edit/f1?tracker=list"),
-      params: { formId: "f1" },
-    } as never);
-    expect(loadTrackerList).not.toHaveBeenCalled();
-  });
-
   it("does not serve the list to someone who cannot build the form", async () => {
-    flagOn(true);
     vi.mocked(canBuildForm).mockResolvedValue(false);
     vi.mocked(canSeeForm).mockResolvedValue(false);
     await loader({
@@ -325,7 +292,6 @@ describe("forms.edit action send-form-reminder", () => {
   };
 
   beforeEach(() => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     vi.mocked(sendFormReminder).mockResolvedValue({ ok: true, sent: 11 });
   });
 
@@ -346,12 +312,6 @@ describe("forms.edit action send-form-reminder", () => {
     expect(sendFormReminder).not.toHaveBeenCalled();
   });
 
-  it("does nothing while the form-upgrades flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect((await send()).status).toBe(400);
-    expect(sendFormReminder).not.toHaveBeenCalled();
-  });
-
   it("needs a message", async () => {
     expect((await send({})).status).toBe(400);
     expect(sendFormReminder).not.toHaveBeenCalled();
@@ -366,8 +326,6 @@ describe("forms.edit action send-form-reminder", () => {
 });
 
 describe("forms.edit summary", () => {
-  const flagOn = (on: boolean) =>
-    vi.mocked(isFeatureEnabled).mockImplementation(async (key) => (key === "form-upgrades" ? on : false));
   const version = { id: "v1", versionNumber: 1, questions: [{ key: "a" }] };
   const call = (query: string) =>
     loader({
@@ -387,8 +345,7 @@ describe("forms.edit summary", () => {
     vi.mocked(loadTrackerCounts).mockResolvedValue(null as never);
   });
 
-  it("loads the summary, not the table, on Results when the flag is on", async () => {
-    flagOn(true);
+  it("loads the summary, not the table, on Results", async () => {
     const data = await call("view=results&version=1&slot=referrals");
     expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "referrals" });
     expect(loadVersionResponses).not.toHaveBeenCalled();
@@ -397,7 +354,6 @@ describe("forms.edit summary", () => {
   });
 
   it("loads the table, not the summary, on the Responses view", async () => {
-    flagOn(true);
     const data = await call("view=results&version=1&show=responses");
     expect(loadVersionResponses).toHaveBeenCalled();
     expect(loadVersionSummary).not.toHaveBeenCalled();
@@ -405,21 +361,11 @@ describe("forms.edit summary", () => {
   });
 
   it("does not load the summary on the Questions view", async () => {
-    flagOn(true);
     await call("");
     expect(loadVersionSummary).not.toHaveBeenCalled();
   });
 
-  it("keeps today's table while the flag is off", async () => {
-    flagOn(false);
-    const data = await call("view=results&version=1");
-    expect(loadVersionSummary).not.toHaveBeenCalled();
-    expect(loadVersionResponses).toHaveBeenCalled();
-    expect(data.summary).toBeNull();
-  });
-
   it("sends a caller who cannot build the form away before loading anything", async () => {
-    flagOn(true);
     vi.mocked(canBuildForm).mockResolvedValue(false);
     vi.mocked(canSeeForm).mockResolvedValue(false);
     await call("view=results&version=1");

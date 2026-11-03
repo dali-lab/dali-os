@@ -56,42 +56,10 @@ export const FEATURE_FLAGS = [
       "A /release-notes page listing what shipped, with demo videos, and a \"What's new\" item in the account menu that shows a dot when there is something unread. Core also gets Communications > Release notes to write, review and publish entries. Ships off.",
   },
   {
-    key: "listserv",
-    label: "Listserv",
-    description:
-      "Communications > Listserv: Core members submit emails for the campus listserv, the outreach lead reviews them, sends approved ones from Gmail, and records which went out. Ships off.",
-  },
-  {
     key: "banners",
     label: "Banners",
     description:
       "Communications > Banners: Core schedules full-screen banners shown when members open DALI OS or visit a page, with audience, frequency and a hide-for-today option. Turning this off also stops banners from showing. Ships off.",
-  },
-  {
-    key: "favorites-bar",
-    label: "Favorites bar",
-    description:
-      "Browser-style favorites: one star in the topbar (next to Copy link, or Cmd/Ctrl+D) that stars whatever page is open, and topbar favorite pills you can drag to reorder or right-click to move and remove. Hides the breadcrumb star and the document title star. Ships off.",
-  },
-  {
-    key: "landing-leaderboard",
-    label: "Home landing high scores",
-    description:
-      "Keeps a high-score board for the tetris game on the week 5 (\"Build\") home landing scene: one personal best per member, listed by name, shown on the attract screen and the game-over card. Off, the game plays exactly as before and nothing is recorded. Ships on — the kill switch exists because the scores are the player's own word for them.",
-    defaultEnabled: true,
-    defaultEveryone: true,
-  },
-  {
-    key: "email-layout",
-    label: "Standard email layout",
-    description:
-      "Wraps outbound email in one branded layout instead of the four hand-rolled styles it uses today: a real HTML document with a light/dark-aware single-column 600px body, one greeting, one button style, and one footer. Also gives every email a plain-text alternative, which most currently ship without. Content is unchanged — only the frame around it. Ships off.",
-  },
-  {
-    key: "optimal-times",
-    label: "Find best meeting times",
-    description:
-      "Suggests the best meeting times in the scheduler. Once people are added, the top 3 slots where the most participants (with a linked calendar) are free show as numbered dotted outlines on the availability grid, with a matching button for each above Starts / Ends that fills in the time. Ships off.",
   },
   {
     key: "infra-dashboard",
@@ -118,40 +86,16 @@ export const FEATURE_FLAGS = [
       "The Community sidebar area: Connect, Opportunities, Gallery and Blogs. Blogs opens /resources: a front page of member blog posts (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Connect stays under Lab and the other Community pages are not reachable.",
   },
   {
-    key: "ai-meeting-notes",
-    label: "AI meeting notes",
-    description:
-      "Audio is processed by a GPU job DALI runs, then deleted after. Only the transcript is kept, visible to whoever can see the note.",
-  },
-  {
     key: "email-personal",
     label: "Email: personal DALI inbox",
     description:
       "Lets a member connect their own @dali.dartmouth.edu mailbox to the Email tab, next to project and shared inboxes. Only they can read it. Connecting requires agreeing to a risk notice first, and each agreement is recorded in the audit log. Turning this off hides connected personal inboxes without deleting the sign-in. Ships off.",
   },
   {
-    key: "os-feedback",
-    label: "DALI OS feedback",
-    description:
-      "A feedback button in the bottom right corner of the shell. It opens the feature request feed at /feedback, where lab members react and comment, or starts a new request: drag to select an area of the page as a screenshot (or skip it), then write it up. Screenshots use the browser's tab sharing prompt, so the desktop app and phones post text only. Ships off.",
-  },
-  {
-    key: "application-events",
-    label: "Application events",
-    description:
-      "Help hours, socials and info sessions on a hiring cycle. Core creates events on the cycle page, emails everyone who started an application, and takes attendance by QR self check-in or by hand. Attendance shows on application reviews as an engagement signal. Ships off.",
-  },
-  {
     key: "work-history-import",
     label: "Work history import",
     description:
       "Import jobs from a resume or LinkedIn export, and store a resume on the profile. Ships off.",
-  },
-  {
-    key: "mobile-app",
-    label: "Mobile app",
-    description:
-      "Lets the DALI OS mobile app (iOS and Android) sign in and load your profile, timesheet, projects, calendar, meeting notes and member pass. Off, the app's data endpoints return not found for that member. Ships off.",
   },
   {
     key: "desktop-tabs",
@@ -170,30 +114,6 @@ export const FEATURE_FLAGS = [
     label: "Onboarding journeys",
     description:
       "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
-  },
-  {
-    key: "agent-presence",
-    label: "Agent presence",
-    description:
-      "When a member's AI agent (Claude, ChatGPT, Cursor) reads or edits a page over MCP, it shows up for everyone on that page: an agent avatar in the presence bar (hover says whose agent it is) and, for edits, a cursor and a brief highlight of what it wrote. Targeting applies to the member whose agent it is. Ships off.",
-  },
-  {
-    key: "form-blocks",
-    label: "Form tile strip",
-    description:
-      "Forms opened from a form link show a strip of DALI tiles across the top of the card. Each form gets its own pattern. On submit the strip folds into one block and the card settles on a short confirmation. Signed-out visitors see it whenever the flag is switched on, whatever its targeting. Ships off.",
-  },
-  {
-    key: "doc-task-block",
-    label: "Task blocks in documents",
-    description:
-      "Adds /task to documents: a small composer that creates a project task and leaves a live row in the note, showing its status, owner and date. Task blocks already in a document keep showing when this is off. Ships off.",
-  },
-  {
-    key: "form-upgrades",
-    label: "Form upgrades",
-    description:
-      "Everything new in Forms: more question types, show-a-question rules, a results Summary with charts, deleting and editing responses, the tracker and reminders, confirmation messages and email receipts, and saved progress. This gates what authors and owners can set up. Anything already saved on a form keeps working when this is off, including rules, so hidden required questions never reappear. Signed-out visitors get saved progress whenever the flag is switched on, whatever its targeting. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

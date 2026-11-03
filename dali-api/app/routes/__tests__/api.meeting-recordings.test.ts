@@ -1,11 +1,9 @@
-// POST /api/meeting-recordings: flag gate, the scheduledMeetingId resolution
+// POST /api/meeting-recordings: the scheduledMeetingId resolution
 // path (attachMeetingNote + recordingPolicy), and the lab-wide cap.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/scheduled-meeting", () => ({ attachMeetingNote: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
@@ -19,7 +17,6 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import {
   canRecordInto,
@@ -46,7 +43,6 @@ beforeEach(() => {
     user: { sub: "u1", email: "u@dali.edu", type: "member" },
     sessionId: "s1",
   } as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(canRecordInto).mockResolvedValue(true);
   vi.mocked(projectRecordingDisabled).mockResolvedValue(false);
   vi.mocked(createRecording).mockResolvedValue({ id: "rec1" } as never);
@@ -83,11 +79,6 @@ describe("POST /api/meeting-recordings", () => {
       transcriptionEnabled: true,
       aiEnabled: true,
     });
-  });
-
-  it("is off without the flag", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect((await run({ documentName: "doc:p1:body" })).status).toBe(403);
   });
 
   it("403s recordingDisabled when the meeting's project has recording off", async () => {
@@ -183,12 +174,6 @@ describe("POST /api/meeting-recordings", () => {
     it("does not log when access is refused", async () => {
       vi.mocked(canRecordInto).mockResolvedValue(false);
       expect((await run({ documentName: "doc:p1:body" })).status).toBe(403);
-      expect(logAuditEvent).not.toHaveBeenCalled();
-    });
-
-    it("does not log when the flag is off", async () => {
-      vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-      await run({ documentName: "doc:p1:body" });
       expect(logAuditEvent).not.toHaveBeenCalled();
     });
 

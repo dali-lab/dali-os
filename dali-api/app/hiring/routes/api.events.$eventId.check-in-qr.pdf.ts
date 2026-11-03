@@ -1,8 +1,7 @@
 import type { Route } from "./+types/api.events.$eventId.check-in-qr.pdf";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { getUserRoles, isCycleAdmin } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCycleAdmin } from "~/lib/roles";
 import { renderCheckInQrPdf } from "~/calendar/lib/check-in-qr-pdf.server";
 
 // GET /api/hiring/events/:eventId/check-in-qr.pdf — Core download of the
@@ -11,11 +10,6 @@ import { renderCheckInQrPdf } from "~/calendar/lib/check-in-qr-pdf.server";
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return new Response("Unauthorized", { status: 401 });
-
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("application-events", auth.user.sub, roles, request))) {
-    return new Response("Not found", { status: 404 });
-  }
 
   const event = await prisma.hiringEvent.findUnique({
     where: { id: params.eventId },

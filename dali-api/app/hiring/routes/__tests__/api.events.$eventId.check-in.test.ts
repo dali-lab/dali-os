@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/hiring/lib/hiring-events.server", () => ({ selfCheckInToEvent: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { selfCheckInToEvent } from "~/hiring/lib/hiring-events.server";
 import { action } from "~/hiring/routes/api.events.$eventId.check-in";
 
@@ -30,8 +26,6 @@ beforeEach(() => {
     ok: true,
     user: { sub: "applicant-1", email: "applicant@dali.edu", type: "dartmouth" },
   } as never);
-  vi.mocked(getUserRoles).mockResolvedValue({} as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(selfCheckInToEvent).mockResolvedValue({ ok: true, alreadyPresent: false } as never);
 });
 
@@ -47,13 +41,6 @@ describe("POST /api/hiring/events/:eventId/check-in", () => {
     const res = await run({ userId: "someone-else" });
     expect(res.status).toBe(200);
     expect(selfCheckInToEvent).toHaveBeenCalledWith({ eventId: EVENT_ID, userId: "applicant-1" });
-  });
-
-  it("404s when the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await run();
-    expect(res.status).toBe(404);
-    expect(selfCheckInToEvent).not.toHaveBeenCalled();
   });
 
   it("redirects/401s when not authenticated", async () => {

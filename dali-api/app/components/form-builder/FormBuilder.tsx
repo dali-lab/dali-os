@@ -70,7 +70,6 @@ import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
 import { SearchInput } from '~/components/ui/SearchInput'
 import { useOsChrome } from '~/components/os-chrome'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 
 type QuestionType = Question['type']
 
@@ -122,9 +121,6 @@ const COMPONENT_GROUPS: {
 
 const COMPONENTS = COMPONENT_GROUPS.flatMap((g) => g.items)
 
-// Types behind the form-upgrades flag. They gate only what the builder
-// offers; a question of one of these types already in a form always works.
-export const FLAGGED_TYPES: readonly QuestionType[] = ['radio', 'scale', 'date', 'number', 'email']
 const OPTION_TYPES: readonly QuestionType[] = ['select', 'radio', 'checkbox', 'skills_rating']
 const OTHER_TYPES: readonly QuestionType[] = ['radio', 'checkbox']
 const componentLabel = (type: QuestionType) =>
@@ -403,10 +399,8 @@ export function FormBuilderTab({
     }
   }
 
-  const newTypesEnabled = useFeatureFlag('form-upgrades')
   const typeOffered = (type: QuestionType) =>
-    (type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox') &&
-    (!FLAGGED_TYPES.includes(type) || newTypesEnabled || editForm.type === type)
+    type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox'
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const { formTrigger } = useOsChrome()
   if (snapshotRef) snapshotRef.current = () => ({ questions, description })
@@ -787,8 +781,7 @@ export function FormBuilderTab({
           )}
 
           {editForm.type !== undefined &&
-            OTHER_TYPES.includes(editForm.type) &&
-            (newTypesEnabled || editForm.data?.allowOther) && (
+            OTHER_TYPES.includes(editForm.type) && (
             <div className="col-span-2">
               <Checkbox
                 checked={editForm.data?.allowOther || false}
@@ -983,7 +976,7 @@ export function FormBuilderTab({
           )}
         </div>
 
-        {(newTypesEnabled || editForm.data?.showIf) && editForm.type !== undefined && (() => {
+        {editForm.type !== undefined && (() => {
           const own = questions.findIndex((q) => q.key === editForm.key)
           const sources = questions.slice(0, Math.max(own, 0)).filter(canBeSource)
           const rule = editForm.data?.showIf
@@ -1101,7 +1094,7 @@ export function FormBuilderTab({
       }}
     >
       <div className="flex flex-col lg:flex-row gap-6 items-start">
-        <ComponentLibrary allowCheckbox={allowCheckbox} allowNewTypes={newTypesEnabled} onAdd={addComponent} />
+        <ComponentLibrary allowCheckbox={allowCheckbox} onAdd={addComponent} />
 
         <CanvasDropZone>
           {/* Block JSON from here on: onChange hands back the BlockNote block
@@ -1332,7 +1325,7 @@ export function FormBuilderTab({
                 Drag a component here, or click one to add it
               </div>
             )}
-            <AddComponentMenu allowCheckbox={allowCheckbox} allowNewTypes={newTypesEnabled} onAdd={addComponent} />
+            <AddComponentMenu allowCheckbox={allowCheckbox} onAdd={addComponent} />
           </div>
 
           <div className="flex justify-end items-center gap-3 pt-4 border-t border-os-container">
@@ -1395,13 +1388,12 @@ export function FormBuilderTab({
   )
 }
 
-function offeredGroups(allowCheckbox: boolean, allowNewTypes: boolean, query = '') {
+function offeredGroups(allowCheckbox: boolean, query = '') {
   return COMPONENT_GROUPS.map((g) => ({
     ...g,
     items: g.items.filter(
       (c) =>
         (c.type !== 'checkbox' || allowCheckbox) &&
-        (allowNewTypes || !FLAGGED_TYPES.includes(c.type)) &&
         (!query || c.label.toLowerCase().includes(query)),
     ),
   })).filter((g) => g.items.length > 0)
@@ -1409,14 +1401,12 @@ function offeredGroups(allowCheckbox: boolean, allowNewTypes: boolean, query = '
 
 export function AddComponentMenu({
   allowCheckbox,
-  allowNewTypes,
   onAdd,
 }: {
   allowCheckbox: boolean
-  allowNewTypes: boolean
   onAdd: (type: QuestionType) => void
 }) {
-  const groups = offeredGroups(allowCheckbox, allowNewTypes)
+  const groups = offeredGroups(allowCheckbox)
   return (
     <Menu
       ariaLabel="Add a question"
@@ -1452,16 +1442,14 @@ export function AddComponentMenu({
 // it, or drag it onto the canvas to drop it at a position.
 function ComponentLibrary({
   allowCheckbox,
-  allowNewTypes,
   onAdd,
 }: {
   allowCheckbox: boolean
-  allowNewTypes: boolean
   onAdd: (type: QuestionType) => void
 }) {
   const { heading } = useOsChrome()
   const [query, setQuery] = useState('')
-  const groups = offeredGroups(allowCheckbox, allowNewTypes, query.trim().toLowerCase())
+  const groups = offeredGroups(allowCheckbox, query.trim().toLowerCase())
 
   return (
     <aside className="w-full lg:w-72 flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rounded-os-card bg-os-card p-4 space-y-5">

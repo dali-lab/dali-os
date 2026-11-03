@@ -22,7 +22,7 @@ export const handle = coreHandle("communications");
 export const meta: Route.MetaFunction = () => [{ title: "Listserv · Core · DALI OS" }];
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const viewer = await requireCommsViewer(request, "listserv");
+  const viewer = await requireCommsViewer(request);
   const [config, submissions] = await Promise.all([getListservConfig(), listListserv()]);
   const isAdmin = viewer.roles.isAdmin;
   const lead = config.leadUserId
@@ -63,7 +63,7 @@ function parseDraft(form: FormData) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const viewer = await requireCommsViewer(request, "listserv");
+  const viewer = await requireCommsViewer(request);
   const config = await getListservConfig();
   const isLead = isListservLead(viewer.userId, config, viewer.roles.isAdmin);
   const form = await request.formData();

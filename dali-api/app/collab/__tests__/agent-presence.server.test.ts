@@ -6,9 +6,6 @@ import type { Hocuspocus } from "@hocuspocus/server";
 const publish = vi.fn();
 const subscribe = vi.fn();
 vi.mock("~/lib/realtime-bus.server", () => ({ publish, subscribe }));
-const isFeatureEnabled = vi.fn();
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(async () => ({})) }));
 
 const {
   AGENT_HIGHLIGHT_MS,
@@ -80,7 +77,6 @@ function asAgent<T>(fn: () => Promise<T>): Promise<T> {
 beforeEach(() => {
   publish.mockReset();
   subscribe.mockReset();
-  isFeatureEnabled.mockReset();
 });
 
 afterEach(() => {
@@ -89,20 +85,11 @@ afterEach(() => {
 
 describe("announceAgent", () => {
   it("does nothing outside an MCP request", async () => {
-    isFeatureEnabled.mockResolvedValue(true);
     await announceAgent({ action: "reading", presenceRoom: "presence:doc:p1" });
     expect(publish).not.toHaveBeenCalled();
   });
 
-  it("does nothing when the owner's flag is off", async () => {
-    isFeatureEnabled.mockResolvedValue(false);
-    await asAgent(() => announceAgent({ action: "reading", presenceRoom: "presence:doc:p1" }));
-    expect(isFeatureEnabled).toHaveBeenCalledWith("agent-presence", "u-ada", {});
-    expect(publish).not.toHaveBeenCalled();
-  });
-
   it("publishes who the agent is and whose it is on the bus", async () => {
-    isFeatureEnabled.mockResolvedValue(true);
     await asAgent(() => announceAgent({ action: "editing", docRoom: "doc:p1:body" }));
     expect(publish).toHaveBeenCalledTimes(1);
     const [topic, data] = publish.mock.calls[0]!;
@@ -118,7 +105,9 @@ describe("announceAgent", () => {
   });
 
   it("swallows failures so presence never breaks the tool call", async () => {
-    isFeatureEnabled.mockRejectedValue(new Error("db down"));
+    publish.mockImplementation(() => {
+      throw new Error("bus down");
+    });
     const err = vi.spyOn(console, "error").mockImplementation(() => {});
     await expect(
       asAgent(() => announceAgent({ action: "reading", presenceRoom: "presence:doc:p1" })),

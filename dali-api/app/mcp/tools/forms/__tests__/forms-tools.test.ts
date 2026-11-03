@@ -57,8 +57,6 @@ vi.mock("~/forms/lib/form-tracker.server", () => ({
   sendFormReminder: vi.fn(),
 }));
 vi.mock("~/forms/lib/version-summary.server", () => ({ loadVersionSummary: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 
 import { canSeeForm, canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction, type FormDetail } from "~/forms/lib/forms-data";
@@ -67,7 +65,6 @@ import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { loadTrackerList, sendFormReminder } from "~/forms/lib/form-tracker.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { prisma } from "~/lib/db.server";
 
 import { LIST_FORMS_TOOL, runListForms } from "../list-forms";
@@ -200,7 +197,6 @@ describe("get_form_summary", () => {
 
   beforeEach(() => {
     vi.mocked(canBuildForm).mockResolvedValue(true);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     vi.mocked(loadFormForEdit).mockResolvedValue(form);
     vi.mocked(loadVersionSummary).mockResolvedValue({
       versionId: "v",
@@ -214,14 +210,6 @@ describe("get_form_summary", () => {
     await expect(runGetFormSummary(ctx(), { formId: "fm1" })).rejects.toMatchObject({
       name: "McpForbiddenError",
     });
-  });
-
-  it("refuses while form-upgrades is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    await expect(runGetFormSummary(ctx(), { formId: "fm1" })).rejects.toMatchObject({
-      name: "McpForbiddenError",
-    });
-    expect(loadVersionSummary).not.toHaveBeenCalled();
   });
 
   it("defaults to the latest version", async () => {
@@ -252,7 +240,6 @@ describe("get_form_summary", () => {
 describe("get_form_tracker", () => {
   beforeEach(() => {
     vi.mocked(canBuildForm).mockResolvedValue(true);
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   });
 
   it("refuses without edit access", async () => {
@@ -260,14 +247,6 @@ describe("get_form_tracker", () => {
     await expect(runGetFormTracker(ctx(), { formId: "fm1" })).rejects.toMatchObject({
       name: "McpForbiddenError",
     });
-  });
-
-  it("refuses while form-upgrades is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    await expect(runGetFormTracker(ctx(), { formId: "fm1" })).rejects.toMatchObject({
-      name: "McpForbiddenError",
-    });
-    expect(loadTrackerList).not.toHaveBeenCalled();
   });
 
   it("adds the responded count to the list", async () => {
@@ -531,7 +510,6 @@ describe("manage_form", () => {
 
     beforeEach(() => {
       vi.mocked(canBuildForm).mockResolvedValue(true);
-      vi.mocked(isFeatureEnabled).mockResolvedValue(true);
       vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
     });
 
@@ -542,7 +520,6 @@ describe("manage_form", () => {
         id: "fm1",
         listed: "false",
       });
-      expect(isFeatureEnabled).not.toHaveBeenCalled();
     });
 
     it("sends the upgraded settings", async () => {
@@ -569,20 +546,6 @@ describe("manage_form", () => {
       expect(runFormsAction).not.toHaveBeenCalled();
     });
 
-    it("refuses each upgraded setting while form-upgrades is off", async () => {
-      vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-      for (const setting of [
-        { allowResponseEdit: false },
-        { remindBeforeClose: false },
-        { sendReceipt: false },
-        { confirmationMessage: "" },
-      ]) {
-        await expect(
-          runManageForm(ctx(), { action: "set_settings", formId: "fm1", ...setting }),
-        ).rejects.toMatchObject({ name: "McpForbiddenError" });
-      }
-      expect(runFormsAction).not.toHaveBeenCalled();
-    });
   });
 
   describe("delete_response", () => {
@@ -590,7 +553,6 @@ describe("manage_form", () => {
 
     beforeEach(() => {
       vi.mocked(canBuildForm).mockResolvedValue(true);
-      vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     });
 
     it("needs a submissionId", async () => {
@@ -601,12 +563,6 @@ describe("manage_form", () => {
 
     it("refuses without edit access", async () => {
       vi.mocked(canBuildForm).mockResolvedValue(false);
-      await expect(runManageForm(ctx(), args)).rejects.toMatchObject({ name: "McpForbiddenError" });
-      expect(deleteFormResponse).not.toHaveBeenCalled();
-    });
-
-    it("refuses while form-upgrades is off", async () => {
-      vi.mocked(isFeatureEnabled).mockResolvedValue(false);
       await expect(runManageForm(ctx(), args)).rejects.toMatchObject({ name: "McpForbiddenError" });
       expect(deleteFormResponse).not.toHaveBeenCalled();
     });
@@ -635,19 +591,12 @@ describe("manage_form", () => {
 
     beforeEach(() => {
       vi.mocked(canBuildForm).mockResolvedValue(true);
-      vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     });
 
     it("needs a message", async () => {
       await expect(
         runManageForm(ctx(), { action: "send_reminder", formId: "fm1" }),
       ).rejects.toMatchObject({ name: "McpInvalidError" });
-    });
-
-    it("refuses while form-upgrades is off", async () => {
-      vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-      await expect(runManageForm(ctx(), args)).rejects.toMatchObject({ name: "McpForbiddenError" });
-      expect(sendFormReminder).not.toHaveBeenCalled();
     });
 
     it("returns how many people were reminded", async () => {

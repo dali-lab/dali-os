@@ -10,8 +10,7 @@ import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { listHiringEvents, isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";
 import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { countAnnouncementRecipients } from "~/hiring/lib/hiring-event-notice";
@@ -453,22 +452,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (continuedInterestEmail) hiringEmails[CONTINUED_INTEREST_SLOT] = continuedInterestEmail;
 
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
-  const [progress, termOptions, phaseStatusByDomain, startTermCandidates, viewerRoles] = await Promise.all([
+  const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
     getCycleProgress(params.id),
     loadTermOptions(request),
     confidentialityRequired ? null : loadPhaseStatusByDomain(params.id),
     loadStartTermCandidates(),
-    getUserRoles(auth.user.sub, request),
   ]);
 
-  // Application events (help hours, socials, info sessions): flag-gated, so
-  // the event list itself is fetched only once the flag resolves. QR SVGs are
-  // built only for events whose check-in is currently open, to keep this
-  // loader cheap on cycles with a long event history.
-  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, viewerRoles, request);
-  const [hiringEventRows, announcementRecipientCount] = applicationEventsEnabled
-    ? await Promise.all([listHiringEvents(params.id!), countAnnouncementRecipients(params.id!)])
-    : [[], 0];
+  // Application events (help hours, socials, info sessions). QR SVGs are built
+  // only for events whose check-in is currently open, to keep this loader cheap
+  // on cycles with a long event history.
+  const [hiringEventRows, announcementRecipientCount] = await Promise.all([
+    listHiringEvents(params.id!),
+    countAnnouncementRecipients(params.id!),
+  ]);
   const hiringEvents: HiringEventRow[] = hiringEventRows.map((e) => ({
     id: e.id,
     kind: e.kind,
@@ -517,7 +514,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       currentConfidentialityBinding,
       confidentialitySignatures,
       confidentialityRequired,
-      applicationEventsEnabled,
       hiringEvents,
       hiringEventCheckIns,
       announcementRecipientCount,
@@ -2353,17 +2349,15 @@ export default function HiringLeadCycleDetails() {
             </NavSection>
           )}
 
-          {loaderData?.applicationEventsEnabled && (
-            <NavSection id="events" title="Application events">
-            <ApplicationEventsCard
-              cycleId={cycle.id}
-              events={loaderData.hiringEvents ?? []}
-              announcementTemplateBound={!!loaderData?.hiringEmails?.["notification:ApplicationEventAnnouncement"]}
-              recipientCount={loaderData.announcementRecipientCount ?? 0}
-              checkIns={loaderData.hiringEventCheckIns ?? {}}
-            />
-            </NavSection>
-          )}
+          <NavSection id="events" title="Application events">
+          <ApplicationEventsCard
+            cycleId={cycle.id}
+            events={loaderData?.hiringEvents ?? []}
+            announcementTemplateBound={!!loaderData?.hiringEmails?.["notification:ApplicationEventAnnouncement"]}
+            recipientCount={loaderData?.announcementRecipientCount ?? 0}
+            checkIns={loaderData?.hiringEventCheckIns ?? {}}
+          />
+          </NavSection>
 
           <NavSection id="timeline" title="Timeline">
           <TimelineCard

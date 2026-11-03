@@ -4,8 +4,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   formatRecordingTranscript: vi.fn().mockResolvedValue("[00:01] You: we shipped it"),
@@ -20,7 +18,6 @@ vi.mock("~/lib/ai.server", async (importOriginal) => ({
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto, storedLines } from "~/lib/meeting-recording.server";
 import { generateShortText, resolveAiProvider } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
@@ -54,7 +51,6 @@ beforeEach(() => {
     user: { sub: "u1", email: "u@dali.edu", type: "member" },
     sessionId: "s1",
   } as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(canRecordInto).mockResolvedValue(true);
   vi.mocked(storedLines).mockReturnValue(LINES as never);
   vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
@@ -91,11 +87,6 @@ describe("POST /api/ai/meeting-notes/enhance", () => {
     vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(null);
     expect((await run(BODY)).status).toBe(404);
     expect(generateShortText).not.toHaveBeenCalled();
-  });
-
-  it("is off without the flag", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect((await run(BODY)).status).toBe(403);
   });
 
   it("needs write access to the document", async () => {

@@ -8,8 +8,7 @@ import { prisma } from '~/lib/db.server'
 import { recordRouteVisit } from '~/lib/user-pages.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
-import { hasCycleAccess, getUserRoles } from '~/lib/roles'
-import { isFeatureEnabled } from '~/lib/feature-flags.server'
+import { hasCycleAccess } from '~/lib/roles'
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from '~/lib/presence-user'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
@@ -49,7 +48,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request)
   if (!auth.ok) return redirectToLogin(request)
 
-  const [applicationBase, reviewer, collabToken, roles] = await Promise.all([
+  const [applicationBase, reviewer, collabToken] = await Promise.all([
     prisma.application.findUniqueOrThrow({
       where: { id: params.id },
       include: {
@@ -71,7 +70,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     }),
     prisma.user.findUniqueOrThrow({ where: { id: auth.user.sub } }),
     getCollabToken(request),
-    getUserRoles(auth.user.sub, request),
   ])
   const cycleId = applicationBase.applicationCycleId
 
@@ -144,9 +142,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // Includes internal instructor notes; this page is behind cycle access +
     // confidentiality.
     getEducationEngagement(applicantUserId),
-    isFeatureEnabled('application-events', auth.user.sub, roles, request).then((on) =>
-      on ? getHiringEventEngagement(applicantUserId) : [],
-    ),
+    getHiringEventEngagement(applicantUserId),
     blindLabelP.then((label) =>
       listPriorApplications({
         userId: applicantUserId,
