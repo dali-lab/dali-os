@@ -262,7 +262,7 @@ export default function MentorshipHub() {
               // The whole line is the link, arrow included.
               <Link
                 to={`/mentorship/browse?termId=${data.termId}`}
-                className="inline-flex items-center gap-1 text-muted-foreground hover:underline"
+                className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
               >
                 Weekly notes from every mentor in the lab
                 <ArrowRight className="w-4 h-4" aria-hidden />

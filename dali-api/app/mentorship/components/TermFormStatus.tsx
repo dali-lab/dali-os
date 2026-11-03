@@ -48,8 +48,8 @@ export function TermFormStatus({
       <Modal open={open} onClose={() => setOpen(false)} labelledBy={titleId} containerClassName={modalCardClass("max-w-lg")}>
         <ModalHeader
           titleId={titleId}
-          title={personName}
-          subtitle={`${formName} · ${new Date(response.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
+          title={formName}
+          subtitle={`${personName} · ${new Date(response.submittedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`}
           onClose={() => setOpen(false)}
         />
         <dl className="flex flex-col gap-3">
@@ -138,9 +138,9 @@ export function WeekFormsDialog({
             className="flex min-w-0 flex-col gap-3 rounded-xl bg-os-container/40 p-4"
           >
             <header className="flex flex-col gap-0.5 border-b border-os-container pb-3">
-              <span className="text-sm font-semibold text-foreground">{s.personName}</span>
+              <span className="text-sm font-semibold text-foreground">{s.formName ?? ROLE_FORM_LABEL[s.role]}</span>
               <span className="text-xs text-muted-foreground">
-                {[s.role === "mentor" ? "Mentor" : "Mentee", s.formName, s.response && formDate(s.response.submittedAt)]
+                {[s.personName, s.role === "mentor" ? "Mentor" : "Mentee", s.response && formDate(s.response.submittedAt)]
                   .filter(Boolean)
                   .join(" · ")}
               </span>
@@ -153,7 +153,7 @@ export function WeekFormsDialog({
               <dl className="flex flex-col gap-3">
                 {s.response.rows.map((row) => (
                   <div key={row.key}>
-                    <dt className="text-xs font-medium text-muted-foreground mb-0.5">{row.label}</dt>
+                    {row.label && <dt className="text-xs font-medium text-muted-foreground mb-0.5">{row.label}</dt>}
                     <dd className="text-sm text-foreground whitespace-pre-wrap">{row.value || "None"}</dd>
                   </div>
                 ))}

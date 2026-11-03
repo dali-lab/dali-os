@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 
-import { FileText, Plus, Send, Trash2 } from "lucide-react";
+import { FileText, Frown, Meh, Plus, Send, Smile, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
@@ -13,7 +13,7 @@ import type {
   GridPerson,
 } from "../lib/mentor-grid.server";
 import { domainTermForms, type DomainTermForms, type TermForms } from "../lib/term-forms";
-import { WeekFormsDialog, type WeekFormSide } from "./TermFormStatus";
+import { FormStateBadge, WeekFormsDialog, type WeekFormSide } from "./TermFormStatus";
 import { MentorNoteOverlay } from "./MentorNoteOverlay";
 
 // Core-only inline editing (behind the mentorship-manage flag). When present,
@@ -34,6 +34,11 @@ const WEEK_COL = "2.5rem";
 const IDENTITY_COL = "17rem";
 // The check-in whose forms the Form pills open.
 const FORM_WEEK = 5;
+// The roomy white hover card used by the week circles and the check-in bubble.
+const POPUP = "!max-w-[320px] !rounded-2xl !border-os-container/60 !bg-white !p-4 !text-sm !text-neutral-900";
+
+const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
+
 // An unfilled week (no note, or a note with no rating): the upcoming-week ring, but solid.
 const UNFILLED = "border border-border text-muted-foreground/70";
 function fullName(u: GridPerson) {
@@ -287,7 +292,8 @@ function MentorGroup({
                           <FormBubble
                             mentor={Boolean(mentorSide.response)}
                             mentee={Boolean(side.response)}
-                            label={`Week ${FORM_WEEK} checkin · Mentor ${mentorSide.response ? "submitted" : "not submitted"}, Mentee ${side.response ? "submitted" : "not submitted"}`}
+                            mentorName={mentorName}
+                            menteeName={fullName(row.mentee)}
                             ariaLabel={`Open Week ${FORM_WEEK} forms — ${mentorName} and ${fullName(row.mentee)}`}
                             onClick={() => setDialog([mentorSide, side])}
                           />
@@ -343,18 +349,42 @@ function MentorGroup({
 function FormBubble({
   mentor,
   mentee,
-  label,
+  mentorName,
+  menteeName,
   ariaLabel,
   onClick,
 }: {
   mentor: boolean;
   mentee: boolean;
-  label: string;
+  mentorName: string;
+  menteeName: string;
   ariaLabel: string;
   onClick: () => void;
 }) {
+  const row = (name: string, done: boolean, role: string) => (
+    <div className="flex items-center gap-3">
+      <span className="flex min-w-0 flex-1 flex-col leading-tight">
+        <span className="truncate font-medium">{name}</span>
+        <span className="text-xs text-neutral-500">{role}</span>
+      </span>
+      <span className={cn("inline-flex items-center gap-1.5 text-xs", done ? "font-medium" : "text-neutral-500")}>
+        {done ? "Submitted" : "Not submitted"}
+        <FormStateBadge done={done} label={role} />
+      </span>
+    </div>
+  );
   return (
-    <Tooltip content={label}>
+    <Tooltip
+      variant="rich"
+      className={cn(POPUP, "!min-w-[260px]")}
+      content={
+        <div className="flex flex-col gap-3">
+          <span className="font-semibold">Week {FORM_WEEK} Checkin Form</span>
+          {row(mentorName, mentor, "Mentor")}
+          {row(menteeName, mentee, "Mentee")}
+        </div>
+      }
+    >
       <button
         type="button"
         onClick={onClick}
@@ -407,18 +437,43 @@ function GridCellView({
     const cls = cell.vibe
       ? `${VIBE_META[cell.vibe].dot} text-black/35`
       : UNFILLED;
-    const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "no rating yet";
+    const VibeIcon = cell.vibe ? VIBE_ICON[cell.vibe] : FileText;
+    const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "";
     const vibeDesc = cell.vibe === "Good"
       ? "Mentor marked this week as going well."
       : cell.vibe === "Ok"
       ? "Mentor flagged some areas to work on."
       : cell.vibe === "Bad"
       ? "Mentor flagged something concerning — follow up."
-      : "This week's note has no rating yet — not filled in.";
+      : "This week's note has no rating yet.";
     return (
       <Tooltip
-        content={`Week ${cell.week} · ${vibeLabel}. ${vibeDesc}`}
         variant="rich"
+        className={POPUP}
+        content={
+          <div className="flex items-start gap-3">
+            <span
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+                cell.vibe ? cn(VIBE_META[cell.vibe].dot, "text-black/60") : "border border-neutral-300 text-neutral-400",
+              )}
+            >
+              <VibeIcon className="h-5 w-5" aria-hidden />
+            </span>
+            <span className="flex flex-col gap-0.5">
+              <span className="text-xs text-neutral-500">Week {cell.week}</span>
+              {cell.vibe ? (
+                <>
+                  <span className="font-semibold">{vibeLabel}</span>
+                  <span className="text-neutral-600">{vibeDesc}</span>
+                </>
+              ) : (
+                // One quiet line instead of a title plus a restatement.
+                <span className="italic text-neutral-500">Not filled in</span>
+              )}
+            </span>
+          </div>
+        }
       >
         {/* A real link (new tab / copy address still work); a plain click opens
             the overlay instead of navigating. */}

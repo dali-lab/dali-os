@@ -118,4 +118,14 @@ describe("MentorGrid cards", () => {
     expect(text).toContain("Submitted"); // the mentor
     expect(text).toContain("Not submitted"); // Zed
   });
+
+  it("shows a response with no question label as just the answer", () => {
+    const group = { mentor: person("m1", "Mo"), rows: [week5("a")] };
+    render(group, linked((d) => {
+      d.mentee.responses.a = { submittedAt: "2026-10-14T00:00:00Z", rows: [{ key: "r", label: "", value: "free text" }] };
+    }));
+    act(() => formPills()[0].click());
+    expect(document.body.textContent).toContain("free text");
+    expect(document.body.querySelectorAll("dt")).toHaveLength(0);
+  });
 });

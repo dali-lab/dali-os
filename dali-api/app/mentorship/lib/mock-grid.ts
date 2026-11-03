@@ -94,20 +94,26 @@ const MENTORS: MockMentor[] = [
 ];
 
 const submittedAt = "2026-10-14T16:00:00Z";
+// The linked forms carry no preset prompts — a response is just what the person
+// typed — so mock responses are a single free-text answer with no question label.
 const mentorResponse = (name: string): TermFormResponse => ({
   submittedAt,
   rows: [
-    { key: "progress", label: `How is ${name} progressing?`, value: "Steady. Ships work on time and asks good questions in review." },
-    { key: "support", label: "Where do they need more support?", value: "Scoping larger tasks — we're pairing on breaking them down." },
-    { key: "relationship", label: "How is the mentorship going?", value: "Weekly check-ins are consistent and productive." },
+    {
+      key: "response",
+      label: "",
+      value: `${name} is steady. Ships work on time and asks good questions in review. The main thing to work on is scoping larger tasks; we've been pairing on breaking them down, and our weekly check-ins have been consistent and productive.`,
+    },
   ],
 });
 const menteeResponse = (name: string): TermFormResponse => ({
   submittedAt,
   rows: [
-    { key: "progress", label: "How do you feel your term is going?", value: `Good overall — ${name.split(" ")[0]} is getting more comfortable owning features.` },
-    { key: "support", label: "What would help most from your mentor?", value: "More feedback on code structure before I open a PR." },
-    { key: "relationship", label: "How is the mentorship going?", value: "Helpful. I'd like a bit more time on architecture questions." },
+    {
+      key: "response",
+      label: "",
+      value: `Things are going well. I'm getting more comfortable owning features. It would help to get more feedback on code structure before I open a PR, and a bit more time on architecture questions in our check-ins. (${name.split(" ")[0]})`,
+    },
   ],
 });
 

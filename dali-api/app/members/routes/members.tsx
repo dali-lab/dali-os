@@ -21,9 +21,10 @@ import {
 } from "~/members/lib/membership.server";
 import { fullName, primaryEmail } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
-import { RolePills } from "~/components/ui/RolePills";
+import { MoreHorizontal } from "lucide-react";
+import { Menu, MenuItem } from "~/components/ui/floating";
 import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
-import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
+import { NewDot, BirthdayBadge } from "~/members/components/WarmthBadges";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { deriveCoreTitles } from "~/lib/core-titles";
@@ -305,7 +306,7 @@ export default function MembersList() {
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="os-add-btn"
+              className="os-add-btn !font-medium"
             >
               <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
               New member
@@ -474,90 +475,130 @@ function CreateField({
   );
 }
 
+// A small, neutral role tag: quiet enough to sit several to a row, with a hairline
+// outline so neighbouring roles stay distinct.
+function RoleTag({ children, title }: { children: React.ReactNode; title?: string }) {
+  return (
+    <span
+      title={title}
+      className="inline-flex items-center rounded-md border border-border/60 px-1.5 py-px text-[11px] leading-4 text-muted-foreground"
+    >
+      {children}
+    </span>
+  );
+}
+
 function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatus }) {
   const navigate = useNavigate();
   // Alumni view swaps the Roles column for Class — roles are largely historical
   // for alumni, and class year is the more useful axis.
   const showClass = status === "alumni";
+  const open = (m: MemberRow) => {
+    const url = `/members/${m.id}`;
+    const label = fullName(m) || "Member";
+    if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
+  };
   return (
-    <div className="overflow-x-auto">
-      <table className={cn("w-full min-w-[640px]", "text-base")}>
-        <thead className="bg-muted/30 text-muted-foreground text-xs">
-          <tr>
-            <th className="text-left font-medium px-4 py-2">Name</th>
-            <th className="text-left font-medium px-4 py-2">Email</th>
-            <th className="text-left font-medium px-4 py-2">{showClass ? "Class" : "Roles"}</th>
+    <div className="max-w-5xl overflow-x-auto">
+      <table className="w-full min-w-[520px] table-fixed text-sm">
+        <colgroup>
+          <col className="w-[46%]" />
+          <col />
+          <col className="w-12" />
+        </colgroup>
+        <thead>
+          <tr className="border-b border-border/40 text-[11px] font-medium text-muted-foreground/80">
+            <th className="px-3 py-2 text-left font-medium">Member</th>
+            <th className="px-3 py-2 text-left font-medium">{showClass ? "Class" : "Roles"}</th>
+            <th className="px-3 py-2">
+              <span className="sr-only">Actions</span>
+            </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((m) => (
-            <tr
-              key={m.id}
-              onClick={() => {
-                const url = `/members/${m.id}`;
-                const label = fullName(m) || "Member";
-                if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
-              }}
-              className="border-t border-border hover:bg-muted/20 cursor-pointer"
-            >
-              <td className="px-4 py-2 text-foreground">
-                <div className="flex items-center gap-2.5">
-                  <Avatar
-                    photoUrl={m.photoUrl}
-                    name={fullName(m) || "Member"}
-                    size="sm"
-                    userId={m.id}
-                    className="flex-shrink-0"
-                  />
-                  <span>
-                    {m.firstName} {m.lastName}
-                  </span>
-                  {status === "active" &&
-                    isNewMember(
-                      {
-                        onboardedAt: m.onboardedAt ? new Date(m.onboardedAt) : null,
-                        createdAt: new Date(m.createdAt),
-                      },
-                      new Date(),
-                    ) && <NewBadge />}
-                  {m.birthday && isBirthdayToday(new Date(m.birthday), new Date()) && (
-                    <BirthdayBadge />
-                  )}
-                  {m.isStaff && (
-                    <span
-                      className={cn(
-                        "inline-flex items-center px-1.5 py-0.5 rounded-full font-semibold bg-os-accent/15 text-os-accent flex-shrink-0",
-                        "text-xs",
-                      )}
-                    >
-                      Staff
+          {rows.map((m) => {
+            const name = fullName(m) || "Member";
+            const isNew =
+              status === "active" &&
+              isNewMember(
+                {
+                  onboardedAt: m.onboardedAt ? new Date(m.onboardedAt) : null,
+                  createdAt: new Date(m.createdAt),
+                },
+                new Date(),
+              );
+            return (
+              <tr
+                key={m.id}
+                onClick={() => open(m)}
+                className="cursor-pointer border-t border-border/30 first:border-t-0 transition-colors hover:bg-muted/30"
+              >
+                <td className="px-3 py-1.5">
+                  <div className="flex items-center gap-3">
+                    <Avatar photoUrl={m.photoUrl} name={name} size="sm" userId={m.id} className="flex-shrink-0" />
+                    <div className="flex min-w-0 flex-col leading-tight">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {m.firstName} {m.lastName}
+                        </span>
+                        {isNew && <NewDot />}
+                        {m.birthday && isBirthdayToday(new Date(m.birthday), new Date()) && <BirthdayBadge />}
+                        {m.isStaff && <RoleTag>Staff</RoleTag>}
+                      </span>
+                      {m.email && <span className="truncate text-xs text-muted-foreground">{m.email}</span>}
+                    </div>
+                  </div>
+                </td>
+                <td className="px-3 py-1.5">
+                  {showClass ? (
+                    <span className="text-xs text-muted-foreground">
+                      {m.classYear ? `Class of ${m.classYear}` : (m.gradProgram ?? "—")}
+                    </span>
+                  ) : m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  ) : (
+                    <span className="flex flex-wrap gap-1">
+                      {m.coreTitles.map((t) => (
+                        <RoleTag key={`core-${t}`} title={`Core role: ${t}`}>
+                          {t}
+                        </RoleTag>
+                      ))}
+                      {m.domainRoles.map((r, i) => (
+                        <RoleTag
+                          key={`domain-${r.domainName}-${i}`}
+                          title={r.level ? `Domain Lead for ${r.domainName} (Level ${r.level})` : `Domain Lead for ${r.domainName}`}
+                        >
+                          {r.domainName}
+                        </RoleTag>
+                      ))}
                     </span>
                   )}
-                </div>
-              </td>
-              <td className="px-4 py-2 text-muted-foreground">{m.email ?? "—"}</td>
-              <td className="px-4 py-2">
-                {showClass ? (
-                  <span className="text-muted-foreground">
-                    {m.classYear
-                      ? `Class of ${m.classYear}`
-                      : (m.gradProgram ?? "—")}
-                  </span>
-                ) : m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
-                  <span className={cn("text-muted-foreground", "text-sm")}>—</span>
-                ) : (
-                  <RolePills
-                    coreTitles={m.coreTitles}
-                    domainRoles={m.domainRoles}
-                    size="md"
-                  />
-                )}
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="px-3 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                  <Menu
+                    align="right"
+                    ariaLabel={`Actions for ${name}`}
+                    trigger={
+                      <button
+                        type="button"
+                        aria-label={`Actions for ${name}`}
+                        className="rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
+                      >
+                        <MoreHorizontal className="h-4 w-4" aria-hidden />
+                      </button>
+                    }
+                  >
+                    <MenuItem onSelect={() => open(m)}>View profile</MenuItem>
+                    {m.email && (
+                      <MenuItem onSelect={() => void navigator.clipboard?.writeText(m.email!)}>Copy email</MenuItem>
+                    )}
+                  </Menu>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
-
