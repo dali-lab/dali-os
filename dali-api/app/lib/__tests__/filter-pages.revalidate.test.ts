@@ -68,6 +68,10 @@ describe.each(PAGES)("$name shouldRevalidate", (page) => {
 
   it("skips a tab, view or status switch the loader doesn't read", () => {
     for (const param of ["tab", "view", "status", "group", "role"].filter((p) => !page.loaderParams.includes(p))) {
+      expect(check(page, "", `?${param}=x`)).toBe(false);
+    }
+  });
+
   it("skips sort, display and other client-side view params", () => {
     const viewParams = ["sort", "dir", "paused", "rejected", "stage", "pie", "status", "domain", "event", "engagement"];
     for (const param of viewParams.filter((p) => !page.loaderParams.includes(p))) {
