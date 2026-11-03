@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.project-bids";
 import { useFilteredList } from "~/hooks/useFilteredList";
@@ -22,6 +22,7 @@ import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsMod
 import { SubmissionDatabase } from "../components/SubmissionDatabase";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
+import { DomainFilter } from "../components/DomainFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { resolveTermFilter } from "~/lib/terms";
@@ -157,11 +158,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   // (The all-terms aggregate has no single slot to bind, so it's exempt.)
   const noFormConnected = !isAll && !binding;
 
+  const domainOptions = await prisma.domain.findMany({
+    orderBy: { displayName: "asc" },
+    select: { id: true, displayName: true },
+  });
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
     termOptions,
     selectedTerm,
+    domainOptions,
     isAll,
     submissions,
     tableColumns,
@@ -298,13 +305,22 @@ function Loaded({
     () => searchParams.get("settings") === "1",
   );
 
+  const [domainId, setDomainId] = useState("");
   const columnFilters = useColumnFilters(data.tableColumns);
 
   const { search, setSearch, filtered } = useFilteredList(data.submissions, {
     searchFields: (s) => [s.name, s.email],
-    predicates: [columnFilters.predicate],
-    deps: [columnFilters.active],
+    predicates: [
+      (s) => !domainId || s.domainIds.includes(domainId),
+      columnFilters.predicate,
+    ],
+    deps: [domainId, columnFilters.active],
   });
+
+  const domains = useMemo(
+    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
+    [data.domainOptions],
+  );
 
   // The form/columns settings only make sense per-cycle; the all-terms
   // aggregate has no single binding to edit, so the trigger is hidden there.
@@ -351,6 +367,7 @@ function Loaded({
           containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
+        <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <div className="min-w-[220px] flex-1">
           <ColumnFilters
             columns={data.tableColumns}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { buttonClasses } from "~/components/ui/Button";
 import { redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.level-up";
@@ -23,6 +23,7 @@ import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
+import { DomainFilter } from "../components/DomainFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -167,11 +168,17 @@ export async function loader({ request }: Route.LoaderArgs) {
       null
     : null;
 
+  const domainOptions = await prisma.domain.findMany({
+    orderBy: { displayName: "asc" },
+    select: { id: true, displayName: true },
+  });
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName, id: singleCycleId },
     termOptions,
     selectedTerm,
+    domainOptions,
     isAll,
     submissions,
     tableColumns,
@@ -461,13 +468,22 @@ function Loaded({ data }: { data: LoadedData }) {
     targetLevel: Level;
   } | null>(null);
 
+  const [domainId, setDomainId] = useState("");
   const columnFilters = useColumnFilters(data.tableColumns);
 
   const { search, setSearch, filtered } = useFilteredList(data.submissions, {
     searchFields: (s) => [s.name, s.email],
-    predicates: [columnFilters.predicate],
-    deps: [columnFilters.active],
+    predicates: [
+      (s) => !domainId || s.domainIds.includes(domainId),
+      columnFilters.predicate,
+    ],
+    deps: [domainId, columnFilters.active],
   });
+
+  const domains = useMemo(
+    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
+    [data.domainOptions],
+  );
 
   const canOpenSettings = !data.isAll;
 
@@ -512,6 +528,7 @@ function Loaded({ data }: { data: LoadedData }) {
           containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
         <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
+        <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <div className="min-w-[220px] flex-1">
           <ColumnFilters
             columns={data.tableColumns}
@@ -539,6 +556,7 @@ function Loaded({ data }: { data: LoadedData }) {
             columns={data.tableColumns}
             rows={filtered}
             canManage={data.canManage}
+            selectedTerm={data.selectedTerm}
             emptyMessage={
               data.submissions.length === 0
                 ? "No Level Up submissions yet."
@@ -567,12 +585,14 @@ function LevelUpTable({
   columns,
   rows,
   canManage,
+  selectedTerm,
   emptyMessage,
   onLevelUp,
 }: {
   columns: { key: string; label: string }[];
   rows: TableRow[];
   canManage: boolean;
+  selectedTerm: string;
   emptyMessage: string;
   onLevelUp: (row: {
     userId: string;
@@ -613,6 +633,7 @@ function LevelUpTable({
               row={r}
               columns={columns}
               canManage={canManage}
+              selectedTerm={selectedTerm}
               onLevelUp={onLevelUp}
             />
           ))}
@@ -626,11 +647,13 @@ function LevelUpRow({
   row,
   columns,
   canManage,
+  selectedTerm,
   onLevelUp,
 }: {
   row: TableRow;
   columns: { key: string; label: string }[];
   canManage: boolean;
+  selectedTerm: string;
   onLevelUp: (row: {
     userId: string;
     name: string;
@@ -640,6 +663,7 @@ function LevelUpRow({
   }) => void;
 }) {
   const tp = row.targetPromotion;
+  const href = `/projects/level-up/${row.userId}?term=${encodeURIComponent(selectedTerm)}`;
 
   const levelLabel: Record<Level, string> = { P1: "P1", P2: "P2", P3: "P3" };
 
@@ -647,13 +671,13 @@ function LevelUpRow({
     <tr className="border-t border-border hover:bg-muted/10">
       <td className="px-4 py-2">
         <a
-          href={`/projects/level-up/${row.userId}`}
+          href={href}
           className="text-foreground hover:underline"
           onClick={(e) => {
             // Allow middle-click / cmd-click to open new tab naturally.
             if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
               e.preventDefault();
-              window.location.href = `/projects/level-up/${row.userId}`;
+              window.location.href = href;
             }
           }}
         >
