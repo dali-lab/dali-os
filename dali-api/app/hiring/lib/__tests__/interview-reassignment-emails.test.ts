@@ -90,6 +90,48 @@ describe("sendReassignmentEmails", () => {
     expect(msg?.ics).toContain("METHOD:REQUEST");
   });
 
+  it("sends the applicant nothing", async () => {
+    await sendReassignmentEmails("iv1", "da1", "removed", "added");
+    expect(sent("lin@example.edu")).toBeUndefined();
+    expect(vi.mocked(getHiringEmail)).not.toHaveBeenCalledWith("InterviewConfirmedApplicant");
+  });
+
+  it("emails only the removed, remaining, and new interviewers", async () => {
+    await sendReassignmentEmails("iv1", "da1", "removed", "added");
+    const targets = vi.mocked(enqueueOutbound).mock.calls.map(([msg]) => msg.target).sort();
+    expect(targets).toEqual(["ada@example.edu", "grace@example.edu", "mary@example.edu"]);
+  });
+
+  it("keeps the applicant on the interviewers' calendar guest list and drops the removed interviewer", async () => {
+    await sendReassignmentEmails("iv1", "da1", "removed", "added");
+    const ics = sent("grace@example.edu")?.ics ?? "";
+    expect(ics).toContain("lin@example.edu");
+    expect(ics).toContain("grace@example.edu");
+    expect(ics).toContain("mary@example.edu");
+    expect(ics).not.toContain("ada@example.edu");
+  });
+
+  it("gives the cancel and the update the same bumped calendar sequence", async () => {
+    await sendReassignmentEmails("iv1", "da1", "removed", "added");
+    expect(db.interview.update).toHaveBeenCalledTimes(1);
+    expect(sent("ada@example.edu")?.ics).toContain("SEQUENCE:2");
+    expect(sent("grace@example.edu")?.ics).toContain("SEQUENCE:2");
+  });
+
+  it("still updates the interviewers when the applicant has no email", async () => {
+    db.domainApplication.findUnique.mockImplementation(({ include }: any) =>
+      Promise.resolve(
+        include?.domain
+          ? { domain: { name: "Fullstack Dev" } }
+          : { application: { user: { firstName: "Lin", dartmouthEmail: null, netId: null } } },
+      ),
+    );
+    await sendReassignmentEmails("iv1", "da1", "removed", "added");
+    const ics = sent("grace@example.edu")?.ics ?? "";
+    expect(ics).toContain("METHOD:REQUEST");
+    expect(ics).not.toContain("lin@example.edu");
+  });
+
   it("falls back to the invite so the calendar update still goes out when the email isn't written", async () => {
     vi.mocked(getHiringEmail).mockImplementation(async (slot: any) =>
       slot === "InterviewInterviewerChanged" ? null : ({ subject: slot, body: "b" } as any),
