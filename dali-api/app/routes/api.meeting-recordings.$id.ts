@@ -1,7 +1,7 @@
 // /api/meeting-recordings/:id — one recording. Used by three audiences:
 //   - The owner (page cookie session, or the desktop app's Session Bearer):
 //     GET for the full state, POST actions (claim/stop/resume/speakers/
-//     finish), DELETE to discard.
+//     finish/capture), DELETE to discard.
 //   - Any other viewer of the note (authorizeCollabDoc): GET a read-only
 //     view, POST {action:"speakers"} (any editor, via canRecordInto). An
 //     editor (not just the owner) may also POST {action:"stop"} — someone
@@ -22,6 +22,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
+import { parseCaptureReport } from "~/lib/transcription/capture-report";
 import {
   canReadRecording,
   canRecordInto,
@@ -396,6 +397,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         typeof body.error === "string" && body.error ? body.error : null,
         typeof body.seconds === "number" ? body.seconds : 0,
       );
+      return Response.json({ ok: true });
+    case "capture":
+      await prisma.meetingRecording.update({ where: { id: rec.id }, data: parseCaptureReport(body) });
       return Response.json({ ok: true });
     default:
       return Response.json({ error: "Unknown action" }, { status: 400 });

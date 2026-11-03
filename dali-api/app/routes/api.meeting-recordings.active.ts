@@ -20,7 +20,17 @@ export async function loader({ request }: Route.LoaderArgs) {
       finalizedAt: null,
     },
     orderBy: { createdAt: "desc" },
-    select: { id: true, documentName: true, status: true, sessionStartedAt: true, voicedChannels: true, lastChunkAt: true },
+    select: {
+      id: true,
+      documentName: true,
+      status: true,
+      sessionStartedAt: true,
+      voicedChannels: true,
+      lastChunkAt: true,
+      micDevice: true,
+      micSilent: true,
+      systemAudioAllowed: true,
+    },
   });
   if (!rec) return Response.json({ recording: null });
 
@@ -41,9 +51,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       : null;
   const noSound =
     sessionSeconds !== null &&
-    sessionSeconds >= NO_SOUND_AFTER_SECONDS &&
-    rec.lastChunkAt !== null &&
-    rec.voicedChannels.length === 0;
+    ((sessionSeconds >= NO_SOUND_AFTER_SECONDS && rec.lastChunkAt !== null && rec.voicedChannels.length === 0) ||
+      rec.micSilent);
 
   return Response.json({
     recording: {
@@ -54,6 +63,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       href,
       sessionSeconds,
       noSound,
+      micDevice: rec.micDevice,
+      callAudioOff: sessionSeconds !== null && rec.systemAudioAllowed === false,
     },
   });
 }

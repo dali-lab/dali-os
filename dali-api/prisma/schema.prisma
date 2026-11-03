@@ -2233,6 +2233,12 @@ model MeetingRecording {
   captureSource  String?   // "desktop" | "browser"
   appVersion     String?   // the desktop shell's version, when there is one
   clientPlatform String?
+  // Reported by the desktop recorder once capture starts, and micSilent again
+  // whenever the mic goes quiet or comes back. systemAudioAllowed is null
+  // when macOS hasn't asked yet or couldn't say.
+  micDevice          String?
+  systemAudioAllowed Boolean?
+  micSilent          Boolean  @default(false)
   // When the chunks were removed, a day after finalizedAt.
   audioDeletedAt DateTime?
 

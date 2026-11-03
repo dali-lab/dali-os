@@ -11,7 +11,11 @@
 //   dali_recorder_stop()                 — stop capture.
 //
 // Status is reported back through `callback` as one JSON object per call:
-//   {"type":"started","systemAudio":Bool}
+//   {"type":"started","systemAudio":Bool,"systemAudioAllowed":Bool|null,
+//    "micDevice":String|null}
+//   {"type":"micSilent","silent":Bool,"micDevice":String|null}
+//                                        (each time the mic goes quiet or
+//                                        comes back)
 //   {"type":"error","message":String}   (fatal; "stopped" follows)
 //   {"type":"stopped"}                   (always the last event)
 //
@@ -95,6 +99,7 @@ private final class Recorder {
     // SystemAudioCapture is 14.2+, so it's held only through its stop action.
     private var stopSystem: (() -> Void)?
     private var stopping = false
+    private var micSilent = false
 
     init(callback: @escaping DaliRecorderCallback) {
         self.callback = callback
@@ -124,7 +129,13 @@ private final class Recorder {
     private func begin() {
         do {
             let micConverter = PCMConverter(channel: 0, levelName: "mic converted")
-            mic = try MicCapture { buffer in micConverter.feed(buffer) }
+            let silence = SilenceWatch { [weak self] silent in
+                recorderQueue.async { self?.reportMicSilent(silent) }
+            }
+            mic = try MicCapture { buffer in
+                silence.add(buffer)
+                micConverter.feed(buffer)
+            }
         } catch {
             emit(["type": "error", "message": "Couldn't open the microphone."])
             emit(["type": "stopped"])
@@ -132,7 +143,9 @@ private final class Recorder {
             return
         }
 
+        var systemAudioAllowed: Bool?
         if #available(macOS 14.2, *) {
+            systemAudioAllowed = systemAudioPermission()
             let callConverter = PCMConverter(channel: 1, levelName: "call converted")
             let callLevel = LevelMeter("call raw")
             if let tap = try? SystemAudioCapture(onBuffer: { buffer in
@@ -143,7 +156,23 @@ private final class Recorder {
             }
         }
 
-        emit(["type": "started", "systemAudio": stopSystem != nil])
+        let micDevice = defaultInputName()
+        recorderLog.notice(
+            "started mic=\(micDevice ?? "unknown", privacy: .public) systemAudioAllowed=\(String(describing: systemAudioAllowed), privacy: .public)")
+        emit([
+            "type": "started",
+            "systemAudio": stopSystem != nil,
+            "systemAudioAllowed": systemAudioAllowed as Any? ?? NSNull(),
+            "micDevice": micDevice as Any? ?? NSNull(),
+        ])
+    }
+
+    private func reportMicSilent(_ silent: Bool) {
+        guard !stopping, silent != micSilent else { return }
+        micSilent = silent
+        let micDevice = defaultInputName()
+        recorderLog.notice("mic silent=\(silent, privacy: .public) device=\(micDevice ?? "unknown", privacy: .public)")
+        emit(["type": "micSilent", "silent": silent, "micDevice": micDevice as Any? ?? NSNull()])
     }
 
     func stop() {
@@ -206,6 +235,78 @@ private final class PCMConverter {
         guard converted.frameLength > 0, let data = converted.int16ChannelData?[0] else { return }
         level.add(data, frames: Int(converted.frameLength))
         deliverAudio(channel, data, Int(converted.frameLength))
+    }
+}
+
+// MARK: - Silence
+
+// Watches the mic as the server will hear it, using the same floor as
+// isVoiced in dali-api's pcm-level.ts, so a mic that delivers nothing usable
+// is flagged while the meeting is still going instead of in an empty
+// transcript. Fed from the mic's tap thread only, across engine restarts.
+private final class SilenceWatch {
+    private static let floor = 100.0 / 32768
+    private static let window: Double = 15
+
+    private let onChange: (Bool) -> Void
+    private var sumSquares: Double = 0
+    private var frames: Double = 0
+    private var seconds: Double = 0
+
+    init(onChange: @escaping (Bool) -> Void) {
+        self.onChange = onChange
+    }
+
+    func add(_ buffer: AVAudioPCMBuffer) {
+        guard buffer.frameLength > 0, buffer.format.sampleRate > 0 else { return }
+        let level = Double(rms(buffer))
+        sumSquares += level * level * Double(buffer.frameLength)
+        frames += Double(buffer.frameLength)
+        seconds += Double(buffer.frameLength) / buffer.format.sampleRate
+        guard seconds >= Self.window else { return }
+        onChange((sumSquares / frames).squareRoot() <= Self.floor)
+        sumSquares = 0
+        frames = 0
+        seconds = 0
+    }
+}
+
+// MARK: - Devices and permissions
+
+private func defaultInputName() -> String? {
+    var device = AudioObjectID(kAudioObjectUnknown)
+    var size = UInt32(MemoryLayout<AudioObjectID>.size)
+    var address = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain)
+    guard AudioObjectGetPropertyData(
+        AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr,
+        device != kAudioObjectUnknown
+    else { return nil }
+    var name: Unmanaged<CFString>?
+    size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+    address.mSelector = kAudioObjectPropertyName
+    guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &name) == noErr, let name else {
+        return nil
+    }
+    return name.takeRetainedValue() as String
+}
+
+// macOS has no public way to read the System Audio Recording permission, and
+// a denied tap records silence without an error. This is the private TCC
+// preflight that other tap-based recorders use: 0 allowed, 1 denied, 2 not
+// asked yet. nil when it's unreadable or not asked.
+private func systemAudioPermission() -> Bool? {
+    typealias Preflight = @convention(c) (CFString, CFDictionary?) -> Int
+    guard let tcc = dlopen("/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC", RTLD_NOW),
+          let symbol = dlsym(tcc, "TCCAccessPreflight")
+    else { return nil }
+    let preflight = unsafeBitCast(symbol, to: Preflight.self)
+    switch preflight("kTCCServiceAudioCapture" as CFString, nil) {
+    case 0: return true
+    case 1: return false
+    default: return nil
     }
 }
 

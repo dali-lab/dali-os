@@ -547,3 +547,35 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).not.toContain("Discard recording");
   });
 });
+
+describe("RecordingRail capture warnings", () => {
+  const live = { phase: "recording" as const, captureMode: "desktop" as const };
+
+  it("names the silent mic device the desktop app reported", () => {
+    const html = render(makeRec({ ...live, noSound: true, micDevice: "iPhone Microphone" }));
+    expect(html).toContain("Nothing is coming from iPhone Microphone.");
+    expect(html).toContain("System Settings &gt; Sound");
+  });
+
+  it("falls back to the general warning without a device", () => {
+    expect(render(makeRec({ ...live, noSound: true }))).toContain("No sound detected. Stop and record again.");
+  });
+
+  it("says call audio is off and where to allow it", () => {
+    const html = render(makeRec({ ...live, callAudioOff: true }));
+    expect(html).toContain("Only your mic is being recorded.");
+    expect(html).toContain("Screen &amp; System Audio Recording");
+  });
+
+  it("shows only the silent mic warning when both apply", () => {
+    const html = render(makeRec({ ...live, noSound: true, micDevice: "USB Mic", callAudioOff: true }));
+    expect(html).toContain("Nothing is coming from USB Mic.");
+    expect(html).not.toContain("Only your mic is being recorded.");
+  });
+
+  it("shows neither when capture is fine", () => {
+    const html = render(makeRec(live));
+    expect(html).not.toContain("Nothing is coming from");
+    expect(html).not.toContain("Only your mic is being recorded.");
+  });
+});

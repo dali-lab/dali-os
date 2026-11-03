@@ -23,6 +23,9 @@ const row = (over: Record<string, unknown> = {}) => ({
   sessionStartedAt: null,
   voicedChannels: [] as string[],
   lastChunkAt: null,
+  micDevice: null,
+  micSilent: false,
+  systemAudioAllowed: null,
   ...over,
 });
 
@@ -66,6 +69,41 @@ describe("GET /api/meeting-recordings/active", () => {
     it("is false once recording has stopped", async () => {
       expect(await noSoundFor({ status: "Stopped" })).toBe(false);
     });
+
+    it("is true as soon as the desktop app reports a silent mic, even with call audio voiced", async () => {
+      expect(await noSoundFor({ sessionStartedAt: ago(20), voicedChannels: ["call"], micSilent: true })).toBe(true);
+    });
+
+    it("does not report a silent mic once recording has stopped", async () => {
+      expect(await noSoundFor({ status: "Stopped", micSilent: true })).toBe(false);
+    });
+  });
+
+  describe("capture checks", () => {
+    const recordingWith = async (over: Record<string, unknown>) => {
+      vi.mocked(prisma.meetingRecording.findFirst).mockResolvedValue(
+        row({ sessionStartedAt: new Date(), ...over }) as never,
+      );
+      return (await (await run()).json()).recording;
+    };
+
+    it("returns the mic device the desktop app reported", async () => {
+      expect((await recordingWith({ micDevice: "iPhone Microphone" })).micDevice).toBe("iPhone Microphone");
+    });
+
+    it("returns a null mic device when none was reported", async () => {
+      expect((await recordingWith({})).micDevice).toBeNull();
+    });
+
+    it("flags call audio off only when the permission is known to be denied", async () => {
+      expect((await recordingWith({ systemAudioAllowed: false })).callAudioOff).toBe(true);
+      expect((await recordingWith({ systemAudioAllowed: true })).callAudioOff).toBe(false);
+      expect((await recordingWith({ systemAudioAllowed: null })).callAudioOff).toBe(false);
+    });
+
+    it("does not flag call audio off once recording has stopped", async () => {
+      expect((await recordingWith({ status: "Stopped", systemAudioAllowed: false })).callAudioOff).toBe(false);
+    });
   });
 
   it("returns the auth response when signed out", async () => {
@@ -105,7 +143,17 @@ describe("GET /api/meeting-recordings/active", () => {
       href: "/documents/p1",
     });
     expect(recording.sessionSeconds).toBeGreaterThanOrEqual(89);
-    expect(Object.keys(recording).sort()).toEqual(["documentName", "href", "id", "noSound", "sessionSeconds", "status", "title"]);
+    expect(Object.keys(recording).sort()).toEqual([
+      "callAudioOff",
+      "documentName",
+      "href",
+      "id",
+      "micDevice",
+      "noSound",
+      "sessionSeconds",
+      "status",
+      "title",
+    ]);
   });
 
   it("has no session length unless the row is Recording", async () => {

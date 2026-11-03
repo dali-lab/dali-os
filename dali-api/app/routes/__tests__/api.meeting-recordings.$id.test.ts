@@ -384,6 +384,37 @@ describe('POST /api/meeting-recordings/:id { action: "stop" }', () => {
   });
 });
 
+describe('POST /api/meeting-recordings/:id { action: "capture" }', () => {
+  const asOwner = () =>
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: true,
+      user: { sub: "u1", email: "u1@dali.edu", type: "member" },
+      sessionId: "s1",
+    } as never);
+
+  it("stores the owner's device and permission report", async () => {
+    asOwner();
+    const res = await run({ action: "capture", micDevice: "iPhone Microphone", systemAudioAllowed: false });
+    expect(res.status).toBe(200);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: { micDevice: "iPhone Microphone", systemAudioAllowed: false },
+    });
+  });
+
+  it("stores a silence report without touching the other fields", async () => {
+    asOwner();
+    await run({ action: "capture", micSilent: true });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({ where: { id: "rec1" }, data: { micSilent: true } });
+  });
+
+  it("is owner-only, even for an editor of the note", async () => {
+    const res = await run({ action: "capture", micSilent: true });
+    expect(res.status).toBe(404);
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("DELETE /api/meeting-recordings/:id", () => {
   const del = () =>
     action({
