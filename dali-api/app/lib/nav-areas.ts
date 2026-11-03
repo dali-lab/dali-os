@@ -282,9 +282,6 @@ const REGROUPED_AREAS: NavArea[] = [
       // system administration. It renders its own Core compliance console.
       { label: "Agreements", href: "/core/agreements", icon: FileSignature },
       { label: "Drive folders", href: "/core/drive-folders", icon: FolderCog },
-      // Room and door-display management. The member-facing booking page sits
-      // in the top bar (see ROOM_BOOKING_NAV_ITEM).
-      { label: "Rooms", href: "/core/rooms", icon: DoorOpen },
     ],
   },
   {

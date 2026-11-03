@@ -86,7 +86,6 @@ const STANDALONE_LABELS: Record<string, string> = {
   access: "Roles & domains",
   agreements: "Agreements",
   "drive-folders": "Drive folders",
-  rooms: "Rooms",
   partners: "Partners",
 };
 

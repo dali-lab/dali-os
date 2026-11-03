@@ -8,7 +8,7 @@ import { redeemDisplaySetupCode } from "~/lib/room-display.server";
 const BodySchema = z.object({ code: z.string().trim().min(1).max(32) });
 
 // POST /api/room-display/activate — unauthenticated. The door iPad redeems the
-// setup code Core minted at /core/rooms for its long-lived display token.
+// setup code Core minted at /admin/rooms for its long-lived display token.
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
