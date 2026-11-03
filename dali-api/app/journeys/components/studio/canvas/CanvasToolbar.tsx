@@ -52,7 +52,7 @@ function ImageForm({ onAdd }: { onAdd: (src: string, alt: string) => void }) {
   const upload = async (file: File) => {
     setUploading(true);
     try {
-      setSrc(await uploadEditorImage(file));
+      setSrc(await uploadEditorImage(file, toast.info));
     } catch {
       toast.error("That image didn't upload. Try again.");
     } finally {

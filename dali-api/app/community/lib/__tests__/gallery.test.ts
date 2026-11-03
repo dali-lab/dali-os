@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   GALLERY_CAPTION_MAX,
   GALLERY_MAX_PHOTOS,
@@ -10,6 +10,7 @@ import {
   isGalleryImageKey,
   layoutMasonry,
   parseNewPosts,
+  scaledGalleryCopy,
   encodeGalleryImage,
   galleryDisplaySize,
   galleryOriginalKeyPrefix,
@@ -284,5 +285,50 @@ describe("galleryDisplaySize", () => {
 
   it("never rounds a thin side down to nothing", () => {
     expect(galleryDisplaySize(20_000, 2)).toEqual({ width: 2048, height: 1 });
+  });
+});
+
+describe("scaledGalleryCopy", () => {
+  function stubCanvas(supported: string[]) {
+    const ctx = {
+      drawImage: vi.fn(),
+      fillRect: vi.fn(),
+      globalCompositeOperation: "source-over",
+      fillStyle: "",
+    };
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ctx,
+      toBlob: (done: (blob: Blob | null) => void, type: string) =>
+        done(new Blob(["x"], { type: supported.includes(type) ? type : "image/png" })),
+    };
+    vi.stubGlobal("document", { createElement: () => canvas });
+    return { ctx, canvas };
+  }
+  const bitmap = {} as ImageBitmap;
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps transparency when the browser can encode WebP", async () => {
+    const { ctx, canvas } = stubCanvas(["image/webp", "image/jpeg"]);
+
+    const copy = await scaledGalleryCopy(bitmap, 300, 200, "display");
+
+    expect(copy?.type).toBe("image/webp");
+    expect([canvas.width, canvas.height]).toEqual([300, 200]);
+    expect(ctx.drawImage).toHaveBeenCalledWith(bitmap, 0, 0, 300, 200);
+    expect(ctx.fillRect).not.toHaveBeenCalled();
+  });
+
+  it("paints white behind the image for the WebKit JPEG fallback", async () => {
+    const { ctx } = stubCanvas(["image/jpeg"]);
+
+    const copy = await scaledGalleryCopy(bitmap, 300, 200, "display");
+
+    expect(copy?.type).toBe("image/jpeg");
+    expect(ctx.globalCompositeOperation).toBe("destination-over");
+    expect(ctx.fillStyle).toBe("#fff");
+    expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, 300, 200);
   });
 });
