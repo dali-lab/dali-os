@@ -3,7 +3,6 @@ import { useLocation } from "react-router";
 import {
   TICK_MS,
   advanceTimer,
-  isCounting,
   pendingFlush,
   startTimer,
   type ViewTimer,
@@ -29,22 +28,8 @@ function beacon(payload: object): void {
   }).catch(() => {});
 }
 
-function frameRendered(): boolean | null {
-  try {
-    const el = window.frameElement as HTMLElement | null;
-    if (!el) return null;
-    if (typeof el.checkVisibility === "function") return el.checkVisibility();
-    return el.getClientRects().length > 0;
-  } catch {
-    return null;
-  }
-}
-
 function counting(): boolean {
-  return isCounting({
-    documentVisible: document.visibilityState === "visible",
-    frameRendered: frameRendered(),
-  });
+  return document.visibilityState === "visible";
 }
 
 type ActiveView = { id: string; timer: ViewTimer };

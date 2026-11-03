@@ -105,7 +105,6 @@ import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { fetchParticipantOptions, useParticipantOptions } from "~/calendar/lib/participant-options";
 import { useIsMobile } from "~/hooks/useIsMobile";
 
-// Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
 // UnderlineTabButtons row unconditionally — it isn't the flag-gated AreaPillNav,
 // so it reserves the flush top spacing regardless of the sidebar-redesign flag.

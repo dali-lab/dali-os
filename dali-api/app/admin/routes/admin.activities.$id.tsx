@@ -43,7 +43,6 @@ import {
 import { fullName } from "~/lib/display";
 
 export const handle = {
-  roomyBreadcrumb: true,
   breadcrumbTrail: (data: unknown) => {
     const d = data as
       | { activity?: { name: string }; viewerIsAdmin?: boolean; isAdmin?: boolean }

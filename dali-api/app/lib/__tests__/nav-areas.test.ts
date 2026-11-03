@@ -82,7 +82,7 @@ describe("isAreaSubtabPath", () => {
   });
 });
 
-// Regression: the tabless history arrows and the layout's flush top padding
+// Regression: the history arrows and the layout's flush top padding
 // both stand down when a page renders its own nav row. Layout used to decide
 // that from `handle.areaPills` alone, which broke both ways — calendar
 // (areaSubnav) got a standalone arrow bar stacked on top of its own subnav

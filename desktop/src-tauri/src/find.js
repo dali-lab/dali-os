@@ -3,9 +3,8 @@
 // file on each menu action (window.rs find_action) and calls the API it
 // defines. The define is guarded, so re-eval after a page reload just works.
 //
-// The app renders each workspace tab in a same-origin <iframe>
-// (TabWorkspace.tsx) with background tabs display:none, so search covers the
-// top document plus every *rendered* iframe document. Highlight registries,
+// Search covers the top document plus every *rendered* same-origin iframe
+// document. Highlight registries,
 // ::highlight styles, and key listeners are all per-document — everything
 // here tracks the set of documents it touched.
 //

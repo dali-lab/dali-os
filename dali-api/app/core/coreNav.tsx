@@ -128,7 +128,6 @@ export function coreHandle(
   leafLabel?: (data: unknown) => string | null | undefined,
 ) {
   return {
-    roomyBreadcrumb: true,
     breadcrumbTrail: (data: unknown) => {
       const d = data as { isAdmin?: boolean; viewerIsAdmin?: boolean } | null;
       const trail = coreTrail(active, !!d?.isAdmin || !!d?.viewerIsAdmin);

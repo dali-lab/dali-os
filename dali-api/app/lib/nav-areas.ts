@@ -580,7 +580,7 @@ export function isPinnedActive(
  * Does this page render its own horizontal nav row? Only `areaSubnav` pages
  * (e.g. calendar) do — the dali.os shell owns every other area's sub-navigation
  * from the sidebar. Anything that stands down "because the page has its own
- * row" (the tabless history arrows) asks this so it doesn't double the row.
+ * row" (the history arrows) asks this so it doesn't double the row.
  */
 export function hasSubnavRow(
   matches: readonly { handle?: unknown }[],
