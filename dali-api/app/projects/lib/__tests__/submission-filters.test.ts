@@ -5,6 +5,7 @@ import {
   clearFilterColumn,
   columnResponses,
   filterValues,
+  hasFilterParams,
   matchesFilters,
   readFilterParams,
   toggleFilterValue,
@@ -190,5 +191,34 @@ describe("readFilterParams / writeFilterParams", () => {
       { columnKey: "q:why & how", values: ["Yes, & more", "50% = half"] },
     ];
     expect(readFilterParams(writeFilterParams(new URLSearchParams(), filters))).toEqual(filters);
+  });
+});
+
+describe("hasFilterParams / markEmpty", () => {
+  it("is false for a URL with no filter params", () => {
+    expect(hasFilterParams(new URLSearchParams("q=ada&term=t1"))).toBe(false);
+  });
+
+  it("is true for a filter or the no-filters marker", () => {
+    expect(hasFilterParams(new URLSearchParams("f.domain=Design"))).toBe(true);
+    expect(hasFilterParams(new URLSearchParams("f="))).toBe(true);
+  });
+
+  it("writes the marker only when asked and the list is empty", () => {
+    expect(writeFilterParams(new URLSearchParams("q=a"), [], { markEmpty: true }).toString()).toBe("q=a&f=");
+    expect(writeFilterParams(new URLSearchParams("q=a"), []).toString()).toBe("q=a");
+    expect(
+      writeFilterParams(new URLSearchParams(), [{ columnKey: "domain", values: ["Eng"] }], {
+        markEmpty: true,
+      }).toString(),
+    ).toBe("f.domain=Eng");
+  });
+
+  it("drops an old marker once a filter is picked", () => {
+    const next = writeFilterParams(new URLSearchParams("f=&q=a"), [
+      { columnKey: "domain", values: ["Eng"] },
+    ]);
+    expect(next.toString()).toBe("q=a&f.domain=Eng");
+    expect(readFilterParams(new URLSearchParams("f="))).toEqual([]);
   });
 });

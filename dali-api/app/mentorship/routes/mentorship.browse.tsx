@@ -5,6 +5,9 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   Activity,
   FolderKanban,
@@ -98,6 +101,19 @@ type LoaderData = {
 
 function pickFilter(value: string | null): string {
   return value ?? "";
+}
+
+// Search and the filter builder run in the browser; these params scope the
+// loader or seed it.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, [
+    "termId",
+    "menteeId",
+    "mentorId",
+    "projectId",
+    "domainId",
+    "status",
+  ]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -313,7 +329,7 @@ export default function MentorshipBrowse() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
-  const [query, setQuery] = useState(data.filters.query);
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const [linkFormsOpen, setLinkFormsOpen] = useState(false);
   const restored = useRef(false);
   const toast = useToast();
@@ -324,11 +340,13 @@ export default function MentorshipBrowse() {
     [data.nudgeRecipients],
   );
 
-  // `q` only enters the URL on a deep link, so re-syncing on its value can't
-  // fight the keystrokes it isn't recording.
-  useEffect(() => setQuery(data.filters.query), [data.filters.query]);
+  // A ?menteeId= / ?mentorId= link seeds the search box with that person's name.
+  useEffect(() => {
+    if (!params.has("q") && data.filters.query) setQuery(data.filters.query);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.filters.query]);
 
-  const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters);
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters, { inUrl: true });
 
   // What the filter bar matches per row, keyed by the row's grid key: the
   // project name, the domain label (as the pickers once showed it), and every

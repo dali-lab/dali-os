@@ -66,6 +66,12 @@ export function toggleFilterValue(
 }
 
 const FILTER_PARAM_PREFIX = "f.";
+// Written when every filter is removed from a board that opens with defaults,
+// so a reload or a shared link keeps "no filters" instead of the defaults.
+const NO_FILTERS_PARAM = "f";
+
+const isFilterParam = (name: string) =>
+  name === NO_FILTERS_PARAM || name.startsWith(FILTER_PARAM_PREFIX);
 
 // One repeated param per filtered column (`?f.domain=Design&f.domain=Eng`), so
 // any column key or value survives without an escaping scheme of our own.
@@ -80,17 +86,24 @@ export function readFilterParams(params: URLSearchParams): ColumnFilter[] {
   return filters;
 }
 
+/** Whether the URL says anything about filters, including "none". */
+export function hasFilterParams(params: URLSearchParams): boolean {
+  return [...params.keys()].some(isFilterParam);
+}
+
 export function writeFilterParams(
   params: URLSearchParams,
   filters: readonly ColumnFilter[],
+  { markEmpty = false }: { markEmpty?: boolean } = {},
 ): URLSearchParams {
   const next = new URLSearchParams();
   for (const [name, value] of params) {
-    if (!name.startsWith(FILTER_PARAM_PREFIX)) next.append(name, value);
+    if (!isFilterParam(name)) next.append(name, value);
   }
   for (const f of filters) {
     for (const v of f.values) next.append(FILTER_PARAM_PREFIX + f.columnKey, v);
   }
+  if (markEmpty && filters.every((f) => f.values.length === 0)) next.set(NO_FILTERS_PARAM, "");
   return next;
 }
 
