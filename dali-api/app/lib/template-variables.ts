@@ -66,6 +66,17 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     contexts: ["email"],
   },
 
+  // ── Form receipts ───────────────────────────────────────────────────────
+  formName: { description: "The name of the form that was submitted.", contexts: ["email"] },
+  submittedAt: {
+    description: "When the response was submitted, written out in Eastern Time.",
+    contexts: ["email"],
+  },
+  answers: {
+    description: "The person's answers, one \"Question: answer\" line each. Left out of the copy sent to people who aren't signed in.",
+    contexts: ["email"],
+  },
+
   // ── Notifications ───────────────────────────────────────────────────────
   // Deliberately generic and few. 24 of the 44 notify() call sites interpolate
   // some variant of "the title of the thing" — a meeting, a task, a document, a

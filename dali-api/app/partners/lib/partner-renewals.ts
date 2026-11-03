@@ -15,6 +15,8 @@ export type RenewalCardModel = {
   iconEmoji: string | null;
   orgName: string | null;
   termCount: number;
+  piUserId: string | null;
+  piName: string | null;
   column: RenewalColumn;
   fromTermCode: string | null;
   nextStep: string | null;
@@ -80,11 +82,6 @@ export function isNextStepOverdue(dueIso: string | null, now: Date): boolean {
     Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) >
     Date.UTC(due.getUTCFullYear(), due.getUTCMonth(), due.getUTCDate())
   );
-}
-
-export function isContactStale(lastIso: string | null, staleDays: number, now: Date): boolean {
-  if (!lastIso) return false;
-  return now.getTime() - new Date(lastIso).getTime() > staleDays * 86_400_000;
 }
 
 export function matchesRenewalQuery(card: RenewalCardModel, query: string): boolean {

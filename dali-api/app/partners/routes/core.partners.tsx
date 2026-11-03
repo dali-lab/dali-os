@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
-import { Popover } from "~/components/ui/floating";
 import type { Route } from "./+types/core.partners";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -10,36 +9,32 @@ import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PartnerBoard } from "../components/PartnerBoard";
 import { PartnerApplicationModal } from "../components/PartnerApplicationModal";
 import {
-  CARD_SORTS,
-  CARD_SORT_LABELS,
-  DEFAULT_FILTERS,
-  filtersFromParams,
-  isCardSort,
-  isPartnerFilters,
+  ACTIVITY_OPTIONS,
+  columnFiltersFromParams,
+  DEFAULT_BOARD_PREFS,
+  filterPartnerCards,
+  isBoardPrefs,
+  partnerCardCells,
+  partnerFiltersFromColumns,
   SOURCE_OPTIONS,
+  type PartnerBoardPrefs,
   type PartnerCardModel,
-  type PartnerCardSort,
-  type PartnerFilters,
 } from "../lib/partner-board";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { usePersistedState } from "~/hooks/usePersistedState";
 import {
-  FilterCountBadge,
-  FilterGroup,
-  FilterPill,
-  FilterResetButton,
-  FilterSectionLabel,
-  FilterToggleRow,
-  customizeButtonClass,
-  filterPanelClass,
-} from "~/components/ui/filter-panel";
-import { Plus, Settings, SlidersHorizontal } from "lucide-react";
+  ColumnFilters,
+  useColumnFilters,
+  type FilterColumn,
+} from "~/projects/components/ColumnFilters";
+import { Activity, CalendarRange, Inbox, Plus, Settings, Shapes } from "lucide-react";
 import { IconButton } from "~/components/ui/IconButton";
 import { PartnerSettingsModal } from "../components/PartnerSettingsModal";
 
 // areaSubnav: this page mounts PartnerCrmNav itself at the top, so the shell
-// must not add its own sub-nav row above it.
-export const handle = { hideBreadcrumbs: true, areaSubnav: true };
+// must not add its own sub-nav row above it. fitViewport: the board's columns
+// scroll internally, so the page itself must never grow the document.
+export const handle = { hideBreadcrumbs: true, areaSubnav: true, fitViewport: true };
 
 export const meta: Route.MetaFunction = () => [
   { title: "Partners · DALI OS" },
@@ -69,6 +64,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         holdUntil: true,
         meetingRequestedAt: true,
         createdAt: true,
+        iconEmoji: true,
         partnerOrg: { select: { name: true } },
         applicantContact: { select: { name: true } },
         targetTerms: {
@@ -122,7 +118,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     lastActivityAt: a.lastActivityAt.toISOString(),
     holdUntil: a.holdUntil?.toISOString() ?? null,
     resultingProjectId: a.resultingProjectId,
-    projectIconEmoji: a.resultingProjectId ? (projectIcons.get(a.resultingProjectId) ?? null) : null,
+    projectIconEmoji: a.resultingProjectId ? (projectIcons.get(a.resultingProjectId) ?? null) : a.iconEmoji,
     meetingRequestedAt: a.meetingRequestedAt?.toISOString() ?? null,
     pendingRequestCount: a.meetingRequests.length,
     meetingCount: a.meetings.length,
@@ -169,194 +165,79 @@ export default function PartnersApplications() {
   const openCard = openId ? cards.find((c) => c.id === openId) ?? null : null;
 
   const [query, setQuery] = useState("");
-  const [filters, setFilters] = usePersistedState<PartnerFilters>(
-    "dali:partnerboard:filters",
-    DEFAULT_FILTERS,
-    isPartnerFilters,
-  );
-  const [sort, setSort] = usePersistedState<PartnerCardSort>(
-    "dali:partnerboard:sort",
-    "manual",
-    isCardSort,
+  const [prefs, setPrefs] = usePersistedState<PartnerBoardPrefs>(
+    "dali:partnerboard:prefs",
+    DEFAULT_BOARD_PREFS,
+    isBoardPrefs,
   );
 
-  useEffect(() => {
-    if (!searchParams.has("source") && !searchParams.has("term")) return;
-    setFilters((f) =>
-      filtersFromParams(f, searchParams, {
-        sources: SOURCE_OPTIONS.map((s) => s.value),
-        termIds: termOptions.map((t) => t.id),
-      }),
-    );
-    // Only the initial URL seeds the filters; later edits go through Customize.
+  const columns = useMemo<FilterColumn[]>(
+    () => [
+      { key: "term", label: "Term", icon: CalendarRange, order: termOptions.map((t) => t.code) },
+      { key: "domain", label: "Domain", icon: Shapes },
+      { key: "source", label: "Source", icon: Inbox, order: SOURCE_OPTIONS.map((s) => s.value) },
+      { key: "activity", label: "Activity", icon: Activity, order: ACTIVITY_OPTIONS },
+    ],
+    [termOptions],
+  );
+  // Only the initial URL seeds the filters; later edits go through the builder.
+  const [initialFilters] = useState(() =>
+    columnFiltersFromParams(searchParams, {
+      sources: SOURCE_OPTIONS.map((s) => s.value),
+      terms: termOptions,
+    }),
+  );
+  const columnFilters = useColumnFilters(columns, initialFilters);
+  const filterRows = useMemo(
+    () => cards.map((c) => ({ cells: partnerCardCells(c, staleDays) })),
+    [cards, staleDays],
+  );
+  const filters = partnerFiltersFromColumns(columnFilters.active, prefs);
+  const shownCount = useMemo(
+    () => filterPartnerCards(cards, filters, query, { staleDays, currentTermStartIso }).length,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const filterCount =
-    (filters.term ? 1 : 0) +
-    (filters.domain ? 1 : 0) +
-    (filters.source ? 1 : 0) +
-    (filters.staleOnly ? 1 : 0) +
-    (filters.showPaused ? 0 : 1) +
-    (filters.showRejectedPastTerms ? 1 : 0) +
-    (sort !== "manual" ? 1 : 0);
-  const resetFilters = () => {
-    setFilters(DEFAULT_FILTERS);
-    setSort("manual");
-  };
-
+    [cards, columnFilters.active, prefs, query, staleDays, currentTermStartIso],
+  );
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2 md:flex-nowrap">
-        <PartnerCrmNav className="shrink-0 self-start md:self-center" />
-        <div className="flex-1" />
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <PartnerCrmNav className="shrink-0" />
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search applications…"
           aria-label="Search applications"
-          containerClassName="w-full sm:w-36 sm:shrink-0"
+          containerClassName="flex-1 min-w-[180px] max-w-[320px]"
         />
-        <Popover
-          align="right"
-          ariaLabel="Customize applications"
-          panelClassName={filterPanelClass(true)}
-          trigger={
-            <button type="button" className={customizeButtonClass(true, filterCount > 0)}>
-              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
-              Customize
-              <FilterCountBadge os={true} count={filterCount} />
-            </button>
-          }
-        >
-          <div className="flex flex-col gap-4">
-            <section className="flex flex-col gap-3">
-              <FilterSectionLabel os={true}>Sort cards</FilterSectionLabel>
-              <FilterGroup label="Order within each column" os={true}>
-                {CARD_SORTS.map((value) => (
-                  <FilterPill
-                    key={value}
-                    os={true}
-                    selected={sort === value}
-                    onClick={() => setSort(value)}
-                  >
-                    {CARD_SORT_LABELS[value]}
-                  </FilterPill>
-                ))}
-              </FilterGroup>
-            </section>
-
-            <section className="flex flex-col gap-3 border-t border-os-container pt-3">
-              <div className="flex items-center justify-between">
-                <FilterSectionLabel os={true}>Filters</FilterSectionLabel>
-                {filterCount > 0 && <FilterResetButton os={true} onClick={resetFilters} />}
-              </div>
-
-              {termOptions.length > 0 && (
-                <FilterGroup label="Term" os={true}>
-                  <FilterPill
-                    os={true}
-                    selected={!filters.term}
-                    onClick={() => setFilters((f) => ({ ...f, term: null }))}
-                  >
-                    All
-                  </FilterPill>
-                  {termOptions.map((t) => (
-                    <FilterPill
-                      key={t.id}
-                      os={true}
-                      selected={filters.term === t.id}
-                      onClick={() => setFilters((f) => ({ ...f, term: t.id }))}
-                    >
-                      {t.code}
-                    </FilterPill>
-                  ))}
-                </FilterGroup>
-              )}
-
-              {domainOptions.length > 0 && (
-                <FilterGroup label="Domain" os={true}>
-                  <FilterPill
-                    os={true}
-                    selected={!filters.domain}
-                    onClick={() => setFilters((f) => ({ ...f, domain: null }))}
-                  >
-                    All
-                  </FilterPill>
-                  {domainOptions.map((d) => (
-                    <FilterPill
-                      key={d.id}
-                      os={true}
-                      selected={filters.domain === d.id}
-                      onClick={() => setFilters((f) => ({ ...f, domain: d.id }))}
-                    >
-                      {d.name}
-                    </FilterPill>
-                  ))}
-                </FilterGroup>
-              )}
-
-              <FilterGroup label="Source" os={true}>
-                <FilterPill
-                  os={true}
-                  selected={!filters.source}
-                  onClick={() => setFilters((f) => ({ ...f, source: null }))}
-                >
-                  All
-                </FilterPill>
-                {SOURCE_OPTIONS.map((s) => (
-                  <FilterPill
-                    key={s.value}
-                    os={true}
-                    selected={filters.source === s.value}
-                    onClick={() => setFilters((f) => ({ ...f, source: s.value }))}
-                  >
-                    {s.label}
-                  </FilterPill>
-                ))}
-              </FilterGroup>
-            </section>
-
-            <section className="flex flex-col gap-3 border-t border-os-container pt-3">
-              <FilterSectionLabel os={true}>Visibility</FilterSectionLabel>
-              <FilterToggleRow
-                label="Stale only"
-                os={true}
-                checked={filters.staleOnly}
-                onChange={(checked) => setFilters((f) => ({ ...f, staleOnly: checked }))}
-              />
-              <FilterToggleRow
-                label="Show paused"
-                os={true}
-                checked={filters.showPaused}
-                onChange={(checked) => setFilters((f) => ({ ...f, showPaused: checked }))}
-              />
-              <FilterToggleRow
-                label="Show rejected from past terms"
-                os={true}
-                checked={filters.showRejectedPastTerms}
-                onChange={(checked) =>
-                  setFilters((f) => ({ ...f, showRejectedPastTerms: checked }))
-                }
-              />
-            </section>
-
-          </div>
-        </Popover>
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={columns}
+            rows={filterRows}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={shownCount}
+            noun={["application", "applications"]}
+          />
+        </div>
         <IconButton
           label="Partner settings"
           icon={Settings}
           onClick={() => setParam("settings", "1")}
           className="os-icon-btn"
         />
-        <button type="button" onClick={() => setCreating(true)} className="os-add-btn shrink-0 whitespace-nowrap">
+        <button type="button" onClick={() => setCreating(true)} className="os-btn-primary shrink-0 whitespace-nowrap">
           <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
           New application
         </button>
       </div>
 
-      {settingsOpen && <PartnerSettingsModal onClose={() => setParam("settings", null)} />}
+      {settingsOpen && (
+        <PartnerSettingsModal
+          onClose={() => setParam("settings", null)}
+          board={{ prefs, onChange: setPrefs }}
+        />
+      )}
 
       <PartnerBoard
           cards={cards}
@@ -365,7 +246,7 @@ export default function PartnersApplications() {
           currentTermStartIso={currentTermStartIso}
           query={query}
           filters={filters}
-          sort={sort}
+          sort={prefs.sort}
           onOpen={(id) => setParam("application", id)}
       />
 

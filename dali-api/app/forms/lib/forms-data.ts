@@ -19,12 +19,19 @@ import { newPublicToken, setFormPublished } from "./form-publish.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { isLayoutOnly } from "~/lib/form-answers";
+import { showIfProblems } from "~/lib/form-logic";
+import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
   "textarea",
   "select",
+  "radio",
+  "scale",
+  "date",
+  "number",
+  "email",
   "github_url",
   "figma_url",
   "drive_url",
@@ -63,8 +70,11 @@ export function isQuestionArray(x: unknown): x is Question[] {
 // resolved). Shared by save-version and update-version so an in-place edit is
 // held to exactly the rules a fresh version is. Returns the parsed questions
 // on success, or a ready-to-return error result.
-function validateVersionQuestions(
+export function validateVersionQuestions(
   raw: string,
+  // Question key -> the staffing feature that reads it, for the form being
+  // saved. A mapped question can't carry a rule.
+  mapped?: ReadonlyMap<string, string>,
 ): { ok: true; questions: Question[] } | { error: string; status: number } {
   let questions: unknown;
   try {
@@ -79,6 +89,31 @@ function validateVersionQuestions(
       return { error: "Every text block needs some text.", status: 400 };
     if (!isLayoutOnly(q.type) && !q.data.label.trim())
       return { error: "Every question needs a label.", status: 400 };
+    if (q.type === "radio" && (q.data.options ?? []).length < 2)
+      return {
+        error: `"${q.data.label}" needs at least two options.`,
+        status: 400,
+      };
+    if (
+      q.type === "number" &&
+      [q.data.min, q.data.max].some(
+        (b) => b !== undefined && !(typeof b === "number" && Number.isFinite(b)),
+      )
+    )
+      return {
+        error: `"${q.data.label}" needs numbers for its minimum and maximum.`,
+        status: 400,
+      };
+    if (
+      q.type === "number" &&
+      q.data.min !== undefined &&
+      q.data.max !== undefined &&
+      q.data.min > q.data.max
+    )
+      return {
+        error: `"${q.data.label}" has a minimum higher than its maximum.`,
+        status: 400,
+      };
     if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
       return {
         error: `"${q.data.label}" is a reference question but has no valid data source.`,
@@ -94,6 +129,8 @@ function validateVersionQuestions(
         status: 400,
       };
   }
+  const [conditionProblem] = showIfProblems(questions, mapped);
+  if (conditionProblem) return { error: conditionProblem.message, status: 400 };
   return { ok: true, questions };
 }
 
@@ -179,6 +216,10 @@ export type FormDetail = {
   opensAt: string | null;
   closesAt: string | null;
   oneResponsePerMember: boolean;
+  allowResponseEdit: boolean;
+  remindBeforeClose: boolean;
+  confirmationMessage: unknown;
+  sendReceipt: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   audience: "Members" | "SignedIn" | "Groups" | "Public";
@@ -227,6 +268,10 @@ export async function loadFormForEdit(
     opensAt: form.opensAt?.toISOString() ?? null,
     closesAt: form.closesAt?.toISOString() ?? null,
     oneResponsePerMember: form.oneResponsePerMember,
+    allowResponseEdit: form.allowResponseEdit,
+    remindBeforeClose: form.remindBeforeClose,
+    confirmationMessage: ensureBlocks(safeParseJsonString(form.confirmationMessage)),
+    sendReceipt: form.sendReceipt,
     notifyOnSubmission: form.notifyOnSubmission,
     listed: form.listed,
     audience: form.audience,
@@ -255,6 +300,35 @@ export async function loadFormForEdit(
         }
       : null,
   };
+}
+
+export const CONFIRMATION_MESSAGE_MAX = 20_000;
+const SAFE_HREF = /^(https?:|mailto:)/i;
+
+function hasUnsafeHref(node: unknown): boolean {
+  if (Array.isArray(node)) return node.some(hasUnsafeHref);
+  if (node === null || typeof node !== "object") return false;
+  return Object.entries(node).some(([key, value]) =>
+    key === "href" && typeof value === "string"
+      ? !SAFE_HREF.test(value.trim())
+      : hasUnsafeHref(value),
+  );
+}
+
+// Block JSON from the settings editor → the string to store. Empty content
+// clears the message; anything that isn't a block array, or carries a link
+// that isn't http(s)/mailto, is refused.
+export function parseConfirmationMessage(
+  raw: string,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw.trim() === "") return { ok: true, value: null };
+  const parsed = safeParseJsonString(raw);
+  if (!Array.isArray(parsed)) return { ok: false, error: "Invalid confirmation message." };
+  if (isEmptyBlocks(parsed)) return { ok: true, value: null };
+  if (hasUnsafeHref(parsed)) {
+    return { ok: false, error: "Links must start with http, https or mailto." };
+  }
+  return { ok: true, value: JSON.stringify(parsed) };
 }
 
 export function safeParseJsonString(s: string | null | undefined): unknown {
@@ -350,9 +424,13 @@ export const ActionSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("update-form-settings"),
     id: z.string().min(1),
-    oneResponsePerMember: z.enum(["true", "false"]),
-    notifyOnSubmission: z.enum(["true", "false"]),
-    listed: z.enum(["true", "false"]),
+    oneResponsePerMember: z.enum(["true", "false"]).optional(),
+    allowResponseEdit: z.enum(["true", "false"]).optional(),
+    remindBeforeClose: z.enum(["true", "false"]).optional(),
+    sendReceipt: z.enum(["true", "false"]).optional(),
+    confirmationMessage: z.string().max(CONFIRMATION_MESSAGE_MAX).optional(), // block JSON; "" clears
+    notifyOnSubmission: z.enum(["true", "false"]).optional(),
+    listed: z.enum(["true", "false"]).optional(),
   }),
   z.object({
     intent: z.literal("update-form-audience"),
@@ -543,7 +621,10 @@ export async function runFormsAction(
         ? await publishData(input.id, exists.publicToken)
         : null;
 
-      const validated = validateVersionQuestions(input.questions);
+      const validated = validateVersionQuestions(
+        input.questions,
+        await mappedQuestionFeatures(input.id),
+      );
       if (!("ok" in validated)) return validated;
 
       const last = await prisma.formVersion.findFirst({
@@ -583,7 +664,10 @@ export async function runFormsAction(
         ? await publishData(input.id, version.form.publicToken)
         : null;
 
-      const validated = validateVersionQuestions(input.questions);
+      const validated = validateVersionQuestions(
+        input.questions,
+        await mappedQuestionFeatures(input.id),
+      );
       if (!("ok" in validated)) return validated;
 
       // Re-check the lock inside the write so a response landing between the
@@ -663,22 +747,52 @@ export async function runFormsAction(
         return { error: "Close must be after open.", status: 400 };
       await prisma.form.update({
         where: { id: input.id },
-        data: { opensAt, closesAt },
+        // The reminder is anchored to the close time, so it goes with it.
+        data: { opensAt, closesAt, ...(closesAt ? {} : { remindBeforeClose: false }) },
       });
       return { ok: true };
     }
     case "update-form-settings": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
-        select: { id: true },
+        select: { id: true, closesAt: true, oneResponsePerMember: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
+      if (input.remindBeforeClose === "true" && !exists.closesAt)
+        return { error: "Set a close time to use this.", status: 400 };
+      if (
+        input.allowResponseEdit === "true" &&
+        input.oneResponsePerMember === undefined &&
+        !exists.oneResponsePerMember
+      )
+        return { error: "Turn on one response per member to use this.", status: 400 };
+      const confirmation =
+        input.confirmationMessage === undefined
+          ? null
+          : parseConfirmationMessage(input.confirmationMessage);
+      if (confirmation && !confirmation.ok)
+        return { error: confirmation.error, status: 400 };
       await prisma.form.update({
         where: { id: input.id },
         data: {
-          oneResponsePerMember: input.oneResponsePerMember === "true",
-          notifyOnSubmission: input.notifyOnSubmission === "true",
-          listed: input.listed === "true",
+          ...(input.oneResponsePerMember
+            ? { oneResponsePerMember: input.oneResponsePerMember === "true" }
+            : {}),
+          // Editing needs the one response to edit, so it can't outlive that setting.
+          ...(input.oneResponsePerMember === "false"
+            ? { allowResponseEdit: false }
+            : input.allowResponseEdit
+              ? { allowResponseEdit: input.allowResponseEdit === "true" }
+              : {}),
+          ...(input.remindBeforeClose
+            ? { remindBeforeClose: input.remindBeforeClose === "true" }
+            : {}),
+          ...(input.sendReceipt ? { sendReceipt: input.sendReceipt === "true" } : {}),
+          ...(confirmation?.ok ? { confirmationMessage: confirmation.value } : {}),
+          ...(input.notifyOnSubmission
+            ? { notifyOnSubmission: input.notifyOnSubmission === "true" }
+            : {}),
+          ...(input.listed ? { listed: input.listed === "true" } : {}),
         },
       });
       return { ok: true };

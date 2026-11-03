@@ -1,7 +1,5 @@
-// Client-side domain filter dropdown for the Intent to Work and Project Bids
-// boards. Filters by member domain eligibility (each row carries its domainIds
-// from buildSubmissionView). Standalone so it can sit next to TermFilter,
-// matching its look.
+// Client-side domain filter dropdown for the Staffing board. Standalone so it
+// can sit next to TermFilter, matching its look.
 
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";

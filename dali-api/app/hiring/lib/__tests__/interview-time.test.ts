@@ -6,6 +6,7 @@ import {
   formatInterviewTimeRange,
   formatInterviewTimeRangeDual,
   formatInterviewTimeRangeInZone,
+  interviewChangeDeadlines,
 } from "~/hiring/lib/interview-time";
 
 // 2026-03-04T15:00:00Z is 10:00 AM EST (UTC-5) on Wednesday, March 4, 2026.
@@ -121,5 +122,26 @@ describe("formatInterviewDate", () => {
     // 2026-03-05T03:30:00Z is 10:30 PM ET on March 4 (Wednesday) — a host
     // running in UTC would otherwise label this "Thursday, March 5".
     expect(formatInterviewDate("2026-03-05T03:30:00Z")).toBe("Wednesday, March 4");
+  });
+});
+
+describe("interviewChangeDeadlines", () => {
+  const start = "2026-11-02T14:00:00.000Z";
+
+  it("counts back from the start by each notice window", () => {
+    const { rescheduleBy, cancelBy } = interviewChangeDeadlines(start, { rescheduleNoticeHours: 12, cancelNoticeHours: 2 });
+    expect(rescheduleBy.toISOString()).toBe("2026-11-02T02:00:00.000Z");
+    expect(cancelBy.toISOString()).toBe("2026-11-02T12:00:00.000Z");
+  });
+
+  it("closes cancelling at the start when there's no notice window", () => {
+    const { cancelBy } = interviewChangeDeadlines(start, { rescheduleNoticeHours: 12, cancelNoticeHours: 0 });
+    expect(cancelBy.toISOString()).toBe(start);
+  });
+
+  it("falls back to the schema defaults without a config", () => {
+    const { rescheduleBy, cancelBy } = interviewChangeDeadlines(start, null);
+    expect(rescheduleBy.toISOString()).toBe("2026-11-02T02:00:00.000Z");
+    expect(cancelBy.toISOString()).toBe(start);
   });
 });

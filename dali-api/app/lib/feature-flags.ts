@@ -189,6 +189,12 @@ export const FEATURE_FLAGS = [
     description:
       "Adds /task to documents: a small composer that creates a project task and leaves a live row in the note, showing its status, owner and date. Task blocks already in a document keep showing when this is off. Ships off.",
   },
+  {
+    key: "form-upgrades",
+    label: "Form upgrades",
+    description:
+      "Everything new in Forms: more question types, show-a-question rules, a results Summary with charts, deleting and editing responses, the tracker and reminders, confirmation messages and email receipts, and saved progress. This gates what authors and owners can set up. Anything already saved on a form keeps working when this is off, including rules, so hidden required questions never reappear. Signed-out visitors get saved progress whenever the flag is switched on, whatever its targeting. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

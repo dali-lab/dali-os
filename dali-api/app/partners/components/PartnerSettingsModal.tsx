@@ -12,6 +12,12 @@ import { Toggle } from "~/components/ui/Toggle";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import {
+  CARD_SORTS,
+  CARD_SORT_LABELS,
+  type PartnerBoardPrefs,
+  type PartnerCardSort,
+} from "../lib/partner-board";
 import type { loader } from "../routes/core.partners.settings";
 
 const SETTINGS_PATH = "/core/partners/settings";
@@ -19,7 +25,19 @@ const SETTINGS_PATH = "/core/partners/settings";
 type SettingsData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 type ActionResult = { ok?: boolean; error?: string };
 
-export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
+type BoardDisplay = {
+  prefs: PartnerBoardPrefs;
+  onChange: (next: PartnerBoardPrefs) => void;
+};
+
+export function PartnerSettingsModal({
+  onClose,
+  board,
+}: {
+  onClose: () => void;
+  /** Applications-board display preferences; only the board page passes them. */
+  board?: BoardDisplay;
+}) {
   const data = useFetcher<SettingsData>();
   const reload = () => data.load(SETTINGS_PATH);
 
@@ -50,6 +68,7 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
         <p className="text-sm text-os-grey">Loading…</p>
       ) : (
         <div className="flex flex-col divide-y divide-os-container">
+          {board && <BoardDisplaySection board={board} />}
           <FollowUpSection key={JSON.stringify(d.settings)} data={d} onSaved={reload} />
           <section className="flex flex-col gap-5 py-6 last:pb-0">
             <h3 className="font-heading text-[15px] font-semibold text-foreground">Partner forms</h3>
@@ -91,6 +110,39 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function BoardDisplaySection({ board }: { board: BoardDisplay }) {
+  const { prefs, onChange } = board;
+  return (
+    <section className="flex flex-col gap-4 pb-6">
+      <h3 className="font-heading text-[15px] font-semibold text-foreground">Applications board</h3>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm text-os-grey">Order cards within a column</span>
+        <Select
+          value={prefs.sort}
+          onChange={(value) => onChange({ ...prefs, sort: value as PartnerCardSort })}
+          ariaLabel="Order cards within a column"
+          options={CARD_SORTS.map((s) => ({ value: s, label: CARD_SORT_LABELS[s] }))}
+          buttonClassName="w-full sm:w-64"
+        />
+      </div>
+      <Toggle
+        tone="os"
+        checked={prefs.showPaused}
+        onChange={(e) => onChange({ ...prefs, showPaused: e.currentTarget.checked })}
+        label="Show paused"
+        description="Keep applications on hold visible on the board."
+      />
+      <Toggle
+        tone="os"
+        checked={prefs.showRejectedPastTerms}
+        onChange={(e) => onChange({ ...prefs, showRejectedPastTerms: e.currentTarget.checked })}
+        label="Show rejected from past terms"
+        description="Include rejections older than the current term."
+      />
+    </section>
+  );
+}
+
 /** Calls onSaved once a fetcher's submission comes back without an error. */
 function useOnSaved(fetcher: { state: string; data?: ActionResult }, onSaved: () => void) {
   const [wasBusy, setWasBusy] = useState(false);
@@ -109,7 +161,7 @@ function FollowUpSection({ data, onSaved }: { data: SettingsData; onSaved: () =>
   useOnSaved(save, onSaved);
 
   return (
-    <save.Form method="post" action={SETTINGS_PATH} className="flex flex-col gap-4 pb-6">
+    <save.Form method="post" action={SETTINGS_PATH} className="flex flex-col gap-4 py-6 first:pt-0">
       <h3 className="font-heading text-[15px] font-semibold text-foreground">Interviews and follow-up</h3>
       <input type="hidden" name="intent" value="settings-save" />
       {panelIds.map((id) => (

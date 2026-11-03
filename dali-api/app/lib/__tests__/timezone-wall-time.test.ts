@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   fromWallClock,
   shiftWallClock,
@@ -94,6 +94,22 @@ describe("wall clock arithmetic", () => {
     const at = new Date("2026-10-20T16:15:42.000Z");
     expect(fromWallClock(toWallClock(at, NY), NY)).toEqual(at);
     expect(toWallClock(at, NY).toISOString()).toBe("2026-10-20T12:15:42.000Z");
+  });
+
+  it("reuses one formatter per zone across conversions", () => {
+    const zone = "Asia/Tokyo";
+    zonedWallTimeUtc(2026, 11, 2, 9, 0, zone);
+    const build = vi.spyOn(Intl, "DateTimeFormat");
+    for (let minute = 0; minute < 60; minute += 15) zonedWallTimeUtc(2026, 11, 2, 9, minute, zone);
+    toWallClock(new Date("2026-11-02T00:00:00Z"), zone);
+    expect(build).not.toHaveBeenCalled();
+    build.mockRestore();
+  });
+
+  it("gives each zone its own formatter", () => {
+    expect(iso(2026, 7, 1, 12, 0, NY)).toBe("2026-07-01T16:00:00.000Z");
+    expect(iso(2026, 7, 1, 12, 0, LA)).toBe("2026-07-01T19:00:00.000Z");
+    expect(iso(2026, 7, 1, 12, 0, NY)).toBe("2026-07-01T16:00:00.000Z");
   });
 
   it("keeps the time of day when a shift crosses a clock change", () => {

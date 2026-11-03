@@ -155,6 +155,8 @@ export default [
     route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
     route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+    route("core/partners/referrals/:userId", "partners/routes/core.partners.referrals.$userId.tsx"),
     route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
@@ -527,6 +529,7 @@ export default [
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
   route("api/feedback/posts", "routes/api.feedback.posts.ts"),
+  route("api/custom-emoji", "routes/api.custom-emoji.ts"),
   route("api/release-notes", "routes/api.release-notes.ts"),
   route("api/announcements/sent", "routes/api.announcements.sent.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
@@ -702,6 +705,7 @@ export default [
   ),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
+  route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
@@ -851,6 +855,7 @@ export default [
   route("api/hiring/domain-applications/:id/full-context", "hiring/routes/api.domain-applications.$id.full-context.ts"),
   route("api/hiring/domain-applications/:id/schedule-interview", "hiring/routes/api.domain-applications.$id.schedule-interview.ts"),
   route("api/hiring/domain-applications/:id/resend-invite", "hiring/routes/api.domain-applications.$id.resend-invite.ts"),
+  route("api/hiring/domain-applications/:id/reopen-scheduling", "hiring/routes/api.domain-applications.$id.reopen-scheduling.ts"),
 
   route("api/hiring/reviews/:id", "hiring/routes/api.reviews.$id.ts"),
   route("api/hiring/reviews/:id/submit", "hiring/routes/api.reviews.$id.submit.ts"),

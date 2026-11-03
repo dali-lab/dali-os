@@ -32,6 +32,7 @@ vi.mock("~/lib/comment-events.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { publishCommentChange } from "~/lib/comment-events.server";
 import {
   LIST_COMMENTS_TOOL,
   runListComments,
@@ -172,6 +173,19 @@ describe("manage_comment", () => {
     await expect(
       runManageComment("u1", { action: "edit", commentId: "c1", body: "updated" }),
     ).rejects.toMatchObject({ name: "ManageCommentError", status: 403 });
+  });
+
+  it.each(["react", "unreact"] as const)("%s tells other viewers of the doc", async (action) => {
+    mockPrisma.docComment.findUnique.mockResolvedValue({
+      id: "c1", authorId: "u2", targetType: "doc", targetId: "page1", parentId: null,
+    });
+    vi.mocked(getPageAccess).mockResolvedValue({ canComment: true } as never);
+    mockPrisma.docCommentReaction.upsert.mockResolvedValue({});
+    mockPrisma.docCommentReaction.deleteMany.mockResolvedValue({ count: 1 });
+    vi.mocked(publishCommentChange).mockClear();
+
+    await runManageComment("u1", { action, commentId: "c1", emoji: "👍" });
+    expect(publishCommentChange).toHaveBeenCalledExactlyOnceWith("page1");
   });
 
   it("allows the author to edit their comment", async () => {

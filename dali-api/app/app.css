@@ -925,6 +925,35 @@ select:not(:disabled) {
   .prose img[data-align] { float: none; max-width: 100%; margin: 1rem 0; }
 }
 
+/* Server-rendered BlockNote HTML hardcodes colors for white paper as inline
+   styles, and pasted text keeps its source color, so body text can land black
+   on a dark surface. Mixing against the inherited color keeps a named color's
+   hue readable in any theme; a color with no name falls back to plain text. */
+.prose :is([data-style-type="textColor"], [data-text-color]) {
+  color: color-mix(in srgb, var(--prose-text-hue, currentColor) 60%, currentColor) !important;
+}
+.prose :is([data-style-type="backgroundColor"], [data-background-color]) {
+  background-color: color-mix(in srgb, var(--prose-bg-hue, transparent) 25%, transparent) !important;
+}
+.prose :is([data-style-type="textColor"][data-value="gray"], [data-text-color="gray"]) { --prose-text-hue: #9b9a97; }
+.prose :is([data-style-type="textColor"][data-value="brown"], [data-text-color="brown"]) { --prose-text-hue: #64473a; }
+.prose :is([data-style-type="textColor"][data-value="red"], [data-text-color="red"]) { --prose-text-hue: #e03e3e; }
+.prose :is([data-style-type="textColor"][data-value="orange"], [data-text-color="orange"]) { --prose-text-hue: #d9730d; }
+.prose :is([data-style-type="textColor"][data-value="yellow"], [data-text-color="yellow"]) { --prose-text-hue: #dfab01; }
+.prose :is([data-style-type="textColor"][data-value="green"], [data-text-color="green"]) { --prose-text-hue: #4d6461; }
+.prose :is([data-style-type="textColor"][data-value="blue"], [data-text-color="blue"]) { --prose-text-hue: #0b6e99; }
+.prose :is([data-style-type="textColor"][data-value="purple"], [data-text-color="purple"]) { --prose-text-hue: #6940a5; }
+.prose :is([data-style-type="textColor"][data-value="pink"], [data-text-color="pink"]) { --prose-text-hue: #ad1a72; }
+.prose :is([data-style-type="backgroundColor"][data-value="gray"], [data-background-color="gray"]) { --prose-bg-hue: #9b9a97; }
+.prose :is([data-style-type="backgroundColor"][data-value="brown"], [data-background-color="brown"]) { --prose-bg-hue: #64473a; }
+.prose :is([data-style-type="backgroundColor"][data-value="red"], [data-background-color="red"]) { --prose-bg-hue: #e03e3e; }
+.prose :is([data-style-type="backgroundColor"][data-value="orange"], [data-background-color="orange"]) { --prose-bg-hue: #d9730d; }
+.prose :is([data-style-type="backgroundColor"][data-value="yellow"], [data-background-color="yellow"]) { --prose-bg-hue: #dfab01; }
+.prose :is([data-style-type="backgroundColor"][data-value="green"], [data-background-color="green"]) { --prose-bg-hue: #4d6461; }
+.prose :is([data-style-type="backgroundColor"][data-value="blue"], [data-background-color="blue"]) { --prose-bg-hue: #0b6e99; }
+.prose :is([data-style-type="backgroundColor"][data-value="purple"], [data-background-color="purple"]) { --prose-bg-hue: #6940a5; }
+.prose :is([data-style-type="backgroundColor"][data-value="pink"], [data-background-color="pink"]) { --prose-bg-hue: #ad1a72; }
+
 /* ── Signing fields + merge variables ──────────────────────────────────── */
 .signing-field {
   display: inline-flex;
@@ -1923,17 +1952,6 @@ html.os-shell > body::-webkit-scrollbar-track {
     box-shadow 0.15s ease;
 }
 
-/* A record's own name is set in caps wherever it's shown as a label or a
-   heading — on a bar, in a hover card, at the top of its modal, in a list of
-   linked records. It's a display treatment, not the stored value: the caps
-   come off the text-transform, so what was typed is what's saved.
-   Deliberately not applied to the name *fields* in a create form — typing
-   into a box that shouts back is a different thing from reading a label. */
-.os-record-name,
-.os-bar-label,
-.os-item-row {
-  text-transform: uppercase;
-}
 .os-bar-label--epic {
   background: var(--os-epic-fill);
   color: var(--os-epic-ink);

@@ -37,6 +37,39 @@ afterEach(() => {
 const pinNow = (iso: string) => vi.useFakeTimers({ now: new Date(iso), toFake: ["Date"] });
 
 describe("loadApplicationTracker", () => {
+  it("gives a scheduled interview its change deadlines from its own round's config", async () => {
+    mockPrisma.interviewConfig.findMany.mockResolvedValue([
+      { interviewRoundId: "other", slotDurationMinutes: 30, rescheduleNoticeHours: 1, cancelNoticeHours: 1 },
+      { interviewRoundId: "interviews", slotDurationMinutes: 30, rescheduleNoticeHours: 12, cancelNoticeHours: 2 },
+    ]);
+    mockPrisma.application.findFirst.mockResolvedValue({
+      id: "app-1",
+      statusUpdates: [{ newStatus: "Submitted", createdAt: new Date("2026-10-15") }],
+      domainApplications: [
+        da({
+          submittedAt: new Date("2026-10-15"),
+          interviews: [
+            {
+              id: "iv1",
+              status: "Scheduled",
+              interviewRoundId: "interviews",
+              startTime: new Date("2026-11-02T14:00:00Z"),
+              endTime: new Date("2026-11-02T14:30:00Z"),
+              room: { id: "r1", name: "Pod" },
+            },
+          ],
+        }),
+      ],
+    });
+
+    const { domainApplications } = await loadApplicationTracker(USER_ID, CYCLE_ID, "UnderReview");
+
+    expect(domainApplications[0].interview).toMatchObject({
+      rescheduleBy: "2026-11-02T02:00:00.000Z",
+      cancelBy: "2026-11-02T12:00:00.000Z",
+    });
+  });
+
   it("has no deadline and treats having no ready domains as closed (nothing to apply to)", async () => {
     const result = await loadApplicationTracker(USER_ID, CYCLE_ID, "Open");
     expect(result.deadline).toBeNull();

@@ -46,7 +46,12 @@ export function busEventStream(
 
       for (const topic of new Set(topics)) unsubscribes.push(subscribe(topic, send));
       keepalive = setInterval(() => write(": keepalive\n\n"), KEEPALIVE_INTERVAL_MS);
-      sync = setInterval(() => send("sync"), syncMs);
+      // A deploy reconnects every client at once, so a sync timed from connect
+      // would have them all re-fetch in the same second, every syncMs.
+      sync = setTimeout(() => {
+        send("sync");
+        sync = setInterval(() => send("sync"), syncMs);
+      }, Math.random() * syncMs);
 
       request.signal.addEventListener("abort", () => {
         teardown();

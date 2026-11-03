@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from "react-router";
-import { BarChart3, Building2, CalendarRange, Kanban, RefreshCcw } from "lucide-react";
+import { BarChart3, Building2, CalendarRange, Kanban, RefreshCcw, UserPlus } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
 
 const TABS = [
@@ -7,6 +7,7 @@ const TABS = [
   { label: "Renewals", href: "/core/partners/renewals", icon: RefreshCcw },
   { label: "Planning", href: "/core/partners/planning", icon: CalendarRange },
   { label: "Directory", href: "/core/partners/directory", icon: Building2 },
+  { label: "Referrals", href: "/core/partners/referrals", icon: UserPlus },
   { label: "Reports", href: "/core/partners/reports", icon: BarChart3 },
 ];
 
@@ -23,5 +24,12 @@ export function PartnerCrmNav({ className }: { className?: string }) {
       tab.href === "/core/partners" ? pathname === tab.href : pathname.startsWith(tab.href),
     onClick: () => navigate(tab.href),
   }));
-  return <SegmentedTabButtons label="Partners" size="sm" items={items} className={className ?? "self-start"} />;
+  return (
+    <SegmentedTabButtons
+      label="Partners"
+      size="toolbar"
+      items={items}
+      className={className ?? "self-start"}
+    />
+  );
 }

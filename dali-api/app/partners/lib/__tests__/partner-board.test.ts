@@ -1,15 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
+  DEFAULT_BOARD_PREFS,
   DEFAULT_FILTERS,
   buildPartnerBoard,
-  filtersFromParams,
+  columnFiltersFromParams,
   formatCardSpots,
   sortPartnerBoard,
   sortPartnerCards,
   SOURCE_OPTIONS,
   filterPartnerCards,
-  isPartnerFilters,
+  isBoardPrefs,
   movePartnerInBoard,
+  partnerCardCells,
+  partnerFiltersFromColumns,
   partnerMatchesQuery,
   type PartnerCardModel,
   type PartnerFilters,
@@ -139,17 +142,19 @@ describe("filterPartnerCards", () => {
     expect(run([card({ id: "a" }), card({ id: "b", stage: "Accepted", status: "Accepted" })])).toEqual(["a", "b"]);
   });
 
-  it("filters by term, domain and source", () => {
+  it("filters by term, domain and source, with values in a column OR-ing together", () => {
     const cards = [
       card({ id: "a", targetTerms: [{ id: "t1", code: "26F" }], domains: [{ id: "dev", name: "Dev", expectedMembers: 0 }], source: "Email" }),
       card({ id: "b", targetTerms: [{ id: "t2", code: "27W" }], domains: [{ id: "ux", name: "UX", expectedMembers: 0 }] }),
+      card({ id: "c", targetTerms: [{ id: "t3", code: "27S" }], source: "Referral" }),
     ];
-    expect(run(cards, { term: "t1" })).toEqual(["a"]);
-    expect(run(cards, { domain: "ux" })).toEqual(["b"]);
-    expect(run(cards, { source: "Email" })).toEqual(["a"]);
+    expect(run(cards, { terms: ["26F"] })).toEqual(["a"]);
+    expect(run(cards, { terms: ["26F", "27W"] })).toEqual(["a", "b"]);
+    expect(run(cards, { domains: ["UX"] })).toEqual(["b"]);
+    expect(run(cards, { sources: ["Email", "Referral"] })).toEqual(["a", "c"]);
   });
 
-  it("stale only keeps open, unpaused applications quiet past the threshold", () => {
+  it("Stale keeps open, unpaused applications quiet past the threshold; Active keeps the rest", () => {
     const old = "2026-09-01T00:00:00Z";
     const cards = [
       card({ id: "stale", lastActivityAt: old }),
@@ -158,7 +163,9 @@ describe("filterPartnerCards", () => {
       card({ id: "hold-over", lastActivityAt: old, holdUntil: "2026-10-01T00:00:00Z" }),
       card({ id: "accepted", lastActivityAt: old, stage: "Accepted", status: "Accepted" }),
     ];
-    expect(run(cards, { staleOnly: true })).toEqual(["stale", "hold-over"]);
+    expect(run(cards, { activity: ["Stale"] })).toEqual(["stale", "hold-over"]);
+    expect(run(cards, { activity: ["Active"] })).toEqual(["fresh", "paused", "accepted"]);
+    expect(run(cards, { activity: ["Stale", "Active"] })).toHaveLength(5);
   });
 
   it("hides only currently paused applications when Show paused is off", () => {
@@ -186,12 +193,61 @@ describe("filterPartnerCards", () => {
   });
 });
 
-describe("isPartnerFilters", () => {
+describe("isBoardPrefs", () => {
   it("accepts the defaults and rejects malformed values", () => {
-    expect(isPartnerFilters(DEFAULT_FILTERS)).toBe(true);
-    expect(isPartnerFilters(null)).toBe(false);
-    expect(isPartnerFilters({ ...DEFAULT_FILTERS, term: 3 })).toBe(false);
-    expect(isPartnerFilters({ ...DEFAULT_FILTERS, staleOnly: "yes" })).toBe(false);
+    expect(isBoardPrefs(DEFAULT_BOARD_PREFS)).toBe(true);
+    expect(isBoardPrefs({ sort: "fee", showPaused: false, showRejectedPastTerms: true })).toBe(true);
+    expect(isBoardPrefs(null)).toBe(false);
+    expect(isBoardPrefs({ ...DEFAULT_BOARD_PREFS, sort: "bogus" })).toBe(false);
+    expect(isBoardPrefs({ ...DEFAULT_BOARD_PREFS, showPaused: "yes" })).toBe(false);
+    // The pre-prefs persisted filter shape is rejected, so stale storage falls
+    // back to the defaults instead of crashing the board.
+    expect(isBoardPrefs({ term: null, staleOnly: false, showPaused: true })).toBe(false);
+  });
+});
+
+describe("partnerCardCells", () => {
+  const now = new Date("2026-10-20T00:00:00Z");
+
+  it("exposes term codes, domain names, source and the activity label", () => {
+    const c = card({
+      id: "a",
+      targetTerms: [{ id: "t1", code: "26F" }, { id: "t2", code: "27W" }],
+      domains: [{ id: "d1", name: "Dev", expectedMembers: 1 }],
+      source: "Email",
+      lastActivityAt: "2026-10-19T00:00:00Z",
+    });
+    expect(partnerCardCells(c, 14, now)).toEqual({
+      term: ["26F", "27W"],
+      domain: ["Dev"],
+      source: "Email",
+      activity: "Active",
+    });
+  });
+
+  it("labels a quiet open card Stale", () => {
+    const c = card({ id: "a", lastActivityAt: "2026-09-01T00:00:00Z" });
+    expect(partnerCardCells(c, 14, now).activity).toBe("Stale");
+  });
+});
+
+describe("partnerFiltersFromColumns", () => {
+  it("maps column filters and prefs onto the board filter shape", () => {
+    const active = [
+      { columnKey: "term", values: ["26F"] },
+      { columnKey: "source", values: ["Email", "Form"] },
+      { columnKey: "activity", values: ["Stale"] },
+    ];
+    expect(
+      partnerFiltersFromColumns(active, { sort: "manual", showPaused: false, showRejectedPastTerms: true }),
+    ).toEqual({
+      terms: ["26F"],
+      domains: [],
+      sources: ["Email", "Form"],
+      activity: ["Stale"],
+      showPaused: false,
+      showRejectedPastTerms: true,
+    });
   });
 });
 
@@ -262,19 +318,18 @@ describe("SOURCE_OPTIONS", () => {
   });
 });
 
-describe("filtersFromParams", () => {
-  const valid = { sources: ["Form", "Email"], termIds: ["t1"] };
+describe("columnFiltersFromParams", () => {
+  const valid = { sources: ["Form", "Email"], terms: [{ id: "t1", code: "26F" }] };
 
-  it("seeds source and term from the URL", () => {
-    expect(filtersFromParams(DEFAULT_FILTERS, new URLSearchParams("source=Form&term=t1"), valid)).toEqual({
-      ...DEFAULT_FILTERS,
-      source: "Form",
-      term: "t1",
-    });
+  it("seeds source and term column filters from the URL, mapping term id to code", () => {
+    expect(columnFiltersFromParams(new URLSearchParams("source=Form&term=t1"), valid)).toEqual([
+      { columnKey: "source", values: ["Form"] },
+      { columnKey: "term", values: ["26F"] },
+    ]);
   });
 
-  it("ignores unknown values and keeps the stored filters", () => {
-    const base = { ...DEFAULT_FILTERS, source: "Email" };
-    expect(filtersFromParams(base, new URLSearchParams("source=Bogus&term=nope"), valid)).toEqual(base);
+  it("ignores unknown values", () => {
+    expect(columnFiltersFromParams(new URLSearchParams("source=Bogus&term=nope"), valid)).toEqual([]);
+    expect(columnFiltersFromParams(new URLSearchParams(), valid)).toEqual([]);
   });
 });

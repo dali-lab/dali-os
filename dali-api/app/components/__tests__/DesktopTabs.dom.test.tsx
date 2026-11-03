@@ -424,7 +424,7 @@ describe("DesktopTabStrip", () => {
   describe("looking up a background document's emoji", () => {
     let fetchMock: ReturnType<typeof vi.fn>;
     beforeEach(() => {
-      fetchMock = vi.fn(async () => Response.json({ iconEmoji: "🌲" }));
+      fetchMock = vi.fn(async () => Response.json({ emojis: { d1: "🌲" } }));
       vi.stubGlobal("fetch", fetchMock);
     });
     afterEach(() => vi.unstubAllGlobals());
@@ -435,9 +435,24 @@ describe("DesktopTabStrip", () => {
       await mountStrip();
       await act(async () => mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true }));
       await flush();
-      expect(fetchMock).toHaveBeenCalledWith("/api/documents/d1");
+      expect(fetchMock).toHaveBeenCalledWith("/api/documents/emojis?ids=d1");
       expect(docTab()?.emoji).toBe("🌲");
       expect(strip().textContent).toContain("🌲");
+    });
+
+    it("asks for several tabs in one request", async () => {
+      fetchMock.mockImplementation(async () => Response.json({ emojis: { d1: "🌲", d2: "🍂" } }));
+      await mountStrip();
+      await act(async () => {
+        mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true });
+        mod.store.tabActions.open({ url: "/documents/d2", label: "Doc 2" }, { background: true });
+      });
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const ids = new URL(fetchMock.mock.calls[0][0], "http://localhost").searchParams.get("ids");
+      expect(ids?.split(",").sort()).toEqual(["d1", "d2"]);
+      expect(docTab()?.emoji).toBe("🌲");
+      expect(mod.store.getTabsSnapshot().tabs.find((t) => t.url === "/documents/d2")?.emoji).toBe("🍂");
     });
 
     it("skips a tab that already has one, the active tab, and pages that aren't documents", async () => {
@@ -452,13 +467,16 @@ describe("DesktopTabStrip", () => {
     });
 
     it("asks once for a page with no emoji", async () => {
-      fetchMock.mockImplementation(async () => Response.json({ iconEmoji: null }));
+      fetchMock.mockImplementation(async () => Response.json({ emojis: { d1: null, d2: null } }));
       await mountStrip();
       await act(async () => mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true }));
       await flush();
       await act(async () => mod.store.tabActions.open({ url: "/documents/d2", label: "Doc 2" }, { background: true }));
       await flush();
-      expect(fetchMock.mock.calls.filter(([url]) => url === "/api/documents/d1")).toHaveLength(1);
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        "/api/documents/emojis?ids=d1",
+        "/api/documents/emojis?ids=d2",
+      ]);
       expect(docTab()).not.toHaveProperty("emoji");
     });
 

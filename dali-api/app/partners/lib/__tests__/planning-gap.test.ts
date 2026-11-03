@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildPlanningGap,
+  effectivePi,
   gapPill,
   isPotentialState,
   planningStateLabel,
@@ -31,9 +32,9 @@ describe("isPotentialState", () => {
 });
 
 describe("planningStateLabel", () => {
-  it("joins source and state", () => {
-    expect(planningStateLabel({ source: "renewing", state: "Undecided" })).toBe("Renewal · Undecided");
-    expect(planningStateLabel({ source: "new", state: "Interview" })).toBe("New · Interview");
+  it("shows the state alone; the tables group rows by source already", () => {
+    expect(planningStateLabel({ state: "Undecided" })).toBe("Undecided");
+    expect(planningStateLabel({ state: "Interview" })).toBe("Interview");
   });
 });
 
@@ -59,7 +60,7 @@ describe("buildPlanningGap", () => {
   ];
 
   it("counts only firm rows when potential is off, and keeps the rest listed uncounted", () => {
-    const m = buildPlanningGap({ domains, items, returning, includePotential: false });
+    const m = buildPlanningGap({ domains, items, returning, includePotential: false, includeBacklog: false });
     const eng = m.rows.find((r) => r.domainId === "eng")!;
     const des = m.rows.find((r) => r.domainId === "des")!;
     expect([eng.renewing, eng.fresh, eng.spots]).toEqual([3, 4, 7]);
@@ -73,7 +74,7 @@ describe("buildPlanningGap", () => {
   });
 
   it("counts potential rows when the toggle is on", () => {
-    const m = buildPlanningGap({ domains, items, returning, includePotential: true });
+    const m = buildPlanningGap({ domains, items, returning, includePotential: true, includeBacklog: false });
     const eng = m.rows.find((r) => r.domainId === "eng")!;
     const des = m.rows.find((r) => r.domainId === "des")!;
     expect([eng.renewing, eng.fresh]).toEqual([5, 4]);
@@ -81,7 +82,7 @@ describe("buildPlanningGap", () => {
   });
 
   it("counts supply as distinct returning users and sorts the worst gap first", () => {
-    const m = buildPlanningGap({ domains, items, returning, includePotential: true });
+    const m = buildPlanningGap({ domains, items, returning, includePotential: true, includeBacklog: false });
     expect(m.rows.map((r) => [r.domainId, r.intent, r.gap])).toEqual([
       ["eng", 2, 7],
       ["des", 1, 5],
@@ -99,6 +100,7 @@ describe("buildPlanningGap", () => {
         { userId: "b", domainIds: ["des"] },
       ],
       includePotential: false,
+      includeBacklog: false,
     });
     expect(m.rows.map((r) => r.gap)).toEqual([3, -2]);
     expect(m.totals.shortfall).toBe(3);
@@ -112,13 +114,14 @@ describe("buildPlanningGap", () => {
       items: [],
       returning: [{ userId: "a", domainIds: ["eng", "des"] }],
       includePotential: false,
+      includeBacklog: false,
     });
     expect(m.totals.intent).toBe(1);
     expect(m.rows.map((r) => r.intent)).toEqual([1, 1]);
   });
 
   it("moves domains with nothing into the empty group", () => {
-    const m = buildPlanningGap({ domains, items, returning, includePotential: false });
+    const m = buildPlanningGap({ domains, items, returning, includePotential: false, includeBacklog: false });
     expect(m.empty.map((r) => r.domainId)).toEqual(["pm"]);
   });
 
@@ -128,13 +131,14 @@ describe("buildPlanningGap", () => {
       items: [item({ key: "u", source: "renewing", state: "Undecided", spotsByDomain: { pm: 2 } })],
       returning: [],
       includePotential: false,
+      includeBacklog: false,
     });
     expect(m.rows.map((r) => r.domainId)).toEqual(["pm"]);
     expect(m.rows[0].spots).toBe(0);
   });
 
   it("lists renewals before new rows in the breakdown", () => {
-    const m = buildPlanningGap({ domains, items, returning, includePotential: true });
+    const m = buildPlanningGap({ domains, items, returning, includePotential: true, includeBacklog: false });
     const eng = m.rows.find((r) => r.domainId === "eng")!;
     expect(eng.items.map((i) => i.source)).toEqual(["renewing", "renewing", "new"]);
   });
@@ -353,7 +357,7 @@ describe("buildPlanningProjects", () => {
   it("matches the domain view's spot totals when Backlog is off", () => {
     for (const includePotential of [false, true]) {
       const projects = build({ includePotential }).totals;
-      const gap = buildPlanningGap({ domains, items, returning: [], includePotential }).totals;
+      const gap = buildPlanningGap({ domains, items, returning: [], includePotential, includeBacklog: false }).totals;
       expect(projects).toEqual({ renewing: gap.renewing, fresh: gap.fresh, spots: gap.spots });
     }
   });
@@ -362,5 +366,46 @@ describe("buildPlanningProjects", () => {
     expect(
       buildPlanningProjects({ domains, items: [], listOnlyItems: [], includePotential: true, includeBacklog: true }),
     ).toEqual({ renewing: [], fresh: [], totals: { renewing: 0, fresh: 0, spots: 0 } });
+  });
+});
+
+describe("buildPlanningGap backlog", () => {
+  const backlog = item({ key: "b", state: "Backlog", source: "new", spotsByDomain: { eng: 3 } });
+  const gap = (includeBacklog: boolean, includePotential: boolean) =>
+    buildPlanningGap({ domains, items: [backlog], returning: [], includePotential, includeBacklog });
+
+  it("leaves Backlog out of the domains until asked for", () => {
+    expect(gap(false, true).rows).toEqual([]);
+    expect(gap(false, true).totals.spots).toBe(0);
+  });
+
+  it("lists Backlog under its domain without counting it", () => {
+    const m = gap(true, false);
+    expect(m.rows[0].items).toMatchObject([{ key: "b", counted: false }]);
+    expect(m.totals.spots).toBe(0);
+  });
+
+  it("counts Backlog once potential is on too", () => {
+    expect(gap(true, true).totals.fresh).toBe(3);
+  });
+});
+
+describe("effectivePi", () => {
+  const rows = [
+    { sortKey: 1, pi: "Ada" },
+    { sortKey: 2, pi: null },
+    { sortKey: 3, pi: "Grace" },
+  ];
+
+  it("uses the term's own PI", () => {
+    expect(effectivePi(rows, 3)).toBe("Grace");
+  });
+
+  it("carries the latest earlier PI into a term without one", () => {
+    expect(effectivePi(rows, 2)).toBe("Ada");
+  });
+
+  it("never reads a later term's PI", () => {
+    expect(effectivePi(rows, 0)).toBeNull();
   });
 });

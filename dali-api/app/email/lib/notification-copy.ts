@@ -630,6 +630,15 @@ export const NOTIFICATION_COPY = {
     variables: ["itemTitle"],
     subject: "{{itemTitle}}",
   },
+  "form.reminder": {
+    eventType: "form.reminder",
+    label: "Form reminder",
+    description:
+      "Sent to people who haven't filled out a form, by the form's owner or a day before it closes. The message is written per send; only the frame around it comes from here.",
+    variables: ["itemTitle"],
+    subject: "Reminder: {{itemTitle}}",
+    linkLabel: "Open form",
+  },
   "education.announcement": {
     eventType: "education.announcement",
     label: "Course announcement",

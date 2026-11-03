@@ -196,8 +196,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   );
 
-  // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
-  // round-trip — no second hit even though canViewStaffing delegates to isCore.
   const [roles, partnerOrgs] =
     await timed(request, 'hub.meta', () => Promise.all([
       getUserRoles(auth.user.sub, request),

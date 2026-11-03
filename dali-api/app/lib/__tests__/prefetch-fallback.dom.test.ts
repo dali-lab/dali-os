@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installPrefetchFallback } from "../prefetch-fallback";
+import { isPrefetchRequest } from "../prefetch";
 
 const data = (body = "warm", init: ResponseInit = {}) => new Response(body, init);
 
@@ -134,6 +135,15 @@ describe("installPrefetchFallback", () => {
     await flush();
     const res = await window.fetch("/projects.data");
     expect(await res.text()).toBe("warm");
+  });
+
+  it("marks a warm as a prefetch so the loader doesn't count it as a page open", async () => {
+    installPrefetchFallback(window, false);
+    addLink("/projects.data");
+    await flush();
+    const [href, init] = network.mock.calls[0] as [string, RequestInit];
+    const request = new Request(new URL(href, "http://localhost"), init);
+    expect(isPrefetchRequest(request)).toBe(true);
   });
 
   it("passes non-data requests straight through", async () => {

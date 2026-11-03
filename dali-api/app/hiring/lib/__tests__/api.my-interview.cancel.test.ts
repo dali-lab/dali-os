@@ -67,6 +67,42 @@ function makeRequest(body: Record<string, unknown>) {
 }
 
 describe("POST /api/hiring/my-interview/cancel", () => {
+  const interviewStarting = (hoursFromNow: number) => ({
+    id: "int-1",
+    domainApplicationId: DA_ID_A,
+    status: "Scheduled",
+    startTime: new Date(Date.now() + hoursFromNow * 60 * 60_000),
+    applicationCycleId: "cycle-1",
+  });
+  const cancel = () =>
+    action({ request: makeRequest({ domainApplicationId: DA_ID_A }), params: {}, context: {} } as any);
+
+  it("refuses once the interview has started, even with no notice window", async () => {
+    mockPrisma.interview.findFirst.mockResolvedValue(interviewStarting(-0.5));
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ rescheduleNoticeHours: 12, cancelNoticeHours: 0 });
+
+    const res = await cancel();
+
+    expect(res.status).toBe(403);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(sendInterviewCancelEmails).not.toHaveBeenCalled();
+  });
+
+  it("refuses inside a configured notice window", async () => {
+    mockPrisma.interview.findFirst.mockResolvedValue(interviewStarting(2));
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ rescheduleNoticeHours: 12, cancelNoticeHours: 4 });
+
+    expect((await cancel()).status).toBe(403);
+  });
+
+  it("allows it right up to the start when there's no notice window", async () => {
+    mockPrisma.interview.findFirst.mockResolvedValue(interviewStarting(0.5));
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ rescheduleNoticeHours: 12, cancelNoticeHours: 0 });
+    mockTx.interview.update.mockResolvedValue({ id: "int-1", status: "CancelledByApplicant" });
+
+    expect((await cancel()).status).toBe(200);
+  });
+
   it("returns 400 when domainApplicationId is missing", async () => {
     const res = await action({ request: makeRequest({}), params: {}, context: {} } as any);
     expect(res.status).toBe(400);

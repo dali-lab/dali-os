@@ -50,7 +50,7 @@ test.describe('internal Organizations pages (Core)', () => {
     await expect(
       page.getByRole('heading', { name: 'Partners' }),
     ).toBeVisible();
-    await expect(page.getByText('Tuck School of Business')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Tuck School of Business' })).toBeVisible();
   });
 
   test('org detail shows members, pending invites, and projects', async ({ page }) => {

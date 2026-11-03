@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.project-bids";
 import { useFilteredList } from "~/hooks/useFilteredList";
@@ -17,12 +17,10 @@ import {
   setSlotGate,
   setSlotPublished,
 } from "../lib/form-slots";
-import { SubmissionFilters } from "../components/SubmissionFilters";
 import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { SubmissionDatabase } from "../components/SubmissionDatabase";
-import { DomainFilter } from "../components/DomainFilter";
-import { TermFilter } from "~/components/TermFilter";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { resolveTermFilter } from "~/lib/terms";
@@ -143,7 +141,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { questions: true },
     });
     const qs = (latest?.questions as unknown as Question[]) ?? [];
-    formQuestions = qs.map((q) => ({
+    formQuestions = qs.filter((q) => !q.data.showIf).map((q) => ({
       key: q.key,
       label: q.data.label,
       type: q.type,
@@ -158,15 +156,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // (The all-terms aggregate has no single slot to bind, so it's exempt.)
   const noFormConnected = !isAll && !binding;
 
-  const domainOptions = await prisma.domain.findMany({
-    orderBy: { displayName: "asc" },
-    select: { id: true, displayName: true },
-  });
-
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
-    termOptions,
     selectedTerm,
     isAll,
     submissions,
@@ -177,7 +169,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     formQuestions,
     mappingWarning,
     noFormConnected,
-    domainOptions,
   };
 }
 
@@ -300,7 +291,6 @@ function Loaded({
 }: {
   data: Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 }) {
-  const [domainId, setDomainId] = useState("");
   const [searchParams] = useSearchParams();
   const [settingsOpen, setSettingsOpen] = useState(
     () => searchParams.get("settings") === "1",
@@ -310,17 +300,9 @@ function Loaded({
 
   const { search, setSearch, filtered } = useFilteredList(data.submissions, {
     searchFields: (s) => [s.name, s.email],
-    predicates: [
-      (s) => !domainId || s.domainIds.includes(domainId),
-      columnFilters.predicate,
-    ],
-    deps: [domainId, columnFilters.active],
+    predicates: [columnFilters.predicate],
+    deps: [columnFilters.active],
   });
-
-  const domains = useMemo(
-    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
-    [data.domainOptions],
-  );
 
   // The form/columns settings only make sense per-cycle; the all-terms
   // aggregate has no single binding to edit, so the trigger is hidden there.
@@ -358,27 +340,24 @@ function Loaded({
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="flex-1">
-          <SubmissionFilters query={search} onQueryChange={setSearch} />
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or email"
+          aria-label="Search submissions"
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
+        />
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={data.tableColumns}
+            rows={data.submissions}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={filtered.length}
+          />
         </div>
-        <DomainFilter
-          domains={domains}
-          value={domainId}
-          onChange={setDomainId}
-        />
-        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
       </div>
-
-      {!data.noFormConnected && (
-        <ColumnFilters
-          columns={data.tableColumns}
-          rows={data.submissions}
-          filters={columnFilters.filters}
-          onChange={columnFilters.setFilters}
-          shownCount={filtered.length}
-        />
-      )}
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
         {data.noFormConnected ? (

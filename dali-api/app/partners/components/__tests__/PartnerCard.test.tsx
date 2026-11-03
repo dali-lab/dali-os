@@ -66,51 +66,39 @@ describe("PartnerCard", () => {
     expect(html).toContain("Ada Lovelace · Acme Co");
   });
 
-  it("labels the source, term and domain instead of chips", () => {
-    expect(fields(render(card()))).toEqual(["Source: Application form", "Term: 26F", "Domain: Mobile"]);
+  it("shows no source and no labeled term or domain rows", () => {
+    const html = render(card());
+    expect(html).not.toContain("Source");
+    expect(fields(html)).toEqual([]);
   });
 
-  it("names every source in words", () => {
-    expect(fields(render(card({ source: "Email" })))[0]).toBe("Source: Email");
-    expect(fields(render(card({ source: "Referral" })))[0]).toBe("Source: Referral");
-    expect(fields(render(card({ source: "Manual" })))[0]).toBe("Source: Added by Core");
-    expect(fields(render(card({ source: "Renewal" })))[0]).toBe("Source: Renewal");
-  });
-
-  it("renders no icon for the source", () => {
-    expect(render(card())).not.toContain("<svg");
-  });
-
-  it("pluralizes and joins several terms and domains", () => {
-    const f = fields(
-      render(
-        card({
-          targetTerms: [{ id: "t1", code: "26F" }, { id: "t2", code: "27W" }],
-          domains: [{ id: "d1", name: "Design", expectedMembers: 0 }, { id: "d2", name: "Engineering", expectedMembers: 0 }],
-        }),
-      ),
+  it("renders terms and domains as pills", () => {
+    const html = render(
+      card({
+        targetTerms: [{ id: "t1", code: "26F" }, { id: "t2", code: "27W" }],
+        domains: [{ id: "d1", name: "Design", expectedMembers: 0 }, { id: "d2", name: "Engineering", expectedMembers: 0 }],
+      }),
     );
-    expect(f).toContain("Terms: 26F, 27W");
-    expect(f).toContain("Domains: Design, Engineering");
+    const pills = [...html.matchAll(/rounded-full[^>]*>(?:<[^>]*>)*([^<]+)</g)].map(([, text]) => text.trim());
+    expect(pills).toEqual(["26F", "27W", "Design", "Engineering"]);
   });
 
-  it("labels the headcount row Spots and spells domains out", () => {
-    const f = fields(
-      render(
-        card({
-          domains: [
-            { id: "d1", name: "Engineering", expectedMembers: 2 },
-            { id: "d2", name: "Design", expectedMembers: 1 },
-          ],
-        }),
-      ),
+  it("appends the spot count to a domain pill when one is set", () => {
+    const html = render(
+      card({
+        targetTerms: [],
+        domains: [
+          { id: "d1", name: "Engineering", expectedMembers: 2 },
+          { id: "d2", name: "Design", expectedMembers: 0 },
+        ],
+      }),
     );
-    expect(f).toContain("Spots: Engineering 2, Design 1");
-    expect(f.some((x) => x.startsWith("Domain"))).toBe(false);
+    expect(html).toContain("Engineering 2");
+    expect(html).not.toContain("Design 0");
   });
 
-  it("leaves out term and domain rows when there are none", () => {
-    expect(fields(render(card({ targetTerms: [], domains: [] })))).toEqual(["Source: Application form"]);
+  it("leaves out the pill row when there are no terms or domains", () => {
+    expect(render(card({ targetTerms: [], domains: [] }))).not.toContain("rounded-full");
   });
 
   it("renders the next step with its due date, adding the year only when it differs", () => {
@@ -160,9 +148,8 @@ describe("PartnerCard", () => {
     expect(render(card({ projectIconEmoji: null }))).not.toContain("🚀");
   });
 
-  it("links the resulting project", () => {
+  it("shows no project link row", () => {
     const html = render(card({ resultingProjectId: "proj-1" }));
-    expect(fields(html)).toContain("Project: Open");
-    expect(html).toContain('href="/projects/proj-1"');
+    expect(html).not.toContain('href="/projects/proj-1"');
   });
 });

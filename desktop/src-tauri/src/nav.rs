@@ -6,7 +6,8 @@
 //      embedded webviews), so re-trigger device pairing instead.
 //   3. Other same-origin navigations → allow, and re-arm the offline watchdog
 //      (so a retry that lands unreachable falls back to the offline page again).
-//   4. Cross-origin navigations → open in the system browser, not the webview.
+//   4. Cross-origin navigations → open in the system browser, not the webview,
+//      except video players embedded in docs, which load in their iframe.
 //   5. Our own `dalios://` links (a meeting note's Record button) → handled
 //      in-process, without a round trip through Launch Services.
 
@@ -23,6 +24,10 @@ use crate::{
 pub fn is_prod_origin(url: &Url) -> bool {
     let prod = Url::parse(config::PROD_ORIGIN).expect("valid prod origin");
     url.scheme() == prod.scheme() && url.host_str() == prod.host_str()
+}
+
+fn is_video_embed_origin(url: &Url) -> bool {
+    config::VIDEO_EMBED_ORIGINS.contains(&url.origin().ascii_serialization().as_str())
 }
 
 /// The prod page finished loading — record it (so a pending offline watchdog
@@ -98,7 +103,40 @@ pub fn on_navigation(app: &AppHandle, url: &Url) -> bool {
         return true;
     }
 
+    if is_video_embed_origin(url) {
+        return true;
+    }
+
     // Cross-origin http(s) link → system browser; cancel the in-webview nav.
     let _ = app.opener().open_url(url.to_string(), None::<&str>);
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed(raw: &str) -> Url {
+        Url::parse(raw).expect("valid url")
+    }
+
+    #[test]
+    fn allows_the_youtube_player() {
+        assert!(is_video_embed_origin(&parsed(
+            "https://www.youtube-nocookie.com/embed/OY8fr2E96lg"
+        )));
+    }
+
+    #[test]
+    fn sends_other_links_to_the_browser() {
+        for raw in [
+            "https://www.youtube.com/watch?v=OY8fr2E96lg",
+            "https://youtube-nocookie.com/embed/OY8fr2E96lg",
+            "http://www.youtube-nocookie.com/embed/OY8fr2E96lg",
+            "https://www.youtube-nocookie.com.example.com/embed/OY8fr2E96lg",
+            "https://example.com/?u=https://www.youtube-nocookie.com",
+        ] {
+            assert!(!is_video_embed_origin(&parsed(raw)), "{raw}");
+        }
+    }
 }

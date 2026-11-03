@@ -17,12 +17,12 @@ import {
 } from "../lib/partner-renewals";
 import { RenewalCard } from "./renewals/RenewalCard";
 import {
-  RenewalModal,
+  RenewalEditorFields,
   toFormFields,
   type DomainOption,
   type RenewalSubmission,
   type TermOption,
-} from "./renewals/RenewalModal";
+} from "./renewals/RenewalEditor";
 
 const ACCENTS = {
   undecided: osStatusAccent("review"),
@@ -35,21 +35,24 @@ type Editing = { projectId: string; decision: RenewalColumn };
 export function RenewalsBoard({
   cards,
   query,
-  staleDays,
   lastTermCode,
   decisionTerm,
   termOptions,
   domains,
+  coreMembers,
+  pickedTermId,
 }: {
   cards: RenewalCardModel[];
   query: string;
-  staleDays: number;
   lastTermCode: string;
   decisionTerm: { id: string; code: string };
   termOptions: TermOption[];
   domains: DomainOption[];
+  coreMembers: { userId: string; name: string }[];
+  pickedTermId: string;
 }) {
   const fetcher = useFetcher<{ error?: string }>();
+  const piFetcher = useFetcher<{ error?: string }>();
   const [editing, setEditing] = useState<Editing | null>(null);
   const now = useMemo(() => new Date(), []);
   const saving =
@@ -106,11 +109,10 @@ export function RenewalsBoard({
     };
   });
 
-  const editingCard = editing ? cards.find((c) => c.projectId === editing.projectId) : null;
-
   return (
     <div className="flex flex-col gap-3">
       {fetcher.data?.error && <p className="text-sm text-os-red">{fetcher.data.error}</p>}
+      {piFetcher.data?.error && <p className="text-sm text-os-red">{piFetcher.data.error}</p>}
       {query.trim() && cards.length > 0 && RENEWAL_COLUMNS.every((c) => grouped[c].length === 0) && (
         <p className="text-sm text-muted-foreground">No projects match &ldquo;{query.trim()}&rdquo;.</p>
       )}
@@ -128,9 +130,6 @@ export function RenewalsBoard({
               <RenewalCard
                 card={c}
                 accentEdge={ACCENTS[c.column].edge}
-                staleDays={staleDays}
-                lastTermCode={lastTermCode}
-                decisionTermCode={decisionTerm.code}
                 now={now}
                 isDragging={false}
                 onOpen={() => {}}
@@ -138,33 +137,45 @@ export function RenewalsBoard({
             </div>
           ) : null;
         }}
-        renderCard={(c, { isDragging, dragHandleProps }) => (
-          <RenewalCard
-            card={c}
-            accentEdge={ACCENTS[c.column].edge}
-            staleDays={staleDays}
-            lastTermCode={lastTermCode}
-            decisionTermCode={decisionTerm.code}
-            now={now}
-            dragHandleProps={dragHandleProps}
-            isDragging={isDragging}
-            onOpen={() => setEditing({ projectId: c.projectId, decision: c.column })}
-          />
-        )}
+        renderCard={(c, { isDragging, dragHandleProps }) => {
+          const editingThis = editing?.projectId === c.projectId;
+          return (
+            <RenewalCard
+              card={c}
+              accentEdge={ACCENTS[editingThis ? editing.decision : c.column].edge}
+              now={now}
+              dragHandleProps={editingThis ? {} : dragHandleProps}
+              isDragging={isDragging}
+              onOpen={() => {
+                if (!editingThis) setEditing({ projectId: c.projectId, decision: c.column });
+              }}
+              onDecide={(decision) => setEditing({ projectId: c.projectId, decision })}
+              coreMembers={coreMembers}
+              onPiChange={(piUserId) =>
+                piFetcher.submit(
+                  { intent: "pi", projectId: c.projectId, termId: pickedTermId, piUserId: piUserId ?? "" },
+                  { method: "post" },
+                )
+              }
+              pendingDecision={editingThis ? editing.decision : undefined}
+              expansion={
+                editingThis ? (
+                  <RenewalEditorFields
+                    card={c}
+                    decision={editing.decision}
+                    decisionTerm={decisionTerm}
+                    termOptions={termOptions}
+                    domains={domains}
+                    busy={fetcher.state !== "idle"}
+                    onCancel={() => setEditing(null)}
+                    onSave={save}
+                  />
+                ) : null
+              }
+            />
+          );
+        }}
       />
-      {editing && editingCard && (
-        <RenewalModal
-          key={`${editing.projectId}:${editing.decision}`}
-          card={editingCard}
-          initialDecision={editing.decision}
-          decisionTerm={decisionTerm}
-          termOptions={termOptions}
-          domains={domains}
-          busy={fetcher.state !== "idle"}
-          onClose={() => setEditing(null)}
-          onSave={save}
-        />
-      )}
     </div>
   );
 }

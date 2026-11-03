@@ -62,20 +62,34 @@ export function getZonedYMD(
   };
 }
 
+const wallFormatters = new Map<string, Intl.DateTimeFormat>();
+
+// Building a formatter costs ten times what using one does, and interview slot
+// and calendar loops convert thousands of times per request on a single thread.
+function wallFormatter(timezone: string): Intl.DateTimeFormat {
+  let formatter = wallFormatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    wallFormatters.set(timezone, formatter);
+  }
+  return formatter;
+}
+
 /** Wall-clock parts of `date` interpreted in `timezone` (month 1-indexed). */
 export function getZonedParts(
   date: Date,
   timezone: string,
 ): { year: number; month: number; day: number; hour: number; minute: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
+  const parts = wallFormatter(timezone).formatToParts(date);
   const get = (t: string) =>
     Number(parts.find((p) => p.type === t)?.value ?? "0");
   return {
@@ -140,16 +154,7 @@ export function zonedWallTimeUtc(
   timezone: string,
 ): Date {
   const wallMs = Date.UTC(year, month - 1, day, hour, minute);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
+  const formatter = wallFormatter(timezone);
   const offsetAt = (ms: number) => {
     const parts = formatter.formatToParts(new Date(ms));
     const get = (type: string) =>

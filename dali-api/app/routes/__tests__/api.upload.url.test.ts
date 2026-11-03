@@ -24,7 +24,7 @@ describe("GET /api/upload/url", () => {
     expect(await res.json()).toEqual({ url: "https://signed.example/x" });
   });
 
-  it.each(["uploads/resumes/u2/a.pdf", "resumes/u2/a.pdf", "/uploads/payroll-imports/x.csv"])(
+  it.each(["uploads/resumes/u2/a.pdf", "resumes/u2/a.pdf", "/uploads/payroll-imports/x.csv", "uploads/../uploads/resumes/u2/a.pdf", "uploads//resumes/u2/a.pdf"])(
     "returns 404 for the reserved key %s without signing",
     async (key) => {
       const res = await call(key);

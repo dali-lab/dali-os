@@ -2,9 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/cycles", () => ({ getOpenCycles: vi.fn() }));
+const { eligibleSpy } = vi.hoisted(() => ({ eligibleSpy: vi.fn() }));
 vi.mock("~/hiring/lib/applicant-groups.server", () => ({
   applicantGroup: vi.fn((applicants: string, cycleId: string) => ({
-    eligible: vi.fn().mockResolvedValue(applicants === "Interns"),
+    eligible: (userId: string) => {
+      eligibleSpy(applicants, userId);
+      return Promise.resolve(applicants === "Interns");
+    },
     portalPath: `/fellowship/${cycleId}`,
   })),
 }));
@@ -71,5 +75,19 @@ describe("getInternalCycleApplyTasks dueAt", () => {
       domainApplications: [{ domainId: "engs" }],
     });
     expect(await getInternalCycleApplyTasks("u1")).toEqual([]);
+  });
+});
+
+describe("getInternalCycleApplyTasks eligibility lookups", () => {
+  it("only checks eligibility for groups that have an open cycle", async () => {
+    await getInternalCycleApplyTasks("u1");
+    expect(eligibleSpy).toHaveBeenCalledTimes(1);
+    expect(eligibleSpy).toHaveBeenCalledWith("Interns", "u1");
+  });
+
+  it("checks nothing when no cycle is open", async () => {
+    mockGetOpenCycles.mockResolvedValue([]);
+    expect(await getInternalCycleApplyTasks("u1")).toEqual([]);
+    expect(eligibleSpy).not.toHaveBeenCalled();
   });
 });

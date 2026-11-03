@@ -216,6 +216,7 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
         where: { commentId: comment.id, userId: callerId, emoji },
       });
     }
+    if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return { ok: true };
   }
 

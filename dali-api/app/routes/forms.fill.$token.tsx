@@ -11,6 +11,10 @@ import {
   ordinaryFillBlock,
 } from "~/forms/lib/public-form";
 import { applicantFillRedirect } from "~/forms/lib/form-usages.server";
+import {
+  loadEditableResponse,
+  loadResponseForEditing,
+} from "~/forms/lib/form-response.server";
 import { canFillEducationForm } from "~/education/lib/feedback.server";
 import {
   MemberFormFillView,
@@ -76,6 +80,28 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Pass the user's id (when signed in) so member-scoped reference sources
   // (e.g. a bid's domain dropdown limited to the member's own eligibility)
   // populate; they resolve to [] on anonymous fills.
+  // Editing your own response loads the version it was answered against, not
+  // the latest. Any refusal falls through to the ordinary panel.
+  if (userId && !educationSessionId && !educationOfferingId && url.searchParams.get("edit") === "1") {
+    const editing = await loadResponseForEditing({ token: params.token!, userId, request });
+    if (!("error" in editing)) {
+      return {
+        accessDenied: false as const,
+        ...editing.form,
+        token: params.token!,
+        educationSessionId: null,
+        educationOfferingId: null,
+        next: null,
+        alreadySubmitted: null,
+        canEdit: false,
+        editingAnswers: editing.answers,
+        tileSeed: null,
+        saveProgress: false,
+        userId,
+      };
+    }
+  }
+
   const form = await loadPublicForm(params.token!, userId);
   if (!form) throw new Response("Not found", { status: 404 });
 
@@ -87,6 +113,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     userId && !educationSessionId && !educationOfferingId
       ? await ordinaryFillBlock(form.formId, userId)
       : null;
+
+  const canEdit =
+    block && userId
+      ? "ok" in (await loadEditableResponse({ token: params.token!, userId, request }))
+      : false;
 
   // Where to send the member after they submit — carried by the app-lock gate
   // (layout.tsx) as ?next so a gated fill returns them to the page they were
@@ -102,6 +133,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ? await isFeatureEnabled("form-blocks", userId, await getUserRoles(userId, request), request)
     : await isFeatureSwitchedOn("form-blocks", request);
 
+  const saveProgress = userId
+    ? await isFeatureEnabled("form-upgrades", userId, await getUserRoles(userId, request), request)
+    : await isFeatureSwitchedOn("form-upgrades", request);
+
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.
   return {
@@ -112,7 +147,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     educationOfferingId,
     next,
     alreadySubmitted: block ? { at: block.at.toISOString() } : null,
+    canEdit,
+    editingAnswers: null,
     tileSeed: tileStrip ? form.formId : null,
+    saveProgress,
+    userId,
   };
 }
 
@@ -153,6 +192,14 @@ export default function MemberFormFill() {
               })}
               .
             </p>
+            {data.canEdit && (
+              <Link
+                to="?edit=1"
+                className={buttonClasses("secondary", "md", "mt-6 mr-2")}
+              >
+                Edit your response
+              </Link>
+            )}
             {data.next && (
               <Link to={data.next} className={buttonClasses("primary", "md", "mt-6")}>
                 Continue
@@ -171,6 +218,9 @@ export default function MemberFormFill() {
           next={data.next}
           tileSeed={data.tileSeed}
           allowExit
+          saveProgress={data.saveProgress}
+          progressUserId={data.userId}
+          editing={data.editingAnswers ? { answers: data.editingAnswers } : undefined}
           extraBody={
             data.educationSessionId || data.educationOfferingId
               ? {

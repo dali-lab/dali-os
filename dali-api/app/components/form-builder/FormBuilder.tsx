@@ -1,5 +1,5 @@
-import { useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
-import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
+import { Fragment, useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
+import { Menu, MenuItem, MenuSeparator, Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { extractPlaceholders, placeholder } from "~/lib/template-variables";
 import { lintFormText } from "~/forms/lib/form-variables";
 import {
@@ -23,6 +23,13 @@ import {
   Database,
   SeparatorHorizontal,
   Text,
+  CircleDot,
+  Gauge,
+  CalendarDays,
+  Hash,
+  Mail,
+  CornerDownRight,
+  Plus,
   type LucideIcon,
 } from 'lucide-react'
 import {
@@ -46,11 +53,24 @@ import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
 import { Checkbox } from '~/components/ui/Checkbox'
+import { Segmented } from '~/components/ui/Segmented'
+import {
+  OP_LABELS,
+  canBeSource,
+  opsForSource,
+  questionNumbers,
+  ruleDepths,
+  showIfProblems,
+  showIfSentence,
+  valuesForSource,
+  type ShowIf,
+} from '~/lib/form-logic'
 import { isLayoutOnly } from '~/lib/form-answers'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
 import { SearchInput } from '~/components/ui/SearchInput'
 import { useOsChrome } from '~/components/os-chrome'
+import { useFeatureFlag } from '~/components/FeatureFlags'
 
 type QuestionType = Question['type']
 
@@ -66,13 +86,18 @@ const COMPONENT_GROUPS: {
     items: [
       { type: 'text', label: 'Short answer', icon: Type },
       { type: 'textarea', label: 'Long answer', icon: AlignLeft },
+      { type: 'number', label: 'Number', icon: Hash },
+      { type: 'email', label: 'Email', icon: Mail },
+      { type: 'date', label: 'Date', icon: CalendarDays },
     ],
   },
   {
     title: 'Choices',
     items: [
+      { type: 'radio', label: 'Multiple choice', icon: CircleDot },
       { type: 'select', label: 'Dropdown', icon: SquareChevronDown },
       { type: 'checkbox', label: 'Checkboxes', icon: ListChecks },
+      { type: 'scale', label: '1 to 5 scale', icon: Gauge },
       { type: 'skills_rating', label: 'Skills rating', icon: Star },
       { type: 'reference', label: 'Database list', icon: Database },
     ],
@@ -96,6 +121,12 @@ const COMPONENT_GROUPS: {
 ]
 
 const COMPONENTS = COMPONENT_GROUPS.flatMap((g) => g.items)
+
+// Types behind the form-upgrades flag. They gate only what the builder
+// offers; a question of one of these types already in a form always works.
+export const FLAGGED_TYPES: readonly QuestionType[] = ['radio', 'scale', 'date', 'number', 'email']
+const OPTION_TYPES: readonly QuestionType[] = ['select', 'radio', 'checkbox', 'skills_rating']
+const OTHER_TYPES: readonly QuestionType[] = ['radio', 'checkbox']
 const componentLabel = (type: QuestionType) =>
   COMPONENTS.find((c) => c.type === type)?.label ?? type
 
@@ -146,6 +177,11 @@ export interface BuildQuestionInput {
   label: string
   description?: string
   optionsText?: string
+  allowOther?: boolean
+  scaleLow?: string
+  scaleHigh?: string
+  minValue?: number | string
+  maxValue?: number | string
   accept?: string
   afterDomains?: boolean
   isGeneralForm?: boolean
@@ -154,6 +190,13 @@ export interface BuildQuestionInput {
   referenceSource?: string
   referenceTermId?: string
   body?: unknown
+  showIf?: ShowIf
+}
+
+function parseBound(raw: number | string | undefined): number | undefined {
+  if (raw === undefined || (typeof raw === 'string' && raw.trim() === '')) return undefined
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : undefined
 }
 
 export function buildQuestion(input: BuildQuestionInput): Question {
@@ -164,6 +207,11 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     label,
     description,
     optionsText,
+    allowOther,
+    scaleLow,
+    scaleHigh,
+    minValue,
+    maxValue,
     accept,
     afterDomains,
     isGeneralForm,
@@ -172,6 +220,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     referenceSource,
     referenceTermId,
     body,
+    showIf,
   } = input
 
   let maxWords: number | undefined
@@ -191,10 +240,14 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     data: {
       label,
       description: description || undefined,
-      options:
-        type === 'select' || type === 'skills_rating' || type === 'checkbox'
-          ? (optionsText ?? '').split('\n').filter((o) => o.trim() !== '')
-          : undefined,
+      options: OPTION_TYPES.includes(type)
+        ? (optionsText ?? '').split('\n').filter((o) => o.trim() !== '')
+        : undefined,
+      allowOther: OTHER_TYPES.includes(type) && allowOther ? true : undefined,
+      scaleLow: type === 'scale' ? scaleLow?.trim() || undefined : undefined,
+      scaleHigh: type === 'scale' ? scaleHigh?.trim() || undefined : undefined,
+      min: type === 'number' ? parseBound(minValue) : undefined,
+      max: type === 'number' ? parseBound(maxValue) : undefined,
       accept: type === 'file' ? accept || undefined : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
@@ -205,6 +258,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
           ? referenceTermId || undefined
           : undefined,
       body: type === 'info' ? body : undefined,
+      showIf,
     },
   }
 }
@@ -248,6 +302,9 @@ interface FormBuilderTabProps {
   // builder (no structured-collab room for that entity).
   formId?: string
   collabToken?: string | null
+  // Question key -> the staffing feature that reads its answer. Those
+  // questions are always shown, so they can't take a condition.
+  mappedQuestions?: Record<string, string>
 }
 // A draft can hold malformed entries: an earlier collab bug stored empty
 // objects (nothing to keep, so they're dropped) and questions can lack a key
@@ -271,6 +328,7 @@ export function FormBuilderTab({
   formId,
   collabToken,
   termBinding = null,
+  mappedQuestions = {},
 }: FormBuilderTabProps) {
   const [initialQuestions] = useState(() => repairQuestions(rawInitialQuestions))
   // Local state used when the collab room is unavailable (hiring challenge
@@ -334,6 +392,10 @@ export function FormBuilderTab({
     }
   }
 
+  const newTypesEnabled = useFeatureFlag('form-upgrades')
+  const typeOffered = (type: QuestionType) =>
+    (type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox') &&
+    (!FLAGGED_TYPES.includes(type) || newTypesEnabled || editForm.type === type)
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const { formTrigger } = useOsChrome()
   if (snapshotRef) snapshotRef.current = () => ({ questions, description })
@@ -342,6 +404,8 @@ export function FormBuilderTab({
   const [optionsText, setOptionsText] = useState('')
   const [maxWordsEnabled, setMaxWordsEnabled] = useState(false)
   const [maxWordsValue, setMaxWordsValue] = useState<string>('')
+  const [minText, setMinText] = useState('')
+  const [maxText, setMaxText] = useState('')
   const [acceptPresets, setAcceptPresets] = useState<Set<string>>(new Set())
   const [acceptCustom, setAcceptCustom] = useState('')
   // Drag-to-reorder via dnd-kit (same idiom as EpicSprintManager / KanbanBoard).
@@ -420,6 +484,8 @@ export function FormBuilderTab({
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
+    setMinText('')
+    setMaxText('')
     setAcceptPresets(new Set())
     setAcceptCustom('')
   }
@@ -429,6 +495,8 @@ export function FormBuilderTab({
     setOptionsText(q.data.options?.join('\n') || '')
     setMaxWordsEnabled(q.data.maxWords !== undefined)
     setMaxWordsValue(q.data.maxWords !== undefined ? String(q.data.maxWords) : '')
+    setMinText(q.data.min !== undefined ? String(q.data.min) : '')
+    setMaxText(q.data.max !== undefined ? String(q.data.max) : '')
     if (q.type === 'file' && q.data.accept) {
       const { presets, custom } = parseAcceptIntoPresets(q.data.accept)
       setAcceptPresets(presets)
@@ -477,6 +545,11 @@ export function FormBuilderTab({
       label: editForm.data?.label || '',
       description: editForm.data?.description,
       optionsText,
+      allowOther: editForm.data?.allowOther,
+      scaleLow: editForm.data?.scaleLow,
+      scaleHigh: editForm.data?.scaleHigh,
+      minValue: minText,
+      maxValue: maxText,
       accept: buildAcceptFromPresets(acceptPresets, acceptCustom),
       afterDomains: editForm.data?.afterDomains,
       isGeneralForm,
@@ -485,12 +558,13 @@ export function FormBuilderTab({
       referenceSource: editForm.data?.referenceSource,
       referenceTermId: editForm.data?.referenceTermId,
       body: editForm.data?.body,
+      showIf: editForm.data?.showIf,
     })
     setQuestions(
       questions.map((q) => (q.key === editForm.key ? rebuilt : q)),
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue])
+  }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue, minText, maxText])
 
   // Collapse the inline editor. The data is already in the list (auto-commit),
   // so this just closes the form — no save needed.
@@ -517,9 +591,23 @@ export function FormBuilderTab({
     setOptionsText('')
     setMaxWordsEnabled(false)
     setMaxWordsValue('')
+    setMinText('')
+    setMaxText('')
     setAcceptPresets(new Set())
     setAcceptCustom('')
   }
+  const numbers = questionNumbers(questions)
+  const depths = ruleDepths(questions)
+  const problemByKey = new Map(
+    showIfProblems(questions, new Map(Object.entries(mappedQuestions))).map((p) => [p.key, p.message]),
+  )
+  const setRule = (showIf: ShowIf | undefined) =>
+    setEditForm({ ...editForm, data: { ...editForm.data!, showIf } })
+  const ruleFor = (source: Question): ShowIf => ({
+    questionKey: source.key,
+    op: opsForSource(source)[0],
+    value: valuesForSource(source)[0] ?? '',
+  })
   const renderEditForm = () => {
     // Soft lint, shared with the email and signing editors: a token this
     // surface doesn't offer stays literal text, so say so rather than letting
@@ -600,9 +688,7 @@ export function FormBuilderTab({
                 })
               }
               options={COMPONENTS.filter(
-                (c) =>
-                  !isLayoutOnly(c.type) &&
-                  (c.type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox'),
+                (c) => !isLayoutOnly(c.type) && typeOffered(c.type),
               ).map((c) => ({ value: c.type, label: c.label }))}
               buttonClassName={formTrigger}
             />
@@ -618,7 +704,7 @@ export function FormBuilderTab({
                     required: e.target.checked,
                   })
                 }
-                label="Required field"
+                label={editForm.data?.showIf ? 'Required when shown' : 'Required field'}
               />
               <InfoTip content="Respondents must answer this question before they can submit. Shown as * in the fill view." />
             </span>
@@ -681,7 +767,7 @@ export function FormBuilderTab({
             </div>
           )}
 
-          {(editForm.type === 'select' || editForm.type === 'checkbox') && (
+          {(editForm.type === 'select' || editForm.type === 'radio' || editForm.type === 'checkbox') && (
             <div className="col-span-2">
               <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Options (One per line)
@@ -693,7 +779,97 @@ export function FormBuilderTab({
                 className="block w-full"
                 placeholder="Option 1&#10;Option 2&#10;Option 3"
               />
+              {editForm.type === 'radio' && (
+                <p className="mt-1 text-xs text-muted-foreground">Add at least two options.</p>
+              )}
             </div>
+          )}
+
+          {editForm.type !== undefined &&
+            OTHER_TYPES.includes(editForm.type) &&
+            (newTypesEnabled || editForm.data?.allowOther) && (
+            <div className="col-span-2">
+              <Checkbox
+                checked={editForm.data?.allowOther || false}
+                onChange={(e) =>
+                  setEditForm({
+                    ...editForm,
+                    data: { ...editForm.data!, allowOther: e.target.checked },
+                  })
+                }
+                label="Add an Other option"
+              />
+            </div>
+          )}
+
+          {editForm.type === 'scale' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  1 means (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={editForm.data?.scaleLow || ''}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      data: { ...editForm.data!, scaleLow: e.target.value },
+                    })
+                  }
+                  className="block w-full"
+                  placeholder="e.g. Not at all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  5 means (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={editForm.data?.scaleHigh || ''}
+                  onChange={(e) =>
+                    setEditForm({
+                      ...editForm,
+                      data: { ...editForm.data!, scaleHigh: e.target.value },
+                    })
+                  }
+                  className="block w-full"
+                  placeholder="e.g. Very much"
+                />
+              </div>
+            </>
+          )}
+
+          {editForm.type === 'number' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  Minimum (Optional)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={minText}
+                  onChange={(e) => setMinText(e.target.value)}
+                  className="block w-full"
+                  placeholder="e.g. 0"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-foreground/80 mb-1">
+                  Maximum (Optional)
+                </label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={maxText}
+                  onChange={(e) => setMaxText(e.target.value)}
+                  className="block w-full"
+                  placeholder="e.g. 100"
+                />
+              </div>
+            </>
           )}
 
           {editForm.type === 'skills_rating' && (
@@ -806,6 +982,88 @@ export function FormBuilderTab({
           )}
         </div>
 
+        {(newTypesEnabled || editForm.data?.showIf) && editForm.type !== undefined && (() => {
+          const own = questions.findIndex((q) => q.key === editForm.key)
+          const sources = questions.slice(0, Math.max(own, 0)).filter(canBeSource)
+          const rule = editForm.data?.showIf
+          const source = rule ? questions.find((q) => q.key === rule.questionKey) : undefined
+          const feature = editForm.key ? mappedQuestions[editForm.key] : undefined
+          const noSources = sources.length === 0 && !rule
+          const problem = editForm.key ? problemByKey.get(editForm.key) : undefined
+          return (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground/80">Show this question</span>
+                <Segmented
+                  ariaLabel="Show this question"
+                  size="md"
+                  value={rule ? 'when' : 'always'}
+                  onChange={(next) =>
+                    setRule(next === 'when' && sources[0] ? ruleFor(sources[0]) : undefined)
+                  }
+                  options={[
+                    { value: 'always', label: 'Always' },
+                    { value: 'when', label: 'Only when', disabled: !!feature || noSources },
+                  ]}
+                />
+              </div>
+              {feature && (
+                <p className="text-xs text-muted-foreground">
+                  {feature} reads this answer, so the question is always shown.
+                </p>
+              )}
+              {!feature && noSources && (
+                <p className="text-xs text-muted-foreground">
+                  There is no earlier dropdown, multiple choice, scale or checkbox question to depend on.
+                </p>
+              )}
+              {rule && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="min-w-[12rem] flex-1">
+                    <Select
+                      value={rule.questionKey}
+                      onChange={(key) => {
+                        const next = questions.find((q) => q.key === key)
+                        if (next) setRule(ruleFor(next))
+                      }}
+                      placeholder="Pick a question…"
+                      options={sources.map((q) => ({
+                        value: q.key,
+                        label: `Q${numbers.get(q.key)} ${q.data.label || 'Untitled question'}`,
+                      }))}
+                      buttonClassName={formTrigger}
+                    />
+                  </div>
+                  <div className="w-36 shrink-0">
+                    <Select
+                      value={rule.op}
+                      onChange={(op) => setRule({ ...rule, op: op as ShowIf['op'] })}
+                      options={(source ? opsForSource(source) : [rule.op]).map((op) => ({
+                        value: op,
+                        label: OP_LABELS[op],
+                      }))}
+                      buttonClassName={formTrigger}
+                    />
+                  </div>
+                  <div className="w-44 shrink-0">
+                    <Select
+                      value={rule.value}
+                      onChange={(value) => setRule({ ...rule, value })}
+                      placeholder="Pick an answer…"
+                      options={(source ? valuesForSource(source) : []).map((v) => ({
+                        value: v,
+                        label: v,
+                      }))}
+                      buttonClassName={formTrigger}
+                    />
+                  </div>
+                </div>
+              )}
+              {problem && <p className="text-xs text-os-amber">{problem}</p>}
+            </div>
+          )
+        })()}
+
         <div className="flex justify-between items-center gap-3 pt-2">
           <Tooltip content="Remove question">
             <button
@@ -842,7 +1100,7 @@ export function FormBuilderTab({
       }}
     >
       <div className="flex flex-col lg:flex-row gap-6 items-start">
-        <ComponentLibrary allowCheckbox={allowCheckbox} onAdd={addComponent} />
+        <ComponentLibrary allowCheckbox={allowCheckbox} allowNewTypes={newTypesEnabled} onAdd={addComponent} />
 
         <CanvasDropZone>
           {/* Block JSON from here on: onChange hands back the BlockNote block
@@ -865,7 +1123,13 @@ export function FormBuilderTab({
               {questions.map((q, index) => (
                 <SortableQuestionRow key={q.key} id={q.key} disabled={editingKey === q.key}>
                   {(dragHandleProps, isDragging) => (
-                    <div className={`space-y-2 ${isDragging ? 'opacity-40' : ''}`}>
+                    <div
+                      className={`relative space-y-2 ${isDragging ? 'opacity-40' : ''}`}
+                      style={(depths.get(q.key) ?? 0) > 0 ? { marginLeft: (depths.get(q.key) ?? 0) * 32 } : undefined}
+                    >
+                      {(depths.get(q.key) ?? 0) > 0 && (
+                        <CornerDownRight aria-hidden className="absolute -left-7 top-4 w-[18px] h-[18px] text-os-accent" />
+                      )}
                       {dropsAt(q.key, false) && insertionLine}
                       {q.type === 'info' ? (
                         <div
@@ -998,9 +1262,18 @@ export function FormBuilderTab({
                               </p>
                             )}
 
-                            {(q.type === 'select' || q.type === 'skills_rating' || q.type === 'checkbox') && q.data.options && (
+                            {q.data.showIf && (
+                              <p className="text-sm text-os-accent mb-2">
+                                Shown when {showIfSentence(q.data.showIf, numbers)}
+                              </p>
+                            )}
+                            {problemByKey.get(q.key) && (
+                              <p className="text-sm text-os-amber mb-2">{problemByKey.get(q.key)}</p>
+                            )}
+
+                            {OPTION_TYPES.includes(q.type) && q.data.options && (
                               <div className="mt-2 flex flex-wrap gap-2">
-                                {q.data.options.map((opt) => (
+                                {[...q.data.options, ...(q.data.allowOther ? ['Other'] : [])].map((opt) => (
                                   <span
                                     key={opt}
                                     className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-os-well text-os-grey border border-os-container"
@@ -1058,6 +1331,7 @@ export function FormBuilderTab({
                 Drag a component here, or click one to add it
               </div>
             )}
+            <AddComponentMenu allowCheckbox={allowCheckbox} allowNewTypes={newTypesEnabled} onAdd={addComponent} />
           </div>
 
           <div className="flex justify-end items-center gap-3 pt-4 border-t border-os-container">
@@ -1120,26 +1394,73 @@ export function FormBuilderTab({
   )
 }
 
-// The left rail: a searchable library of components. Click a tile to append
-// it, or drag it onto the canvas to drop it at a position.
-function ComponentLibrary({
-  allowCheckbox,
-  onAdd,
-}: {
-  allowCheckbox: boolean
-  onAdd: (type: QuestionType) => void
-}) {
-  const { heading } = useOsChrome()
-  const [query, setQuery] = useState('')
-  const q = query.trim().toLowerCase()
-  const groups = COMPONENT_GROUPS.map((g) => ({
+function offeredGroups(allowCheckbox: boolean, allowNewTypes: boolean, query = '') {
+  return COMPONENT_GROUPS.map((g) => ({
     ...g,
     items: g.items.filter(
       (c) =>
         (c.type !== 'checkbox' || allowCheckbox) &&
-        (!q || c.label.toLowerCase().includes(q)),
+        (allowNewTypes || !FLAGGED_TYPES.includes(c.type)) &&
+        (!query || c.label.toLowerCase().includes(query)),
     ),
   })).filter((g) => g.items.length > 0)
+}
+
+export function AddComponentMenu({
+  allowCheckbox,
+  allowNewTypes,
+  onAdd,
+}: {
+  allowCheckbox: boolean
+  allowNewTypes: boolean
+  onAdd: (type: QuestionType) => void
+}) {
+  const groups = offeredGroups(allowCheckbox, allowNewTypes)
+  return (
+    <Menu
+      ariaLabel="Add a question"
+      trigger={
+        <button
+          type="button"
+          aria-label="Add a question"
+          className="flex w-full items-center justify-center gap-2 p-3 rounded-os-item border border-dashed border-os-container-hi text-sm font-medium text-os-grey transition-colors hover:border-os-accent/60 hover:bg-os-accent/5 hover:text-foreground"
+        >
+          <Plus className="w-4 h-4" />
+          Add question
+        </button>
+      }
+    >
+      {groups.map((g, i) => (
+        <Fragment key={g.title}>
+          {i > 0 && <MenuSeparator />}
+          {g.items.map((c) => (
+            <MenuItem key={c.type} onSelect={() => onAdd(c.type)} label={c.label}>
+              <span className="flex items-center gap-2">
+                <c.icon className="w-4 h-4 text-os-accent" />
+                {c.label}
+              </span>
+            </MenuItem>
+          ))}
+        </Fragment>
+      ))}
+    </Menu>
+  )
+}
+
+// The left rail: a searchable library of components. Click a tile to append
+// it, or drag it onto the canvas to drop it at a position.
+function ComponentLibrary({
+  allowCheckbox,
+  allowNewTypes,
+  onAdd,
+}: {
+  allowCheckbox: boolean
+  allowNewTypes: boolean
+  onAdd: (type: QuestionType) => void
+}) {
+  const { heading } = useOsChrome()
+  const [query, setQuery] = useState('')
+  const groups = offeredGroups(allowCheckbox, allowNewTypes, query.trim().toLowerCase())
 
   return (
     <aside className="w-full lg:w-72 flex-shrink-0 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto rounded-os-card bg-os-card p-4 space-y-5">

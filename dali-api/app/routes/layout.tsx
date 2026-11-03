@@ -49,6 +49,9 @@ import { tabStripHintFromRequest, tabsSnapshotFromRequest } from '~/lib/desktop-
 import { SidePanelHost } from '~/components/side-panel/SidePanel'
 import type { Route } from './+types/layout'
 
+const isInstructorPath = (pathname: string) =>
+  pathname.startsWith('/education/manage') || pathname === '/education/offerings'
+
 export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now()
   const auth = await timed(request, 'auth', () => requireAuth(request))
@@ -58,17 +61,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const pathname = new URL(request.url).pathname
   const publicDoc = () => publicDocRedirectForPath(pathname)
   if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request)
-  if (await isNonMember(auth, request)) return (await publicDoc()) ?? redirect('/portal')
-
-  // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
-  // session to a BetterAuth session, then reload the same URL so the new cookie
-  // takes effect. Self-limiting — it clears the legacy cookie, so the fast-path
-  // skips it on the reload and it runs at most once per user.
-  const __betterauthUpgrade = await maybeUpgradeLegacyToBetterAuth(request, auth)
-  if (__betterauthUpgrade) {
-    const __u = new URL(request.url)
-    return redirect(__u.pathname + __u.search, { headers: __betterauthUpgrade })
-  }
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that
@@ -77,7 +69,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Drives the sidebar footer avatar. The loader runs on every shell
   // load/revalidation, so this stays in sync after a profile edit. Also tells
   // the launch tour whether to offer the "connect your calendar" step.
-  const [partnerRedirect, roles, activeCycles, sidebarPages, me] = await Promise.all([
+  const [nonMember, partnerRedirect, roles, activeCycles, sidebarPages, me] = await Promise.all([
+    // Same memoized read `layoutRoles` and `loadShellUser` use, so it costs no extra round trip.
+    isNonMember(auth, request),
     timed(request, 'partnerCheck', () => redirectPartnerToPortal(auth)),
     timed(request, 'roles', () => layoutRoles(auth.user.sub, request)),
     // Every active cycle, whoever it's for: any number can be live at once.
@@ -90,6 +84,26 @@ export async function loader({ request }: Route.LoaderArgs) {
     // without a second lookup — both loaders run concurrently for one nav.
     timed(request, 'shellUser', () => loadShellUser(auth.user.sub, request)),
   ])
+  // The non-member gate below handles two cases: external instructors keep
+  // their management pages, and education deep links map to their portal twin.
+  // A `member`-type account with no DALIMember row stays out of the twin case:
+  // portal education sends that type back to /education, which would loop.
+  const instructorPage = roles.isInstructor && isInstructorPath(pathname)
+  const portalTwin = auth.user.type !== 'member' && educationPortalTwin(pathname) !== null
+  if (nonMember && !instructorPage && !portalTwin) {
+    return (await publicDoc()) ?? redirect('/portal')
+  }
+
+  // TEMPORARY (remove ~1 week post-cutover): silently migrate a validated legacy
+  // session to a BetterAuth session, then reload the same URL so the new cookie
+  // takes effect. Self-limiting — it clears the legacy cookie, so the fast-path
+  // skips it on the reload and it runs at most once per user.
+  const __betterauthUpgrade = await maybeUpgradeLegacyToBetterAuth(request, auth)
+  if (__betterauthUpgrade) {
+    const __u = new URL(request.url)
+    return redirect(__u.pathname + __u.search, { headers: __betterauthUpgrade })
+  }
+
   if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect
 
   const {
@@ -117,10 +131,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     const url = new URL(request.url)
     const twin = educationPortalTwin(url.pathname)
     if (twin) return redirect(twin + url.search)
-    const instructorPaths =
-      url.pathname.startsWith('/education/manage') ||
-      url.pathname === '/education/offerings'
-    if (!instructorPaths) return (await publicDoc()) ?? redirect('/portal')
+    if (!isInstructorPath(url.pathname)) return (await publicDoc()) ?? redirect('/portal')
   }
 
   // Hard gates, resolved together since neither depends on the other:

@@ -55,6 +55,16 @@ export const FORM_UPLOAD_CAP: UploadCap = {
   expiresIn: 900,
 };
 
+export const CUSTOM_EMOJI_MAX_BYTES = 256 * 1024;
+export const CUSTOM_EMOJI_PREFIX = "custom-emoji/";
+
+// Reactions render at chip size, so an emoji never needs to be larger than this.
+export const CUSTOM_EMOJI_UPLOAD_CAP: UploadCap = {
+  maxBytes: CUSTOM_EMOJI_MAX_BYTES,
+  label: "256 KB",
+  expiresIn: 300,
+};
+
 /** Prefixes minted only by the server. A client-supplied key under one is
  *  refused at presign and never signed for read. */
 export const DRIVE_DOWNLOAD_PREFIX = "uploads/drive-downloads/";
@@ -64,8 +74,18 @@ export const RESERVED_UPLOAD_PREFIXES = [
   DRIVE_DOWNLOAD_PREFIX,
 ];
 
+function resolveKeySegments(key: string): string {
+  const out: string[] = [];
+  for (const seg of key.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") out.pop();
+    else out.push(seg);
+  }
+  return out.join("/");
+}
+
 export function isReservedUploadKey(key: string): boolean {
-  const scoped = `uploads/${key.replace(/^\/+/, "").replace(/^uploads\//, "")}`;
+  const scoped = `uploads/${resolveKeySegments(key).replace(/^uploads\//, "")}`;
   return RESERVED_UPLOAD_PREFIXES.some((p) => scoped.startsWith(p));
 }
 
@@ -76,6 +96,7 @@ export function isReservedUploadKey(key: string): boolean {
 export function uploadCapForKey(key: string): UploadCap {
   const unscoped = key.replace(/^\/+/, "").replace(/^uploads\//, "");
   if (FILE_STORE_PREFIXES.some((p) => unscoped.startsWith(p))) return FILE_STORE_UPLOAD_CAP;
+  if (unscoped.startsWith(CUSTOM_EMOJI_PREFIX)) return CUSTOM_EMOJI_UPLOAD_CAP;
   if (
     unscoped.startsWith(FORM_UPLOAD_PREFIX) ||
     unscoped.startsWith(RELEASE_NOTE_PREFIX) ||

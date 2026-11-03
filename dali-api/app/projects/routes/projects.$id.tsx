@@ -52,6 +52,7 @@ import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db.server";
+import { activeDomainOptions } from "~/lib/reference-cache.server";
 import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
 import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
@@ -68,6 +69,7 @@ import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "../components/ProjectIconPicker";
+import { replaceProjectTerms } from "../lib/project-terms.server";
 import { Markdown } from "~/components/Markdown";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getUserRoles, isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
@@ -493,11 +495,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // in the action and downstream helpers don't re-query.
     getUserRoles(auth.user.sub, request),
     // Domain editor option list — project-independent.
-    prisma.domain.findMany({
-      where: { active: true },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
+    activeDomainOptions(),
     // All terms — ascending (chronological) for sprint→term resolvers;
     // display lists re-sort to newest-first where needed. Project-independent.
     prisma.term.findMany({
@@ -1373,30 +1371,6 @@ async function replaceProjectDomains(projectId: string, incoming: string[]) {
       ? [
           prisma.projectDomain.createMany({
             data: ids.map((domainId) => ({ projectId, domainId })),
-            skipDuplicates: true,
-          }),
-        ]
-      : []),
-  ]);
-}
-
-// Project term set. Full-replacement too, so the one helper covers both adding
-// and removing terms. The start term and active-this-term are derived from this
-// set, not stored.
-async function replaceProjectTerms(projectId: string, incoming: string[]) {
-  const valid = incoming.length
-    ? await prisma.term.findMany({
-        where: { id: { in: incoming } },
-        select: { id: true },
-      })
-    : [];
-  const ids = valid.map((t) => t.id);
-  await prisma.$transaction([
-    prisma.projectTerm.deleteMany({ where: { projectId } }),
-    ...(ids.length
-      ? [
-          prisma.projectTerm.createMany({
-            data: ids.map((termId) => ({ projectId, termId })),
             skipDuplicates: true,
           }),
         ]

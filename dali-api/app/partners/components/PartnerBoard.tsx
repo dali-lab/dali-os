@@ -303,13 +303,15 @@ export function PartnerBoard({
         </div>
       ),
       cards: stageCards,
+      // Below md the columns stack and cap themselves; from md up the
+      // fitViewport page hands them the remaining height and they scroll inside.
       listClassName:
-        "flex flex-col gap-2 p-2 min-h-[360px] max-h-[calc(100vh-14rem)] overflow-y-auto",
+        "flex flex-col gap-2 p-2 overflow-y-auto min-h-[240px] max-h-[calc(100dvh-14rem)] md:min-h-0 md:max-h-none md:flex-1",
     };
   });
 
   return (
-    <div className={cn("flex flex-col", os ? "gap-4" : "gap-3")}>
+    <div className={cn("flex flex-col md:min-h-0 md:flex-1", os ? "gap-4" : "gap-3")}>
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
 
       {query.trim() && filteredCards.length === 0 && (
@@ -320,6 +322,7 @@ export function PartnerBoard({
 
       <KanbanBoard<PartnerCardModel>
         id="partner-board"
+        fillHeight
         columns={columns}
         getCardId={(c) => c.id}
         getCardData={(c) => ({ applicationId: c.id, fromStage: c.stage })}
