@@ -8,7 +8,6 @@ vi.mock("~/education/lib/engagement.server", () => ({ getEducationEngagement: vi
 vi.mock("~/hiring/lib/prior-applications.server", () => ({ listPriorApplications: vi.fn() }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getApplicantEmailEngagement: vi.fn() }));
 vi.mock("~/hiring/lib/hiring-events.server", () => ({ getHiringEventEngagement: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
 vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
@@ -23,7 +22,6 @@ import { getEducationEngagement } from "~/education/lib/engagement.server";
 import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { getHiringEventEngagement } from "~/hiring/lib/hiring-events.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { domainApplicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/applications.$domainApplicationId";
@@ -78,7 +76,6 @@ beforeEach(() => {
   vi.mocked(listPriorApplications).mockResolvedValue([] as never);
   vi.mocked(getApplicantEmailEngagement).mockResolvedValue(null as never);
   vi.mocked(getHiringEventEngagement).mockResolvedValue([] as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(false);
   vi.mocked(readDocAsBlocks).mockResolvedValue([]);
   vi.mocked(domainApplicationBlindLabel).mockResolvedValue(null);
 
@@ -108,7 +105,6 @@ describe("applications.$domainApplicationId loader — blind review", () => {
 
   it("passes blinded=true through to priorApplications and email engagement calls", async () => {
     vi.mocked(domainApplicationBlindLabel).mockResolvedValue("Applicant 1");
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     vi.mocked(getApplicantEmailEngagement).mockResolvedValue({
       totals: { inbound: 0, outbound: 0, firstAt: null, lastAt: null },
       threads: [],
@@ -131,16 +127,7 @@ describe("applications.$domainApplicationId loader — blind review", () => {
 });
 
 describe("applications.$domainApplicationId loader — application events engagement", () => {
-  it("defaults to an empty list and skips the lookup when the flag is off", async () => {
-    const result: any = await callLoader();
-
-    expect(getHiringEventEngagement).not.toHaveBeenCalled();
-    expect(result.hiringEventEngagement).toEqual([]);
-    expect(result.cycleId).toBe(CYCLE_ID);
-  });
-
-  it("fetches the applicant's event attendance when the flag is on", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+  it("fetches the applicant's event attendance", async () => {
     vi.mocked(getHiringEventEngagement).mockResolvedValue([
       {
         eventId: "evt-1",

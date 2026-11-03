@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 
 describe("api.feedback.posts", () => {
-  it("runs the os-feedback gate first and lets its rejection through", async () => {
+  it("runs the feedback gate first and lets its rejection through", async () => {
     vi.mocked(requireFeedbackViewer).mockRejectedValue(new Response("Not found", { status: 404 }));
     await expect(call()).rejects.toMatchObject({ status: 404 });
     expect(loadFeedbackPage).not.toHaveBeenCalled();

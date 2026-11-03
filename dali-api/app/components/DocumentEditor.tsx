@@ -20,9 +20,7 @@ import { PresenceBar } from "./collab/PresenceBar";
 import { FIND_SHORTCUT, isFindShortcut, isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, type DocTag } from "./TagPicker";
-import { FavoriteStar } from "./FavoriteStar";
 import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useTaskProjects } from "~/components/doc/task/task-api";
 import { taskBlockConfig } from "~/components/doc/task/task-composer-state";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
@@ -112,7 +110,6 @@ export function DocumentEditor({
   focusMentionUserId,
   aiEnabled = false,
   canManageAccess = false,
-  favorited: initialFavorited = false,
   workspaceType,
   workspaceId = null,
   onEditorReady,
@@ -154,8 +151,6 @@ export function DocumentEditor({
   // the doc's manager on any workspace type — creator/Core on a lab doc, project
   // staff, the note owner, an instructor, or a Full-access grantee.
   canManageAccess?: boolean;
-  // Whether the viewer has this page in their own Favorites (home panel).
-  favorited?: boolean;
   // Workspace the page lives in — drives the Share dialog's per-workspace copy
   // (lab-access toggle, base-access line) and the "Move to…" picker's current
   // location.
@@ -196,7 +191,6 @@ export function DocumentEditor({
   // entries go to the surrounding header instead (page-bar-slot).
   chrome?: "inline" | "pageBar" | "panel";
 }) {
-  const favoritesBar = useFeatureFlag("favorites-bar");
   const pageBarSlot = usePageBarSlot();
   const inPageBar = chrome === "pageBar" && pageBarSlot;
   const inPanel = chrome === "panel" && pageBarSlot;
@@ -223,7 +217,7 @@ export function DocumentEditor({
   const [moveOpen, setMoveOpen] = useState(false);
   const toast = useToast();
   const docProjectId = workspaceType === "Project" ? workspaceId : null;
-  const taskProjects = useTaskProjects(useFeatureFlag("doc-task-block") && canEdit);
+  const taskProjects = useTaskProjects(canEdit);
   const taskBlock = useMemo(() => taskBlockConfig(taskProjects, docProjectId), [taskProjects, docProjectId]);
   const moveDestinations = useDriveDestinations({
     enabled: moveOpen,
@@ -1091,14 +1085,6 @@ export function DocumentEditor({
                 <h1 className={cn(pageTitle, "doc-title min-w-0 leading-tight select-text")}>
                   {initialTitle}
                 </h1>
-              )}
-              {/* Favorite: personal, unlike the ⋯ "Pin" which moves the
-                  document for everyone. Anyone who can read the page can
-                  bookmark it. Same first-line box as the icon. */}
-              {!favoritesBar && !pageBarSlot && (
-                <div className="flex h-[50px] shrink-0 items-center print:hidden">
-                  <FavoriteStar pageId={pageId} favorited={initialFavorited} iconClassName="h-5 w-5" />
-                </div>
               )}
             </div>
 

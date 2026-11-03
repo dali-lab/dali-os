@@ -30,7 +30,6 @@ vi.mock("~/hooks/useUserTimeZone", () => ({ useUserTimeZone: () => "America/New_
 
 import { FormDetail } from "../FormDetail";
 import { DialogProvider } from "~/components/ui/dialog";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -84,16 +83,12 @@ function loaderData(overrides: Record<string, unknown> = {}) {
 let container: HTMLDivElement;
 let root: Root;
 
-async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1", flagOn = false) {
+async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1") {
   const Stub = createRoutesStub([
     {
       path: "/forms/edit/:formId",
       Component: () =>
-        createElement(
-          FeatureFlagsProvider,
-          { flags: { "form-upgrades": flagOn } },
-          createElement(DialogProvider, null, createElement(FormDetail)),
-        ),
+        createElement(DialogProvider, null, createElement(FormDetail)),
       loader: () => data,
     },
   ]);
@@ -205,22 +200,15 @@ describe("FormDetail", () => {
     };
     const buttons = () => [...container.querySelectorAll("button")].map((b) => b.textContent);
 
-    it("shows only the table while the flag is off", async () => {
-      await mount(loaderData({ results: table, summary: null } as never), url, false);
-      expect(container.querySelector("table")).not.toBeNull();
-      expect(buttons()).not.toContain("Summary");
-      expect(buttons()).not.toContain("Responses");
-    });
-
-    it("shows the summary with the Summary | Responses toggle when the flag is on", async () => {
-      await mount(loaderData({ results: null, summary } as never), url, true);
+    it("shows the summary with the Summary | Responses toggle", async () => {
+      await mount(loaderData({ results: null, summary } as never), url);
       expect(container.querySelector("table")).toBeNull();
       expect(buttons()).toEqual(expect.arrayContaining(["Summary", "Responses"]));
       expect(container.textContent).toContain("3 answered, 1 skipped");
     });
 
     it("shows the table under the toggle on the Responses view", async () => {
-      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`, true);
+      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`);
       expect(container.querySelector("table")).not.toBeNull();
       expect(buttons()).toContain("Summary");
     });

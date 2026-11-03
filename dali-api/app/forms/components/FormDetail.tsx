@@ -30,7 +30,6 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FormSettingsButton } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
 import { VersionSummary } from "~/forms/components/VersionSummary";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DocEditor } from "~/components/doc";
 import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -123,8 +122,7 @@ export function FormDetail() {
   // the loader can fetch that version's responses and links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();
   const view = searchParams.get("view") === "results" ? "results" : "questions";
-  const upgrades = useFeatureFlag("form-upgrades");
-  const showSummary = upgrades && searchParams.get("show") !== "responses";
+  const showSummary = searchParams.get("show") !== "responses";
 
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(
     () =>

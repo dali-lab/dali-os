@@ -2,8 +2,7 @@ import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/forms.fill.$token";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, requireMember } from "~/lib/roles";
-import { isFeatureEnabled, isFeatureSwitchedOn } from "~/lib/feature-flags.server";
+import { requireMember } from "~/lib/roles";
 import {
   formAccessMeta,
   formFillAccess,
@@ -129,14 +128,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       ? nextParam
       : null;
 
-  const tileStrip = userId
-    ? await isFeatureEnabled("form-blocks", userId, await getUserRoles(userId, request), request)
-    : await isFeatureSwitchedOn("form-blocks", request);
-
-  const saveProgress = userId
-    ? await isFeatureEnabled("form-upgrades", userId, await getUserRoles(userId, request), request)
-    : await isFeatureSwitchedOn("form-upgrades", request);
-
   // loadPublicForm doesn't echo the token back; the submit endpoint is
   // addressed by it, so pass it through explicitly.
   return {
@@ -149,8 +140,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     alreadySubmitted: block ? { at: block.at.toISOString() } : null,
     canEdit,
     editingAnswers: null,
-    tileSeed: tileStrip ? form.formId : null,
-    saveProgress,
+    tileSeed: form.formId,
+    saveProgress: true,
     userId,
   };
 }

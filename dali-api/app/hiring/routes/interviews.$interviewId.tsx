@@ -15,7 +15,6 @@ import { safeParseJsonString } from '~/forms/lib/forms-data'
 import { DocEditor, EnhanceReviewContext } from '~/components/doc'
 import { interviewNotesRoomName } from '~/collab/roomName'
 import { latestRecordingFor } from '~/lib/meeting-recording.server'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { MeetingRecorder } from '~/components/MeetingRecorder'
 import { RecordingPresencePill } from '~/components/RecordingPresencePill'
 import { RecordingMount } from '~/components/meeting-recorder/RecordingMount'
@@ -40,7 +39,6 @@ import { useOsChrome } from '~/components/os-chrome'
 import { buttonClasses } from '~/components/ui/Button'
 import { cn } from '~/lib/cn'
 import { getUserRoles } from '~/lib/roles'
-import { isFeatureEnabled } from '~/lib/feature-flags.server'
 import { domainApplicationBlindLabel } from '~/hiring/lib/anonymization.server'
 import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
 import { getApplicantEmailEngagement } from '~/hiring/lib/email-engagement.server'
@@ -227,9 +225,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement, latestRecordingRow] =
     await Promise.all([
       getEducationEngagement(application.userId),
-      isFeatureEnabled('application-events', auth.user.sub, roles, request).then((on) =>
-        on ? getHiringEventEngagement(application.userId) : [],
-      ),
+      getHiringEventEngagement(application.userId),
       listPriorApplications({
         userId: application.userId,
         currentApplicationId: application.id,
@@ -377,7 +373,6 @@ export default function InterviewDetailPage() {
   const isCompleted = completedFlag === 'completed'
   const notesRoom = interviewNotesRoomName(interview.id)
   const [searchParams] = useSearchParams()
-  const recordingEnabled = useFeatureFlag('ai-meeting-notes')
   const hasTranscriptParam = Boolean(searchParams.get('transcript'))
   const { editorRef, onEditorReady, hookProps: recordingEditorProps } = useRecordingEditor({
     notePath: `/hiring/interviews/${interview.id}`,
@@ -552,7 +547,7 @@ export default function InterviewDetailPage() {
           )}
 
           <RecordingMount
-            enabled={recordingEnabled && !!collabToken && (!isCompleted || hasTranscriptParam)}
+            enabled={!!collabToken && (!isCompleted || hasTranscriptParam)}
             documentName={notesRoom}
             canEdit={!isCompleted}
             isCore={isCore}

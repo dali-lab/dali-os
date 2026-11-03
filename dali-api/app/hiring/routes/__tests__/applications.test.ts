@@ -3,7 +3,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn(async () => false) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
   domainApplicationBlindLabels: vi.fn(),
@@ -12,7 +11,6 @@ vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { domainApplicationBlindLabels } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/applications";
 
@@ -128,19 +126,7 @@ describe("applications.tsx loader — attendedEvent engagement signal", () => {
     });
   }
 
-  it("skips the attendance lookup and marks every row unattended when the flag is off", async () => {
-    mockDomainAppsWithUserId("ada-user");
-
-    const result: any = await callLoader();
-
-    expect(mockPrisma.hiringEventAttendance.findMany).not.toHaveBeenCalled();
-    expect(mockPrisma.hiringEvent.findMany).not.toHaveBeenCalled();
-    expect(result.rows[0].attendedEvent).toBe(false);
-    expect(result.eventOptions).toEqual([]);
-  });
-
-  it("queries attendance scoped to the selected cycle and marks matching rows when the flag is on", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+  it("queries attendance scoped to the selected cycle and marks matching rows", async () => {
     mockPrisma.hiringEventAttendance.findMany.mockResolvedValue([
       { userId: "ada-user", eventId: "ev-1" },
       { userId: "ada-user", eventId: "ev-2" },
@@ -171,7 +157,6 @@ describe("applications.tsx loader — attendedEvent engagement signal", () => {
   });
 
   it("does not mark a row attended when its userId isn't in the attendance result", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     mockPrisma.hiringEventAttendance.findMany.mockResolvedValue([{ userId: "someone-else", eventId: "ev-1" }]);
     mockDomainAppsWithUserId("ada-user");
 

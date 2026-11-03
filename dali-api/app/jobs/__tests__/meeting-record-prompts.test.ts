@@ -2,14 +2,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/google-calendar", () => ({ isGoogleEventCancelled: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isGoogleEventCancelled } from "~/lib/google-calendar";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
@@ -19,8 +15,6 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
-const mockGetUserRoles = getUserRoles as unknown as ReturnType<typeof vi.fn>;
-const mockIsFeatureEnabled = isFeatureEnabled as unknown as ReturnType<typeof vi.fn>;
 const mockIsGoogleEventCancelled = isGoogleEventCancelled as unknown as ReturnType<typeof vi.fn>;
 
 const NOW = new Date("2026-07-15T15:00:00Z");
@@ -53,8 +47,6 @@ beforeEach(() => {
   mockPrisma.meetingReminderLog = {
     create: vi.fn().mockResolvedValue({}),
   } as never;
-  mockGetUserRoles.mockResolvedValue({});
-  mockIsFeatureEnabled.mockResolvedValue(true);
   mockNotify.mockResolvedValue({ inApp: 1, emailed: 0, slackDmed: 0 });
   mockIsGoogleEventCancelled.mockResolvedValue(false);
 });
@@ -133,28 +125,6 @@ describe("runMeetingRecordPrompts", () => {
     });
     expect(result.items).toBe(0);
     expect(mockNotify).not.toHaveBeenCalled();
-  });
-
-  it("skips when the organizer lacks the ai-meeting-notes flag", async () => {
-    mockIsFeatureEnabled.mockResolvedValue(false);
-    const result = await runMeetingRecordPrompts({
-      now: NOW,
-      lastSuccessAt: null,
-      settings: { leadMinutes: 1 },
-    });
-    expect(result.items).toBe(0);
-    expect(mockNotify).not.toHaveBeenCalled();
-    expect(mockIsFeatureEnabled).toHaveBeenCalledWith("ai-meeting-notes", "org", {});
-  });
-
-  it("caches the flag lookup per organizer across meetings in one tick", async () => {
-    mockPrisma.scheduledMeeting.findMany.mockResolvedValue([
-      meeting({ id: "m1" }),
-      meeting({ id: "m2", notePages: [{ id: "note2", meetingOccurrenceStart: IN_30_SEC }] }),
-    ]);
-    await runMeetingRecordPrompts({ now: NOW, lastSuccessAt: null, settings: { leadMinutes: 1 } });
-    expect(mockIsFeatureEnabled).toHaveBeenCalledTimes(1);
-    expect(mockGetUserRoles).toHaveBeenCalledTimes(1);
   });
 
   it("skips a meeting that has no type and no note to record into", async () => {

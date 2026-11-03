@@ -29,13 +29,11 @@ async function mount({
   tabs = true,
   onCopyLink = () => {},
   tile = {},
-  flags = {},
 }: {
   page?: ReactNode;
   tabs?: boolean;
   onCopyLink?: () => void;
   tile?: { areaKey?: string; icon?: typeof Mail };
-  flags?: Record<string, boolean>;
 } = {}) {
   const Stub = createRoutesStub([
     {
@@ -45,7 +43,7 @@ async function mount({
           ToastProvider,
           null,
           createElement(FeatureFlagsProvider, {
-            flags,
+            flags: {},
             children: createElement(PageBarSlotProvider, {
               children: createElement("div", null, page, createElement(PageBar, { tabs, star, onCopyLink, ...tile })),
             }),
@@ -221,15 +219,9 @@ describe("PageBar recording pill", () => {
 
   it("leads the right-hand cluster, ahead of the page's own actions", async () => {
     await recording();
-    await mount({ flags: { "ai-meeting-notes": true }, page: createElement(PageBarPortal, { slot: "actions", children: createElement("button", { "aria-label": "Page action" }) }) });
+    await mount({ page: createElement(PageBarPortal, { slot: "actions", children: createElement("button", { "aria-label": "Page action" }) }) });
     const right = bar().lastElementChild!;
     expect(right.firstElementChild?.textContent).toContain("Weekly sync");
     expect(barButtons().indexOf("Stop recording")).toBeLessThan(barButtons().indexOf("Page action"));
-  });
-
-  it("is absent without the flag", async () => {
-    await recording();
-    await mount();
-    expect(bar().textContent).not.toContain("Weekly sync");
   });
 });

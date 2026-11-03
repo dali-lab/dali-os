@@ -17,7 +17,6 @@ vi.mock("~/components/Modal", () => ({
 }));
 
 import { VersionResults } from "~/forms/components/VersionResults";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { DialogProvider } from "~/components/ui/dialog";
 
 let root: Root;
@@ -37,7 +36,7 @@ const response = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-async function open(flagOn: boolean, over: Record<string, unknown> = {}) {
+async function open(over: Record<string, unknown> = {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -58,13 +57,9 @@ async function open(flagOn: boolean, over: Record<string, unknown> = {}) {
         path: "/forms/edit/f1",
         action: () => null,
         element: createElement(
-          FeatureFlagsProvider,
-          { flags: { "form-upgrades": flagOn } },
-          createElement(
-            DialogProvider,
-            null,
-            createElement(VersionResults, { formId: "f1", versionNumber: 1, results: data as never }),
-          ),
+          DialogProvider,
+          null,
+          createElement(VersionResults, { formId: "f1", versionNumber: 1, results: data as never }),
         ),
       },
     ],
@@ -80,32 +75,27 @@ afterEach(() => {
 });
 
 describe("VersionResults delete and edited marker", () => {
-  it("offers Delete response in the detail when the flag is on", async () => {
-    await open(true);
+  it("offers Delete response in the detail", async () => {
+    await open();
     expect(container.textContent).toContain("Delete response");
     expect(container.querySelector<HTMLInputElement>('input[name="intent"]')!.value).toBe("delete-form-response");
     expect(container.querySelector<HTMLInputElement>('input[name="submissionId"]')!.value).toBe("s1");
   });
 
-  it("offers nothing to delete when the flag is off", async () => {
-    await open(false);
-    expect(container.textContent).not.toContain("Delete response");
-  });
-
   it("shows why instead of a button when the response feeds something else", async () => {
-    await open(true, { lockReason: "Linked to an application or survey." });
+    await open({ lockReason: "Linked to an application or survey." });
     expect(container.textContent).toContain("This response can't be deleted. Linked to an application or survey.");
     expect(container.textContent).not.toContain("Delete response");
   });
 
   it("marks an edited response in the table and the detail", async () => {
-    await open(true, { edited: true });
+    await open({ edited: true });
     expect(container.querySelector("td")!.parentElement!.textContent).toContain("Edited");
     expect(container.querySelector('[data-testid="subtitle"]')!.textContent).toContain("Edited");
   });
 
   it("shows no marker on an untouched response", async () => {
-    await open(true);
+    await open();
     expect(container.querySelector("tbody tr")!.textContent).not.toContain("Edited");
   });
 });

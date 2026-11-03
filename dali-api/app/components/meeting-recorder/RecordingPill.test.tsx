@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { RECORDING_FAVICON, RecordingPill } from "./RecordingPill";
 import { adoptDesktopSession, getLiveSession, refreshLiveSession, resetLiveSession } from "./live-session";
 
@@ -37,15 +36,11 @@ async function show(status: "Pending" | "Recording" | "Stopped", over: Record<st
   });
 }
 
-async function mount(opts: { at?: string; flag?: boolean } = {}) {
+async function mount(opts: { at?: string } = {}) {
   const Stub = createRoutesStub([
     {
       path: "*",
-      Component: () =>
-        createElement(FeatureFlagsProvider, {
-          flags: { "ai-meeting-notes": opts.flag ?? true },
-          children: createElement(RecordingPill),
-        }),
+      Component: () => createElement(RecordingPill),
     },
   ]);
   container = document.createElement("div");
@@ -106,17 +101,6 @@ describe("RecordingPill", () => {
     serverRow = row();
     await mount();
     expect(container.textContent).toContain("Weekly sync");
-  });
-
-  it("does not ask the server anything when the flag is off", async () => {
-    await mount({ flag: false });
-    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
-  });
-
-  it("renders nothing when the flag is off, even with a session", async () => {
-    await show("Recording");
-    await mount({ flag: false });
-    expect(container.textContent).toBe("");
   });
 
   it("shows the timer, the note title as a link, and Stop while recording", async () => {

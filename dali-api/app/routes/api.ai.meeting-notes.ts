@@ -2,8 +2,8 @@
 // collaborative document it was recorded on. Accepts either `recordingId`
 // (v2: formats the recording's own lines, with speaker names resolved
 // through its rename map) or the legacy `documentName` + `transcript`
-// string. Requires the `ai-meeting-notes` flag, write access to the
-// document's collab room, and a configured AI provider (503 otherwise).
+// string. Requires write access to the document's
+// collab room, and a configured AI provider (503 otherwise).
 // Shares the doc assistant's per-user burst limit and daily quota shape.
 //
 // NEVER log the API key, JWT, cookies, or the transcript.
@@ -13,9 +13,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
-import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db.server";
 
@@ -89,10 +87,6 @@ export async function action({ request }: Route.ActionArgs) {
   if (!documentName) return Response.json({ error: "documentName is required" }, { status: 400 });
   if (!transcript) return Response.json({ error: "Nothing was transcribed." }, { status: 400 });
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request))) {
-    return Response.json({ error: "Not available" }, { status: 403 });
-  }
 
   // Only for someone who could write the result into the document.
   if (!(await canRecordInto(auth.user.sub, documentName))) {
