@@ -185,17 +185,17 @@ export function useSharedArray<T extends object>(
       setSynced(true);
     };
 
-    const handleChange = (_event: Y.YArrayEvent<Y.Map<unknown>>, tr: Y.Transaction) => {
+    const handleChange = (_events: Y.YEvent<Y.AbstractType<unknown>>[], tr: Y.Transaction) => {
       if (!tr.local && uniqueField) dropInvalidYArrayItems(yarray, uniqueField);
       setLocalItems(readItems());
     };
 
     provider.on("synced", handleSynced);
-    yarray.observe(handleChange);
+    yarray.observeDeep(handleChange);
 
     return () => {
       provider.off("synced", handleSynced);
-      yarray.unobserve(handleChange);
+      yarray.unobserveDeep(handleChange);
       um.off("stack-item-added", syncUndoState);
       um.off("stack-item-popped", syncUndoState);
       yarrayRef.current = null;
@@ -230,8 +230,11 @@ export function useSharedArray<T extends object>(
       setLocalItems((prev) => prev.map((p, i) => (i === index ? item : p)));
       return;
     }
-    replaceYArrayItem(yarray, index, item);
-  }, []);
+    // `index` counts the visible list, which hides repeats and empty maps.
+    const id = uniqueField ? (item as Record<string, unknown>)[uniqueField] : undefined;
+    const raw = id === undefined ? index : yarray.toArray().findIndex((m) => m.get(uniqueField!) === id);
+    if (raw !== -1) replaceYArrayItem(yarray, raw, item);
+  }, [uniqueField]);
 
   const push = useCallback((item: T) => {
     const yarray = yarrayRef.current;
