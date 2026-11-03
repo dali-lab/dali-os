@@ -22,6 +22,7 @@ import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { SubmissionDatabase } from "../components/SubmissionDatabase";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { TermFilter } from "~/components/TermFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { resolveTermFilter } from "~/lib/terms";
@@ -164,6 +165,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
+    termOptions,
     selectedTerm,
     isAll,
     submissions,
@@ -354,6 +356,7 @@ function Loaded({
           aria-label="Search submissions"
           containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
+        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
         <div className="min-w-[220px] flex-1">
           <ColumnFilters
             columns={data.tableColumns}
