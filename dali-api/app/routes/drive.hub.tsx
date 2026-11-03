@@ -1188,7 +1188,7 @@ export default function DriveHub() {
     [loadedScopes],
   );
   // In the URL like ?type= and ?term=, so "everything tagged onboarding" is a
-  // link someone can send, and the back button steps through filters.
+  // link someone can send.
   const selectedTagIds = useMemo(
     () => new Set(searchParams.getAll("tag").filter(Boolean)),
     [searchParams],

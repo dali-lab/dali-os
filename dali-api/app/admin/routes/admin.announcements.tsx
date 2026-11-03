@@ -1,4 +1,6 @@
 import { redirect, useLoaderData } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/admin.announcements";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db.server";
@@ -23,6 +25,11 @@ export const meta: Route.MetaFunction = () => [
 // lab, specific people, or a user group, with an optional due date and an
 // optional attached published form. Sending fans out via the shared
 // /api/notifications/send endpoint (one Notification row per recipient).
+
+// The Scheduled / Sent view and the ?formId= seed are client side.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, []);
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

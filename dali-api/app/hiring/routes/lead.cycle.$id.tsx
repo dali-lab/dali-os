@@ -1613,7 +1613,7 @@ export default function HiringLeadCycleDetails() {
       const sp = new URLSearchParams(prev)
       sp.set('tab', next)
       return sp
-    }, { preventScrollReset: true })
+    }, { replace: true, preventScrollReset: true })
   }, [setSearchParams])
 
   // ── Decisions state ──

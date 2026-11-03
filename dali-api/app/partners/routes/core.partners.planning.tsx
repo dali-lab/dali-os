@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
+import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.partners.planning";
 import { requireAuth, isNonMember } from "~/lib/auth";
@@ -20,6 +23,11 @@ export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partner planning · DALI OS" }];
 
+// Grouping is client side; only the term scopes the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -29,10 +37,12 @@ export async function loader({ request }: Route.LoaderArgs) {
   return loadPlanningData(termParam);
 }
 
+const GROUP_BY = ["project", "domain"] as const;
+
 export default function PartnersPlanning() {
   const data = useLoaderData<typeof loader>();
   const { os } = useOsChrome();
-  const [view, setView] = useState<"domain" | "project">("project");
+  const [view, setView] = useSearchParamChoice("group", GROUP_BY, "project");
   const [includePotential, setIncludePotential] = useState(false);
   const [includeBacklog, setIncludeBacklog] = useState(false);
   const model = useMemo(

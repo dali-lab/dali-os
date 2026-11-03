@@ -1,4 +1,6 @@
 import type { Route } from "./+types/core.communications.listserv";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
@@ -20,6 +22,11 @@ import { ListservPage } from "~/core/components/listserv/ListservPage";
 export const handle = coreHandle("communications");
 
 export const meta: Route.MetaFunction = () => [{ title: "Listserv · Core · DALI OS" }];
+
+// The In progress / Sent view is client side.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, []);
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const viewer = await requireCommsViewer(request);
