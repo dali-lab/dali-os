@@ -25,6 +25,7 @@ const BACKGROUNDS: Record<LandingBackgroundId, LazyExoticComponent<ComponentType
   delta: lazy(() => import('./delta/DeltaBackground')),
   'demo-expo': lazy(() => import('./week4/Week4Background')),
   build: lazy(() => import('./week5/Week5Background')),
+  'bug-hunt': lazy(() => import('./week8/Week8Background')),
 }
 
 export default function LandingBackground({ id }: { id: LandingBackgroundId }) {
