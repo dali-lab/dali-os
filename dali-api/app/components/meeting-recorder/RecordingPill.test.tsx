@@ -97,6 +97,18 @@ describe("RecordingPill", () => {
     expect(container.textContent).not.toContain("No sound");
   });
 
+  it("carries the mic device and call audio state from the server into the session", async () => {
+    serverRow = row({ noSound: true, micDevice: "iPhone Microphone", callAudioOff: true });
+    await mount();
+    expect(getLiveSession()).toMatchObject({ noSound: true, micDevice: "iPhone Microphone", callAudioOff: true });
+  });
+
+  it("treats a server without capture fields as no device and call audio on", async () => {
+    serverRow = row();
+    await mount();
+    expect(getLiveSession()).toMatchObject({ micDevice: null, callAudioOff: false });
+  });
+
   it("picks up a recording the server already has on first load", async () => {
     serverRow = row();
     await mount();

@@ -308,6 +308,29 @@ describe("EnhanceBar other states", () => {
     fine.unmount();
   });
 
+  it("recording: names the mic device when the desktop app reports it silent", () => {
+    const { container, unmount } = mountBar(makeRec({ phase: "recording", noSound: true, micDevice: "iPhone Microphone" }));
+    expect(container.textContent).toContain("Your mic isn't picking up sound");
+    expect(container.textContent).toContain("Nothing is coming from iPhone Microphone.");
+    unmount();
+  });
+
+  it("recording: says call audio is off when the permission is denied", () => {
+    const { container, unmount } = mountBar(makeRec({ phase: "recording", callAudioOff: true }));
+    expect(container.textContent).toContain("Call audio is off");
+    expect(container.textContent).toContain("Screen & System Audio Recording");
+    unmount();
+  });
+
+  it("recording: a silent mic outranks call audio being off", () => {
+    const { container, unmount } = mountBar(
+      makeRec({ phase: "recording", noSound: true, micDevice: "USB Mic", callAudioOff: true }),
+    );
+    expect(container.textContent).toContain("Your mic isn't picking up sound");
+    expect(container.textContent).not.toContain("Call audio is off");
+    unmount();
+  });
+
   it("noSpeech: says nothing was captured and offers no Insert or Enhance", () => {
     const { container } = mountBar(makeRec({ phase: "done", hasTranscript: false, aiEnabled: true }));
     expect(container.textContent).toContain("No speech was captured");

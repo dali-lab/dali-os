@@ -54,6 +54,16 @@ enum Event {
     Started {
         #[serde(rename = "systemAudio")]
         system_audio: bool,
+        #[serde(rename = "systemAudioAllowed", default)]
+        system_audio_allowed: Option<bool>,
+        #[serde(rename = "micDevice", default)]
+        mic_device: Option<String>,
+    },
+    #[serde(rename = "micSilent")]
+    MicSilent {
+        silent: bool,
+        #[serde(rename = "micDevice", default)]
+        mic_device: Option<String>,
     },
     Error {
         message: String,
@@ -396,13 +406,28 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
                 match msg {
                     None => break,
                     Some(msg) => match serde_json::from_str::<Event>(&msg) {
-                        Ok(Event::Started { system_audio }) => {
-                            let body = if system_audio {
-                                "Recording this Mac's audio and your mic."
-                            } else {
-                                "Recording your mic. System audio needs macOS 14.2 or later."
-                            };
-                            notify::raise_simple(app, "Recording this meeting", body);
+                        Ok(Event::Started { system_audio, system_audio_allowed, mic_device }) => {
+                            notify::raise_simple(
+                                app,
+                                "Recording this meeting",
+                                started_body(system_audio, system_audio_allowed),
+                            );
+                            report_capture(
+                                &http,
+                                &url,
+                                &token,
+                                json!({ "micDevice": mic_device, "systemAudioAllowed": system_audio_allowed }),
+                            );
+                        }
+                        Ok(Event::MicSilent { silent, mic_device }) => {
+                            if silent {
+                                notify::raise_simple(
+                                    app,
+                                    "Your mic isn't picking up sound",
+                                    &mic_silent_body(mic_device.as_deref()),
+                                );
+                            }
+                            report_capture(&http, &url, &token, json!({ "micSilent": silent, "micDevice": mic_device }));
                         }
                         Ok(Event::Error { message }) => capture_error = Some(message),
                         Ok(Event::Stopped) => break,
@@ -466,6 +491,30 @@ async fn record(app: &AppHandle, id: &str) -> Result<(), String> {
         Some(message) => Err(message),
         None => Ok(()),
     }
+}
+
+// Off the event loop so a slow server can't hold up stop or audio handling.
+fn report_capture(http: &reqwest::Client, url: &str, token: &str, mut body: Value) {
+    body["action"] = json!("capture");
+    let (http, url, token) = (http.clone(), url.to_string(), token.to_string());
+    tokio::spawn(async move {
+        let _ = post(&http, &url, &token, body).await;
+    });
+}
+
+fn started_body(system_audio: bool, system_audio_allowed: Option<bool>) -> &'static str {
+    match (system_audio, system_audio_allowed) {
+        (false, _) => "Recording your mic. System audio needs macOS 14.2 or later.",
+        (true, Some(false)) => {
+            "Recording your mic only. To include call audio, allow DALI OS in System Settings > Privacy & Security > Screen & System Audio Recording."
+        }
+        (true, _) => "Recording this Mac's audio and your mic.",
+    }
+}
+
+fn mic_silent_body(device: Option<&str>) -> String {
+    let source = device.map_or_else(|| "your mic".to_string(), |d| d.to_string());
+    format!("Nothing is coming from {source}. If people are talking, pick another input in System Settings > Sound.")
 }
 
 // Per-channel chunking + upload.
@@ -650,4 +699,59 @@ async fn post(
         .json(&body)
         .send()
         .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn started_event_reads_permission_and_device() {
+        let e: Event = serde_json::from_str(
+            r#"{"type":"started","systemAudio":true,"systemAudioAllowed":false,"micDevice":"MacBook Air Microphone"}"#,
+        )
+        .unwrap();
+        let Event::Started { system_audio, system_audio_allowed, mic_device } = e else { panic!() };
+        assert!(system_audio);
+        assert_eq!(system_audio_allowed, Some(false));
+        assert_eq!(mic_device.as_deref(), Some("MacBook Air Microphone"));
+    }
+
+    #[test]
+    fn started_event_from_older_recorder_still_parses() {
+        let e: Event = serde_json::from_str(r#"{"type":"started","systemAudio":true}"#).unwrap();
+        let Event::Started { system_audio_allowed, mic_device, .. } = e else { panic!() };
+        assert_eq!(system_audio_allowed, None);
+        assert_eq!(mic_device, None);
+    }
+
+    #[test]
+    fn started_event_with_null_permission_parses() {
+        let e: Event =
+            serde_json::from_str(r#"{"type":"started","systemAudio":true,"systemAudioAllowed":null,"micDevice":null}"#)
+                .unwrap();
+        assert!(matches!(e, Event::Started { system_audio_allowed: None, mic_device: None, .. }));
+    }
+
+    #[test]
+    fn mic_silent_event_parses() {
+        let e: Event = serde_json::from_str(r#"{"type":"micSilent","silent":true,"micDevice":"iPhone Microphone"}"#).unwrap();
+        let Event::MicSilent { silent, mic_device } = e else { panic!() };
+        assert!(silent);
+        assert_eq!(mic_device.as_deref(), Some("iPhone Microphone"));
+    }
+
+    #[test]
+    fn started_body_names_the_missing_permission() {
+        assert!(started_body(true, Some(false)).contains("Screen & System Audio Recording"));
+        assert_eq!(started_body(true, Some(true)), "Recording this Mac's audio and your mic.");
+        assert_eq!(started_body(true, None), "Recording this Mac's audio and your mic.");
+        assert!(started_body(false, Some(false)).contains("macOS 14.2"));
+    }
+
+    #[test]
+    fn mic_silent_body_names_the_device() {
+        assert!(mic_silent_body(Some("iPhone Microphone")).starts_with("Nothing is coming from iPhone Microphone."));
+        assert!(mic_silent_body(None).starts_with("Nothing is coming from your mic."));
+    }
 }

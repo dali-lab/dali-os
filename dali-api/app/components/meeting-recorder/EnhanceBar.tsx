@@ -8,6 +8,7 @@ import { Menu, MenuItem } from "~/components/ui/floating";
 import { enhanceWasUndone, useActionItemDraft, type ActionItemDraft } from "./action-item-draft";
 import { BAR_ATTR } from "./block-dom";
 import { BarTransition, type BarContent } from "./BarTransition";
+import { CALL_AUDIO_OFF_DETAIL, micSilentDetail } from "./capture-warnings";
 import { DUR, enterRef } from "./motion";
 import { PopIn } from "./PopIn";
 import { deriveRailState, ENHANCE_AGAIN_TIP } from "./RecordingRail";
@@ -321,11 +322,18 @@ function barContent(
 
   switch (state) {
     case "recording":
-      return rec.noSound
-        ? {
-            key: "noSound",
-            node: <BarShell title="No sound detected" detail="Nothing has been picked up so far. Stop and record again." />,
-          }
+      if (rec.noSound) {
+        return {
+          key: "noSound",
+          node: rec.micDevice ? (
+            <BarShell title="Your mic isn't picking up sound" detail={micSilentDetail(rec.micDevice)} />
+          ) : (
+            <BarShell title="No sound detected" detail="Nothing has been picked up so far. Stop and record again." />
+          ),
+        };
+      }
+      return rec.callAudioOff
+        ? { key: "callAudioOff", node: <BarShell title="Call audio is off" detail={CALL_AUDIO_OFF_DETAIL} /> }
         : null;
 
     case "processing": {

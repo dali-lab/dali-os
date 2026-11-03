@@ -392,7 +392,10 @@ export function useMeetingRecording({
     liveSession && liveSession.recordingId === recordingId && liveSession.captureMode === "browser" && !remote
       ? liveSession
       : null;
-  const noSound = phase === "recording" && liveSession?.recordingId === recordingId && Boolean(liveSession?.noSound);
+  const ownLive = phase === "recording" && liveSession?.recordingId === recordingId ? liveSession : null;
+  const noSound = Boolean(ownLive?.noSound);
+  const micDevice = ownLive?.micDevice ?? null;
+  const callAudioOff = Boolean(ownLive?.callAudioOff);
   const channelsActive = ownSession ? ownSession.channelsActive : polledChannels;
   const levels = ownSession ? ownSession.levels : emptyLevels;
   const stalled = ownSession ? ownSession.stalled : emptyStalled;
@@ -1434,6 +1437,8 @@ export function useMeetingRecording({
     levels,
     stalled,
     noSound,
+    micDevice,
+    callAudioOff,
     recordedSeconds,
     now,
     lines,

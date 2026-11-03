@@ -25,6 +25,8 @@ export type LiveSession = {
   conflicted: boolean;
   stoppedSeconds: number | null;
   noSound: boolean;
+  micDevice: string | null;
+  callAudioOff: boolean;
 };
 
 type ActiveRecordingResponse = {
@@ -36,6 +38,8 @@ type ActiveRecordingResponse = {
     href: string | null;
     sessionSeconds: number | null;
     noSound: boolean;
+    micDevice?: string | null;
+    callAudioOff?: boolean;
   } | null;
 };
 
@@ -224,6 +228,8 @@ export async function startBrowserSession(opts: {
     conflicted: false,
     stoppedSeconds: null,
     noSound: false,
+    micDevice: null,
+    callAudioOff: false,
   });
   const channels: Channel[] = ["mic"];
   try {
@@ -266,6 +272,8 @@ export function adoptDesktopSession(opts: {
     conflicted: false,
     stoppedSeconds: null,
     noSound: false,
+    micDevice: null,
+    callAudioOff: false,
   });
   void refreshLiveSession();
 }
@@ -332,7 +340,13 @@ function reconcile(recording: ActiveRecordingResponse["recording"]) {
   const serverStart = typeof recording.sessionSeconds === "number" ? Date.now() - recording.sessionSeconds * 1000 : null;
 
   if (s && s.recordingId === recording.id) {
-    const changes: Partial<LiveSession> = { title: recording.title, href: recording.href, noSound: recording.noSound };
+    const changes: Partial<LiveSession> = {
+      title: recording.title,
+      href: recording.href,
+      noSound: recording.noSound,
+      micDevice: recording.micDevice ?? null,
+      callAudioOff: Boolean(recording.callAudioOff),
+    };
     if (!(s.captureMode === "browser" && isLive(s))) {
       if (!(s.status === "stopping" && serverStatus !== "stopped")) changes.status = serverStatus;
       if (serverStart !== null && Math.abs(s.startedAt - serverStart) > CLOCK_RESYNC_MS) changes.startedAt = serverStart;
@@ -355,6 +369,8 @@ function reconcile(recording: ActiveRecordingResponse["recording"]) {
     conflicted: false,
     stoppedSeconds: null,
     noSound: recording.noSound,
+    micDevice: recording.micDevice ?? null,
+    callAudioOff: Boolean(recording.callAudioOff),
   });
 }
 

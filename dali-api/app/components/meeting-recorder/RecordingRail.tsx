@@ -9,6 +9,7 @@ import { formatDateTime } from "./use-meeting-recording";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
 import { RecordingTranscript } from "./RecordingTranscript";
+import { CALL_AUDIO_OFF_DETAIL, micSilentDetail } from "./capture-warnings";
 
 export const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 
@@ -491,7 +492,12 @@ export function RecordingBody({ rec }: { rec: UseMeetingRecording }) {
   const channelLabel: Record<Channel, string> = { mic: "Microphone", call: "Call audio" };
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-os-well px-3 py-3">
-      {rec.noSound && <p className="text-sm text-destructive">No sound detected. Stop and record again.</p>}
+      {rec.noSound && (
+        <p className="text-sm text-destructive">
+          {rec.micDevice ? micSilentDetail(rec.micDevice) : "No sound detected. Stop and record again."}
+        </p>
+      )}
+      {!rec.noSound && rec.callAudioOff && <p className="text-sm text-muted-foreground">{CALL_AUDIO_OFF_DETAIL}</p>}
       {rec.captureMode === "browser" ? (
         <>
           {rec.channelsActive.length > 0 && (
