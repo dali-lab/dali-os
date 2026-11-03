@@ -60,6 +60,26 @@ describe("POST /api/pages/:id/date", () => {
     expect(setNoteDate).toHaveBeenCalledWith("d1", null, "u1");
   });
 
+  it.each([
+    ["2026-01-14", "2026-01-14T05:00:00.000Z"],
+    ["2026-03-08", "2026-03-08T05:00:00.000Z"],
+    ["2026-03-09", "2026-03-09T04:00:00.000Z"],
+    ["2026-11-01", "2026-11-01T04:00:00.000Z"],
+    ["2026-11-02", "2026-11-02T05:00:00.000Z"],
+    ["2028-02-29", "2028-02-29T05:00:00.000Z"],
+  ])("converts %s to midnight ET", async (date, instant) => {
+    expect((await post({ date })).status).toBe(200);
+    expect(setNoteDate).toHaveBeenCalledWith("d1", new Date(instant), "u1");
+  });
+
+  it.each(["2026-02-30", "2026-02-29", "2026-04-31", "2026-13-01", "2026-00-10", "2026-01-00", "0099-01-01"])(
+    "rejects %s without saving a normalized date",
+    async (date) => {
+      expect((await post({ date })).status).toBe(400);
+      expect(setNoteDate).not.toHaveBeenCalled();
+    },
+  );
+
   it("returns the session gate's response when not a member", async () => {
     vi.mocked(requireMemberSession).mockResolvedValue({
       ok: false,

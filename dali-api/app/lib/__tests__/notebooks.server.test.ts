@@ -1109,6 +1109,22 @@ describe("setNoteDate", () => {
     expect(m.page.update).not.toHaveBeenCalled();
   });
 
+  it("403s an editor who cannot manage the notebook", async () => {
+    pages({ doc1: orphan() });
+    access({ nb1: VIEW_ONLY });
+    m.scheduledMeeting.findFirst.mockResolvedValue(null);
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(403);
+    expect(getPageAccess).toHaveBeenCalledWith("u1", expect.objectContaining({ id: "nb1" }), undefined, { ignoreShares: true });
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("404s a document the actor cannot view", async () => {
+    pages({ doc1: orphan() });
+    access({ doc1: NONE });
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(404);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
   it("404s a missing or trashed page", async () => {
     pages({});
     expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(404);
