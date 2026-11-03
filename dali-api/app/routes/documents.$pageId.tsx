@@ -53,7 +53,7 @@ import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
 import { itemTrail, noteTabLabel, noteTrail, tabWeekLabels, withLeafEmoji } from "~/components/notebooks/note-trail";
 import { termWindows } from "~/lib/terms";
-import { APPLICATION_TZ } from "~/lib/timezone";
+import { APPLICATION_TZ, getZonedYMD } from "~/lib/timezone";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -275,13 +275,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     );
     notebook = {
       ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
-      tabs: visible.map((t, i) => ({
-        id: t.id,
-        label: noteTabLabel(t),
-        meeting: mixed ? (t.meetingNote?.title ?? null) : null,
-        isNote: t.meetingNoteId !== null,
-        week: weeks[i] ?? null,
-      })),
+      tabs: visible.map((t, i) => {
+        let date: string | null = null;
+        if (t.meetingOccurrenceStart) {
+          const ymd = getZonedYMD(t.meetingOccurrenceStart, APPLICATION_TZ);
+          date = `${ymd.year}-${String(ymd.month).padStart(2, "0")}-${String(ymd.day).padStart(2, "0")}`;
+        }
+        return {
+          id: t.id,
+          label: noteTabLabel(t),
+          meeting: mixed ? (t.meetingNote?.title ?? null) : null,
+          isNote: t.meetingNoteId !== null,
+          week: weeks[i] ?? null,
+          date,
+        };
+      }),
     };
   }
 

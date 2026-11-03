@@ -714,6 +714,7 @@ export default [
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
   route("api/notebooks/:id", "routes/api.notebooks.$id.ts"),
   route("api/pages/:id/meeting", "routes/api.pages.$id.meeting.ts"),
+  route("api/pages/:id/date", "routes/api.pages.$id.date.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
 
