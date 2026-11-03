@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   redirect,
   useLoaderData,
-  useNavigate,
   useSearchParams,
 } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   Activity,
@@ -289,8 +289,6 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 
-const FILTERS_STORAGE_KEY = "mentorship.browse.filters";
-
 function nameOf(p: { firstName: string; lastName: string }) {
   return `${p.firstName} ${p.lastName}`.trim().toLowerCase();
 }
@@ -318,13 +316,11 @@ export default function MentorshipBrowse() {
   const data = useLoaderData() as LoaderData;
   const { pageTitle } = useOsChrome();
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
   const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const [linkFormsOpen, setLinkFormsOpen] = useState(false);
-  const restored = useRef(false);
   const toast = useToast();
 
   const canNudge = data.isCore;
@@ -338,6 +334,9 @@ export default function MentorshipBrowse() {
     if (!params.has("q") && data.filters.query) setQuery(data.filters.query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.filters.query]);
+
+  // Opening the page bare (sidebar, breadcrumb) reopens the last view.
+  useRememberedSearch("mentorship.browse.filters");
 
   const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters, { inUrl: true });
 
@@ -421,28 +420,6 @@ export default function MentorshipBrowse() {
     }
   }
 
-  // Remember the last-applied filter query and restore it on a fresh visit (no
-  // filter params). Running once guards against clobbering an explicit "Clear".
-  // `embed` is a dev-preview marker, not a filter — ignore it either way.
-  useEffect(() => {
-    if (restored.current) return;
-    restored.current = true;
-    if (typeof window === "undefined") return;
-    const current = new URLSearchParams(window.location.search);
-    current.delete("embed");
-    if ([...current].length === 0) {
-      const saved = window.localStorage.getItem(FILTERS_STORAGE_KEY);
-      if (saved) navigate(`/mentorship/browse?${saved}`, { replace: true });
-    }
-  }, [navigate]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sp = new URLSearchParams(params);
-    sp.delete("embed");
-    const search = sp.toString();
-    if (search) window.localStorage.setItem(FILTERS_STORAGE_KEY, search);
-  }, [params]);
 
   return (
     <main className="flex flex-col gap-6">

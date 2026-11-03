@@ -5,9 +5,11 @@ import {
   redirect,
   useActionData,
   useLoaderData,
+  useSearchParams,
 } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/core.partners.directory";
 import { requireAuth, isNonMember } from "~/lib/auth";
@@ -21,7 +23,6 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { IconButton } from "~/components/ui/IconButton";
 import { Menu, MenuItem } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
-import { usePersistedState } from "~/hooks/usePersistedState";
 import { cn } from "~/lib/cn";
 import {
   ColumnFilters,
@@ -32,15 +33,14 @@ import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { DirectoryTable } from "../components/PartnerDirectoryTables";
 import {
-  DEFAULT_DIRECTORY_SORT,
   DIRECTORY_KIND_OPTIONS,
   directoryExportHref,
   directoryRowCells,
   filterDirectoryRows,
-  isDirectorySort,
+  directorySortFromParams,
+  writeDirectorySortParams,
   nextDirectorySort,
   sortDirectoryRows,
-  type DirectorySort,
   type DirectorySortKey,
   type PartnerDirectoryRow,
 } from "../lib/partner-directory";
@@ -349,11 +349,10 @@ export default function PartnersDirectory() {
   const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const columnFilters = useColumnFilters(FILTER_COLUMNS, [], { inUrl: true });
   const filterRows = useMemo(() => rows.map((r) => ({ cells: directoryRowCells(r) })), [rows]);
-  const [sort, setSort] = usePersistedState<DirectorySort>(
-    "dali:partners:directory:sort",
-    DEFAULT_DIRECTORY_SORT,
-    isDirectorySort,
-  );
+  // Opening the directory bare reopens its last search, filters and sort.
+  useRememberedSearch("dali:partners:directory:view");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sort = directorySortFromParams(searchParams);
 
   const filtered = useMemo(
     () => sortDirectoryRows(filterDirectoryRows(rows, query, columnFilters.active), sort),
@@ -366,7 +365,11 @@ export default function PartnersDirectory() {
   );
 
   const hasNarrowing = query.trim() !== "" || columnFilters.active.length > 0;
-  const onSort = (key: DirectorySortKey) => setSort((current) => nextDirectorySort(current, key));
+  const onSort = (key: DirectorySortKey) =>
+    setSearchParams((prev) => writeDirectorySortParams(prev, nextDirectorySort(sort, key)), {
+      replace: true,
+      preventScrollReset: true,
+    });
 
   return (
     <div className="flex flex-col gap-4">

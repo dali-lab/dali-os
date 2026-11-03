@@ -2,55 +2,111 @@ import { describe, expect, it } from "vitest";
 import {
   applicationColumns,
   visibleSort,
+  CYCLE_SCOPED_PARAMS,
   DEFAULT_SORT,
-  EMPTY_FILTERS,
-  isApplicationFilters,
-  isApplicationSort,
+  filtersFromParams,
   sortApplications,
-  withFilterDefaults,
+  sortFromParams,
+  writeViewParams,
 } from "~/hiring/lib/application-filters";
 
-describe("isApplicationFilters", () => {
-  it("accepts the empty shape and a populated one", () => {
-    expect(isApplicationFilters(EMPTY_FILTERS)).toBe(true);
+const params = (search: string) => new URLSearchParams(search);
+
+describe("filtersFromParams", () => {
+  it("is empty for a bare URL", () => {
+    expect(filtersFromParams(params(""))).toEqual({
+      domainIds: [],
+      statuses: [],
+      stage: null,
+      engagement: [],
+      eventIds: [],
+      pieIncludesInProgress: false,
+    });
+  });
+
+  it("reads every filter, keeping repeated values", () => {
     expect(
-      isApplicationFilters({
-        domainIds: ["d1"],
-        statuses: ["Submitted"],
-        stage: "Interview",
-        engagement: ["returning", "educated", "attendedEvent"],
-        eventIds: ["ev1"],
-        pieIncludesInProgress: true,
-        query: "ada",
-      }),
-    ).toBe(true);
+      filtersFromParams(
+        params(
+          "cycle=c1&domain=d1&domain=d2&status=Submitted&stage=Interview&engagement=returning&engagement=educated&event=ev1&pie=all&q=ada",
+        ),
+      ),
+    ).toEqual({
+      domainIds: ["d1", "d2"],
+      statuses: ["Submitted"],
+      stage: "Interview",
+      engagement: ["returning", "educated"],
+      eventIds: ["ev1"],
+      pieIncludesInProgress: true,
+    });
   });
 
-  it("accepts filters stored before eventIds existed and fills the default in", () => {
-    const { eventIds: _omit, ...stale } = EMPTY_FILTERS;
-    expect(isApplicationFilters(stale)).toBe(true);
-    expect(withFilterDefaults(stale as typeof EMPTY_FILTERS).eventIds).toEqual([]);
-    expect(isApplicationFilters({ ...EMPTY_FILTERS, eventIds: [1] })).toBe(false);
+  it("drops engagement signals that don't exist", () => {
+    expect(filtersFromParams(params("engagement=classYear&engagement=emailed")).engagement).toEqual([
+      "emailed",
+    ]);
   });
 
-  it("rejects stale or corrupt stored values", () => {
-    expect(isApplicationFilters(null)).toBe(false);
-    expect(isApplicationFilters({ domainIds: "d1" })).toBe(false);
-    expect(isApplicationFilters({ ...EMPTY_FILTERS, stage: 3 })).toBe(false);
-    expect(isApplicationFilters({ ...EMPTY_FILTERS, domainIds: [1] })).toBe(false);
-    expect(isApplicationFilters({ ...EMPTY_FILTERS, engagement: ["classYear"] })).toBe(false);
+  it("treats an empty stage as no stage", () => {
+    expect(filtersFromParams(params("stage=")).stage).toBeNull();
   });
 });
 
-describe("isApplicationSort", () => {
-  it("accepts known columns and rejects anything else", () => {
-    expect(isApplicationSort(DEFAULT_SORT)).toBe(true);
-    expect(isApplicationSort({ key: "reviewers", dir: "desc" })).toBe(true);
-    expect(isApplicationSort({ key: "interviewers", dir: "asc" })).toBe(true);
-    expect(isApplicationSort({ key: "reviewCount", dir: "desc" })).toBe(false);
-    expect(isApplicationSort(null)).toBe(false);
-    expect(isApplicationSort({ key: "email", dir: "asc" })).toBe(false);
-    expect(isApplicationSort({ key: "name", dir: "up" })).toBe(false);
+describe("sortFromParams", () => {
+  it("defaults when the URL names no sort or an unknown column", () => {
+    expect(sortFromParams(params(""))).toEqual(DEFAULT_SORT);
+    expect(sortFromParams(params("sort=reviewCount&dir=desc"))).toEqual(DEFAULT_SORT);
+  });
+
+  it("reads a known column and direction", () => {
+    expect(sortFromParams(params("sort=reviewers&dir=desc"))).toEqual({ key: "reviewers", dir: "desc" });
+    expect(sortFromParams(params("sort=submittedAt&dir=asc"))).toEqual({ key: "submittedAt", dir: "asc" });
+  });
+});
+
+describe("writeViewParams", () => {
+  it("writes only the fields it is given and keeps every other param", () => {
+    const next = writeViewParams(params("cycle=c1&q=ada&status=Submitted"), { domainIds: ["d1", "d2"] });
+    expect(next.toString()).toBe("cycle=c1&q=ada&status=Submitted&domain=d1&domain=d2");
+  });
+
+  it("replaces a list and removes it when emptied", () => {
+    expect(writeViewParams(params("status=A&status=B"), { statuses: ["C"] }).toString()).toBe("status=C");
+    expect(writeViewParams(params("cycle=c1&status=A"), { statuses: [] }).toString()).toBe("cycle=c1");
+  });
+
+  it("sets and clears the stage and the in-progress toggle", () => {
+    const on = writeViewParams(params(""), { stage: "Interview", pieIncludesInProgress: true });
+    expect(on.toString()).toBe("stage=Interview&pie=all");
+    expect(writeViewParams(on, { stage: null, pieIncludesInProgress: false }).toString()).toBe("");
+  });
+
+  it("writes a sort, and leaves the default out of the URL", () => {
+    const desc = writeViewParams(params("q=a"), { sort: { key: "reviewers", dir: "desc" } });
+    expect(desc.toString()).toBe("q=a&sort=reviewers&dir=desc");
+    expect(writeViewParams(desc, { sort: { key: "domain", dir: "asc" } }).toString()).toBe("q=a&sort=domain&dir=asc");
+    expect(writeViewParams(desc, { sort: DEFAULT_SORT }).toString()).toBe("q=a");
+  });
+
+  it("round-trips through filtersFromParams and sortFromParams", () => {
+    const view = {
+      domainIds: ["d1"],
+      statuses: ["Submitted", "Rejected"],
+      stage: "Offer",
+      engagement: ["attendedEvent" as const],
+      eventIds: ["ev1", "ev2"],
+      pieIncludesInProgress: true,
+    };
+    const sort = { key: "status" as const, dir: "desc" as const };
+    const written = writeViewParams(params("cycle=c1"), { ...view, sort });
+    expect(filtersFromParams(written)).toEqual(view);
+    expect(sortFromParams(written)).toEqual(sort);
+  });
+});
+
+describe("CYCLE_SCOPED_PARAMS", () => {
+  it("covers every filter picked from a cycle's data, and not search, sort or the toggle", () => {
+    expect([...CYCLE_SCOPED_PARAMS].sort()).toEqual(["domain", "engagement", "event", "stage", "status"]);
   });
 });
 
