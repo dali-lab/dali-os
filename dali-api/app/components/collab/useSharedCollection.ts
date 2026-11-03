@@ -25,10 +25,55 @@ export function moveYArrayItem(
   });
 }
 
+/**
+ * Overwrite the item at `index` in place, field by field, so a concurrent
+ * edit to a different item survives the merge (a whole-list replace would
+ * duplicate it).
+ */
+export function replaceYArrayItem(
+  yarray: Y.Array<Y.Map<unknown>>,
+  index: number,
+  item: object,
+): void {
+  const m = yarray.get(index);
+  if (!m) return;
+  yarray.doc!.transact(() => {
+    for (const k of [...m.keys()]) if (!(k in item)) m.delete(k);
+    for (const [k, v] of Object.entries(item)) m.set(k, v);
+  });
+}
+
+/**
+ * Delete empty maps and every item whose `field` repeats an earlier item's.
+ * Every client keeps the first occurrence, so concurrent cleanups agree.
+ * Returns true when it deleted anything.
+ */
+export function dropInvalidYArrayItems(
+  yarray: Y.Array<Y.Map<unknown>>,
+  field?: string,
+): boolean {
+  const seen = new Set<unknown>();
+  const drop = yarray.toArray().flatMap((m, i) => {
+    if (m.size === 0) return [i];
+    if (!field || !m.has(field)) return [];
+    const id = m.get(field);
+    if (seen.has(id)) return [i];
+    seen.add(id);
+    return [];
+  });
+  if (drop.length === 0) return false;
+  yarray.doc!.transact(() => {
+    for (const i of drop.reverse()) yarray.delete(i, 1);
+  });
+  return true;
+}
+
 export interface UseSharedArrayResult<T> {
   items: T[];
   /** Replace the full list. */
   setItems: (next: T[]) => void;
+  /** Overwrite the item at `index` without touching the rest of the list. */
+  replace: (index: number, item: T) => void;
   /** Append a single item. */
   push: (item: T) => void;
   /** Remove the item at `index`. */
@@ -60,12 +105,16 @@ export interface UseSharedArrayResult<T> {
  *                      initialValue. Callers should seed this from the
  *                      Postgres draftQuestions / criteria column so a new room
  *                      opens with the current saved content.
+ * @param uniqueField   Item field that identifies an item (e.g. a question's
+ *                      `key`). Repeats are hidden and deleted: two clients
+ *                      seeding the same empty room both write the seed.
  */
 export function useSharedArray<T extends object>(
   documentName: string,
   token: string | null | undefined,
   yKey = "items",
   initialItems: T[] = [],
+  uniqueField?: string,
 ): UseSharedArrayResult<T> {
   const [items, setLocalItems] = useState<T[]>(initialItems);
   const [synced, setSynced] = useState(false);
@@ -103,28 +152,26 @@ export function useSharedArray<T extends object>(
     um.on("stack-item-added", syncUndoState);
     um.on("stack-item-popped", syncUndoState);
 
-    // An empty map is never a real item. Earlier versions of `move` left one
-    // behind (see there), so skip any on read and delete them once synced.
-    const readItems = () =>
-      yarray
+    const readItems = () => {
+      const seen = new Set<unknown>();
+      return yarray
         .toArray()
-        .filter((m) => m.size > 0)
+        .filter((m) => {
+          if (m.size === 0) return false;
+          if (!uniqueField || !m.has(uniqueField)) return true;
+          const id = m.get(uniqueField);
+          if (seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        })
         .map((m) => Object.fromEntries(m.entries()) as T);
+    };
 
     const handleSynced = () => {
       if (yarray.length > 0) {
-        const empties = yarray
-          .toArray()
-          .flatMap((m, i) => (m.size === 0 ? [i] : []));
-        if (empties.length > 0) {
-          ydoc.transact(() => {
-            for (const i of empties.reverse()) yarray.delete(i, 1);
-          });
-        }
+        dropInvalidYArrayItems(yarray, uniqueField);
         setLocalItems(readItems());
       } else if (initialRef.current.some((item) => Object.keys(item).length > 0)) {
-        // Seed empty room from the Postgres snapshot (mirrors useSharedString's
-        // initialValue bootstrap: write once, then defer to CRDT state).
         ydoc.transact(() => {
           for (const item of initialRef.current) {
             if (Object.keys(item).length === 0) continue;
@@ -133,12 +180,15 @@ export function useSharedArray<T extends object>(
             yarray.push([m]);
           }
         });
-        setLocalItems(initialRef.current.filter((item) => Object.keys(item).length > 0));
+        setLocalItems(readItems());
       }
       setSynced(true);
     };
 
-    const handleChange = () => setLocalItems(readItems());
+    const handleChange = (_event: Y.YArrayEvent<Y.Map<unknown>>, tr: Y.Transaction) => {
+      if (!tr.local && uniqueField) dropInvalidYArrayItems(yarray, uniqueField);
+      setLocalItems(readItems());
+    };
 
     provider.on("synced", handleSynced);
     yarray.observe(handleChange);
@@ -154,7 +204,7 @@ export function useSharedArray<T extends object>(
       provider.destroy();
       ydoc.destroy();
     };
-  }, [documentName, token, yKey]);
+  }, [documentName, token, yKey, uniqueField]);
 
   const setItems = useCallback((next: T[]) => {
     const yarray = yarrayRef.current;
@@ -172,6 +222,15 @@ export function useSharedArray<T extends object>(
       }
     });
     setLocalItems(next);
+  }, []);
+
+  const replace = useCallback((index: number, item: T) => {
+    const yarray = yarrayRef.current;
+    if (!yarray) {
+      setLocalItems((prev) => prev.map((p, i) => (i === index ? item : p)));
+      return;
+    }
+    replaceYArrayItem(yarray, index, item);
   }, []);
 
   const push = useCallback((item: T) => {
@@ -220,7 +279,7 @@ export function useSharedArray<T extends object>(
     undoRef.current?.redo();
   }, []);
 
-  return { items, setItems, push, remove, move, undo, redo, canUndo, canRedo, synced };
+  return { items, setItems, replace, push, remove, move, undo, redo, canUndo, canRedo, synced };
 }
 
 // ─── useSharedMap ────────────────────────────────────────────────────────────

@@ -306,12 +306,20 @@ interface FormBuilderTabProps {
   // questions are always shown, so they can't take a condition.
   mappedQuestions?: Record<string, string>
 }
-// A draft can hold malformed entries: an earlier collab bug stored empty
-// objects (nothing to keep, so they're dropped) and questions can lack a key
-// (given a fresh one; drafts have no answers keyed to it yet).
-function repairQuestions(questions: Question[]): Question[] {
+// A draft can hold malformed entries from earlier collab bugs: empty objects
+// and repeated keys (dropped; answers are keyed by question, so a repeat is
+// never a real second question) and questions without a key (given a fresh
+// one; drafts have no answers keyed to it yet).
+export function repairQuestions(questions: Question[]): Question[] {
+  const seen = new Set<string>()
   return questions
     .filter((q) => !!q && !!q.data && typeof q.data === 'object')
+    .filter((q) => {
+      if (typeof q.key !== 'string' || !q.key) return true
+      if (seen.has(q.key)) return false
+      seen.add(q.key)
+      return true
+    })
     .map((q, i) => (typeof q.key === 'string' && q.key ? q : { ...q, key: `q-${Date.now()}-${i}` }))
 }
 
@@ -346,7 +354,7 @@ export function FormBuilderTab({
   const roomName = formId ? formDraftName(formId) : 'noop'
   const {
     items: collabQuestions,
-    setItems: collabSetItems,
+    replace: collabReplace,
     push: collabPush,
     remove: collabRemove,
     move: collabMove,
@@ -359,14 +367,17 @@ export function FormBuilderTab({
     collabActive ? collabToken : null,
     'items',
     initialQuestions,
+    'key',
   )
 
   // Unified question list + mutators: route to the collab surface when active,
   // else to plain React state so the hiring challenge builder keeps working.
   const questions = collabActive ? collabQuestions : localQuestions
-  const setQuestions = (next: Question[]) => {
-    if (collabActive) collabSetItems(next)
-    else setLocalQuestions(next)
+  const replaceQuestion = (key: string, next: (q: Question) => Question) => {
+    const index = questions.findIndex((q) => q.key === key)
+    if (index === -1) return
+    if (collabActive) collabReplace(index, next(questions[index]))
+    else setLocalQuestions((prev) => prev.map((q) => (q.key === key ? next(q) : q)))
   }
   const pushQuestion = (item: Question) => {
     if (collabActive) collabPush(item)
@@ -516,19 +527,11 @@ export function FormBuilderTab({
   // but layout-only: edited inline via their own title/subtitle inputs rather
   // than the question edit buffer.
   const updatePageBreak = (key: string, patch: { label?: string; description?: string }) => {
-    setQuestions(
-      questions.map((q) =>
-        q.key === key ? { ...q, data: { ...q.data, ...patch } } : q,
-      ),
-    )
+    replaceQuestion(key, (q) => ({ ...q, data: { ...q.data, ...patch } }))
   }
   // Text blocks edit inline too; their body is the whole row.
   const updateInfoBody = (key: string, body: unknown) => {
-    setQuestions(
-      questions.map((q) =>
-        q.key === key ? { ...q, data: { ...q.data, body } } : q,
-      ),
-    )
+    replaceQuestion(key, (q) => ({ ...q, data: { ...q.data, body } }))
   }
 
   // Auto-commit: edits to the inline form flow straight into the question list,
@@ -560,9 +563,7 @@ export function FormBuilderTab({
       body: editForm.data?.body,
       showIf: editForm.data?.showIf,
     })
-    setQuestions(
-      questions.map((q) => (q.key === editForm.key ? rebuilt : q)),
-    )
+    replaceQuestion(editForm.key, () => rebuilt)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editForm, optionsText, acceptPresets, acceptCustom, maxWordsEnabled, maxWordsValue, minText, maxText])
 
