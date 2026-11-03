@@ -19,7 +19,7 @@ import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { getActiveDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { createDisplaySetupCode } from "~/lib/room-display.server";
-import { action, loader } from "~/rooms/routes/core.rooms";
+import { action, loader } from "~/rooms/routes/admin.rooms";
 
 const occurrenceStart = new Date("2026-09-30T22:00:00Z");
 const scan = {
@@ -34,13 +34,13 @@ const scan = {
 };
 
 function load() {
-  return loader({ request: new Request("http://localhost/core/rooms"), params: {}, context: {} } as never);
+  return loader({ request: new Request("http://localhost/admin/rooms"), params: {}, context: {} } as never);
 }
 function submit(fields: Record<string, string>) {
   const body = new FormData();
   for (const [k, v] of Object.entries(fields)) body.set(k, v);
   return action({
-    request: new Request("http://localhost/core/rooms", { method: "POST", body }),
+    request: new Request("http://localhost/admin/rooms", { method: "POST", body }),
     params: {},
     context: {},
   } as never);
@@ -49,7 +49,7 @@ function stop() {
   const body = new FormData();
   body.set("intent", "stop-display-scan");
   return action({
-    request: new Request("http://localhost/core/rooms", { method: "POST", body }),
+    request: new Request("http://localhost/admin/rooms", { method: "POST", body }),
     params: {},
     context: {},
   } as never);

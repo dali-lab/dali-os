@@ -54,6 +54,7 @@ describe("adminTrail", () => {
 
   it("stops at the section for a single-tab section", () => {
     expect(labels("onboarding")).toEqual(["Admin", "Onboarding"]);
+    expect(labels("rooms")).toEqual(["Admin", "Rooms"]);
   });
 
   it("keeps Payroll and admin-only tabs out of a Core member's switchers", () => {
@@ -84,6 +85,10 @@ describe("legacy admin URLs", () => {
   it("forwards an activity detail page and tolerates a trailing slash", () => {
     expect(legacyAdminTarget("/admin/activities/abc123")).toBe("/admin/onboarding/abc123");
     expect(legacyAdminTarget("/admin/jobs/")).toBe("/admin/platform/jobs");
+  });
+
+  it("forwards Rooms from its old Core URL", () => {
+    expect(legacyAdminTarget("/core/rooms")).toBe("/admin/rooms");
   });
 
   it("leaves unknown paths alone", () => {
