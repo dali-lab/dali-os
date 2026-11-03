@@ -258,11 +258,18 @@ export default function MentorshipHub() {
                   week.
                 </span>
               </>
-            ) : (
-              <span>Weekly notes from every mentor in the lab.</span>
-            )}
+            ) : data.termId ? (
+              // The whole line is the link, arrow included.
+              <Link
+                to={`/mentorship/browse?termId=${data.termId}`}
+                className="inline-flex items-center gap-1 text-muted-foreground hover:underline"
+              >
+                Weekly notes from every mentor in the lab
+                <ArrowRight className="w-4 h-4" aria-hidden />
+              </Link>
+            ) : null}
           </div>
-          {data.termId && (
+          {data.termId && (data.phase === "break" || behind) && (
             <Link
               to={`/mentorship/browse?termId=${data.termId}`}
               className={cn(
