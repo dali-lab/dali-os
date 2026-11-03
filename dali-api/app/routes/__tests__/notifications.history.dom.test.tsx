@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { createMemoryRouter, RouterProvider } from "react-router";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/hooks/useUserTimeZone", () => ({ useUserTimeZone: () => "America/New_York" }));
@@ -33,13 +34,21 @@ const initial = {
 let container: HTMLDivElement;
 let root: Root;
 let fetchMock: ReturnType<typeof vi.fn>;
+let router: ReturnType<typeof createMemoryRouter>;
 
 const text = () => container.textContent ?? "";
 const flush = () => act(async () => { await vi.advanceTimersByTimeAsync(400); });
 
-function mount(initialStatus: "open" | "cleared" | "all" = "all") {
-  act(() => root.render(createElement(HistoryTab, { initial, initialStatus })));
+function mount(initialStatus: "open" | "cleared" | "all" = "all", search = "?tab=history") {
+  const status = initialStatus === "all" ? "" : `&status=${initialStatus}`;
+  router = createMemoryRouter(
+    [{ path: "/notifications", Component: () => createElement(HistoryTab, { initial, initialStatus }) }],
+    { initialEntries: [`/notifications${search}${status}`] },
+  );
+  act(() => root.render(createElement(RouterProvider, { router })));
 }
+
+const params = () => new URLSearchParams(router.state.location.search);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -107,5 +116,48 @@ describe("HistoryTab first page", () => {
     mount("cleared");
     await flush();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the picked status in the URL, replacing history", async () => {
+    mount("all");
+    const open = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Open"))!;
+    await act(async () => open.click());
+    await flush();
+    expect(params().get("status")).toBe("open");
+    expect(params().get("tab")).toBe("history");
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("leaves All out of the URL", async () => {
+    mount("open");
+    const all = [...container.querySelectorAll("button")].find((b) => b.textContent === "All")!;
+    await act(async () => all.click());
+    await flush();
+    expect(params().has("status")).toBe(false);
+  });
+
+  it("opens on the status in the URL", async () => {
+    mount("cleared");
+    const active = [...container.querySelectorAll("button")].find((b) => b.textContent?.startsWith("Cleared"))!;
+    expect(active.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("saves the search in the URL once typing stops", async () => {
+    mount("all");
+    const input = container.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "invite");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(params().has("q")).toBe(false);
+    await flush();
+    expect(params().get("q")).toBe("invite");
+  });
+
+  it("opens on the search in the URL and fetches it", async () => {
+    mount("all", "?tab=history&q=invite");
+    expect(container.querySelector<HTMLInputElement>("input")!.value).toBe("invite");
+    await flush();
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/api/notifications?status=all&q=invite");
   });
 });

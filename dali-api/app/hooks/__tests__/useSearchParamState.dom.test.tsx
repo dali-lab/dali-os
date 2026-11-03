@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { useSearchParamState } from "../useSearchParamState";
+import { useSearchParamChoice, useSearchParamState } from "../useSearchParamState";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,8 +12,13 @@ let root: Root;
 let router: ReturnType<typeof createMemoryRouter>;
 let current: [string, (next: string) => void];
 
+let choice: [Tab, (next: Tab) => void];
+const TABS = ["overview", "cleanup", "requests"] as const;
+type Tab = (typeof TABS)[number];
+
 function Probe({ debounceMs }: { debounceMs?: number }) {
   current = useSearchParamState("q", { debounceMs });
+  choice = useSearchParamChoice<Tab>("tab", TABS, "overview");
   return null;
 }
 
@@ -118,5 +123,42 @@ describe("useSearchParamState", () => {
       expect(value()).toBe("grace");
       expect(search()).toBe("?q=grace");
     });
+  });
+});
+
+describe("useSearchParamChoice", () => {
+  it("is the default when the URL names nothing", async () => {
+    await mount(["/list"]);
+    expect(choice[0]).toBe("overview");
+  });
+
+  it("reads a known value", async () => {
+    await mount(["/list?tab=cleanup"]);
+    expect(choice[0]).toBe("cleanup");
+  });
+
+  it("reads an unknown value as the default", async () => {
+    await mount(["/list?tab=bogus"]);
+    expect(choice[0]).toBe("overview");
+  });
+
+  it("writes a pick, replacing history", async () => {
+    await mount(["/list?term=t1"]);
+    await act(async () => choice[1]("requests"));
+    expect(choice[0]).toBe("requests");
+    expect(search()).toBe("?term=t1&tab=requests");
+    expect(router.state.historyAction).toBe("REPLACE");
+  });
+
+  it("leaves the default out of the URL", async () => {
+    await mount(["/list?tab=cleanup&term=t1"]);
+    await act(async () => choice[1]("overview"));
+    expect(search()).toBe("?term=t1");
+  });
+
+  it("follows back to an earlier pick", async () => {
+    await mount(["/list?tab=cleanup", "/list?tab=requests"]);
+    await act(async () => router.navigate(-1));
+    expect(choice[0]).toBe("cleanup");
   });
 });

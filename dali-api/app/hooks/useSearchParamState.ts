@@ -65,3 +65,16 @@ export function useSearchParamState(
 
   return [value, set];
 }
+
+// A tab, segmented view or single-choice filter kept in one search param. An
+// unknown value reads as the default, and the default stays out of the URL.
+export function useSearchParamChoice<T extends string>(
+  key: string,
+  choices: readonly T[],
+  fallback: T,
+): [T, (next: T) => void] {
+  const [raw, setRaw] = useSearchParamState(key);
+  const value = (choices as readonly string[]).includes(raw) ? (raw as T) : fallback;
+  const set = useCallback((next: T) => setRaw(next === fallback ? "" : next), [fallback, setRaw]);
+  return [value, set];
+}

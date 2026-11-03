@@ -8,6 +8,13 @@ import * as partnersDirectory from "~/partners/routes/core.partners.directory";
 import * as partnersReferrals from "~/partners/routes/core.partners.referrals";
 import * as members from "~/members/routes/members";
 import * as mentorship from "~/mentorship/routes/mentorship.browse";
+import * as infrastructure from "~/admin/routes/admin.infrastructure";
+import * as announcements from "~/admin/routes/admin.announcements";
+import * as listserv from "~/core/routes/core.communications.listserv";
+import * as banners from "~/core/routes/core.communications.banners";
+import * as planning from "~/partners/routes/core.partners.planning";
+import * as payrollExport from "~/admin/routes/admin.payroll-export";
+import * as notifications from "~/routes/notifications";
 
 type ShouldRevalidate = (args: ShouldRevalidateFunctionArgs) => boolean;
 
@@ -27,6 +34,13 @@ const PAGES: {
     shouldRevalidate: mentorship.shouldRevalidate,
     loaderParams: ["termId", "menteeId", "mentorId", "projectId", "domainId", "status"],
   },
+  { name: "Infrastructure", path: "/admin/infrastructure", shouldRevalidate: infrastructure.shouldRevalidate, loaderParams: ["term"] },
+  { name: "Announcements", path: "/admin/announcements", shouldRevalidate: announcements.shouldRevalidate, loaderParams: [] },
+  { name: "Listserv", path: "/core/communications/listserv", shouldRevalidate: listserv.shouldRevalidate, loaderParams: [] },
+  { name: "Banners", path: "/core/communications/banners", shouldRevalidate: banners.shouldRevalidate, loaderParams: [] },
+  { name: "Planning", path: "/core/partners/planning", shouldRevalidate: planning.shouldRevalidate, loaderParams: ["term"] },
+  { name: "Payroll export", path: "/admin/payroll/hire-setup", shouldRevalidate: payrollExport.shouldRevalidate, loaderParams: ["term", "domain", "level"] },
+  { name: "Notifications", path: "/notifications", shouldRevalidate: notifications.shouldRevalidate, loaderParams: ["tab"] },
 ];
 
 const check = (page: (typeof PAGES)[number], current: string, next: string, formMethod?: string) =>
@@ -46,6 +60,12 @@ describe.each(PAGES)("$name shouldRevalidate", (page) => {
   it("skips a filter builder change", () => {
     expect(check(page, "", "?f.domain=Design")).toBe(false);
     expect(check(page, "?f.domain=Design", "?f=")).toBe(false);
+  });
+
+  it("skips a tab, view or status switch the loader doesn't read", () => {
+    for (const param of ["tab", "view", "status", "group", "role"].filter((p) => !page.loaderParams.includes(p))) {
+      expect(check(page, "", `?${param}=x`)).toBe(false);
+    }
   });
 
   it("reloads after a mutation", () => {

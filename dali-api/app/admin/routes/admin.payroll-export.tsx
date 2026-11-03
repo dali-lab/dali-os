@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
+import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import {
   redirect,
   useFetcher,
@@ -86,6 +89,11 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ ok: true });
 }
 
+// The role view is client side; term and the domain and level pills scope the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term", "domain", "level"]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -167,7 +175,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 type Role = "Project" | "Core" | "Instructor" | "Technigala";
-type RoleView = "all" | Role;
+const ROLE_VIEWS = ["all", "Project", "Core", "Instructor", "Technigala"] as const satisfies readonly ("all" | Role)[];
+type RoleView = (typeof ROLE_VIEWS)[number];
 
 type HireRow = {
   key: string;
@@ -227,7 +236,7 @@ export default function PayrollExport() {
   const fetcher = useFetcher();
   const dialog = useDialog();
   const { panel, actionBtn, actionBtnPrimary, iconBtn, bodyText } = useOsChrome();
-  const [view, setView] = useState<RoleView>("all");
+  const [view, setView] = useSearchParamChoice<RoleView>("role", ROLE_VIEWS, "all");
 
   // Every candidate starts checked: admins uncheck people who didn't work the
   // term (Summer is the main case). Not persisted across reloads.

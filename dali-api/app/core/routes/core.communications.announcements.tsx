@@ -12,6 +12,6 @@
 
 import { coreHandle } from "~/core/coreNav";
 
-export { meta, loader, action, default } from "~/admin/routes/admin.announcements";
+export { meta, loader, action, shouldRevalidate, default } from "~/admin/routes/admin.announcements";
 
 export const handle = coreHandle("communications");

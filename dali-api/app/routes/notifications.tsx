@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamChoice, useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { ExternalLink, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { LoadMore } from "~/components/ui/Pager";
@@ -55,6 +57,11 @@ export const handle = {
 // fetches incrementally from /api/notifications with the additive history
 // params. The open tabs render the same cards as the bell's drawer.
 type PageTab = "work" | "open" | "history";
+
+// History's status and search fetch their own pages; only the tab reloads.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["tab"]);
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -142,6 +149,8 @@ function timeLabel(iso: string, tz: string): string {
   });
 }
 
+const HISTORY_STATUSES = ["all", "open", "cleared"] as const;
+
 export function HistoryTab({
   initial,
   initialStatus,
@@ -149,11 +158,9 @@ export function HistoryTab({
   initial: NotificationHistoryResult;
   initialStatus: "open" | "cleared" | "all";
 }) {
-  const [status, setStatus] = useState<"open" | "cleared" | "all">(
-    initialStatus,
-  );
-  const [q, setQ] = useState("");
-  const [debouncedQ, setDebouncedQ] = useState("");
+  const [status, setStatus] = useSearchParamChoice("status", HISTORY_STATUSES, "all");
+  const [q, setQ] = useSearchParamState("q", { debounceMs: 300 });
+  const [debouncedQ, setDebouncedQ] = useState(() => q.trim());
   const [items, setItems] = useState<NotificationHistoryItem[]>(initial.items);
   const [cursor, setCursor] = useState(initial.nextCursor);
   const [counts, setCounts] = useState(initial.counts);
@@ -372,7 +379,8 @@ export default function NotificationsRoute() {
     const params = new URLSearchParams(searchParams);
     params.set("tab", next);
     params.delete("status");
-    setSearchParams(params);
+    params.delete("q");
+    setSearchParams(params, { replace: true, preventScrollReset: true });
   }
 
   const [cleared, setCleared] = useState<ReadonlySet<string>>(new Set());
