@@ -1,4 +1,6 @@
-import { redirect, useLoaderData } from "react-router";
+import { redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/core.partners.renewals";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -9,7 +11,6 @@ import { TermFilter } from "~/components/TermFilter";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { RenewalsBoard } from "../components/RenewalsBoard";
-import { useState } from "react";
 import { normalizeNextStep, type RenewalCardModel } from "../lib/partner-renewals";
 import { listActiveCoreMembers } from "../lib/core-members.server";
 
@@ -32,6 +33,11 @@ async function gate(request: Request) {
   if (await isNonMember(auth, request)) return { redirect: redirect("/portal") } as const;
   if (!(await isCore(auth.user.sub))) return { redirect: redirect("/") } as const;
   return { userId: auth.user.sub } as const;
+}
+
+// Search runs in the browser; only the term scopes the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -149,7 +155,7 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function PartnersRenewals() {
   const data = useLoaderData<typeof loader>();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const { terms, termOptions, picked, decisionTerm, cards, domains, coreMembers } = data;
 
   return (

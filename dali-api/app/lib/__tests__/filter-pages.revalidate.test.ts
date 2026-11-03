@@ -8,6 +8,8 @@ import * as partnersDirectory from "~/partners/routes/core.partners.directory";
 import * as partnersReferrals from "~/partners/routes/core.partners.referrals";
 import * as members from "~/members/routes/members";
 import * as mentorship from "~/mentorship/routes/mentorship.browse";
+import * as partnersRenewals from "~/partners/routes/core.partners.renewals";
+import * as applications from "~/hiring/routes/applications";
 
 type ShouldRevalidate = (args: ShouldRevalidateFunctionArgs) => boolean;
 
@@ -19,6 +21,8 @@ const PAGES: {
 }[] = [
   { name: "Partners board", path: "/core/partners", shouldRevalidate: partnersBoard.shouldRevalidate, loaderParams: [] },
   { name: "Partners directory", path: "/core/partners/directory", shouldRevalidate: partnersDirectory.shouldRevalidate, loaderParams: [] },
+  { name: "Renewals", path: "/core/partners/renewals", shouldRevalidate: partnersRenewals.shouldRevalidate, loaderParams: ["term"] },
+  { name: "Applications", path: "/hiring/applications", shouldRevalidate: applications.shouldRevalidate, loaderParams: ["cycle"] },
   { name: "Referrals", path: "/core/partners/referrals", shouldRevalidate: partnersReferrals.shouldRevalidate, loaderParams: ["term"] },
   { name: "Members", path: "/members", shouldRevalidate: members.shouldRevalidate, loaderParams: ["status", "domain", "project", "class"] },
   {
@@ -46,6 +50,13 @@ describe.each(PAGES)("$name shouldRevalidate", (page) => {
   it("skips a filter builder change", () => {
     expect(check(page, "", "?f.domain=Design")).toBe(false);
     expect(check(page, "?f.domain=Design", "?f=")).toBe(false);
+  });
+
+  it("skips sort, display and other client-side view params", () => {
+    const viewParams = ["sort", "dir", "paused", "rejected", "stage", "pie", "status", "domain", "event", "engagement"];
+    for (const param of viewParams.filter((p) => !page.loaderParams.includes(p))) {
+      expect(check(page, "", `?${param}=x`)).toBe(false);
+    }
   });
 
   it("reloads after a mutation", () => {

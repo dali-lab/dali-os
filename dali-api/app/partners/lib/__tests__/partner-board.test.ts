@@ -9,7 +9,8 @@ import {
   sortPartnerCards,
   SOURCE_OPTIONS,
   filterPartnerCards,
-  isBoardPrefs,
+  boardPrefsFromParams,
+  writeBoardPrefsParams,
   movePartnerInBoard,
   partnerCardCells,
   partnerFiltersFromColumns,
@@ -193,16 +194,33 @@ describe("filterPartnerCards", () => {
   });
 });
 
-describe("isBoardPrefs", () => {
-  it("accepts the defaults and rejects malformed values", () => {
-    expect(isBoardPrefs(DEFAULT_BOARD_PREFS)).toBe(true);
-    expect(isBoardPrefs({ sort: "fee", showPaused: false, showRejectedPastTerms: true })).toBe(true);
-    expect(isBoardPrefs(null)).toBe(false);
-    expect(isBoardPrefs({ ...DEFAULT_BOARD_PREFS, sort: "bogus" })).toBe(false);
-    expect(isBoardPrefs({ ...DEFAULT_BOARD_PREFS, showPaused: "yes" })).toBe(false);
-    // The pre-prefs persisted filter shape is rejected, so stale storage falls
-    // back to the defaults instead of crashing the board.
-    expect(isBoardPrefs({ term: null, staleOnly: false, showPaused: true })).toBe(false);
+describe("board prefs params", () => {
+  const params = (q: string) => new URLSearchParams(q);
+
+  it("uses the defaults for a bare URL", () => {
+    expect(boardPrefsFromParams(params(""))).toEqual(DEFAULT_BOARD_PREFS);
+  });
+
+  it("reads each option", () => {
+    expect(boardPrefsFromParams(params("sort=fee&paused=hide&rejected=show"))).toEqual({
+      sort: "fee",
+      showPaused: false,
+      showRejectedPastTerms: true,
+    });
+  });
+
+  it("falls back to manual order for an unknown sort", () => {
+    expect(boardPrefsFromParams(params("sort=bogus")).sort).toBe("manual");
+  });
+
+  it("writes only what differs from the defaults and keeps other params", () => {
+    const written = writeBoardPrefsParams(params("q=acme&f.term=26F"), {
+      sort: "next-step",
+      showPaused: false,
+      showRejectedPastTerms: true,
+    });
+    expect(written.toString()).toBe("q=acme&f.term=26F&sort=next-step&paused=hide&rejected=show");
+    expect(writeBoardPrefsParams(written, DEFAULT_BOARD_PREFS).toString()).toBe("q=acme&f.term=26F");
   });
 });
 

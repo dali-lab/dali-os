@@ -14,6 +14,7 @@ import {
   type FilterCells,
 } from "~/projects/lib/submission-filters";
 import type { PartnerRelationshipStatus } from "./partner-org";
+import { readSortParams, writeSortParams } from "~/lib/sort-params";
 
 // The row's link stretches over it, so the row must contain that overlay. macOS
 // WKWebView (the desktop app) ignores `relative` on a <tr>: without the
@@ -242,10 +243,12 @@ export type DirectorySort = { key: DirectorySortKey; dir: DirectorySortDir };
 
 export const DEFAULT_DIRECTORY_SORT: DirectorySort = { key: "activity", dir: "desc" };
 
-export function isDirectorySort(value: unknown): value is DirectorySort {
-  if (!value || typeof value !== "object") return false;
-  const v = value as Record<string, unknown>;
-  return (v.key === "name" || v.key === "activity") && (v.dir === "asc" || v.dir === "desc");
+export function directorySortFromParams(params: URLSearchParams): DirectorySort {
+  return readSortParams(params, ["name", "activity"], DEFAULT_DIRECTORY_SORT);
+}
+
+export function writeDirectorySortParams(prev: URLSearchParams, sort: DirectorySort): URLSearchParams {
+  return writeSortParams(prev, sort, DEFAULT_DIRECTORY_SORT);
 }
 
 export function nextDirectorySort(current: DirectorySort, key: DirectorySortKey): DirectorySort {
