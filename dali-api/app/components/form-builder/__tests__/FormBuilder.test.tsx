@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildQuestion } from '../FormBuilder'
+import { buildQuestion, repairQuestions } from '../FormBuilder'
+import type { Question } from '~/types'
 
 describe('buildQuestion (form builder save logic)', () => {
   const base = {
@@ -201,5 +202,23 @@ describe('buildQuestion (show rule)', () => {
   it('leaves no rule when none is given', () => {
     const q = buildQuestion({ key: 'q2', type: 'text', required: false, label: 'Name' })
     expect(q.data.showIf).toBeUndefined()
+  })
+})
+
+describe('repairQuestions', () => {
+  const q = (key: string, label: string) =>
+    ({ key, type: 'text', required: false, data: { label } }) as Question
+
+  it('drops later questions that repeat a key, keeping order', () => {
+    const out = repairQuestions([q('a', 'A'), q('b', 'B'), q('a', 'A copy'), q('c', 'C'), q('b', 'B copy')])
+    expect(out.map((x) => x.data.label)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('drops empty entries and keys questions that have none', () => {
+    const out = repairQuestions([{} as Question, { ...q('', 'No key') }, q('a', 'A')])
+    expect(out).toHaveLength(2)
+    expect(out[0].data.label).toBe('No key')
+    expect(out[0].key).toMatch(/^q-\d+-0$/)
+    expect(out[1].key).toBe('a')
   })
 })
