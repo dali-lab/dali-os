@@ -2,6 +2,7 @@ import {
   BarChart3,
   Clock,
   Compass,
+  DoorOpen,
   Flag,
   Inbox,
   LayoutDashboard,
@@ -103,6 +104,16 @@ export const ADMIN_SECTIONS: AdminSection[] = [
       { key: "jobs", label: "Jobs", to: "/admin/platform/jobs", icon: Clock, description: "Background job status and controls." },
       { key: "infrastructure", label: "Infrastructure", to: "/admin/platform/infrastructure", icon: Server, flag: "infra-dashboard", description: "The Fly.io and Neon fleet across lab projects." },
       { key: "flags", label: "Feature flags", to: "/admin/platform/flags", icon: Flag, description: "Roll features out to everyone, roles, or named people." },
+    ],
+  }),
+  section({
+    key: "rooms",
+    label: "Rooms",
+    path: "/admin/rooms",
+    description: "Bookable DALI rooms and the iPad displays outside them.",
+    icon: DoorOpen,
+    sections: [
+      { key: "rooms", label: "Rooms", to: "/admin/rooms", icon: DoorOpen, description: "Bookable DALI rooms and the iPad displays outside them." },
     ],
   }),
   section({

@@ -94,6 +94,7 @@ export default [
     route("admin/platform/flags", "admin/routes/admin.feature-flags.tsx"),
     route("admin/onboarding", "admin/routes/admin.activities.tsx"),
     route("admin/onboarding/:id", "admin/routes/admin.activities.$id.tsx"),
+    route("admin/rooms", "rooms/routes/admin.rooms.tsx"),
     ...[
       "system", "payroll-export", "site-users", "security", "outbound-messages", "email-senders",
       "analytics", "ai-usage", "activity", "jobs", "infrastructure", "feature-flags", "activities",
@@ -134,7 +135,7 @@ export default [
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
-    route("core/rooms", "rooms/routes/core.rooms.tsx"),
+    route("core/rooms", "admin/routes/admin.legacy-redirect.ts", { id: "legacy-core-rooms" }),
     route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx", [
       index("core/routes/core.communications._index.tsx"),

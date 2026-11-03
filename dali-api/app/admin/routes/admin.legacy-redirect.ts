@@ -1,8 +1,9 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/admin.legacy-redirect";
 
-// Admin's pre-sections URLs. Bookmarks, favorites, emails and audit-log links
-// still point at these, so each one forwards to its new home with its query.
+// Admin's pre-sections URLs, plus pages moved here from Core. Bookmarks,
+// favorites, emails and audit-log links still point at these, so each one
+// forwards to its new home with its query.
 export const LEGACY_ADMIN_PATHS: Record<string, string> = {
   "/admin/system": "/admin",
   "/admin/payroll-export": "/admin/payroll/hire-setup",
@@ -17,6 +18,7 @@ export const LEGACY_ADMIN_PATHS: Record<string, string> = {
   "/admin/infrastructure": "/admin/platform/infrastructure",
   "/admin/feature-flags": "/admin/platform/flags",
   "/admin/activities": "/admin/onboarding",
+  "/core/rooms": "/admin/rooms",
 };
 
 export function legacyAdminTarget(pathname: string): string | null {
