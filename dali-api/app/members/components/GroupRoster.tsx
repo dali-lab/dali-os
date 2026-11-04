@@ -4,7 +4,6 @@ import { Avatar } from "~/components/ui/Avatar";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { LoadMore } from "~/components/ui/Pager";
-import { RolePills } from "~/components/ui/RolePills";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { cn } from "~/lib/cn";
 
@@ -87,12 +86,12 @@ function ExpandedMemberCard({
             {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
               <span className="text-muted-foreground text-xs">—</span>
             ) : (
-              <RolePills
-                coreTitles={member.coreTitles}
-                domainRoles={member.domainRoles}
-                size="sm"
-                showLevel
-              />
+              <span className="text-xs italic text-muted-foreground">
+                {[
+                  ...member.coreTitles,
+                  ...member.domainRoles.map((r) => (r.level ? `${r.domainName} · ${r.level}` : r.domainName)),
+                ].join(", ")}
+              </span>
             )}
           </div>
         </div>

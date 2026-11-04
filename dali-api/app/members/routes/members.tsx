@@ -287,7 +287,7 @@ export default function MembersList() {
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="os-add-btn"
+              className="os-add-btn !font-medium"
             >
               <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
               New member
