@@ -3,7 +3,6 @@ import { confirmDialog } from './helpers';
 import {
   createStaffingFixture,
   deleteStaffingFixture,
-  devLogin,
   projectAssignmentCount,
   type StaffingFixture,
 } from './staffing.helpers';
@@ -22,8 +21,8 @@ test.describe('Staffing board and finalize', () => {
     await deleteStaffingFixture(f);
   });
 
-  test('non-manager cannot open the board or finalize', async ({ page }) => {
-    await devLogin(page, f.email);
+  test('non-manager cannot open the board or finalize', async ({ page, loginAs }) => {
+    await loginAs({ daliEmail: f.email });
     await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/staffing/);
 
@@ -34,8 +33,8 @@ test.describe('Staffing board and finalize', () => {
     expect(await projectAssignmentCount(f)).toBe(0);
   });
 
-  test('manager proposes a member, finalizes, and the roster persists', async ({ page }) => {
-    await devLogin(page, MANAGER);
+  test('manager proposes a member, finalizes, and the roster persists', async ({ page, loginAs }) => {
+    await loginAs({ daliEmail: MANAGER });
     await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
 
     await page.getByRole('button', { name: `View ${f.fullName}'s bid` }).click();
@@ -82,8 +81,8 @@ test.describe('Staffing board and finalize', () => {
     await expect(page.getByText(f.fullName).first()).toBeVisible();
   });
 
-  test('taking a confirmed member off the project removes them from the roster', async ({ page }) => {
-    await devLogin(page, MANAGER);
+  test('taking a confirmed member off the project removes them from the roster', async ({ page, loginAs }) => {
+    await loginAs({ daliEmail: MANAGER });
     await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: `Remove ${f.fullName} from project` }).click();
     const assign = page.waitForResponse(
