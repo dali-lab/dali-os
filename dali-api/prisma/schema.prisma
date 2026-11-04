@@ -306,6 +306,11 @@ model User {
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
   partnerContact PartnerContact?
 
+  // ─── Partner referrals ────────────────────────────────────────────────────
+  partnerReferralsMade       PartnerReferral[]        @relation("PartnerReferralReferredBy")
+  partnerReferralsReachedOut PartnerReferral[]        @relation("PartnerReferralReachedOutBy")
+  partnerReferralQuizPass    PartnerReferralQuizPass?
+
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
   oauthGrants           OAuthGrant[]
   oneTimeTokens         OneTimeToken[]
@@ -2149,6 +2154,7 @@ model AiUsage {
   userId       String
   day          String // UTC date "YYYY-MM-DD"
   count        Int    @default(0)
+  askCount     Int    @default(0)
   inputTokens  Int    @default(0)
   outputTokens Int    @default(0)
 
@@ -7185,6 +7191,61 @@ enum PartnerApplicationSource {
   Referral // word-of-mouth / introduction
   Manual // Core created it directly (MCP / internal page)
   Renewal // auto-created by the renewal sweep when a partner's project ends
+}
+
+// ─── Partner referrals ───────────────────────────────────────────────────────
+// Member-submitted lead for a prospective partner. The three tiers describe
+// the referrer's level of involvement with the lead and carry different payout
+// amounts in the Partner Bounty program (see /refer). Cross-matching to an
+// eventual PartnerApplication is done manually by Partner Relations; this
+// pilot deliberately omits attribution tokens / auto-linking.
+model PartnerReferral {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  referredByUserId String
+  referredBy       User   @relation("PartnerReferralReferredBy", fields: [referredByUserId], references: [id], onDelete: Cascade)
+
+  tier PartnerReferralTier
+
+  // What the referrer knows about the lead. partnerEmail is the natural key
+  // Core uses to cross-match with any resulting PartnerApplication.
+  partnerName        String
+  partnerEmail       String?
+  partnerAffiliation String?
+  partnerOrgName     String?
+  // Why the referrer thinks this is a fit; what kind of project they imagine.
+  context            String
+  // Full Pitch only: the referrer's own pitch for the partner.
+  pitchBody          String?
+
+  // Partner Relations working notes + "we've reached out" marker.
+  coreNotes          String?
+  reachedOutAt       DateTime?
+  reachedOutByUserId String?
+  reachedOutBy       User?     @relation("PartnerReferralReachedOutBy", fields: [reachedOutByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([referredByUserId])
+  @@index([tier])
+}
+
+enum PartnerReferralTier {
+  Cold
+  Warm
+  FullPitch
+}
+
+// One row per member who has completed the referral quiz. Presence lets them
+// skip straight to /refer/new; absence sends them to /refer/quiz. The quiz is
+// one-and-done — a member who's passed never retakes.
+model PartnerReferralQuizPass {
+  id       String   @id @default(cuid())
+  userId   String   @unique
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passedAt DateTime @default(now())
+  attempts Int      @default(1)
 }
 
 // Binds the generic Form whose questions partners answer when pitching a

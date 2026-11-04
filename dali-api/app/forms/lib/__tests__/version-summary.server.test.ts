@@ -42,19 +42,19 @@ describe("loadVersionSummary", () => {
     expect(call.skip).toBeUndefined();
   });
 
-  it("applies the slot filter, including the referrals slot, to the counted answers", async () => {
+  it("applies the slot filter, including a specific slot, to the counted answers", async () => {
     stub([{ a: "Yes" }]);
-    await loadVersionSummary("f1", { id: "v1", questions }, { slot: "referrals" });
+    await loadVersionSummary("f1", { id: "v1", questions }, { slot: "level-up" });
     const call = findMany.mock.calls.find(([a]) => !a.distinct)![0];
-    expect(call.where).toEqual({ formId: "f1", formVersionId: "v1", slot: "referrals" });
+    expect(call.where).toEqual({ formId: "f1", formVersionId: "v1", slot: "level-up" });
   });
 
   it("offers every slot in the version regardless of the filter", async () => {
-    stub([], ["referrals", "Tue 3pm"]);
+    stub([], ["level-up", "Tue 3pm"]);
     const out = await loadVersionSummary("f1", { id: "v1", questions }, { slot: "Tue 3pm" });
     const slotCall = findMany.mock.calls.find(([a]) => a.distinct)![0];
     expect(slotCall.where).toEqual({ formId: "f1", formVersionId: "v1", slot: { not: null } });
-    expect(out.slotOptions).toEqual(["referrals", "Tue 3pm"]);
+    expect(out.slotOptions).toEqual(["level-up", "Tue 3pm"]);
   });
 
   it("summarizes with reference labels", async () => {

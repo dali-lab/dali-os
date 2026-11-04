@@ -346,8 +346,8 @@ describe("forms.edit summary", () => {
   });
 
   it("loads the summary, not the table, on Results", async () => {
-    const data = await call("view=results&version=1&slot=referrals");
-    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "referrals" });
+    const data = await call("view=results&version=1&slot=level-up");
+    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "level-up" });
     expect(loadVersionResponses).not.toHaveBeenCalled();
     expect(data.summary).toEqual({ versionId: "v1" });
     expect(data.results).toBeNull();

@@ -108,7 +108,7 @@ describe.each([
   });
 
   it("rejects a question mapped on any binding, whatever its slot", async () => {
-    for (const slot of ["project-bids", "intent-to-work", "level-up", "referrals"]) {
+    for (const slot of ["project-bids", "intent-to-work", "level-up"]) {
       db.staffingCycleFormBinding.findMany.mockResolvedValue([
         {
           slot,
@@ -126,24 +126,10 @@ describe.each([
     );
   });
 
-  it("names the referrals feature for a referrals mapping", async () => {
-    db.staffingCycleFormBinding.findMany.mockResolvedValue([
-      {
-        slot: "referrals",
-        columnMapping: {
-          version: 1,
-          entries: [{ role: "display", label: "Why", source: "question", questionKey: "why" }],
-        },
-      },
-    ]);
-    const res = await save([dropdown, q("why", "textarea", rule("returning", "is", "No"))]);
-    expect(res).toMatchObject({ error: expect.stringContaining("Referrals") });
-  });
-
   it("allows a rule on a question the mapping does not read", async () => {
     db.staffingCycleFormBinding.findMany.mockResolvedValue([
       {
-        slot: "referrals",
+        slot: "level-up",
         columnMapping: {
           version: 1,
           entries: [{ role: "display", label: "Other", source: "question", questionKey: "other" }],
