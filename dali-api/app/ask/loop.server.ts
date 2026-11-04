@@ -22,6 +22,32 @@ export const OUT_OF_STEPS =
 
 export type AskUsage = { inputTokens: number; outputTokens: number };
 
+const EPHEMERAL = { type: "ephemeral" } as const;
+
+/** Each round resends the whole loop, so first-party requests cache the shared
+ *  tools, this member's system prompt, and the growing tail. The gateway's
+ *  cache_control support is unverified, so it gets the plain request. */
+export function askRequest(
+  provider: Pick<AiProvider, "name">,
+  system: string,
+  tools: Anthropic.Tool[],
+  messages: Anthropic.MessageParam[],
+): Anthropic.MessageStreamParams {
+  const base = { ...modelParams(provider, "ask"), max_tokens: MAX_TOKENS, messages };
+  if (provider.name !== "anthropic") return { ...base, system, tools };
+  return {
+    ...base,
+    system: [{ type: "text", text: system, cache_control: EPHEMERAL }],
+    tools: tools.map((t, i) => (i === tools.length - 1 ? { ...t, cache_control: EPHEMERAL } : t)),
+    cache_control: EPHEMERAL,
+  };
+}
+
+/** Every input token the round processed, cached or not, so the budget and AI Usage keep measuring context size. */
+function inputTokensOf(usage: Anthropic.Usage | undefined): number {
+  return (usage?.input_tokens ?? 0) + (usage?.cache_creation_input_tokens ?? 0) + (usage?.cache_read_input_tokens ?? 0);
+}
+
 export function askSystemPrompt(
   firstName: string,
   now: Date,
@@ -138,10 +164,7 @@ export async function runAsk(opts: {
 
   for (let round = 0; round <= ASK_MAX_TOOL_ROUNDS; round++) {
     if (signal.aborted) return usage;
-    const stream = provider.client.messages.stream(
-      { ...modelParams(provider, "ask"), max_tokens: MAX_TOKENS, system, tools, messages },
-      { signal },
-    );
+    const stream = provider.client.messages.stream(askRequest(provider, system, tools, messages), { signal });
     let text = "";
     for await (const event of stream) {
       if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
@@ -151,7 +174,7 @@ export async function runAsk(opts: {
     }
     const message = await stream.finalMessage();
     const reported = {
-      inputTokens: message.usage?.input_tokens ?? 0,
+      inputTokens: inputTokensOf(message.usage),
       outputTokens: message.usage?.output_tokens ?? 0,
     };
     const roundUsage =
