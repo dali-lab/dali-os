@@ -65,6 +65,39 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("opening the side panel", () => {
+  it("shows at once without a router navigation, so the page's loaders don't re-run", () => {
+    mount("/one?tab=drive");
+    act(() => api.open("abc"));
+    expect(shown()).toBe("abc");
+    expect(at()).toBe("/one?tab=drive");
+    expect(new URL(window.location.href).searchParams.get("side")).toBe("doc:abc");
+  });
+
+  it("closes after an instant open", () => {
+    mount();
+    act(() => api.open("abc"));
+    act(() => api.close());
+    expect(shown()).toBeNull();
+    expect(new URL(window.location.href).searchParams.get("side")).toBeNull();
+  });
+
+  it("switches panels through the router when the address already names one", () => {
+    mount("/one?side=doc:xyz");
+    expect(shown()).toBe("xyz");
+    act(() => api.open("abc"));
+    expect(shown()).toBe("abc");
+    expect(at()).toBe("/one?side=doc%3Aabc");
+  });
+
+  it("navigates below md, so Back can close the panel", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    mount("/one");
+    act(() => api.open("abc"));
+    expect(at()).toBe("/one?side=doc%3Aabc");
+  });
+});
+
 describe("keeping the side panel across navigation", () => {
   it("stays open, without remounting, when the page changes", () => {
     mount();

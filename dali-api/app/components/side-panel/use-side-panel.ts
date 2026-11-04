@@ -29,15 +29,24 @@ export function useSidePanel() {
   const panel = useVisibleSidePanel();
   const urlNamesPanel = params.has(SIDE_PARAM);
   const open = useCallback(
-    (next: SidePanel) =>
+    (next: SidePanel) => {
+      // A router navigation would re-run the page's loaders before the panel could show.
+      if (!urlNamesPanel && !panelCoversPage()) {
+        setKeptSidePanel(next);
+        const url = new URL(window.location.href);
+        url.searchParams.set(SIDE_PARAM, formatSidePanel(next));
+        window.history.replaceState(window.history.state, "", url);
+        return;
+      }
       setParams(
         (prev) => {
           prev.set(SIDE_PARAM, formatSidePanel(next));
           return prev;
         },
         { replace: !panelCoversPage(), preventScrollReset: true },
-      ),
-    [setParams],
+      );
+    },
+    [setParams, urlNamesPanel],
   );
   const close = useCallback(() => {
     setKeptSidePanel(null);
