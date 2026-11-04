@@ -5,14 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DALI OS Style Guide</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;500;600;700;900&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap">
 <style>
   :root {
     --bg: #ffffff; --nav: #eef1f5; --card: #f3f6f9; --card-hover: #eaf3f8; --well: #eaeff5;
-    --rail-pill-mix: 24%;
+    --rail-pill-mix: 55%;
     --container: #ccd7e2; --container-hi: #a9b9c9;
     --fg: #13293a; --grey: #4d5c69; --muted: #78899a;
-    --accent: #0f6e7d; --accent-hover: #0b5964;
+    --accent: color-mix(in srgb, #8fb6f2 70%, white); --accent-hover: color-mix(in srgb, #8fb6f2 85%, white);
+    --accent-ink: #2f5fb5; --accent-tint: #8fb6f2; --on-accent: color-mix(in srgb, var(--accent-ink) 60%, black);
     --green: #0f7a4d; --amber: #8f5400; --danger: #c0362f;
     --shadow: rgba(19, 41, 58, 0.16); --overlay: rgba(19, 41, 58, 0.38);
     --add-bg: #d9e2ec; --add-bg-hover: #c6d3e0;
@@ -41,7 +42,7 @@
     --role-lime-fill: #e8f2c8; --role-lime-ink: #4d5a12;
     --role-indigo-fill: #dfe0fb; --role-indigo-ink: #33377f;
     --role-sand-fill: #f0e4d3; --role-sand-ink: #5f4726;
-    --blob-a: rgba(15, 110, 125, 0.10); --blob-b: rgba(204, 215, 226, 0.7);
+    --blob-a: rgba(47, 95, 181, 0.10); --blob-b: rgba(204, 215, 226, 0.7);
     --is-dark: 0;
   }
   @media (prefers-color-scheme: dark) {
@@ -50,7 +51,8 @@
       --rail-pill-mix: 16%;
       --container: #3f3f48; --container-hi: #54545f;
       --fg: #ffffff; --grey: #bababa; --muted: #6a6a73;
-      --accent: #a8d3de; --accent-hover: #bfe1e9;
+      --accent: color-mix(in srgb, #8fb6f2 70%, white); --accent-hover: color-mix(in srgb, #8fb6f2 85%, white);
+      --accent-ink: #8fb6f2; --accent-tint: #8fb6f2; --on-accent: color-mix(in srgb, var(--accent-ink) 60%, black);
       --green: #9fe0a8; --amber: #f2b84b; --danger: #ff6b6b;
       --shadow: rgba(0, 0, 0, 0.5); --overlay: rgba(10, 13, 10, 0.6);
       --add-bg: #1e1e1f; --add-bg-hover: #2b2b2c;
@@ -79,15 +81,17 @@
       --role-lime-fill: #333d1f; --role-lime-ink: #cfe08a;
       --role-indigo-fill: #2a2c4d; --role-indigo-ink: #b0b4f0;
       --role-sand-fill: #3a3128; --role-sand-ink: #ddc3a3;
-      --blob-a: rgba(168, 211, 222, 0.08); --blob-b: rgba(63, 63, 72, 0.5);
+      --blob-a: rgba(143, 182, 242, 0.08); --blob-b: rgba(63, 63, 72, 0.5);
       --is-dark: 1;
     }
   }
   :root[data-theme="dark"] {
     --bg: #282830; --nav: #24242a; --card: #2b2b36; --card-hover: #323240; --well: #26262f;
+    --rail-pill-mix: 16%;
     --container: #3f3f48; --container-hi: #54545f;
     --fg: #ffffff; --grey: #bababa; --muted: #6a6a73;
-    --accent: #a8d3de; --accent-hover: #bfe1e9;
+    --accent: color-mix(in srgb, #8fb6f2 70%, white); --accent-hover: color-mix(in srgb, #8fb6f2 85%, white);
+      --accent-ink: #8fb6f2; --accent-tint: #8fb6f2; --on-accent: color-mix(in srgb, var(--accent-ink) 60%, black);
     --green: #9fe0a8; --amber: #f2b84b; --danger: #ff6b6b;
     --shadow: rgba(0, 0, 0, 0.5); --overlay: rgba(10, 13, 10, 0.6);
     --add-bg: #1e1e1f; --add-bg-hover: #2b2b2c;
@@ -116,7 +120,7 @@
     --role-lime-fill: #333d1f; --role-lime-ink: #cfe08a;
     --role-indigo-fill: #2a2c4d; --role-indigo-ink: #b0b4f0;
     --role-sand-fill: #3a3128; --role-sand-ink: #ddc3a3;
-    --blob-a: rgba(168, 211, 222, 0.08); --blob-b: rgba(63, 63, 72, 0.5);
+    --blob-a: rgba(143, 182, 242, 0.08); --blob-b: rgba(63, 63, 72, 0.5);
     --is-dark: 1;
   }
 
@@ -136,13 +140,13 @@
 
   .sheet {
     position: relative; z-index: 1; max-width: 1440px; margin: 0 auto;
-    background: var(--card); border-radius: 24px; padding: 40px 24px 48px;
+    background: var(--card); border-radius: 12px; padding: 40px 24px 48px;
   }
   @media (min-width: 900px) { .sheet { padding: 56px 64px 64px; } }
 
   .masthead { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px 32px; padding-bottom: 20px; border-bottom: 1px solid var(--fg); }
-  .masthead h1 { margin: 0; font-size: 36px; font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; }
-  .masthead h1 .mark { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-weight: 600; color: var(--accent); }
+  .masthead h1 { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; margin: 0; font-size: 36px; font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; text-wrap: balance; }
+  .masthead h1 .mark { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-weight: 600; color: var(--accent-ink); }
   .masthead .sub { color: var(--grey); font-size: 18px; font-weight: 400; }
   .masthead .tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   @media (min-width: 900px) { .masthead h1 { font-size: 48px; } }
@@ -152,8 +156,8 @@
     font: inherit; font-size: 13px; font-weight: 600; color: var(--grey); background: transparent; border: 0;
     border-radius: 100px; padding: 6px 14px; cursor: pointer; transition: background-color .15s ease, color .15s ease;
   }
-  .mode button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
-  .mode button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .mode button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+  .mode button:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
 
   .principles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 16px 32px; padding: 28px 0 8px; }
   .principles div { font-size: 14px; color: var(--grey); }
@@ -167,7 +171,7 @@
   @media (min-width: 1100px) {
     .l4 { grid-column: span 4; } .l3 { grid-column: span 3; } .l5 { grid-column: span 5; } .l6 { grid-column: span 6; } .l8 { grid-column: span 8; } .l7 { grid-column: span 7; }
   }
-  section > h2 { margin: 0 0 18px; padding-bottom: 10px; font-size: 22px; font-weight: 500; color: var(--fg); border-bottom: 1px solid var(--container); display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  section > h2 { margin: 0 0 18px; padding-bottom: 10px; font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-size: 20px; font-weight: 600; color: var(--fg); border-bottom: 1px solid var(--container); display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
   section > h2 small { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
   .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--grey); margin: 22px 0 10px; }
   .eyebrow:first-of-type { margin-top: 0; }
@@ -179,15 +183,15 @@
   .spec .row { display: grid; grid-template-columns: 1fr; gap: 2px; }
   .spec .sample { color: var(--fg); line-height: 1.15; }
   .spec .meta { font-size: 11px; color: var(--muted); letter-spacing: .02em; }
-  .t-page { font-size: 36px; font-weight: 500; }
-  .t-modal { font-size: 22px; font-weight: 500; }
-  .t-section { font-size: 19px; font-weight: 600; }
+  .t-page { font-size: 22.5px; font-weight: 700; }
+  .t-modal { font-size: 20px; font-weight: 500; }
+  .t-section { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-size: 15px; font-weight: 600; }
   .t-tab { font-size: 16px; font-weight: 500; }
-  .t-body { font-size: 14px; color: var(--grey) !important; max-width: 46ch; line-height: 1.5 !important; }
+  .t-body { font-size: 13px; color: var(--grey) !important; max-width: 46ch; line-height: 1.5 !important; }
   .t-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--grey) !important; }
   .t-header { font-size: 12px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; }
-  .t-caption { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--grey) !important; }
-  .t-logo { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-size: 24px; font-weight: 600; color: var(--accent) !important; }
+  .t-caption { font-size: 14px; font-weight: 600; color: var(--grey) !important; }
+  .t-logo { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-size: 24px; font-weight: 600; color: var(--accent-ink) !important; }
   .weights { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 22px; line-height: 1.2; }
   .weights span { color: var(--fg); }
 
@@ -205,12 +209,12 @@
 
   /* Pills and chips */
   .pills { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 100px; padding: 4px 12px; font-size: 14px; font-weight: 500; background: var(--container); color: var(--grey); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 100px; padding: 4px 12px; font-size: 13px; font-weight: 500; background: var(--container); color: var(--grey); }
   .pill .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .pill.outline { background: transparent; border: 1px solid var(--container); }
-  .status { display: inline-flex; align-items: center; border-radius: 100px; padding: 5px 12px; font-size: 12px; font-weight: 700; letter-spacing: .24px; text-transform: uppercase; border: 1px solid transparent; }
-  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 100px; font-size: 12px; font-weight: 700; letter-spacing: .24px; text-transform: uppercase; }
-  .chip { display: inline-flex; border-radius: 100px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+  .status { display: inline-flex; align-items: center; border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 700; letter-spacing: .24px; text-transform: uppercase; border: 1px solid transparent; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; letter-spacing: .24px; text-transform: uppercase; }
+  .chip { display: inline-flex; border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
 
   /* Shape and elevation */
   .shapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 16px; }
@@ -219,39 +223,39 @@
   .shape .lbl { font-size: 12px; font-weight: 700; }
   .shape .lbl small { display: block; font-weight: 400; color: var(--grey); font-size: 11px; }
   .elev { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; align-items: start; }
-  .elev .plate { background: var(--card); border-radius: 24px; height: 84px; display: flex; align-items: flex-end; padding: 12px 14px; font-size: 12px; font-weight: 700; }
+  .elev .plate { background: var(--card); border-radius: 12px; height: 84px; display: flex; align-items: flex-end; padding: 12px 14px; font-size: 12px; font-weight: 700; }
   .elev .plate.ground { background: var(--card); outline: 1px dashed var(--container); }
   .elev .plate.pop { border-radius: 12px; border: 1px solid var(--container); box-shadow: 0 16px 40px var(--shadow); }
   .elev .plate.dlg { border: 1px solid var(--container); box-shadow: 0 24px 64px var(--shadow); }
   .elev .plate small { display: block; font-weight: 400; color: var(--grey); }
-  .elev-wrap { background: var(--bg); border: 1px solid var(--container); border-radius: 16px; padding: 18px; }
+  .elev-wrap { background: var(--bg); border: 1px solid var(--container); border-radius: 12px; padding: 18px; }
 
   .space { display: flex; flex-direction: column; gap: 10px; }
   .space .bar { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--grey); }
-  .space .bar i { display: block; height: 14px; background: var(--accent); opacity: .85; border-radius: 3px; flex: none; }
+  .space .bar i { display: block; height: 14px; background: var(--accent-ink); opacity: .85; border-radius: 3px; flex: none; }
   .space .bar b { color: var(--fg); min-width: 44px; font-variant-numeric: tabular-nums; }
 
   /* Components */
   .btns { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .btn { display: inline-flex; align-items: center; gap: 8px; border-radius: 100px; font: inherit; font-size: 14px; cursor: pointer; border: 1px solid transparent; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .1s ease; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; height: 32px; border-radius: 8px; font: inherit; font-size: 13px; cursor: pointer; border: 1px solid transparent; transition: background-color .15s ease, border-color .15s ease, color .15s ease, transform .1s ease; }
   .btn:active { transform: scale(.97); }
-  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .btn-primary { padding: 10px 22px; background: var(--accent); color: var(--bg); font-weight: 600; }
+  .btn:focus-visible { outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+  .btn-primary { padding: 6px 16px; background: var(--accent); color: var(--on-accent); font-weight: 600; }
   .btn-primary:hover { background: var(--accent-hover); }
-  .btn-ghost { padding: 10px 20px; background: transparent; color: var(--grey); font-weight: 500; }
+  .btn-ghost { padding: 6px 14px; background: transparent; color: var(--grey); font-weight: 500; }
   .btn-ghost:hover { background: var(--container); color: var(--fg); }
-  .btn-add { padding: 10px 18px; background: var(--add-bg); border-color: var(--container); color: var(--fg); font-weight: 900; }
+  .btn-add { padding: 6px 14px; background: var(--add-bg); border-color: var(--container); color: var(--fg); font-weight: 900; }
   .btn-add:hover { background: var(--add-bg-hover); border-color: var(--container-hi); }
-  .btn-add.sm { padding: 5px 12px; font-size: 12px; gap: 6px; }
-  .btn-edit { padding: 10px 18px; background: transparent; border-color: var(--container); color: var(--grey); font-weight: 600; }
+  .btn-add.sm { height: 28px; padding: 4px 10px; font-size: 12px; gap: 6px; }
+  .btn-edit { padding: 6px 14px; background: transparent; border-color: var(--container); color: var(--grey); font-weight: 600; }
   .btn-edit:hover { border-color: var(--container-hi); color: var(--fg); }
-  .btn-edit[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
-  .btn-action { padding: 6px 12px; border-color: var(--container); color: var(--grey); background: transparent; }
+  .btn-edit[aria-pressed="true"] { background: var(--accent); border-color: var(--accent-ink); color: var(--on-accent); }
+  .btn-action { padding: 6px 12px; font-size: 13px; border-color: var(--container); color: var(--grey); background: transparent; }
   .btn-action:hover { border-color: var(--container-hi); color: var(--fg); }
-  .btn-action.active { border-color: color-mix(in srgb, var(--accent) 30%, transparent); background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
-  .btn-action.lead { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
-  .btn-danger { padding: 10px 22px; background: var(--danger); color: #fff; font-weight: 600; }
-  .icon-btn { width: 32px; height: 32px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; color: var(--grey); background: transparent; border: 0; cursor: pointer; }
+  .btn-action.active { border-color: color-mix(in srgb, var(--accent-ink) 30%, transparent); background: color-mix(in srgb, var(--accent-ink) 15%, transparent); color: var(--accent-ink); }
+  .btn-action.lead { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+  .btn-danger { padding: 6px 16px; background: var(--danger); color: #fff; font-weight: 600; }
+  .icon-btn { width: 32px; height: 32px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--grey); background: transparent; border: 0; cursor: pointer; }
   .icon-btn:hover { background: var(--container); color: var(--fg); }
   .icon-btn.danger:hover { color: var(--danger); }
   svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
@@ -259,26 +263,26 @@
 
   .form { display: flex; flex-direction: column; gap: 20px; max-width: 420px; }
   .field { display: flex; flex-direction: column; gap: 8px; }
-  .field .cap { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--grey); }
+  .field .cap { font-size: 14px; font-weight: 600; color: var(--grey); }
   .field .cap .req { color: var(--danger); margin-left: 2px; }
-  .input { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border-radius: 10px; background: var(--well); border: 1px solid var(--container); padding: 10px 14px; font-size: 14px; color: var(--fg); }
-  .input.focus { border-color: var(--accent); }
+  .input { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border-radius: 8px; background: var(--well); border: 1px solid var(--container); padding: 8px 12px; font-size: 13px; color: var(--fg); }
+  .input.focus { border-color: var(--accent-ink); }
   .input .ph { color: var(--muted); }
   .input svg.i { color: var(--grey); }
   .field .hint { font-size: 12px; color: var(--grey); }
   .field .err { font-size: 12px; color: var(--danger); }
   .frow { display: flex; gap: 16px; }
   .frow .field { flex: 1; }
-  .search { display: inline-flex; align-items: center; gap: 8px; border-radius: 100px; background: var(--well); border: 1px solid var(--container); padding: 8px 14px; color: var(--muted); font-size: 14px; width: 100%; max-width: 260px; }
+  .search { display: inline-flex; align-items: center; gap: 8px; border-radius: 8px; background: var(--well); border: 1px solid var(--container); padding: 8px 12px; color: var(--muted); font-size: 13px; width: 100%; max-width: 260px; }
   .search svg.i { color: var(--grey); }
-  .filter { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 100px; border: 1px solid var(--container); background: var(--card); padding: 10px 20px; font-size: 14px; color: var(--fg); min-width: 150px; }
+  .filter { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 8px; border: 1px solid var(--container); background: var(--card); padding: 8px 12px; font-size: 13px; color: var(--fg); min-width: 150px; }
   .check { display: inline-flex; align-items: center; gap: 10px; font-size: 14px; }
   .check .box { width: 18px; height: 18px; border-radius: 5px; border: 1.5px solid var(--container-hi); display: inline-flex; align-items: center; justify-content: center; }
-  .check .box.on { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .check .box.on { background: var(--accent); border-color: var(--accent-ink); color: var(--on-accent); }
   .check .box.on svg.i { width: 12px; height: 12px; stroke-width: 3; }
   .check .radio { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--container-hi); display: inline-flex; align-items: center; justify-content: center; }
-  .check .radio.on { border-color: var(--accent); }
-  .check .radio.on::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  .check .radio.on { border-color: var(--accent-ink); }
+  .check .radio.on::after { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--accent-ink); }
   .toggle { width: 36px; height: 20px; border-radius: 100px; background: var(--container-hi); position: relative; flex: none; }
   .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--card); }
   .toggle.on { background: var(--accent); }
@@ -290,11 +294,11 @@
   .tabs span.on { background: var(--container); color: var(--fg); }
   .subtab { display: flex; flex-direction: column; gap: 6px; max-width: 220px; background: var(--nav); border-radius: 12px; padding: 10px; }
   .subtab span { position: relative; padding: 7px 13px; font-size: 14px; color: var(--grey); border-radius: 8px; }
-  .subtab span.on { background: color-mix(in srgb, var(--accent) var(--rail-pill-mix), transparent); color: var(--fg); font-weight: 600; }
-  .subtab span.on::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+  .subtab span.on { background: color-mix(in srgb, var(--accent-tint) var(--rail-pill-mix), transparent); color: var(--fg); font-weight: 600; }
+  .subtab span.on::before { content: ""; position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent-ink); }
 
   .menu { width: 220px; background: var(--card); border: 1px solid var(--container); border-radius: 12px; box-shadow: 0 16px 40px var(--shadow); padding: 6px; }
-  .menu div { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 14px; color: var(--fg); }
+  .menu div { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: var(--fg); }
   .menu div.hover { background: var(--hover); }
   .menu div.danger { color: var(--danger); }
   .menu hr { border: 0; border-top: 1px solid var(--container); margin: 4px 0; }
@@ -302,24 +306,24 @@
   .tip { display: inline-block; background: var(--fg); color: var(--bg); font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 8px; }
   .overlays { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
 
-  .dialog-wrap { background: var(--overlay); border-radius: 16px; padding: 24px; }
-  .dialog { background: var(--card); border: 1px solid var(--container); border-radius: 24px; box-shadow: 0 24px 64px var(--shadow); padding: 24px; max-width: 440px; }
-  .dialog .ttl { font-size: 22px; font-weight: 500; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .dialog-wrap { background: var(--overlay); border-radius: 12px; padding: 24px; }
+  .dialog { background: var(--card); border: 1px solid var(--container); border-radius: 12px; box-shadow: 0 24px 64px var(--shadow); padding: 20px; max-width: 440px; }
+  .dialog .ttl { font-size: 20px; font-weight: 500; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .dialog .div { height: 1px; background: var(--container); margin: 20px 0; }
   .dialog .foot { display: flex; justify-content: flex-end; gap: 12px; margin-top: 28px; }
-  .dialog p { margin: 0; color: var(--grey); }
+  .dialog p { margin: 0; color: var(--grey); font-size: 13px; }
 
-  .card-demo { background: var(--bg); border: 1px solid var(--container); border-radius: 16px; padding: 20px; display: grid; gap: 16px; }
-  .os-card { background: var(--card); border-radius: 24px; padding: 24px; }
-  .os-card h3 { margin: 0 0 6px; font-size: 19px; font-weight: 600; }
+  .card-demo { background: var(--bg); border: 1px solid var(--container); border-radius: 12px; padding: 20px; display: grid; gap: 16px; }
+  .os-card { background: var(--card); border-radius: 12px; padding: 20px; }
+  .os-card h3 { margin: 0 0 6px; font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-size: 15px; font-weight: 600; }
   .os-card .ey { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--grey); display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
   .os-card .ey svg.i { width: 14px; height: 14px; }
-  .drow { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--container); font-size: 14px; }
+  .drow { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--container); font-size: 13px; }
   .drow:first-of-type { border-top: 0; }
   .drow svg.i { width: 17px; height: 17px; color: var(--grey); }
   .drow .k { color: var(--grey); width: 110px; flex: none; }
   .item-list { display: flex; flex-direction: column; gap: 6px; }
-  .item-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; background: var(--well); font-size: 14px; }
+  .item-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; background: var(--well); font-size: 13px; }
   .item-row:hover { background: var(--card-hover); }
   .item-row .sp { flex: 1; }
 
@@ -337,9 +341,21 @@
   .logo-tile .plate.ground { background: var(--bg); }
   .logo-tile .plate.navy { background: #1E5779; border-color: #1E5779; }
   .logo-tile .cap { font-size: 11px; color: var(--grey); }
-  .wordmark { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-weight: 600; color: var(--accent); font-size: 28px; }
+  .wordmark { font-family: "Plus Jakarta Sans", "Mulish", sans-serif; font-weight: 600; color: var(--accent-ink); font-size: 28px; }
   .wordmark.sm { font-size: 20px; }
   .lab-logo { height: 64px; width: auto; max-width: 100%; }
+
+  .pagebar-demo { border: 1px solid var(--container); border-radius: 12px; overflow: hidden; }
+  .pagebar { display: flex; align-items: center; gap: 10px; height: 54px; padding: 0 12px; background: var(--bg); border-bottom: 1px solid var(--container); }
+  .pagebar .nav-b { display: inline-flex; gap: 2px; color: var(--grey); }
+  .pagebar .area-tile { width: 22px; height: 22px; border-radius: 6px; background: var(--accent-tint); color: var(--on-accent); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .pagebar .crumb { font-size: 13px; color: var(--grey); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pagebar .crumb b { color: var(--fg); font-weight: 600; }
+  .pagebar .sp { flex: 1; }
+  .pagebar-body { background: var(--bg); height: 44px; }
+  .board-heads { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-top: 10px; }
+  .board-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--fg); }
+  .board-head i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 
   .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px 28px; }
   .rule { display: flex; gap: 10px; align-items: flex-start; font-size: 13.5px; color: var(--grey); }
@@ -370,31 +386,31 @@
   </header>
 
   <div class="principles">
-    <div><b>Rounded</b>Cards and dialogs take a 24px corner, items 12px, fields 10px. Every button and chip is a full pill.</div>
-    <div><b>Blue</b>Grounds read as cool paper, ink is the brand navy, and there is one accent. Coral and teal never mean a second thing.</div>
-    <div><b>Big</b>Page titles at 36px, section titles at 19px, body and controls at 14px. Panels get 24px of padding.</div>
-    <div><b>Quiet chrome</b>Cards carry no border and no shadow. The ground does the work. Only popovers and dialogs cast a shadow.</div>
+    <div><b>Soft, not round</b>Cards and dialogs take a 12px corner, controls and fields 8px. Full pills are kept for status pills, avatars and toggles.</div>
+    <div><b>One accent per page</b>Grounds read as cool paper and ink is the brand navy. The accent is the tone of the page's section, never a mix of two.</div>
+    <div><b>Compact</b>Page titles at 22.5px, section titles at 15px, body and controls at 13px, buttons 32px tall. Panels get 20px of padding.</div>
+    <div><b>Quiet chrome</b>Cards carry no shadow. The ground does the work. Only popovers and dialogs cast a shadow.</div>
     <div><b>Both modes</b>Every token has a light and a dark value. Anything built from tokens works in both for free. Check both.</div>
   </div>
 
   <div class="grid">
 
     <section class="c6 l4">
-      <h2>Typography <small>Mulish</small></h2>
+      <h2>Typography <small>Mulish, Plus Jakarta Sans</small></h2>
       <div class="spec">
-        <div class="row"><div class="sample t-page">Page title</div><div class="meta">36px, medium (text-4xl). Sits directly on the page ground.</div></div>
-        <div class="row"><div class="sample t-modal">Modal title</div><div class="meta">22px, medium</div></div>
-        <div class="row"><div class="sample t-section">Section title</div><div class="meta">19px, semibold. A content page titles its sections this way.</div></div>
+        <div class="row"><div class="sample t-page">Page title</div><div class="meta">22.5px, bold, Mulish. Sits directly on the page ground.</div></div>
+        <div class="row"><div class="sample t-modal">Modal title</div><div class="meta">20px, medium</div></div>
+        <div class="row"><div class="sample t-section">Section title</div><div class="meta">15px, semibold, Plus Jakarta Sans. A content page titles its sections this way.</div></div>
         <div class="row"><div class="sample t-tab">Tab label</div><div class="meta">16px, medium</div></div>
-        <div class="row"><div class="sample t-body">Body text. Short and plain, 14px, in the secondary grey. Controls, buttons and menus also set at 14px.</div><div class="meta">14px, regular, grey</div></div>
+        <div class="row"><div class="sample t-body">Body text. Short and plain, 13px, in the secondary grey. Controls, buttons and menus also set at 13px (12px for small).</div><div class="meta">13px, regular, grey</div></div>
         <div class="row"><div class="sample t-eyebrow">Panel eyebrow</div><div class="meta">12px, semibold, uppercase, wide tracking. Labels a settings panel.</div></div>
         <div class="row"><div class="sample t-header">Section header in a dialog</div><div class="meta">12px, bold, uppercase, 1.2px tracking</div></div>
-        <div class="row"><div class="sample t-caption">Field caption</div><div class="meta">11px, bold, uppercase, 1px tracking, grey</div></div>
+        <div class="row"><div class="sample t-caption">Field caption</div><div class="meta">14px, semibold, sentence case, grey</div></div>
         <div class="row"><div class="sample t-logo">dali.os</div><div class="meta">Wordmark only: Plus Jakarta Sans, semibold, accent</div></div>
       </div>
       <div class="eyebrow" style="margin-top:26px">Weights in use</div>
       <div class="weights"><span style="font-weight:400">Regular</span><span style="font-weight:500">Medium</span><span style="font-weight:600">Semibold</span><span style="font-weight:700">Bold</span><span style="font-weight:900">Black</span></div>
-      <p class="note">Black is reserved for the plus in an Add button. Headings never go above medium except section titles.</p>
+      <p class="note">Black is reserved for the plus in an Add button. Page titles are bold and section titles semibold.</p>
     </section>
 
     <section class="c6 l8">
@@ -404,6 +420,10 @@
       <div class="swatches" id="sw-surface"></div>
       <div class="eyebrow">Ink and accent</div>
       <div class="swatches" id="sw-ink"></div>
+      <div class="eyebrow">Area tones</div>
+      <div class="legend"><span>Left half: tint (dark)</span><span>Right half: ink (light)</span></div>
+      <div class="swatches" id="sw-area"></div>
+      <p class="note">The accent comes from the page's section. Shown here is the default, Projects blue, which modeless pages use.</p>
       <div class="eyebrow">Washes and overlays</div>
       <div class="swatches" id="sw-wash"></div>
       <p class="note">All colors are tokens. Never hardcode a hex in a component. Hover washes flip with the mode, so a white-alpha hover vanishes in light mode.</p>
@@ -414,22 +434,25 @@
       <div class="eyebrow">Status pill: one neutral chip, a colored dot</div>
       <div class="pills">
         <span class="pill"><i class="dot" style="background:var(--green)"></i>Accepted</span>
-        <span class="pill"><i class="dot" style="background:var(--accent)"></i>In review</span>
+        <span class="pill"><i class="dot" style="background:var(--accent-ink)"></i>In review</span>
         <span class="pill"><i class="dot" style="background:#f59e0b"></i>Waitlisted</span>
         <span class="pill"><i class="dot" style="background:#ef4444"></i>Rejected</span>
         <span class="pill"><i class="dot" style="background:var(--grey)"></i>Draft</span>
         <span class="pill outline">Outline, applicant-facing</span>
       </div>
-      <p class="note">Tones: success, accent, warning, danger, neutral. Don't tint the whole chip. The filled variant is reserved for a section's readiness pill.</p>
+      <p class="note">Tones: success, accent, warning, danger, neutral. Pills and the sprint chip aside, type badges and label chips take a 6px corner. Don't tint the whole chip. The filled variant is reserved for a section's readiness pill.</p>
       <div class="eyebrow">Record type badges</div>
       <div class="pills">
         <span class="badge" style="background:var(--epic-fill);color:var(--epic-ink)">Epic</span>
         <span class="badge" style="background:var(--story-fill);color:var(--story-ink)">Story</span>
         <span class="badge" style="background:var(--task-fill);color:var(--task-ink)">Task</span>
-        <span class="badge" style="background:var(--sprint-fill);color:var(--sprint-ink)">Sprint</span>
+        <span class="badge" style="background:var(--sprint-fill);color:var(--sprint-ink);border-radius:8px">Sprint</span>
       </div>
       <div class="eyebrow">Task board columns</div>
       <div class="pills" id="statuses"></div>
+      <div class="eyebrow">Board column headers</div>
+      <div class="board-heads" id="board-heads" style="margin-top:0"></div>
+      <p class="note">A header is a wash of the stage hue over the card, with an 8px stage dot before the title. Not a solid band.</p>
       <div class="eyebrow">Categorical chips (14 hues)</div>
       <div class="pills" id="roles"></div>
     </section>
@@ -438,15 +461,16 @@
       <h2>Shape and elevation</h2>
       <div class="eyebrow">Corners</div>
       <div class="shapes">
-        <div class="shape"><div class="box" style="border-radius:24px"></div><div class="lbl">24px<small>Cards, panels, dialogs</small></div></div>
-        <div class="shape"><div class="box" style="border-radius:12px"></div><div class="lbl">12px<small>Popovers, menus, icon buttons, wells</small></div></div>
-        <div class="shape"><div class="box" style="border-radius:10px"></div><div class="lbl">10px<small>Fields, item rows, the open tab</small></div></div>
-        <div class="shape"><div class="box" style="border-radius:100px;height:44px;margin-top:14px"></div><div class="lbl">Pill<small>Every button, chip, badge, filter</small></div></div>
+        <div class="shape"><div class="box" style="border-radius:12px"></div><div class="lbl">12px<small>Cards, panels, dialogs, popovers, menus</small></div></div>
+        <div class="shape"><div class="box" style="border-radius:8px"></div><div class="lbl">8px<small>Buttons, fields, item rows, filter pills, rail rows, icon buttons</small></div></div>
+        <div class="shape"><div class="box" style="border-radius:10px"></div><div class="lbl">10px<small>Segmented track, the open tab</small></div></div>
+        <div class="shape"><div class="box" style="border-radius:6px"></div><div class="lbl">6px<small>Type badges, label chips</small></div></div>
+        <div class="shape"><div class="box" style="border-radius:100px;height:44px;margin-top:14px"></div><div class="lbl">Pill<small>Status pills, avatars, toggles, count badges</small></div></div>
       </div>
       <div class="eyebrow">Elevation</div>
       <div class="elev-wrap">
         <div class="elev">
-          <div class="plate ground"><span>Card<small>flat, no border, no shadow</small></span></div>
+          <div class="plate ground"><span>Card<small>flat, no shadow</small></span></div>
           <div class="plate pop"><span>Popover<small>0 16px 40px shadow</small></span></div>
           <div class="plate dlg"><span>Dialog<small>0 24px 64px shadow</small></span></div>
         </div>
@@ -457,7 +481,7 @@
     <section class="c6 l4">
       <h2>Spacing</h2>
       <div class="space">
-        <div class="bar"><i style="width:24px"></i><b>24px</b>Panel padding, dialog padding</div>
+        <div class="bar"><i style="width:20px"></i><b>20px</b>Panel padding, dialog padding</div>
         <div class="bar"><i style="width:20px"></i><b>20px</b>Between fields in a form</div>
         <div class="bar"><i style="width:16px"></i><b>16px</b>Small card padding, side by side field gap</div>
         <div class="bar"><i style="width:12px"></i><b>12px</b>Dialog footer button gap</div>
@@ -466,13 +490,13 @@
       </div>
       <div class="eyebrow">Page rhythm</div>
       <div class="card-demo">
-        <div class="t-page" style="font-size:24px;font-weight:500">Projects</div>
+        <div class="t-page">Projects</div>
         <div class="tabs"><span class="on">Overview</span><span>Tasks</span><span>Files</span></div>
         <div class="os-card" style="padding:16px">
           <div class="ey"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>This term</div>
           <div class="item-list">
             <div class="item-row"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg><span class="sp">Reimagine the DALI website</span><span class="pill" style="padding:2px 10px;font-size:12px"><i class="dot" style="background:var(--green)"></i>Active</span></div>
-            <div class="item-row"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg><span class="sp">Partner portal redesign</span><span class="pill" style="padding:2px 10px;font-size:12px"><i class="dot" style="background:var(--accent)"></i>Staffing</span></div>
+            <div class="item-row"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg><span class="sp">Partner portal redesign</span><span class="pill" style="padding:2px 10px;font-size:12px"><i class="dot" style="background:var(--accent-ink)"></i>Staffing</span></div>
           </div>
         </div>
       </div>
@@ -487,7 +511,7 @@
         <button class="btn btn-ghost" type="button">Cancel</button>
         <button class="btn btn-danger" type="button">Delete</button>
       </div>
-      <p class="note">Primary is the accent filled with page-colored text. Ghost is grey text that gains the container fill on hover. Destructive confirms use the danger ink.</p>
+      <p class="note">Buttons are 13px with an 8px corner and 32px tall. Primary is the pastel accent fill with a near-black label. Ghost is grey text that gains the container fill on hover. Destructive confirms use the danger ink.</p>
       <div class="eyebrow">Add and mode toggle</div>
       <div class="btns">
         <button class="btn btn-add" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New project</button>
@@ -495,8 +519,8 @@
         <button class="btn btn-edit" type="button" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>Edit</button>
         <button class="btn btn-edit" type="button" aria-pressed="true"><svg class="i" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>Editing</button>
       </div>
-      <p class="note">Add is a bordered pill with a heavy plus. The mode toggle is outlined and fills with the accent when pressed.</p>
-      <div class="eyebrow">Page action row</div>
+      <p class="note">Add is a bordered button with a heavy plus. The mode toggle is outlined and fills with the accent when pressed.</p>
+      <div class="eyebrow">Page action row (32px, bordered, 8px corner)</div>
       <div class="btns">
         <button class="btn btn-action lead" type="button"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>Record</button>
         <button class="btn btn-action active" type="button"><svg class="i" viewBox="0 0 24 24"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21l1.5-7L2 9.3l7-.8Z"/></svg>Favorite</button>
@@ -555,7 +579,7 @@
         <span class="check"><span class="toggle on"></span>On</span>
         <span class="check"><span class="toggle"></span>Off</span>
       </div>
-      <p class="note">Fields wear the well fill, a container hairline and a 10px corner. Captions sit 8px above, fields 20px apart. Native selects and browser confirms are not used.</p>
+      <p class="note">Fields wear the well fill, a container hairline and an 8px corner, 13px type, 8px 12px padding. Captions sit 8px above, fields 20px apart. Native selects and browser confirms are not used.</p>
     </section>
 
     <section class="c6 l4">
@@ -585,7 +609,7 @@
           <div class="foot"><button class="btn btn-ghost" type="button">Cancel</button><button class="btn btn-danger" type="button">Delete</button></div>
         </div>
       </div>
-      <p class="note">Menus and popovers wear the 12px surface with the popover shadow. Dialogs are 24px cards behind a scrim, capped at 85vh, scrolling inside. A destructive dialog asks a question ending in ?, names the thing, and labels the confirm with the verb alone.</p>
+      <p class="note">Menus and popovers wear the 12px surface with the popover shadow. Dialogs are 12px cards with 20px padding behind a scrim, capped at 85vh, scrolling inside. A destructive dialog asks a question ending in ?, names the thing, and labels the confirm with the verb alone.</p>
     </section>
 
     <section class="c6 l4">
@@ -606,7 +630,23 @@
           </div>
         </div>
       </div>
-      <p class="note">A detail card is an eyebrow over 17px-icon rows. A list card is item rows on the well fill with a 10px corner. Hovered cards wash toward the accent, not toward grey.</p>
+      <p class="note">A detail card is an eyebrow over 17px-icon rows. A list card is item rows on the well fill with an 8px corner. Hovered cards wash toward the accent, not toward grey.</p>
+    </section>
+
+    <section class="c6 l4">
+      <h2>Page bar</h2>
+      <div class="pagebar-demo">
+        <div class="pagebar">
+          <span class="nav-b"><button class="icon-btn" type="button" aria-label="Back"><svg class="i" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></button><button class="icon-btn" type="button" aria-label="Forward"><svg class="i" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg></button></span>
+          <span class="area-tile">P</span>
+          <span class="crumb">Projects <span style="color:var(--muted)">/</span> <b>Dali OS</b></span>
+          <span class="sp"></span>
+          <button class="icon-btn" type="button" aria-label="Favorite"><svg class="i" viewBox="0 0 24 24"><path d="M12 2l3 6.5 7 .8-5.2 4.8 1.5 7L12 17.6 5.7 21l1.5-7L2 9.3l7-.8Z"/></svg></button>
+          <button class="icon-btn" type="button" aria-label="More"><svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+        </div>
+        <div class="pagebar-body"></div>
+      </div>
+      <p class="note">A 54px row on the page ground with a hairline below (44px under the tab strip). Back and forward, the section's 22px area tile, the breadcrumb ending in the page title, then 32px icon buttons on the right. Pages put their actions here instead of a toolbar row of their own.</p>
     </section>
 
     <section class="c6 l4">
@@ -623,7 +663,7 @@
       </div>
       <p class="note">Monochrome line icons in the secondary grey, going to the primary ink on hover. 16px in controls, 17px in detail rows, 14px in eyebrows. Never a colored icon to mean a state.</p>
       <div class="eyebrow">Motion</div>
-      <p class="note" style="margin-top:0">Color and border transitions at 0.15s ease. Pill buttons press to 0.97 scale. No entrance animations on app surfaces.</p>
+      <p class="note" style="margin-top:0">Color and border transitions at 0.15s ease. Buttons press to 0.97 scale. No entrance animations on app surfaces.</p>
     </section>
 
     <section class="c6 l4">
@@ -665,12 +705,12 @@
     <section class="c6 l4">
       <h2>Copy</h2>
       <div class="rules">
-        <div class="rule"><i class="do"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg></i><span><b>Sentence case</b> for titles and buttons. Uppercase only comes from eyebrow and caption styles.</span></div>
+        <div class="rule"><i class="do"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg></i><span><b>Sentence case</b> for titles and buttons. Uppercase only comes from the eyebrow and dialog section-header styles.</span></div>
         <div class="rule"><i class="do"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg></i><span><b>Label first.</b> If a control needs explaining, put it in a tooltip, not helper text under the label.</span></div>
         <div class="rule"><i class="do"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></svg></i><span><b>Verbs on confirms.</b> Delete, Remove, Revoke. Never a bare Confirm.</span></div>
         <div class="rule"><i class="dont"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></i><span><b>No em dashes</b> in UI strings. Use a period or a comma. A bare dash as an empty table cell is fine.</span></div>
         <div class="rule"><i class="dont"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></i><span><b>No marketing openings.</b> Say the thing. "Start drawing. Everyone on this board sees your changes live."</span></div>
-        <div class="rule"><i class="dont"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></i><span><b>No second accent.</b> Coral and teal don't appear in the shell to mean a second thing.</span></div>
+        <div class="rule"><i class="dont"><svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></i><span><b>No mixed section tones.</b> A page takes one accent from its section. Status colors come from the status palettes.</span></div>
       </div>
     </section>
 
@@ -700,15 +740,14 @@
     ['os-card-hover', '#eaf3f8', '#323240', 'Hovered card'],
     ['os-well', '#eaeff5', '#26262f', 'Inputs, nested rows'],
     ['os-container', '#ccd7e2', '#3f3f48', 'Hairlines, chips, active fill'],
-    ['os-container-hi', '#a9b9c9', '#54545f', 'Hover border'],
-    ['os-add-bg', '#d9e2ec', '#1e1e1f', 'The Add pill fill']
+    ['os-container-hi', '#a9b9c9', '#54545f', 'Hover border']
   ];
   var ink = [
     ['os-fg', '#13293a', '#ffffff', 'Primary text'],
     ['os-grey', '#4d5c69', '#bababa', 'Secondary text, labels, icons'],
     ['os-muted', '#78899a', '#6a6a73', 'Tertiary text, placeholders'],
-    ['os-accent', '#0f6e7d', '#a8d3de', 'The one accent: primary buttons, focus, active'],
-    ['os-accent-hover', '#0b5964', '#bfe1e9', 'Accent hover'],
+    ['os-accent', '#b1ccf6', '#b1ccf6', 'Fill: section tint over white at 70%, both modes'],
+    ['os-accent-ink', '#2f5fb5', '#8fb6f2', 'Ink: text, borders, focus, thin washes'],
     ['os-green', '#0f7a4d', '#9fe0a8', 'Success, active'],
     ['os-amber', '#8f5400', '#f2b84b', 'Warning, in progress'],
     ['danger-ink', '#c0362f', '#ff6b6b', 'Errors, required marks, destructive']
@@ -735,11 +774,23 @@
   render('sw-surface', surface, false);
   render('sw-ink', ink, false);
   render('sw-wash', wash, true);
+  render('sw-area', [
+    ['Projects', '#8FB6F2', '#2F5FB5', 'Default'],
+    ['Community', '#80D5CD', '#0f6e7d', ''],
+    ['Education', '#FFD461', '#8F6500', ''],
+    ['Hiring', '#C9B2F5', '#6B4AC2', ''],
+    ['Core', '#FF8B81', '#C13D33', ''],
+    ['Admin', '#9FB8D1', '#46637F', '']
+  ], false);
 
   var statuses = ['backlog', 'todo', 'progress', 'review', 'done', 'cancelled'];
   var statusLabels = { backlog: 'Backlog', todo: 'To do', progress: 'In progress', review: 'In review', done: 'Done', cancelled: 'Cancelled' };
   document.getElementById('statuses').innerHTML = statuses.map(function (s) {
     return '<span class="status" style="background:var(--st-' + s + '-fill);color:var(--st-' + s + '-ink);border-color:var(--st-' + s + '-edge)">' + statusLabels[s] + '</span>';
+  }).join('');
+
+  document.getElementById('board-heads').innerHTML = statuses.map(function (s) {
+    return '<div class="board-head" style="background:color-mix(in srgb, var(--st-' + s + '-edge) 16%, var(--card))"><i style="background:var(--st-' + s + '-edge)"></i>' + statusLabels[s] + '</div>';
   }).join('');
 
   var roles = ['amber', 'teal', 'violet', 'pink', 'blue', 'green', 'orange', 'magenta', 'slate', 'cyan', 'red', 'lime', 'indigo', 'sand'];
