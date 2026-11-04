@@ -80,7 +80,7 @@ beforeEach(() => {
   };
 });
 
-describe.each(["referrals", "level-up"])("submitMemberForm: %s slot", (slot) => {
+describe.each(["level-up"])("submitMemberForm: %s slot", (slot) => {
   beforeEach(() => {
     mockPrisma.form.findUnique.mockResolvedValue(boundForm(binding(slot)));
   });

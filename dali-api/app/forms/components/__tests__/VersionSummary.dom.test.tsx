@@ -169,12 +169,12 @@ describe("VersionSummary", () => {
 
   it("has no search box, offers the slot filter, and keeps the tracker above the rows", async () => {
     await mount(
-      data([{ kind: "text", key: "t", number: 1, label: "Why", ...base }], { slotOptions: ["referrals", "Tue 3pm"] }),
+      data([{ kind: "text", key: "t", number: 1, label: "Why", ...base }], { slotOptions: ["level-up", "Tue 3pm"] }),
       undefined,
       { expected: 5, responded: 3 },
     );
     expect(container.querySelector("input")).toBeNull();
-    expect(container.textContent).toContain("referrals");
+    expect(container.textContent).toContain("level-up");
     const tracker = container.querySelector('[data-testid="tracker"]')!;
     const section = container.querySelector("section")!;
     expect(tracker.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
