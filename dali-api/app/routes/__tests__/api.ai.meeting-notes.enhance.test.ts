@@ -123,6 +123,34 @@ describe("POST /api/ai/meeting-notes/enhance", () => {
     expect((await run(BODY)).status).toBe(502);
   });
 
+  it("asks the model for up to 16k output tokens", async () => {
+    await run(BODY);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(16_000);
+  });
+
+  it("422s with a clear error when the model hits the output cap, and stores nothing", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({
+      text: VALID_MODEL_JSON.slice(0, 20),
+      inputTokens: 1,
+      outputTokens: 16_000,
+      stopReason: "max_tokens",
+    });
+    const res = await run(BODY);
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe("This meeting is too long to enhance in one pass.");
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+
+  it("parses normally when the model stops on its own", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({
+      text: VALID_MODEL_JSON,
+      inputTokens: 1,
+      outputTokens: 1,
+      stopReason: "end_turn",
+    });
+    expect((await run(BODY)).status).toBe(200);
+  });
+
   it("strips markdown code fences before parsing", async () => {
     vi.mocked(generateShortText).mockResolvedValue({
       text: "```json\n" + VALID_MODEL_JSON + "\n```",

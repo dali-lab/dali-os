@@ -100,7 +100,7 @@ export async function generateShortText(opts: {
   /** Override the provider's default model (e.g. provider.sonnetModel for a
    *  heavier generation). Defaults to provider.model. */
   model?: string;
-}): Promise<{ text: string; inputTokens: number; outputTokens: number } | null> {
+}): Promise<{ text: string; inputTokens: number; outputTokens: number; stopReason?: string | null } | null> {
   const provider = resolveAiProvider();
   if (!provider) return null;
 
@@ -122,6 +122,7 @@ export async function generateShortText(opts: {
     text,
     inputTokens: message.usage?.input_tokens ?? 0,
     outputTokens: message.usage?.output_tokens ?? 0,
+    stopReason: message.stop_reason,
   };
 }
 
