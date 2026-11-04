@@ -1,6 +1,6 @@
 ---
-title: Connect and resume reviews
-summary: Find alumni on a map, see who is most engaged, and ask for or answer anonymous resume review requests.
+title: Connect, coffee chats and resume reviews
+summary: Find alumni on a map, see who is most engaged, and ask for or answer anonymous coffee chat and resume review requests.
 keywords: [connect, alumni map, where alumni are, coffee chat, resume review, open to, leaderboard, based in]
 paths: [/connect, /coffee-chats/:id]
 ---
@@ -32,7 +32,15 @@ Click a name to open the profile.
 
 ## Anonymous requests
 
-Resume review requests and coffee chat invites are anonymous until the other person says yes. Members can send resume review requests. There is no button to send a coffee chat invite yet.
+Resume review requests and coffee chat invites are anonymous until the other person says yes. Members can send both.
+
+### Send a coffee chat invite
+
+1. Open the profile of someone who has coffee chats turned on. A **Coffee chat** button shows in the header only for those people, and never on your own profile.
+2. Click it and read the prompt. The person gets a notification and an email, and sees your name only if they accept.
+3. Click **Send invite**.
+
+The button then reads **Coffee chat invite sent** and stays that way. The same waiting and declined rules as resume reviews apply. An accepted coffee chat earns points on the leaderboard.
 
 ### Send a resume review request
 
@@ -52,4 +60,4 @@ A notification links to the request page, titled **Coffee chat** or **Resume rev
 
 ### Turn requests on or off
 
-Alumni set this on their Home page: open the **Profile** tab and use the **Resume reviews** switch under **I'm open to**. It is off until you turn it on. When it is on, other members and alumni see a **Resume review** button on your profile. The **Coffee chats** switch is next to it, but nothing uses it yet.
+Alumni set this on their Home page: open the **Profile** tab and use the **Coffee chats** and **Resume reviews** switches under **I'm open to**. Both are off until you turn them on. When a switch is on, other members and alumni see the matching **Coffee chat** or **Resume review** button on your profile.

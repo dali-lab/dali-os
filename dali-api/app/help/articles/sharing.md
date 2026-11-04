@@ -50,6 +50,6 @@ On a project document, if the project has an active partner, a **Partners** sect
 
 ## Tags
 
-Tags are lab-wide labels. Tags show below a document's title. Only Core can add or remove tags and create new ones, and only on project and General documents.
+Tags are lab-wide labels. Tags show below a document's title. Only Core sees the tag controls, to add or remove tags and create new ones, and only on project and General documents. Everyone else sees the tags read-only.
 
 In [Drive](/drive), use the tag filter to see everything with a tag, across drives.

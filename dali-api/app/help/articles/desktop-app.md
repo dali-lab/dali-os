@@ -35,7 +35,7 @@ To turn tabs off, go to [Settings → General](/settings/general), find **Worksp
 
 The app shows new notifications as banners from your computer, even when the window is in the background. Click a banner to open its page.
 
-- Meeting invites on a banner have **Accept**, **Maybe** and **Decline** buttons, so you can reply without opening the app.
+- Meeting invites on a banner have **Going**, **Maybe** and **Can't make it** buttons, so you can reply without opening the app.
 - Other banners have **Mark read**.
 - Time-sensitive items, such as a meeting about to start, play a sound.
 

@@ -22,9 +22,9 @@ pub fn raise(app: &AppHandle, banner: Banner) {
         }
         n.action("default", "Open");
         if banner.rsvp {
-            n.action(super::ACTION_RSVP_ACCEPT, "Accept");
-            n.action(super::ACTION_RSVP_MAYBE, "Maybe");
-            n.action(super::ACTION_RSVP_DECLINE, "Decline");
+            n.action(super::ACTION_RSVP_ACCEPT, super::LABEL_RSVP_ACCEPT);
+            n.action(super::ACTION_RSVP_MAYBE, super::LABEL_RSVP_MAYBE);
+            n.action(super::ACTION_RSVP_DECLINE, super::LABEL_RSVP_DECLINE);
         } else if banner.is_row() {
             n.action(super::ACTION_READ, "Mark read");
         }

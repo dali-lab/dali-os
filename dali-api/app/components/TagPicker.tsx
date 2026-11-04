@@ -3,6 +3,10 @@ import { buttonClasses } from "~/components/ui/Button";
 import { X, Plus, Check } from "lucide-react";
 import { Popover } from "~/components/ui/floating";
 
+export function canManageDocTags(isCore: boolean, workspaceType: string): boolean {
+  return isCore && (workspaceType === "Project" || workspaceType === "Lab");
+}
+
 export type DocTag = { id: string; label: string; slug: string; color: string | null };
 
 // Reusable lab-tag editor for a document (Page) or file (ProjectFile). Applied

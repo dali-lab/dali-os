@@ -44,7 +44,7 @@ The **Classes** section lists your classes this term so nobody books over them.
 - Events you create with **Add event** are saved to your main calendar.
 - Meetings you schedule are saved to the calendar you pick under **Send invite from**, and the guests get a Google invite. Adding a Google Meet link puts it on that event.
 - Changes you make to an event you can edit, and deleting it, are sent to Google.
-- Your **Going**, **Maybe** or **Can't go** answers on events are sent to Google.
+- Your **Going**, **Maybe** or **Can't make it** answers on events are sent to Google.
 - **Track in DALI OS** (on a Google event that is not yet a DALI OS meeting) does not change the Google event. It gives the event a DALI OS meeting page for notes and attendance. You can track an event you are on, and Core can track any event. **Stop tracking** removes that, and the Google event stays on everyone's calendar.
 
 DALI OS does not edit events on calendars you cannot write to.

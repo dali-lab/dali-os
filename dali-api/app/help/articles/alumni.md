@@ -16,9 +16,9 @@ An alum's **Home** is [Connect](/connect), a full-page map of where alumni are b
 - **Leaderboard**: **Most engaged alumni**, ranked by points since graduating. See [Connect](/help/articles/connect) for the scoring.
 - **Profile**: your photo, name, class year, current job and location, plus two things below.
 
-### Open to resume reviews
+### Open to coffee chats and resume reviews
 
-On the **Profile** tab, under **I'm open to**, turn on **Resume reviews**. It is off by default. When it is on, other members and alumni see a **Resume review** button on your profile, and you see their name only if you accept. When it is off, nobody can send you a request. The **Coffee chats** switch is there too, but nothing uses it yet.
+On the **Profile** tab, under **I'm open to**, turn on **Coffee chats**, **Resume reviews**, or both. They are off by default. When a switch is on, other members and alumni see a **Coffee chat** or **Resume review** button on your profile, and you see their name only if you accept. When it is off, nobody can send you that kind of request.
 
 ### Profile completeness
 
@@ -37,7 +37,7 @@ Alumni don't see Mentorship, Attendance, Education or Drive in the sidebar.
 ## What alumni can do
 
 - Read the directory and any member's or alum's profile, and edit their own.
-- Request a resume review from someone who has them turned on, and answer requests sent to them.
+- Invite someone to a coffee chat or request a resume review when they have it turned on, and answer requests sent to them.
 - Refer a partner to Core.
 - With Community on: post and browse gallery photos, read blogs, and write a blog post for an Admin to approve.
 

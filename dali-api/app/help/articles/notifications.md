@@ -29,7 +29,7 @@ Each row has the buttons to deal with it right there. A project task has **Mark 
 
 ## Reply to a meeting invite
 
-When someone schedules a meeting with you, an invite appears in the bell and on My Tasks with three buttons: **Going**, **Maybe** and **Can't make it**. Pick one and the invite clears. On a desktop banner the buttons read **Accept**, **Maybe** and **Decline**, and they do the same thing. If your Google Calendar is connected, your answer is also sent to the event there.
+When someone schedules a meeting with you, an invite appears in the bell and on My Tasks with three buttons: **Going**, **Maybe** and **Can't make it**. Pick one and the invite clears. Desktop banners use the same three buttons. If your Google Calendar is connected, your answer is also sent to the event there.
 
 ## Reminders
 
@@ -62,4 +62,4 @@ Slack DM boxes stay switched off until you connect Slack. Go to [Settings → Co
 
 ## Desktop banners
 
-In the [desktop app](/help/articles/desktop-app), new in-app items also show as native banners when the **Desktop** box is checked for that row. Meeting invites on a banner have **Accept**, **Maybe** and **Decline** buttons. Other banners have **Mark read**. Time-sensitive items, such as a meeting about to start, play a sound.
+In the [desktop app](/help/articles/desktop-app), new in-app items also show as native banners when the **Desktop** box is checked for that row. Meeting invites on a banner have **Going**, **Maybe** and **Can't make it** buttons. Other banners have **Mark read**. Time-sensitive items, such as a meeting about to start, play a sound.

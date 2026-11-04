@@ -30,7 +30,7 @@ If there is no good slot, schedule at the closest time. Guests can answer with *
 
 ## Answer an invite
 
-When someone invites you, the invite appears in the bell and on My Tasks with **Going**, **Maybe** and **Can't make it**. You can also click the event on the calendar and answer there with **Going**, **Maybe** or **Can't go**. Your answer goes to Google Calendar too.
+When someone invites you, the invite appears in the bell and on My Tasks with **Going**, **Maybe** and **Can't make it**. You can also click the event on the calendar and answer there with **Going**, **Maybe** or **Can't make it**. Your answer goes to Google Calendar too.
 
 To suggest another time, click **Propose new time** on the event, pick a date and time, and confirm. The organizer is notified. The organizer or Core then sees a **Proposed times** section on the meeting page and chooses **Accept** or **Decline**. Accepting moves the meeting. Organizers can't propose a time for their own meeting.
 

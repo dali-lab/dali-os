@@ -31,9 +31,9 @@ In **Reviews**, click **Auto-assign reviewers** to spread applications across yo
 Deliberations appear once the cycle is Under Review. Each round is a separate board.
 
 1. In **Deliberations**, click **Start** for the round. The board opens with every qualifying application in the first column.
-2. Drag applications between columns. The columns depend on the round: a round that leads to interviews has **No Decision**, **Interview** and **Reject**, a middle round has **No Decision**, **Advance** and **Reject**, and the final round has **Accept**, **Waitlist** and **Reject**. In the final round everyone starts in **Accept**, so move each person who should not be accepted. Changes save as you go, and reviewers watch a live read-only copy.
+2. Drag applications between columns. The columns depend on the round: a round that leads to interviews has **No Decision**, **Interview** and **Reject**, a middle round has **No Decision**, **Advance** and **Reject**, and the final round has **No Decision**, **Accept**, **Waitlist** and **Reject**. Everyone starts in **No Decision**, so move each person you want to accept, waitlist or reject. Changes save as you go, and reviewers watch a live read-only copy.
 3. Click a card to see the full application and all reviews. On rounds that lead to interviews, write the **Interview Prep Note** here. Interviewers see it on their interview page.
-4. When you are done, click **Close delibs** and confirm. Closing creates draft decisions. In earlier rounds, anyone left in **No Decision** gets no decision, and **Advance** creates no decision either: the closed board is what qualifies those people for the next round.
+4. When you are done, click **Close delibs** and confirm. Closing creates draft decisions. Anyone left in **No Decision** gets no decision. In earlier rounds, **Advance** creates no decision either: the closed board is what qualifies those people for the next round.
 
 A closed round can be reopened from the same row.
 

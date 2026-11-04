@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   FIRST_INTERVIEW_ROUND_ID,
+  closeSummary,
   STANDARD_TIMELINE,
   blockKey,
   blockLabel,
@@ -108,7 +109,7 @@ describe("delibRounds", () => {
       ["c", "Advance", false, true],
       ["d", null, true, false],
     ]);
-    expect(r[3].columns).toEqual(["Accept", "Waitlist", "Reject"]);
+    expect(r[3].columns).toEqual(["No Decision", "Accept", "Waitlist", "Reject"]);
     expect(hasInterviews(t)).toBe(true);
   });
 });
@@ -285,5 +286,12 @@ describe("openTimelineChange", () => {
     );
     const early: Timeline = [...base, round("x", 6), ...STANDARD_TIMELINE.slice(2)];
     expect(openTimelineChange(STANDARD_TIMELINE, early, boards)).toMatch(/go after First delib/);
+  });
+
+  it("words the close confirmation for the round", () => {
+    const t: Timeline = [...base, round("a", 6), round("b", 8), ph("decisions", 9)];
+    const [advance, final] = delibRounds(t);
+    expect(closeSummary(advance, { Advance: ["x"] })).toBe('1 advance, 0 reject. Anyone left in "No Decision" or "Advance" gets no decision.');
+    expect(closeSummary(final, { Accept: ["x", "y"] })).toBe('2 accept, 0 waitlist, 0 reject. Anyone left in "No Decision" gets no decision.');
   });
 });

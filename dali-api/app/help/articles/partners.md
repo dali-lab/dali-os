@@ -48,7 +48,7 @@ In the side panel, set a **Next step** with a due date, or pause the application
 
 ## Contract, statement of work and fees
 
-The side panel's **Contract** section lets you choose a template and click **Send**. The section shows Not sent, Sent or Signed. The partner signs from their portal, and once signed the section shows the date and a **PDF** link. If no templates are listed, there is no contract template to send yet.
+The side panel's **Contract** section lets you choose a template and click **Send**. The section shows Not sent, Sent or Signed. The partner signs from their portal, and once signed the section shows the date and a **PDF** link. Only published agreements marked as a partner contract template are listed. If none are listed, open an agreement in [Drive](/drive), choose **Partner contract template** from its **Type** menu, and publish a version. See [Agreements](/help/articles/agreements).
 
 **Deal terms** records the funding type, fee, legal entity name and address, and payment schedule. These fill in the contract, and the organization's **Finance** tab lists them.
 

@@ -50,4 +50,4 @@ The archive button at the top of an agreement moves it out of the active list an
 
 ## Partner contracts
 
-Contracts sent to partners use the same signing tools, and the partner signs from their portal. See [Partner applications](/help/articles/partners).
+Contracts sent to partners use the same signing tools, and the partner signs from their portal. To make an agreement available as a contract, open it and choose **Partner contract template** from the **Type** menu at the top. Only Core can change this. The agreement appears in the contract list on a partner application once a version is published, and choosing **General** removes it from that list. See [Partner applications](/help/articles/partners).

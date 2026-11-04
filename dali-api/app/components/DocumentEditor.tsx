@@ -19,7 +19,7 @@ import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
 import { FIND_SHORTCUT, isFindShortcut, isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
-import { TagPicker, type DocTag } from "./TagPicker";
+import { TagPicker, canManageDocTags, type DocTag } from "./TagPicker";
 import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useTaskProjects } from "~/components/doc/task/task-api";
 import { taskBlockConfig } from "~/components/doc/task/task-composer-state";
@@ -98,6 +98,7 @@ export function DocumentEditor({
   subtitle,
   canEdit,
   canComment,
+  isCore = false,
   tags,
   allTags,
   iconEmoji: initialIcon = null,
@@ -130,6 +131,7 @@ export function DocumentEditor({
   subtitle?: string | null;
   canEdit: boolean;
   canComment: boolean;
+  isCore?: boolean;
   tags: DocTag[];
   allTags: DocTag[];
   iconEmoji?: string | null;
@@ -1094,8 +1096,8 @@ export function DocumentEditor({
                 targetId={pageId}
                 applied={tags}
                 allTags={allTags}
-                canEdit={canEdit}
-                canCreate={canEdit}
+                canEdit={canManageDocTags(isCore, workspaceType)}
+                canCreate={canManageDocTags(isCore, workspaceType)}
                 onChange={() => revalidator.revalidate()}
               />
             </div>
@@ -1253,6 +1255,7 @@ export function DocumentEditor({
   const versionHistory = historyOpen && (
     <VersionHistoryPanel
       documentName={documentName}
+      canEdit={canEdit}
       onClose={() => setHistoryOpen(false)}
     />
   );

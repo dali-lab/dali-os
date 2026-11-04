@@ -31,7 +31,7 @@ The **Project** tab shows the project you are staffed on this term, with the spr
 
 The **Calendar** tab shows your week. **Up next** shows your next meeting.
 
-- Tap a meeting to see its details. If you were invited, answer with **Going**, **Maybe** or **No**.
+- Tap a meeting to see its details. If you were invited, answer with **Going**, **Maybe** or **Can't make it**.
 - **Add to timesheet** puts a meeting on your timesheet.
 - **New event** creates a DALI OS meeting you organize. Give it a title, start time and length, search for people to invite, and optionally add a location or a Google Meet link. Turn on **Add to Google Calendar** to put it on your linked calendar with email invites.
 

@@ -49,11 +49,11 @@ Interviews are booked by applicants from open time on interviewers' DALI OS cale
 - On **My work**, **Interviews**, click **Open interview** on a card.
 - The interview page shows the applicant, the reviews on file, the room or a **Join Google Meet** link, your co-interviewer, and any **Interview prep note** the domain leads left during the first delibs.
 - Take notes in **Interview notes**. They are shared with your co-interviewer as you type. You can record and enhance notes with the recorder if it is shown.
-- When you finish, choose a **Joint recommendation** and click **Mark complete**. It is one recommendation for both interviewers, and either of you can complete it. Only Core can use **Reopen** to change a completed interview.
+- When you finish, choose a **Joint recommendation** and click **Mark complete**. It is one recommendation for both interviewers, and either of you can complete it. Only Core sees **Reopen** on a completed interview; ask Core if it needs changing.
 - If you can't make a slot, click **Mark unavailable** on the card. The system looks for a replacement. If none is free, you are asked to contact the hiring lead.
 
 In-person interviews happen in rooms. A cycle can hold its interview rooms so nobody else books them during interview hours; those holds show up as bookings in [Rooms](/rooms).
 
 ## Deliberations
 
-After review, domain leads run deliberations: boards where applications are dragged into columns such as Interview, Advance, Accept, Waitlist or Reject. You can't move cards, but the **Delibs** view on **My work** mirrors the board live. Click a card to open the applicant's context, including all reviews on that application. Decisions are drafts until a domain lead finalizes them and the hiring lead releases them.
+After review, domain leads run deliberations: boards where applications are dragged into columns such as No Decision, Interview, Advance, Accept, Waitlist or Reject. You can't move cards, but the **Delibs** view on **My work** mirrors the board live. Click a card to open the applicant's context, including all reviews on that application. Decisions are drafts until a domain lead finalizes them and the hiring lead releases them.

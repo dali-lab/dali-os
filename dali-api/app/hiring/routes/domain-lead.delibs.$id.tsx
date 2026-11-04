@@ -13,7 +13,7 @@ import { GripVertical } from "lucide-react";
 import { useEventStream } from "~/hooks/useEventStream";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { buildColumnOrder, dropCard, missingReviewsLabel } from "~/hiring/lib/delibs";
-import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { closeSummary, findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
@@ -343,14 +343,10 @@ export default function DelibsKanban() {
   }
 
   async function confirmClose() {
-    const counts = (columns as string[])
-      .filter((c) => c !== defaultColumn)
-      .map((c) => `${(columnOrder[c] ?? []).length} ${c.toLowerCase()}`)
-      .join(", ");
     if (
       await dialog.confirm({
         title: "Close delibs and create draft decisions?",
-        description: `${counts}. Anyone left in "${defaultColumn}" gets no decision.`,
+        description: closeSummary(round, columnOrder),
         confirmLabel: "Close delibs",
         tone: "destructive",
       })

@@ -11,7 +11,7 @@ If you only have view access, you read the same page but can't edit. Who can ope
 
 ## Write with blocks
 
-Click the title to rename the document. Below it you can add tags, an icon and a cover image.
+Click the title to rename the document. Below it you can add an icon and a cover image. Core members can also add tags to project and General documents.
 
 Type `/` on an empty line to open the slash menu, then keep typing to filter it. It offers headings, bullet, numbered and check lists, quotes, code, dividers, toggle lists, tables, images, files, videos, callouts, bookmarks, a page break and two or three column layouts. Press Enter to insert the one you highlighted.
 
@@ -31,7 +31,7 @@ Press the Find shortcut (Cmd-F on Mac) or choose **Find & replace** from the men
 
 ## Version history
 
-Choose **Version history** from the menu, or press Cmd-Option-Shift-H. The panel lists earlier versions: ones you or others named, and auto-saved ones. Select a version to preview it, and use the pencil to **Name this version** or rename it. **Restore this version** replaces the live document with it, after you confirm.
+Choose **Version history** from the menu, or press Cmd-Option-Shift-H. The panel lists earlier versions: ones you or others named, and auto-saved ones. Select a version to preview it. If you can edit the document, use the pencil to **Name this version** or rename it, and **Restore this version** to replace the live document with it, after you confirm. People who can only view or comment can preview versions but not name or restore them.
 
 ## Ask AI
 
