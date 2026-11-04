@@ -7,8 +7,11 @@ import type { Route } from "./+types/core.partners.planning";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
+import { prisma } from "~/lib/db.server";
+import { setTermPi } from "../lib/partner-renewals.server";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PlanningTable } from "../components/PlanningTable";
+import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
 import { buildPlanningGap, buildPlanningProjects, type IntentSetup } from "../lib/planning-gap";
@@ -34,7 +37,39 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   if (!(await isCore(auth.user.sub))) return redirect("/");
   const termParam = new URL(request.url).searchParams.get("term");
-  return loadPlanningData(termParam);
+  return loadPlanningData(termParam, request);
+}
+
+// Per-term Principal Investigator. Core-only on both sides, matching the
+// renewals board — one helper writes the row from either surface so they
+// cannot drift.
+export async function action({ request }: Route.ActionArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+  if (!(await isCore(auth.user.sub, request))) {
+    return Response.json({ error: "Only Core can set the project PI." }, { status: 403 });
+  }
+  const form = await request.formData();
+  const intent = String(form.get("intent") ?? "");
+  if (intent !== "pi") {
+    return Response.json({ error: "Unknown action." }, { status: 400 });
+  }
+  const projectId = String(form.get("projectId") ?? "");
+  const termId = String(form.get("termId") ?? "");
+  const piUserId = String(form.get("piUserId") ?? "") || null;
+  if (!projectId || !termId) {
+    return Response.json({ error: "Missing project or term." }, { status: 400 });
+  }
+  if (piUserId && !(await isCore(piUserId, request))) {
+    return Response.json({ error: "A PI must be a Core member." }, { status: 400 });
+  }
+  if (!(await setTermPi(prisma, { projectId, termId, piUserId }))) {
+    return Response.json(
+      { error: "That project is not active in that term." },
+      { status: 400 },
+    );
+  }
+  return Response.json({ ok: true });
 }
 
 const GROUP_BY = ["project", "domain"] as const;
@@ -45,6 +80,22 @@ export default function PartnersPlanning() {
   const [view, setView] = useSearchParamChoice("group", GROUP_BY, "project");
   const [includePotential, setIncludePotential] = useState(false);
   const [includeBacklog, setIncludeBacklog] = useState(false);
+  // The planning rows open this popup instead of navigating away so the planner
+  // keeps their filter + scroll position. Only project rows use it; application
+  // rows still jump to the Partners board where their card lives.
+  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const openProject = useMemo(() => {
+    if (!openProjectId) return null;
+    const match = [...data.items, ...data.listOnlyItems].find(
+      (i) => i.kind === "project" && i.refId === openProjectId,
+    );
+    const info = data.projectInfo[openProjectId];
+    if (!match || !info) return null;
+    return {
+      project: { id: match.refId, name: match.name, iconEmoji: match.iconEmoji ?? null },
+      info,
+    };
+  }, [openProjectId, data.items, data.listOnlyItems, data.projectInfo]);
   const model = useMemo(
     () =>
       buildPlanningGap({
@@ -126,7 +177,11 @@ export default function PartnersPlanning() {
       {!data.termId ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">No terms exist yet.</div>
       ) : view === "project" ? (
-        <ProjectPlanningTable model={projectModel} termCode={termCode} />
+        <ProjectPlanningTable
+          model={projectModel}
+          termCode={termCode}
+          onProjectClick={setOpenProjectId}
+        />
       ) : data.intentSetup.kind !== "ready" ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">
           {intentSetupMessage(data.intentSetup, termCode)}{" "}
@@ -135,7 +190,18 @@ export default function PartnersPlanning() {
           </Link>
         </div>
       ) : (
-        <PlanningTable model={model} />
+        <PlanningTable model={model} onProjectClick={setOpenProjectId} />
+      )}
+
+      {openProject && (
+        <PlanningProjectModal
+          project={openProject.project}
+          info={openProject.info}
+          coreMembers={data.coreMembers}
+          currentTermId={data.termId}
+          canEditPi
+          onClose={() => setOpenProjectId(null)}
+        />
       )}
     </div>
   );
