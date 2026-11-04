@@ -7,15 +7,10 @@ import type { Route } from "./+types/mcp";
 import { authenticateMcpRequest } from "~/lib/mcp-auth";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
-import { logMcpToolCall } from "~/mcp/audit.server";
 import { enterAgentContext } from "~/collab/agent-presence.server";
 import { safeJson } from "~/lib/safe-json";
-import { validateInput, type JsonSchema } from "~/lib/mcp-input";
-import {
-  findRegistryTool,
-  registryToolDefs,
-  mapToolError,
-} from "~/mcp/registry";
+import { registryToolDefs } from "~/mcp/registry";
+import { dispatchTool } from "~/mcp/dispatch.server";
 import { MemberNotFoundError } from "~/mcp/tools/get-member-profile";
 import { ME_RESOURCE, readMeResource } from "~/mcp/resources/me";
 import {
@@ -172,40 +167,20 @@ export async function action({ request }: Route.ActionArgs) {
         ownerName: `${auth.user.firstName} ${auth.user.lastName}`.trim(),
       });
 
-      const tool = toolName ? findRegistryTool(toolName) : undefined;
-      if (!tool) {
-        return rpcError(body.id, -32601, `Unknown tool: ${toolName}`);
-      }
-      const audit = {
-        auth,
-        toolName: tool.def.name,
-        scope: tool.def.requiredScope,
+      const result = await dispatchTool(toolName, params?.arguments, {
+        user: auth.user,
+        scopes: auth.scopes,
         request,
-      };
-      if (!auth.scopes.includes(tool.def.requiredScope)) {
-        await logMcpToolCall({ ...audit, errorCode: -32002 });
-        return rpcError(body.id, -32002, `Missing required scope: ${tool.def.requiredScope}`);
-      }
-      const validated = validateInput(params?.arguments, tool.def.inputSchema as JsonSchema);
-      if (!validated.ok) {
-        await logMcpToolCall({ ...audit, errorCode: -32602 });
-        return rpcError(body.id, -32602, `Invalid params: ${validated.error}`);
-      }
-      const args = validated.value as Record<string, unknown>;
-      try {
-        const payload = await tool.run({ user: auth.user, scopes: auth.scopes, request }, args);
-        await logMcpToolCall({ ...audit, args });
-        return rpcResult(body.id, {
-          content: [{ type: "text", text: JSON.stringify(payload) }],
-          structuredContent: payload,
-        });
-      } catch (err) {
-        const mapped = mapToolError(err);
-        await logMcpToolCall({ ...audit, args, errorCode: mapped?.code ?? -32000 });
-        if (mapped) return rpcError(body.id, mapped.code, mapped.message);
-        const message = err instanceof Error ? err.message : "Tool execution failed";
-        return rpcError(body.id, -32000, message);
-      }
+        origin: "mcp",
+        clientId: auth.clientId,
+        clientName: auth.clientName,
+        grantId: auth.grantId,
+      });
+      if (!result.ok) return rpcError(body.id, result.code, result.message);
+      return rpcResult(body.id, {
+        content: [{ type: "text", text: JSON.stringify(result.payload) }],
+        structuredContent: result.payload,
+      });
     }
 
     case "resources/list":

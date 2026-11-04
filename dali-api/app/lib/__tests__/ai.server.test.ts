@@ -9,6 +9,7 @@ const ENV_KEYS = [
   "DARTMOUTH_CHAT_BASE_URL",
   "DARTMOUTH_CHAT_MODEL",
   "DARTMOUTH_CHAT_SONNET_MODEL",
+  "DARTMOUTH_CHAT_ASK_MODEL",
   "AI_PROVIDER",
 ] as const;
 
@@ -62,6 +63,27 @@ describe("resolveAiProvider", () => {
     const p = resolveAiProvider();
     expect(p?.model).toBe("anthropic.claude-haiku-4-5");
     expect(p?.sonnetModel).toBe("anthropic.claude-sonnet-5");
+  });
+
+  it("defaults Ask to Sonnet 5.5 on Dartmouth, independent of the chat and Sonnet models", () => {
+    process.env.DARTMOUTH_CHAT_API_KEY = "dk";
+    process.env.DARTMOUTH_CHAT_MODEL = "anthropic.claude-haiku-5-5";
+    process.env.DARTMOUTH_CHAT_SONNET_MODEL = "anthropic.claude-sonnet-5";
+    expect(resolveAiProvider()?.askModel).toBe("anthropic.claude-sonnet-5-5");
+  });
+
+  it("honors DARTMOUTH_CHAT_ASK_MODEL without moving the other models", () => {
+    process.env.DARTMOUTH_CHAT_API_KEY = "dk";
+    process.env.DARTMOUTH_CHAT_ASK_MODEL = "anthropic.claude-opus-5-5";
+    const p = resolveAiProvider();
+    expect(p?.askModel).toBe("anthropic.claude-opus-5-5");
+    expect(p?.model).toBe("anthropic.claude-haiku-4-5-20251001");
+    expect(p?.sonnetModel).toBe("anthropic.claude-haiku-4-5-20251001");
+  });
+
+  it("uses the first-party Sonnet for Ask when ANTHROPIC_API_KEY is set", () => {
+    process.env.ANTHROPIC_API_KEY = "ak";
+    expect(resolveAiProvider()?.askModel).toBe("claude-sonnet-5");
   });
 
   it("prefers first-party Anthropic when both keys are set", () => {
