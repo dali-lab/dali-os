@@ -140,6 +140,10 @@ describe("askSystemPrompt", () => {
     expect(p).toMatch(/\[s3\]/);
   });
 
+  it("tells the model to cite the page for where to do something", () => {
+    expect(askSystemPrompt("Ada", new Date())).toContain("cite the page source for that place");
+  });
+
   it("leaves the help out when there are no articles", () => {
     expect(askSystemPrompt("Ada", new Date())).not.toMatch(/read_help/);
   });

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router";
 import {
+  AppWindow,
   AlertCircle,
   ArrowRight,
   ArrowUp,
@@ -50,6 +51,7 @@ const KIND: Record<AskSourceKind, { icon: LucideIcon; label: string }> = {
   form: { icon: ClipboardList, label: "Form" },
   guide: { icon: BookOpen, label: "Guide" },
   helpArticle: { icon: LifeBuoy, label: "Help" },
+  page: { icon: AppWindow, label: "Page" },
 };
 
 const shortDate = (iso: string) =>

@@ -57,6 +57,17 @@ function task(t: Obj, projectId: string | null): AskSourceInput[] {
   return [{ kind: "task", title: str(t.title) ?? "Task", url: taskUrl(projectId, id), date: str(t.dueAt) }];
 }
 
+const ARTICLE_LINK = /\[([^\]]+)\]\((\/[^)\s]*)\)/g;
+
+/** The in-site pages a help article links to, so an answer can send someone straight there. */
+function articleLinks(body: string): AskSourceInput[] {
+  return [...body.matchAll(ARTICLE_LINK)].map(([, title, url]) => ({
+    kind: url.startsWith("/help/articles/") ? "helpArticle" : "page",
+    title,
+    url,
+  }));
+}
+
 function flattenPages(nodes: Obj[]): Obj[] {
   return nodes.flatMap((n) => [n, ...flattenPages(list(n.children))]);
 }
@@ -185,7 +196,8 @@ export const ASK_TOOLS: Record<string, AskTool> = {
     sources: (_args, payload) => {
       const a = obj(payload);
       const url = str(a.url);
-      return url ? [{ kind: "helpArticle", title: str(a.title) ?? "Help", url }] : [];
+      if (!url) return [];
+      return [{ kind: "helpArticle", title: str(a.title) ?? "Help", url }, ...articleLinks(str(a.body) ?? "")];
     },
   },
   get_project_overview: {

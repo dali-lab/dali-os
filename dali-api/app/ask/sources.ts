@@ -9,7 +9,8 @@ export type AskSourceKind =
   | "education"
   | "form"
   | "guide"
-  | "helpArticle";
+  | "helpArticle"
+  | "page";
 
 export type AskSourceInput = {
   kind: AskSourceKind;
