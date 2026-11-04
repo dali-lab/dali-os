@@ -160,6 +160,7 @@ export function RolesDomainsPage({ data }: { data: Data }) {
         />
         <SegmentedTabButtons
           label="Role"
+          className="no-scrollbar max-w-full overflow-x-auto"
           items={(
             [
               ["all", "Everyone"],
