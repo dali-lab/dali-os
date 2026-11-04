@@ -53,7 +53,7 @@ import {
   noteForOccurrence,
   resolveOccurrence,
   rruleWithUntil,
-  bareRrule,
+  followingRule,
   type Occurrence,
   type OccurrenceException,
   type OccurrenceMeeting,
@@ -2056,6 +2056,7 @@ async function updateScheduledMeetingImpl(
       notebookId: true,
       attendanceMode: true,
       recurrenceRule: true,
+      startTime: true,
       scopeType: true,
       scopeId: true,
       isCoreMeeting: true,
@@ -2181,7 +2182,7 @@ async function updateScheduledMeetingImpl(
       }
     }
 
-    const newRule = bareRrule(meeting.recurrenceRule ?? "FREQ=WEEKLY");
+    const newRule = followingRule(meeting.recurrenceRule ?? "FREQ=WEEKLY", meeting.startTime, new Date(occurrenceStart));
 
     const ownerLink = meeting.organizerCalendarLinkId
       ? await prisma.userCalendarLink.findUnique({

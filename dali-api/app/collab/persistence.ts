@@ -123,8 +123,10 @@ function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
   if (blocknote.length > 0) return false;
   if (doc.getXmlFragment(LEGACY_PM_FRAGMENT).length === 0) return false;
 
+  const clone = new Y.Doc();
   try {
-    const pmJson = yDocToProsemirrorJSON(doc, LEGACY_PM_FRAGMENT);
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    const pmJson = yDocToProsemirrorJSON(clone, LEGACY_PM_FRAGMENT);
     const { blocks, losses } = mapPmDocToBlocks(pmJson);
     doc.transact(() => {
       blocksToFragment(blocks, blocknote);
@@ -139,6 +141,8 @@ function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
     // BlockNote clients and the legacy state stays intact for another attempt.
     console.error(`[collab:convert] conversion failed for ${name}`, err);
     return false;
+  } finally {
+    clone.destroy();
   }
 }
 

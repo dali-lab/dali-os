@@ -80,6 +80,14 @@ describe("files action — access", () => {
     expect(db.projectFile.update).not.toHaveBeenCalled();
   });
 
+  it("checks the session before looking the file up, so signed-out callers can't probe which ids exist", async () => {
+    const denied = new Response("no", { status: 401 });
+    vi.mocked(requireMemberSession).mockResolvedValue({ ok: false, response: denied } as any);
+    db.projectFile.findUnique.mockResolvedValue(null);
+    expect(await call("DELETE")).toBe(denied);
+    expect(db.projectFile.findUnique).not.toHaveBeenCalled();
+  });
+
   it("403s a member who cannot edit the file and checks edit rights against the file's workspace", async () => {
     vi.mocked(canEditFile).mockResolvedValue(false);
     expect((await call("POST", { intent: "rename", title: "X" })).status).toBe(403);

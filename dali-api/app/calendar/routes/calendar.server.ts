@@ -75,7 +75,7 @@ import {
 } from "~/lib/scheduled-meeting";
 import {
   rruleWithUntil,
-  bareRrule,
+  followingRule,
   googleInstanceOriginalStart,
   googleSeriesBase,
   googleSeriesBaseUID,
@@ -415,7 +415,9 @@ function parseCustomMeetings(raw: Record<string, FormDataEntryValue>): PeriodMee
   const daysStr = typeof raw.customDays === "string" ? raw.customDays : "";
   const days = daysStr
     .split(",")
-    .map((n) => Number(n.trim()))
+    .map((n) => n.trim())
+    .filter((n) => n !== "")
+    .map(Number)
     .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
   const startMin = hhmmToMinute(typeof raw.customStart === "string" ? raw.customStart : "");
   const endMin = hhmmToMinute(typeof raw.customEnd === "string" ? raw.customEnd : "");
@@ -1184,7 +1186,7 @@ async function handleEventAction(
             startIso,
             endIso,
             allDay,
-            recurrenceRule: bareRrule(master.recurrence),
+            recurrenceRule: followingRule(master.recurrence, new Date(master.startIso ?? master.startDate ?? splitAt), splitAt),
             timeZone,
             attendees: [],
             addMeet: addMeet || undefined,
@@ -1280,7 +1282,8 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         try {
           segments = JSON.parse(segmentsRaw);
         } catch {
-          // Leave as empty; zod will surface the validation error.
+          // Not [] — an empty array is a valid "clear this day" and would wipe it.
+          segments = null;
         }
       }
       return {

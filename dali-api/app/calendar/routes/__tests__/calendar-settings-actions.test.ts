@@ -246,6 +246,14 @@ describe("working hours", () => {
     });
   });
 
+  it("rejects malformed segments instead of clearing the day", async () => {
+    const res = await post({ intent: "set-working-segments", dayOfWeek: "3", segments: "{not json" });
+
+    expect(res!.status).toBe(400);
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(db.workingHoursDay!.create).not.toHaveBeenCalled();
+  });
+
   it("rejects a segment that ends before it starts", async () => {
     const res = await post({
       intent: "set-working-segments",
@@ -858,6 +866,8 @@ describe("class-* actions", () => {
   });
 
   it.each([
+    ["no days picked", { customDays: "", customStart: "09:00", customEnd: "10:00" }],
+    ["only blank days", { customDays: " , ", customStart: "09:00", customEnd: "10:00" }],
     ["only out-of-range days", { customDays: "7,9", customStart: "09:00", customEnd: "10:00" }],
     ["an unparseable start", { customDays: "1", customStart: "9am", customEnd: "10:00" }],
     ["an out-of-range hour", { customDays: "1", customStart: "09:00", customEnd: "24:00" }],

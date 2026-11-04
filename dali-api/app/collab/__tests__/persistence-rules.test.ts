@@ -34,7 +34,13 @@ vi.mock("../legacy/pm-to-blocknote", async (importOriginal) => {
   return { ...actual, mapPmDocToBlocks: vi.fn(actual.mapPmDocToBlocks) };
 });
 
+vi.mock("y-prosemirror", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("y-prosemirror")>();
+  return { ...actual, yDocToProsemirrorJSON: vi.fn(actual.yDocToProsemirrorJSON) };
+});
+
 import { prisma } from "~/lib/db.server";
+import { yDocToProsemirrorJSON } from "y-prosemirror";
 import { forceSnapshot, getPlainText, loadDocument, restoreVersion, storeDocument } from "../persistence";
 import { blocksToFragment, fragmentToBlocks, plainTextToBlocks } from "../blocknote-server";
 import { mapPmDocToBlocks } from "../legacy/pm-to-blocknote";
@@ -163,6 +169,17 @@ describe("loadDocument", () => {
     expect(mapPmDocToBlocks).toHaveBeenCalledTimes(1);
     expect(db.collabDocument.upsert).not.toHaveBeenCalled();
     expect(blocksToPlainText(fragmentToBlocks(second.getXmlFragment("blocknote")))).toBe("old body");
+  });
+
+  it("decodes legacy content from a clone, never the live doc", async () => {
+    db.collabDocument.findUnique.mockResolvedValue({ name: "doc:p:body", state: stateOf(legacyDoc("old body")) });
+    const live = new Y.Doc();
+    await loadDocument("doc:p:body", live);
+
+    const decoded = vi.mocked(yDocToProsemirrorJSON).mock.calls.map((c) => c[0]);
+    expect(decoded.length).toBeGreaterThan(0);
+    expect(decoded).not.toContain(live);
+    expect(live.getXmlFragment("default").length).toBe(1);
   });
 
   it("opens a doc unconverted, without storing, when legacy conversion throws", async () => {

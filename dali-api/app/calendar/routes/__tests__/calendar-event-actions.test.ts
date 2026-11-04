@@ -674,6 +674,10 @@ describe("event-update", () => {
     });
 
     it("scope following truncates the master a second before, then starts a new series with the edited fields", async () => {
+      vi.mocked(getGoogleEvent).mockResolvedValue({
+        recurrence: SERIES,
+        startIso: "2026-11-02T14:00:00.000Z",
+      } as never);
       await post({ ...series, scope: "following", originalStartIso: START, addMeet: "1" });
 
       expect(patchGoogleCalendarEvent).toHaveBeenCalledWith({
@@ -691,7 +695,7 @@ describe("event-update", () => {
         startIso: START,
         endIso: END,
         allDay: false,
-        recurrenceRule: "FREQ=WEEKLY;COUNT=10",
+        recurrenceRule: "FREQ=WEEKLY;COUNT=9",
         timeZone: undefined,
         attendees: [],
         addMeet: true,

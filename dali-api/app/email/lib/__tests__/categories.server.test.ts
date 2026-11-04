@@ -147,6 +147,19 @@ describe("save-category create", () => {
       }),
     );
   });
+
+  it("treats addresses that differ only by case or spacing as one inbox", async () => {
+    const res = await run({
+      intent: "save-category",
+      name: "Admissions",
+      inbox: ["Apply@Example.edu", "apply@example.edu", " APPLY@example.edu "],
+    });
+    expect(res.status).toBe(200);
+    expect(db.mailAccount.upsert).toHaveBeenCalledTimes(1);
+    expect(db.mailCategory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ accounts: { create: [{ accountId: "acct-apply@example.edu" }] } }),
+    });
+  });
 });
 
 describe("save-category update", () => {

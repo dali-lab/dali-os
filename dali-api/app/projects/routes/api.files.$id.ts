@@ -106,6 +106,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
+  const gate = await requireMemberSession(request);
+  if (!gate.ok) return withCors(request, gate.response);
+  const auth = gate.auth;
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },
     select: {
@@ -120,9 +123,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
-  const gate = await requireMemberSession(request);
-  if (!gate.ok) return withCors(request, gate.response);
-  const auth = gate.auth;
   if (!(await canEditFile(auth.user.sub, file, request))) {
     return withCors(request, Response.json({ error: "You can't edit this file" }, { status: 403 }));
   }

@@ -303,13 +303,19 @@ export function rruleWithUntil(recurrence: string | string[], until: Date): stri
   return parts.join(";");
 }
 
-/**
- * Strip UNTIL from a recurrence rule, returning the bare repeating rule.
- * Used when spinning up a new series from a "following" split — the new
- * series has no end date unless the user sets one.
- */
-export function bareRrule(recurrence: string | string[]): string | null {
+export function followingRule(recurrence: string | string[], seriesStart: Date, splitAt: Date): string | null {
   const arr = typeof recurrence === "string" ? [recurrence] : recurrence;
   const rule = arr.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  return rule ? rule.split(";").filter((p) => !/^UNTIL=/i.test(p)).join(";") : null;
+  if (!rule) return null;
+  const parts = rule.split(";");
+  const base = parts.filter((p) => !/^(UNTIL|COUNT)=/i.test(p));
+  const until = parts.find((p) => /^UNTIL=/i.test(p));
+  if (until) return [...base, until].join(";");
+  const count = parts.find((p) => /^COUNT=/i.test(p));
+  if (!count) return base.join(";");
+  const built = buildRule(rule, seriesStart);
+  if (!built) return base.join(";");
+  const before = built.all().filter((d) => d < splitAt).length;
+  const remaining = Number(count.split("=")[1]) - before;
+  return [...base, `COUNT=${Math.max(remaining, 1)}`].join(";");
 }
