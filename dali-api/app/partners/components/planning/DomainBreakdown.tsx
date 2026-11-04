@@ -13,7 +13,7 @@ const INDENT = "pl-[22px]";
 export function breakdownHref(row: Pick<PlanningBreakdownRow, "kind" | "refId">): string {
   return row.kind === "application"
     ? `/core/partners?application=${row.refId}`
-    : "/core/partners/renewals";
+    : `/projects/${row.refId}`;
 }
 
 export function DomainBreakdown({ items }: { items: PlanningBreakdownRow[] }) {

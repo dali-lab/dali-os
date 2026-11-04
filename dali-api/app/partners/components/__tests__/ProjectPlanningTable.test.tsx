@@ -62,12 +62,12 @@ describe("ProjectPlanningTable", () => {
     expect(html).not.toContain("Renewing");
   });
 
-  it("links applications to the board and projects to renewals", () => {
+  it("links applications to the board and projects to their detail page", () => {
     const html = render({
       renewing: [row()],
       fresh: [row({ key: "application:a", kind: "application", refId: "a", source: "new", state: "Deciding" })],
     });
-    expect(html).toContain('href="/core/partners/renewals"');
+    expect(html).toContain('href="/projects/p1"');
     expect(html).toContain('href="/core/partners?application=a"');
   });
 
