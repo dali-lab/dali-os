@@ -77,6 +77,22 @@ async function forgetOrphanedInboxes(accountIds: string[]) {
   if (orphaned.length) await prisma.mailAccountConnection.deleteMany({ where: { accountId: { in: orphaned } } });
 }
 
+async function sharedInbox(address: string) {
+  const where = { scopeKey_address: { scopeKey: "shared", address } };
+  try {
+    return await prisma.mailAccount.upsert({
+      where,
+      create: { kind: "Shared", scopeKey: "shared", address },
+      update: {},
+      select: { id: true },
+    });
+  } catch (err) {
+    // A concurrent save created the same inbox first.
+    if ((err as { code?: string })?.code !== "P2002") throw err;
+    return prisma.mailAccount.findUniqueOrThrow({ where, select: { id: true } });
+  }
+}
+
 /** Handles CATEGORY_INTENTS. The caller has already checked the user is an admin. */
 export async function handleInboxCategoryAction(request: Request, form: FormData, userId: string) {
   const intent = String(form.get("intent") ?? "");
@@ -106,17 +122,7 @@ export async function handleInboxCategoryAction(request: Request, form: FormData
       audienceGroupIds: groups.map((g) => g.id),
     };
 
-    // Each address is one Shared inbox, reused across categories.
-    const accounts = await Promise.all(
-      addresses.map((address) =>
-        prisma.mailAccount.upsert({
-          where: { scopeKey_address: { scopeKey: "shared", address } },
-          create: { kind: "Shared", scopeKey: "shared", address },
-          update: {},
-          select: { id: true },
-        }),
-      ),
-    );
+    const accounts = await Promise.all(addresses.map(sharedInbox));
     const accountIds = accounts.map((a) => a.id);
 
     let categoryId = id;
