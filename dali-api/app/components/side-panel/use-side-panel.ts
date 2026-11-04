@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import {
   SIDE_PARAM,
@@ -117,4 +117,42 @@ export function useAltClickOpensBeside() {
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
   }, []);
+}
+
+export function useCarryPageScroll(open: boolean) {
+  const pageRef = useRef<HTMLDivElement>(null);
+  const windowY = useRef(0);
+  const pageY = useRef(0);
+  const { pathname } = useLocation();
+  const last = useRef({ open: false, pathname });
+
+  useEffect(() => {
+    if (open) return;
+    const record = () => {
+      windowY.current = window.scrollY;
+    };
+    record();
+    window.addEventListener("scroll", record, { passive: true });
+    return () => window.removeEventListener("scroll", record);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    // A tab switch or navigation that also opens or closes the panel restores its own scroll.
+    const toggledInPlace = last.current.open !== open && last.current.pathname === pathname;
+    last.current = { open, pathname };
+    if (!page || panelCoversPage()) return;
+    if (open) {
+      if (toggledInPlace) page.scrollTop = windowY.current;
+      const record = () => {
+        pageY.current = page.scrollTop;
+      };
+      record();
+      page.addEventListener("scroll", record, { passive: true });
+      return () => page.removeEventListener("scroll", record);
+    }
+    if (toggledInPlace) window.scrollTo(0, pageY.current);
+  }, [open, pathname]);
+
+  return pageRef;
 }

@@ -26,6 +26,7 @@ import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
 import { modKey, tabCycleShortcut } from '~/lib/shortcuts'
 import { cn } from '~/lib/cn'
+import { scrollPageTo } from '~/lib/page-scroll'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
@@ -90,7 +91,7 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
     const restoreY = tabActions.record(url, recordedKey.current === location.key ? 'REPLACE' : navigationType)
     recordedKey.current = location.key
     let raf = 0
-    if (restoreY !== null) raf = window.requestAnimationFrame(() => window.scrollTo(0, restoreY))
+    if (restoreY !== null) raf = window.requestAnimationFrame(() => scrollPageTo(restoreY))
     const labelTimer = window.setTimeout(() => tabActions.label(url, pageTitle() || fallbackPageLabel(url)), 50)
     return () => {
       window.cancelAnimationFrame(raf)
