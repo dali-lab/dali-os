@@ -28,6 +28,7 @@ import {
   type OpenTabRequest,
 } from "~/lib/desktop-tabs";
 import { writeTabsSnapshotCookie } from "~/lib/desktop-tabs-pref";
+import { pageScrollY } from "~/lib/page-scroll";
 
 export const TABS_STORAGE_KEY = "dali:desktop-tabs:v1";
 export const LEGACY_WORKSPACE_KEY = "dali:tabworkspace:v4";
@@ -75,15 +76,11 @@ function emit() {
   for (const l of listeners) l();
 }
 
-function currentScrollY(): number {
-  return typeof window === "undefined" ? 0 : Math.round(window.scrollY);
-}
-
 // Leave the active tab: remember where it was scrolled, then apply `next` and
 // show whatever tab it made active.
 function moveTo(next: DesktopTabsState) {
   const leaving = activeTab(state);
-  const withScroll = leaving ? saveScroll(next, leaving.id, currentScrollY()) : next;
+  const withScroll = leaving ? saveScroll(next, leaving.id, pageScrollY()) : next;
   const target = activeTab(withScroll);
   set(withScroll);
   if (!target || target.id === leaving?.id) return;
