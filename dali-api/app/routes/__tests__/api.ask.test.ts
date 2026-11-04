@@ -42,7 +42,7 @@ const USER = {
   firstName: "Ada",
   lastName: "Lovelace",
 };
-const PROVIDER = { name: "dartmouth", askModel: "anthropic.claude-sonnet-5-5" };
+const PROVIDER = { name: "dartmouth" };
 
 function post(body: unknown, init: RequestInit = {}) {
   const request = new Request("http://x/api/ask", {

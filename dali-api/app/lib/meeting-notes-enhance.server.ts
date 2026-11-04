@@ -348,13 +348,13 @@ export async function generateAndVerifyEnhancePlan(params: {
   const provider = resolveAiProvider();
   if (!provider) return { ok: false, aiEnabled: false };
 
-  let raw: { text: string; inputTokens: number; outputTokens: number } | null;
+  let raw: Awaited<ReturnType<typeof generateShortText>>;
   try {
     raw = await generateShortText({
+      task: "enhance",
       system,
       prompt,
       maxTokens: ENHANCE_MAX_TOKENS,
-      model: provider.sonnetModel,
     });
   } catch (err) {
     if (err instanceof Anthropic.APIError) {

@@ -233,6 +233,7 @@ export async function action({ request }: Route.ActionArgs) {
   // ── Generate + cache ──────────────────────────────────────────────────────
   try {
     const result = await generateShortText({
+      task: "projectTldr",
       system: SYSTEM_PROMPT,
       prompt: factsToPrompt(project.name, facts, detail),
       maxTokens: 400,

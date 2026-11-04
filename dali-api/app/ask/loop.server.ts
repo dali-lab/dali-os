@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { AiProvider } from "~/lib/ai.server";
+import { modelParams, type AiProvider } from "~/lib/ai.server";
 import type { AiHistoryEntry } from "~/lib/ai-history";
 import { findRegistryTool } from "~/mcp/registry";
 import { dispatchTool, type ToolCaller } from "~/mcp/dispatch.server";
@@ -84,10 +84,10 @@ async function recoverUsage(
 ): Promise<AskUsage> {
   try {
     const [inCount, outCount] = await Promise.all([
-      provider.client.messages.countTokens({ model: provider.askModel, ...params }),
+      provider.client.messages.countTokens({ model: modelParams(provider, "ask").model, ...params }),
       output
         ? provider.client.messages.countTokens({
-            model: provider.askModel,
+            model: modelParams(provider, "ask").model,
             messages: [{ role: "user", content: output }],
           })
         : Promise.resolve({ input_tokens: 0 }),
@@ -121,7 +121,7 @@ export async function runAsk(opts: {
   for (let round = 0; round <= ASK_MAX_TOOL_ROUNDS; round++) {
     if (signal.aborted) return usage;
     const stream = provider.client.messages.stream(
-      { model: provider.askModel, max_tokens: MAX_TOKENS, system, tools, messages },
+      { ...modelParams(provider, "ask"), max_tokens: MAX_TOKENS, system, tools, messages },
       { signal },
     );
     let text = "";

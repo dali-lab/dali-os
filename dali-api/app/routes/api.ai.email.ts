@@ -120,6 +120,7 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     // A post passage comes back whole (see POST_PASSAGE_CHARS), so it gets room.
     const result = await generateShortText({
+      task: "email",
       system,
       prompt,
       maxTokens: surface === "post" ? 4000 : 1500,

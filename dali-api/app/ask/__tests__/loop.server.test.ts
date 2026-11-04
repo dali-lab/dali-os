@@ -59,10 +59,6 @@ function fakeProvider(turns: Turn[]) {
   });
   const provider = {
     name: "dartmouth",
-    askModel: "anthropic.claude-sonnet-5-5",
-    model: "m",
-    sonnetModel: "s",
-    adaptiveThinking: false,
     client: { messages: { stream, countTokens } },
   } as unknown as AiProvider;
   return { provider, calls, stream, countTokens };

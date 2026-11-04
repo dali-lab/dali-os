@@ -94,6 +94,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   try {
     const result = await generateShortText({
+      task: "meetingNotes",
       system: SYSTEM_PROMPT,
       prompt: `${title ? `Document: ${title}\n\n` : ""}Transcript:\n${transcript}`,
       maxTokens: 2000,

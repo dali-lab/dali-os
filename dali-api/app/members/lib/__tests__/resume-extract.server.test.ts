@@ -31,16 +31,17 @@ const reply = (text: string, usage = { input_tokens: 120, output_tokens: 45 }) =
 
 beforeEach(() => {
   vi.clearAllMocks();
-  resolveAiProvider.mockReturnValue({ client: { messages: { create } }, sonnetModel: "sonnet-test" });
+  resolveAiProvider.mockReturnValue({ name: "anthropic", client: { messages: { create } } });
 });
 
 describe("extractJobsFromPdf", () => {
-  it("sends the PDF as a base64 document block on the sonnet model", async () => {
+  it("sends the PDF as a base64 document block on Sonnet at low effort", async () => {
     create.mockResolvedValue(reply(JSON.stringify(JOBS)));
     await extractJobsFromPdf(new Uint8Array([0x25, 0x50, 0x44, 0x46]));
 
     const request = create.mock.calls[0][0];
-    expect(request.model).toBe("sonnet-test");
+    expect(request.model).toBe("claude-sonnet-5-5");
+    expect(request.output_config).toEqual({ effort: "low" });
     expect(request.max_tokens).toBe(4096);
     expect(request.thinking).toBeUndefined();
     const doc = request.messages[0].content.find((b: { type: string }) => b.type === "document");

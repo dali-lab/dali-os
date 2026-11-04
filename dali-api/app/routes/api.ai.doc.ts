@@ -11,7 +11,7 @@
 import type { Route } from "./+types/api.ai.doc";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
-import { resolveAiProvider } from "~/lib/ai.server";
+import { modelParams, resolveAiProvider } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { aiQuotaResponse, claimAiQuota } from "~/lib/ai-quota.server";
@@ -147,13 +147,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   // ── Shared create params ──────────────────────────────────────────────────
   const createParams = {
-    model: provider.model,
+    ...modelParams(provider, "doc"),
     max_tokens: 8192,
-    // Adaptive thinking only on first-party Claude — the Dartmouth gateway's
-    // Bedrock-style model ids may reject the param.
-    ...(provider.adaptiveThinking
-      ? { thinking: { type: "adaptive" as const } }
-      : {}),
     system: SYSTEM_PROMPT,
     messages,
   };
@@ -315,12 +310,12 @@ export async function action({ request }: Route.ActionArgs) {
           try {
             const [inCount, outCount] = await Promise.all([
               provider.client.messages.countTokens({
-                model: provider.model,
+                model: modelParams(provider, "doc").model,
                 system: SYSTEM_PROMPT,
                 messages,
               }),
               provider.client.messages.countTokens({
-                model: provider.model,
+                model: modelParams(provider, "doc").model,
                 messages: [{ role: "user", content: streamedText }],
               }),
             ]);
