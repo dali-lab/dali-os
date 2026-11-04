@@ -21,6 +21,7 @@ test.describe.serial('journey progress', () => {
 
   test.afterAll(async () => {
     await resetJourneyProgress(JOURNEY_ID, LEARNER);
+    await setFeatureFlag('onboarding-journeys', false);
   });
 
   test('a locked module opens only after its prerequisite is completed, and that persists', async ({
