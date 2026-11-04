@@ -37,6 +37,16 @@ describe("save-category (real database)", () => {
     expect(await prisma.mailCategory.count()).toBe(1);
   });
 
+  it("saves concurrent categories that name the same new inbox, sharing one account", async () => {
+    const results = await Promise.all(
+      [1, 2, 3, 4, 5].map((n) => run({ intent: "save-category", name: `Cat ${n}`, inbox: "race@example.edu" })),
+    );
+
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(await prisma.mailAccount.count()).toBe(1);
+    expect(await prisma.mailCategoryAccount.count()).toBe(5);
+  });
+
   it("reuses one shared account across categories", async () => {
     await run({ intent: "save-category", name: "A", inbox: "help@example.edu" });
     await run({ intent: "save-category", name: "B", inbox: "Help@example.edu" });

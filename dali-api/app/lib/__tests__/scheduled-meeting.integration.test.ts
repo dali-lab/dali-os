@@ -47,10 +47,7 @@ const keys = async (meetingId: string) => ({
   pages: (await prisma.page.findMany({ where: { meetingNoteId: meetingId }, orderBy: { meetingOccurrenceStart: "asc" } })).map((r) => r.meetingOccurrenceStart!.getTime()),
 });
 
-// Skipped: updateScheduledMeetingImpl selects a nonexistent `startTime` column
-// (scheduled-meeting.ts:2059; the column is `selectedAt`), so every call throws
-// before reaching the SQL under test. Un-skip once that select is fixed.
-describe.skip("whole-series reschedule shifts occurrence keys", () => {
+describe("whole-series reschedule shifts occurrence keys", () => {
   it("moves a weekly series one week later without tripping the unique keys", async () => {
     const { ada, grace, meeting } = await seriesWithKeys([0, 1, 2, 3]);
     const r = await updateScheduledMeeting(meeting.id, ada.id, { ...withGuest(grace), recurrenceRule: "FREQ=WEEKLY;COUNT=6", startTime: at(1).toISOString() });
@@ -101,7 +98,7 @@ describe.skip("whole-series reschedule shifts occurrence keys", () => {
   });
 });
 
-describe.skip("this and following split", () => {
+describe("this and following split", () => {
   const split = (meetingId: string, actor: string, occ: Date, extra: object = {}) =>
     updateScheduledMeeting(meetingId, actor, { ...ALL, editScope: "following", occurrenceStart: occ.toISOString(), startTime: occ.toISOString(), ...extra });
 

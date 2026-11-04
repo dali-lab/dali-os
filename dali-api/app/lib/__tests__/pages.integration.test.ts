@@ -118,6 +118,27 @@ describe("sibling ordering", () => {
   });
 });
 
+describe("concurrent creates", () => {
+  it("lets one of several same-name lab creates through and gives siblings distinct positions", async () => {
+    const u = await makeUser();
+    const results = await Promise.allSettled([1, 2, 3, 4].map(() => createLabPage({ title: "Same", createdById: u.id })));
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(await prisma.page.count({ where: { workspaceType: "Lab", title: "Same" } })).toBe(1);
+  });
+
+  it("gives concurrent differently named project pages distinct positions", async () => {
+    const u = await makeUser();
+    const proj = await makeProject();
+    await Promise.all(
+      ["A", "B", "C", "D", "E"].map((title) => createProjectPage({ projectId: proj.id, title, createdById: u.id })),
+    );
+
+    const positions = (await prisma.page.findMany({ where: { workspaceId: proj.id }, select: { position: true } })).map((p) => p.position);
+    expect([...positions].sort()).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
 describe("tree walks on real rows", () => {
   async function build(u: string, depth: number) {
     const ids: string[] = [];

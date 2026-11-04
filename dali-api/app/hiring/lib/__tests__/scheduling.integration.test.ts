@@ -106,15 +106,13 @@ describe("racing for one interviewer slot", () => {
     expect(new Set(interviewerIds).size).toBe(4);
   });
 
-  it("three applicants racing for a slot with room for two never double-book an interviewer", async () => {
+  it("three applicants racing for a slot with room for two fill both places without double-booking", async () => {
     const r = await makeRound({ engInterviewers: 2, designInterviewers: 2 });
     const people = await Promise.all(["Ada", "Grace", "Katherine"].map((n) => makeApplicant(r.cycle.id, r.eng.id, n)));
     const results = await Promise.allSettled(people.map((p) => book(r, p.id, slot())));
-    const won = results.filter((x) => x.status === "fulfilled").length;
-    expect(won).toBeGreaterThanOrEqual(1);
-    expect(won).toBeLessThanOrEqual(2);
+    expect(results.filter((x) => x.status === "fulfilled")).toHaveLength(2);
     const interviews = await scheduled();
-    expect(interviews).toHaveLength(won);
+    expect(interviews).toHaveLength(2);
     expect(interviews.every((i) => i.assignments.length === 2)).toBe(true);
     const interviewerIds = interviews.flatMap((i) => i.assignments.map((x) => x.cycleInterviewerId));
     expect(new Set(interviewerIds).size).toBe(interviewerIds.length);
