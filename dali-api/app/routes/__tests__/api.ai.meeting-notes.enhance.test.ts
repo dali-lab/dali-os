@@ -246,3 +246,94 @@ describe("carrying a taskId forward across a re-run", () => {
     expect(json.plan.actionItems[0].taskId).toBeUndefined();
   });
 });
+
+describe("interview notes", () => {
+  const INTERVIEW_DOC = "interview:iv1:notes";
+  const WITH_ACTION_ITEM = JSON.stringify({
+    blocks: [{ id: "b1", op: "keep" }],
+    actionItems: [{ text: "Send the take-home", cites: [1] }],
+  });
+
+  beforeEach(() => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: INTERVIEW_DOC,
+      scheduledMeetingId: null,
+      occurrenceStart: null,
+      createdAt: new Date("2026-10-10T00:00:00Z"),
+    } as never);
+    vi.mocked(prisma.interview.findUnique).mockResolvedValue({
+      startTime: new Date("2026-11-03T15:00:00Z"),
+      assignments: [
+        { cycleInterviewer: { user: { id: "u1", firstName: "Ada", lastName: "Lovelace", daliEmail: "ada@example.edu" } } },
+        { cycleInterviewer: { user: { id: "u2", firstName: "Alan", lastName: "Turing", daliEmail: "alan@example.edu" } } },
+      ],
+    } as never);
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+  });
+
+  it("uses the interview prompt with the active interviewers and interview date", async () => {
+    expect((await run(BODY)).status).toBe(200);
+    const { system, prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(system).toMatch(/^You enhance a hiring interview's notes/);
+    expect(system).toContain("Record, never judge.");
+    expect(prompt).toContain("Interview date: 2026-11-03");
+    expect(prompt).toContain("Interviewers:\nAda Lovelace\nAlan Turing");
+    expect(prompt).not.toContain("Recorder");
+    expect(prompt).not.toContain("Meeting type");
+    expect(vi.mocked(prisma.interview.findUnique).mock.calls[0]![0]).toMatchObject({
+      where: { id: "iv1" },
+      select: { assignments: { where: { status: "Active" } } },
+    });
+  });
+
+  it("drops action items the model returns anyway", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({ text: WITH_ACTION_ITEM, inputTokens: 1, outputTokens: 1 });
+    const res = await run(BODY);
+    expect(res.status).toBe(200);
+    expect((await res.json()).plan.actionItems).toEqual([]);
+    const stored = vi.mocked(prisma.meetingRecording.update).mock.calls[0]![0].data.notes as {
+      plan: { actionItems: unknown[] };
+    };
+    expect(stored.plan.actionItems).toEqual([]);
+  });
+
+  it("falls back to the recording date and no interviewers when the interview is gone", async () => {
+    vi.mocked(prisma.interview.findUnique).mockResolvedValue(null);
+    expect((await run(BODY)).status).toBe(200);
+    const { prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(prompt).toContain("Interview date: 2026-10-10");
+    expect(prompt).toContain("Interviewers: (none on record)");
+  });
+
+  it("treats the interview's recommendation room as a regular note", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "interview:iv1:recommendation",
+      scheduledMeetingId: null,
+      occurrenceStart: null,
+      createdAt: new Date("2026-10-10T00:00:00Z"),
+    } as never);
+    await run(BODY);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].system).toMatch(/^You enhance meeting notes/);
+  });
+});
+
+describe("regular meeting notes", () => {
+  it("keep the meeting prompt and action items", async () => {
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+    vi.mocked(generateShortText).mockResolvedValue({
+      text: JSON.stringify({ blocks: [{ id: "b1", op: "keep" }], actionItems: [{ text: "Ship it", cites: [1] }] }),
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    const res = await run(BODY);
+    const { system, prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(system).toMatch(/^You enhance meeting notes/);
+    expect(prompt).toContain('Recorder (speaks as "You")');
+    expect((await res.json()).plan.actionItems).toHaveLength(1);
+    expect(prisma.interview.findUnique).not.toHaveBeenCalled();
+  });
+});
