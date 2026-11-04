@@ -14,13 +14,14 @@ vi.mock("~/lib/db.server");
 // request — with a fake key the client would retry with backoff (~5s) and time
 // the test out. The route catches the rejection and returns a 502, which still
 // exercises "the 503 key-gate was skipped".
+const sdk = vi.hoisted(() => ({ create: vi.fn() }));
 vi.mock("@anthropic-ai/sdk", () => {
   class APIError extends Error {
     status?: number;
   }
   class Anthropic {
     messages = {
-      create: vi.fn().mockRejectedValue(new Error("network disabled in tests")),
+      create: sdk.create,
       stream: vi.fn(() => {
         throw new Error("network disabled in tests");
       }),
@@ -64,6 +65,7 @@ function postReq(body: unknown, signal?: AbortSignal): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  sdk.create.mockRejectedValue(new Error("network disabled in tests"));
   vi.mocked(requireAuth).mockResolvedValue(AUTH_OK);
   // All tests share user u1 — reset the in-memory burst counter so earlier
   // tests can't trip the 10/min gate for later ones.
@@ -96,6 +98,20 @@ describe("POST /api/ai/doc — auth gate", () => {
       request: postReq({ instruction: "hi" }),
     } as any);
     expect(res.status).toBe(401);
+  });
+});
+
+// ── Model ─────────────────────────────────────────────────────────────────────
+
+describe("POST /api/ai/doc — model", () => {
+  it("writes with Sonnet 5.5 on first-party and leaves thinking at the model default", async () => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    sdk.create.mockResolvedValue({ content: [{ type: "text", text: "Done" }], usage: { input_tokens: 1, output_tokens: 1 } });
+    const res = await action({ request: postReq({ instruction: "tighten this" }) } as any);
+    expect(res.status).toBe(200);
+    const params = sdk.create.mock.calls[0]![0];
+    expect(params.model).toBe("claude-sonnet-5-5");
+    expect(params).not.toHaveProperty("thinking");
   });
 });
 

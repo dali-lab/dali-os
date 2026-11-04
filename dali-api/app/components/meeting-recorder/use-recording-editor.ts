@@ -2,8 +2,8 @@ import { useCallback, useRef } from "react";
 import {
   appendBlocks,
   appendTaskMentionContent,
-  blocksToPlainText,
   enhanceSnapshotBlocks,
+  noteBodyText,
   findEnhanceMarks,
   findTranscriptToggle,
   hasTranscriptToggle,
@@ -88,7 +88,7 @@ export function useRecordingEditor({ notePath, projectId }: { notePath: string; 
     const editor = editorRef.current;
     if (!editor) return null;
     const doc = editor.document;
-    return { blocks: enhanceSnapshotBlocks(doc), bodyText: blocksToPlainText(doc) };
+    return { blocks: enhanceSnapshotBlocks(doc), bodyText: noteBodyText(doc) };
   }, []);
 
   // Replays Enhance's merge ops against the live editor, then adds the

@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { getAppEnv } from "~/lib/app-env";
 import { getFeatureFlagRows } from "~/lib/feature-flags.server";
 import { githubAppClient, parseRepo } from "~/lib/github";
-import { generateShortText, resolveAiProvider } from "~/lib/ai.server";
+import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { listObjectKeys } from "~/lib/s3";
 import type { JobResult } from "~/jobs/registry";
@@ -129,10 +129,10 @@ async function captureKeysByPr(prNumbers: number[]): Promise<Map<number, string[
 
 async function draftChunk(prs: PullForPrompt[]): Promise<number> {
   const result = await generateShortText({
+    task: "releaseNotes",
     system: DRAFT_SYSTEM_PROMPT,
     prompt: buildDraftPrompt(prs),
     maxTokens: MAX_OUTPUT_TOKENS,
-    model: resolveAiProvider()?.sonnetModel,
   });
   if (!result) throw new Error("No AI provider is configured");
 

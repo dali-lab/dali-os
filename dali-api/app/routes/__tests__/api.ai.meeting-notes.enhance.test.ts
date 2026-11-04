@@ -62,7 +62,7 @@ beforeEach(() => {
   } as never);
   vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.meetingRecording.update).mockResolvedValue({} as never);
-  vi.mocked(resolveAiProvider).mockReturnValue({ sonnetModel: "claude-sonnet-5" } as never);
+  vi.mocked(resolveAiProvider).mockReturnValue({ name: "anthropic" } as never);
   vi.mocked(generateShortText).mockResolvedValue({ text: VALID_MODEL_JSON, inputTokens: 10, outputTokens: 5 });
 });
 
@@ -126,6 +126,7 @@ describe("POST /api/ai/meeting-notes/enhance", () => {
   it("asks the model for up to 16k output tokens", async () => {
     await run(BODY);
     expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(16_000);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].task).toBe("enhance");
   });
 
   it("422s with a clear error when the model hits the output cap, and stores nothing", async () => {

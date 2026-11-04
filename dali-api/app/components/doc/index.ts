@@ -41,6 +41,7 @@ export {
   appendTaskMentionContent,
   transcriptToggleBlock,
   enhanceSnapshotBlocks,
+  noteBodyText,
   findTranscriptToggle,
   hasTranscriptToggle,
   findEnhanceMarks,

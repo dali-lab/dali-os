@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type { AiProvider } from "~/lib/ai.server";
+import { modelParams, type AiProvider } from "~/lib/ai.server";
 import type { AiHistoryEntry } from "~/lib/ai-history";
 import { findRegistryTool } from "~/mcp/registry";
 import { dispatchTool, type ToolCaller } from "~/mcp/dispatch.server";
@@ -12,7 +12,7 @@ export type { AskEvent };
 export const ASK_MAX_TOOL_ROUNDS = 6;
 export const ASK_INPUT_TOKEN_BUDGET = 150_000;
 export const ASK_TOOL_RESULT_MAX_CHARS = 40_000;
-const MAX_TOKENS = 2048;
+const MAX_TOKENS = 8000;
 
 export const OUT_OF_STEPS =
   "I ran out of steps before I could put an answer together. Try a narrower question.";
@@ -84,10 +84,10 @@ async function recoverUsage(
 ): Promise<AskUsage> {
   try {
     const [inCount, outCount] = await Promise.all([
-      provider.client.messages.countTokens({ model: provider.askModel, ...params }),
+      provider.client.messages.countTokens({ model: modelParams(provider, "ask").model, ...params }),
       output
         ? provider.client.messages.countTokens({
-            model: provider.askModel,
+            model: modelParams(provider, "ask").model,
             messages: [{ role: "user", content: output }],
           })
         : Promise.resolve({ input_tokens: 0 }),
@@ -121,7 +121,7 @@ export async function runAsk(opts: {
   for (let round = 0; round <= ASK_MAX_TOOL_ROUNDS; round++) {
     if (signal.aborted) return usage;
     const stream = provider.client.messages.stream(
-      { model: provider.askModel, max_tokens: MAX_TOKENS, system, tools, messages },
+      { ...modelParams(provider, "ask"), max_tokens: MAX_TOKENS, system, tools, messages },
       { signal },
     );
     let text = "";

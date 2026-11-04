@@ -28,8 +28,8 @@ export interface MeetingNotesResponse {
 export const AI_BURST_MAX = 10;
 export const AI_BURST_WINDOW_MS = 60_000;
 
-// Roughly two hours of speech. Longer recordings keep their most recent part.
-export const TRANSCRIPT_MAX = 120_000;
+// About 150k tokens, roughly twelve hours of speech; still fits Haiku 4.5's 200k context on the gateway.
+export const TRANSCRIPT_MAX = 600_000;
 
 const SYSTEM_PROMPT = `You write meeting notes for a university software lab from a raw speech-to-text transcript. \
 Each line is "[mm:ss] Speaker: text". "You" is the person who recorded (their microphone) and "Others" is everyone else on the call (the computer's audio); there are no other speaker names. Words may be misheard, and it may start or stop mid-sentence. \
@@ -94,9 +94,10 @@ export async function action({ request }: Route.ActionArgs) {
 
   try {
     const result = await generateShortText({
+      task: "meetingNotes",
       system: SYSTEM_PROMPT,
       prompt: `${title ? `Document: ${title}\n\n` : ""}Transcript:\n${transcript}`,
-      maxTokens: 2000,
+      maxTokens: 4000,
     });
     if (!result) return Response.json({ aiEnabled: false }, { status: 503 });
     await recordTokenUsage(auth.user.sub, day, result.inputTokens, result.outputTokens);
