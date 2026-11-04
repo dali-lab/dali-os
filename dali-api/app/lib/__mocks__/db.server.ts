@@ -862,6 +862,7 @@ export const prisma = {
   aiUsage: {
     upsert: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   workExperience: {
     createMany: vi.fn(),

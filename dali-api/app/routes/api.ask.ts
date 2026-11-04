@@ -7,7 +7,7 @@ import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { resolveAiProvider } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { aiQuotaResponse, claimAskQuota } from "~/lib/ai-quota.server";
+import { aiQuotaResponse, claimAskQuota, releaseAskQuota } from "~/lib/ai-quota.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { validateHistory } from "~/lib/ai-history";
 import { runAsk, type AskEvent } from "~/ask/loop.server";
@@ -96,7 +96,10 @@ export async function action({ request }: Route.ActionArgs) {
           usage,
         });
       } catch {
-        if (!request.signal.aborted) emit({ type: "error", message: "Something went wrong. Try again." });
+        if (!request.signal.aborted) {
+          emit({ type: "error", message: "Something went wrong. Try again." });
+          await releaseAskQuota(userId, quota.day);
+        }
       } finally {
         await recordTokenUsage(userId, quota.day, usage.inputTokens, usage.outputTokens);
         try {
