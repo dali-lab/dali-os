@@ -3,7 +3,7 @@ import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-
 import { Download, Upload } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.file.$fileId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
@@ -145,7 +145,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       createdAt: v.createdAt.toISOString(),
       isCurrent: v.id === file.currentVersionId,
       contentType: v.contentType,
-      downloadUrl: await getDownloadUrl(v.s3Key),
+      downloadUrl: `/api/files/${file.id}/download?version=${v.id}`,
       // Inline-preview URL: forces the known content type + inline disposition
       // so the browser renders it even when the S3 object's stored Content-Type
       // is wrong or missing (e.g. generated PDFs served as octet-stream).

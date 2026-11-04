@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -24,11 +24,11 @@ vi.mock("~/hiring/lib/email-variables", async () => {
   };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { getActiveCycleById } from "~/hiring/lib/cycles";
-import { action } from "~/routes/portal.apply";
+import { action, buildSections, computeRequiredProgress } from "~/routes/portal.apply";
 
 const mockPrisma = prisma as unknown as {
   application: {
@@ -371,6 +371,89 @@ function makeUpdateDomainsRequest(
     body: body.toString(),
   });
 }
+
+describe("POST /portal/apply (submit) answer format validation", () => {
+  const typedQuestions = [
+    { key: "email", type: "email", required: true, data: { label: "Contact email" } },
+    { key: "level", type: "scale", required: false, data: { label: "Comfort" } },
+  ];
+  const domainDate = [{ key: "start", type: "date", required: true, data: { label: "Start date" } }];
+
+  it("rejects a malformed email and writes nothing", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: { email: "not-an-email" } }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toBe('"Contact email": enter a valid email address.');
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+    expect(mockPrisma.applicationStatusUpdate.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects an out-of-range scale answer", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: { email: "ada@example.edu", level: "9" } }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toContain("pick a number from 1 to 5");
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a bad answer on a selected domain's challenge form", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: DA_ID, domainId: "domain-x", selected: true, challengeFormVersion: { questions: domainDate } },
+    ]);
+
+    const res = await action({
+      request: makeSubmitRequest({
+        answers: { email: "ada@example.edu" },
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: { start: "2026-02-30" } }],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as any).error).toBe('"Start date": enter a valid date.');
+    expect(mockPrisma.application.update).not.toHaveBeenCalled();
+  });
+
+  it("submits valid answers and stores the email trimmed and lowercased", async () => {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: typedQuestions },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+
+    const res = await action({
+      request: makeSubmitRequest({ answers: { email: "  Ada@Example.EDU ", level: "4" } }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect((res as Response).status).toBe(302);
+    expect(mockPrisma.application.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ answers: { email: "ada@example.edu", level: "4" } }),
+      }),
+    );
+  });
+});
 
 describe("POST /portal/apply (submit) confirmation email", () => {
   const CYCLE_ID = "cycle-1";
@@ -1227,5 +1310,251 @@ describe("POST /portal/apply — reused waitlisted application", () => {
     } as any);
 
     expect(mockPrisma.domainApplication.update).not.toHaveBeenCalled();
+  });
+});
+
+
+// ─── form logic (show a question only when an earlier answer calls for it) ──
+
+describe("POST /portal/apply — form logic", () => {
+  const when = (questionKey: string, value: string) => ({
+    showIf: { questionKey, op: "is" as const, value },
+  });
+  const ruleGeneral = [
+    { key: "returning", type: "select", required: true, data: { label: "Returning?", options: ["Yes", "No"] } },
+    { key: "why", type: "textarea", required: true, data: { label: "Why?", maxWords: 2, ...when("returning", "No") } },
+    { key: "cv", type: "file", required: true, data: { label: "CV", ...when("returning", "No") } },
+    {
+      key: "mail",
+      type: "email",
+      required: false,
+      data: { label: "Email", afterDomains: true, ...when("returning", "No") },
+    },
+  ];
+  const ruleDomain = [
+    { key: "track", type: "select", required: true, data: { label: "Track", options: ["A", "B"] } },
+    { key: "essay", type: "textarea", required: true, data: { label: "Essay", maxWords: 2, ...when("track", "B") } },
+  ];
+
+  function stage(general = ruleGeneral, domain = ruleDomain) {
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationFormVersion: { questions: general },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      { id: DA_ID, domainId: "domain-x", selected: true, challengeFormVersion: { questions: domain } },
+    ]);
+  }
+  const submit = (answers: Record<string, string>, domainAnswers: Record<string, string> = { track: "A" }) =>
+    action({
+      request: makeSubmitRequest({
+        answers,
+        domainAnswers: [{ domainApplicationId: DA_ID, answers: domainAnswers }],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+
+  it("does not require a hidden general question, hidden file included", async () => {
+    stage();
+    const res = await submit({ returning: "Yes" });
+    expect((res as Response).status).toBe(302);
+  });
+
+  it("requires a general question once its rule shows it", async () => {
+    stage();
+    const res = await submit({ returning: "No", why: "moving" });
+    expect((res as any).error).toMatch(/\(1 unanswered\)/);
+  });
+
+  it("stores no hidden general answer", async () => {
+    stage();
+    await submit({ returning: "Yes", why: "stale", mail: "bad" });
+    expect(mockPrisma.application.update.mock.calls[0][0].data.answers).toEqual({ returning: "Yes" });
+  });
+
+  it("does not run the word limit on a hidden question", async () => {
+    stage();
+    const res = await submit({ returning: "Yes", why: "one two three four" });
+    expect((res as any).wordCountErrors).toBeUndefined();
+    expect((res as Response).status).toBe(302);
+  });
+
+  it("still enforces the word limit on a shown question", async () => {
+    stage();
+    const res = await submit({ returning: "No", why: "one two three", cv: "k" });
+    expect((res as any).wordCountErrors.why).toMatchObject({ wordCount: 3, maxWords: 2 });
+  });
+
+  it("does not check the format of a hidden question", async () => {
+    stage();
+    const res = await submit({ returning: "Yes", mail: "not an email" });
+    expect((res as Response).status).toBe(302);
+  });
+
+  it("checks the format of a shown question, across the afterDomains split", async () => {
+    stage();
+    const res = await submit({ returning: "No", why: "ok", cv: "k", mail: "not an email" });
+    expect((res as any).error).toMatch(/valid email/i);
+  });
+
+  it("applies rules to per-domain answers", async () => {
+    stage();
+    const ok = await submit({ returning: "Yes" }, { track: "A", essay: "one two three four" });
+    expect((ok as Response).status).toBe(302);
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: DA_ID, applicationId: APP_ID },
+      data: { answers: { track: "A" } },
+    });
+  });
+
+  it("requires a per-domain question once its rule shows it", async () => {
+    stage();
+    const res = await submit({ returning: "Yes" }, { track: "B" });
+    expect((res as any).error).toMatch(/\(1 unanswered\)/);
+  });
+
+  it("applies rules to the continued interest form", async () => {
+    const continuedQuestions = [
+      { key: "still", type: "select", required: true, data: { label: "Still?", options: ["Yes", "No"] } },
+      { key: "why_not", type: "textarea", required: true, data: { label: "Why not?", ...when("still", "No") } },
+    ];
+    mockPrisma.application.findUnique.mockResolvedValue({
+      applicationCycleId: CYCLE_ID,
+      applicationFormVersion: { questions: ruleGeneral },
+    });
+    mockPrisma.domainApplication.findMany.mockResolvedValue([
+      {
+        id: DA_ID,
+        domainId: "domain-x",
+        selected: true,
+        continuedFromId: "da-old",
+        challengeFormVersion: { questions: ruleDomain },
+        continuedInterestFormVersion: { questions: continuedQuestions },
+      },
+    ]);
+    const res = await action({
+      request: makeSubmitRequest({
+        domainAnswers: [
+          { domainApplicationId: DA_ID, answers: {}, continuedInterestAnswers: { still: "Yes", why_not: "stale" } } as any,
+        ],
+        selectedDomainIds: ["domain-x"],
+      }),
+      params: {},
+      context: {},
+    } as any);
+    expect((res as Response).status).toBe(302);
+    expect(mockPrisma.domainApplication.updateMany).toHaveBeenCalledWith({
+      where: { id: DA_ID, applicationId: APP_ID },
+      data: { continuedInterestAnswers: { still: "Yes" } },
+    });
+  });
+
+  it("keeps hidden answers when saving a draft", async () => {
+    stage();
+    mockPrisma.domainApplication.findMany.mockResolvedValue([]);
+    const body = new URLSearchParams({
+      intent: "save-draft",
+      applicationId: APP_ID,
+      answers: JSON.stringify({ returning: "Yes", why: "kept for later" }),
+      domainAnswers: JSON.stringify([]),
+    });
+    await action({
+      request: new Request("http://localhost/portal/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: body.toString(),
+      }),
+      params: {},
+      context: {},
+    } as any);
+    expect(mockPrisma.application.update.mock.calls[0][0].data.answers).toEqual({
+      returning: "Yes",
+      why: "kept for later",
+    });
+  });
+
+  it("behaves as before for a form with no rules", async () => {
+    stage(generalQuestions as any, domainQuestions as any);
+    const res = await submit({ story: "one", name: "Ada" }, { domain_essay: "one two" });
+    expect((res as Response).status).toBe(302);
+    const missing = await submit({ story: "one" }, { domain_essay: "one two" });
+    expect((missing as any).error).toMatch(/\(1 unanswered\)/);
+  });
+});
+
+describe("applicant portal progress with form logic", () => {
+  const when = (questionKey: string, value: string) => ({
+    showIf: { questionKey, op: "is" as const, value },
+  });
+  const general: any[] = [
+    { key: "returning", type: "select", required: true, data: { label: "Returning?", options: ["Yes", "No"] } },
+    { key: "why", type: "text", required: true, data: { label: "Why?", ...when("returning", "No") } },
+    { key: "later", type: "text", required: true, data: { label: "Later", afterDomains: true, ...when("returning", "No") } },
+  ];
+  const domain: any = {
+    id: "d1",
+    name: "Design",
+    challenges: [
+      {
+        challengeVersionId: "cv1",
+        challengeName: "C",
+        description: null,
+        questions: [
+          { key: "track", type: "select", required: true, data: { label: "Track", options: ["A", "B"] } },
+          { key: "essay", type: "text", required: true, data: { label: "Essay", ...when("track", "B") } },
+        ],
+      },
+    ],
+  };
+  const progress = (answers: Record<string, string>, domainAnswers: Record<string, string> = {}, continued = {}) =>
+    computeRequiredProgress(general, [domain], ["d1"], { d1: "cv1" }, answers, { d1: domainAnswers }, continued, new Set(), false);
+  const sections = (answers: Record<string, string>, domainAnswers: Record<string, string> = {}) =>
+    buildSections(general, [domain], ["d1"], { d1: "cv1" }, answers, { d1: domainAnswers }, {}, new Set(), false);
+
+  it("counts only visible required questions across general and domain answers", () => {
+    expect(progress({ returning: "Yes" }, { track: "A" })).toEqual({ totalRequired: 2, totalAnswered: 2 });
+    expect(progress({ returning: "No" }, { track: "B" })).toEqual({ totalRequired: 5, totalAnswered: 2 });
+  });
+
+  it("does not count a hidden answer as answered", () => {
+    expect(progress({ returning: "Yes", why: "stale" }, { track: "A", essay: "stale" })).toEqual({
+      totalRequired: 2,
+      totalAnswered: 2,
+    });
+  });
+
+  it("includes the continued interest counts as given", () => {
+    expect(progress({ returning: "Yes" }, { track: "A" }, { d1: { required: 1, answered: 0 } })).toEqual({
+      totalRequired: 3,
+      totalAnswered: 2,
+    });
+  });
+
+  it("hides a section with nothing visible", () => {
+    expect(sections({ returning: "Yes" }).map((s) => s.id)).toEqual(["general-before", "domain-d1"]);
+    expect(sections({ returning: "No" }).map((s) => s.id)).toEqual([
+      "general-before",
+      "domain-d1",
+      "general-after",
+    ]);
+  });
+
+  it("counts each section's visible required questions, with a rule crossing the split", () => {
+    const [before, , after] = sections({ returning: "No", why: "x" });
+    expect([before.requiredCount, before.answeredRequiredCount]).toEqual([2, 2]);
+    expect([after.requiredCount, after.answeredRequiredCount]).toEqual([1, 0]);
+  });
+
+  it("counts a domain's visible required questions", () => {
+    const section = sections({ returning: "Yes" }, { track: "B" })[1];
+    expect([section.requiredCount, section.answeredRequiredCount]).toEqual([2, 1]);
+  });
+
+  it("matches the old counts when there are no rules", () => {
+    const plain = [{ key: "a", type: "text", required: true, data: { label: "A" } }] as any[];
+    expect(
+      computeRequiredProgress(plain, [], [], {}, { a: "x" }, {}, {}, new Set(), false),
+    ).toEqual({ totalRequired: 1, totalAnswered: 1 });
   });
 });

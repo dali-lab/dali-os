@@ -3,7 +3,7 @@
 // variables baked in), captures ip/user-agent, and audit-logs. Generalizes the
 // confidentiality sign upsert.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { getClientIp } from "~/lib/request-meta";
 import { fullName } from "~/lib/display";

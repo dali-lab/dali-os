@@ -1,18 +1,21 @@
 // MCP `get_meeting` — full detail for a single ScheduledMeeting including
 // roster. Mirrors the calendar.meeting.$id loader. Requires `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { noteForOccurrence } from "~/lib/meeting-occurrences";
 import { parseOccurrenceParam, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { canReadRecording } from "~/lib/meeting-recording.server";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 20, maxLimit: 100 };
 
 export const GET_MEETING_DEF = {
   name: "get_meeting",
   description:
-    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, the attendance roster, and the readable recordings across every occurrence (newest first) with their transcript status. A recurring meeting keeps a separate note and roster per occurrence; pass occurrenceStart to pick one (default: the first). Accessible to the organizer, Core members, project members, and any invited attendee.",
+    "Fetch full detail for a scheduled meeting: time, duration, URL, meeting type, Core flag, note page, the attendance roster, and the readable recordings across every occurrence (newest first) with their transcript status, 20 per page (pass page.nextCursor as cursor for older ones until page.hasMore is false; transcriptAvailable covers all of them). A recurring meeting keeps a separate note and roster per occurrence; pass occurrenceStart to pick one (default: the first). Accessible to the organizer, Core members, project members, and any invited attendee.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -25,6 +28,7 @@ export const GET_MEETING_DEF = {
         type: "string",
         description: "For a recurring meeting, when the occurrence starts (ISO 8601).",
       },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["meetingId"],
     additionalProperties: false,
@@ -32,7 +36,7 @@ export const GET_MEETING_DEF = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { meetingId: string; occurrenceStart?: string };
+type Input = PageArgs & { meetingId: string; occurrenceStart?: string };
 
 export async function runGetMeeting(callerId: string, input: Input) {
   const meeting = await prisma.scheduledMeeting.findUnique({
@@ -89,14 +93,11 @@ export async function runGetMeeting(callerId: string, input: Input) {
   const key = occurrence.originalStart.getTime();
   const roster = meeting.attendance.filter((a) => a.occurrenceStart.getTime() === key);
 
-  // Across every occurrence, newest first — not just the resolved one — so an
-  // agent can see a meeting's transcript history in one call. Filtered to
-  // rows this caller may actually read (owner, or anyone who can view the
-  // note), the same gate the recording's own GET route applies.
+  // Across every occurrence, not just the resolved one. Filtered to rows this
+  // caller may read, the same gate the recording's own GET route applies.
   const allRecordings = await prisma.meetingRecording.findMany({
     where: { scheduledMeetingId: meeting.id },
-    orderBy: { occurrenceStart: "desc" },
-    take: 20,
+    orderBy: [{ occurrenceStart: { sort: "desc", nulls: "last" } }, { id: "asc" }],
     select: {
       id: true,
       status: true,
@@ -111,6 +112,8 @@ export async function runGetMeeting(callerId: string, input: Input) {
       allRecordings.map(async (r) => ((await canReadRecording(r, callerId)) ? r : null)),
     )
   ).filter((r): r is (typeof allRecordings)[number] => r !== null);
+
+  const { rows: recordingsPage, page } = pageArray(readableRecordings, input, PAGE_LIMITS);
 
   const typeLabel =
     meeting.meetingType === "Other"
@@ -133,12 +136,13 @@ export async function runGetMeeting(callerId: string, input: Input) {
     organizerName: fullName(meeting.organizer),
     notePageId: noteForOccurrence(meeting.notePages, occurrence.originalStart)?.id ?? null,
     transcriptAvailable: readableRecordings.some((r) => r.status === "Done"),
-    recordings: readableRecordings.map((r) => ({
+    recordings: recordingsPage.map((r) => ({
       id: r.id,
       status: r.status,
       recordedSeconds: r.recordedSeconds,
       occurrenceStart: r.occurrenceStart ? r.occurrenceStart.toISOString() : null,
     })),
+    page,
     canManage,
     roster: roster.map((a) => ({
       userId: a.userId,

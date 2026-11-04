@@ -6,7 +6,7 @@
 // NEVER log the raw body (it's the transcript) or DIARIZE_SECRET.
 
 import type { Route } from "./+types/api.meeting-recordings.$id.result";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { verifyHmac } from "~/lib/transcription/hmac";
 import { applyResult } from "~/lib/meeting-recording.server";
 import type { ModalCallbackBody, ModalProgress, ModalProgressBody } from "~/lib/transcription/modal";

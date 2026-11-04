@@ -7,7 +7,7 @@
 // This table is the only source. The legacy `Project.chartString` columns were
 // imported into it (migration chart_string_legacy_backfill) and then dropped.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import {
   DALI_PROJECTS_GL,

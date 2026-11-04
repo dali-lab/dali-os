@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const delegate = () => ({ findMany: vi.fn(), count: vi.fn(), updateMany: vi.fn() });
   return {
     prisma: {
@@ -19,7 +19,7 @@ vi.mock("~/lib/db", () => {
   };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { occurrenceKeyMap, retitledNote, runOccurrenceRekey } from "~/jobs/occurrence-rekey.server";
 import { JOBS } from "~/jobs/registry";
 

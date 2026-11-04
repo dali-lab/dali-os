@@ -37,6 +37,11 @@ export function detachRequest(pageId: string): JsonRequest {
   return { url: `/api/pages/${pageId}/meeting`, body: { intent: "detach-meeting" } };
 }
 
+/** Set or clear a note's week-grouping date. Pass "YYYY-MM-DD" or null. */
+export function setNoteDateRequest(pageId: string, date: string | null): JsonRequest {
+  return { url: `/api/pages/${pageId}/date`, body: { date } };
+}
+
 export function renameRequest(pageId: string, title: string): JsonRequest {
   return { url: `/api/documents/${pageId}`, body: { title: title.trim() } };
 }

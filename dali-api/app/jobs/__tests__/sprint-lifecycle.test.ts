@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn().mockReturnValue(true),
   postMessage: vi.fn().mockResolvedValue({ ts: "1" }),
@@ -12,7 +12,7 @@ vi.mock("~/projects/lib/project-members.server", () => ({
   currentProjectParticipantIds: vi.fn().mockResolvedValue(new Set(["u1", "u2"])),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { postMessage } from "~/slack/lib/slack-client";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";

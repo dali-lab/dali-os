@@ -15,7 +15,7 @@
 // permanently skip a reminder, and the copy is computed from the real dueAt
 // so a late send still reads correctly.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import {
   APPLICATION_TZ,

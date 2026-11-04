@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 // The expense seam is exercised on its own in the reconcile tests — here we
 // stub it so the budget merge/PATEO/grouping logic is tested in isolation.
 vi.mock("~/admin/lib/payroll-reconcile.server", () => ({
   computeExpensesByProjectChartTerm: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { computeExpensesByProjectChartTerm } from "~/admin/lib/payroll-reconcile.server";
 import {
   getBudgetData,

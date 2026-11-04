@@ -2,7 +2,7 @@
 // Actions: create · edit · react · unreact · delete. Comments carry no
 // open/resolved state, so there is nothing to mark done.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
@@ -216,6 +216,7 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
         where: { commentId: comment.id, userId: callerId, emoji },
       });
     }
+    if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return { ok: true };
   }
 

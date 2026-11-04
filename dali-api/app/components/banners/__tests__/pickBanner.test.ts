@@ -8,16 +8,15 @@ const b = (id: string, trigger: "AppOpen" | "Page", triggerPath: string | null =
 describe("pickBanner", () => {
   const live = [b("open", "AppOpen"), b("cal", "Page", "/calendar")];
 
-  it("opens the app-open banner only on the first load, and not inside a tab", () => {
-    expect(pickBanner(live, "open", "/", true, new Set())?.id).toBe("open");
-    expect(pickBanner(live, "open", "/", false, new Set())).toBeNull();
+  it("opens the app-open banner only on the first load, and not in a page-scoped embed", () => {
+    expect(pickBanner(live, "all", "/", true, new Set())?.id).toBe("open");
+    expect(pickBanner(live, "all", "/", false, new Set())).toBeNull();
     expect(pickBanner(live, "page", "/", true, new Set())).toBeNull();
   });
 
-  it("opens a page banner when its page is visited, but not from the shell in tab mode", () => {
+  it("opens a page banner when its page is visited", () => {
     expect(pickBanner(live, "page", "/calendar/meeting/1", false, new Set())?.id).toBe("cal");
     expect(pickBanner(live, "all", "/calendar", false, new Set())?.id).toBe("cal");
-    expect(pickBanner(live, "open", "/calendar", false, new Set())).toBeNull();
   });
 
   it("never opens the same banner twice in one document", () => {

@@ -10,6 +10,7 @@
 // Pure module (no DB, no HTTP) so it's exhaustively unit-testable, like the
 // interpreters that consume it.
 
+import { isIntentStatus, type IntentStatusValue } from "./intent-status";
 import type { Question } from "~/types";
 import type { Slot } from "./form-slots";
 
@@ -19,7 +20,7 @@ import type { Slot } from "./form-slots";
 export type QuestionTypeConstraint =
   | "reference-project" // reference question, project source
   | "reference-domain" // reference question, domain source
-  | "choice" // select/text answer coerced to a fixed enum (intent status)
+  | "choice" // select/radio/text answer coerced to a fixed enum (intent status)
   | "text" // free text/textarea
   | "person" // not a question — the authenticated submitter (builtin source)
   | "display" // not staffing-feeding — view-only (builtin or any question)
@@ -134,6 +135,9 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
   ],
+  // Pure database view: no interpreter, no staffing writes. Every column is a
+  // display column plus the server-derived submitter identity.
+  referrals: [DISPLAY_ROLE, SUBMITTER_ROLE],
   "level-up": [
     {
       role: "target-domain",
@@ -167,6 +171,7 @@ export const REQUIRED_BUILTINS: Record<Slot, BuiltinSource[]> = {
   "project-bids": ["submitter", "hiredRoles"],
   "intent-to-work": [],
   "level-up": ["submitter"],
+  referrals: ["submitter"],
 };
 
 // A column is filled from one of two source kinds: a form question, or a
@@ -186,6 +191,9 @@ type CommonEntry = {
   // Hidden from the default table but still shown on the row's detail page.
   // Absent/false = visible.
   hidden?: boolean;
+  // Only for intent-status: which status each answer option means, e.g.
+  // { "Yes": "Returning" }. Answers not listed fall back to the status names.
+  statusMap?: Record<string, IntentStatusValue>;
 };
 
 export type ColumnMappingEntry =
@@ -233,6 +241,7 @@ export function parseColumnMapping(json: unknown): ColumnMapping | null {
       // mapping renders in the same order it always did.
       order: typeof r.order === "number" ? r.order : idx,
       ...(r.hidden === true ? { hidden: true } : {}),
+      ...parseStatusMap(r.statusMap),
     };
     // Back-compat: entries saved before builtins have no `source` and are
     // question-sourced. A missing/"question" source needs a questionKey; a
@@ -248,6 +257,15 @@ export function parseColumnMapping(json: unknown): ColumnMapping | null {
     }
   }
   return { version: 1, entries };
+}
+
+function parseStatusMap(raw: unknown): { statusMap?: Record<string, IntentStatusValue> } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, IntentStatusValue> = {};
+  for (const [answer, status] of Object.entries(raw as Record<string, unknown>)) {
+    if (isIntentStatus(status)) out[answer] = status;
+  }
+  return Object.keys(out).length > 0 ? { statusMap: out } : {};
 }
 
 function questionFitsConstraint(
@@ -312,6 +330,12 @@ export function validateMapping(
           ok: false,
           reason:
             "The form was changed and the column mapping is out of date — re-map its questions.",
+        };
+      }
+      if (q.data.showIf) {
+        return {
+          ok: false,
+          reason: `Question "${q.data.label}" is only shown sometimes, so it can't fill the "${def.defaultLabel}" column.`,
         };
       }
       if (!questionFitsConstraint(q, def.constraint)) {

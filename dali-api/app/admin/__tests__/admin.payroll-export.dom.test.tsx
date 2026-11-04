@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn(), currentTermMemberWhere: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -65,12 +65,16 @@ const DATA = {
 let container: HTMLDivElement;
 let root: Root;
 const actionSpy = vi.fn();
+const loaderSpy = vi.fn();
 
-async function mount(data: unknown = DATA) {
+async function mount(data: unknown = DATA, entry = "/admin/payroll/hire-setup") {
   const Stub = createRoutesStub([
     {
       path: "/admin/payroll/hire-setup",
-      loader: () => data,
+      loader: ({ request }) => {
+        loaderSpy(new URL(request.url));
+        return data;
+      },
       action: async ({ request }) => {
         actionSpy(Object.fromEntries(await request.formData()));
         return { ok: true };
@@ -82,7 +86,7 @@ async function mount(data: unknown = DATA) {
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () =>
-    root.render(createElement(DialogProvider, null, createElement(Stub, { initialEntries: ["/admin/payroll/hire-setup"] }))),
+    root.render(createElement(DialogProvider, null, createElement(Stub, { initialEntries: [entry] }))),
   );
   await act(async () => {});
 }
@@ -101,6 +105,7 @@ async function click(el: Element) {
 
 beforeEach(() => {
   actionSpy.mockReset();
+  loaderSpy.mockReset();
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} unobserve() {} });
 });
 afterEach(() => {
@@ -189,6 +194,23 @@ describe("Payroll hire setup page", () => {
     expect(text()).toContain("Project assignments narrowed to Engineering · P1");
     await click(radio("Core"));
     expect(text()).not.toContain("Clear filter");
+  });
+
+  it("switching the term reloads that term and drops the old term's domain and level picks", async () => {
+    await mount(DATA, "/admin/payroll/hire-setup?term=t-26s&domain=d-eng&level=P1");
+    const trigger = document.querySelector<HTMLButtonElement>("button[aria-label='Filter by term']")!;
+    expect(trigger.textContent).toContain("26S (current)");
+    await act(async () => {
+      trigger.click();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const options = Array.from(document.querySelectorAll<HTMLElement>("[role='option']"));
+    expect(options.map((o) => o.textContent)).toEqual(["26S (current)", "26W"]);
+    await click(options[1]);
+    const url: URL = loaderSpy.mock.lastCall![0];
+    expect(url.searchParams.get("term")).toBe("t-26w");
+    expect(url.searchParams.has("domain")).toBe(false);
+    expect(url.searchParams.has("level")).toBe(false);
   });
 
   it("says so when there are no terms", async () => {

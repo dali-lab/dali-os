@@ -2,7 +2,7 @@
 // and access; the slides live on the 1:1 SlideDeck row. Every write is a
 // compare-and-set on SlideDeck.updatedAt, from the editor and MCP alike.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { getPageAccess, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { parseSlides } from "~/components/slides/slide-schema";
 import type { Slide } from "~/components/slides/types";

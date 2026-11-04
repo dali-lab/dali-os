@@ -7,7 +7,7 @@
 // Purge of forms checks formDeletionBlockers before deleting.
 
 import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
 import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";

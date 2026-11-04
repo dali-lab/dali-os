@@ -11,6 +11,6 @@
 
 import { coreHandle } from "~/core/coreNav";
 
-export { meta, loader, action, default } from "~/projects/routes/projects.intent-to-work";
+export { meta, loader, action, shouldRevalidate, default } from "~/projects/routes/projects.intent-to-work";
 
 export const handle = coreHandle("intent-to-work");

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findMany: vi.fn(), groupBy: vi.fn() },
     scheduledMeeting: { findMany: vi.fn(), findUnique: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/lib/note-path.server", () => ({
   ),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { findRoot } from "~/lib/drive-roots.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { notebookLocationPartsBulk } from "~/lib/note-path.server";

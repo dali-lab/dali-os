@@ -94,6 +94,7 @@ export default [
     route("admin/platform/flags", "admin/routes/admin.feature-flags.tsx"),
     route("admin/onboarding", "admin/routes/admin.activities.tsx"),
     route("admin/onboarding/:id", "admin/routes/admin.activities.$id.tsx"),
+    route("admin/rooms", "rooms/routes/admin.rooms.tsx"),
     ...[
       "system", "payroll-export", "site-users", "security", "outbound-messages", "email-senders",
       "analytics", "ai-usage", "activity", "jobs", "infrastructure", "feature-flags", "activities",
@@ -134,7 +135,7 @@ export default [
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
-    route("core/rooms", "rooms/routes/core.rooms.tsx"),
+    route("core/rooms", "admin/routes/admin.legacy-redirect.ts", { id: "legacy-core-rooms" }),
     route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx", [
       index("core/routes/core.communications._index.tsx"),
@@ -152,7 +153,11 @@ export default [
     // application records), Core-only. The external portal at /partner/*
     // (singular) is a separate surface and does not move.
     route("core/partners", "partners/routes/core.partners.tsx"),
+    route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
+    route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+    route("core/partners/referrals/:userId", "partners/routes/core.partners.referrals.$userId.tsx"),
     route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
@@ -198,6 +203,7 @@ export default [
     // The writing page sits outside the Resources layout: no masthead or
     // bookmark tabs, just the post and its settings.
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
+    route("api/resources/blog-posts", "routes/api.resources.blog-posts.ts"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
     route("release-notes", "routes/release-notes._index.tsx"),
@@ -247,6 +253,7 @@ export default [
     route("journeys", "journeys/routes/journeys.tsx"),
     route("journeys/access", "journeys/routes/journeys.access.tsx"),
     route("journeys/reviews", "journeys/routes/journeys.reviews.tsx"),
+    route("journeys/reviews/more", "journeys/routes/journeys.reviews.more.ts"),
     route("journeys/:domain", "journeys/routes/journeys.$domain.tsx"),
     route("journeys/:domain/:journeyId", "journeys/routes/journeys.$domain.$journeyId.tsx"),
     route("journeys/:domain/:journeyId/edit", "journeys/routes/journeys.$domain.$journeyId.edit.tsx"),
@@ -522,7 +529,12 @@ export default [
   route("api/groups/:groupId", "admin/routes/api.groups.$groupId.ts"),
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
+  route("api/feedback/posts", "routes/api.feedback.posts.ts"),
+  route("api/custom-emoji", "routes/api.custom-emoji.ts"),
+  route("api/release-notes", "routes/api.release-notes.ts"),
+  route("api/announcements/sent", "routes/api.announcements.sent.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
+  route("api/my-tasks", "routes/api.my-tasks.ts"),
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),
   route("api/presence/statuses", "routes/api.presence.statuses.ts"),
   route("api/presence/hide-activity", "routes/api.presence.hide-activity.ts"),
@@ -558,6 +570,8 @@ export default [
   route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
   route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
 
+  route("api/attendance/feed", "routes/api.attendance.feed.ts"),
+
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/update", "calendar/routes/api.scheduled-meetings.$id.update.ts"),
@@ -580,6 +594,7 @@ export default [
   route("api/rooms", "rooms/routes/api.rooms.ts"),
   route("api/rooms/:id/schedule", "rooms/routes/api.rooms.$id.schedule.ts"),
   route("api/rooms/:id/bookings", "rooms/routes/api.rooms.$id.bookings.ts"),
+  route("api/room-bookings/:id", "rooms/routes/api.room-bookings.$id.ts"),
   route("api/room-bookings/:id/cancel", "rooms/routes/api.room-bookings.$id.cancel.ts"),
   route("api/room-display/activate", "rooms/routes/api.room-display.activate.ts"),
   route("api/room-display/schedule", "rooms/routes/api.room-display.schedule.ts"),
@@ -658,6 +673,7 @@ export default [
     "api/projects/:id/tasks/archive",
     "projects/routes/api.projects.$id.tasks.archive.ts",
   ),
+  route("api/task-options", "projects/routes/api.task-options.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
   route("api/tasks/:id/view", "projects/routes/api.tasks.$id.view.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
@@ -690,6 +706,7 @@ export default [
   ),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
+  route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
@@ -697,6 +714,7 @@ export default [
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
   route("api/notebooks/:id", "routes/api.notebooks.$id.ts"),
   route("api/pages/:id/meeting", "routes/api.pages.$id.meeting.ts"),
+  route("api/pages/:id/date", "routes/api.pages.$id.date.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
 
@@ -718,6 +736,7 @@ export default [
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).
   route("api/drive/files", "routes/api.drive.files.ts"),
+  route("api/drive/download", "routes/api.drive.download.ts"),
   // Drive Trash: list/restore/purge archived items (docs, files, forms).
   route("api/drive/trash", "routes/api.drive.trash.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
@@ -728,6 +747,7 @@ export default [
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
+  route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
 
   // Lab-wide document/file tags
@@ -776,6 +796,7 @@ export default [
   // JSON create path for the board modal's create mode (see the form-based
   // create intent on core.partners.tsx for the list view's twin).
   route("api/partner-applications", "partners/routes/api.partner-applications.ts"),
+  route("api/partner-activity", "partners/routes/api.partner-activity.ts"),
   route("api/partner-applications/:id/move", "partners/routes/api.partner-applications.$id.move.ts"),
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),
@@ -836,6 +857,7 @@ export default [
   route("api/hiring/domain-applications/:id/full-context", "hiring/routes/api.domain-applications.$id.full-context.ts"),
   route("api/hiring/domain-applications/:id/schedule-interview", "hiring/routes/api.domain-applications.$id.schedule-interview.ts"),
   route("api/hiring/domain-applications/:id/resend-invite", "hiring/routes/api.domain-applications.$id.resend-invite.ts"),
+  route("api/hiring/domain-applications/:id/reopen-scheduling", "hiring/routes/api.domain-applications.$id.reopen-scheduling.ts"),
 
   route("api/hiring/reviews/:id", "hiring/routes/api.reviews.$id.ts"),
   route("api/hiring/reviews/:id/submit", "hiring/routes/api.reviews.$id.submit.ts"),
@@ -876,7 +898,7 @@ export default [
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
   route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
 
-  // BetterAuth admin impersonation (flag-gated on `betterauth`).
+  // BetterAuth admin impersonation.
   route("admin/impersonate", "routes/admin.impersonate.ts"),
   route("admin/stop-impersonating", "routes/admin.stop-impersonating.ts"),
 
@@ -926,10 +948,10 @@ export default [
   // — not wired into existing auth flows yet.
   route("api/auth/*", "routes/api.auth.$.ts"),
 
-  // Meeting-note recording: transcript in, notes Markdown out. Behind the
-  // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
+  // Meeting-note recording: transcript in, notes Markdown out. Same provider
+  // gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
-  // Enhance (specs/meeting-notes-model.md §2): same flag/permission/budget as
+  // Enhance (specs/meeting-notes-model.md §2): same permission/budget as
   // Write notes above, merges the model's plan against the note's typed
   // blocks instead of appending a fixed summary.
   route("api/ai/meeting-notes/enhance", "routes/api.ai.meeting-notes.enhance.ts"),
@@ -938,6 +960,7 @@ export default [
   // lands on /result. Desktop app depends on these (see
   // desktop/src-tauri/src/recording.rs).
   route("api/meeting-recordings", "routes/api.meeting-recordings.ts"),
+  route("api/meeting-recordings/active", "routes/api.meeting-recordings.active.ts"),
   route("api/meeting-recordings/:id", "routes/api.meeting-recordings.$id.ts"),
   route("api/meeting-recordings/:id/chunks", "routes/api.meeting-recordings.$id.chunks.ts"),
   route("api/meeting-recordings/:id/result", "routes/api.meeting-recordings.$id.result.ts"),

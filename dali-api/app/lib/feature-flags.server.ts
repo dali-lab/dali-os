@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cachedForRequest } from "~/lib/request-cache";
 import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import type { UserRoles } from "~/lib/roles";
@@ -145,22 +145,6 @@ export async function isFeatureEnabledForEveryone(
       }
     : defaultConfig(def);
   return config.enabled && config.everyone;
-}
-
-// Whether a flag's master switch is on at all, regardless of audience
-// targeting. For signed-out surfaces (the auth pages) that cannot match a
-// user: any rollout of the flag — even one targeted at a single tester —
-// turns them on, since showing the targeted variant to everyone is harmless
-// there and the alternative (everyone-only) hides it from the tester too.
-export async function isFeatureSwitchedOn(
-  key: FeatureFlagKey,
-  request?: Request,
-): Promise<boolean> {
-  const def = FEATURE_FLAGS.find((f) => f.key === key);
-  if (!def) return false;
-  const byKey = await getFeatureFlagRows(request);
-  const row = byKey.get(key) ?? null;
-  return row ? row.enabled : defaultConfig(def).enabled;
 }
 
 // Which of a multi-value flag's options applies to this user, or null when the

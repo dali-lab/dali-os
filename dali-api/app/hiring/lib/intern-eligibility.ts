@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTermStrict } from "~/lib/roles";
 
 // A user is eligible to apply to an Fellowship cycle iff they currently

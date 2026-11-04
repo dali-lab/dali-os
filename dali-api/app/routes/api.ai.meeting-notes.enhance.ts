@@ -15,12 +15,10 @@
 import type { Route } from "./+types/api.ai.meeting-notes.enhance";
 import { z } from "zod";
 import { requireAuth } from "~/lib/auth";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto } from "~/lib/meeting-recording.server";
-import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { generateAndVerifyEnhancePlan, EnhanceBlocksSchema } from "~/lib/meeting-notes-enhance.server";
 import { AI_BURST_MAX, AI_BURST_WINDOW_MS } from "./api.ai.meeting-notes";
 
@@ -62,10 +60,6 @@ export async function action({ request }: Route.ActionArgs) {
   const rec = await prisma.meetingRecording.findUnique({ where: { id: body.recordingId } });
   if (!rec) return Response.json({ error: "Recording not found" }, { status: 404 });
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request))) {
-    return Response.json({ error: "Not available" }, { status: 403 });
-  }
   if (!(await canRecordInto(auth.user.sub, rec.documentName))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }

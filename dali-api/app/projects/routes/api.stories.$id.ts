@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.stories.$id";
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, type Prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 

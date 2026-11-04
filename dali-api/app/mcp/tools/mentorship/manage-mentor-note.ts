@@ -12,7 +12,7 @@
 // it from the template on creation but never overwrites it directly afterward —
 // use the DocEditor to write. The vibe and metadata fields are plain columns.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { canViewMentorship } from "~/mentorship/lib/visibility";
 import { startOfWeekUTC } from "~/mentorship/lib/week";

@@ -13,7 +13,8 @@ import {
   isLandingBackgroundId,
   scheduledLandingWeek,
 } from "~/components/home/landing/backgrounds/schedule";
-import { currentTermStrict, getUserRoles } from "~/lib/roles";
+import { currentTermStrict } from "~/lib/roles";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { termWeekNumber } from "~/lib/terms.shared";
 import { resultIcon } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
@@ -32,7 +33,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-  if ((await getUserRoles(auth.user.sub, request)).isAlumni) return redirect("/connect");
+  if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/connect");
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
@@ -243,18 +244,8 @@ function HomeSearch() {
   // show a pending state instead of flashing "No matches" before the first hit.
   const isSearching = trimmed.length >= MIN_QUERY_LENGTH && resultsQuery !== trimmed;
 
-  // Home renders inside the workspace iframe, so a result opens as a workspace
-  // tab rather than navigating this view away — same rule as every other link
-  // on this page.
   const openResult = (r: SearchResult) => {
-    if (window.self !== window.top) {
-      window.parent.postMessage(
-        { type: "dali:openTab", url: r.url, label: r.title },
-        window.location.origin,
-      );
-    } else {
-      window.location.assign(r.url);
-    }
+    window.location.assign(r.url);
     setOpen(false);
   };
 

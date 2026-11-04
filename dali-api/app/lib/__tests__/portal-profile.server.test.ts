@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async () => "https://cdn/photo.png") }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadPortalProfile, savePortalProfile } from "~/lib/portal-profile.server";
 
 const mockPrisma = prisma as unknown as {

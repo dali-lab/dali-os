@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 const getCollabServer = vi.fn();
 vi.mock("../server", () => ({ getCollabServer }));
 vi.mock("../persistence", () => ({ maybeSnapshot: vi.fn(), storeDocument: vi.fn() }));

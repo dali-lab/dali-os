@@ -11,7 +11,7 @@
 // the outbox in one transaction, so a crash can't leave rows unmarked (and
 // re-sent); the outbox then owns delivery (retry + dead-letter).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import { escapeHtml } from "~/lib/email";

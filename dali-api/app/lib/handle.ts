@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // User @-handles (e.g. "spark" for Sophie Park). Seeded from first-initial +
 // last-name, kept unique with a numeric suffix, and used to @-mention members

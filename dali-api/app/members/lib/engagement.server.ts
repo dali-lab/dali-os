@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { commencementDate } from "~/lib/membership-status";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";

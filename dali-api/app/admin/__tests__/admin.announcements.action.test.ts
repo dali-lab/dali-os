@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { scheduledAnnouncement: { findUnique: vi.fn(), updateMany: vi.fn() } },
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -11,7 +11,7 @@ vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
 vi.mock("~/components/doc", () => ({ DocEditor: () => null }));
 vi.mock("~/core/lib/regroup-redirect.server", () => ({ regroupRedirect: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

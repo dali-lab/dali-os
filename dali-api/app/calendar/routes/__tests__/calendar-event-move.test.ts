@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({
   updateScheduledMeeting: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { patchGoogleCalendarEvent } from "~/lib/google-calendar";
 import { updateScheduledMeeting } from "~/lib/scheduled-meeting";

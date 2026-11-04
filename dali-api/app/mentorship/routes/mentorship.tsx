@@ -7,7 +7,7 @@ import {
 import type { Route } from "./+types/mentorship";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, currentTermPhase } from "~/lib/roles";
 import { interimLabel } from "~/lib/terms.shared";
 import { canViewMentorship } from "../lib/visibility";
@@ -261,7 +261,7 @@ export default function MentorshipHub() {
             ) : data.termId ? (
               // The whole line is the link, arrow included.
               <Link
-                to={`/mentorship/browse?termId=${data.termId}`}
+                to={`/mentorship/browse?term=${data.termId}`}
                 className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground active:text-foreground"
               >
                 Weekly notes from every mentor in the lab
@@ -271,7 +271,7 @@ export default function MentorshipHub() {
           </div>
           {data.termId && (data.phase === "break" || behind) && (
             <Link
-              to={`/mentorship/browse?termId=${data.termId}`}
+              to={`/mentorship/browse?term=${data.termId}`}
               className={cn(
                 "text-sm hover:underline inline-flex items-center gap-1 shrink-0",
                 behind ? "text-os-accent" : "text-muted-foreground",

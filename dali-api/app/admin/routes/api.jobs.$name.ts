@@ -6,7 +6,7 @@
 
 import type { Route } from "./+types/api.jobs.$name";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";

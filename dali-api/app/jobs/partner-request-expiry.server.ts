@@ -3,7 +3,7 @@
 // mark it Expired and log it to the timeline. No notify() here; nothing
 // actionable is left for anyone to respond to.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

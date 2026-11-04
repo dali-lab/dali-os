@@ -18,7 +18,7 @@ test('what this shows', async ({ page, stage, loginAs }) => {
 });
 ```
 
-`./lib/demo` extends the e2e fixtures (`loginAs`, seeded users, launch-welcome dismissed) and sets `dali_tabless=1`, so pages render directly like they do for real users (no workspace iframe). Viewport is fixed at 1280x720. Never `waitForLoadState('networkidle')` after the first login: SSE and websockets never settle. Keep it to 15-20 seconds; the target is under 3 MB.
+`./lib/demo` extends the e2e fixtures (`loginAs`, seeded users, launch-welcome dismissed). Viewport is fixed at 1280x720. Never `waitForLoadState('networkidle')` after the first login: SSE and websockets never settle. Keep it to 15-20 seconds; the target is under 3 MB.
 
 `stage` helpers:
 

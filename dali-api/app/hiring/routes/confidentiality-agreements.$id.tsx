@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/confidentiality-agreements.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";

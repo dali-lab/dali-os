@@ -4,7 +4,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isLabMember: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { getPageAccess } from "~/lib/pageAccess.server";

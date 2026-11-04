@@ -1,13 +1,13 @@
 import { Link, useLoaderData } from "react-router";
 import { ArrowLeft } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { hasCycleAccess } from "~/lib/roles";
 import { requirePageSignedOrRedirect } from "~/hiring/lib/confidentiality";
 import { presignAnswers } from "~/hiring/lib/presign";
-import { applicationBlindLabel, reviewerBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { overallApplicationStatus } from "~/hiring/lib/applicant-history.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { safeParseJsonString } from "~/forms/lib/forms-data";
@@ -41,7 +41,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       userId: true,
       applicationCycleId: true,
-      applicationCycle: { select: { anonymizeReview: true } },
     },
   });
   if (!current) throw new Response("Not found", { status: 404 });
@@ -84,23 +83,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404 });
   }
 
-  // Blinded here if the viewer is blinded to the CURRENT applicant on either
-  // surface that links here (the reviewer page or the lead detail pages). The
-  // prior cycle's own released decisions don't lift it.
-  const [reviewerLabel, applicationLabel] = await Promise.all([
-    reviewerBlindLabel({
-      reviewerId: auth.user.sub,
-      cycleId: current.applicationCycleId,
-      applicationId: current.id,
-      anonymizeReview: current.applicationCycle.anonymizeReview,
-    }),
-    applicationBlindLabel({
-      cycleId: current.applicationCycleId,
-      applicationId: current.id,
-      anonymizeReview: current.applicationCycle.anonymizeReview,
-    }),
-  ]);
-  const blindLabel = reviewerLabel ?? applicationLabel;
+  const reviewerRows = await prisma.cycleReviewer.findMany({
+    where: { applicationCycleId: current.applicationCycleId, userId: auth.user.sub },
+    select: { domainId: true },
+  });
+  const blindLabel = await applicationBlindLabel({
+    cycleId: current.applicationCycleId,
+    applicationId: current.id,
+    domainIds: reviewerRows.map((r) => r.domainId),
+  });
   if (blindLabel) prior.user = blindUser(prior.user, blindLabel);
 
   // Presign file-type answers and synthesize the viewer's challenge-version

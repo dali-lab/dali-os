@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const prisma: any = {
     scheduledMeeting: { findUnique: vi.fn() },
     meetingShareGrant: { findMany: vi.fn(), createMany: vi.fn(), deleteMany: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/lib/db", () => {
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";

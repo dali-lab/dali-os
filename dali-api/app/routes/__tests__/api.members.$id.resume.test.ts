@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}), isAdmin: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
@@ -19,7 +19,7 @@ vi.mock("~/lib/ai.server", async (importOriginal) => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -27,7 +27,7 @@ import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isAiEnabled, resolveAiProvider } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
-import { AI_DAILY_MAX } from "~/routes/api.ai.meeting-notes";
+import { AI_DAILY_MAX } from "~/lib/ai-quota.server";
 import { action, loader } from "~/routes/api.members.$id.resume";
 
 const ME = "u-me";

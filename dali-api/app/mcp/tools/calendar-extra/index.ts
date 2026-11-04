@@ -67,12 +67,22 @@ import {
   MANAGE_CALENDAR_LINK_DEF,
   runManageCalendarLink,
 } from "./manage-calendar-link";
+import {
+  LIST_ROOMS_DEF,
+  GET_ROOM_SCHEDULE_DEF,
+  BOOK_ROOM_DEF,
+  CANCEL_ROOM_BOOKING_DEF,
+  runListRooms,
+  runGetRoomSchedule,
+  runBookRoom,
+  runCancelRoomBooking,
+} from "./rooms";
 
 export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: LIST_SCHEDULED_MEETINGS_DEF,
     run: (ctx, args) =>
-      runListScheduledMeetings(ctx.user.id, args as { status?: "Searching" | "Confirmed" | "Cancelled"; role?: "organizer" | "participant" | "any"; limit?: number }),
+      runListScheduledMeetings(ctx.user.id, args as { status?: "Searching" | "Confirmed" | "Cancelled"; role?: "organizer" | "participant" | "any"; limit?: number; cursor?: string }),
   },
   {
     def: GET_MEETING_ATTENDANCE_DEF,
@@ -112,7 +122,7 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: GET_MEETING_DEF,
     run: (ctx, args) =>
-      runGetMeeting(ctx.user.id, args as { meetingId: string; occurrenceStart?: string }),
+      runGetMeeting(ctx.user.id, args as Parameters<typeof runGetMeeting>[1]),
   },
   {
     def: GET_MEETING_TRANSCRIPT_DEF,
@@ -126,7 +136,7 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: SEARCH_CALENDAR_DEF,
     run: (ctx, args) =>
-      runSearchCalendar(ctx.user.id, args as { q: string; scope?: "near" | "all"; rangeStart?: string; rangeEnd?: string }),
+      runSearchCalendar(ctx.user.id, args as Parameters<typeof runSearchCalendar>[1]),
   },
   {
     def: MANAGE_CLASS_DEF,
@@ -136,7 +146,7 @@ export const CALENDAR_TOOLS: McpTool[] = [
   {
     def: SEARCH_TIMETABLE_COURSES_DEF,
     run: (ctx, args) =>
-      runSearchTimetableCourses(ctx.user.id, args as { termId: string; q: string }),
+      runSearchTimetableCourses(ctx.user.id, args as Parameters<typeof runSearchTimetableCourses>[1]),
   },
   {
     def: SCAN_ATTENDEE_DEF,
@@ -147,5 +157,25 @@ export const CALENDAR_TOOLS: McpTool[] = [
     def: MANAGE_CALENDAR_LINK_DEF,
     run: (ctx, args) =>
       runManageCalendarLink(ctx.user.id, args as Parameters<typeof runManageCalendarLink>[1]),
+  },
+  {
+    def: LIST_ROOMS_DEF,
+    run: (ctx, args) =>
+      runListRooms(ctx.user.id, args as Parameters<typeof runListRooms>[1]),
+  },
+  {
+    def: GET_ROOM_SCHEDULE_DEF,
+    run: (ctx, args) =>
+      runGetRoomSchedule(ctx.user.id, args as Parameters<typeof runGetRoomSchedule>[1]),
+  },
+  {
+    def: BOOK_ROOM_DEF,
+    run: (ctx, args) =>
+      runBookRoom(ctx.user.id, args as Parameters<typeof runBookRoom>[1]),
+  },
+  {
+    def: CANCEL_ROOM_BOOKING_DEF,
+    run: (ctx, args) =>
+      runCancelRoomBooking(ctx.user.id, args as Parameters<typeof runCancelRoomBooking>[1]),
   },
 ];

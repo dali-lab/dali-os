@@ -106,7 +106,7 @@ export const NOTIFICATION_COPY = {
     description: "Sent to the organizer shortly before a meeting they organize starts.",
     variables: ["itemTitle"],
     subject: "{{itemTitle}} is starting. Record it?",
-    body: "DALI can transcribe it and delete the audio once it's done.",
+    body: "DALI can transcribe it and delete the audio after.",
   },
   "meeting.transcript_ready": {
     eventType: "meeting.transcript_ready",
@@ -320,7 +320,7 @@ export const NOTIFICATION_COPY = {
     purpose: "Hiring",
     eventType: "hiring.interview_cancelled",
     label: "Interview cancelled",
-    description: "Sent to an interviewer when a hiring lead cancels an interview they were assigned to.",
+    description: "Sent to an interviewer when an interview they were assigned to is cancelled or moved to a new time.",
     variables: ["personName", "itemDetail"],
     subject: "Interview cancelled: {{personName}}",
     body: "{{itemDetail}}",
@@ -629,6 +629,15 @@ export const NOTIFICATION_COPY = {
       "Sent by Core to a chosen audience. The subject and body are written per announcement; only the frame around them comes from here.",
     variables: ["itemTitle"],
     subject: "{{itemTitle}}",
+  },
+  "form.reminder": {
+    eventType: "form.reminder",
+    label: "Form reminder",
+    description:
+      "Sent to people who haven't filled out a form, by the form's owner or a day before it closes. The message is written per send; only the frame around it comes from here.",
+    variables: ["itemTitle"],
+    subject: "Reminder: {{itemTitle}}",
+    linkLabel: "Open form",
   },
   "education.announcement": {
     eventType: "education.announcement",

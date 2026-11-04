@@ -1,6 +1,6 @@
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.invite.$token";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { startLoginSession } from "~/lib/login-session.server";
 import { logAuditEvent } from "~/lib/audit";
 import {

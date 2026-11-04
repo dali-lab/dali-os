@@ -2,7 +2,7 @@
 // that has MeetingAttendance rows (see tracksAttendance). Mirrors the logic
 // of api.scheduled-meetings.$id.attendance.ts. Requires `mcp:write` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { markMeetingAttendance, parseOccurrenceParam, tracksAttendance } from "~/lib/scheduled-meeting";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError } from "../../registry";

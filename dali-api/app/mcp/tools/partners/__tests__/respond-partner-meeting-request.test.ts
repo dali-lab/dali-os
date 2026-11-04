@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();

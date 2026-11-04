@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.partner-applications.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore, getUserRoles, getActiveCoreCycleTermIds } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCore } from "~/lib/roles";
+import { listActiveCoreMembers, resolveApplicationIcon } from "../lib/core-members.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
@@ -36,6 +36,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
+      iconEmoji: true,
+      piUserId: true,
       summary: true,
       stage: true,
       sowDocId: true,
@@ -142,37 +144,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     ]),
   );
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
-  const financeOn = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
-  const emailThreads = partnerEmailOn
-    ? await getPartnerContactEmailThreads(application.applicantContact.id)
-    : [];
+  const emailThreads = await getPartnerContactEmailThreads(application.applicantContact.id);
   const contract = await partnerContractStatus(application.id);
   const contractDocuments = canEdit ? await listPartnerContractDocuments() : [];
 
   // Attendee picker for the Meetings tab's manual "log a meeting" form —
   // mirrors the full page's loader (core.partners.applications.$id.tsx).
-  let coreMembers: { userId: string; name: string }[] = [];
-  const cycleTermIds = await getActiveCoreCycleTermIds(request);
-  if (cycleTermIds.length > 0) {
-    const assignments = await prisma.coreAssignment.findMany({
-      where: { termId: { in: cycleTermIds } },
-      select: {
-        userId: true,
-        user: { select: { firstName: true, lastName: true, daliEmail: true } },
-      },
-      distinct: ["userId"],
-    });
-    coreMembers = assignments.map((a) => ({
-      userId: a.userId,
-      name:
-        [a.user.firstName, a.user.lastName].filter(Boolean).join(" ") ||
-        a.user.daliEmail ||
-        a.userId,
-    }));
-    coreMembers.sort((a, b) => a.name.localeCompare(b.name));
-  }
+  const coreMembers = await listActiveCoreMembers(request);
+  const iconEmoji = await resolveApplicationIcon(application);
 
   return withCors(
     request,
@@ -180,6 +159,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       application: {
         id: application.id,
         title: application.title,
+        iconEmoji,
+        piUserId: application.piUserId,
         summary: application.summary,
         stage: application.stage,
         sowDocId: application.sowDocId,
@@ -249,8 +230,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })),
       actorNames,
       emailThreads,
-      partnerEmailOn,
-      financeOn,
       contract,
       contractDocuments,
       coreMembers,

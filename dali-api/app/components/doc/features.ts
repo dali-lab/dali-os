@@ -30,6 +30,12 @@ export interface Features {
    * with components loses them if reopened on a surface without this.
    */
   components?: boolean;
+  /**
+   * The task block's schema, so `document` surfaces keep the blocks they read.
+   * Offering "/task" is separate: see DocEditorProps.taskBlock. Never gate this
+   * on a feature flag, because a surface without it strips the block on load.
+   */
+  tasks?: boolean;
   /** Page-break block + slash item (full document surfaces only). */
   pageBreak?: boolean;
   /**
@@ -56,7 +62,7 @@ export const EDITOR_PRESETS: Record<EditorPresetName, Features> = {
   notes: { images: true }, // mentorship notes/templates, hiring notes
   agreement: { images: true, signing: true }, // signing document body
   guide: { mentions: true, images: true, files: true, pageBreak: true, columns: true }, // page-doc guides
-  document: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true }, // full document
+  document: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true, tasks: true }, // full document
   resource: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true, components: true }, // Resources pages + blog posts
 };
 

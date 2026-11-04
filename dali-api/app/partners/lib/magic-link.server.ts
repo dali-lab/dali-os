@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { sendMemberEmailConflictEmail } from "./partner-emails.server";
 

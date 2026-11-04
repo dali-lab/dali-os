@@ -11,7 +11,7 @@
 // column reads and decodes nothing.
 
 import type { JobContext, JobResult } from "~/jobs/registry";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { pageDocName } from "~/collab/roomName";
 import { stateToBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";

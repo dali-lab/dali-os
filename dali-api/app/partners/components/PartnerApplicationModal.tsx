@@ -1,7 +1,7 @@
 // Partner application record modal — follows TaskModal's conventions (record
-// mode with a pencil to edit, useDialog guarded close) but
-// wide, with one column of tabs; the editable properties lead the Details
-// tab. specs/partner-crm.md §5.
+// mode with a pencil to edit, useDialog guarded close) but wide, with the
+// detail pages' OsTabBar over the content and the editable properties in a
+// persistent sidebar on the right. specs/partner-crm.md §5.
 //
 // Mounted from the board route (app/partners/components/PartnerBoard.tsx),
 // so every save posts through a plain fetch() to the detail route's action
@@ -14,12 +14,13 @@ import { Maximize2, Pencil, X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { MultiSelect, Select, Tooltip } from "~/components/ui/floating";
 import { Button, buttonClasses } from "~/components/ui/Button";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { OsTabBar } from "~/components/os-page";
 import { useDialog } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { PARTNER_STAGE_LABELS } from "../lib/partner-application";
+import { postPartnerApplicationIntent } from "../lib/partner-detail-fetch";
 import type { PartnerCardModel } from "../lib/partner-board";
 import type { ApplicationDetailResponse } from "../lib/partner-application-detail";
 import { ActivityTab } from "./application/ActivityTab";
@@ -28,10 +29,12 @@ import { MeetingsTab } from "./application/MeetingsTab";
 import { EvaluationTab } from "./application/EvaluationTab";
 import { EmailTab } from "./application/EmailTab";
 import { PropertyRail } from "./application/PropertyRail";
-import { DetailsLayout, STAGE_TONE } from "./application/rail";
+import { STAGE_TONE } from "./application/rail";
 import { StageActions } from "./application/StageActions";
 import { SowTab } from "./application/SowTab";
 import { ScheduleInterviewModal } from "./ScheduleInterviewModal";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 
 const TAB_ROW_LIMIT = 8;
 
@@ -187,6 +190,12 @@ export function PartnerApplicationModal({
     refresh();
   }
 
+  async function saveIcon(emoji: string | null) {
+    if (!detail) return;
+    await postPartnerApplicationIntent(detail.application.id, "icon", { iconEmoji: emoji });
+    refresh();
+  }
+
   const availableDomains = detail
     ? domainOptions.filter((d) => !detail.application.domains.some((ad) => ad.domainId === d.id))
     : domainOptions;
@@ -198,7 +207,8 @@ export function PartnerApplicationModal({
         onClose={() => void guardedClose()}
         labelledBy="partner-application-modal-title"
         containerClassName={cn(
-          modalCardClass("max-w-4xl"),
+          // Record mode is wider: content column plus the property sidebar.
+          modalCardClass(isCreate ? "max-w-4xl" : "max-w-5xl"),
           // A fixed frame, so switching to a short tab doesn't resize the dialog.
           isCreate ? "flex flex-col" : "flex h-[85vh] flex-col",
         )}
@@ -239,12 +249,21 @@ export function PartnerApplicationModal({
                 </Button>
               </form>
             ) : (
-              <h2
-                id="partner-application-modal-title"
-                className="os-record-name os-modal-title min-w-0 flex-1 break-words"
-              >
-                {detail?.application.title ?? "Loading…"}
-              </h2>
+              <div className="flex min-w-0 items-center gap-2">
+                {detail && canEdit && (
+                  <ProjectIconPicker
+                    iconEmoji={detail.application.iconEmoji}
+                    editing
+                    onChange={(emoji) => void saveIcon(emoji)}
+                  />
+                )}
+                {detail && !canEdit && detail.application.iconEmoji && (
+                  <ProjectIcon iconEmoji={detail.application.iconEmoji} size="lg" />
+                )}
+                <h2 id="partner-application-modal-title" className="os-modal-title min-w-0 flex-1 break-words">
+                  {detail?.application.title ?? "Loading…"}
+                </h2>
+              </div>
             )}
             {!isCreate && detail && (
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-os-grey">
@@ -377,10 +396,13 @@ export function PartnerApplicationModal({
           ) : !detail ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
-            <div className="min-w-0">
-                <SegmentedTabButtons
-                  label="Application sections"
-                  items={TABS.map((t) => ({ label: t.label, active: tab === t.key, onClick: () => setTab(t.key) }))}
+            <div className="min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-8">
+              <div className="min-w-0">
+                <OsTabBar
+                  ariaLabel="Application sections"
+                  tabs={TABS}
+                  active={tab}
+                  onSelect={setTab}
                 />
                 <div className="mt-5">
                   {tab === "activity" && (
@@ -388,7 +410,7 @@ export function PartnerApplicationModal({
                       applicationId={detail.application.id}
                       activities={detail.activities}
                       actorNames={detail.actorNames}
-                      emailThreads={detail.partnerEmailOn ? detail.emailThreads : []}
+                      emailThreads={detail.emailThreads}
                       canEdit={canEdit}
                       limit={TAB_ROW_LIMIT}
                       viewAllHref={`/core/partners/applications/${detail.application.id}?tab=activity`}
@@ -396,24 +418,27 @@ export function PartnerApplicationModal({
                     />
                   )}
                   {tab === "details" && (
-                    <DetailsLayout>
-                    <PropertyRail
-                      application={detail.application}
-                      canEdit={canEdit}
-                      domainOptions={availableDomains}
-                      termOptions={termOptions}
-                      contract={detail.contract}
-                      contractDocuments={detail.contractDocuments}
-                      financeOn={detail.financeOn}
-                      onChanged={refresh}
-                    />
-                    <DetailsTab
-                      summary={detail.application.summary}
-                      formAnswers={detail.formAnswers}
-                      domains={detail.application.domains}
-                      viewAllHref={`/core/partners/applications/${detail.application.id}?tab=details`}
-                    />
-                    </DetailsLayout>
+                    <div className="os-form flex flex-col divide-y divide-os-container">
+                      <DetailsTab
+                        applicationId={detail.application.id}
+                        summary={detail.application.summary}
+                        formAnswers={detail.formAnswers}
+                        domains={detail.application.domains}
+                        canEdit={canEdit}
+                        onChanged={refresh}
+                        viewAllHref={`/core/partners/applications/${detail.application.id}?tab=details`}
+                      />
+                      <PropertyRail
+                        sections="deal"
+                        application={detail.application}
+                        canEdit={canEdit}
+                        domainOptions={availableDomains}
+                        termOptions={termOptions}
+                        contract={detail.contract}
+                        contractDocuments={detail.contractDocuments}
+                        onChanged={refresh}
+                      />
+                    </div>
                   )}
                   {tab === "sow" && (
                     <SowTab
@@ -451,10 +476,26 @@ export function PartnerApplicationModal({
                     <EmailTab
                       contactId={detail.application.applicant.id}
                       threads={detail.emailThreads}
-                      partnerEmailOn={detail.partnerEmailOn}
                     />
                   )}
                 </div>
+              </div>
+              <aside
+                aria-label="Application properties"
+                className="os-form mt-8 flex min-w-0 flex-col divide-y divide-os-container border-t border-os-container pt-4 md:mt-0 md:border-l md:border-t-0 md:pl-6 md:pt-0"
+              >
+                <PropertyRail
+                  sections="status"
+                  application={detail.application}
+                  canEdit={canEdit}
+                  domainOptions={availableDomains}
+                  termOptions={termOptions}
+                  contract={detail.contract}
+                  contractDocuments={detail.contractDocuments}
+                  coreMembers={detail.coreMembers}
+                  onChanged={refresh}
+                />
+              </aside>
             </div>
           )}
         </div>

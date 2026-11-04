@@ -29,7 +29,7 @@ import type { NavArea, SubTab } from '~/lib/nav-areas'
 import type { UpcomingMeeting } from '~/lib/upcoming-meetings.server'
 import type { FeatureFlagMap } from '~/lib/feature-flags'
 import type { FavoritePage } from '~/lib/user-pages.server'
-import type { OpenTabRequest } from '~/components/TabWorkspace'
+import type { OpenTabRequest } from '~/lib/desktop-tabs'
 
 type TabClickProps = (req: OpenTabRequest) => Record<string, unknown>
 
@@ -71,8 +71,8 @@ export type RailProps = {
 }
 
 const ICON_BUTTON =
-  'group relative flex shrink-0 items-center justify-center rounded-md text-os-grey outline-none transition-[background-color,color,transform] duration-150 ease-out hover:bg-os-hover hover:text-foreground active:scale-95 focus-visible:ring-2 focus-visible:ring-os-accent/60'
-const ICON_MOTION = 'transition-transform duration-150 ease-out'
+  'group relative flex shrink-0 items-center justify-center rounded-md text-os-grey outline-none transition-[background-color,color,transform] duration-75 ease-out hover:bg-os-hover hover:text-foreground active:scale-95 focus-visible:ring-2 focus-visible:ring-os-accent/60'
+const ICON_MOTION = 'transition-transform duration-75 ease-out'
 
 function QuickItem({
   label,
@@ -99,7 +99,7 @@ function QuickItem({
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex shrink-0 items-center rounded-lg outline-none transition-[background-color,color,transform] duration-150 ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-os-accent/60',
+        'group relative flex shrink-0 items-center rounded-lg outline-none transition-[background-color,color,transform] duration-75 ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-os-accent/60',
         compact ? 'h-9 w-9 justify-center' : 'h-8 px-[9px]',
         active ? 'bg-os-hover-strong text-sm font-medium text-foreground' : 'text-os-grey hover:bg-os-hover hover:text-foreground',
       )}
@@ -281,7 +281,7 @@ export function Rail({
       className={cn(
         // The wordmark wears the active section's color (--area), so entering
         // Education turns it yellow, Core coral, and so on.
-        'group flex h-9 shrink-0 items-center rounded-lg font-os-logo text-xl font-semibold text-[var(--area,var(--color-os-accent))] transition-colors duration-150 hover:text-[color-mix(in_srgb,var(--area,var(--color-os-accent))_80%,white)] focus:outline-none',
+        'group flex h-9 shrink-0 items-center rounded-lg font-os-logo text-xl font-semibold text-[var(--area,var(--color-os-accent))] transition-colors duration-75 hover:text-[color-mix(in_srgb,var(--area,var(--color-os-accent))_80%,white)] focus:outline-none',
         compact ? 'w-9 justify-center' : 'pl-1.5 pr-2',
       )}
     >
@@ -352,7 +352,7 @@ export function Rail({
             onClick={onOpenSearch}
             aria-label="Search"
             className={cn(
-              'group flex shrink-0 items-center rounded-lg border border-os-container bg-os-card text-sm text-os-grey outline-none transition-[background-color,border-color,color,transform] duration-150 ease-out hover:border-os-container-hi hover:bg-os-card-hover hover:text-foreground active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
+              'group flex shrink-0 items-center rounded-lg border border-os-container bg-os-card text-sm text-os-grey outline-none transition-[background-color,border-color,color,transform] duration-75 ease-out hover:border-os-container-hi hover:bg-os-card-hover hover:text-foreground active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
               compact ? 'mx-auto h-9 w-9 justify-center' : 'h-9 w-full gap-2.5 pl-[13px] pr-1.5',
             )}
           >
@@ -447,7 +447,7 @@ export function Rail({
                       aria-label={`Section: ${activeArea.label}. Switch section`}
                       ref={areaTriggerRef}
                       className={cn(
-                        'group flex h-9 shrink-0 items-center rounded-lg border text-left text-sm font-semibold text-foreground outline-none transition-[background-color,border-color,transform] duration-150 ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
+                        'group flex h-9 shrink-0 items-center rounded-lg border text-left text-sm font-semibold text-foreground outline-none transition-[background-color,border-color,transform] duration-75 ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
                         compact ? 'w-9 justify-center' : 'w-full gap-2.5 pl-[9px] pr-2',
                         'bg-[color-mix(in_srgb,var(--area)_var(--os-area-wash-mix,9%),var(--color-os-card))] hover:bg-[color-mix(in_srgb,var(--area)_var(--os-area-wash-mix-hover,15%),var(--color-os-card))]',
                         'border-[var(--area)]',
@@ -460,7 +460,7 @@ export function Rail({
                         <>
                           <span className="truncate">{activeArea.label}</span>
                           <ChevronsUpDown
-                            className="ml-auto h-3.5 w-3.5 shrink-0 text-os-muted transition-colors duration-150 group-hover:text-foreground"
+                            className="ml-auto h-3.5 w-3.5 shrink-0 text-os-muted transition-colors duration-75 group-hover:text-foreground"
                             aria-hidden
                           />
                         </>
@@ -547,7 +547,7 @@ export function Rail({
                         aria-label={compact ? t.label : undefined}
                         style={staggered ? { animationDelay: `${i * 30}ms` } : undefined}
                         className={cn(
-                          'group relative flex shrink-0 items-center rounded-lg text-left text-sm outline-none transition-[color,transform] duration-150 ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
+                          'group relative flex shrink-0 items-center rounded-lg text-left text-sm outline-none transition-[color,transform] duration-75 ease-out active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
                           compact ? 'h-9 w-9 justify-center' : 'h-8 w-full gap-2.5 pl-[13px] pr-2',
                           staggered && 'motion-safe:animate-rail-stagger',
                           active ? 'font-semibold text-foreground' : 'text-os-grey hover:text-foreground',
@@ -555,14 +555,14 @@ export function Rail({
                       >
                         {!active && (
                           <span
-                            className="absolute inset-0 rounded-lg bg-os-hover opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                            className="absolute inset-0 rounded-lg bg-os-hover opacity-0 transition-opacity duration-75 group-hover:opacity-100"
                             aria-hidden
                           />
                         )}
                         <t.icon
                           strokeWidth={1.5}
                           className={cn(
-                            'relative h-[18px] w-[18px] shrink-0 transition-[transform,color] duration-150 ease-out',
+                            'relative h-[18px] w-[18px] shrink-0 transition-[transform,color] duration-75 ease-out',
                             active ? 'text-[var(--area)]' : 'group-hover:text-[var(--area)]',
                             !active && (compact ? 'group-hover:scale-110' : 'group-hover:translate-x-0.5'),
                           )}
@@ -633,7 +633,7 @@ export function Rail({
               aria-expanded={userMenuOpen}
               aria-label={`Account: ${userName}`}
               className={cn(
-                'group flex shrink-0 items-center rounded-lg text-left outline-none transition-[background-color,transform] duration-150 ease-out hover:bg-os-hover active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
+                'group flex shrink-0 items-center rounded-lg text-left outline-none transition-[background-color,transform] duration-75 ease-out hover:bg-os-hover active:scale-[0.97] focus-visible:ring-2 focus-visible:ring-os-accent/60',
                 compact ? 'h-9 w-9 justify-center' : 'h-9 w-full gap-2.5 pl-[10px] pr-2',
                 userMenuOpen && 'bg-os-hover',
               )}
@@ -654,7 +654,7 @@ export function Rail({
                 <>
                   <span className="truncate text-sm font-semibold text-foreground">{userName}</span>
                   <ChevronsUpDown
-                    className="ml-auto h-3.5 w-3.5 shrink-0 text-os-muted transition-colors duration-150 group-hover:text-foreground"
+                    className="ml-auto h-3.5 w-3.5 shrink-0 text-os-muted transition-colors duration-75 group-hover:text-foreground"
                     aria-hidden
                   />
                 </>

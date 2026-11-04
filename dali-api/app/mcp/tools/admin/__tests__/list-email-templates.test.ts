@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     emailTemplate: { findMany: vi.fn() },
     emailTemplateVersion: { findMany: vi.fn() },
@@ -10,7 +10,7 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   runListEmailTemplates,
@@ -126,16 +126,28 @@ describe("list_email_templates", () => {
         createdBy: { firstName: "Ada", lastName: "L" },
       },
     ]);
-    const { templates } = await runListEmailTemplates(makeCtx(), { includeVersions: true });
-    const accepted = templates.find((t) => t.key === "hiring:decision:Accepted")!;
-    expect(accepted.versions).toHaveLength(1);
-    const other = templates.find((t) => t.key === "hiring:decision:Rejected")!;
-    expect(other.versions).toEqual([]);
+    const { templates } = await runListEmailTemplates(makeCtx(), {
+      key: "hiring:decision:Accepted",
+      includeVersions: true,
+    });
+    expect(templates).toHaveLength(1);
+    expect(templates[0].versions).toHaveLength(1);
+    expect(mockPrisma.emailTemplateVersion.findMany.mock.calls[0][0].where).toEqual({
+      templateKey: { in: ["hiring:decision:Accepted"] },
+    });
   });
 
   it("selects only an author's name, never the whole user row", async () => {
-    await runListEmailTemplates(makeCtx(), { includeVersions: true });
+    await runListEmailTemplates(makeCtx(), { key: "hiring:decision:Accepted", includeVersions: true });
     const select = mockPrisma.emailTemplateVersion.findMany.mock.calls[0][0].select;
     expect(select.createdBy).toEqual({ select: { firstName: true, lastName: true } });
+  });
+
+  it("refuses includeVersions without a key", async () => {
+    await expect(runListEmailTemplates(makeCtx(), { includeVersions: true })).rejects.toMatchObject({
+      name: "McpInvalidError",
+      status: 400,
+    });
+    expect(mockPrisma.emailTemplateVersion.findMany).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 const requireMobileUser = vi.fn();
 const getUserRoleInstances = vi.fn();
 const addTimeEntry = vi.fn();
@@ -18,7 +18,7 @@ vi.mock("~/lib/time-entries.server", () => ({
   deleteTimeEntry: (...a: unknown[]) => deleteTimeEntry(...a),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loader, action } from "../api.mobile.time";
 import { action as entryAction } from "../api.mobile.time.$id";
 

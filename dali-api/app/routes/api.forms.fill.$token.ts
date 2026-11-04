@@ -11,6 +11,7 @@ import {
   submitMemberForm,
 } from "~/forms/lib/public-form";
 import { applicantFillRedirect } from "~/forms/lib/form-usages.server";
+import { editOwnResponse } from "~/forms/lib/form-response.server";
 
 // Submit endpoint for /forms/fill/:token. Who may submit is the form's
 // audience setting, enforced through the same formFillAccess gate the fill
@@ -32,9 +33,29 @@ const SubmitSchema = z.object({
   educationOfferingId: z.string().nullish(),
 });
 
+const EditSchema = z.object({
+  answers: z.record(z.string(), z.unknown()),
+});
+
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
+
+  if (request.method === "PATCH") {
+    const auth = await requireAuth(request);
+    if (!auth.ok) return withCors(request, auth.response);
+    const body = await parseJson(request, EditSchema);
+    if (body instanceof Response) return withCors(request, body);
+    const result = await editOwnResponse({
+      token: params.token!,
+      userId: auth.user.sub,
+      answers: body.answers,
+      request,
+    });
+    if ("error" in result)
+      return withCors(request, Response.json({ error: result.error }, { status: result.status }));
+    return withCors(request, Response.json({ ok: true }));
+  }
 
   if (request.method !== "POST") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));

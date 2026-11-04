@@ -28,6 +28,6 @@ describe("recorderTriggerLabel", () => {
   });
 
   it("no transcript yet reads Show recording", () => {
-    expect(recorderTriggerLabel(makeRec({ phase: "done" }), false, null)).toBe("Show recording");
+    expect(recorderTriggerLabel(makeRec({ phase: "done", hasTranscript: false }), false, null)).toBe("Show recording");
   });
 });

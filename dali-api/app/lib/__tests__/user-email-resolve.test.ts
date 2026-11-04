@@ -4,14 +4,14 @@ vi.mock("~/lib/dartmouth-people", () => ({
   findNetIdByAddress: vi.fn(async () => null),
 }));
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     userEmail: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { findUserIdByAddress, findUserIdsByAddresses } from "~/lib/user-email.server";
 
 const db = prisma as unknown as { userEmail: { findMany: ReturnType<typeof vi.fn> }; user: { findMany: ReturnType<typeof vi.fn> } };

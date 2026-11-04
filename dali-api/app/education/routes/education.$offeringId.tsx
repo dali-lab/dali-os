@@ -25,7 +25,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { buttonClasses } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { formatSessionWhen } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";

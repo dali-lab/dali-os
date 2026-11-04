@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.comments.$id";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
@@ -173,6 +173,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: comment.id },
       data: { anchor: anchor === null ? undefined : (anchor as object) },
     });
+    publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -214,6 +215,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         where: { commentId: comment.id, userId: auth.user.sub, emoji },
       });
     }
+    if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));
   }
 

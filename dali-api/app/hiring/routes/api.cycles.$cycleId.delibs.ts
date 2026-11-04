@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.cycles.$cycleId.delibs";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, requireCoreOrDomainLead, forbidden } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { idSchema, parseJson } from "~/lib/validate";

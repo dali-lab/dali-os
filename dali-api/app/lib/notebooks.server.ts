@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { WorkspaceType } from "~/generated/prisma/client";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import {
@@ -356,6 +356,41 @@ export async function detachNote(pageId: string, actorId: string): Promise<void>
   });
   await trashNotebookIfAbandoned(notebook.id);
   await syncMeetingShares(page.meetingNoteId);
+}
+
+/**
+ * Set (or clear) the "when it happened" date on an orphan note — one that is
+ * not attached to a meeting. The notebook rail groups tabs under week dividers
+ * from this column, so a note created before the dating existed sits above the
+ * first week until a date is set.
+ *
+ * Rejected on a note still linked to a meeting: that date is the meeting's
+ * occurrence time and must be changed by rescheduling the meeting, not here.
+ */
+export async function setNoteDate(pageId: string, date: Date | null, actorId: string): Promise<void> {
+  const page = await prisma.page.findUnique({
+    where: { id: pageId },
+    select: {
+      ...PAGE_ACCESS_SELECT,
+      kind: true,
+      meetingNoteId: true,
+      parent: { select: { ...PAGE_ACCESS_SELECT, kind: true } },
+    },
+  });
+  if (!page || page.archivedAt !== null) throw new NotebookError("Document not found", 404);
+  const access = await getPageAccess(actorId, page);
+  if (!access.canView) throw new NotebookError("Document not found", 404);
+  if (!access.canEdit) throw new NotebookError("You can't edit this document", 403);
+  if (page.meetingNoteId) {
+    throw new NotebookError("A note linked to a meeting takes its date from the meeting", 400);
+  }
+  if (page.parent?.kind !== "Notebook") {
+    throw new NotebookError("This document isn't in a notebook", 400);
+  }
+  if (!(await canManageNotebook(actorId, page.parent))) {
+    throw new NotebookError("You can't manage this notebook", 403);
+  }
+  await prisma.page.update({ where: { id: pageId }, data: { meetingOccurrenceStart: date } });
 }
 
 /**

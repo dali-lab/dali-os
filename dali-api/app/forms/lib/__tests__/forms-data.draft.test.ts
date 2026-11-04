@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-// `Prisma` comes from the mocked ~/lib/db (which re-exports the namespace), so
+// `Prisma` comes from the mocked ~/lib/db.server (which re-exports the namespace), so
 // the test and forms-data.ts share the same DbNull sentinel — and neither
 // touches the generated client, which isn't built in the unit-test CI job.
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 
 const mockPrisma = prisma as unknown as {
@@ -183,5 +183,40 @@ describe("runFormsAction — layout rows", () => {
     );
     expect(res).toEqual({ error: "Every text block needs some text.", status: 400 });
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("repeated question keys", () => {
+  const REPEATED = JSON.stringify([
+    { key: "q1", type: "text", required: false, data: { label: "Name" } },
+    { key: "q2", type: "text", required: false, data: { label: "Email" } },
+    { key: "q1", type: "text", required: false, data: { label: "Name copy" } },
+    { key: "q2", type: "text", required: false, data: { label: "Email copy" } },
+  ]);
+
+  it("save-draft keeps the first question for each key", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+
+    await runFormsAction(
+      fd({ intent: "save-draft", id: "form-1", questions: REPEATED, description: "" }),
+      "user-1",
+    );
+
+    const saved = mockPrisma.form.update.mock.calls[0][0].data.draftQuestions;
+    expect(saved.map((q: { data: { label: string } }) => q.data.label)).toEqual(["Name", "Email"]);
+  });
+
+  it("save-version publishes each key once", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+    mockPrisma.formVersion.findFirst.mockResolvedValue(null);
+
+    await runFormsAction(
+      fd({ intent: "save-version", id: "form-1", questions: REPEATED, description: "" }),
+      "user-1",
+    );
+
+    const saved = mockPrisma.formVersion.create.mock.calls[0][0].data.questions;
+    expect(saved.map((q: { key: string }) => q.key)).toEqual(["q1", "q2"]);
+    expect(saved.map((q: { data: { label: string } }) => q.data.label)).toEqual(["Name", "Email"]);
   });
 });

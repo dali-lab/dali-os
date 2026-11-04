@@ -19,7 +19,7 @@
 //
 // Nothing here grants write access: only the owner edits their own notes.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { groupIdsForUser as sharedGroupIdsForUser } from "~/lib/page-sharing.server";
 import type { Prisma } from "~/generated/prisma/client";
 

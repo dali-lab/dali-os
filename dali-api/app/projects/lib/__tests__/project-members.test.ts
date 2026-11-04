@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     projectAssignment: { findMany: vi.fn() },
     externalMentor: { findMany: vi.fn() },
@@ -8,7 +8,7 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 

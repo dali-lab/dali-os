@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.scheduled-meetings.$id.attendees";
 import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 
 // GET /api/scheduled-meetings/:id/attendees

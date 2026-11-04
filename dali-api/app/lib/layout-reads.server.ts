@@ -1,5 +1,6 @@
-import { prisma } from "~/lib/db";
-import { getUserRoles, isLabMentor } from "~/lib/roles";
+import { prisma } from "~/lib/db.server";
+import { isLabMentor } from "~/lib/roles";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { listFavoritesAndRecents } from "~/lib/user-pages.server";
 import { viewerHasUnseenReleaseNotes } from "~/lib/release-notes.server";
 import { listVisibleGroupIdsForUser } from "~/lib/groups";
@@ -8,17 +9,15 @@ import { getBoundFormGateOutstanding } from "~/forms/lib/gate.server";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
 import { cachedForLayout } from "~/lib/layout-cache.server";
 
-// The shell loader's per-user reads, through the layout cache. Nothing else
-// should call these: they can be up to a TTL stale (see layout-cache.server.ts).
+// The shell loader's per-user reads, through the layout cache. They can be up
+// to a TTL stale (see layout-cache.server.ts), so only the shell calls these.
+// The one exception is roles: GET loaders and read-only API routes may use
+// `readOnlyRoles`, never actions, never to gate a write, never a `requireX`
+// guard.
 
 const cycleKey = (cycleIds: string[]) => [...cycleIds].sort().join(",");
 
-/** Non-members are never cached, so one who was just accepted isn't bounced to /portal. */
-export function layoutRoles(userId: string, request: Request) {
-  return cachedForLayout(userId, "roles", () => getUserRoles(userId, request), {
-    shouldCache: (roles) => roles.isLabMember,
-  });
-}
+export const layoutRoles = readOnlyRoles;
 
 export function layoutFavorites(userId: string, request: Request) {
   return cachedForLayout(userId, "favorites", () => listFavoritesAndRecents(userId, request));

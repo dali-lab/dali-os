@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Y from "yjs";
 
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const mock: any = {
     collabDocument: { findUnique: vi.fn() },
   };
   return { prisma: mock };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks, stateToBlocks, ydocToBlocks } from "../read";
 import { blocksToFragment, plainTextToBlocks } from "../blocknote-server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";

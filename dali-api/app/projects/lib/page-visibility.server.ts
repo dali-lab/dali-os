@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";

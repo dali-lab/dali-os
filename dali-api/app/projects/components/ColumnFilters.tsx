@@ -12,6 +12,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { useSearchParams } from "react-router";
 import { Check, ChevronDown, ChevronRight, ListFilter, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/Button";
@@ -24,18 +25,52 @@ import {
   clearFilterColumn,
   columnResponses,
   filterValues,
+  hasFilterParams,
   matchesFilters,
+  readFilterParams,
   toggleFilterValue,
+  writeFilterParams,
   type ColumnFilter,
   type FilterCells,
 } from "../lib/submission-filters";
 
-export type FilterColumn = { key: string; label: string; icon?: LucideIcon };
+export type FilterColumn = {
+  key: string;
+  label: string;
+  icon?: LucideIcon;
+  // Option order when alphabetical is wrong for the column (terms, newest first).
+  order?: readonly string[];
+  // Display text for an option; the value itself is what rows are matched on.
+  optionLabel?: (value: string) => string;
+};
 
 // Filter state for a board plus the row predicate to hand useFilteredList
-// (put `active` in its `deps`).
-export function useColumnFilters(columns: { key: string }[], initial: ColumnFilter[] = []) {
-  const [filters, setFilters] = useState<ColumnFilter[]>(initial);
+// (put `active` in its `deps`). With inUrl the filters live in `f.*` search
+// params, so the view survives reload and the back button; `initial` applies
+// while the URL says nothing about filters.
+export function useColumnFilters(
+  columns: { key: string }[],
+  initial: ColumnFilter[] = [],
+  { inUrl = false }: { inUrl?: boolean } = {},
+) {
+  const [localFilters, setLocalFilters] = useState<ColumnFilter[]>(initial);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlFilters = useMemo(
+    () => (hasFilterParams(searchParams) ? readFilterParams(searchParams) : null),
+    [searchParams],
+  );
+  const filters = inUrl ? (urlFilters ?? initial) : localFilters;
+  const hasDefaults = initial.length > 0;
+  const setFilters = useCallback(
+    (next: ColumnFilter[]) => {
+      if (!inUrl) return setLocalFilters(next);
+      setSearchParams((prev) => writeFilterParams(prev, next, { markEmpty: hasDefaults }), {
+        replace: true,
+        preventScrollReset: true,
+      });
+    },
+    [inUrl, hasDefaults, setSearchParams],
+  );
   const active = useMemo(
     () => applicableFilters(filters, columns.map((c) => c.key)),
     [filters, columns],
@@ -111,14 +146,17 @@ export function ColumnFilters({
     ).length;
   };
 
-  if (columns.length === 0) return null;
-
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div ref={addRef} className="relative">
         <Button
           size="sm"
           variant="secondary"
+          // No columns yet (no form bound, or nothing mapped): keep the bar
+          // and count so the toolbar reads the same on every board, with the
+          // button inert rather than opening an empty menu.
+          disabled={columns.length === 0}
+          title={columns.length === 0 ? "No columns to filter yet" : undefined}
           onClick={() => (addOpen ? closeAdd() : (setOpenPill(null), setAddOpen(true)))}
           aria-haspopup="menu"
           aria-expanded={addOpen}
@@ -127,7 +165,7 @@ export function ColumnFilters({
           <ListFilter className="h-4 w-4" aria-hidden />
           Filter
           {activeCount > 0 && (
-            <span className="-mr-1 flex h-5 min-w-5 items-center justify-center rounded-md bg-os-accent px-1.5 text-xs font-bold text-os-bg">
+            <span className="-mr-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-os-accent px-1.5 text-xs font-bold text-os-bg">
               {activeCount}
             </span>
           )}
@@ -161,7 +199,7 @@ export function ColumnFilters({
             key={addStage.key}
             column={addStage}
             selected={filterValues(filters, addStage.key)}
-            options={columnResponses(rows, addStage.key)}
+            options={columnResponses(rows, addStage.key, addStage.order)}
             countFor={countFor}
             onToggle={(v) => onChange(toggleFilterValue(filters, addStage.key, v))}
             onClear={() => onChange(clearFilterColumn(filters, addStage.key))}
@@ -177,7 +215,7 @@ export function ColumnFilters({
           key={col.key}
           column={col}
           selected={filterValues(filters, col.key)}
-          options={columnResponses(rows, col.key)}
+          options={columnResponses(rows, col.key, col.order)}
           open={openPill === col.key}
           onOpenChange={(open) => {
             if (open) closeAdd();
@@ -226,8 +264,9 @@ function FilterPill({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useDismiss(ref, open, () => onOpenChange(false));
+  const labels = selected.map(column.optionLabel ?? ((v) => v));
   const summary =
-    selected.length <= 2 ? selected.join(", ") : `${selected[0]} +${selected.length - 1}`;
+    labels.length <= 2 ? labels.join(", ") : `${labels[0]} +${labels.length - 1}`;
 
   return (
     <div ref={ref} className="relative">
@@ -246,7 +285,7 @@ function FilterPill({
           onClick={() => onOpenChange(!open)}
           aria-haspopup="listbox"
           aria-expanded={open}
-          aria-label={`${column.label}: ${selected.join(", ")}. Edit`}
+          aria-label={`${column.label}: ${labels.join(", ")}. Edit`}
           className="flex h-full max-w-[220px] items-center gap-1 border-l border-os-container px-2 font-semibold text-foreground transition-colors hover:bg-os-hover focus-visible:bg-os-hover focus-visible:outline-none"
         >
           <span className="truncate">{summary}</span>
@@ -296,8 +335,9 @@ function FilterValuePicker({
   onBack?: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const labelOf = column.optionLabel ?? ((v: string) => v);
   const shown = options.filter((o) =>
-    o.toLowerCase().includes(search.trim().toLowerCase()),
+    labelOf(o).toLowerCase().includes(search.trim().toLowerCase()),
   );
 
   return (
@@ -358,7 +398,7 @@ function FilterValuePicker({
               >
                 {checked && <Check className="h-3 w-3" strokeWidth={3} />}
               </span>
-              <span className={cn("truncate", checked && "font-semibold")}>{opt}</span>
+              <span className={cn("truncate", checked && "font-semibold")}>{labelOf(opt)}</span>
               <span className="ml-auto text-xs tabular-nums text-os-muted">{count}</span>
             </button>
           );

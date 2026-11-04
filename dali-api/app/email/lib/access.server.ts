@@ -9,7 +9,7 @@
 // never a teammate's, and may archive an inbox to hide it from their own list.
 
 import type { MailAccountKind } from "~/generated/prisma/enums";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { currentTerm, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";

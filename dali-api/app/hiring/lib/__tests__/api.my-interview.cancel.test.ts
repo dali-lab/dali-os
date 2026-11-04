@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
@@ -9,11 +9,18 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
 }));
 vi.mock("~/hiring/lib/interview-emails", () => ({
+  getInterviewerRecipients: vi.fn(),
   sendInterviewCancelEmails: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock("~/hiring/lib/interview-notifications", () => ({
+  getActiveInterviewerUserIds: vi.fn().mockResolvedValue([]),
+  notifyInterviewCancelled: vi.fn().mockResolvedValue(undefined),
+}));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
+import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
+import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";
 import { action } from "~/hiring/routes/api.my-interview.cancel";
 
 const mockTx: any = {
@@ -60,6 +67,42 @@ function makeRequest(body: Record<string, unknown>) {
 }
 
 describe("POST /api/hiring/my-interview/cancel", () => {
+  const interviewStarting = (hoursFromNow: number) => ({
+    id: "int-1",
+    domainApplicationId: DA_ID_A,
+    status: "Scheduled",
+    startTime: new Date(Date.now() + hoursFromNow * 60 * 60_000),
+    applicationCycleId: "cycle-1",
+  });
+  const cancel = () =>
+    action({ request: makeRequest({ domainApplicationId: DA_ID_A }), params: {}, context: {} } as any);
+
+  it("refuses once the interview has started, even with no notice window", async () => {
+    mockPrisma.interview.findFirst.mockResolvedValue(interviewStarting(-0.5));
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ rescheduleNoticeHours: 12, cancelNoticeHours: 0 });
+
+    const res = await cancel();
+
+    expect(res.status).toBe(403);
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(sendInterviewCancelEmails).not.toHaveBeenCalled();
+  });
+
+  it("refuses inside a configured notice window", async () => {
+    mockPrisma.interview.findFirst.mockResolvedValue(interviewStarting(2));
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ rescheduleNoticeHours: 12, cancelNoticeHours: 4 });
+
+    expect((await cancel()).status).toBe(403);
+  });
+
+  it("allows it right up to the start when there's no notice window", async () => {
+    mockPrisma.interview.findFirst.mockResolvedValue(interviewStarting(0.5));
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ rescheduleNoticeHours: 12, cancelNoticeHours: 0 });
+    mockTx.interview.update.mockResolvedValue({ id: "int-1", status: "CancelledByApplicant" });
+
+    expect((await cancel()).status).toBe(200);
+  });
+
   it("returns 400 when domainApplicationId is missing", async () => {
     const res = await action({ request: makeRequest({}), params: {}, context: {} } as any);
     expect(res.status).toBe(400);
@@ -145,6 +188,68 @@ describe("POST /api/hiring/my-interview/cancel", () => {
     expect(mockTx.interviewAssignment.updateMany).toHaveBeenCalledWith({
       where: { interviewId: "int-design", status: "Active" },
       data: { status: "Declined" },
+    });
+  });
+
+  it("emails the interviewers read before their assignments were declined", async () => {
+    const interviewers = [{ email: "ada@example.edu", firstName: "Ada" }];
+    vi.mocked(getInterviewerRecipients).mockResolvedValue(interviewers);
+    mockPrisma.interview.findFirst.mockResolvedValue({
+      id: "int-design",
+      domainApplicationId: DA_ID_A,
+      applicationCycleId: "cycle-1",
+      interviewRoundId: "interviews",
+      startTime: new Date("2027-01-01T10:00:00Z"),
+      status: "Scheduled",
+      calendarEventId: null,
+      roomBookingId: null,
+      roomBooking: null,
+    });
+    mockTx.interview.update.mockResolvedValue({ id: "int-design", status: "CancelledByApplicant" });
+
+    await action({
+      request: makeRequest({ domainApplicationId: DA_ID_A }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(getInterviewerRecipients).toHaveBeenCalledWith("int-design", mockTx);
+    expect(vi.mocked(getInterviewerRecipients).mock.invocationCallOrder[0]).toBeLessThan(
+      mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(sendInterviewCancelEmails).toHaveBeenCalledWith("int-design", DA_ID_A, interviewers);
+  });
+
+  it("tells the interviewers in-app, with ids read before their assignments were declined", async () => {
+    vi.mocked(getActiveInterviewerUserIds).mockResolvedValue(["u-ada", "u-grace"]);
+    mockPrisma.interview.findFirst.mockResolvedValue({
+      id: "int-design",
+      domainApplicationId: DA_ID_A,
+      applicationCycleId: "cycle-1",
+      interviewRoundId: "interviews",
+      startTime: new Date("2027-01-01T10:00:00Z"),
+      status: "Scheduled",
+      calendarEventId: null,
+      roomBookingId: null,
+      roomBooking: null,
+    });
+    mockTx.interview.update.mockResolvedValue({ id: "int-design", status: "CancelledByApplicant" });
+
+    await action({
+      request: makeRequest({ domainApplicationId: DA_ID_A }),
+      params: {},
+      context: {},
+    } as any);
+
+    expect(getActiveInterviewerUserIds).toHaveBeenCalledWith("int-design", mockTx);
+    expect(vi.mocked(getActiveInterviewerUserIds).mock.invocationCallOrder[0]).toBeLessThan(
+      mockTx.interviewAssignment.updateMany.mock.invocationCallOrder[0],
+    );
+    expect(notifyInterviewCancelled).toHaveBeenCalledWith({
+      interviewId: "int-design",
+      interviewerUserIds: ["u-ada", "u-grace"],
+      reason: "applicant",
+      createdByUserId: USER_ID,
     });
   });
 

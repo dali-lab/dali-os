@@ -1,16 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/forms/lib/submission-notify.server", () => ({
   notifyFormSubmission: vi.fn().mockResolvedValue(undefined),
+  sendFormReceipt: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   submitMemberForm,
   ordinaryFillBlock,
 } from "~/forms/lib/public-form";
-import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
+import { notifyFormSubmission, sendFormReceipt } from "~/forms/lib/submission-notify.server";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -114,6 +115,16 @@ describe("submitMemberForm one-response gate", () => {
       formId: "form-1",
       submitterUserId: "user-1",
     });
+    expect(sendFormReceipt).toHaveBeenCalledWith({ formId: "form-1", submissionId: "sub-1" });
+  });
+
+  it("sends the receipt for a slot-bound submission too", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({ cycleBindings: [LEVEL_UP_BINDING] }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
+    await submit();
+    expect(sendFormReceipt).toHaveBeenCalledWith({ formId: "form-1", submissionId: "sub-1" });
   });
 
   it("never queries for duplicates when the toggle is off", async () => {
@@ -131,6 +142,7 @@ describe("submitMemberForm one-response gate", () => {
       id: "cyc-1",
       termId: "term-1",
       maxPreferencesPerMember: 3,
+      term: { code: "26F" },
     },
   };
 
@@ -178,6 +190,7 @@ describe("submitMemberForm one-response gate", () => {
               id: "cyc-2",
               termId: "term-2",
               maxPreferencesPerMember: 3,
+              term: { code: "27W" },
             },
           },
         ],
@@ -352,5 +365,24 @@ describe("ordinaryFillBlock", () => {
       createdAt: at,
     });
     expect(await ordinaryFillBlock("form-1", "user-1")).toEqual({ at });
+  });
+});
+
+describe("submitMemberForm closes the person's notifications", () => {
+  it("marks their open to-dos and form reminders for this form as read", async () => {
+    await submit();
+
+    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
+      where: {
+        recipientUserId: "user-1",
+        readAt: null,
+        formId: "form-1",
+        OR: [
+          { kind: "SystemAnnouncement", isTodo: true },
+          { eventType: "form.reminder" },
+        ],
+      },
+      data: { readAt: expect.any(Date) },
+    });
   });
 });

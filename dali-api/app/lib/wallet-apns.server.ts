@@ -10,7 +10,7 @@
 // files, so no new credential is needed.
 
 import http2 from "node:http2";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 
 // APNs host: prod by default. Point at the sandbox host during development

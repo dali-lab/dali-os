@@ -288,7 +288,7 @@ export const EVENT_TYPES = {
     kind: "General",
     area: "Hiring",
     label: "Interview cancellations",
-    description: "When an interview you were assigned to is cancelled by the hiring lead.",
+    description: "When an interview you were assigned to is cancelled or moved to a new time.",
     lockedInApp: true,
     // The ICS cancellation already goes out by email; this is the in-app tile.
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
@@ -434,6 +434,13 @@ export const EVENT_TYPES = {
     coalesceWindowMs: 60 * 60_000, // one ping per form per hour
     coalesceNoun: "response",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "form.reminder": {
+    kind: "General",
+    area: "Forms",
+    label: "Form reminders",
+    description: "When a form you were asked to fill out is still waiting on you.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "education.announcement": {
     kind: "Education",

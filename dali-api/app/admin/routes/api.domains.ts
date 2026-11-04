@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domains";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore, isDomainLead, isAdmin } from "~/lib/roles";

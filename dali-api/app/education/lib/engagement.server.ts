@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { OfferingType } from "~/education/lib/offering-type";
 import { summarizeAttendance, type AttendanceSummary } from "~/education/lib/session-time";
 

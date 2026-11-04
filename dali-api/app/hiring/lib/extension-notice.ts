@@ -15,7 +15,7 @@
 //      and we count them as alreadySent. (Replaced the CycleNotificationSend
 //      ledger.)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getApplicationsGmailRefreshToken } from "~/lib/gmail-integration";
 import { APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";

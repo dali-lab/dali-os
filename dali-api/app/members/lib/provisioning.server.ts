@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ensureTeam, addTeamMember, isNo2fa } from "~/lib/github";
 import { inviteToWorkspace } from "~/slack/lib/slack-client";
 import { provisionWorkspaceAccount, type WorkspaceResult } from "~/lib/google-workspace";

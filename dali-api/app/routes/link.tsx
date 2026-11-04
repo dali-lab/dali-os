@@ -9,7 +9,7 @@
 import { Form, Link, redirect } from "react-router";
 import type { Route } from "./+types/link";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { formatUserCode, normalizeUserCode } from "~/lib/pairing";
 import { buttonClasses } from "~/components/ui/Button";
 import { useOsShellRoot } from "~/lib/os-shell";

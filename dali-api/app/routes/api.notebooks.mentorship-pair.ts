@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { formatFiledPath, notebookLocationParts } from "~/lib/note-path.server";
 import { ensurePairNotebook } from "~/mentorship/lib/pair-notebook.server";
 import { findMentorPair } from "~/mentorship/lib/pair-suggestion.server";

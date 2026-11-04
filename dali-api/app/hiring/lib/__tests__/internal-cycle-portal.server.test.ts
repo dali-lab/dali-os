@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ requireMember: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -21,7 +21,7 @@ vi.mock("~/hiring/lib/applicant-groups.server", () => ({
   applicantPortalPath: (_applicants: string, cycleId: string) => `/fellowship/${cycleId}`,
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { requireMember } from "~/lib/roles";
 import { getActiveCycleById, getActiveCycles } from "~/hiring/lib/cycles";
@@ -177,5 +177,66 @@ describe("loadInternalCyclePortal: per-domain windows", () => {
     const data = (await loadInternalCyclePortal(req(), "Interns", undefined)) as any;
     expect(data.reason).toBe("choose-cycle");
     expect(data.cycles.map((c: any) => c.deadline)).toEqual([ENGS_CLOSE.toISOString(), CYCLE_CLOSE.toISOString()]);
+  });
+});
+
+
+describe("handleInternalCyclePortalAction: form logic", () => {
+  const RULE_QUESTIONS = [
+    { key: "returning", type: "select", required: true, data: { label: "Returning", options: ["Yes", "No"] } },
+    {
+      key: "why",
+      type: "text",
+      required: true,
+      data: { label: "Why", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    },
+    {
+      key: "mail",
+      type: "email",
+      required: false,
+      data: { label: "Email", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    },
+  ];
+  beforeEach(() => {
+    vi.mocked(loadHiringForm).mockResolvedValue({ versionId: "fv1", questions: RULE_QUESTIONS } as any);
+  });
+  const storedAnswers = () => mockPrisma.application.upsert.mock.calls[0][0].update.answers;
+
+  it("submits without a hidden required question, a hidden bad format, or a hidden answer", async () => {
+    const res = await handleInternalCyclePortalAction(
+      post("submit", ["engs"], { returning: "Yes", why: "stale", mail: "bad" }),
+      "Interns",
+      CYCLE_ID,
+    );
+    expect(res).toEqual({ submitted: true });
+    expect(storedAnswers()).toEqual({ returning: "Yes" });
+  });
+
+  it("requires a question once its rule shows it", async () => {
+    const res = (await handleInternalCyclePortalAction(
+      post("submit", ["engs"], { returning: "No" }),
+      "Interns",
+      CYCLE_ID,
+    )) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.application.upsert).not.toHaveBeenCalled();
+  });
+
+  it("checks the format of a shown question", async () => {
+    const res = (await handleInternalCyclePortalAction(
+      post("submit", ["engs"], { returning: "No", why: "x", mail: "bad" }),
+      "Interns",
+      CYCLE_ID,
+    )) as Response;
+    expect(res.status).toBe(400);
+  });
+
+  it("keeps hidden answers when saving a draft", async () => {
+    await handleInternalCyclePortalAction(
+      post("save-draft", ["engs"], { returning: "Yes", why: "later" }),
+      "Interns",
+      CYCLE_ID,
+    );
+    expect(storedAnswers()).toEqual({ returning: "Yes", why: "later" });
   });
 });

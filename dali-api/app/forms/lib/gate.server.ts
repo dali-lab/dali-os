@@ -4,7 +4,7 @@
 // hard-gated into the fill page before they can use the rest of the app.
 // Reuses the signing audience resolvers so
 // "who owes this" is defined in exactly one place.
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolveGroupMembers } from "~/lib/groups";
 import { getSignerCohorts } from "~/signing/lib/state.server";

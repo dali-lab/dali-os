@@ -5,6 +5,7 @@ import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { useDialog } from '~/components/ui/dialog'
 import { isEmptyBlocks } from '~/lib/blocks'
+import { visibleQuestions } from '~/lib/form-logic'
 import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
 import {
   PANEL_CARD as CARD,
@@ -378,7 +379,7 @@ export interface ApplicationViewerProps {
       challengeVersion?: {
         questions: unknown
         description?: unknown
-        domain: { name: string; displayName?: string }
+        domain?: { name: string; displayName?: string }
         challenge?: { name: string }
       } | null
       domain?: { name: string; displayName?: string } | null
@@ -406,17 +407,18 @@ function buildQuestionMap(questions: Question[]): Record<string, Question> {
 
 const LAYOUT_TYPES: ReadonlyArray<Question['type']> = ['info', 'pageBreak']
 
-// Every question in form order (so a draft shows the blanks too), then any
-// saved answers whose question is no longer on the form.
+// Every question that was asked, in form order (so a draft shows the blanks
+// too), then any saved answers whose question is no longer on the form.
 export function answerEntries(
   questions: Question[],
   answers: Record<string, unknown>,
 ): Array<[string, unknown]> {
-  const asked = questions.filter((q) => !LAYOUT_TYPES.includes(q.type))
-  const askedKeys = new Set(asked.map((q) => q.key))
+  const real = questions.filter((q) => !LAYOUT_TYPES.includes(q.type))
+  const known = new Set(real.map((q) => q.key))
+  const shown = new Set(visibleQuestions(real, answers).map((q) => q.key))
   return [
-    ...asked.map((q): [string, unknown] => [q.key, answers[q.key]]),
-    ...Object.entries(answers).filter(([key]) => !askedKeys.has(key)),
+    ...real.filter((q) => shown.has(q.key)).map((q): [string, unknown] => [q.key, answers[q.key]]),
+    ...Object.entries(answers).filter(([key]) => !known.has(key)),
   ]
 }
 
@@ -501,7 +503,7 @@ export function ApplicationViewer({ application, questionLabels, initialAnnotati
       {application.domainApplications.map((dapp) => {
         const cv = dapp.challengeVersion
         const directDomain = dapp.domain
-        const domainName = cv?.domain.displayName ?? cv?.domain.name ?? directDomain?.displayName ?? directDomain?.name ?? 'Domain'
+        const domainName = cv?.domain?.displayName ?? cv?.domain?.name ?? directDomain?.displayName ?? directDomain?.name ?? 'Domain'
         const ci = dapp.continuedInterest
         const ciQuestions = (ci?.questions as unknown as Question[] | undefined) ?? []
         const ciQuestionsByKey = buildQuestionMap(ciQuestions)

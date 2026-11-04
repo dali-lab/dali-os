@@ -8,7 +8,7 @@
 
 import { redirect } from "react-router";
 import type { Route } from "./+types/auth.handoff";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getClientIp } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing";
@@ -46,10 +46,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   // requireAuth tries the legacy cookie first; a leftover one would shadow this.
   clearSessionCookie(headers);
 
-  // The desktop shell rides the same tabless-by-default shell as the web app.
-  // Its bare WKWebView has no browser chrome, but tabless mode supplies its own
-  // back/forward arrows in the desktop top bar (TablessHistoryNav), so there's nothing to
-  // force here — a fresh pairing plants no preference and takes the default.
   await logAuditEvent({ action: "pairing.handoff", userId: row.userId, request });
   return redirect(pickSafeLoginNext(url.searchParams.get("next")) ?? "/", { headers });
 }

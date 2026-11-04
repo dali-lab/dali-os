@@ -5,7 +5,7 @@ vi.mock("~/lib/room-display.server", async (importOriginal) => ({
   requireRoomDisplay: vi.fn(),
   displayUnauthorized: vi.fn(() => Response.json({ error: "Display not paired" }, { status: 401 })),
 }));
-vi.mock("~/lib/db", () => ({ prisma: { roomBooking: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { roomBooking: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/display-check-ins.server", () => ({ isCheckedIn: vi.fn() }));
 vi.mock("~/lib/wallet-token", () => ({ walletTokensConfigured: vi.fn() }));
@@ -26,7 +26,7 @@ import { walletTokensConfigured } from "~/lib/wallet-token";
 import { resolveScannedMember } from "~/lib/wallet-scan.server";
 import { markMeetingAttendance } from "~/lib/scheduled-meeting";
 import { cancelRoomBooking, createRoomBooking, currentEvent, extendRoomBooking, getRoomSchedule } from "~/lib/rooms.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { isCheckedIn } from "~/lib/display-check-ins.server";
 import { parseJson } from "~/lib/validate";

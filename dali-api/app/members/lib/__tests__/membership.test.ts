@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/handle", () => ({ assignHandleIfMissing: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/admin/lib/eligibility.server", () => ({ addOrUpdateEligibility: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createOrPromoteMember,
   MemberInputError,
@@ -145,6 +145,15 @@ describe("createOrPromoteMember identity backfill", () => {
     await expect(
       createOrPromoteMember({ firstName: "Ada", lastName: "Lovelace", netId: "f001" }, "actor"),
     ).rejects.toThrow("An email is required.");
+  });
+
+  it("allows a missing email only when the caller opts in and gives a netId", async () => {
+    const base = { firstName: "Ada", lastName: "Lovelace" };
+    await expect(
+      createOrPromoteMember(base, "actor", { allowMissingEmail: true }),
+    ).rejects.toThrow("An email is required.");
+    await createOrPromoteMember({ ...base, netId: "f001" }, "actor", { allowMissingEmail: true });
+    expect(mockPrisma.user.create.mock.calls[0][0].data).toMatchObject({ netId: "f001" });
   });
 
   it.each([

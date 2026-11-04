@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/app-env", () => ({ getFrontendUrl: vi.fn(() => "https://os.dali.dartmouth.edu") }));
 vi.mock("~/partners/lib/partner-emails.server", () => ({ sendPartnerSurveyEmail: vi.fn() }));
 vi.mock("~/forms/lib/public-form", () => ({ loadPublicForm: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadPublicForm } from "~/forms/lib/public-form";
 import { sendPartnerSurveyEmail } from "~/partners/lib/partner-emails.server";
 import {

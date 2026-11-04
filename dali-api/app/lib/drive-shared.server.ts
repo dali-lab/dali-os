@@ -1,7 +1,7 @@
 // Server-only loader for the Drive's "Shared with me" space: a flat list of
 // pages the viewer reaches by a named share, not through workspace membership.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { pageOpenHref } from "~/lib/page-href";
 import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";

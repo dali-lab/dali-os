@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 /**
  * Reconcile DomainApplication rows for an Application against a desired set of

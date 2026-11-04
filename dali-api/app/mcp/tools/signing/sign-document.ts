@@ -5,7 +5,7 @@
 import { recordSignature } from "~/signing/lib/sign.server";
 import { getSignerCohorts } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   McpForbiddenError,
   McpInvalidError,

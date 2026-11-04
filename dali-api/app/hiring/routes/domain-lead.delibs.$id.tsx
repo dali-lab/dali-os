@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/domain-lead.delibs.$id";
 import type { DragEndEvent } from "@dnd-kit/core";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -22,7 +22,7 @@ import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { useOsChrome } from "~/components/os-chrome";
 import { useDialog } from "~/components/ui/dialog";
-import { anonLabelMapForCycle, releasedDaIds, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels, blindUser } from "~/hiring/lib/anonymization.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 
@@ -86,7 +86,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: session.applicationCycleId },
-    select: { id: true, timeline: true, anonymizeReview: true },
+    select: { id: true, timeline: true },
   });
   // The board's round sets its columns and who qualifies. A round removed from
   // the timeline leaves its board behind with nothing to show.
@@ -144,16 +144,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     : [];
 
-  // Blind review: with anonymizeReview on, cards read "Applicant N" until that
-  // applicant's decision is released.
-  if (cycle.anonymizeReview) {
-    const released = await releasedDaIds(domainApplications.map((d) => d.id));
-    const labelMap = await anonLabelMapForCycle(session.applicationCycleId);
-    for (const da of domainApplications) {
-      if (released.has(da.id)) continue;
-      const label = labelMap.get(da.application.id);
-      if (label) da.application.user = blindUser(da.application.user, label);
-    }
+  const blindLabels = await domainApplicationBlindLabels({
+    cycleId: session.applicationCycleId,
+    domainApplicationIds: domainApplications.map((da) => da.id),
+  });
+  for (const da of domainApplications) {
+    const label = blindLabels.get(da.id);
+    if (label) da.application.user = blindUser(da.application.user, label);
   }
 
   const [collabToken, engagement] = await Promise.all([

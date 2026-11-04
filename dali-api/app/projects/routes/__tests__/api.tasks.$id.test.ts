@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
@@ -14,7 +14,7 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 
 import { requireProjectEditAccess } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { action, loader } from "~/projects/routes/api.tasks.$id";
 
 const TASK_ID = "task-1";
@@ -338,7 +338,8 @@ describe("GET /api/tasks/:id", () => {
       status: "InProgress",
       dueAt: new Date("2026-11-01T00:00:00.000Z"),
       projectId: PROJECT_ID,
-      assignees: [{ user: { firstName: "Ada", lastName: "Lovelace" } }],
+      project: { name: "Campus Compost" },
+      assignees: [{ user: { id: "u1", firstName: "Ada", lastName: "Lovelace" } }],
       ...overrides,
     };
   }
@@ -352,8 +353,27 @@ describe("GET /api/tasks/:id", () => {
       title: "Ship it",
       status: "InProgress",
       assignee: { name: "Ada Lovelace" },
+      assignees: [{ id: "u1", name: "Ada Lovelace" }],
+      projectName: "Campus Compost",
       dueAt: "2026-11-01T00:00:00.000Z",
     });
+  });
+
+  it("returns every assignee so a block can show co-owners", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue(
+      taskRow({
+        assignees: [
+          { user: { id: "u1", firstName: "Ada", lastName: "Lovelace" } },
+          { user: { id: "u2", firstName: "Grace", lastName: "Hall" } },
+        ],
+      }),
+    );
+    const body = await (await get()).json();
+    expect(body.assignee).toEqual({ name: "Ada Lovelace" });
+    expect(body.assignees).toEqual([
+      { id: "u1", name: "Ada Lovelace" },
+      { id: "u2", name: "Grace Hall" },
+    ]);
   });
 
   it("returns assignee: null and dueAt: null when unset", async () => {

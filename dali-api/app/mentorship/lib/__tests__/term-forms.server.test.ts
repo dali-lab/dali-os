@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     mentorshipTermForm: { findMany: vi.fn(), deleteMany: vi.fn(), upsert: vi.fn() },
     formSubmission: { findMany: vi.fn() },
@@ -13,7 +13,7 @@ vi.mock("~/forms/lib/answer-rows.server", () => ({
   })),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadTermForms, setTermForm } from "../term-forms.server";
 
 const m = prisma as any;

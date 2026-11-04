@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   redirect,
   useLoaderData,
@@ -100,7 +102,7 @@ import type {
   EduApplicationStatus,
   SubmissionType,
 } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Avatar } from "~/components/ui/Avatar";
@@ -139,6 +141,13 @@ export const handle = {
   breadcrumb: (data: { offering: { title: string } } | undefined) =>
     data?.offering.title ?? "Offering",
 };
+
+// Only ?session= (the roster session) reaches the loader; ?tab= is client-only.
+const LOADER_SEARCH_PARAMS = ["session"] as const;
+
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, LOADER_SEARCH_PARAMS);
+}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const authOrRedirect = await requireAuth(request);
@@ -1090,7 +1099,7 @@ export default function ManageOffering() {
           <button
             key={t.key}
             type="button"
-            onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
+            onClick={() => setSearchParams({ tab: t.key }, { replace: true, preventScrollReset: true })}
             style={
               tab === t.key
                 ? { borderBottomColor: "var(--color-os-accent)" }

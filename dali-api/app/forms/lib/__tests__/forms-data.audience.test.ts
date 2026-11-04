@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/forms/lib/form-page.server", () => ({
   createForm: vi.fn(),
   renameForm: vi.fn(),
@@ -10,7 +10,7 @@ vi.mock("~/forms/lib/form-page.server", () => ({
   setFormArchived: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { setFormAudience } from "~/forms/lib/form-page.server";
 

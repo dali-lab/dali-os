@@ -67,7 +67,6 @@ export default function DocumentPanel({ panel, onClose }: { panel: SidePanel; on
         canEdit={doc.canEdit}
         canComment={doc.canComment}
         canManageAccess={doc.canManageAccess}
-        favorited={doc.favorited}
         workspaceType={doc.workspaceType}
         workspaceId={doc.workspaceId}
         tags={doc.tags}

@@ -98,3 +98,30 @@ describe("Segmented", () => {
     expect(radios().every((r) => r.className.includes("text-sm") && r.className.includes("h-7"))).toBe(true);
   });
 });
+
+
+describe("Segmented disabled option", () => {
+  it("does not fire onChange for a disabled option and marks it disabled", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const onChange = vi.fn();
+    act(() =>
+      root.render(
+        createElement(Segmented<"a" | "b">, {
+          value: "a",
+          onChange,
+          ariaLabel: "Pick one",
+          options: [
+            { value: "a", label: "Alpha" },
+            { value: "b", label: "Beta", disabled: true },
+          ],
+        }),
+      ),
+    );
+    expect(radios()[1].disabled).toBe(true);
+    act(() => radios()[1].click());
+    expect(onChange).not.toHaveBeenCalled();
+    expect(radios()[0].disabled).toBe(false);
+  });
+});

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     projectFile: { findUnique: vi.fn(), update: vi.fn() },
     form: { findUnique: vi.fn(), update: vi.fn() },
@@ -22,7 +22,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
 
 import { moveForm } from "~/forms/lib/form-page.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";

@@ -7,6 +7,7 @@
 
 import { requireAuth } from "~/lib/auth";
 import { getDownloadUrl } from "~/lib/s3";
+import { isReservedUploadKey } from "~/lib/file-validation";
 
 export async function loader({ request }: { request: Request }) {
   const auth = await requireAuth(request);
@@ -16,6 +17,8 @@ export async function loader({ request }: { request: Request }) {
   if (!key || !key.startsWith("uploads/")) {
     return Response.json({ error: "key must be an uploads/ object key" }, { status: 400 });
   }
+
+  if (isReservedUploadKey(key)) return Response.json({ error: "Not found" }, { status: 404 });
 
   const url = await getDownloadUrl(key);
   return Response.redirect(url, 302);

@@ -1,12 +1,13 @@
 import type { Route } from "./+types/api.files.$id";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, requireMemberSession, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getDownloadUrl } from "~/lib/s3";
+import { downloadFileName } from "~/lib/file-download-name";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { notifyFileNewVersion } from "../lib/file-notifications.server";
 
@@ -91,7 +92,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       uploadedBy: nameById.get(v.uploadedById) ?? UNKNOWN_LABEL,
       createdAt: v.createdAt.toISOString(),
       isCurrent: v.id === file.currentVersionId,
-      downloadUrl: await getDownloadUrl(v.s3Key),
+      downloadUrl: await getDownloadUrl(v.s3Key, { fileName: downloadFileName(file.title, v.fileName) }),
     })),
   );
 
@@ -105,6 +106,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST" && request.method !== "DELETE") {
     return withCors(request, Response.json({ error: "Method not allowed" }, { status: 405 }));
   }
+  const gate = await requireMemberSession(request);
+  if (!gate.ok) return withCors(request, gate.response);
+  const auth = gate.auth;
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },
     select: {
@@ -119,9 +123,6 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!file || file.archivedAt !== null) {
     return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
   }
-  const gate = await requireMemberSession(request);
-  if (!gate.ok) return withCors(request, gate.response);
-  const auth = gate.auth;
   if (!(await canEditFile(auth.user.sub, file, request))) {
     return withCors(request, Response.json({ error: "You can't edit this file" }, { status: 403 }));
   }

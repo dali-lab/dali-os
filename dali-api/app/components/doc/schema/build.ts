@@ -29,8 +29,10 @@ import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
 import { ComponentSpec } from "./component";
 import { EmbedSpec } from "./embed";
+import { createMediaImageSpec, createMediaVideoSpec } from "./media";
 import { MentionSpec, PageMentionSpec, TaskMentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
+import { TaskSpec } from "./task";
 
 // Heading spec with allowToggleHeadings=true enables Notion-style collapsible
 // headings (h1–h3 only; h4–h6 are excluded per Notion convention — the app
@@ -54,14 +56,15 @@ function fullBlockSpecs() {
     checkListItem: defaultBlockSpecs.checkListItem,
     codeBlock: createCodeBlockSpec(codeBlockOptions),
     divider: defaultBlockSpecs.divider,
-    image: defaultBlockSpecs.image,
+    image: createMediaImageSpec({ live: true }),
     file: defaultBlockSpecs.file,
-    video: defaultBlockSpecs.video,
+    video: createMediaVideoSpec({ live: true }),
     table: defaultBlockSpecs.table,
     toggleListItem: defaultBlockSpecs.toggleListItem,
     callout: CalloutSpec,
     embed: EmbedSpec,
     component: ComponentSpec,
+    task: TaskSpec,
     pageBreak: createPageBreakBlockSpec(),
   };
 }
@@ -96,6 +99,7 @@ export function buildSchema(features: Features = {}) {
     delete blocks.embed;
   }
   if (!features.components) delete blocks.component;
+  if (!features.tasks) delete blocks.task;
   if (!features.mentions) {
     delete inline.mention;
     delete inline.pageMention;

@@ -22,18 +22,11 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
         // localStorage unavailable (e.g. about:blank) — ignore.
       }
     }, LAUNCH_WELCOME_SEEN_KEY);
-    // The suite was written against the tabbed workspace shell (several specs
-    // locate content via frameLocator on workspace iframes). Tabless is the
-    // app default now, so pin the tabbed opt-in cookie per context. Keep the
-    // name/value in sync with TABLESS_COOKIE in app/lib/tabless.ts.
     // dali_pk_prompt=1 is "passkey offer dismissed" (PASSKEY_PROMPT_COOKIE in
     // app/lib/passkey-prompt.server.ts); otherwise the offer's modal covers the
     // page for every signed-in user, none of whom has a passkey.
     if (baseURL) {
-      await page.context().addCookies([
-        { name: 'dali_tabless', value: '0', url: baseURL },
-        { name: 'dali_pk_prompt', value: '1', url: baseURL },
-      ]);
+      await page.context().addCookies([{ name: 'dali_pk_prompt', value: '1', url: baseURL }]);
     }
     await use(page);
   },
@@ -43,8 +36,11 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
       if (daliEmail) params.set('daliEmail', daliEmail);
       else if (personalEmail) params.set('personalEmail', personalEmail);
       else if (netId) params.set('netId', netId);
-      await page.goto(`/dev-login-as?${params}`);
-      await page.waitForLoadState('networkidle');
+      // Not networkidle: the notification stream and collab socket keep connections open.
+      const res = await page.goto(`/dev-login-as?${params}`, { waitUntil: 'domcontentloaded' });
+      if (new URL(page.url()).pathname.startsWith('/dev-login-as')) {
+        throw new Error(`loginAs(${params}) failed: ${res?.status()} ${await res?.text()}`);
+      }
     });
   },
 });

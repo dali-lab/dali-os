@@ -1,6 +1,6 @@
 // MCP `delete_story` — Core or project member.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
 export const DELETE_STORY_TOOL = {

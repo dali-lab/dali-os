@@ -13,7 +13,7 @@
 // Gate: student self (caller must be an Approved enrollee).
 // Scope: mcp:write.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { submitAssignment } from "~/education/lib/assignments.server";
 import {
   McpForbiddenError,

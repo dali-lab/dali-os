@@ -4,7 +4,7 @@ import { Bell, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, Settings, X 
 import { Tooltip } from '~/components/ui/floating'
 import { userInitials } from '~/lib/display'
 import { useAttentionFeed } from '~/components/NotificationBell'
-import { TasksDrawer, attentionCount } from '~/components/AttentionPanel'
+import { TasksDrawer, attentionTotal } from '~/components/AttentionPanel'
 import { CommandPalette } from '~/components/CommandPalette'
 import { useShellNav } from '~/components/shell-nav'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -23,9 +23,8 @@ import { cn } from '~/lib/cn'
 /* same ⌘K as the member shell — a student is in the same product, not  */
 /* a cut-down copy of it — with the parts that describe lab membership  */
 /* left out rather than shown empty: no area switcher (their four       */
-/* surfaces are all direct rows), no Drive, no favourites strip, no     */
-/* tabbed workspace. The top bar keeps the task bell, which is how an   */
-/* offering reaches them.                                              */
+/* surfaces are all direct rows), no Drive, no favourites strip. The    */
+/* top bar keeps the task bell, which is how an offering reaches them.  */
 /* ------------------------------------------------------------------ */
 
 const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
@@ -69,10 +68,8 @@ export function LayoutPortalOS({
   const path = location.pathname + location.search
   useOsShellRoot(true)
 
-  // The portal never renders the tabbed workspace, so the shell is always in
-  // its tabless mode: rows navigate the top window and ⌘K is listened for here.
   const { paletteOpen, setPaletteOpen, openInWorkspace, openFromPalette, tabClickProps } =
-    useShellNav(true)
+    useShellNav()
 
   const [collapsed, setCollapsed] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -121,8 +118,11 @@ export function LayoutPortalOS({
   }
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems, projectTasks } = useAttentionFeed()
-  const taskCount = attentionCount(openTasks, feedItems, projectTasks)
+  const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
+  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, {
+    tasks: taskTotal,
+    projectTasks: projectTaskTotal,
+  })
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
   const [bellOpen, setBellOpen] = useState(false)
@@ -305,6 +305,8 @@ export function LayoutPortalOS({
         tasks={openTasks}
         notifications={feedItems}
         projectTasks={projectTasks}
+        total={taskCount}
+        allTasksLink={false}
         onOpen={(url, label) => {
           closeBellPanel()
           openInWorkspace({ url, label })
@@ -421,7 +423,6 @@ export function LayoutPortalOS({
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        tabless
         focusMode={false}
         portalNav={nav}
         onOpen={openFromPalette}

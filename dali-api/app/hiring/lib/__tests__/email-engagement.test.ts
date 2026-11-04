@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { mailMessageIndex: { findMany: vi.fn() } },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { APPLICATIONS_FROM_EMAIL } from "~/lib/app-env";
 import { getApplicantEmailEngagement, getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 

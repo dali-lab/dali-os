@@ -1,18 +1,10 @@
 import type { Route } from "./+types/api.doctags.apply";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-
-// Apply or remove a lab tag on a document (Page) or file (ProjectFile).
-//   POST /api/doctags/apply
-//   { targetType: "doc" | "file", targetId, tagId, op: "add" | "remove" }
-//
-// Applying an existing tag mirrors the project-edit gate (isCore === Admin ||
-// Core) — the same surface that can edit the doc/file can label it. (Creating
-// *new* tags is the separate Core-only /api/doctags POST.)
 
 const ApplySchema = z.object({
   targetType: z.enum(["doc", "file"]),

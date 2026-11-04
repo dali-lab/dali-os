@@ -6,8 +6,8 @@
 //     /api/activities/:id endpoint. The surface floats over whatever page the
 //     member is exploring — the activity's whole point is to roam the site — so
 //     it's a modal, not a page.
-// The on-page code Overlay is separate (ActivityChrome → pageContent) because in
-// tab mode the routed page lives in an iframe. This bar/modal are the shell.
+// The on-page code Overlay is separate (ActivityChrome → pageContent). This
+// bar/modal are the shell.
 //
 // Reads the live-for-me list from ActivitiesProvider; renders nothing when it's
 // empty, so the bar and modal disappear on their own once a window closes.

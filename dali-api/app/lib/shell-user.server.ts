@@ -7,7 +7,7 @@
 // other awaits it, turning what used to be two separate lookups (one of them a
 // serial hop before Home's parallel block) into one shared read.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cachedForRequest } from "~/lib/request-cache";
 
 const SHELL_USER_SELECT = {

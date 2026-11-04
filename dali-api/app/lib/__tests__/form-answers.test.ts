@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { isAnswered, findMissingRequired, isLayoutOnly } from "../form-answers";
+import {
+  isAnswered,
+  findMissingRequired,
+  isLayoutOnly,
+  isValidIsoDate,
+  isValidOtherText,
+  normalizeAnswerFormats,
+  validateAnswerFormats,
+} from "../form-answers";
 import type { Question } from "~/types";
 
 function q(partial: Partial<Question> & { key: string }): Question {
@@ -143,4 +151,203 @@ describe("findMissingRequired", () => {
     const satisfied = findMissingRequired([skills], () => "React: 3");
     expect(satisfied).toEqual([]);
   });
+});
+
+function typed(type: Question["type"], data: Partial<Question["data"]> = {}): Question {
+  return { key: "k", type, required: false, data: { label: "Q", ...data } };
+}
+
+const errorsFor = (question: Question, value: unknown) =>
+  validateAnswerFormats([question], { k: value });
+
+describe("validateAnswerFormats", () => {
+  describe("date", () => {
+    it.each(["2026-11-02", "2024-02-29", "1999-12-31"])("accepts %s", (v) => {
+      expect(errorsFor(typed("date"), v)).toEqual([]);
+    });
+    it.each(["2026-13-01", "2026-02-30", "2025-02-29", "11/02/2026", "2026-1-2", "tomorrow", "2026-11-02T10:00"])(
+      "rejects %s",
+      (v) => {
+        expect(errorsFor(typed("date"), v)).toEqual([
+          { key: "k", message: '"Q": enter a valid date.' },
+        ]);
+      },
+    );
+    it.each([undefined, null, "", "   "])("treats %j as empty", (v) => {
+      expect(errorsFor(typed("date"), v)).toEqual([]);
+    });
+  });
+
+  describe("number", () => {
+    it.each(["0", "42", "-7", "3.14", " 12 ", "-0.5"])("accepts %j", (v) => {
+      expect(errorsFor(typed("number"), v)).toEqual([]);
+    });
+    it.each(["abc", "1e5", "1,000", "1.", ".5", "--1", "NaN", "Infinity", "12 3"])("rejects %j", (v) => {
+      expect(errorsFor(typed("number"), v)).toEqual([{ key: "k", message: '"Q": enter a number.' }]);
+    });
+    it("enforces min", () => {
+      const q = typed("number", { min: 5 });
+      expect(errorsFor(q, "5")).toEqual([]);
+      expect(errorsFor(q, "4.99")).toEqual([{ key: "k", message: '"Q": must be at least 5.' }]);
+    });
+    it("enforces max", () => {
+      const q = typed("number", { max: 10 });
+      expect(errorsFor(q, "10")).toEqual([]);
+      expect(errorsFor(q, "10.01")).toEqual([{ key: "k", message: '"Q": must be at most 10.' }]);
+    });
+    it("allows a min of zero and negative bounds", () => {
+      const q = typed("number", { min: 0, max: 0 });
+      expect(errorsFor(q, "0")).toEqual([]);
+      expect(errorsFor(q, "-1")).toHaveLength(1);
+      expect(errorsFor(typed("number", { min: -5 }), "-5")).toEqual([]);
+    });
+    it("accepts anything numeric with no bounds", () => {
+      expect(errorsFor(typed("number"), "-99999999")).toEqual([]);
+    });
+    it("treats blank as empty", () => {
+      expect(errorsFor(typed("number", { min: 1 }), "")).toEqual([]);
+    });
+  });
+
+  describe("email", () => {
+    it.each(["ada@example.edu", "Ada.Lovelace+x@Example.EDU", "  ada@example.edu  ", "a@b.co.uk"])(
+      "accepts %j",
+      (v) => {
+        expect(errorsFor(typed("email"), v)).toEqual([]);
+      },
+    );
+    it.each(["ada", "ada@", "@example.edu", "ada@example", "ada @example.edu", "ada@@example.edu", "ada@example..edu", "ada@.edu"])(
+      "rejects %j",
+      (v) => {
+        expect(errorsFor(typed("email"), v)).toEqual([
+          { key: "k", message: '"Q": enter a valid email address.' },
+        ]);
+      },
+    );
+    it("treats blank as empty", () => {
+      expect(errorsFor(typed("email"), "  ")).toEqual([]);
+    });
+  });
+
+  describe("scale", () => {
+    it.each(["1", "2", "3", "4", "5"])("accepts %s", (v) => {
+      expect(errorsFor(typed("scale"), v)).toEqual([]);
+    });
+    it.each(["0", "6", "3.5", "-1", "five", "10"])("rejects %s", (v) => {
+      expect(errorsFor(typed("scale"), v)).toEqual([
+        { key: "k", message: '"Q": pick a number from 1 to 5.' },
+      ]);
+    });
+    it("treats blank as empty", () => {
+      expect(errorsFor(typed("scale"), "")).toEqual([]);
+    });
+  });
+
+  describe("radio", () => {
+    const radio = typed("radio", { options: ["Red", "Blue"] });
+    it("accepts a listed option", () => {
+      expect(errorsFor(radio, "Red")).toEqual([]);
+    });
+    it("rejects an unlisted value without allowOther", () => {
+      expect(errorsFor(radio, "Green")).toEqual([
+        { key: "k", message: '"Q": that choice is no longer available.' },
+      ]);
+    });
+    it("accepts an unlisted value with allowOther", () => {
+      expect(errorsFor({ ...radio, data: { ...radio.data, allowOther: true } }, "Green")).toEqual([]);
+    });
+    it("accepts exactly 200 characters of Other text and rejects 201", () => {
+      const other = { ...radio, data: { ...radio.data, allowOther: true } };
+      expect(errorsFor(other, "x".repeat(200))).toEqual([]);
+      expect(errorsFor(other, "x".repeat(201))).toHaveLength(1);
+    });
+    it("treats blank as empty", () => {
+      expect(errorsFor(radio, "")).toEqual([]);
+    });
+  });
+
+  it("rejects a non-string answer for a single-string type", () => {
+    for (const type of ["radio", "scale", "date", "number", "email"] as const) {
+      expect(errorsFor(typed(type, { options: ["a"] }), ["a"])).toHaveLength(1);
+    }
+  });
+
+  it("ignores other question types", () => {
+    expect(errorsFor(typed("text"), "anything at all")).toEqual([]);
+    expect(errorsFor(typed("select", { options: ["a"] }), "not listed")).toEqual([]);
+  });
+
+  it("reports every bad question, in order", () => {
+    const questions: Question[] = [
+      { ...typed("email"), key: "a" },
+      { ...typed("scale"), key: "b" },
+      { ...typed("date"), key: "c" },
+    ];
+    const errors = validateAnswerFormats(questions, { a: "nope", b: "9", c: "2026-11-02" });
+    expect(errors.map((e) => e.key)).toEqual(["a", "b"]);
+  });
+
+  it("does not modify the answers", () => {
+    const answers = { k: "  Ada@Example.edu " };
+    validateAnswerFormats([typed("email")], answers);
+    expect(answers).toEqual({ k: "  Ada@Example.edu " });
+  });
+});
+
+describe("normalizeAnswerFormats", () => {
+  it("trims and lowercases email", () => {
+    const answers: Record<string, unknown> = { k: "  Ada@Example.EDU " };
+    normalizeAnswerFormats([typed("email")], answers);
+    expect(answers.k).toBe("ada@example.edu");
+  });
+  it("trims number, date and scale", () => {
+    const answers: Record<string, unknown> = { n: " 4 ", d: " 2026-11-02 ", s: " 3 " };
+    normalizeAnswerFormats(
+      [{ ...typed("number"), key: "n" }, { ...typed("date"), key: "d" }, { ...typed("scale"), key: "s" }],
+      answers,
+    );
+    expect(answers).toEqual({ n: "4", d: "2026-11-02", s: "3" });
+  });
+  it("leaves radio write-ins and text answers literal", () => {
+    const answers: Record<string, unknown> = { r: " Other  Thing ", t: "  Hi " };
+    normalizeAnswerFormats(
+      [{ ...typed("radio", { allowOther: true }), key: "r" }, { ...typed("text"), key: "t" }],
+      answers,
+    );
+    expect(answers).toEqual({ r: " Other  Thing ", t: "  Hi " });
+  });
+  it("skips missing and non-string answers", () => {
+    const answers: Record<string, unknown> = { k: 5 };
+    normalizeAnswerFormats([typed("email"), { ...typed("email"), key: "gone" }], answers);
+    expect(answers).toEqual({ k: 5 });
+  });
+});
+
+describe("isValidIsoDate", () => {
+  it("handles leap days and century rules", () => {
+    expect(isValidIsoDate("2000-02-29")).toBe(true);
+    expect(isValidIsoDate("1900-02-29")).toBe(false);
+  });
+});
+
+describe("isValidOtherText", () => {
+  it("rejects blank and over-length, accepts the boundary", () => {
+    expect(isValidOtherText("")).toBe(false);
+    expect(isValidOtherText("   ")).toBe(false);
+    expect(isValidOtherText("a")).toBe(true);
+    expect(isValidOtherText("a".repeat(200))).toBe(true);
+    expect(isValidOtherText("a".repeat(201))).toBe(false);
+  });
+});
+
+describe("question types in required handling", () => {
+  it.each(["radio", "scale", "date", "number", "email"] as const)(
+    "a required %s is missing until it has a value",
+    (type) => {
+      const question: Question = { ...typed(type), required: true };
+      expect(findMissingRequired([question], () => "")).toHaveLength(1);
+      expect(findMissingRequired([question], () => "  ")).toHaveLength(1);
+      expect(findMissingRequired([question], () => "1")).toHaveLength(0);
+    },
+  );
 });

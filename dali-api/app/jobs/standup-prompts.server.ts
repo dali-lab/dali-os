@@ -3,7 +3,7 @@
 // posted-today cursor) plus a weekend skip; channel posts are prod-gated
 // like every unattended Slack send.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { shouldRunDigest, weekdayInZone } from "~/lib/notification-digest.server";
 import { jobChannelPostAllowed } from "~/jobs/job-slack";

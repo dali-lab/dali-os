@@ -5,7 +5,7 @@
 // app/hiring/lib/email-engagement.server.ts, scoped to a PartnerContact
 // instead of a User and with no blinding (Partner CRM has no blind review).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 

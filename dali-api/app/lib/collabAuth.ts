@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isDomainLead, isProjectMember, isLabMember } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";

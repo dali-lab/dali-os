@@ -48,6 +48,7 @@ import {
   PanelRight,
   Pencil,
   Trash2,
+  Download,
   FolderInput,
   HardDrive,
   Search,
@@ -76,9 +77,9 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
+import { modKey } from "~/lib/shortcuts";
 import { collapseMiddle } from "~/lib/collapse-middle";
 import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
@@ -88,10 +89,13 @@ import { TagDots } from "~/components/drive/TagDots";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Truncated } from "~/components/ui/Truncated";
+import { LoadMore } from "~/components/ui/Pager";
+import { useClientSlice } from "~/hooks/useClientSlice";
 import { useOsChrome } from "~/components/os-chrome";
 import { crumbsFor, driveScopeLabel, locationOf, type ItemLocation } from "~/components/drive/location";
 import { LocationLink } from "~/components/drive/LocationLink";
 import { menuEntries, type MenuEntry } from "~/components/drive/item-menu";
+import { downloadItems, hasDownloadable } from "~/components/drive/download-files";
 import { clickIntent } from "~/components/drive/column-click";
 import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
@@ -99,6 +103,7 @@ import { CORAL_FOLDER, glyphLabel, pickGlyph, type ItemGlyph } from "~/component
 import { droppedFiles } from "~/components/drive/dropped-files";
 import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
+import { EmptyFolder } from "~/components/drive/EmptyFolder";
 import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
 
 function useDriveText() {
@@ -135,6 +140,8 @@ export type RowActions = {
   onRename: (item: DriveItem) => void;
   onRequestMove: (item: DriveItem) => void;
   onDelete: (item: DriveItem) => void;
+  /** Save a file, or the whole selection when the row is part of one. */
+  onDownload?: (item: DriveItem) => void;
   /** Open the in-place Share dialog for a page-backed item (doc, folder, or form). */
   onShare?: (item: DriveItem) => void;
   /** Apply a tag to the Drive's tag filter (clicking a tag dot). */
@@ -417,8 +424,8 @@ function ItemGlyphTip({ item, size }: { item: DriveItem; size?: IconSize }) {
   );
 }
 
-function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm", tiles = false) {
-  return scopeIconFor(scope, size, tiles);
+function scopeIcon(scope: DriveTreeScope, size: IconSize = "sm") {
+  return scopeIconFor(scope, size);
 }
 
 function scopeLabel(scope: DriveTreeScope): string {
@@ -529,6 +536,11 @@ function itemMenuItems(
         Open
       </Menu.Item>
       <OpenBesideMenuItem item={item} />
+      {has("download") && actions.onDownload && (
+        <Menu.Item icon={<Download className="h-3.5 w-3.5" />} onSelect={() => actions.onDownload!(item)}>
+          Download
+        </Menu.Item>
+      )}
       {canFavorite && onToggleFavorite && (
         <Menu.Item
           icon={<Star className={`h-3.5 w-3.5 ${item.favorited ? "fill-current text-os-accent" : ""}`} />}
@@ -765,6 +777,12 @@ export function DriveBrowser({
   const sharingChangedRef = useRef(false);
   const revalidator = useRevalidator();
   const toast = useToast();
+  const [downloading, setDownloading] = useState(false);
+  async function download(items: DriveItem[]) {
+    setDownloading(true);
+    await downloadItems(items, { toast, open: (url) => window.location.assign(url) });
+    setDownloading(false);
+  }
 
   async function dropOnNotebook(notebook: DriveItem, dragged: DriveItem[]) {
     if (!dragged.every(isPlainDocument)) {
@@ -806,6 +824,7 @@ export function DriveBrowser({
     const inSelection = (item: DriveItem) => selected.has(item.id) && selectedItems.length > 1;
     return {
       ...base,
+      onDownload: (item: DriveItem) => void download(inSelection(item) ? selectedItems : [item]),
       onDelete: (item: DriveItem) =>
         inSelection(item) && onBulkDelete ? onBulkDelete(selectedItems) : base.onDelete(item),
       onRequestMove: (item: DriveItem) =>
@@ -964,10 +983,17 @@ export function DriveBrowser({
   const searching = search.trim().length > 0 || !!tagFilter;
   const columnsActive = viewMode === "columns" && !searching;
   const searchExpanded = searchFocused || search.length > 0;
-  const hits = useMemo(
+  const allHits = useMemo(
     () => (searching ? searchAll(scopes, search, typeFilter, tagFilter) : []),
     [searching, scopes, search, typeFilter, tagFilter],
   );
+  const tagFilterRef = useRef({ fn: tagFilter, generation: 0 });
+  if (tagFilterRef.current.fn !== tagFilter) {
+    tagFilterRef.current = { fn: tagFilter, generation: tagFilterRef.current.generation + 1 };
+  }
+  const { visible: hits, pager: hitsPager } = useClientSlice(allHits, {
+    resetKey: JSON.stringify([search, tagFilterRef.current.generation, typeFilter]),
+  });
 
   const folderCrumbs = currentScope ? crumbsFor(currentScope.items, currentFolderId) : [];
 
@@ -1326,8 +1352,13 @@ export function DriveBrowser({
   function onPaneKeyDown(e: ReactKeyboardEvent<HTMLElement>) {
     if (isInFloatingLayer(e.target)) return;
     if ((e.target as Element).closest("input, textarea, select, [contenteditable='true']")) return;
-    const mod = e.metaKey || e.ctrlKey;
+    const mod = modKey(e);
 
+    if (e.key === "Delete" || (mod && e.key === "Backspace")) {
+      e.preventDefault();
+      deleteSelection();
+      return;
+    }
     if (e.key === "Backspace" || (mod && e.key === "ArrowUp")) {
       e.preventDefault();
       goUp();
@@ -1347,11 +1378,6 @@ export function DriveBrowser({
       if (!selectable) return;
       e.preventDefault();
       setSelected(new Set(rows.map((r) => r.id)));
-      return;
-    }
-    if (e.key === "Delete" || e.key === "#") {
-      e.preventDefault();
-      deleteSelection();
       return;
     }
     if (e.key === "F2") {
@@ -1872,7 +1898,7 @@ export function DriveBrowser({
                           ? "Documents shared with you by name appear here."
                           : sId === FAVORITES_SPACE_KEY
                             ? "Items you favorite appear here."
-                            : "This folder is empty."
+                            : <EmptyFolder className="py-6">This folder is empty.</EmptyFolder>
                       }
                       marquee={marqueeFor(levelIdx)}
                     >
@@ -1915,78 +1941,84 @@ export function DriveBrowser({
               </div>
             </div>
           ) : (
-            /* ── LIST / GRID / SEARCH ──────────────────────────────────── */
-            <div
-              ref={listRef}
-              tabIndex={0}
-              data-drive-pane
-              data-testid="drive-list-pane"
-              onKeyDown={onPaneKeyDown}
-              {...paneMarquee.handlers}
-              onDragEnter={onFileDragEnter}
-              onDragOver={onFileDragOver}
-              onDragLeave={onFileDragLeave}
-              onDrop={onFileDrop}
-              className={cn(
-                "relative min-w-0 min-h-[420px] overflow-hidden rounded-os-item border border-border select-none",
-                "p-1.5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
-                // Room under the last row for the floating selection bar.
-                // Padding below the content moves nothing above it.
-                showBulk && "pb-14",
-              )}
-            >
-              {uploadOver && !fileOverFolder && (
-                <div className={DROP_OVERLAY}>
-                  <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
-                    <Upload className="w-4 h-4" /> Drop files to upload
-                  </span>
+            <>
+              <div
+                ref={listRef}
+                tabIndex={0}
+                data-drive-pane
+                data-testid="drive-list-pane"
+                onKeyDown={onPaneKeyDown}
+                {...paneMarquee.handlers}
+                onDragEnter={onFileDragEnter}
+                onDragOver={onFileDragOver}
+                onDragLeave={onFileDragLeave}
+                onDrop={onFileDrop}
+                className={cn(
+                  "relative min-w-0 min-h-[420px] overflow-hidden rounded-os-item border border-border select-none",
+                  "p-1.5 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-os-accent/30",
+                  // Room under the last row for the floating selection bar.
+                  // Padding below the content moves nothing above it.
+                  showBulk && "pb-14",
+                )}
+              >
+                {uploadOver && !fileOverFolder && (
+                  <div className={DROP_OVERLAY}>
+                    <span className="flex items-center gap-2 text-sm font-medium text-os-accent">
+                      <Upload className="w-4 h-4" /> Drop files to upload
+                    </span>
+                  </div>
+                )}
+                <MarqueeBox box={paneMarquee.box} />
+
+                {searching ? (
+                  <SearchResults
+                    hits={hits}
+                    selected={selected}
+                    focusId={focusId}
+                    handlers={rowHandlers}
+                    onOpenLocation={onNavigate}
+                    getScopeActions={getInternalScopeActions}
+                    onToggleFavorite={onToggleFavorite}
+                  />
+                ) : !currentScope ? (
+                  // In embedded mode the scope is always pre-selected, so this
+                  // branch only renders in the full /drive browser. Embedded mode
+                  // always has a currentScope because currentScopeId = embeddedScopeId.
+                  <ScopeList
+                    scopes={scopes}
+                    viewMode={viewMode === "grid" ? "grid" : "list"}
+                    focusId={focusId}
+                    dragging={!!activeDrag}
+                    onOpen={(id) => {
+                      if (!consumeSuppressedClick()) openById(id);
+                    }}
+                  />
+                ) : (
+                  <ScopeContents
+                    scope={currentScope}
+                    atScopeTop={currentFolderId === null}
+                    listing={listing}
+                    viewMode={viewMode === "grid" ? "grid" : "list"}
+                    sort={sort}
+                    onToggleSort={toggleSort}
+                    selected={selected}
+                    focusId={focusId}
+                    handlers={rowHandlers}
+                    actions={getInternalScopeActions(currentScope.id)}
+                    onToggleFavorite={onToggleFavorite}
+                    onTogglePartnerVisible={
+                      hasActivePartner && onTogglePartnerVisible ? onTogglePartnerVisible : undefined
+                    }
+                    dragging={!!activeDrag}
+                  />
+                )}
+              </div>
+              {searching && (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <LoadMore {...hitsPager} />
                 </div>
               )}
-              <MarqueeBox box={paneMarquee.box} />
-
-              {searching ? (
-                <SearchResults
-                  hits={hits}
-                  selected={selected}
-                  focusId={focusId}
-                  handlers={rowHandlers}
-                  onOpenLocation={onNavigate}
-                  getScopeActions={getInternalScopeActions}
-                  onToggleFavorite={onToggleFavorite}
-                />
-              ) : !currentScope ? (
-                // In embedded mode the scope is always pre-selected, so this
-                // branch only renders in the full /drive browser. Embedded mode
-                // always has a currentScope because currentScopeId = embeddedScopeId.
-                <ScopeList
-                  scopes={scopes}
-                  viewMode={viewMode === "grid" ? "grid" : "list"}
-                  focusId={focusId}
-                  dragging={!!activeDrag}
-                  onOpen={(id) => {
-                    if (!consumeSuppressedClick()) openById(id);
-                  }}
-                />
-              ) : (
-                <ScopeContents
-                  scope={currentScope}
-                  atScopeTop={currentFolderId === null}
-                  listing={listing}
-                  viewMode={viewMode === "grid" ? "grid" : "list"}
-                  sort={sort}
-                  onToggleSort={toggleSort}
-                  selected={selected}
-                  focusId={focusId}
-                  handlers={rowHandlers}
-                  actions={getInternalScopeActions(currentScope.id)}
-                  onToggleFavorite={onToggleFavorite}
-                  onTogglePartnerVisible={
-                    hasActivePartner && onTogglePartnerVisible ? onTogglePartnerVisible : undefined
-                  }
-                  dragging={!!activeDrag}
-                />
-              )}
-            </div>
+            </>
           )}
 
           {/* ── Bulk selection actions ────────────────────────────────────────
@@ -2000,6 +2032,8 @@ export function DriveBrowser({
             showBulk={showBulk}
             selectedCount={selected.size}
             selectedItems={selectedItems}
+            onBulkDownload={() => void download(selectedItems)}
+            downloading={downloading}
             onBulkMove={onBulkMove}
             onBulkDelete={onBulkDelete}
             onClearSelection={clearSelection}
@@ -2073,6 +2107,8 @@ function DriveBulkBar({
   showBulk,
   selectedCount,
   selectedItems,
+  onBulkDownload,
+  downloading,
   onBulkMove,
   onBulkDelete,
   onClearSelection,
@@ -2080,6 +2116,8 @@ function DriveBulkBar({
   showBulk: boolean;
   selectedCount: number;
   selectedItems: DriveItem[];
+  onBulkDownload: () => void;
+  downloading: boolean;
   onBulkMove?: (items: DriveItem[]) => void;
   onBulkDelete?: (items: DriveItem[]) => void;
   onClearSelection: () => void;
@@ -2098,6 +2136,17 @@ function DriveBulkBar({
       <span className="whitespace-nowrap rounded-full bg-os-container px-2.5 py-1 text-xs font-medium text-foreground">
         {selectedCount} selected
       </span>
+      {hasDownloadable(selectedItems) && (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={downloading}
+          data-testid="drive-bulk-download"
+          onClick={onBulkDownload}
+        >
+          <Download className="h-3.5 w-3.5" /> {downloading ? "Preparing…" : "Download"}
+        </Button>
+      )}
       {onBulkMove && (
         <Button
           variant="secondary"
@@ -2227,7 +2276,6 @@ function ColumnScopeRow({
   isDragging: boolean;
   onClick: () => void;
 }) {
-  const tiles = useFeatureFlag("desktop-tabs");
   const t = useDriveText();
   const drop = useScopeDrop(scope.id, isDragging);
 
@@ -2255,7 +2303,7 @@ function ColumnScopeRow({
             : "text-foreground hover:bg-os-hover"
       } ${isFocused && !drop.isOver ? "ring-1 ring-inset ring-os-accent/50" : ""}`}
     >
-      {scopeIcon(scope, "sm", tiles)}
+      {scopeIcon(scope, "sm")}
       <span className="min-w-0 flex-1 truncate font-medium">{scopeLabel(scope)}</span>
       {audienceChip}
     </div>
@@ -2432,7 +2480,7 @@ function MillerColumn({
   children: ReactNode;
   testid?: string;
   isEmpty: boolean;
-  emptyMessage: string;
+  emptyMessage: ReactNode;
   /** Drag-to-select on the column's empty space; omitted for the list of drives. */
   marquee?: Parameters<typeof useMarquee>[0];
 }) {
@@ -2449,7 +2497,11 @@ function MillerColumn({
     >
       <MarqueeBox box={box} />
       {isEmpty ? (
-        <p className={`px-2.5 py-4 ${t.meta} text-os-muted`}>{emptyMessage}</p>
+        typeof emptyMessage === "string" ? (
+          <p className={`px-2.5 py-4 ${t.meta} text-os-muted`}>{emptyMessage}</p>
+        ) : (
+          emptyMessage
+        )
       ) : (
         <div className="flex flex-col">{children}</div>
       )}
@@ -2660,7 +2712,6 @@ type ScopeEntryProps = {
 };
 
 function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
-  const tiles = useFeatureFlag("desktop-tabs");
   const drop = useScopeDrop(scope.id, dragging);
   return (
     <div
@@ -2674,7 +2725,7 @@ function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
       }}
       className={`${GRID_TILE} ${drop.isOver ? DROP_RING : focused ? "bg-os-container/40" : "hover:bg-os-hover"}`}
     >
-      {scopeIcon(scope, "xl", tiles)}
+      {scopeIcon(scope, "xl")}
       <span className={`${GRID_LABEL} ${focused ? "bg-os-accent text-os-bg" : "text-foreground"}`}>
         {scopeLabel(scope)}
       </span>
@@ -2683,7 +2734,6 @@ function ScopeTile({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
 }
 
 function ScopeRow({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
-  const tiles = useFeatureFlag("desktop-tabs");
   const t = useDriveText();
   const drop = useScopeDrop(scope.id, dragging);
   return (
@@ -2700,7 +2750,7 @@ function ScopeRow({ scope, focused, dragging, onOpen }: ScopeEntryProps) {
         drop.isOver ? DROP_RING : focused ? "bg-os-container text-os-accent" : "hover:bg-os-hover"
       }`}
     >
-      {scopeIcon(scope, "sm", tiles)}
+      {scopeIcon(scope, "sm")}
       <span className="min-w-0 flex-1 truncate font-medium text-foreground">{scopeLabel(scope)}</span>
       {/* Signal ③: scope audience chip — hover-reveal via group-hover. */}
       {scope.scopeAudience ? (
@@ -2750,12 +2800,10 @@ export function ScopeContents({
   const t = useDriveText();
   const isSharedSpace = scope.id === SHARED_SPACE_KEY;
   if (listing.length === 0) {
-    return (
-      <EmptyLine>
-        {isSharedSpace
-          ? "Documents shared with you by name appear here."
-          : "This folder is empty. Drop files here to upload."}
-      </EmptyLine>
+    return isSharedSpace ? (
+      <EmptyLine>Documents shared with you by name appear here.</EmptyLine>
+    ) : (
+      <EmptyFolder>This folder is empty. Drop files here to upload.</EmptyFolder>
     );
   }
 

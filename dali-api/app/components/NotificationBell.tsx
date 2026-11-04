@@ -40,6 +40,8 @@ type Polled = {
   items: AttentionNotification[];
   // Assigned project tasks (the Project work tab); empty while its flag is off.
   projectTasks: ProjectWorkItem[];
+  // The true count behind projectTasks, which carries only the first page.
+  projectTaskCount: number;
 };
 
 // Polls /api/notifications once and returns the open-task count and the
@@ -51,6 +53,7 @@ function usePolledCounts(): Polled {
     tasks: [],
     items: [],
     projectTasks: [],
+    projectTaskCount: 0,
   });
   const { revalidate } = useRevalidator();
   // Stable ref so the once-mounted SSE listener always calls the latest
@@ -69,15 +72,19 @@ function usePolledCounts(): Polled {
           tasks?: OpenTask[];
           items?: AttentionNotification[];
           projectTasks?: ProjectWorkItem[];
+          projectTaskCount?: number;
         };
         if (cancelled) return;
         const tasks = Array.isArray(json.tasks) ? json.tasks : [];
+        const projectTasks = Array.isArray(json.projectTasks) ? json.projectTasks : [];
         setState({
           taskCount:
             typeof json.taskCount === "number" ? json.taskCount : tasks.length,
           tasks,
           items: Array.isArray(json.items) ? json.items : [],
-          projectTasks: Array.isArray(json.projectTasks) ? json.projectTasks : [],
+          projectTasks,
+          projectTaskCount:
+            typeof json.projectTaskCount === "number" ? json.projectTaskCount : projectTasks.length,
         });
       } catch {
         // Polling errors are benign; we'll try again next tick.
@@ -130,7 +137,9 @@ export function useAttentionFeed(): {
   tasks: OpenTask[];
   items: AttentionNotification[];
   projectTasks: ProjectWorkItem[];
+  taskTotal: number;
+  projectTaskTotal: number;
 } {
-  const { tasks, items, projectTasks } = usePolledCounts();
-  return { tasks, items, projectTasks };
+  const { tasks, items, projectTasks, taskCount, projectTaskCount } = usePolledCounts();
+  return { tasks, items, projectTasks, taskTotal: taskCount, projectTaskTotal: projectTaskCount };
 }

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Y from "yjs";
 
 // Mock prisma before importing the module under test
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const mock: any = {
     collabDocument: { findUnique: vi.fn(), upsert: vi.fn() },
     collabDocumentVersion: { findFirst: vi.fn(), create: vi.fn() },
@@ -21,7 +21,7 @@ vi.mock("~/collab/server", () => ({
   getCollabServer: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPlainText, loadDocument, storeDocument, maybeSnapshot } from "../persistence";
 import { fragmentToBlocks } from "../blocknote-server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";

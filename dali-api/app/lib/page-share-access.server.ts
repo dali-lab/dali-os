@@ -14,7 +14,7 @@
 // Plus one cross-workspace addition from the FullAccess tier: anyone granted
 // FullAccess on the page may re-share it (that's what FullAccess means).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { sharePermissionFor } from "~/lib/page-sharing.server";

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isFellowshipEligible, eligibleInternUserIds } from "~/hiring/lib/intern-eligibility";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     term: { findFirst: vi.fn() },
     projectAssignment: { findFirst: vi.fn(), findMany: vi.fn() },

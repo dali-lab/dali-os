@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const update = vi.fn();
-vi.mock("~/lib/db", () => ({ prisma: { user: { update: (...a: unknown[]) => update(...a) } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { user: { update: (...a: unknown[]) => update(...a) } } }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";

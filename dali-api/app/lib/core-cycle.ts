@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Core is elected in Spring (election cycle) and the lab's Core cohort stays
 // the same through the following Winter. We materialize one CoreAssignment row

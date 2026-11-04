@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     pageShare: { findMany: vi.fn() },
     meetingShareGrant: { findMany: vi.fn() },
@@ -20,7 +20,7 @@ vi.mock("~/lib/groups", () => ({
   listVisibleGroupIdsForUser: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { describePageAudience, summarizeAudience, type AudiencePageRow } from "../page-audience.server";
 

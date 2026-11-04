@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock("~/collab/blocknote-server", () => ({
 vi.mock("~/lib/pdf/document-pdf.server", () => ({ renderDocumentPdf: vi.fn() }));
 vi.mock("~/lib/page-typography", () => ({ normalizePageTypography: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isNonMember, isPartnerAccount, requireAuth } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { readDocAsBlocks } from "~/collab/read";

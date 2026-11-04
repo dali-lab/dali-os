@@ -11,6 +11,6 @@
 
 import { coreHandle } from "~/core/coreNav";
 
-export { meta, loader, action, default } from "~/projects/routes/projects.level-up";
+export { meta, loader, action, shouldRevalidate, default } from "~/projects/routes/projects.level-up";
 
 export const handle = coreHandle("level-up");

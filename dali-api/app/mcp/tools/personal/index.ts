@@ -17,7 +17,6 @@ import {
   SET_ACTIVITY_VISIBILITY_DEF,
   runSetActivityVisibility,
 } from "./set-activity-visibility";
-import { WHATSTHECODE_DEF, runWhatsTheCode } from "./whatsthecode";
 
 export const PERSONAL_TOOLS: McpTool[] = [
   {
@@ -33,9 +32,5 @@ export const PERSONAL_TOOLS: McpTool[] = [
     def: SET_ACTIVITY_VISIBILITY_DEF,
     run: (ctx, args) =>
       runSetActivityVisibility(ctx.user.id, args as Parameters<typeof runSetActivityVisibility>[1]),
-  },
-  {
-    def: WHATSTHECODE_DEF,
-    run: async () => runWhatsTheCode(),
   },
 ];

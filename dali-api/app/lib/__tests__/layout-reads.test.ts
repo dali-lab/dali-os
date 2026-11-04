@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     cycleInterviewer: { findFirst: vi.fn() },
     cycleReviewer: { findFirst: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/forms/lib/gate.server", () => ({ getBoundFormGateOutstanding: vi.fn()
 vi.mock("~/hiring/lib/new-member-cohort.server", () => ({ isNewMemberCohort: vi.fn() }));
 vi.mock("~/lib/realtime-bus.server", () => ({ publish: vi.fn(), subscribe: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, isLabMentor } from "~/lib/roles";
 import { listFavoritesAndRecents } from "~/lib/user-pages.server";
 import { viewerHasUnseenReleaseNotes } from "~/lib/release-notes.server";
@@ -37,6 +37,7 @@ import {
   layoutIsNewMember,
   layoutRoles,
 } from "~/lib/layout-reads.server";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 
 const db = prisma as unknown as {
   cycleInterviewer: { findFirst: ReturnType<typeof vi.fn> };
@@ -78,6 +79,35 @@ describe("layoutRoles", () => {
     await layoutRoles("ada", request);
     invalidateLayoutCache("roles");
     await layoutRoles("ada", request);
+    expect(getUserRoles).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("readOnlyRoles", () => {
+  it("shares the shell's cache entry, so a loader after a layout hit reads nothing", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue({ isLabMember: true } as never);
+    await layoutRoles("ada", request);
+    expect(await readOnlyRoles("ada", new Request("http://test/other"))).toEqual({ isLabMember: true });
+    expect(getUserRoles).toHaveBeenCalledOnce();
+  });
+
+  it("keeps users apart", async () => {
+    vi.mocked(getUserRoles).mockImplementation(async (id) => ({ isLabMember: true, isCore: id === "ada" }) as never);
+    expect(await readOnlyRoles("ada", request)).toMatchObject({ isCore: true });
+    expect(await readOnlyRoles("grace", request)).toMatchObject({ isCore: false });
+  });
+
+  it("re-reads a non-member every time", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue({ isLabMember: false } as never);
+    await twice(() => readOnlyRoles("ada", request));
+    expect(getUserRoles).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads after a roles clear", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue({ isLabMember: true } as never);
+    await readOnlyRoles("ada", request);
+    invalidateLayoutCache("roles", ["ada"]);
+    await readOnlyRoles("ada", request);
     expect(getUserRoles).toHaveBeenCalledTimes(2);
   });
 });

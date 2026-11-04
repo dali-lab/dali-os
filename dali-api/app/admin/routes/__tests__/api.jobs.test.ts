@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/jobs/runner.server", () => ({ runJob: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { runJob } from "~/jobs/runner.server";

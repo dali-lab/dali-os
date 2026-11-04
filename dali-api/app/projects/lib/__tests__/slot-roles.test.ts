@@ -428,6 +428,14 @@ describe("missingRequirements (project-bids)", () => {
 describe("validateMapping (intent-to-work)", () => {
   const qs = [q("s1", "select"), q("s2", "select")];
 
+  it("a multiple choice (radio) question can fill the status column like a dropdown", () => {
+    const r = validateMapping("intent-to-work", [q("r1", "radio", { options: ["Yes", "No"] })], {
+      version: 1,
+      entries: [{ source: "question", questionKey: "r1", role: "intent-status", label: "Status", order: 0 }],
+    });
+    expect(r).toEqual({ ok: true });
+  });
+
   it("empty mapping is valid", () => {
     expect(
       validateMapping("intent-to-work", qs, { version: 1, entries: [] }),
@@ -463,6 +471,54 @@ describe("validateMapping (intent-to-work)", () => {
         { source: "builtin", builtin: "hiredRoles", role: "hiredRoles", label: "Hired roles", order: 0 },
       ],
     });
+    expect(r).toEqual({ ok: true });
+  });
+});
+
+describe("parseColumnMapping status map", () => {
+  const entry = (statusMap: unknown) => ({
+    version: 1,
+    entries: [{ source: "question", questionKey: "q", role: "intent-status", label: "Status", statusMap }],
+  });
+
+  it("keeps answers mapped to real statuses", () => {
+    expect(parseColumnMapping(entry({ Yes: "Returning", No: "Off" }))?.entries[0]).toMatchObject({
+      statusMap: { Yes: "Returning", No: "Off" },
+    });
+  });
+
+  it("drops unknown statuses, and the map when nothing valid is left", () => {
+    expect(parseColumnMapping(entry({ Yes: "Returning", No: "Gone" }))?.entries[0]).toMatchObject({
+      statusMap: { Yes: "Returning" },
+    });
+    expect(parseColumnMapping(entry({ No: "Gone" }))?.entries[0]).not.toHaveProperty("statusMap");
+    expect(parseColumnMapping(entry(["Returning"]))?.entries[0]).not.toHaveProperty("statusMap");
+  });
+});
+
+
+describe("validateMapping with conditional questions", () => {
+  it("rejects a mapping to a question that is only shown sometimes", () => {
+    const conditional = q("n", "textarea", { showIf: { questionKey: "p", op: "is", value: "x" } });
+    const r = validateMapping(
+      "project-bids",
+      [projQ("p"), conditional, ...REQ_PROJ_QS],
+      withBidRequirements([
+        { source: "question", questionKey: "n", role: "display", label: "Notes", order: 0 },
+      ]),
+    );
+    expect(r).toMatchObject({ ok: false });
+    if (!r.ok) expect(r.reason).toMatch(/only shown sometimes/);
+  });
+
+  it("still accepts a mapping to an unconditional question", () => {
+    const r = validateMapping(
+      "project-bids",
+      [projQ("p"), q("n", "textarea"), ...REQ_PROJ_QS],
+      withBidRequirements([
+        { source: "question", questionKey: "n", role: "display", label: "Notes", order: 0 },
+      ]),
+    );
     expect(r).toEqual({ ok: true });
   });
 });

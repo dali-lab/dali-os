@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 import { desktopVersion } from "~/lib/desktop";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
+import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import {
   useFormPager,
   FormPagerNav,
@@ -16,11 +17,12 @@ import {
 } from "~/forms/components/FormTileStrip";
 import { stripPattern } from "~/forms/lib/tile-strip";
 import { canAnimate, prefersReducedMotion } from "~/components/meeting-recorder/motion";
-import { paginateQuestions } from "~/lib/form-pages";
+import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/lib/form-logic";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
-import { findMissingRequired } from "~/lib/form-answers";
+import { useFormProgress } from "~/forms/components/useFormProgress";
+import { findMissingRequired, validateAnswerFormats } from "~/lib/form-answers";
 import type { Question } from "~/types";
 
 // The shared authenticated form-fill UI. Rendered both by /forms/fill/:token
@@ -31,7 +33,10 @@ import type { Question } from "~/types";
 
 export type MemberFormData = {
   name: string;
+  iconEmoji?: string | null;
   description: unknown;
+  // Block JSON the author wrote for the done screens; empty keeps the default copy.
+  confirmationMessage?: unknown;
   versionId: string;
   // Fingerprint echoed back on submit so a mid-fill in-place edit is caught.
   versionUpdatedAt: string;
@@ -57,6 +62,15 @@ export function MemberFormFillView({
   // Seeds the tile strip; the form renders full-bleed inside a flush shell.
   tileSeed,
   allowExit = false,
+  // The editor's preview: submit plays the same done sequence without saving.
+  preview = false,
+  // Changing a response already given: seeded with the stored answers, and
+  // saved over the existing response instead of submitting a new one.
+  editing,
+  // Keeps answers in the browser until submit. `progressUserId` keeps one
+  // person's saved answers from showing to another on the same browser.
+  saveProgress = false,
+  progressUserId = null,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
@@ -64,14 +78,39 @@ export function MemberFormFillView({
   next?: string | null;
   tileSeed?: string | null;
   allowExit?: boolean;
+  preview?: boolean;
+  editing?: { answers: Record<string, string> };
+  saveProgress?: boolean;
+  progressUserId?: string | null;
 }) {
   const navigate = useNavigate();
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>(editing?.answers ?? {});
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const questions = data.questions;
-  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const pages = useMemo(() => visiblePages(questions, answers), [questions, answers]);
   const pager = useFormPager(pages, { excludeFileType: true });
+  const { goTo } = pager;
+  const progress = useFormProgress({
+    enabled: saveProgress && !preview && !editing,
+    token: data.token,
+    versionId: data.versionId,
+    versionUpdatedAt: data.versionUpdatedAt,
+    userId: progressUserId,
+    answers,
+    pageIndex: pager.index,
+    onRestore: (saved) => {
+      setAnswers(saved.answers);
+      goTo(saved.pageIndex);
+    },
+  });
+
+  function startOver() {
+    progress.clear();
+    setAnswers({});
+    setError(null);
+    pager.reset();
+  }
 
   const tiles = useMemo(() => (tileSeed ? stripPattern(tileSeed) : null), [tileSeed]);
   const [tilePhase, setTilePhase] = useState<TileStripPhase>("idle");
@@ -131,32 +170,48 @@ export function MemberFormFillView({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const missing = findMissingRequired(questions, (q) => answers[q.key], {
+    const visible = visibleQuestions(questions, answers);
+    const missing = findMissingRequired(visible, (q) => answers[q.key], {
       excludeFileType: true,
     });
     if (missing.length > 0) {
       setError(`"${missing[0].data.label}" is required.`);
       return;
     }
+    const formatErrors = validateAnswerFormats(visible, answers);
+    if (formatErrors.length > 0) {
+      setError(formatErrors[0].message);
+      return;
+    }
     setState("submitting");
     if (tiles) startFold();
+    if (preview) {
+      setState("done");
+      return;
+    }
+    const submitted = pruneHiddenAnswers(questions, answers);
     try {
       const res = await fetch(`/api/forms/fill/${data.token}`, {
-        method: "POST",
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          versionId: data.versionId,
-          versionUpdatedAt: data.versionUpdatedAt,
-          answers,
-          ...extraBody,
-        }),
+        body: JSON.stringify(
+          editing
+            ? { answers: submitted }
+            : {
+                versionId: data.versionId,
+                versionUpdatedAt: data.versionUpdatedAt,
+                answers: submitted,
+                ...extraBody,
+              },
+        ),
       });
       const out = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         failSubmit(out.error ?? `Submission failed (${res.status}).`);
         return;
       }
+      progress.clear();
       setState("done");
     } catch {
       failSubmit("Network error — please try again.");
@@ -171,17 +226,33 @@ export function MemberFormFillView({
     </div>
   );
 
+  const confirmation =
+    !editing && !isEmptyBlocks(data.confirmationMessage) ? (
+      <div className="text-sm text-muted-foreground mt-2">
+        <DocEditor
+          features="notes"
+          density="compact"
+          editable={false}
+          initialContent={data.confirmationMessage}
+        />
+      </div>
+    ) : null;
+
   if (state === "done" && !tiles) {
     return (
       <div className="text-center py-10">
         {doneContent ?? (
           <>
             <h1 className="font-heading text-xl font-bold text-foreground">
-              Submitted
+              {editing ? "Response updated" : "Submitted"}
             </h1>
-            <p className="text-sm text-muted-foreground mt-2">
-              Your response to “{data.name}” has been recorded.
-            </p>
+            {confirmation ?? (
+              <p className="text-sm text-muted-foreground mt-2">
+                {editing
+                  ? `Your response to “${data.name}” has been saved.`
+                  : `Your response to “${data.name}” has been recorded.`}
+              </p>
+            )}
           </>
         )}
         {continueButton}
@@ -191,9 +262,12 @@ export function MemberFormFillView({
 
   const formBody = (
     <>
-      <h1 className="font-heading text-2xl font-bold text-foreground">
-        {data.name}
-      </h1>
+      <div className="flex items-center gap-3">
+        {data.iconEmoji && <PageIconPicker iconEmoji={data.iconEmoji} canEdit={false} onChange={() => {}} />}
+        <h1 className="min-w-0 font-heading text-2xl font-bold text-foreground">
+          {data.name}
+        </h1>
+      </div>
       {!isEmptyBlocks(data.description) && (
         <div className="mt-2 text-sm text-muted-foreground">
           <DocEditor
@@ -208,6 +282,15 @@ export function MemberFormFillView({
       {error && (
         <div className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           {error}
+        </div>
+      )}
+
+      {progress.restored && (
+        <div className="mt-4 flex items-center justify-between gap-3 rounded-os-item bg-os-well px-3 py-2 text-sm text-muted-foreground">
+          <span>We saved your answers</span>
+          <Button type="button" variant="secondary" size="sm" onClick={startOver}>
+            Start over
+          </Button>
         </div>
       )}
 
@@ -245,7 +328,13 @@ export function MemberFormFillView({
               disabled={state === "submitting"}
               className="self-start"
             >
-              {state === "submitting" ? "Submitting…" : "Submit"}
+              {state === "submitting"
+                ? editing
+                  ? "Saving…"
+                  : "Submitting…"
+                : editing
+                  ? "Save changes"
+                  : "Submit"}
             </Button>
           }
         />
@@ -265,9 +354,11 @@ export function MemberFormFillView({
               <h1 className="font-heading text-2xl font-bold text-foreground">
                 Thanks for submitting!
               </h1>
-              <p className="text-sm text-muted-foreground mt-2">
-                Your response to “{data.name}” has been recorded.
-              </p>
+              {confirmation ?? (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Your response to “{data.name}” has been recorded.
+                </p>
+              )}
             </>
           )}
           {continueButton}
@@ -331,28 +422,44 @@ export function MemberFormShell({
 }) {
   return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-8 pt-10 sm:pt-16">
-      <div
-        className={
-          flush
-            ? "mx-auto max-w-2xl bg-card border border-border rounded-os-card overflow-hidden"
-            : "mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8"
-        }
-      >
-        {!flush && (
-          <div className="flex items-center gap-2 mb-6">
-            {allowExit && <FormExitButton />}
-            <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
-              <span className="text-white font-bold text-base leading-none font-heading">
-                D
-              </span>
-            </div>
-            <span className="font-heading text-sm font-bold text-foreground">
-              DALI OS
+      <MemberFormCard allowExit={allowExit} flush={flush}>
+        {children}
+      </MemberFormCard>
+    </div>
+  );
+}
+
+export function MemberFormCard({
+  children,
+  allowExit = false,
+  flush = false,
+}: {
+  children: React.ReactNode;
+  allowExit?: boolean;
+  flush?: boolean;
+}) {
+  return (
+    <div
+      className={
+        flush
+          ? "mx-auto max-w-2xl bg-card border border-border rounded-os-card overflow-hidden"
+          : "mx-auto max-w-2xl bg-card border border-border rounded-os-card p-5 sm:p-8"
+      }
+    >
+      {!flush && (
+        <div className="flex items-center gap-2 mb-6">
+          {allowExit && <FormExitButton />}
+          <div className="w-7 h-7 bg-os-accent rounded-md flex items-center justify-center">
+            <span className="text-white font-bold text-base leading-none font-heading">
+              D
             </span>
           </div>
-        )}
-        {children}
-      </div>
+          <span className="font-heading text-sm font-bold text-foreground">
+            DALI OS
+          </span>
+        </div>
+      )}
+      {children}
     </div>
   );
 }

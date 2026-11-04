@@ -11,7 +11,7 @@
 // Dev/staging machines auto-stop at zero traffic, pausing ticks — acceptable:
 // those DBs are wiped/restored on every deploy anyway.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   JOBS,
   jobByName,

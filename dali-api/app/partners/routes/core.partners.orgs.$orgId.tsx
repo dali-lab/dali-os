@@ -8,29 +8,49 @@ import {
   useSearchParams,
   useSubmit,
 } from "react-router";
-import { Select, Combobox, Tooltip } from "~/components/ui/floating";
+import { Select, Combobox } from "~/components/ui/floating";
 import {
+  ArrowRightLeft,
+  AtSign,
   Building2,
-  CircleDollarSign,
-  Clock,
-  ClipboardList,
-  FolderKanban,
+  Eye,
+  Globe,
+  Image as ImageIcon,
+  Landmark,
   Mail,
-  Settings as SettingsIcon,
+  MapPin,
+  Pencil,
+  Plus,
+  Settings2,
+  Star,
+  Tag,
+  Tags,
   Unlink,
-  Users,
+  User,
+  UserMinus,
+  UserPlus,
+  X,
 } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { UnderlineTabButtons } from "~/components/AreaPillNav";
+import { Button } from "~/components/ui/Button";
+import { IconButton } from "~/components/ui/IconButton";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { useOsChrome } from "~/components/os-chrome";
+import {
+  DetailEditRow,
+  DetailRow,
+  OS_DETAIL_CARD,
+  OS_DETAIL_ICON,
+  OsTabBar,
+} from "~/components/os-page";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { Route } from "./+types/core.partners.orgs.$orgId";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { recordRouteVisit } from "~/lib/user-pages.server";
-import { prisma } from "~/lib/db";
-import { isCore, getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { prisma } from "~/lib/db.server";
+import { isCore } from "~/lib/roles";
+import { cn } from "~/lib/cn";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -39,8 +59,15 @@ import { formatUsd } from "~/lib/money";
 import { PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { EditableSection } from "~/components/EditableSection";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
+import { loadPartnerActivityPage } from "../lib/partner-activity-page.server";
 import { OrgAvatar } from "../components/org/OrgAvatar";
-import { OrgStatusPill, OrgTypePill } from "../components/org/OrgStatusPill";
+import { ContactAvatar } from "../components/contact/ContactAvatar";
+import {
+  DotPill,
+  OrgStatusPill,
+  OrgTypePill,
+  PartnerStagePill,
+} from "../components/org/OrgStatusPill";
 import { InvoicesPanel } from "../components/org/InvoicesPanel";
 import { upsertInvoice, setInvoiceStatus } from "../lib/partner-finance.server";
 import {
@@ -58,10 +85,6 @@ import {
   issuePartnerMagicLink,
   normalizeEmail,
 } from "../lib/magic-link.server";
-import {
-  PARTNER_STAGE_LABELS,
-  PARTNER_STAGE_PILL,
-} from "../lib/partner-application";
 import {
   logPartnerActivity,
 } from "../lib/partner-activity.server";
@@ -94,8 +117,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!canEdit) return redirect("/");
 
   const now = new Date();
-  const roles = await getUserRoles(auth.user.sub, request);
-  const financeEnabled = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
 
   const org = await prisma.partnerOrg.findUnique({
     where: { id: params.orgId },
@@ -179,7 +200,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // failed bookkeeping write must not cost the reader their org page.
   recordRouteVisit(auth.user.sub, `/core/partners/orgs/${org.id}`, org.name, request);
 
-  const [pendingInvites, linkableProjects, otherOrgs, allContacts, activityRows, lastActivityRow] =
+  const [pendingInvites, linkableProjects, otherOrgs, allContacts, activityPage, lastActivityRow] =
     await Promise.all([
       listPendingInvites(org.id),
       prisma.project.findMany({
@@ -201,52 +222,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         orderBy: { name: "asc" },
         select: { id: true, name: true, email: true },
       }),
-      prisma.partnerActivity.findMany({
-        where: { orgId: org.id },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-        select: {
-          id: true,
-          createdAt: true,
-          applicationId: true,
-          actorUserId: true,
-          type: true,
-          body: true,
-          metadata: true,
-        },
-      }),
+      loadPartnerActivityPage({ orgId: org.id }),
       prisma.partnerActivity.findFirst({
         where: { orgId: org.id },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true },
       }),
     ]);
-
-  const activities = activityRows.map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    applicationId: r.applicationId,
-    actorUserId: r.actorUserId,
-    type: r.type,
-    body: r.body,
-    metadata: (r.metadata ?? null) as Record<string, unknown> | null,
-  }));
-  const actorIds = [
-    ...new Set(activityRows.map((r) => r.actorUserId).filter(Boolean)),
-  ] as string[];
-  let actorNames: Record<string, string> = {};
-  if (actorIds.length > 0) {
-    const users = await prisma.user.findMany({
-      where: { id: { in: actorIds } },
-      select: { id: true, firstName: true, lastName: true, daliEmail: true },
-    });
-    actorNames = Object.fromEntries(
-      users.map((u) => [
-        u.id,
-        [u.firstName, u.lastName].filter(Boolean).join(" ") || u.daliEmail || u.id,
-      ]),
-    );
-  }
 
   const status = partnerRelationshipStatus({
     projectLinks: org.projects.map((p) => ({ endedAt: p.endedAt })),
@@ -263,34 +245,32 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     termCode: string;
     projectName: string;
   }[] = [];
-  if (financeEnabled) {
-    const projectIds = org.projects.map((p) => p.projectId);
-    if (projectIds.length > 0) {
-      const rows = await prisma.projectChartString.findMany({
-        where: { projectId: { in: projectIds }, isCurrent: true },
-        select: {
-          id: true,
-          raw: true,
-          normalized: true,
-          type: true,
-          fundingType: true,
-          projectId: true,
-          term: { select: { code: true, sortKey: true } },
-        },
-      });
-      const projectNameById = new Map(org.projects.map((p) => [p.projectId, p.project.name]));
-      chartStrings = rows
-        .sort((a, b) => b.term.sortKey - a.term.sortKey)
-        .map((r) => ({
-          id: r.id,
-          raw: r.raw,
-          normalized: r.normalized,
-          type: r.type,
-          fundingType: r.fundingType,
-          termCode: r.term.code,
-          projectName: projectNameById.get(r.projectId ?? "") ?? "",
-        }));
-    }
+  const projectIds = org.projects.map((p) => p.projectId);
+  if (projectIds.length > 0) {
+    const rows = await prisma.projectChartString.findMany({
+      where: { projectId: { in: projectIds }, isCurrent: true },
+      select: {
+        id: true,
+        raw: true,
+        normalized: true,
+        type: true,
+        fundingType: true,
+        projectId: true,
+        term: { select: { code: true, sortKey: true } },
+      },
+    });
+    const projectNameById = new Map(org.projects.map((p) => [p.projectId, p.project.name]));
+    chartStrings = rows
+      .sort((a, b) => b.term.sortKey - a.term.sortKey)
+      .map((r) => ({
+        id: r.id,
+        raw: r.raw,
+        normalized: r.normalized,
+        type: r.type,
+        fundingType: r.fundingType,
+        termCode: r.term.code,
+        projectName: projectNameById.get(r.projectId ?? "") ?? "",
+      }));
   }
 
   return {
@@ -316,9 +296,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     linkableProjects,
     otherOrgs,
     allContacts,
-    activities,
-    actorNames,
-    financeEnabled,
+    activities: activityPage.items,
+    activitiesNextCursor: activityPage.nextCursor,
+    actorNames: activityPage.actorNames,
     chartStrings,
     canEdit,
     // Cleanup affordance for duplicate-org husks: deletable only when truly
@@ -942,13 +922,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   return { error: "Unknown action." };
 }
-
 function memberName(c: { name: string; email: string | null }) {
   return c.name || c.email || "Unnamed";
 }
-
-const detailInputClass =
-  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
 
 // loader returns redirect() (a Response) on auth-fail branches; the component
 // only renders on the data branch, so narrow it out.
@@ -968,9 +944,18 @@ function isOrgTab(x: string | null): x is OrgTab {
   return !!x && (ORG_TAB_VALUES as readonly string[]).includes(x);
 }
 
-// The Details body. Individuals show Name + Email (both stored on the sole
-// contact) and hide the org-only Website/Logo/Primary-contact fields. The
-// Individual checkbox is controlled so toggling it swaps the fields live;
+const ORG_TAB_LABELS: Record<OrgTab, string> = {
+  timeline: "Timeline",
+  contacts: "Contacts",
+  applications: "Applications",
+  projects: "Projects",
+  finance: "Finance",
+  settings: "Settings",
+};
+
+// The Settings tab's facts card. Individuals show Name + Email (both stored on
+// the sole contact) and hide the org-only Website/Logo/Primary-contact fields.
+// The Individual checkbox is controlled so toggling it swaps the fields live;
 // EditableSection remounts this on Cancel, resetting the state.
 function DetailsFields({
   org,
@@ -981,63 +966,56 @@ function DetailsFields({
   editing: boolean;
   allContacts: { id: string; name: string; email: string | null }[];
 }) {
+  const { formClass, formTrigger } = useOsChrome();
   const [individual, setIndividual] = useState(org.isIndividual);
   const [showcaseConsent, setShowcaseConsent] = useState(org.showcaseConsent);
   const [referredByContactId, setReferredByContactId] = useState(
     org.referredByContactId ?? "",
   );
   const soleContact = org.memberships[0]?.contact ?? null;
+  const ic = OS_DETAIL_ICON;
+  const dash = <span className="text-os-muted">—</span>;
 
-  return (
-    <div className="grid gap-3 sm:grid-cols-2">
-      <input type="hidden" name="intent" value="org-details" />
-      <input type="hidden" name="showcaseConsent" value={showcaseConsent ? "on" : ""} />
-      <input type="hidden" name="referredByContactId" value={referredByContactId} />
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Name</div>
-        {editing ? (
-          <input name="name" defaultValue={org.name} required className={detailInputClass} />
-        ) : (
-          <div className="text-sm text-foreground">{org.name}</div>
-        )}
-      </div>
-
-      {individual ? (
-        <div>
-          <div className="text-xs font-medium text-muted-foreground mb-1">Email</div>
-          {editing ? (
+  if (editing) {
+    return (
+      <div
+        className={cn(OS_DETAIL_CARD, "pb-2 pt-1", formClass, "grid grid-cols-[max-content_1fr]")}
+      >
+        <input type="hidden" name="intent" value="org-details" />
+        <input type="hidden" name="showcaseConsent" value={showcaseConsent ? "on" : ""} />
+        <input type="hidden" name="referredByContactId" value={referredByContactId} />
+        <DetailEditRow icon={<Building2 className={ic} />} label="Name">
+          <input name="name" type="text" defaultValue={org.name} required className="w-full" />
+        </DetailEditRow>
+        {individual ? (
+          <DetailEditRow icon={<AtSign className={ic} />} label="Email">
             <input
               name="email"
               type="email"
               required
               defaultValue={soleContact?.email ?? ""}
-              className={detailInputClass}
+              className="w-full"
             />
-          ) : (
-            <div className="text-sm text-foreground">{soleContact?.email ?? "—"}</div>
-          )}
-        </div>
-      ) : (
-        <>
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">Website</div>
-            {editing ? (
-              <input name="website" defaultValue={org.website ?? ""} className={detailInputClass} />
-            ) : (
-              <div className="text-sm text-foreground">{org.website ?? "—"}</div>
-            )}
-          </div>
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">Logo URL</div>
-            {editing ? (
-              <input name="logoUrl" defaultValue={org.logoUrl ?? ""} className={detailInputClass} />
-            ) : (
-              <div className="text-sm text-foreground truncate">{org.logoUrl ?? "—"}</div>
-            )}
-          </div>
-          <div>
-            <div className="text-xs font-medium text-muted-foreground mb-1">Primary contact</div>
-            {editing ? (
+          </DetailEditRow>
+        ) : (
+          <>
+            <DetailEditRow icon={<Globe className={ic} />} label="Website">
+              <input
+                name="website"
+                type="text"
+                defaultValue={org.website ?? ""}
+                className="w-full"
+              />
+            </DetailEditRow>
+            <DetailEditRow icon={<ImageIcon className={ic} />} label="Logo URL">
+              <input
+                name="logoUrl"
+                type="text"
+                defaultValue={org.logoUrl ?? ""}
+                className="w-full"
+              />
+            </DetailEditRow>
+            <DetailEditRow icon={<Star className={ic} />} label="Primary contact">
               <Select
                 name="primaryContactId"
                 defaultValue={org.primaryContactId ?? ""}
@@ -1045,25 +1023,11 @@ function DetailsFields({
                   { value: "", label: "None" },
                   ...org.memberships.map((m) => ({ value: m.id, label: memberName(m.contact) })),
                 ]}
-                buttonClassName={`${detailInputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
               />
-            ) : (
-              <div className="text-sm text-foreground">
-                {memberName(
-                  org.memberships.find((m) => m.id === org.primaryContactId)?.contact ?? {
-                    name: "—",
-                    email: null,
-                  },
-                )}
-              </div>
-            )}
-          </div>
-        </>
-      )}
-
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Type</div>
-        {editing ? (
+            </DetailEditRow>
+          </>
+        )}
+        <DetailEditRow icon={<Tag className={ic} />} label="Type">
           <Select
             name="type"
             defaultValue={org.type ?? ""}
@@ -1071,67 +1035,29 @@ function DetailsFields({
               { value: "", label: "Not set" },
               ...PARTNER_ORG_TYPES.map((t) => ({ value: t, label: PARTNER_ORG_TYPE_LABELS[t] })),
             ]}
-            buttonClassName={`${detailInputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
           />
-        ) : (
-          <div className="text-sm text-foreground">
-            {org.type ? PARTNER_ORG_TYPE_LABELS[org.type] : "—"}
-          </div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Legal entity name</div>
-        {editing ? (
-          <input name="legalEntityName" defaultValue={org.legalEntityName ?? ""} className={detailInputClass} />
-        ) : (
-          <div className="text-sm text-foreground">{org.legalEntityName ?? "—"}</div>
-        )}
-      </div>
-      <div className="sm:col-span-2">
-        <div className="text-xs font-medium text-muted-foreground mb-1">Address</div>
-        {editing ? (
-          <input name="address" defaultValue={org.address ?? ""} className={detailInputClass} />
-        ) : (
-          <div className="text-sm text-foreground">{org.address ?? "—"}</div>
-        )}
-      </div>
-      <div className="sm:col-span-2">
-        <div className="text-xs font-medium text-muted-foreground mb-1">Tags</div>
-        {editing ? (
+        </DetailEditRow>
+        <DetailEditRow icon={<Landmark className={ic} />} label="Legal entity name">
+          <input
+            name="legalEntityName"
+            type="text"
+            defaultValue={org.legalEntityName ?? ""}
+            className="w-full"
+          />
+        </DetailEditRow>
+        <DetailEditRow icon={<MapPin className={ic} />} label="Address">
+          <input name="address" type="text" defaultValue={org.address ?? ""} className="w-full" />
+        </DetailEditRow>
+        <DetailEditRow icon={<Tags className={ic} />} label="Tags">
           <input
             name="tags"
+            type="text"
             defaultValue={org.tags.join(", ")}
             placeholder="comma-separated"
-            className={detailInputClass}
+            className="w-full"
           />
-        ) : org.tags.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {org.tags.map((t) => (
-              <span key={t} className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5">
-                {t}
-              </span>
-            ))}
-          </div>
-        ) : (
-          <div className="text-sm text-foreground">—</div>
-        )}
-      </div>
-      <div className="sm:col-span-2">
-        <div className="text-xs font-medium text-muted-foreground mb-1">Notes</div>
-        {editing ? (
-          <textarea
-            name="notes"
-            defaultValue={org.notes ?? ""}
-            rows={3}
-            className={detailInputClass}
-          />
-        ) : (
-          <div className="text-sm text-foreground whitespace-pre-wrap">{org.notes ?? "—"}</div>
-        )}
-      </div>
-      <div>
-        <div className="text-xs font-medium text-muted-foreground mb-1">Referred by</div>
-        {editing ? (
+        </DetailEditRow>
+        <DetailEditRow icon={<UserPlus className={ic} />} label="Referred by">
           <Combobox
             value={referredByContactId}
             onChange={setReferredByContactId}
@@ -1141,47 +1067,97 @@ function DetailsFields({
               { value: "", label: "None" },
               ...allContacts.map((c) => ({ value: c.id, label: c.name || c.email || c.id })),
             ]}
-            className={`${detailInputClass} flex`}
+            className={cn(formTrigger, "flex border-os-container")}
           />
-        ) : (
-          <div className="text-sm text-foreground">
-            {allContacts.find((c) => c.id === org.referredByContactId)?.name ?? "—"}
-          </div>
-        )}
+        </DetailEditRow>
+        <DetailEditRow icon={<User className={ic} />} label="Individual">
+          <Checkbox
+            name="isIndividual"
+            checked={individual}
+            onChange={(e) => setIndividual(e.target.checked)}
+            label="A single person, not an organization"
+            className="text-sm text-foreground"
+          />
+        </DetailEditRow>
+        <DetailEditRow icon={<Eye className={ic} />} label="Showcase consent">
+          <Checkbox
+            checked={showcaseConsent}
+            onChange={(e) => setShowcaseConsent(e.target.checked)}
+            label="The partner agreed to be named on the public showcase"
+            className="text-sm text-foreground"
+          />
+        </DetailEditRow>
+        <div className="col-span-2 flex flex-col gap-2 py-3">
+          <span className="flex items-center gap-2.5 text-sm text-os-grey">
+            <Pencil className={ic} />
+            Notes
+          </span>
+          <textarea name="notes" defaultValue={org.notes ?? ""} rows={3} className="w-full" />
+        </div>
       </div>
+    );
+  }
 
-      {editing ? (
-        <Checkbox
-          name="isIndividual"
-          checked={individual}
-          onChange={(e) => setIndividual(e.target.checked)}
-          label="Individual (not an organization)"
-          className="text-sm text-foreground"
-        />
+  return (
+    <div className={OS_DETAIL_CARD}>
+      <DetailRow icon={<Building2 className={ic} />} label="Name">
+        {org.name}
+      </DetailRow>
+      {org.isIndividual ? (
+        <DetailRow icon={<AtSign className={ic} />} label="Email">
+          {soleContact?.email ?? dash}
+        </DetailRow>
       ) : (
-        <Checkbox
-          checked={org.isIndividual}
-          disabled
-          label="Individual (not an organization)"
-          className="text-sm text-foreground"
-        />
+        <>
+          <DetailRow icon={<Globe className={ic} />} label="Website">
+            {org.website ?? dash}
+          </DetailRow>
+          <DetailRow icon={<ImageIcon className={ic} />} label="Logo URL">
+            {org.logoUrl ? <span className="break-all">{org.logoUrl}</span> : dash}
+          </DetailRow>
+          <DetailRow icon={<Star className={ic} />} label="Primary contact">
+            {org.memberships.find((m) => m.id === org.primaryContactId)
+              ? memberName(org.memberships.find((m) => m.id === org.primaryContactId)!.contact)
+              : dash}
+          </DetailRow>
+        </>
       )}
-      {editing ? (
-        <Checkbox
-          checked={showcaseConsent}
-          onChange={(e) => setShowcaseConsent(e.target.checked)}
-          label="Showcase consent"
-          description="The partner agreed to be named on the public showcase."
-          className="text-sm text-foreground"
-        />
-      ) : (
-        <Checkbox
-          checked={org.showcaseConsent}
-          disabled
-          label="Showcase consent"
-          className="text-sm text-foreground"
-        />
-      )}
+      <DetailRow icon={<Tag className={ic} />} label="Type">
+        {org.type ? PARTNER_ORG_TYPE_LABELS[org.type] : dash}
+      </DetailRow>
+      <DetailRow icon={<Landmark className={ic} />} label="Legal entity name">
+        {org.legalEntityName ?? dash}
+      </DetailRow>
+      <DetailRow icon={<MapPin className={ic} />} label="Address">
+        {org.address ?? dash}
+      </DetailRow>
+      <DetailRow icon={<Tags className={ic} />} label="Tags">
+        {org.tags.length > 0 ? (
+          <span className="flex flex-wrap justify-end gap-1.5">
+            {org.tags.map((t) => (
+              <DotPill key={t}>{t}</DotPill>
+            ))}
+          </span>
+        ) : (
+          dash
+        )}
+      </DetailRow>
+      <DetailRow icon={<UserPlus className={ic} />} label="Referred by">
+        {allContacts.find((c) => c.id === org.referredByContactId)?.name ?? dash}
+      </DetailRow>
+      <DetailRow icon={<User className={ic} />} label="Individual">
+        {org.isIndividual ? "Yes" : "No"}
+      </DetailRow>
+      <DetailRow icon={<Eye className={ic} />} label="Showcase consent">
+        {org.showcaseConsent ? "Yes" : "No"}
+      </DetailRow>
+      <div className="flex flex-col gap-2 py-3">
+        <span className="flex items-center gap-2.5 text-sm text-os-grey">
+          <Pencil className={ic} />
+          Notes
+        </span>
+        <p className="whitespace-pre-wrap text-sm text-foreground">{org.notes ?? "—"}</p>
+      </div>
     </div>
   );
 }
@@ -1196,50 +1172,53 @@ function MergeOrgCard({
   const [target, setTarget] = useState("");
   const dialog = useDialog();
   const submit = useSubmit();
+  const os = useOsChrome();
   const formRef = useRef<HTMLFormElement>(null);
   if (otherOrgs.length === 0) return null;
   const targetName = otherOrgs.find((o) => o.id === target)?.name ?? "";
 
   return (
-    <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-      <h2 className="text-sm font-semibold text-foreground">Merge into another organization</h2>
-      <p className="text-xs text-muted-foreground">
-        Members, applications, project links, activity, invites, and invoices move to the
-        organization you pick. This organization is deleted. It can't be undone.
-      </p>
-      <div className="flex flex-wrap items-center gap-3">
-        <Combobox
-          value={target}
-          onChange={setTarget}
-          ariaLabel="Merge into"
-          placeholder="Choose an organization…"
-          options={otherOrgs.map((o) => ({ value: o.id, label: o.name }))}
-          className="flex-1 min-w-[220px] px-3 py-2 text-sm border border-border rounded-lg bg-background text-foreground"
-        />
-        <Form method="post" ref={formRef}>
-          <input type="hidden" name="intent" value="org-merge" />
-          <input type="hidden" name="survivorOrgId" value={target} />
-          <button
-            type="button"
-            disabled={!target}
-            onClick={async () => {
-              if (
-                await dialog.confirm({
-                  title: `Merge ${org.name} into ${targetName}?`,
-                  description:
-                    "This organization is deleted once everything moves over. This can't be undone.",
-                  confirmLabel: "Merge",
-                  tone: "destructive",
-                })
-              ) {
-                submit(formRef.current);
-              }
-            }}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted transition disabled:opacity-50"
-          >
-            Merge
-          </button>
-        </Form>
+    <section className={os.sectionShell}>
+      <h2 className={os.sectionTitle}>Merge into another organization</h2>
+      <div className={cn("rounded-os-card bg-os-card", os.panelPad, "flex flex-col gap-3")}>
+        <p className="text-sm text-os-grey">
+          Members, applications, project links, activity, invites, and invoices move to the
+          organization you pick. This organization is deleted. It can't be undone.
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <Combobox
+            value={target}
+            onChange={setTarget}
+            ariaLabel="Merge into"
+            placeholder="Choose an organization…"
+            options={otherOrgs.map((o) => ({ value: o.id, label: o.name }))}
+            className={cn(os.formTrigger, "min-w-[220px] flex-1 border-os-container")}
+          />
+          <Form method="post" ref={formRef}>
+            <input type="hidden" name="intent" value="org-merge" />
+            <input type="hidden" name="survivorOrgId" value={target} />
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!target}
+              onClick={async () => {
+                if (
+                  await dialog.confirm({
+                    title: `Merge ${org.name} into ${targetName}?`,
+                    description:
+                      "This organization is deleted once everything moves over. This can't be undone.",
+                    confirmLabel: "Merge",
+                    tone: "destructive",
+                  })
+                ) {
+                  submit(formRef.current);
+                }
+              }}
+            >
+              Merge
+            </Button>
+          </Form>
+        </div>
       </div>
     </section>
   );
@@ -1254,8 +1233,8 @@ export default function PartnerOrgDetail() {
     otherOrgs,
     allContacts,
     activities,
+    activitiesNextCursor,
     actorNames,
-    financeEnabled,
     chartStrings,
     canDeleteOrg,
     canEdit,
@@ -1263,6 +1242,7 @@ export default function PartnerOrgDetail() {
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const confirmSubmit = useConfirmSubmit();
+  const os = useOsChrome();
   const detailsFormRef = useRef<HTMLFormElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [inviting, setInviting] = useState(false);
@@ -1276,15 +1256,11 @@ export default function PartnerOrgDetail() {
 
   const error = actionData && "error" in actionData ? actionData.error : null;
 
-  const inputClass =
-    "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm";
-
   // An individual partner is a single person — their sole membership's contact.
   const soleContact = org.isIndividual ? org.memberships[0]?.contact ?? null : null;
 
   const tabParam = searchParams.get("tab");
-  const tab: OrgTab =
-    isOrgTab(tabParam) && (tabParam !== "finance" || financeEnabled) ? tabParam : "timeline";
+  const tab: OrgTab = isOrgTab(tabParam) ? tabParam : "timeline";
   const setTab = (next: OrgTab) =>
     setSearchParams(
       (prev) => {
@@ -1297,201 +1273,133 @@ export default function PartnerOrgDetail() {
   const memberContactIds = new Set(org.memberships.map((m) => m.contact.id));
   const addContactCandidates = allContacts.filter((c) => !memberContactIds.has(c.id));
 
-  const tabItems = [
-    { label: "Timeline", value: "timeline" as const, icon: Clock },
-    { label: "Contacts", value: "contacts" as const, icon: Users },
-    { label: "Applications", value: "applications" as const, icon: ClipboardList },
-    { label: "Projects", value: "projects" as const, icon: FolderKanban },
-    ...(financeEnabled
-      ? [{ label: "Finance", value: "finance" as const, icon: CircleDollarSign }]
-      : []),
-    { label: "Settings", value: "settings" as const, icon: SettingsIcon },
-  ];
+  const websiteHost = org.website?.replace(/^https?:\/\//, "").replace(/\/$/, "");
 
   return (
-    <div className="flex flex-col gap-6 max-w-4xl">
-      <div className="flex items-center gap-4">
+    <div className="flex flex-col gap-6">
+      <header className="flex items-center gap-6">
         <OrgAvatar org={org} size="lg" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="font-heading text-2xl font-bold text-foreground truncate">
-              {org.name}
-            </h1>
-            <OrgTypePill type={org.type} />
-            <OrgStatusPill status={status as PartnerRelationshipStatus} />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {org.isIndividual ? "Individual partner" : "Partner organization"}
-            {org.website && (
-              <>
-                {" · "}
-                <a
-                  href={org.website}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline hover:text-foreground"
-                >
-                  {org.website.replace(/^https?:\/\//, "")}
-                </a>
-              </>
-            )}
-          </p>
-          {org.tags.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {org.tags.map((t) => (
-                <span
-                  key={t}
-                  className="text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5"
-                >
-                  {t}
-                </span>
-              ))}
+        <div className="min-w-0 flex flex-1 flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex flex-col gap-1">
+              <h1 className="font-heading text-[32px] font-medium leading-none text-foreground truncate">
+                {org.name}
+              </h1>
+              <span className="text-[13px] text-os-grey">
+                {org.isIndividual ? "Individual partner" : "Partner organization"}
+                {websiteHost && (
+                  <>
+                    {" · "}
+                    <a
+                      href={org.website!}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="transition-colors hover:text-foreground hover:underline"
+                    >
+                      {websiteHost}
+                    </a>
+                  </>
+                )}
+              </span>
             </div>
-          )}
+            {canEdit && tab !== "settings" && (
+              <button type="button" onClick={() => setTab("settings")} className={os.actionBtn()}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <OrgStatusPill status={status as PartnerRelationshipStatus} size="md" />
+            <OrgTypePill type={org.type} size="md" />
+            {org.tags.map((t) => (
+              <DotPill key={t} size="md" className="font-normal text-os-grey">
+                {t}
+              </DotPill>
+            ))}
+          </div>
         </div>
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => setTab("settings")}
-            className="px-3 py-1.5 text-sm font-medium rounded-md border border-border hover:bg-muted transition"
-          >
-            Edit
-          </button>
-        )}
-      </div>
+      </header>
+
+      <OsTabBar
+        ariaLabel="Organization sections"
+        tabs={ORG_TAB_VALUES.map((t) => ({ key: t, label: ORG_TAB_LABELS[t] }))}
+        active={tab}
+        onSelect={setTab}
+      />
 
       {error && (
-        <p className="text-sm text-destructive bg-destructive/10 rounded-lg px-4 py-3">
+        <p className="rounded-os-item bg-destructive/10 px-4 py-3 text-sm text-destructive">
           {error}
         </p>
       )}
 
-      <UnderlineTabButtons
-        label="Organization"
-        items={tabItems.map((t) => ({
-          label: t.label,
-          icon: t.icon,
-          active: tab === t.value,
-          onClick: () => setTab(t.value),
-        }))}
-      />
+      <div className="flex min-h-[25vh] flex-col gap-6">
+        {tab === "timeline" && (
+          <PartnerActivityFeed
+            activities={activities}
+            nextCursor={activitiesNextCursor}
+            scope={{ orgId: org.id }}
+            actorNames={actorNames}
+            canEdit={canEdit}
+          />
+        )}
 
-      {tab === "timeline" && (
-        <PartnerActivityFeed activities={activities} actorNames={actorNames} canEdit={canEdit} />
-      )}
-
-      {tab === "contacts" && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <h2 className="font-heading font-semibold text-foreground flex items-center gap-2">
-              <Users className="w-4 h-4" /> {org.isIndividual ? "Contact" : "Members"}
-            </h2>
-            {!org.isIndividual && canEdit && (
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setAddingContact((v) => !v)}
-                  className="text-sm text-dark-blue hover:underline"
-                >
-                  + Add existing contact
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInviting((v) => !v)}
-                  className="text-sm text-dark-blue hover:underline"
-                >
-                  + Invite member
-                </button>
-              </div>
-            )}
-          </div>
-
-          {addingContact && canEdit && !org.isIndividual && (
-            <Form
-              method="post"
-              onSubmit={() => {
-                setAddingContact(false);
-                setAddContactId("");
-              }}
-              className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3"
-            >
-              <input type="hidden" name="intent" value="member-add" />
-              <input type="hidden" name="contactId" value={addContactId} />
-              <div className="flex-1 min-w-[240px]">
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
-                  Contact
-                </label>
-                <Combobox
-                  value={addContactId}
-                  onChange={setAddContactId}
-                  ariaLabel="Add existing contact"
-                  placeholder="Search contacts…"
-                  options={addContactCandidates.map((c) => ({
-                    value: c.id,
-                    label: c.name || c.email || c.id,
-                    description: c.email ?? undefined,
-                  }))}
-                  className={`${inputClass} flex`}
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!addContactId}
-                className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition disabled:opacity-50"
-              >
-                Add
-              </button>
-            </Form>
-          )}
-
-          {org.isIndividual ? (
-            soleContact ? (
-              <div className="flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-foreground">
-                    {memberName(soleContact)}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {soleContact.email ?? "no email"}
-                  </div>
+        {tab === "contacts" && (
+          <section className={os.sectionShell}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className={os.sectionTitle}>{org.isIndividual ? "Contact" : "Members"}</h2>
+              {!org.isIndividual && canEdit && (
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setAddingContact((v) => !v)} className={os.quietBtn}>
+                    <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+                    Add existing contact
+                  </button>
+                  <button type="button" onClick={() => setInviting((v) => !v)} className={os.quietBtn}>
+                    <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+                    Invite member
+                  </button>
                 </div>
-                <span
-                  className={`text-xs rounded-full px-2 py-0.5 ${
-                    soleContact.userId
-                      ? "bg-accent-teal/15 text-accent-teal"
-                      : "bg-muted text-muted-foreground"
-                  }`}
+              )}
+            </div>
+
+            <div className="rounded-os-card bg-os-card px-5">
+              {addingContact && canEdit && !org.isIndividual && (
+                <Form
+                  method="post"
+                  onSubmit={() => {
+                    setAddingContact(false);
+                    setAddContactId("");
+                  }}
+                  className={cn(
+                    os.formClass,
+                    "flex flex-wrap items-end gap-3 border-b border-os-container py-4",
+                  )}
                 >
-                  {soleContact.userId ? "Active" : "Hasn't signed in"}
-                </span>
-                {canEdit && (
-                  <Form
-                    method="post"
-                    onSubmit={confirmSubmit({
-                      title: `Send a sign-in link to ${soleContact.email}?`,
-                      description:
-                        "This emails them a one-time link to sign in to the partner portal.",
-                      confirmLabel: "Send link",
-                    })}
-                  >
-                    <input type="hidden" name="intent" value="send-signin-link" />
-                    <button
-                      type="submit"
-                      className="text-xs text-dark-blue hover:underline whitespace-nowrap"
-                    >
-                      {soleContact.userId ? "Resend sign-in link" : "Send sign-in link"}
-                    </button>
-                  </Form>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Add this person's email in Settings to set up their portal access.
-              </p>
-            )
-          ) : (
-            <>
-              {inviting && canEdit && (
+                  <input type="hidden" name="intent" value="member-add" />
+                  <input type="hidden" name="contactId" value={addContactId} />
+                  <label className={cn(os.fieldLabel, "min-w-[240px] flex-1")}>
+                    <span>Contact</span>
+                    <Combobox
+                      value={addContactId}
+                      onChange={setAddContactId}
+                      ariaLabel="Add existing contact"
+                      placeholder="Search contacts…"
+                      options={addContactCandidates.map((c) => ({
+                        value: c.id,
+                        label: c.name || c.email || c.id,
+                        description: c.email ?? undefined,
+                      }))}
+                      className={cn(os.formTrigger, "flex border-os-container")}
+                    />
+                  </label>
+                  <Button type="submit" variant="primary" disabled={!addContactId}>
+                    Add
+                  </Button>
+                </Form>
+              )}
+
+              {inviting && canEdit && !org.isIndividual && (
                 <Form
                   method="post"
                   onSubmit={confirmSubmit({
@@ -1499,54 +1407,86 @@ export default function PartnerOrgDetail() {
                     description: "This emails a join link to the address you entered.",
                     confirmLabel: "Send invite",
                   })}
-                  className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3"
+                  className={cn(
+                    os.formClass,
+                    "flex flex-wrap items-end gap-3 border-b border-os-container py-4",
+                  )}
                 >
                   <input type="hidden" name="intent" value="invite" />
-                  <div className="flex-1 min-w-[200px]">
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">
-                      Email
-                    </label>
-                    <input name="email" type="email" required className={inputClass} />
-                  </div>
-                  <div className="flex-1 min-w-[160px]">
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">
-                      Role (optional)
-                    </label>
-                    <input name="displayRole" placeholder="e.g. CTO" className={inputClass} />
-                  </div>
-                  <Tooltip content="Emails a join link to this address">
-                    <button
-                      type="submit"
-                      className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
-                    >
-                      Send invite
-                    </button>
-                  </Tooltip>
+                  <label className={cn(os.fieldLabel, "min-w-[200px] flex-1")}>
+                    <span>Email</span>
+                    <input name="email" type="email" required className="w-full" />
+                  </label>
+                  <label className={cn(os.fieldLabel, "min-w-[160px] flex-1")}>
+                    <span>Role (optional)</span>
+                    <input name="displayRole" type="text" placeholder="e.g. CTO" className="w-full" />
+                  </label>
+                  <Button type="submit" variant="primary">
+                    Send invite
+                  </Button>
                 </Form>
               )}
 
-              {org.memberships.length === 0 && pendingInvites.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
+              {org.isIndividual ? (
+                soleContact ? (
+                  <div className="flex items-center gap-3 py-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium text-foreground">
+                        {memberName(soleContact)}
+                      </div>
+                      <div className="text-xs text-os-grey">{soleContact.email ?? "no email"}</div>
+                    </div>
+                    <DotPill dot={soleContact.userId ? "bg-os-green" : "bg-os-muted"}>
+                      {soleContact.userId ? "Active" : "Hasn't signed in"}
+                    </DotPill>
+                    {canEdit && (
+                      <Form
+                        method="post"
+                        onSubmit={confirmSubmit({
+                          title: `Send a sign-in link to ${soleContact.email}?`,
+                          description:
+                            "This emails them a one-time link to sign in to the partner portal.",
+                          confirmLabel: "Send link",
+                        })}
+                      >
+                        <input type="hidden" name="intent" value="send-signin-link" />
+                        <button type="submit" className={os.actionBtn()}>
+                          {soleContact.userId ? "Resend sign-in link" : "Send sign-in link"}
+                        </button>
+                      </Form>
+                    )}
+                  </div>
+                ) : (
+                  <p className="py-6 text-sm text-os-grey">
+                    Add this person's email in Settings to set up their portal access.
+                  </p>
+                )
+              ) : org.memberships.length === 0 && pendingInvites.length === 0 ? (
+                <p className="py-6 text-sm text-os-grey">
                   No members yet{canEdit ? ". Invite the first contact." : "."}
                 </p>
               ) : (
-                <ul className="divide-y divide-border">
+                <ul>
                   {org.memberships.map((m) => (
-                    <li key={m.id} className="py-2.5 flex flex-col gap-2">
+                    <li
+                      key={m.id}
+                      className="flex flex-col gap-2 border-b border-os-container py-3 last:border-0"
+                    >
                       <div className="flex items-center gap-3">
+                        <ContactAvatar contact={m.contact} />
                         <div className="min-w-0 flex-1">
-                          <Link
-                            to={`/core/partners/contacts/${m.contact.id}`}
-                            className="text-sm font-medium text-foreground hover:underline"
-                          >
-                            {memberName(m.contact)}
-                          </Link>
-                          {org.primaryContactId === m.id && (
-                            <span className="ml-2 text-xs rounded-full bg-accent-teal/15 text-accent-teal px-2 py-0.5">
-                              Primary contact
-                            </span>
-                          )}
-                          <div className="text-xs text-muted-foreground">
+                          <span className="flex items-center gap-2">
+                            <Link
+                              to={`/core/partners/contacts/${m.contact.id}`}
+                              className="text-sm font-medium text-foreground hover:underline"
+                            >
+                              {memberName(m.contact)}
+                            </Link>
+                            {org.primaryContactId === m.id && (
+                              <DotPill dot="bg-os-accent">Primary</DotPill>
+                            )}
+                          </span>
+                          <div className="text-xs text-os-grey">
                             {m.contact.email ?? "no email"}
                             {m.contact.title ? ` · ${m.contact.title}` : ""}
                             {m.role ? ` · ${m.role}` : ""}
@@ -1556,24 +1496,15 @@ export default function PartnerOrgDetail() {
                           <Form method="post">
                             <input type="hidden" name="intent" value="member-set-primary" />
                             <input type="hidden" name="membershipId" value={m.id} />
-                            <button
-                              type="submit"
-                              className="text-xs text-muted-foreground hover:text-foreground transition whitespace-nowrap"
-                            >
-                              Set primary
-                            </button>
+                            <IconButton type="submit" label="Set primary" icon={Star} />
                           </Form>
                         )}
                         {canEdit && otherOrgs.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setMovingId(movingId === m.id ? null : m.id)
-                            }
-                            className="text-xs text-muted-foreground hover:text-foreground transition"
-                          >
-                            Move
-                          </button>
+                          <IconButton
+                            label="Move"
+                            icon={ArrowRightLeft}
+                            onClick={() => setMovingId(movingId === m.id ? null : m.id)}
+                          />
                         )}
                         {canEdit && (
                           <Form
@@ -1587,19 +1518,19 @@ export default function PartnerOrgDetail() {
                           >
                             <input type="hidden" name="intent" value="member-remove" />
                             <input type="hidden" name="partnerUserId" value={m.id} />
-                            <button
+                            <IconButton
                               type="submit"
-                              className="text-xs text-muted-foreground hover:text-destructive transition"
-                            >
-                              Remove
-                            </button>
+                              label="Remove"
+                              icon={UserMinus}
+                              tone="destructive"
+                            />
                           </Form>
                         )}
                       </div>
                       {canEdit && movingId === m.id && (
                         <Form
                           method="post"
-                          className="flex items-center gap-2 bg-muted/20 rounded-lg p-2.5"
+                          className="flex items-center gap-2 rounded-os-item bg-os-well p-3"
                           onSubmit={confirmSubmit({
                             title: `Move ${memberName(m.contact)} to the selected organization?`,
                             description: "Their portal access switches immediately.",
@@ -1614,34 +1545,35 @@ export default function PartnerOrgDetail() {
                             defaultValue=""
                             placeholder="Move to…"
                             options={otherOrgs.map((o) => ({ value: o.id, label: o.name }))}
-                            buttonClassName="flex-1 px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+                            buttonClassName={cn(os.formTrigger, "flex-1 border-os-container")}
                           />
-                          <button
-                            type="submit"
-                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-dark-blue text-white hover:opacity-90 transition"
-                          >
+                          <Button type="submit" variant="primary" size="sm">
                             Move
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
+                            variant="secondary"
+                            size="sm"
                             onClick={() => setMovingId(null)}
-                            className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition"
                           >
                             Cancel
-                          </button>
+                          </Button>
                         </Form>
                       )}
                     </li>
                   ))}
                   {pendingInvites.map((inv) => (
-                    <li key={inv.id} className="py-2.5 flex items-center gap-3">
-                      <Mail className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                    <li
+                      key={inv.id}
+                      className="flex items-center gap-3 border-b border-os-container py-3 last:border-0"
+                    >
+                      <Mail className="h-4 w-4 flex-shrink-0 text-os-grey" aria-hidden />
                       <div className="min-w-0 flex-1">
-                        <span className="text-sm text-foreground">{inv.email}</span>
-                        <span className="ml-2 text-xs rounded-full bg-muted text-muted-foreground px-2 py-0.5">
-                          Invited
+                        <span className="flex items-center gap-2">
+                          <span className="text-sm text-foreground">{inv.email}</span>
+                          <DotPill dot="bg-os-amber">Invited</DotPill>
                         </span>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-os-grey">
                           Expires {new Date(inv.expiresAt).toLocaleDateString()}
                           {inv.displayRole ? ` · ${inv.displayRole}` : ""}
                         </div>
@@ -1658,310 +1590,301 @@ export default function PartnerOrgDetail() {
                         >
                           <input type="hidden" name="intent" value="revoke-invite" />
                           <input type="hidden" name="inviteId" value={inv.id} />
-                          <button
+                          <IconButton
                             type="submit"
-                            className="text-xs text-muted-foreground hover:text-destructive transition"
-                          >
-                            Revoke
-                          </button>
+                            label="Revoke invite"
+                            icon={X}
+                            tone="destructive"
+                          />
                         </Form>
                       )}
                     </li>
                   ))}
                 </ul>
               )}
-            </>
-          )}
-        </section>
-      )}
+            </div>
+          </section>
+        )}
 
-      {tab === "applications" && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          <h2 className="font-heading font-semibold text-foreground">Applications</h2>
-          {org.applications.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No applications.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {org.applications.map((a) => (
-                <li key={a.id} className="py-2.5 flex items-center gap-3 flex-wrap">
-                  <Link
-                    to={`/core/partners/applications/${a.id}`}
-                    className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
-                  >
-                    {a.title}
-                  </Link>
-                  <span
-                    className={`text-xs rounded-full px-2 py-0.5 ${PARTNER_STAGE_PILL[a.stage]}`}
-                  >
-                    {PARTNER_STAGE_LABELS[a.stage]}
-                  </span>
-                  {a.nextStep && (
-                    <span className="text-xs text-muted-foreground">{a.nextStep}</span>
-                  )}
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {relativeTime(a.lastActivityAt)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {tab === "projects" && (
-        <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-heading font-semibold text-foreground flex items-center gap-2">
-              <FolderKanban className="w-4 h-4" /> Funded projects
-            </h2>
-            {canEdit && linkableProjects.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setLinking((v) => !v)}
-                className="text-sm text-dark-blue hover:underline"
-              >
-                + Link project
-              </button>
-            )}
-          </div>
-
-          {linking && canEdit && (
-            <Form
-              method="post"
-              className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3"
-            >
-              <input type="hidden" name="intent" value="project-link" />
-              <div className="flex-1 min-w-[240px]">
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
-                  Project
-                </label>
-                <Select
-                  name="projectId"
-                  required
-                  defaultValue=""
-                  placeholder="Select a project…"
-                  options={linkableProjects.map((p) => ({ value: p.id, label: p.name }))}
-                  buttonClassName={`${inputClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
-                />
-              </div>
-              <button
-                type="submit"
-                className="rounded-lg bg-dark-blue text-white text-sm font-medium px-4 py-2 hover:opacity-90 transition"
-              >
-                Link
-              </button>
-            </Form>
-          )}
-
-          {org.projects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked projects.</p>
-          ) : (
-            <ul className="divide-y divide-border">
-              {org.projects.map((pp) => (
-                <li key={pp.id} className="py-2.5 flex flex-col gap-2">
-                  <div className="flex items-center gap-3">
-                    <ProjectIcon iconEmoji={pp.project.iconEmoji} />
-                    <div className="min-w-0 flex-1">
-                      <Link
-                        to={`/projects/${pp.project.id}`}
-                        className="text-sm font-medium text-foreground hover:underline"
-                      >
-                        {pp.project.name}
-                      </Link>
-                      <span
-                        className={`ml-2 text-xs rounded-full px-2 py-0.5 ${
-                          pp.active
-                            ? "bg-accent-teal/15 text-accent-teal"
-                            : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {pp.active ? "Active" : pp.project.status === "Archived" ? "Archived" : "Ended"}
-                      </span>
-                      <div className="text-xs text-muted-foreground">
-                        {pp.startedAt
-                          ? `Since ${new Date(pp.startedAt).toLocaleDateString()}`
-                          : "No start date"}
-                        {pp.endedAt
-                          ? ` · Ended ${new Date(pp.endedAt).toLocaleDateString()}`
-                          : ""}
-                      </div>
-                    </div>
-                    {canEdit && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setManagingId(managingId === pp.id ? null : pp.id)
-                        }
-                        className="text-xs text-muted-foreground hover:text-foreground transition"
-                      >
-                        Manage
-                      </button>
-                    )}
-                  </div>
-                  {/* End/Unlink change what the partner can see — kept behind a
-                      disclosure + confirm so neither is a stray one-click. */}
-                  {canEdit && managingId === pp.id && (
-                    <div className="flex items-center gap-3 bg-muted/20 rounded-lg p-2.5 flex-wrap">
-                      <p className="text-xs text-muted-foreground flex-1 min-w-[220px]">
-                        Ending keeps the history and closes the partner's live
-                        access. Unlinking deletes the partnership record
-                        entirely.
-                      </p>
-                      {!pp.endedAt && (
-                        <Form
-                          method="post"
-                          onSubmit={confirmSubmit({
-                            title: `End the partnership on ${pp.project.name}?`,
-                            description:
-                              "The partner loses live access to it; the record stays.",
-                            confirmLabel: "End partnership",
-                            tone: "destructive",
-                          })}
-                        >
-                          <input type="hidden" name="intent" value="project-end" />
-                          <input type="hidden" name="projectPartnerId" value={pp.id} />
-                          <button
-                            type="submit"
-                            className="px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted transition"
-                          >
-                            End partnership
-                          </button>
-                        </Form>
-                      )}
-                      <Form
-                        method="post"
-                        onSubmit={confirmSubmit({
-                          title: `Unlink ${pp.project.name}?`,
-                          description:
-                            "This deletes the partnership record. Prefer “End partnership” to keep history.",
-                          confirmLabel: "Unlink",
-                          tone: "destructive",
-                        })}
-                      >
-                        <input type="hidden" name="intent" value="project-unlink" />
-                        <input type="hidden" name="projectPartnerId" value={pp.id} />
-                        <Tooltip content="Unlink project">
-                          <button
-                            type="submit"
-                            aria-label="Unlink project"
-                            className="inline-flex items-center justify-center p-1.5 rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition"
-                          >
-                            <Unlink className="w-3.5 h-3.5" />
-                          </button>
-                        </Tooltip>
-                      </Form>
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      {tab === "finance" && financeEnabled && (
-        <div className="flex flex-col gap-4">
-          <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-            <h2 className="font-heading font-semibold text-foreground">Deal terms</h2>
-            {org.applications.filter((a) => a.stage === "Accepted").length === 0 ? (
-              <p className="text-sm text-muted-foreground">No accepted applications yet.</p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {org.applications
-                  .filter((a) => a.stage === "Accepted")
-                  .map((a) => (
-                    <li key={a.id} className="py-2.5 flex items-center gap-3 flex-wrap">
+        {tab === "applications" && (
+          <section className={os.sectionShell}>
+            <h2 className={os.sectionTitle}>Applications</h2>
+            <div className="rounded-os-card bg-os-card px-5">
+              {org.applications.length === 0 ? (
+                <p className="py-6 text-sm text-os-grey">No applications.</p>
+              ) : (
+                <ul>
+                  {org.applications.map((a) => (
+                    <li
+                      key={a.id}
+                      className="flex flex-wrap items-center gap-3 border-b border-os-container py-3 last:border-0"
+                    >
                       <Link
                         to={`/core/partners/applications/${a.id}`}
-                        className="text-sm font-medium text-foreground hover:underline flex-1 min-w-0 truncate"
+                        className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:underline"
                       >
                         {a.title}
                       </Link>
-                      <span className="text-xs text-muted-foreground">
-                        {a.fundingType ? PROJECT_FUNDING_TYPE_LABELS[a.fundingType] : "Funding type not set"}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {a.feeCents != null ? formatUsd(a.feeCents / 100) : "No fee set"}
+                      <PartnerStagePill stage={a.stage} />
+                      {a.nextStep && <span className="text-xs text-os-grey">{a.nextStep}</span>}
+                      <span className="whitespace-nowrap text-xs text-os-grey">
+                        {relativeTime(a.lastActivityAt)}
                       </span>
                     </li>
                   ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="bg-card border border-border rounded-lg p-4 flex flex-col gap-3">
-            <h2 className="font-heading font-semibold text-foreground">Chart strings</h2>
-            {chartStrings.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No chart strings on file.</p>
-            ) : (
-              <ul className="divide-y divide-border">
-                {chartStrings.map((cs) => (
-                  <li key={cs.id} className="py-2.5 flex items-center gap-3 flex-wrap">
-                    <span className="text-sm font-mono text-foreground">{cs.raw}</span>
-                    <span className="text-xs text-muted-foreground">{cs.termCode}</span>
-                    <span className="text-xs text-muted-foreground">{cs.projectName}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <InvoicesPanel orgId={org.id} invoices={org.invoices} canEdit={canEdit} />
-        </div>
-      )}
-
-      {tab === "settings" && (
-        <div className="flex flex-col gap-4">
-          <Form method="post" ref={detailsFormRef}>
-            <EditableSection
-              title="Details"
-              icon={<Building2 className="w-4 h-4" />}
-              canEdit={canEdit}
-              onSave={() => {
-                if (detailsFormRef.current) submit(detailsFormRef.current);
-              }}
-            >
-              {({ editing }) => (
-                <DetailsFields org={org} editing={editing} allContacts={allContacts} />
+                </ul>
               )}
-            </EditableSection>
-          </Form>
+            </div>
+          </section>
+        )}
 
-          {canEdit && <MergeOrgCard org={org} otherOrgs={otherOrgs} />}
-
-          {/* Cleanup for duplicate-org husks — only offered when truly empty. */}
-          {canDeleteOrg && (
-            <section className="border border-destructive/30 rounded-lg p-4 flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h2 className="text-sm font-semibold text-foreground">
-                  Delete organization
-                </h2>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  No members, projects, applications, or pending invites. This
-                  organization can be removed.
-                </p>
-              </div>
-              <Form
-                method="post"
-                onSubmit={confirmSubmit({
-                  title: `Delete ${org.name}?`,
-                  description: "This can't be undone.",
-                  confirmLabel: "Delete",
-                  tone: "destructive",
-                })}
-              >
-                <input type="hidden" name="intent" value="org-delete" />
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 text-sm font-medium rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 transition"
-                >
-                  Delete organization
+        {tab === "projects" && (
+          <section className={os.sectionShell}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className={os.sectionTitle}>Funded projects</h2>
+              {canEdit && linkableProjects.length > 0 && (
+                <button type="button" onClick={() => setLinking((v) => !v)} className={os.quietBtn}>
+                  <Plus className="h-3.5 w-3.5" strokeWidth={3} aria-hidden />
+                  Link project
                 </button>
-              </Form>
+              )}
+            </div>
+
+            <div className="rounded-os-card bg-os-card px-5">
+              {linking && canEdit && (
+                <Form
+                  method="post"
+                  className={cn(
+                    os.formClass,
+                    "flex flex-wrap items-end gap-3 border-b border-os-container py-4",
+                  )}
+                >
+                  <input type="hidden" name="intent" value="project-link" />
+                  <label className={cn(os.fieldLabel, "min-w-[240px] flex-1")}>
+                    <span>Project</span>
+                    <Select
+                      name="projectId"
+                      required
+                      defaultValue=""
+                      placeholder="Select a project…"
+                      options={linkableProjects.map((p) => ({ value: p.id, label: p.name }))}
+                    />
+                  </label>
+                  <Button type="submit" variant="primary">
+                    Link
+                  </Button>
+                </Form>
+              )}
+
+              {org.projects.length === 0 ? (
+                <p className="py-6 text-sm text-os-grey">No linked projects.</p>
+              ) : (
+                <ul>
+                  {org.projects.map((pp) => (
+                    <li
+                      key={pp.id}
+                      className="flex flex-col gap-2 border-b border-os-container py-3 last:border-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ProjectIcon iconEmoji={pp.project.iconEmoji} />
+                        <div className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <Link
+                              to={`/projects/${pp.project.id}`}
+                              className="text-sm font-medium text-foreground hover:underline"
+                            >
+                              {pp.project.name}
+                            </Link>
+                            <DotPill dot={pp.active ? "bg-os-green" : "bg-os-muted"}>
+                              {pp.active
+                                ? "Active"
+                                : pp.project.status === "Archived"
+                                  ? "Archived"
+                                  : "Ended"}
+                            </DotPill>
+                          </span>
+                          <div className="text-xs text-os-grey">
+                            {pp.startedAt
+                              ? `Since ${new Date(pp.startedAt).toLocaleDateString()}`
+                              : "No start date"}
+                            {pp.endedAt
+                              ? ` · Ended ${new Date(pp.endedAt).toLocaleDateString()}`
+                              : ""}
+                          </div>
+                        </div>
+                        {canEdit && (
+                          <IconButton
+                            label="Manage"
+                            icon={Settings2}
+                            onClick={() => setManagingId(managingId === pp.id ? null : pp.id)}
+                          />
+                        )}
+                      </div>
+                      {/* End/Unlink change what the partner can see — kept behind a
+                          disclosure + confirm so neither is a stray one-click. */}
+                      {canEdit && managingId === pp.id && (
+                        <div className="flex flex-wrap items-center gap-3 rounded-os-item bg-os-well p-3">
+                          <p className="min-w-[220px] flex-1 text-xs text-os-grey">
+                            Ending keeps the history and closes the partner's live access.
+                            Unlinking deletes the partnership record entirely.
+                          </p>
+                          {!pp.endedAt && (
+                            <Form
+                              method="post"
+                              onSubmit={confirmSubmit({
+                                title: `End the partnership on ${pp.project.name}?`,
+                                description:
+                                  "The partner loses live access to it; the record stays.",
+                                confirmLabel: "End partnership",
+                                tone: "destructive",
+                              })}
+                            >
+                              <input type="hidden" name="intent" value="project-end" />
+                              <input type="hidden" name="projectPartnerId" value={pp.id} />
+                              <Button type="submit" variant="secondary" size="sm">
+                                End partnership
+                              </Button>
+                            </Form>
+                          )}
+                          <Form
+                            method="post"
+                            onSubmit={confirmSubmit({
+                              title: `Unlink ${pp.project.name}?`,
+                              description:
+                                "This deletes the partnership record. Prefer “End partnership” to keep history.",
+                              confirmLabel: "Unlink",
+                              tone: "destructive",
+                            })}
+                          >
+                            <input type="hidden" name="intent" value="project-unlink" />
+                            <input type="hidden" name="projectPartnerId" value={pp.id} />
+                            <IconButton
+                              type="submit"
+                              label="Unlink project"
+                              icon={Unlink}
+                              tone="destructive"
+                            />
+                          </Form>
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tab === "finance" && (
+          <>
+            <section className={os.sectionShell}>
+              <h2 className={os.sectionTitle}>Deal terms</h2>
+              <div className="rounded-os-card bg-os-card px-5">
+                {org.applications.filter((a) => a.stage === "Accepted").length === 0 ? (
+                  <p className="py-6 text-sm text-os-grey">No accepted applications yet.</p>
+                ) : (
+                  <ul>
+                    {org.applications
+                      .filter((a) => a.stage === "Accepted")
+                      .map((a) => (
+                        <li
+                          key={a.id}
+                          className="flex flex-wrap items-center gap-3 border-b border-os-container py-3 last:border-0"
+                        >
+                          <Link
+                            to={`/core/partners/applications/${a.id}`}
+                            className="min-w-0 flex-1 truncate text-sm font-medium text-foreground hover:underline"
+                          >
+                            {a.title}
+                          </Link>
+                          <span className="text-xs text-os-grey">
+                            {a.fundingType
+                              ? PROJECT_FUNDING_TYPE_LABELS[a.fundingType]
+                              : "Funding type not set"}
+                          </span>
+                          <span className="text-xs text-os-grey">
+                            {a.feeCents != null ? formatUsd(a.feeCents / 100) : "No fee set"}
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                )}
+              </div>
             </section>
-          )}
-        </div>
-      )}
+
+            <section className={os.sectionShell}>
+              <h2 className={os.sectionTitle}>Chart strings</h2>
+              <div className="rounded-os-card bg-os-card px-5">
+                {chartStrings.length === 0 ? (
+                  <p className="py-6 text-sm text-os-grey">No chart strings on file.</p>
+                ) : (
+                  <ul>
+                    {chartStrings.map((cs) => (
+                      <li
+                        key={cs.id}
+                        className="flex flex-wrap items-center gap-3 border-b border-os-container py-3 last:border-0"
+                      >
+                        <span className="font-mono text-sm text-foreground">{cs.raw}</span>
+                        <span className="text-xs text-os-grey">{cs.termCode}</span>
+                        <span className="text-xs text-os-grey">{cs.projectName}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </section>
+
+            <InvoicesPanel orgId={org.id} invoices={org.invoices} canEdit={canEdit} />
+          </>
+        )}
+
+        {tab === "settings" && (
+          <>
+            <Form method="post" ref={detailsFormRef}>
+              <EditableSection
+                title="Details"
+                canEdit={canEdit}
+                onSave={() => {
+                  if (detailsFormRef.current) submit(detailsFormRef.current);
+                }}
+              >
+                {({ editing }) => (
+                  <DetailsFields org={org} editing={editing} allContacts={allContacts} />
+                )}
+              </EditableSection>
+            </Form>
+
+            {canEdit && <MergeOrgCard org={org} otherOrgs={otherOrgs} />}
+
+            {/* Cleanup for duplicate-org husks — only offered when truly empty. */}
+            {canDeleteOrg && (
+              <section className="flex flex-wrap items-center justify-between gap-3 rounded-os-card border border-destructive/30 p-5">
+                <div>
+                  <h2 className="text-sm font-semibold text-foreground">Delete organization</h2>
+                  <p className="mt-0.5 text-xs text-os-grey">
+                    No members, projects, applications, or pending invites. This organization can
+                    be removed.
+                  </p>
+                </div>
+                <Form
+                  method="post"
+                  onSubmit={confirmSubmit({
+                    title: `Delete ${org.name}?`,
+                    description: "This can't be undone.",
+                    confirmLabel: "Delete",
+                    tone: "destructive",
+                  })}
+                >
+                  <input type="hidden" name="intent" value="org-delete" />
+                  <Button type="submit" variant="destructive">
+                    Delete organization
+                  </Button>
+                </Form>
+              </section>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

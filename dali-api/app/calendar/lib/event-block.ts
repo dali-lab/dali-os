@@ -1,5 +1,5 @@
 import React from "react";
-import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
 import type { EventAttendeeDTO, EventBlock, TimeEntryDTO } from "~/calendar/lib/types";
 
 // Hard-coded dark text that doesn't flip in dark mode (the dark-blue token does).
@@ -210,8 +210,14 @@ export function nominalDayRange(
   startHour = 9,
 ): { startIso: string; endIso: string } {
   const d = new Date(dateLike);
-  const dayStart = zonedDayStartUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), timezone);
-  const start = new Date(dayStart.getTime() + startHour * 3_600_000);
+  const start = zonedWallTimeUtc(
+    d.getUTCFullYear(),
+    d.getUTCMonth() + 1,
+    d.getUTCDate(),
+    0,
+    startHour * 60,
+    timezone,
+  );
   const end = new Date(start.getTime() + Math.max(hours, 0.25) * 3_600_000);
   return { startIso: start.toISOString(), endIso: end.toISOString() };
 }
@@ -224,8 +230,7 @@ export function localDayTimeToIso(date: string, time: string, timezone: string):
   const [hh, mm] = time.split(":").map(Number);
   if (!y || !m || !d || hh === undefined || mm === undefined) return null;
   if (!Number.isFinite(hh) || !Number.isFinite(mm)) return null;
-  const dayStart = zonedDayStartUtc(y, m, d, timezone);
-  return new Date(dayStart.getTime() + (hh * 60 + mm) * 60_000).toISOString();
+  return zonedWallTimeUtc(y, m, d, hh, mm, timezone).toISOString();
 }
 
 export function todayDateInputValue(timezone: string): string {

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { SLOTS, type Slot, getSlotBinding } from "./form-slots";
 
 // Per-slot guardrail status for the Core staffing boards. Binding a form to a

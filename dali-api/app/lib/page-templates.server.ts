@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import type { WorkspaceType } from "~/generated/prisma/client";
 

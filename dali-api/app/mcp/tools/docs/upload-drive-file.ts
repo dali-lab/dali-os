@@ -11,7 +11,7 @@
 //   Member scope — any authenticated caller (the file is owned by the caller).
 //                  If folderPageId given, must have edit access to it.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isLabMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";

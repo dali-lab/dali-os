@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.cycles.$cycleId.confidentiality.sign";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 

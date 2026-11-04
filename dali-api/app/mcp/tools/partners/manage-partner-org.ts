@@ -15,7 +15,7 @@
 //   delete — delete an empty org. Requires orgId. Blocked if any members, project links,
 //             applications, or pending invites exist.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "~/partners/lib/magic-link.server";

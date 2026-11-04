@@ -10,7 +10,7 @@
 //
 // Nothing in this module authorises anything. Call it behind your own gate.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
 import { cachedForRequest } from "~/lib/request-cache";
 import type { SharePrincipalType, SharePermission } from "~/generated/prisma/client";

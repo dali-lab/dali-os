@@ -5,7 +5,7 @@
 // lastError on the claimed row — visible in the composer's scheduled list —
 // and deliberately does NOT send; the admin re-composes.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { sendAnnouncement } from "~/lib/announcements.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

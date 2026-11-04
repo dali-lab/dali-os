@@ -3,7 +3,7 @@
 // for project editors (Core or project members), matching the web task PATCH
 // route plus the assignee self-service path shared with `update_task_status`.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
 export const SET_TASK_CHECKLIST_TOOL = {

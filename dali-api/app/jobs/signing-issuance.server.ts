@@ -10,7 +10,7 @@
 // the admin last enforced (so publishing a newer draft mid-term never silently
 // re-issues). Re-ticks find the binding present and do nothing.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 import { currentTerm } from "~/lib/roles";
 import { notifySignRequest } from "~/signing/lib/notify.server";

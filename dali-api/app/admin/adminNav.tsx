@@ -2,6 +2,7 @@ import {
   BarChart3,
   Clock,
   Compass,
+  DoorOpen,
   Flag,
   Inbox,
   LayoutDashboard,
@@ -106,6 +107,16 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     ],
   }),
   section({
+    key: "rooms",
+    label: "Rooms",
+    path: "/admin/rooms",
+    description: "Bookable DALI rooms and the iPad displays outside them.",
+    icon: DoorOpen,
+    sections: [
+      { key: "rooms", label: "Rooms", to: "/admin/rooms", icon: DoorOpen, description: "Bookable DALI rooms and the iPad displays outside them." },
+    ],
+  }),
+  section({
     key: "onboarding",
     label: "Onboarding",
     path: "/admin/onboarding",
@@ -161,7 +172,6 @@ export function adminTrail(active: string, isAdmin: boolean) {
 // data (`isAdmin`, or `viewerIsAdmin` on the pages that name it that way).
 export function adminHandle(active: string) {
   return {
-    roomyBreadcrumb: true,
     breadcrumbTrail: (data: unknown) => {
       const d = data as { isAdmin?: boolean; viewerIsAdmin?: boolean } | null;
       return adminTrail(active, !!d?.isAdmin || !!d?.viewerIsAdmin);

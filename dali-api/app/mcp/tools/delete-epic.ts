@@ -1,7 +1,7 @@
 // MCP `delete_epic` — Core or project member. Tasks pointing at the epic have
 // their epicId nulled (mirrors api.epics.$id DELETE).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
 export const DELETE_EPIC_TOOL = {

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const projectChartString = {
     findMany: vi.fn(),
     findFirst: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock("~/lib/roles", async (orig) => {
 });
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isAdmin } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {

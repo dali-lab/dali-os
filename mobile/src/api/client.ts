@@ -116,7 +116,7 @@ export const api = {
     request<{ ok: true }>('PATCH', `/api/mobile/time/${encodeURIComponent(id)}`, body),
   deleteTimeEntry: (id: string) => request<{ ok: true }>('DELETE', `/api/mobile/time/${encodeURIComponent(id)}`),
 
-  notes: () => request<NotesResponse>('GET', '/api/mobile/notes'),
+  notes: (cursor?: string) => request<NotesResponse>('GET', `/api/mobile/notes${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`),
   note: (id: string) => request<NoteDetail>('GET', `/api/mobile/notes/${encodeURIComponent(id)}`),
   personalNotePage: (title: string) => request<NotePage>('POST', '/api/mobile/notes', { title }),
   meetingNotePage: (scheduledMeetingId: string, occurrenceStart: string) =>

@@ -1,6 +1,11 @@
 import { cn } from "~/lib/cn";
 
-export type SegmentedOption<T extends string> = { value: T; label: string; count?: number };
+export type SegmentedOption<T extends string> = {
+  value: T;
+  label: string;
+  count?: number;
+  disabled?: boolean;
+};
 
 /** A short either/or choice drawn as one pill with a thumb on the picked side. */
 export function Segmented<T extends string>({
@@ -46,6 +51,7 @@ export function Segmented<T extends string>({
             type="button"
             role="radio"
             aria-checked={checked}
+            disabled={o.disabled}
             onClick={() => onChange(o.value)}
             className={cn(
               // 36px total at md (28px thumb inside the 4px-padded frame).
@@ -55,8 +61,8 @@ export function Segmented<T extends string>({
               // Full width splits the row evenly, so side padding would only
               // push a long label past its share.
               fullWidth ? "min-w-0 flex-1 truncate px-1.5" : size === "md" ? "px-4" : "px-3",
-              "whitespace-nowrap",
-              checked ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              "whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-50",
+              checked ? "bg-background text-foreground shadow-sm" : "text-muted-foreground enabled:hover:text-foreground",
             )}
           >
             {o.label}

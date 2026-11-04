@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domain-applications.$id.schedule-interview";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { assignInterviewers } from "~/hiring/lib/scheduling";

@@ -1,7 +1,7 @@
 // Wire contract between the mobile app and dali-api (/api/mobile/*, /api/meeting-recordings/*).
 // Every route takes `Authorization: Bearer <token>` (device-pairing token) and returns
 // JSON. Errors are `{ error: string }` with a 4xx/5xx status. Dates are ISO strings.
-// All routes 404 `{ error: "Not found" }` when the `mobile-app` feature flag is off for the user.
+// All routes 404 `{ error: "Not found" }` for anyone who is not a lab member.
 
 export type Presence = 'active' | 'away' | 'offline';
 export type TaskStatus = 'Backlog' | 'Todo' | 'InProgress' | 'InReview' | 'Done' | 'Cancelled';
@@ -215,11 +215,13 @@ export interface TypedNote {
   notebook: string | null; // the notebook it's filed in; null for a personal note
 }
 
-// GET /api/mobile/notes -> the member's latest 30 recordings and 30 typed notes
+// GET /api/mobile/notes[?cursor=] -> a page of up to 30 recordings and 30 typed notes, newest first
 export interface NotesResponse {
   recordingEnabled: boolean; // AI meeting notes flag on and transcription configured
   notes: NoteSummary[];
   pages: TypedNote[];
+  /** Pass as ?cursor= for the next page. Absent from older servers; null on the last page. */
+  nextCursor?: string | null;
 }
 // POST /api/mobile/notes { title } | { scheduledMeetingId, occurrenceStart } -> { pageId, documentName }
 //   a new personal note, or a calendar meeting occurrence's notes page

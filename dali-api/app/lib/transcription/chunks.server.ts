@@ -1,6 +1,6 @@
 // PCM chunk storage for a MeetingRecording — one object per 20s chunk, under
 // a private prefix Modal reads via short-lived presigned URLs and dali-api
-// deletes once the transcript is in. See specs/meeting-transcription.md.
+// deletes a day after the recording finalizes. See specs/meeting-transcription.md.
 
 import { putObject, listObjectKeys, deleteObjects, getDownloadUrl } from "~/lib/s3";
 

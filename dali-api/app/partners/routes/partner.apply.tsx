@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Form, redirect, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/partner.apply";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { loadApplicationForm } from "~/partners/lib/application-form.server";
@@ -15,7 +15,7 @@ import {
   FormPagerNav,
   FormPageHeading,
 } from "~/forms/components/FormPager";
-import { paginateQuestions } from "~/lib/form-pages";
+import { visiblePages, visibleQuestions } from "~/lib/form-logic";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -182,8 +182,8 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
   const [clientError, setClientError] = useState<string | null>(null);
 
   const pages = useMemo(
-    () => paginateQuestions(applicationForm?.questions ?? []),
-    [applicationForm],
+    () => visiblePages(applicationForm?.questions ?? [], formAnswers),
+    [applicationForm, formAnswers],
   );
   const pager = useFormPager(pages);
 
@@ -193,7 +193,7 @@ export default function PartnerApply({ actionData }: Route.ComponentProps) {
 
   function checkRequired(e: React.FormEvent<HTMLFormElement>) {
     const missing = applicationForm
-      ? findMissingRequired(applicationForm.questions, (q) => formAnswers[q.key])
+      ? findMissingRequired(visibleQuestions(applicationForm.questions, formAnswers), (q) => formAnswers[q.key])
       : [];
     if (missing.length > 0) {
       e.preventDefault();

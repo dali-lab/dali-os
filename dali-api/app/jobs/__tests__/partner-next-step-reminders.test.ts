@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/partners/lib/partner-notify.server", () => ({ notifyPartners: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { runPartnerNextStepReminders } from "~/jobs/partner-next-step-reminders.server";
 
@@ -47,7 +47,7 @@ describe("runPartnerNextStepReminders", () => {
     expect(mockPrisma.partnerApplication.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          stage: { in: ["New", "Interview"] },
+          stage: { in: ["New", "Interview", "Deciding"] },
           nextStepDueAt: { not: null, lt: new Date("2026-10-07T00:00:00.000Z") },
         },
         take: 200,

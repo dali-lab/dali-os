@@ -6,10 +6,8 @@
 // — same ledger as meeting-reminders / meeting-record-prompts, a dedicated
 // `kind` so the three don't collide on the unique index.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 const MINUTE_MS = 60_000;
@@ -46,17 +44,6 @@ export async function runMeetingNotesNudge({ now, settings }: JobContext): Promi
     take: SCAN_TAKE,
   });
 
-  // The flag is per recorder, not per recording — cache it across this tick.
-  const flagByUser = new Map<string, boolean>();
-  async function userCanRecord(userId: string): Promise<boolean> {
-    const cached = flagByUser.get(userId);
-    if (cached !== undefined) return cached;
-    const roles = await getUserRoles(userId);
-    const enabled = await isFeatureEnabled("ai-meeting-notes", userId, roles);
-    flagByUser.set(userId, enabled);
-    return enabled;
-  }
-
   let sent = 0;
   for (const rec of recordings) {
     if (sent >= CAP) break;
@@ -68,8 +55,6 @@ export async function runMeetingNotesNudge({ now, settings }: JobContext): Promi
 
     const pageId = pageIdFromDocumentName(rec.documentName);
     if (!pageId) continue;
-
-    if (!(await userCanRecord(rec.userId))) continue;
 
     // Claim before sending: a unique violation means another machine (or a
     // previous tick) already nudged this (meeting, occurrence, user, kind).

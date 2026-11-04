@@ -16,7 +16,7 @@
 import { redirect } from "react-router";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { isAdmin } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
 

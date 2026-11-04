@@ -3,7 +3,7 @@
 // Mirrors the /settings/notifications page's rules: locked in-app events
 // can't be muted, externally-emailed events expose no email control.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   EVENT_TYPES,
   EVENT_TYPE_KEYS,

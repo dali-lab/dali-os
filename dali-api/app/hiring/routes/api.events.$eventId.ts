@@ -1,9 +1,8 @@
 import type { Route } from "./+types/api.events.$eventId";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { getUserRoles, isCycleAdmin } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCycleAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, idSchema, nullableTrimmed } from "~/lib/validate";
 import {
@@ -43,23 +42,12 @@ const ActionBodySchema = z.object({
   occurrence: z.string().optional(),
 });
 
-async function requireFlag(request: Request, userId: string): Promise<Response | null> {
-  const roles = await getUserRoles(userId, request);
-  if (!(await isFeatureEnabled("application-events", userId, roles, request))) {
-    return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
-  }
-  return null;
-}
-
 export async function loader({ request, params }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
   if (preflight) return preflight;
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-
-  const flagResponse = await requireFlag(request, auth.user.sub);
-  if (flagResponse) return flagResponse;
 
   const event = await prisma.hiringEvent.findUnique({
     where: { id: params.eventId },
@@ -83,9 +71,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-
-  const flagResponse = await requireFlag(request, auth.user.sub);
-  if (flagResponse) return flagResponse;
 
   const body = await parseJson(request, ActionBodySchema);
   if (body instanceof Response) return withCors(request, body);

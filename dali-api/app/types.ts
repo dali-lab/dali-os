@@ -100,6 +100,17 @@ export interface Question {
     | 'text'
     | 'textarea'
     | 'select'
+    // Single choice over `data.options`, shown as radio buttons. Same stored
+    // answer as `select`.
+    | 'radio'
+    // Fixed 1 to 5 rating. Stored as "1" to "5".
+    | 'scale'
+    // Stored as YYYY-MM-DD.
+    | 'date'
+    // Stored as a numeric string, bounded by optional `data.min` / `data.max`.
+    | 'number'
+    // Stored trimmed and lowercased.
+    | 'email'
     | 'github_url'
     | 'figma_url'
     | 'drive_url'
@@ -127,6 +138,15 @@ export interface Question {
     label: string
     description?: string
     options?: string[]
+    // radio / checkbox only: adds a final "Other" choice whose typed text
+    // (up to 200 characters) is stored as the answer.
+    allowOther?: boolean
+    // scale only: optional labels for the 1 and 5 ends.
+    scaleLow?: string
+    scaleHigh?: string
+    // number only: optional bounds.
+    min?: number
+    max?: number
     afterDomains?: boolean
     accept?: string
     maxWords?: number
@@ -148,6 +168,13 @@ export interface Question {
     // ProseMirror JSON (old TipTap editor) or, before the rich-text upgrade,
     // a plain string — readers format-sniff all three.
     body?: unknown
+    // Show this question only when an earlier select, radio, scale or
+    // checkbox answer matches. See app/lib/form-logic.ts.
+    showIf?: {
+      questionKey: string
+      op: 'is' | 'isNot' | 'includes' | 'excludes'
+      value: string
+    }
   }
 }
 

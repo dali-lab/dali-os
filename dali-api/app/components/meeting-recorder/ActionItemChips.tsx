@@ -1,27 +1,21 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router";
 import { ListChecks, Plus } from "lucide-react";
-import { Avatar } from "~/components/ui/Avatar";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { DateField } from "~/components/ui/DateField";
-import { Combobox, Tooltip, type SelectOption } from "~/components/ui/floating";
+import { Tooltip } from "~/components/ui/floating";
+import { TASK_CHIP_BASE as CHIP_BASE, TASK_CHIP_CLASS as CHIP_CLASS, TASK_CHIP_REQUIRED_CLASS as UNMATCHED_CLASS, TaskDueChip, TaskOwnerChip } from "~/components/tasks/TaskFieldChips";
 import { cn } from "~/lib/cn";
 import { useActionItemDraft } from "./action-item-draft";
 import { actionItemMatchesBlock } from "./enhance-plan";
 import { contentOf, findBlock, frameThrottle, overlayHost, toHost, type HostBox } from "./block-dom";
 import { useBlockStyleRules } from "./block-style-rules";
 import { chipSpaceCss, NARROW_BREAKPOINT } from "./enhance-rules";
-import { DUR, POP_FRAMES, animate } from "./motion";
+import { DUR } from "./motion";
 import { PopIn } from "./PopIn";
-import { isSearchableQuery, useLabMemberSearch } from "./member-search";
 import { formatIsoDate, type UseMeetingRecording } from "./use-meeting-recording";
 
 export { NARROW_BREAKPOINT };
-
-const CHIP_BASE = "h-7 rounded-full border px-2.5 text-xs font-medium";
-const CHIP_CLASS = cn(CHIP_BASE, "border-border bg-card text-foreground");
-const UNMATCHED_CLASS = cn(CHIP_BASE, "border-dashed border-os-amber/60 bg-os-amber/10 text-foreground");
 
 type Placement = { index: number; id: string; box: HostBox; fromRight: number };
 type Size = { width: number; height: number };
@@ -39,62 +33,30 @@ function samePlacements(a: Placement[], b: Placement[]): boolean {
 function OwnerChip({ index }: { index: number }) {
   const draft = useActionItemDraft()!;
   const row = draft.rowFor(index);
-  const swap = useRef<HTMLDivElement>(null);
-  const lastOwner = useRef(row.ownerUserId);
-  useEffect(() => {
-    if (lastOwner.current === row.ownerUserId) return;
-    lastOwner.current = row.ownerUserId;
-    void animate(swap.current, POP_FRAMES(0.92), DUR.ownerIn);
-  }, [row.ownerUserId]);
   const item = draft.items[index]!;
-  const { setQuery, query, results } = useLabMemberSearch();
-
-  const options = useMemo<SelectOption[]>(() => {
-    const roster: SelectOption[] = draft.roster.map((r) => ({ value: r.userId, label: r.name, description: "In this meeting" }));
-    const found: SelectOption[] = results
-      .filter((m) => !draft.roster.some((r) => r.userId === m.id))
-      .map((m) => ({ value: m.id, label: m.name, description: "Lab member" }));
-    const known = [...roster, ...found];
-    if (row.ownerUserId && !known.some((o) => o.value === row.ownerUserId)) {
-      known.push({ value: row.ownerUserId, label: row.ownerName || "Assigned" });
-    }
-    return known;
-  }, [draft.roster, results, row.ownerUserId, row.ownerName]);
-
   const unmatched = !row.ownerUserId && Boolean(item.ownerName);
-  const selectedName = options.find((o) => o.value === row.ownerUserId)?.label;
-
   return (
-    <div ref={swap}>
-    <Combobox
+    <TaskOwnerChip
       value={row.ownerUserId}
-      options={options}
-      onChange={(value) => draft.setRow(index, { ownerUserId: value, ownerName: options.find((o) => o.value === value)?.label ?? "" })}
-      onQueryChange={setQuery}
+      name={row.ownerName}
+      roster={draft.roster}
+      rosterLabel="In this meeting"
+      onChange={(ownerUserId, ownerName) => draft.setRow(index, { ownerUserId, ownerName })}
       ariaLabel={`Owner for ${item.text}`}
       placeholder={unmatched ? `“${item.ownerName}” · pick owner` : "Add owner"}
-      emptyLabel={isSearchableQuery(query) ? "No matches" : "Type to search lab members"}
-      icon={selectedName ? <Avatar name={selectedName} size="xs" /> : undefined}
       className={cn("w-48", unmatched ? UNMATCHED_CLASS : CHIP_CLASS)}
     />
-    </div>
   );
 }
 
 function DueChip({ index }: { index: number }) {
   const draft = useActionItemDraft()!;
-  const row = draft.rowFor(index);
   return (
-    <div className="w-36">
-      <DateField
-        mode="date"
-        value={row.dueAt}
-        onChange={(value) => draft.setRow(index, { dueAt: value })}
-        placeholder="Add date"
-        ariaLabel={`Due date for ${draft.items[index]!.text}`}
-        buttonClassName={cn(CHIP_CLASS, "justify-between")}
-      />
-    </div>
+    <TaskDueChip
+      value={draft.rowFor(index).dueAt}
+      onChange={(dueAt) => draft.setRow(index, { dueAt })}
+      ariaLabel={`Due date for ${draft.items[index]!.text}`}
+    />
   );
 }
 

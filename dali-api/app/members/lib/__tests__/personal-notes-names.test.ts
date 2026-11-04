@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { page: { findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findUniqueOrThrow: vi.fn() } },
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -17,7 +17,7 @@ vi.mock("~/members/lib/personal-notes.server", () => ({
 }));
 vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { assertUniqueName } from "~/lib/page-names.server";
 import { createNote, updateNote } from "../personal-notes-actions.server";
 

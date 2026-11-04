@@ -5,7 +5,7 @@
 // same roll-forward currentTerm() the app's role checks use: between terms
 // it advances to the next upcoming term rather than reporting none.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 
 export const LIST_TERMS_TOOL = {

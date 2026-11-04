@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { PageKind, WorkspaceType } from "~/generated/prisma/client";
 
 const KIND_LABELS: Partial<Record<PageKind | "File", string>> = {

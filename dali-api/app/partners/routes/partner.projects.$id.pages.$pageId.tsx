@@ -1,7 +1,7 @@
 import { useLoaderData } from "react-router";
 import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import type { Route } from "./+types/partner.projects.$id.pages.$pageId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { requirePartner } from "~/partners/lib/partner-auth.server";

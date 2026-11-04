@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   matchProjectBacklogUri,
   readProjectBacklogResource,
@@ -12,10 +12,13 @@ import {
 
 const mockPrisma = prisma as unknown as {
   project: { findUnique: ReturnType<typeof vi.fn> };
-  task: { findMany: ReturnType<typeof vi.fn> };
+  task: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockPrisma.task.count = vi.fn().mockResolvedValue(0);
+});
 
 describe("project-backlog resource", () => {
   it("template + scope are right", () => {
@@ -56,5 +59,36 @@ describe("project-backlog resource", () => {
       epicTitle: "Onboarding",
       assignees: [{ id: "u1", name: "A B" }],
     });
+  });
+
+  it("reports the total and truncated=false when everything fits", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", name: "Alpha" });
+    mockPrisma.task.findMany.mockResolvedValue([]);
+    mockPrisma.task.count.mockResolvedValue(0);
+    const data = JSON.parse(await readProjectBacklogResource("p1"));
+    expect(data).toMatchObject({ total: 0, truncated: false });
+  });
+
+  it("caps at 200 rows and signals truncation with the real total", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", name: "Alpha" });
+    const rows = Array.from({ length: 200 }, (_, i) => ({
+      id: `t${i}`,
+      title: "T",
+      status: "Todo",
+      priority: "Normal",
+      epicId: null,
+      epic: null,
+      dueAt: null,
+      assignees: [],
+    }));
+    mockPrisma.task.findMany.mockResolvedValue(rows);
+    mockPrisma.task.count.mockResolvedValue(350);
+    const data = JSON.parse(await readProjectBacklogResource("p1"));
+    expect(mockPrisma.task.findMany.mock.calls[0][0]).toMatchObject({
+      take: 200,
+      orderBy: [{ priority: "desc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+    expect(data.tasks).toHaveLength(200);
+    expect(data).toMatchObject({ total: 350, truncated: true });
   });
 });

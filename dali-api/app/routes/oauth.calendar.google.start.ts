@@ -6,17 +6,10 @@
 
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { getApiBaseUrl } from "~/lib/app-env";
-import { buildGoogleAuthUrl } from "~/lib/google-oauth";
+import { buildGoogleAuthUrl, GOOGLE_CALENDAR_SCOPE } from "~/lib/google-oauth";
 import { randomBytes } from "node:crypto";
 
 export const CAL_STATE_COOKIE = "__dali_cal_oauth_state";
-
-// Full calendar scope: needed for events.insert / events.patch when pushing
-// scheduled meetings and RSVP updates, plus calendarList + freebusy reads.
-// Exported so the callback can confirm Google actually *granted* it — a
-// partial grant (granular consent, or a Workspace policy that blocks the
-// scope) still completes the flow, so we have to check the response.
-export const GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar";
 
 const SCOPES = ["openid", "email", GOOGLE_CALENDAR_SCOPE];
 

@@ -13,7 +13,7 @@ const h = vi.hoisted(() => ({
   counterSig: null as null | { fieldValues: unknown },
 }));
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     signingBinding: { findUnique: vi.fn(async () => h.binding) },
     signingSignature: {

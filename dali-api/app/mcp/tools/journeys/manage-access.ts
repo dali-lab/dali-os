@@ -1,7 +1,7 @@
 // MCP: manage_journey_access. Who can edit an onboarding journey. Owners (and
 // Core) manage access; every journey keeps at least one owner. Scope: mcp:write.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpNotFoundError, requireForAction } from "../../errors";
 import type { McpCtx, McpTool } from "../../registry";
 import {

@@ -5,7 +5,7 @@
 // general access). The Form columns stay written until the cleanup PR drops
 // them; readers may use either side meanwhile.
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import type { FormAudience, LinkAccess, WorkspaceType } from "~/generated/prisma/client";
 
 export function linkAccessForAudience(audience: FormAudience): LinkAccess {
@@ -104,6 +104,10 @@ export async function renameForm(id: string, name: string): Promise<void> {
     prisma.form.update({ where: { id }, data: { name } }),
     prisma.page.update({ where: { id }, data: { title: name } }),
   ]);
+}
+
+export async function setFormIcon(id: string, iconEmoji: string | null): Promise<void> {
+  await prisma.page.update({ where: { id }, data: { iconEmoji } });
 }
 
 export async function moveForm(id: string, folderPageId: string | null): Promise<void> {

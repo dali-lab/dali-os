@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -30,7 +30,7 @@ import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore } from "~/lib/roles";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   canReadRecording,
   canRecordInto,
@@ -381,6 +381,37 @@ describe('POST /api/meeting-recordings/:id { action: "stop" }', () => {
     );
     await run({ action: "stop" });
     expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/meeting-recordings/:id { action: "capture" }', () => {
+  const asOwner = () =>
+    vi.mocked(requireAuth).mockResolvedValue({
+      ok: true,
+      user: { sub: "u1", email: "u1@dali.edu", type: "member" },
+      sessionId: "s1",
+    } as never);
+
+  it("stores the owner's device and permission report", async () => {
+    asOwner();
+    const res = await run({ action: "capture", micDevice: "iPhone Microphone", systemAudioAllowed: false });
+    expect(res.status).toBe(200);
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "rec1" },
+      data: { micDevice: "iPhone Microphone", systemAudioAllowed: false },
+    });
+  });
+
+  it("stores a silence report without touching the other fields", async () => {
+    asOwner();
+    await run({ action: "capture", micSilent: true });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith({ where: { id: "rec1" }, data: { micSilent: true } });
+  });
+
+  it("is owner-only, even for an editor of the note", async () => {
+    const res = await run({ action: "capture", micSilent: true });
+    expect(res.status).toBe(404);
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
 });
 

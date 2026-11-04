@@ -3010,7 +3010,7 @@ async function main() {
   console.log(`  ${reviewSpecs.length} ApplicationReviews + ${decisionSpecs.length * 3} Decisions + ${interviewBookings.length} booked interviews for Fall 2026`);
 
   // ── Email templates (versioned, keyed by EmailTemplateType) ─────────────────
-  const seedTemplates: { type: 'ApplicationReceived' | 'ApplicationExtensionNotice' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewCancelledByTeamApplicant' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
+  const seedTemplates: { type: 'ApplicationReceived' | 'ApplicationExtensionNotice' | 'Rejected' | 'RejectedPostInterview' | 'InvitedToInterview' | 'InterviewInviteMentor' | 'InterviewInterviewerChanged' | 'InterviewConfirmedApplicant' | 'InterviewCancelledApplicant' | 'InterviewCancelledInterviewer' | 'InterviewCancelledByTeamApplicant' | 'InterviewLocationChanged' | 'Waitlisted' | 'Accepted'; subject: string; body: string }[] = [
     {
       type: 'ApplicationReceived',
       subject: 'We received your DALI application!',
@@ -3040,6 +3040,11 @@ async function main() {
       type: 'InterviewInviteMentor',
       subject: 'DALI interview assigned to you — {{domain}}',
       body: `Hi {{firstName}},\n\nYou've been assigned to conduct a {{domain}} interview.\n\nWhen: {{time}}\nWhere: {{location}}\n\nPlease log in to the reviewer dashboard to view your assigned applicant(s) and interview details. A calendar event is attached to this email.\n\nIf you have any conflicts or questions, please reach out to the hiring lead as soon as possible.\n\nThanks for your help making DALI hiring happen!\n\n— The DALI Team`,
+    },
+    {
+      type: 'InterviewInterviewerChanged',
+      subject: 'Your {{domain}} interview has a new co-interviewer',
+      body: `Hi {{firstName}},\n\nThe other interviewer on your {{domain}} interview has changed. You are still on it, at the same time.\n\nWhen: {{time}}\nWhere: {{location}}\n\nYour calendar event has been updated.\n\nDALI Lab`,
     },
     {
       type: 'InterviewConfirmedApplicant',
@@ -3088,6 +3093,7 @@ async function main() {
       'ApplicationReceived',
       'ApplicationExtensionNotice',
       'InterviewInviteMentor',
+      'InterviewInterviewerChanged',
       'InterviewConfirmedApplicant',
       'InterviewCancelledApplicant',
       'InterviewCancelledInterviewer',

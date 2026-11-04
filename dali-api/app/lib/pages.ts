@@ -1,5 +1,5 @@
-import { prisma } from "~/lib/db";
-import type { PageKind } from "~/generated/prisma/client";
+import { prisma } from "~/lib/db.server";
+import type { PageKind, Prisma } from "~/generated/prisma/client";
 import { assertUniqueName } from "~/lib/page-names.server";
 import { syncMeetingShares } from "~/lib/meeting-shares.server";
 
@@ -8,6 +8,20 @@ import { syncMeetingShares } from "~/lib/meeting-shares.server";
 // among sibling pages under the same parent (top-level when parentPageId is
 // null). Shared by the manual "add document"/"add folder" routes and any
 // flow that auto-creates a project document (e.g. meeting notes).
+// Serializes creates among siblings so the name check and the next position can't race.
+function inSiblingScope<T>(
+  workspaceType: string,
+  workspaceId: string | null,
+  parentPageId: string | null,
+  fn: (tx: Prisma.TransactionClient) => Promise<T>,
+): Promise<T> {
+  const key = `page-siblings:${workspaceType}:${workspaceId ?? ""}:${parentPageId ?? ""}`;
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    return fn(tx);
+  });
+}
+
 export async function createProjectPage(input: {
   projectId: string;
   title: string;
@@ -20,37 +34,39 @@ export async function createProjectPage(input: {
   kind?: PageKind;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
-  if (!input.meetingNoteId && !input.meetingWhiteboardId && !input.notebookKey) {
-    await assertUniqueName({
-      workspaceType: "Project",
-      workspaceId: input.projectId,
-      parentPageId,
-      kind: input.kind ?? "FreeForm",
-      title: input.title,
+  return inSiblingScope("Project", input.projectId, parentPageId, async (tx) => {
+    if (!input.meetingNoteId && !input.meetingWhiteboardId && !input.notebookKey) {
+      await assertUniqueName({
+        workspaceType: "Project",
+        workspaceId: input.projectId,
+        parentPageId,
+        kind: input.kind ?? "FreeForm",
+        title: input.title,
+      });
+    }
+    const last = await tx.page.findFirst({
+      where: { workspaceType: "Project", workspaceId: input.projectId, parentPageId },
+      orderBy: { position: "desc" },
+      select: { position: true },
     });
-  }
-  const last = await prisma.page.findFirst({
-    where: { workspaceType: "Project", workspaceId: input.projectId, parentPageId },
-    orderBy: { position: "desc" },
-    select: { position: true },
-  });
-  const position = last ? last.position + 1 : 0;
+    const position = last ? last.position + 1 : 0;
 
-  return prisma.page.create({
-    data: {
-      workspaceType: "Project",
-      workspaceId: input.projectId,
-      title: input.title,
-      kind: input.kind ?? "FreeForm",
-      position,
-      parentPageId,
-      createdById: input.createdById,
-      meetingNoteId: input.meetingNoteId ?? null,
-      meetingOccurrenceStart: input.meetingOccurrenceStart ?? null,
-      meetingWhiteboardId: input.meetingWhiteboardId ?? null,
-      notebookKey: input.notebookKey ?? null,
-    },
-    select: { id: true },
+    return tx.page.create({
+      data: {
+        workspaceType: "Project",
+        workspaceId: input.projectId,
+        title: input.title,
+        kind: input.kind ?? "FreeForm",
+        position,
+        parentPageId,
+        createdById: input.createdById,
+        meetingNoteId: input.meetingNoteId ?? null,
+        meetingOccurrenceStart: input.meetingOccurrenceStart ?? null,
+        meetingWhiteboardId: input.meetingWhiteboardId ?? null,
+        notebookKey: input.notebookKey ?? null,
+      },
+      select: { id: true },
+    });
   });
 }
 
@@ -353,35 +369,37 @@ export async function createLabPage(input: {
   restricted?: boolean;
 }): Promise<{ id: string }> {
   const parentPageId = input.parentPageId ?? null;
-  await assertUniqueName({
-    workspaceType: "Lab",
-    workspaceId: null,
-    parentPageId,
-    kind: input.kind ?? "FreeForm",
-    title: input.title,
-  });
-  const last = await prisma.page.findFirst({
-    where: { workspaceType: "Lab", workspaceId: null, parentPageId },
-    orderBy: { position: "desc" },
-    select: { position: true },
-  });
-  const position = last ? last.position + 1 : 0;
-
-  return prisma.page.create({
-    data: {
+  return inSiblingScope("Lab", null, parentPageId, async (tx) => {
+    await assertUniqueName({
       workspaceType: "Lab",
       workspaceId: null,
-      title: input.title,
-      kind: input.kind ?? "FreeForm",
-      position,
       parentPageId,
-      createdById: input.createdById,
-      // Lab docs default to the communal shelf (everyone in the lab can edit);
-      // pages inside a scoped drive start Restricted so the scope is authoritative.
-      linkAccess: input.restricted ? "Restricted" : "LabMembers",
-      linkPermission: input.restricted ? "View" : "Edit",
-    },
-    select: { id: true },
+      kind: input.kind ?? "FreeForm",
+      title: input.title,
+    });
+    const last = await tx.page.findFirst({
+      where: { workspaceType: "Lab", workspaceId: null, parentPageId },
+      orderBy: { position: "desc" },
+      select: { position: true },
+    });
+    const position = last ? last.position + 1 : 0;
+
+    return tx.page.create({
+      data: {
+        workspaceType: "Lab",
+        workspaceId: null,
+        title: input.title,
+        kind: input.kind ?? "FreeForm",
+        position,
+        parentPageId,
+        createdById: input.createdById,
+        // Lab docs default to the communal shelf (everyone in the lab can edit);
+        // pages inside a scoped drive start Restricted so the scope is authoritative.
+        linkAccess: input.restricted ? "Restricted" : "LabMembers",
+        linkPermission: input.restricted ? "View" : "Edit",
+      },
+      select: { id: true },
+    });
   });
 }
 

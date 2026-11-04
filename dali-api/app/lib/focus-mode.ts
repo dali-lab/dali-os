@@ -1,7 +1,6 @@
 // Device-scoped "focus mode": hide the sidebar and navigate with ⌘K and
-// breadcrumbs. Cookie-backed (like tabless) so the layout loader decides the
-// shell chrome server-side — no flash of the sidebar before it's hidden.
-// Sibling of lib/tabless.ts; the two prefs are independent booleans.
+// breadcrumbs. Cookie-backed so the layout loader decides the shell chrome
+// server-side — no flash of the sidebar before it's hidden.
 
 export const FOCUS_COOKIE = "dali_focus";
 

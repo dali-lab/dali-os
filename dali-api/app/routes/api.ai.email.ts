@@ -13,7 +13,7 @@ import { requireAuth } from "~/lib/auth";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { prisma } from "~/lib/db";
+import { aiQuotaResponse, claimAiQuota } from "~/lib/ai-quota.server";
 import {
   WRITING_SURFACES,
   WRITING_TASKS,
@@ -34,14 +34,7 @@ import { getMailboxToken, getThread, MailboxError } from "~/email/lib/gmail-mail
 
 const AI_BURST_MAX = 10;
 const AI_BURST_WINDOW_MS = 60_000;
-const AI_DAILY_MAX = 200;
 const MAX_TEXT_CHARS = 20_000;
-
-function secondsToUtcMidnight(): number {
-  const now = new Date();
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
-}
 
 const str = (v: unknown) => (typeof v === "string" ? v : "");
 
@@ -120,18 +113,9 @@ export async function action({ request }: Route.ActionArgs) {
     });
   }
 
-  const day = new Date().toISOString().slice(0, 10);
-  const usage = await prisma.aiUsage.upsert({
-    where: { userId_day: { userId, day } },
-    create: { userId, day, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-  if (usage.count > AI_DAILY_MAX) {
-    return Response.json(
-      { error: `You've reached today's AI limit (${AI_DAILY_MAX} requests). It resets at midnight UTC.` },
-      { status: 429, headers: { "Retry-After": String(secondsToUtcMidnight()) } },
-    );
-  }
+  const quota = await claimAiQuota(userId);
+  if (!quota.ok) return aiQuotaResponse(quota);
+  const { day } = quota;
 
   try {
     // A post passage comes back whole (see POST_PASSAGE_CHARS), so it gets room.

@@ -87,7 +87,8 @@ async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1"
   const Stub = createRoutesStub([
     {
       path: "/forms/edit/:formId",
-      Component: () => createElement(DialogProvider, null, createElement(FormDetail)),
+      Component: () =>
+        createElement(DialogProvider, null, createElement(FormDetail)),
       loader: () => data,
     },
   ]);
@@ -143,10 +144,73 @@ describe("FormDetail", () => {
     expect(container.textContent).not.toContain("Unexpected Application Error");
   });
 
+  it("offers Add icon on a form without one", async () => {
+    await mount(loaderData());
+    expect(container.textContent).toContain("Add icon");
+  });
+
+  it("shows the form's icon before its name", async () => {
+    const data = loaderData();
+    (data.form as Record<string, unknown>).iconEmoji = "📋";
+    await mount(data);
+    expect(container.textContent).toContain("📋");
+    expect(container.textContent).not.toContain("Add icon");
+  });
+
   it("renders the builder for a brand-new form", async () => {
     const data = loaderData();
     data.form.versions = [];
     await mount(data);
     expect(container.textContent).toContain("Drag a component here");
+  });
+
+  describe("results view", () => {
+    const url = "/forms/edit/f1?view=results&version=1";
+    const table = {
+      versionId: "v1",
+      isPartnerApplicationForm: false,
+      totalCount: 1,
+      matchCount: 1,
+      page: 1,
+      hasNext: false,
+      columns: [{ key: "q1", label: "Name" }],
+      slotOptions: [],
+      responses: [
+        {
+          id: "s1",
+          createdAt: "2026-05-20T10:00:00.000Z",
+          edited: false,
+          lockReason: null,
+          name: "Ada",
+          email: null,
+          slot: null,
+          submitterIp: null,
+          partnerApplication: null,
+          rows: [{ key: "q1", label: "Name", value: "Ada" }],
+        },
+      ],
+    };
+    const summary = {
+      versionId: "v1",
+      slotOptions: [],
+      summary: {
+        total: 4,
+        questions: [{ kind: "text", key: "q1", number: 1, label: "Name", answered: 3, skipped: 1 }],
+      },
+    };
+    const buttons = () => [...container.querySelectorAll("button")].map((b) => b.textContent);
+
+    it("shows the summary with the Summary | Responses toggle", async () => {
+      await mount(loaderData({ results: null, summary } as never), url);
+      expect(container.querySelector("table")).toBeNull();
+      expect(buttons()).toEqual(expect.arrayContaining(["Summary", "Responses"]));
+      expect(container.textContent).toContain("3 answered, 1 skipped");
+    });
+
+    it("shows the table under the toggle on the Responses view", async () => {
+      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`);
+      expect(container.querySelector("table")).not.toBeNull();
+      expect(buttons()).toContain("Summary");
+    });
   });
 });

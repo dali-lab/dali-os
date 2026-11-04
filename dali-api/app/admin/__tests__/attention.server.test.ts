@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     outboundMessage: { count: vi.fn() },
     scheduledJob: { findMany: vi.fn() },
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadAdminAttention } from "~/admin/lib/attention.server";
 
 const count = vi.mocked(prisma.outboundMessage.count);

@@ -91,9 +91,10 @@ export function runsValue(
   offering: Pick<OfferingCardData, "startsAt" | "endsAt">,
   tz: string,
 ): string {
-  return offering.startsAt && offering.endsAt
-    ? `${formatDateShort(offering.startsAt, tz)} – ${formatDateShort(offering.endsAt, tz)}`
-    : "Dates TBD";
+  if (!offering.startsAt || !offering.endsAt) return "Dates TBD";
+  const start = formatDateShort(offering.startsAt, tz);
+  const end = formatDateShort(offering.endsAt, tz);
+  return start === end ? start : `${start} – ${end}`;
 }
 
 // Seats as a labelled meta row with urgency: a full offering points at its

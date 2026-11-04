@@ -4,7 +4,7 @@
 // scheduled-meeting (if any) is not Cancelled, mirroring the inbox filter in
 // `listMyNotifications`. Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const ANNOUNCEMENTS_ACTIVE_RESOURCE = {
   uri: "dali://announcements/active",
@@ -15,15 +15,19 @@ export const ANNOUNCEMENTS_ACTIVE_RESOURCE = {
   requiredScope: "mcp:read" as const,
 };
 
+const ACTIVE_LIMIT = 50;
+
 export async function readAnnouncementsActiveResource(callerId: string) {
-  const rows = await prisma.notification.findMany({
-    where: {
-      recipientUserId: callerId,
-      readAt: null,
-      kind: "SystemAnnouncement",
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
+  const where = {
+    recipientUserId: callerId,
+    readAt: null,
+    kind: "SystemAnnouncement" as const,
+  };
+  const [rows, total] = await Promise.all([
+    prisma.notification.findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: ACTIVE_LIMIT,
     select: {
       id: true,
       title: true,
@@ -33,7 +37,9 @@ export async function readAnnouncementsActiveResource(callerId: string) {
       createdAt: true,
       createdBy: { select: { firstName: true, lastName: true } },
     },
-  });
+    }),
+    prisma.notification.count({ where }),
+  ]);
 
   if (rows.length === 0) {
     return "_No active announcements._";
@@ -60,5 +66,6 @@ export async function readAnnouncementsActiveResource(callerId: string) {
       .join("\n\n");
   });
 
-  return sections.join("\n\n---\n\n");
+  const body = sections.join("\n\n---\n\n");
+  return total > rows.length ? `_Showing ${rows.length} of ${total} active announcements, newest first._\n\n${body}` : body;
 }

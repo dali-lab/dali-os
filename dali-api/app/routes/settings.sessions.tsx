@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import type { Route } from "./+types/settings.sessions";
 

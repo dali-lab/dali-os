@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   inferDomainApplicationStatus,
   domainApplicationStatusInclude,
@@ -10,6 +10,7 @@ import { applicantDeadline, domainCloseDate, isDomainClosed } from "./domain-win
 import { joinNames } from "./tracker-stage";
 import { FIRST_INTERVIEW_ROUND_ID } from "./cycle-timeline";
 import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
+import { interviewChangeDeadlines } from "./interview-time";
 
 // The applicant's tracker for one cycle: their application's overall status
 // and, per selected domain, its inferred stage and any scheduled interview.
@@ -35,7 +36,12 @@ export async function loadApplicationTracker(
     }),
     prisma.interviewConfig.findMany({
       where: { applicationCycleId: cycleId },
-      select: { interviewRoundId: true, slotDurationMinutes: true },
+      select: {
+        interviewRoundId: true,
+        slotDurationMinutes: true,
+        rescheduleNoticeHours: true,
+        cancelNoticeHours: true,
+      },
     }),
     prisma.applicationCycle.findUnique({ where: { id: cycleId }, select: { closeDate: true } }),
     prisma.domainApplicationCycle.findMany({
@@ -86,6 +92,12 @@ export async function loadApplicationTracker(
     const activeInterview = da.interviews?.find(
       (i: any) => i.status === "Scheduled",
     );
+    const deadlines = activeInterview
+      ? interviewChangeDeadlines(
+          activeInterview.startTime,
+          configs.find((c) => c.interviewRoundId === activeInterview.interviewRoundId),
+        )
+      : null;
 
     return {
       id: da.id,
@@ -101,6 +113,8 @@ export async function loadApplicationTracker(
             startTime: activeInterview.startTime,
             endTime: activeInterview.endTime,
             status: activeInterview.status,
+            rescheduleBy: deadlines!.rescheduleBy.toISOString(),
+            cancelBy: deadlines!.cancelBy.toISOString(),
             room: activeInterview.room,
             zoomJoinUrl: activeInterview.zoomJoinUrl,
             videoUrl: await ensureInterviewMeetUrl(activeInterview),

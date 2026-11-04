@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 import { validateAnswers } from "~/forms/lib/public-form";
 import type { Question } from "~/types";

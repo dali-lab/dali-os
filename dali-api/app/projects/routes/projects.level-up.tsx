@@ -1,13 +1,16 @@
 import { useMemo, useState, useEffect } from "react";
 import { buttonClasses } from "~/components/ui/Button";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { redirect, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.level-up";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { useFilteredList } from "~/hooks/useFilteredList";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseFormDataJson } from "~/lib/safe-json";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { applyEligibilityWithNotify } from "~/admin/lib/eligibility.server";
 import { ensureStaffingCycle } from "../lib/staffing-cycle";
 import {
@@ -17,12 +20,13 @@ import {
   setSlotBinding,
   setSlotColumnMapping,
   setSlotGate,
+  setSlotPublished,
 } from "../lib/form-slots";
-import { SubmissionFilters } from "../components/SubmissionFilters";
 import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
-import { DomainFilter } from "../components/DomainFilter";
+import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
+import { DomainFilter } from "../components/DomainFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -54,6 +58,12 @@ function parseLevel(raw: string): Level | null {
   if (s === "p2" || s === "doer") return "P2";
   if (s === "p3" || s === "mentor") return "P3";
   return null;
+}
+
+// Search, domain and column filters live in the URL but filter client side;
+// only the term changes what the loader reads.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -134,7 +144,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { questions: true },
     });
     const qs = (latest?.questions as unknown as Question[]) ?? [];
-    formQuestions = qs.map((q) => ({
+    formQuestions = qs.filter((q) => !q.data.showIf).map((q) => ({
       key: q.key,
       label: q.data.label,
       type: q.type,
@@ -160,11 +170,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     targetPromotion: targetPromotion.get(r.userId) ?? null,
   }));
 
-  const domainOptions = await prisma.domain.findMany({
-    orderBy: { displayName: "asc" },
-    select: { id: true, displayName: true },
-  });
-
   // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
   // only — the all-terms aggregate has no one slot to bind, mirroring binding.
   const slotStatus: SlotStatus | null = singleCycleId
@@ -172,11 +177,17 @@ export async function loader({ request }: Route.LoaderArgs) {
       null
     : null;
 
+  const domainOptions = await prisma.domain.findMany({
+    orderBy: { displayName: "asc" },
+    select: { id: true, displayName: true },
+  });
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName, id: singleCycleId },
     termOptions,
     selectedTerm,
+    domainOptions,
     isAll,
     submissions,
     tableColumns,
@@ -186,7 +197,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     formQuestions,
     mappingWarning,
     noFormConnected,
-    domainOptions,
     slotStatus,
   };
 }
@@ -339,7 +349,8 @@ export async function action({ request }: Route.ActionArgs) {
   if (
     intent === "set-slot-form" ||
     intent === "set-slot-mapping" ||
-    intent === "set-slot-gate"
+    intent === "set-slot-gate" ||
+    intent === "set-slot-published"
   ) {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -396,6 +407,17 @@ export async function action({ request }: Route.ActionArgs) {
         return Response.json({ error: result.error }, { status: 400 });
       return Response.json({ ok: true });
     }
+
+    if (intent === "set-slot-published") {
+      const result = await setSlotPublished(
+        cycle.id,
+        SLOT,
+        form.get("published") === "1",
+      );
+      if (!result.ok)
+        return Response.json({ error: result.error }, { status: 400 });
+      return Response.json({ ok: true });
+    }
   }
 
   // Note saving: anyone who can view the page.
@@ -443,8 +465,10 @@ export default function LevelUpDatabase() {
 type LoadedData = Extract<Awaited<ReturnType<typeof loader>>, { gate: "ok" }>;
 
 function Loaded({ data }: { data: LoadedData }) {
-  const [domainId, setDomainId] = useState("");
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const [settingsOpen, setSettingsOpen] = useState(
+    () => searchParams.get("settings") === "1",
+  );
   const [confirmRow, setConfirmRow] = useState<{
     userId: string;
     name: string;
@@ -453,9 +477,12 @@ function Loaded({ data }: { data: LoadedData }) {
     targetLevel: Level;
   } | null>(null);
 
-  const columnFilters = useColumnFilters(data.tableColumns);
+  const [domainId, setDomainId] = useSearchParamState("domain");
+  const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
+  const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
 
-  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
+  const { filtered } = useFilteredList(data.submissions, {
+    search,
     searchFields: (s) => [s.name, s.email],
     predicates: [
       (s) => !domainId || s.domainIds.includes(domainId),
@@ -503,23 +530,26 @@ function Loaded({ data }: { data: LoadedData }) {
 
       {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
 
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="flex-1">
-          <SubmissionFilters query={search} onQueryChange={setSearch} />
-        </div>
-        <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
-        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
-      </div>
-
-      {!data.noFormConnected && (
-        <ColumnFilters
-          columns={data.tableColumns}
-          rows={data.submissions}
-          filters={columnFilters.filters}
-          onChange={columnFilters.setFilters}
-          shownCount={filtered.length}
+      <div className="flex flex-wrap items-center gap-3">
+        <SearchInput
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or email"
+          aria-label="Search submissions"
+          containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
-      )}
+        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
+        <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
+        <div className="min-w-[220px] flex-1">
+          <ColumnFilters
+            columns={data.tableColumns}
+            rows={data.submissions}
+            filters={columnFilters.filters}
+            onChange={columnFilters.setFilters}
+            shownCount={filtered.length}
+          />
+        </div>
+      </div>
 
       <div
         className={cn(
@@ -537,6 +567,7 @@ function Loaded({ data }: { data: LoadedData }) {
             columns={data.tableColumns}
             rows={filtered}
             canManage={data.canManage}
+            selectedTerm={data.selectedTerm}
             emptyMessage={
               data.submissions.length === 0
                 ? "No Level Up submissions yet."
@@ -565,12 +596,14 @@ function LevelUpTable({
   columns,
   rows,
   canManage,
+  selectedTerm,
   emptyMessage,
   onLevelUp,
 }: {
   columns: { key: string; label: string }[];
   rows: TableRow[];
   canManage: boolean;
+  selectedTerm: string;
   emptyMessage: string;
   onLevelUp: (row: {
     userId: string;
@@ -611,6 +644,7 @@ function LevelUpTable({
               row={r}
               columns={columns}
               canManage={canManage}
+              selectedTerm={selectedTerm}
               onLevelUp={onLevelUp}
             />
           ))}
@@ -624,11 +658,13 @@ function LevelUpRow({
   row,
   columns,
   canManage,
+  selectedTerm,
   onLevelUp,
 }: {
   row: TableRow;
   columns: { key: string; label: string }[];
   canManage: boolean;
+  selectedTerm: string;
   onLevelUp: (row: {
     userId: string;
     name: string;
@@ -638,6 +674,7 @@ function LevelUpRow({
   }) => void;
 }) {
   const tp = row.targetPromotion;
+  const href = `/projects/level-up/${row.userId}?term=${encodeURIComponent(selectedTerm)}`;
 
   const levelLabel: Record<Level, string> = { P1: "P1", P2: "P2", P3: "P3" };
 
@@ -645,13 +682,13 @@ function LevelUpRow({
     <tr className="border-t border-border hover:bg-muted/10">
       <td className="px-4 py-2">
         <a
-          href={`/projects/level-up/${row.userId}`}
+          href={href}
           className="text-foreground hover:underline"
           onClick={(e) => {
             // Allow middle-click / cmd-click to open new tab naturally.
             if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
               e.preventDefault();
-              window.location.href = `/projects/level-up/${row.userId}`;
+              window.location.href = href;
             }
           }}
         >

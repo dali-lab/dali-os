@@ -1,12 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response(JSON.stringify({ error: "Forbidden" }), { status: 403 })),
 }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isCycleAdmin: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCycleAdmin: vi.fn() }));
 vi.mock("~/hiring/lib/hiring-events.server", () => ({
   deleteHiringEvent: vi.fn(),
   getEventRoster: vi.fn(),
@@ -16,10 +15,9 @@ vi.mock("~/hiring/lib/hiring-events.server", () => ({
 }));
 vi.mock("~/hiring/lib/hiring-event-notice", () => ({ sendEventAnnouncement: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles, isCycleAdmin } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isCycleAdmin } from "~/lib/roles";
 import {
   deleteHiringEvent,
   getEventRoster,
@@ -60,8 +58,6 @@ beforeEach(() => {
     ok: true,
     user: { sub: "core-1", email: "core@dali.edu", type: "member" },
   } as never);
-  vi.mocked(getUserRoles).mockResolvedValue({} as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(isCycleAdmin).mockResolvedValue(true);
   vi.mocked(getEventRoster).mockResolvedValue([]);
   vi.mocked(updateHiringEvent).mockResolvedValue({ ok: true, event: { id: EVENT_ID } } as never);
@@ -84,13 +80,6 @@ describe("GET /api/hiring/events/:eventId (roster)", () => {
     expect(getEventRoster).toHaveBeenCalledWith(EVENT_ID);
   });
 
-  it("404s when the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await runLoader();
-    expect(res.status).toBe(404);
-    expect(getEventRoster).not.toHaveBeenCalled();
-  });
-
   it("gates reads with isCycleAdmin (getEventRoster itself doesn't gate)", async () => {
     vi.mocked(isCycleAdmin).mockResolvedValue(false);
     const res = await runLoader();
@@ -106,13 +95,6 @@ describe("GET /api/hiring/events/:eventId (roster)", () => {
 });
 
 describe("POST /api/hiring/events/:eventId (intents)", () => {
-  it("404s when the flag is off, regardless of intent", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await runAction({ intent: "delete" });
-    expect(res.status).toBe(404);
-    expect(deleteHiringEvent).not.toHaveBeenCalled();
-  });
-
   it("update: forwards provided fields and the actor", async () => {
     const res = await runAction({ intent: "update", title: "New title" });
     expect(res.status).toBe(200);

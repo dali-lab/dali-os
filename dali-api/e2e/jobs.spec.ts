@@ -5,11 +5,6 @@ import { test, expect } from "./fixtures";
 
 const ADMIN = { daliEmail: "admin@dali.dartmouth.edu" };
 
-// /admin/platform/jobs renders inside the workspace iframe (same convention
-// as the other admin specs).
-const adminFrame = (page: import("@playwright/test").Page) =>
-  page.frameLocator('iframe[title="Admin"]');
-
 test.describe("admin jobs panel", () => {
   test.beforeEach(async ({ loginAs }) => {
     await loginAs(ADMIN);
@@ -17,7 +12,6 @@ test.describe("admin jobs panel", () => {
 
   test("lists registered jobs with controls", async ({ page }) => {
     await page.goto("/admin/platform/jobs");
-    const frame = adminFrame(page);
 
     for (const name of [
       "task-due-reminders",
@@ -32,29 +26,37 @@ test.describe("admin jobs panel", () => {
       "standup-prompts",
       "retention-janitor",
     ]) {
-      await expect(frame.getByText(name, { exact: true })).toBeVisible();
+      await expect(page.getByText(name, { exact: true })).toBeVisible();
     }
   });
 
   test("toggle persists across reload", async ({ page }) => {
     await page.goto("/admin/platform/jobs");
-    const frame = adminFrame(page);
 
     // The switch's <input> is visually hidden (sr-only), so a forced click at its
     // centre can land beside the drawn track and toggle nothing. Click the track
     // (the input's parent), the way a person does.
     const track = (sw: import("@playwright/test").Locator) => sw.locator("..");
-    const row = frame.locator("li", { hasText: "session-feedback-sweep" });
+    const row = page.locator("li", { hasText: "session-feedback-sweep" });
+    const saved = () =>
+      page.waitForResponse(
+        (r) => r.request().method() === "PATCH" && r.url().includes("/api/jobs/session-feedback-sweep"),
+      );
+    // Reloading before the PATCH lands drops the change.
+    const paused = saved();
     await track(row.getByRole("switch", { name: "Pause session-feedback-sweep" })).click();
+    await paused;
     await expect(row.getByText("Paused", { exact: true }).first()).toBeVisible();
 
     await page.reload();
-    const rowAfter = adminFrame(page).locator("li", { hasText: "session-feedback-sweep" });
+    const rowAfter = page.locator("li", { hasText: "session-feedback-sweep" });
     const resume = rowAfter.getByRole("switch", { name: "Resume session-feedback-sweep" });
     await expect(resume).not.toBeChecked();
 
     // Restore for other tests.
+    const resumed = saved();
     await track(resume).click();
+    await resumed;
     await expect(
       rowAfter.getByRole("switch", { name: "Pause session-feedback-sweep" }),
     ).toBeChecked();
@@ -62,11 +64,10 @@ test.describe("admin jobs panel", () => {
 
   test("Run now executes a job and records the run", async ({ page }) => {
     await page.goto("/admin/platform/jobs");
-    const frame = adminFrame(page);
 
-    const row = frame.locator("li", { hasText: "scheduled-announcements" });
+    const row = page.locator("li", { hasText: "scheduled-announcements" });
     await row.getByRole("button", { name: "Run now" }).click();
-    await frame.getByRole("dialog").getByRole("button", { name: "Run now" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Run now" }).click();
     await expect(row.getByText(/Healthy|Failing/)).toBeVisible({ timeout: 15_000 });
   });
 });

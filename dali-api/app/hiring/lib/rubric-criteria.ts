@@ -15,7 +15,7 @@
 // RubricVersion sharing the same rubricId is a sibling, so newest-first across
 // all of them recovers the label for any key that ever existed.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export type CriterionMeta = { label: string; maxScore?: number; description?: string };
 

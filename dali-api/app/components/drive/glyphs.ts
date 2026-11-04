@@ -46,7 +46,7 @@ export type ItemGlyph =
 
 export function pickGlyph(item: GlyphSource): ItemGlyph {
   if (item.type === "doc" && item.isNotebook) return { kind: "notebook", tabs: tabBadge(item.tabCount) };
-  if (item.type === "folder" || item.type === "doc") {
+  if (item.type === "folder" || item.type === "doc" || item.type === "form") {
     if (item.iconEmoji) return { kind: "emoji", emoji: item.iconEmoji };
   }
   switch (item.type) {

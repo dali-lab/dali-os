@@ -13,7 +13,7 @@ vi.mock("~/lib/dartmouth-people", async (importOriginal) => {
 });
 
 // Mock the Prisma client.
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: {
       update: vi.fn(),
@@ -31,7 +31,7 @@ import {
   peopleByNetId,
   DartmouthPeopleError,
 } from "~/lib/dartmouth-people";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { captureDartmouthIdentity } from "~/lib/dartmouth-capture.server";
 
 const mockFindNetId = vi.mocked(findNetIdByAddress);

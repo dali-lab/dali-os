@@ -6,7 +6,7 @@
 // pattern in app/education/lib/application-form.server.ts.
 
 import { randomUUID } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { createForm } from "~/forms/lib/form-page.server";
 import { canEditDomainSetup } from "~/hiring/lib/domain-windows.server";

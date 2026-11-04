@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, canViewStaffing: vi.fn() };
@@ -20,12 +20,12 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { runListPartnerContacts, LIST_PARTNER_CONTACTS_TOOL } from "../list-partner-contacts";
 
 const mockPrisma = prisma as unknown as {
-  partnerContact: { findMany: ReturnType<typeof vi.fn> };
+  partnerContact: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => {
@@ -47,6 +47,7 @@ describe("list_partner_contacts", () => {
   it("shapes contacts with org names and application counts", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
     mockPrisma.partnerContact = {
+      count: vi.fn().mockResolvedValue(1),
       findMany: vi.fn().mockResolvedValue([
         {
           id: "c1",
@@ -82,7 +83,7 @@ describe("list_partner_contacts", () => {
 
   it("scopes to one org's active members when orgId is given", async () => {
     vi.mocked(canViewStaffing).mockResolvedValue(true);
-    mockPrisma.partnerContact = { findMany: vi.fn().mockResolvedValue([]) };
+    mockPrisma.partnerContact = { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) };
     await runListPartnerContacts("u1", { orgId: "org-1" });
     expect(mockPrisma.partnerContact.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -91,5 +92,43 @@ describe("list_partner_contacts", () => {
         }),
       }),
     );
+  });
+
+  it("walks pages by offset with an id tiebreak and ends with a null cursor", async () => {
+    vi.mocked(canViewStaffing).mockResolvedValue(true);
+    const row = (id: string) => ({
+      id, name: "Jo", email: null, title: null, phone: null, affiliation: null,
+      preferredChannel: "Email", memberships: [], _count: { applications: 0 },
+    });
+    const findMany = vi.fn().mockResolvedValueOnce([row("c1"), row("c2"), row("c3")]);
+    mockPrisma.partnerContact = { findMany, count: vi.fn().mockResolvedValue(3) };
+
+    const first = (await runListPartnerContacts("u1", { limit: 2 })) as {
+      contacts: { id: string }[];
+      page: { nextCursor: string | null; hasMore: boolean; total: number };
+    };
+    expect(first.contacts.map((c) => c.id)).toEqual(["c1", "c2"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+    expect(findMany.mock.calls[0][0]).toMatchObject({
+      orderBy: [{ name: "asc" }, { id: "asc" }],
+      skip: 0,
+      take: 3,
+    });
+
+    findMany.mockResolvedValueOnce([row("c3")]);
+    const second = (await runListPartnerContacts("u1", { limit: 2, cursor: first.page.nextCursor! })) as typeof first;
+    expect(second.contacts.map((c) => c.id)).toEqual(["c3"]);
+    expect(second.page.nextCursor).toBeNull();
+    expect(findMany.mock.calls[1][0]).toMatchObject({ skip: 2 });
+  });
+
+  it("counts with the same filters as the page", async () => {
+    vi.mocked(canViewStaffing).mockResolvedValue(true);
+    const count = vi.fn().mockResolvedValue(0);
+    mockPrisma.partnerContact = { findMany: vi.fn().mockResolvedValue([]), count };
+    await runListPartnerContacts("u1", { orgId: "org-1" });
+    expect(count).toHaveBeenCalledWith({
+      where: { memberships: { some: { orgId: "org-1", endedAt: null } } },
+    });
   });
 });

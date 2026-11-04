@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { deriveSlotStatus } from "~/projects/lib/slot-status.server";
 
 const mockPrisma = prisma as unknown as {
@@ -56,9 +56,9 @@ describe("deriveSlotStatus", () => {
     expect(itw.bound).toBe(true);
     expect(itw.mappingComplete).toBe(true);
     expect(itw.sentToCount).toBe(3);
-    // All three slots are reported.
+    // Every registered slot is reported.
     expect(out.map((s) => s.slot).sort()).toEqual(
-      ["intent-to-work", "level-up", "project-bids"].sort(),
+      ["intent-to-work", "level-up", "project-bids", "referrals"].sort(),
     );
   });
 

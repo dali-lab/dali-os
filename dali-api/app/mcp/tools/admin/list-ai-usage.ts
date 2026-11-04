@@ -1,7 +1,7 @@
 // MCP `list_ai_usage` — AI doc-writing usage summary per member.
 // Reuses admin.ai-usage.tsx loader logic. mcp:admin, Core leads only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";

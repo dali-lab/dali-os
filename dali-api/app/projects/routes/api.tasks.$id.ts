@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.tasks.$id";
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
@@ -9,10 +9,11 @@ import { notifyTaskAssigned } from "../lib/task-notifications.server";
 import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
 
 // GET    /api/tasks/:id — minimal task card for the doc editor's taskMention
-//        hover card (TaskMentionHoverCard.tsx): id/title/status/assignee/
-//        dueAt only, never the description or checklist. Same access gate
-//        as the task modal's edit surface — a mention chip for a task the
-//        viewer can't reach falls back to its stored label.
+//        hover card and task block (TaskMentionHoverCard.tsx): status, title,
+//        assignees, due date and project name, never the description or
+//        checklist. Same access gate as the task modal's edit surface — a
+//        chip or block for a task the viewer can't reach falls back to its
+//        stored label.
 // PATCH  /api/tasks/:id — edit fields not covered by the move endpoint.
 //        Status/position changes still go through /api/tasks/:id/move so its
 //        column-rebalance logic stays unified. Body is a partial — only
@@ -37,9 +38,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       status: true,
       dueAt: true,
       projectId: true,
+      project: { select: { name: true } },
       assignees: {
-        take: 1,
-        select: { user: { select: { firstName: true, lastName: true } } },
+        select: { user: { select: { id: true, firstName: true, lastName: true } } },
       },
     },
   });
@@ -49,14 +50,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const gate = await requireProjectEditAccess(request, task.projectId);
   if (!gate.ok) return gate.response;
 
-  const assignee = task.assignees[0] ? { name: fullName(task.assignees[0].user) } : null;
+  const assignees = task.assignees.map((a) => ({ id: a.user.id, name: fullName(a.user) }));
   return withCors(
     request,
     Response.json({
       id: task.id,
       title: task.title,
       status: task.status,
-      assignee,
+      assignee: assignees[0] ? { name: assignees[0].name } : null,
+      assignees,
+      projectName: task.project.name,
       dueAt: task.dueAt ? task.dueAt.toISOString() : null,
     }),
   );

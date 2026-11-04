@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/transcription/provider", () => ({ getTranscriptionProvider: vi.fn() }));
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { getTranscriptionProvider } from "~/lib/transcription/provider";
@@ -372,6 +372,29 @@ describe("recordChunk", () => {
     );
   });
 
+  const chunkIndexWritten = () =>
+    (vi.mocked(prisma.meetingRecording.update).mock.calls[0][0] as unknown as {
+      data: { chunkIndex: Record<string, number[]> };
+    }).data.chunkIndex;
+
+  it("marks a skipped segment rather than leaving a hole Prisma rejects", async () => {
+    lockedRow({ chunkIndex: { mic: [45] } });
+    await recordChunk(rec(), "mic", 2, 0, true);
+    expect(chunkIndexWritten()).toEqual({ mic: [45, -1, 0] });
+  });
+
+  it("marks earlier segments for a channel that first appears after a Continue", async () => {
+    lockedRow({ chunkIndex: { mic: [45, 10] } });
+    await recordChunk(rec(), "call", 1, 3, true);
+    expect(chunkIndexWritten()).toEqual({ mic: [45, 10], call: [-1, 3] });
+  });
+
+  it("raises a segment previously marked as skipped", async () => {
+    lockedRow({ chunkIndex: { mic: [45, -1, 0] } });
+    await recordChunk(rec(), "mic", 1, 0, true);
+    expect(chunkIndexWritten()).toEqual({ mic: [45, 0, 0] });
+  });
+
   it("tells the client to stop when the row is gone", async () => {
     vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: typeof prisma) => unknown) =>
       fn(prisma)) as never);
@@ -576,6 +599,14 @@ describe("startProcessing / finalizeEmpty", () => {
 });
 
 describe("applyResult", () => {
+  it("keeps the audio when the job reports an error", async () => {
+    await applyResult(rec({ status: "Processing" }), { channels: {}, error: "boom" });
+    expect(prisma.meetingRecording.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: "Failed", finalizedAt: expect.any(Date) }) }),
+    );
+    expect(deletePrefix).not.toHaveBeenCalled();
+  });
+
   const success = {
     channels: {
       mic: {
@@ -596,7 +627,7 @@ describe("applyResult", () => {
         data: expect.objectContaining({ status: "Done", error: null, finalizedAt: expect.any(Date) }),
       }),
     );
-    expect(deletePrefix).toHaveBeenCalledWith("r1");
+    expect(deletePrefix).not.toHaveBeenCalled();
   });
 
   it("clears progress on Done", async () => {

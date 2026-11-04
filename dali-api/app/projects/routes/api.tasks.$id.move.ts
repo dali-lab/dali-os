@@ -1,9 +1,10 @@
 import type { Route } from "./+types/api.tasks.$id.move";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
 import { closeIssueForTask, syncIssueForTask } from "../lib/github-task-sync";
+import { nextColumnPosition } from "../lib/task-position.server";
 import { notifyTaskStatusChanged } from "../lib/task-notifications.server";
 
 // POST /api/tasks/:id/move
@@ -14,11 +15,12 @@ import { notifyTaskStatusChanged } from "../lib/task-notifications.server";
 //     renumbered to its index, and :id gets `status`. Handles both cross-
 //     column moves and within-column reordering.
 //   { status, position }   — legacy append-to-end shape.
+//   { status }             — the server appends to the end of that column.
 // Same permission model as task creation.
 
 type Body =
   | { status: string; orderedIds: string[]; position?: undefined }
-  | { status: string; position: number; orderedIds?: undefined };
+  | { status: string; position?: number; orderedIds?: undefined };
 
 function isBody(x: unknown): x is Body {
   if (!x || typeof x !== "object") return false;
@@ -27,7 +29,7 @@ function isBody(x: unknown): x is Body {
   if (Array.isArray(o.orderedIds)) {
     return o.orderedIds.every((id) => typeof id === "string");
   }
-  return typeof o.position === "number";
+  return o.position === undefined || typeof o.position === "number";
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -101,7 +103,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: {
         status: body.status,
-        position: body.position,
+        position: body.position ?? (await nextColumnPosition(task.projectId, body.status)),
         ...(body.status !== task.status ? { activityAt: new Date() } : {}),
       },
     });

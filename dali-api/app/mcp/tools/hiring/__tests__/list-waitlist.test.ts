@@ -21,7 +21,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, getUserRoles: vi.fn() };
@@ -69,9 +69,9 @@ describe("list_waitlist", () => {
     vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true }));
     vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry]);
 
-    const result = await runListWaitlist("u1", {}) as any[];
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ domainApplicationId: "da1", rank: 1 });
+    const result = (await runListWaitlist("u1", {})) as any;
+    expect(result.entries).toHaveLength(1);
+    expect(result.entries[0]).toMatchObject({ domainApplicationId: "da1", rank: 1 });
     expect(listActiveWaitlistEntries).toHaveBeenCalledWith({ cycleId: undefined });
   });
 
@@ -88,9 +88,10 @@ describe("list_waitlist", () => {
     const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, applicants: "LabMembers" as const } };
     vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry, coreEntry]);
 
-    const result = (await runListWaitlist("u1", {})) as any[];
-    expect(result).toHaveLength(1);
-    expect(result[0].cycle.applicants).toBe("Students");
+    const result = (await runListWaitlist("u1", {})) as any;
+    expect(result.entries).toHaveLength(1);
+    expect(result.page.total).toBe(1);
+    expect(result.entries[0].cycle.applicants).toBe("Students");
   });
 
   it("shows Core-cycle waitlisters to Admins (A2)", async () => {
@@ -98,7 +99,20 @@ describe("list_waitlist", () => {
     const coreEntry = { ...fakeEntry, cycle: { ...fakeEntry.cycle, applicants: "LabMembers" as const } };
     vi.mocked(listActiveWaitlistEntries).mockResolvedValue([fakeEntry, coreEntry]);
 
-    const result = (await runListWaitlist("u1", {})) as any[];
-    expect(result).toHaveLength(2);
+    const result = (await runListWaitlist("u1", {})) as any;
+    expect(result.entries).toHaveLength(2);
+  });
+
+  it("returns an object and walks pages with the cursor", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue(roles({ isCore: true }));
+    const entries = ["a", "b", "c"].map((id) => ({ ...fakeEntry, domainApplicationId: id }));
+    vi.mocked(listActiveWaitlistEntries).mockResolvedValue(entries);
+
+    const first = (await runListWaitlist("u1", { limit: 2 })) as any;
+    expect(first.entries.map((e: any) => e.domainApplicationId)).toEqual(["a", "b"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    const second = (await runListWaitlist("u1", { limit: 2, cursor: first.page.nextCursor })) as any;
+    expect(second.entries.map((e: any) => e.domainApplicationId)).toEqual(["c"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 });

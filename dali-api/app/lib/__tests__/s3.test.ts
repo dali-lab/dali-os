@@ -9,8 +9,24 @@ vi.hoisted(() => {
   vi.stubEnv("AWS_SECRET_ACCESS_KEY", "test-secret");
 });
 
-import { S3Client, NotFound, S3ServiceException } from "@aws-sdk/client-s3";
-import { getDownloadUrl, getUploadPost, headObject } from "~/lib/s3";
+import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CreateMultipartUploadCommand,
+  NoSuchKey,
+  NotFound,
+  S3Client,
+  S3ServiceException,
+  UploadPartCommand,
+} from "@aws-sdk/client-s3";
+import {
+  attachmentDisposition,
+  getDownloadUrl,
+  getObjectStream,
+  getUploadPost,
+  headObject,
+  putObjectStream,
+} from "~/lib/s3";
 import { MAX_FILE_STORE_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 
 afterEach(() => {
@@ -121,5 +137,113 @@ describe("getDownloadUrl cacheFor", () => {
     expect(url.searchParams.get("X-Amz-Date")).toBe("20261022T144012Z");
     expect(url.searchParams.get("X-Amz-Expires")).toBe("3600");
     expect(url.searchParams.has("response-cache-control")).toBe(false);
+  });
+});
+
+describe("attachmentDisposition", () => {
+  it("keeps a plain name readable in both forms", () => {
+    expect(attachmentDisposition("Report.pdf")).toBe(
+      `attachment; filename="Report.pdf"; filename*=UTF-8''Report.pdf`,
+    );
+  });
+
+  it("carries non-ASCII names in filename* with an ASCII fallback", () => {
+    const value = attachmentDisposition("Screenshot 9.41 PM.png");
+    expect(value).toContain(`filename="Screenshot 9.41_PM.png"`);
+    expect(value).toContain(`filename*=UTF-8''Screenshot%209.41%E2%80%AFPM.png`);
+  });
+
+  it("can't be broken out of with quotes, backslashes or newlines", () => {
+    const value = attachmentDisposition('a"\\\r\nb.pdf');
+    expect(value).toBe(`attachment; filename="ab.pdf"; filename*=UTF-8''ab.pdf`);
+  });
+
+  it("drops a lone surrogate instead of throwing", () => {
+    expect(attachmentDisposition("a\ud83d.pdf")).toContain(`filename="a.pdf"`);
+  });
+
+  it("escapes the characters encodeURIComponent leaves alone", () => {
+    expect(attachmentDisposition("it's (1).pdf")).toContain("filename*=UTF-8''it%27s%20%281%29.pdf");
+  });
+});
+
+describe("getDownloadUrl filenames", () => {
+  it("signs the attachment disposition for a named file", async () => {
+    const url = new URL(await getDownloadUrl("uploads/a.pdf", { fileName: "Résumé.pdf" }));
+    expect(url.searchParams.get("response-content-disposition")).toBe(attachmentDisposition("Résumé.pdf"));
+  });
+
+  it("stays inline when asked, even with a name", async () => {
+    const url = new URL(await getDownloadUrl("uploads/a.pdf", { fileName: "a.pdf", inline: true }));
+    expect(url.searchParams.get("response-content-disposition")).toBe("inline");
+  });
+});
+
+describe("getObjectStream", () => {
+  it("returns the object's body", async () => {
+    const body = (async function* () {
+      yield new Uint8Array([1]);
+    })();
+    vi.spyOn(S3Client.prototype, "send").mockResolvedValue({ Body: body } as never);
+    expect(await getObjectStream("uploads/a")).toBe(body);
+  });
+
+  it("returns null for a missing key", async () => {
+    vi.spyOn(S3Client.prototype, "send").mockRejectedValue(
+      new NoSuchKey({ message: "gone", $metadata: {} }) as never,
+    );
+    expect(await getObjectStream("uploads/a")).toBeNull();
+  });
+
+  it("rethrows other storage errors", async () => {
+    vi.spyOn(S3Client.prototype, "send").mockRejectedValue(new Error("boom") as never);
+    await expect(getObjectStream("uploads/a")).rejects.toThrow("boom");
+  });
+});
+
+describe("putObjectStream", () => {
+  const MB = 1024 * 1024;
+  async function* chunks(...sizes: number[]) {
+    for (const size of sizes) yield new Uint8Array(size);
+  }
+  function fakeS3() {
+    return vi.spyOn(S3Client.prototype, "send").mockImplementation((async (command: unknown) => {
+      if (command instanceof CreateMultipartUploadCommand) return { UploadId: "up1" };
+      if (command instanceof UploadPartCommand) return { ETag: `e${command.input.PartNumber}` };
+      return {};
+    }) as never);
+  }
+  const sent = <T,>(spy: ReturnType<typeof fakeS3>, type: new (...args: never[]) => T) =>
+    spy.mock.calls.map(([c]) => c).filter((c) => c instanceof type) as T[];
+
+  it("splits into parts of at least 8 MB and completes them in order", async () => {
+    const s3 = fakeS3();
+    await putObjectStream("uploads/z.zip", chunks(5 * MB, 5 * MB, MB), "application/zip");
+
+    const parts = sent(s3, UploadPartCommand);
+    expect(parts.map((p) => (p.input.Body as Buffer).length)).toEqual([10 * MB, MB]);
+    const [complete] = sent(s3, CompleteMultipartUploadCommand);
+    expect(complete.input.MultipartUpload?.Parts).toEqual([
+      { ETag: "e1", PartNumber: 1 },
+      { ETag: "e2", PartNumber: 2 },
+    ]);
+    expect(sent(s3, CreateMultipartUploadCommand)[0].input.ContentType).toBe("application/zip");
+  });
+
+  it("doesn't send an empty trailing part", async () => {
+    const s3 = fakeS3();
+    await putObjectStream("uploads/z.zip", chunks(8 * MB), "application/zip");
+    expect(sent(s3, UploadPartCommand)).toHaveLength(1);
+  });
+
+  it("aborts the upload when the source fails, and rethrows", async () => {
+    const s3 = fakeS3();
+    async function* failing() {
+      yield new Uint8Array(1);
+      throw new Error("source died");
+    }
+    await expect(putObjectStream("uploads/z.zip", failing(), "application/zip")).rejects.toThrow("source died");
+    expect(sent(s3, AbortMultipartUploadCommand)[0].input.UploadId).toBe("up1");
+    expect(sent(s3, CompleteMultipartUploadCommand)).toHaveLength(0);
   });
 });

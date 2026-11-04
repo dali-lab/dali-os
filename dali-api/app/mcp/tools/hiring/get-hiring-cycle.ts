@@ -6,7 +6,7 @@
 // CycleInterviewer for this specific cycle). No confidentiality gate — status
 // and scheduling configuration are not applicant PII.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { hasCycleAccess } from "~/lib/roles";
 import { generateCandidateSlots, isInterviewerFree } from "~/hiring/lib/scheduling";
 import { APPLICATION_TZ } from "~/lib/timezone";

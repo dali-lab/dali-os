@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { page: { findMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findMany: vi.fn() } } }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { listPageTemplates } from "../page-templates.server";
 

@@ -2,7 +2,7 @@
 // scheduled term sync and the on-demand per-subject refresh) and a live
 // single-subject refresh for keeping volatile data (seats) current on demand.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { dartmouthTermCode, daliTermCodeFromDartmouth } from "~/lib/terms.shared";
 import { fetchSubjectCatalog, type OracleCourse } from "~/lib/dartmouth-timetable.server";
 

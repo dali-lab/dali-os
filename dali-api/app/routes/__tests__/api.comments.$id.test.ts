@@ -4,8 +4,9 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/lib/comment-events.server", () => ({ publishCommentChange: vi.fn() }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isLabMember: vi.fn(),
@@ -19,8 +20,9 @@ vi.mock("~/lib/pageAccess.server", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
+import { publishCommentChange } from "~/lib/comment-events.server";
 import { isCore } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { action } from "~/routes/api.comments.$id";
@@ -121,6 +123,32 @@ describe("edit intent", () => {
     );
     const res = (await post("edit", AUTHOR_ID, { body: "Updated FAQ" })) as Response;
     expect(res.status).toBe(200);
+  });
+});
+
+describe("live comment updates", () => {
+  beforeEach(() => {
+    vi.mocked(publishCommentChange).mockClear();
+    mockPrisma.docComment.findUnique.mockResolvedValue(baseComment());
+    mockPrisma.docComment.update.mockResolvedValue({});
+    mockPrisma.docCommentReaction.upsert.mockResolvedValue({});
+    mockPrisma.docCommentReaction.deleteMany.mockResolvedValue({ count: 1 });
+    vi.mocked(getPageAccess).mockResolvedValue({ canComment: true } as never);
+  });
+
+  it.each([
+    ["set-anchor", { anchor: { kind: "blocknote" } }],
+    ["react", { emoji: "👍" }],
+    ["unreact", { emoji: "👍" }],
+  ])("%s tells other viewers of the doc", async (intent, body) => {
+    await post(intent, AUTHOR_ID, body);
+    expect(publishCommentChange).toHaveBeenCalledExactlyOnceWith(PAGE_ID);
+  });
+
+  it("doesn't publish reactions on non-doc targets", async () => {
+    mockPrisma.docComment.findUnique.mockResolvedValue(baseComment({ targetType: "file" }));
+    await post("react", AUTHOR_ID, { emoji: "👍" });
+    expect(publishCommentChange).not.toHaveBeenCalled();
   });
 });
 

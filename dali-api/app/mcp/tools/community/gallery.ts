@@ -5,7 +5,7 @@
 // browser composer makes with a canvas and an agent makes itself), then
 // manage_gallery_post create records the post.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { getUserRoles, isLabMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";

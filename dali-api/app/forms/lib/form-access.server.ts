@@ -2,7 +2,7 @@
 // (getPageAccess: workspace role, folder scope, named shares, general access).
 // Fill = View on the page, build (and responses) = Edit.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { isLabMember } from "~/lib/roles";
 

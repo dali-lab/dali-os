@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { syncCreditForAttendance } from "./ce-credits.server";
 import { requestSessionFeedback } from "./feedback.server";

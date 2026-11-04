@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useFetcher } from "react-router";
 import { Check, Copy, MessageSquareWarning, Pencil, Plus, Settings2, Trash2, Undo2 } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
@@ -42,7 +43,8 @@ export type ListservData = {
 };
 
 type ActionData = { ok: true; done: string; count?: number; sentOn?: string } | { ok: false; error: string };
-type View = "queue" | "sent";
+const VIEWS = ["queue", "sent"] as const;
+type View = (typeof VIEWS)[number];
 
 /** Runs one listserv action and toasts its outcome once. */
 function useListservAction(onDone?: (d: Extract<ActionData, { ok: true }>) => void) {
@@ -71,7 +73,7 @@ export function ListservPage({ data }: { data: ListservData }) {
   const toast = useToast();
   const { isLead, viewerId, today } = data;
   const leadName = data.lead?.name ?? "The outreach lead";
-  const [view, setView] = useState<View>("queue");
+  const [view, setView] = useSearchParamChoice<View>("view", VIEWS, "queue");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [composer, setComposer] = useState<{ open: boolean; editing: ListservRow | null }>({ open: false, editing: null });
   const [markOpen, setMarkOpen] = useState(false);

@@ -14,7 +14,7 @@
 // see app/lib/linking.ts (Phase 2). We detect the collision via P2002 and
 // retry without the conflicting netId so the door never dead-ends the user.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   findNetIdByAddress,
   peopleByNetId,

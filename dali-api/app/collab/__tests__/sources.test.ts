@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Y from "yjs";
 
 // Mock the DB + roles before importing the module under test.
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const mock: any = {
     mentorNote: { findUnique: vi.fn(), updateMany: vi.fn() },
     mentorNoteTemplate: { findUnique: vi.fn(), update: vi.fn() },
@@ -11,7 +11,7 @@ vi.mock("~/lib/db", () => {
 });
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { COLLAB_SOURCES, seedRegistryDoc, syncRegistryDocBack } from "../sources";
 import { BLOCKNOTE_FRAGMENT, plainTextToBlocks } from "../blocknote-server";

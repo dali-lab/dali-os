@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.notifications.$id.rsvp";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { publishNotificationChange } from "~/lib/notify-stream.server";

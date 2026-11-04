@@ -1,5 +1,7 @@
 import type { Route } from "./+types/core.communications.listserv";
-import { prisma } from "~/lib/db";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { coreHandle } from "~/core/coreNav";
@@ -21,8 +23,13 @@ export const handle = coreHandle("communications");
 
 export const meta: Route.MetaFunction = () => [{ title: "Listserv · Core · DALI OS" }];
 
+// The In progress / Sent view is client side.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, []);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
-  const viewer = await requireCommsViewer(request, "listserv");
+  const viewer = await requireCommsViewer(request);
   const [config, submissions] = await Promise.all([getListservConfig(), listListserv()]);
   const isAdmin = viewer.roles.isAdmin;
   const lead = config.leadUserId
@@ -63,7 +70,7 @@ function parseDraft(form: FormData) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const viewer = await requireCommsViewer(request, "listserv");
+  const viewer = await requireCommsViewer(request);
   const config = await getListservConfig();
   const isLead = isListservLead(viewer.userId, config, viewer.roles.isAdmin);
   const form = await request.formData();

@@ -16,7 +16,7 @@
 // feedbackRequestedAt) when no published feedback form is bound, so such
 // sessions simply re-scan until they age out.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requestSessionFeedback } from "~/education/lib/feedback.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

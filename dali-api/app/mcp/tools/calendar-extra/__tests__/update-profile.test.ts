@@ -20,9 +20,9 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   runUpdateProfile,
   UPDATE_PROFILE_DEF,

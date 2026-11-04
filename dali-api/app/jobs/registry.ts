@@ -85,6 +85,7 @@ import { runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.serv
 import { runOccurrenceRekey } from "~/jobs/occurrence-rekey.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 import { runFormWindows } from "~/jobs/form-windows.server";
+import { runFormReminders } from "~/jobs/form-reminders.server";
 import { runInterviewReminders } from "~/jobs/interview-reminders.server";
 import { runStandupPrompts } from "~/jobs/standup-prompts.server";
 import { runTimesheetDueReminders } from "~/jobs/timesheet-due-reminders.server";
@@ -259,7 +260,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "interview-reminders",
     description:
-      "Emails applicant and interviewers 24 hours and 1 hour before a scheduled interview.",
+      "Emails applicant and interviewers 1 hour before a scheduled interview.",
     intervalMinutes: 5,
     handler: runInterviewReminders,
   },
@@ -269,6 +270,13 @@ export const JOBS: JobDefinition[] = [
       "Publishes and unpublishes forms whose scheduled open/close time has passed.",
     intervalMinutes: 1,
     handler: runFormWindows,
+  },
+  {
+    name: "form-reminders",
+    description:
+      "Reminds people who haven't responded to a form a day before it closes, for forms with that setting on. Sends once per close time.",
+    intervalMinutes: 60,
+    handler: runFormReminders,
   },
   {
     name: "sprint-lifecycle",
@@ -531,7 +539,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "partner-renewal-sweep",
     description:
-      "Auto-creates a renewal application when a partner's project is in its last planned term and that term ends within 30 days, unless the org already has one open.",
+      "Reminds Core when a project's last planned term ends within 30 days and no decision exists for the next term. Links to Renewals.",
     intervalMinutes: 1440,
     handler: runPartnerRenewalSweep,
   },
@@ -624,7 +632,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "meeting-record-prompts",
     description:
-      "Notifies a meeting's organizer shortly before it starts, offering to record it (bell, desktop banner, Slack DM per preference). Skips when the series opted out, the project disabled recording, the organizer lacks the ai-meeting-notes flag, a recording already exists for the occurrence, or the meeting has no note to record into.",
+      "Notifies a meeting's organizer shortly before it starts, offering to record it (bell, desktop banner, Slack DM per preference). Skips when the series opted out, the project disabled recording, a recording already exists for the occurrence, or the meeting has no note to record into.",
     intervalMinutes: 1,
     settings: [
       {
@@ -641,7 +649,7 @@ export const JOBS: JobDefinition[] = [
   {
     name: "meeting-notes-nudge",
     description:
-      "Nudges a meeting recording's owner once its transcript is ready, when it hasn't been inserted into the note. Skips recordings with no scheduled meeting, before the configured delay past the occurrence's end, or for a recorder without the ai-meeting-notes flag.",
+      "Nudges a meeting recording's owner once its transcript is ready, when it hasn't been inserted into the note. Skips recordings with no scheduled meeting, before the configured delay past the occurrence's end.",
     intervalMinutes: 5,
     settings: [
       {

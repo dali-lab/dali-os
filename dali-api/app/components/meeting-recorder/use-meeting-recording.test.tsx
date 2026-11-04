@@ -14,6 +14,7 @@ import { DialogProvider } from "~/components/ui/dialog";
 import { useMeetingRecording, type UseMeetingRecording } from "./use-meeting-recording";
 import type { EnhanceBlockChange, EnhanceMarkEntry, SnapshotBlock } from "./enhance-plan";
 import type { LatestRecording } from "./types";
+import { resetLiveSession } from "./live-session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -57,6 +58,7 @@ function installLocalStoragePolyfill() {
 let container: HTMLDivElement;
 let root: Root;
 const box: { current: UseMeetingRecording | null } = { current: null };
+const harnessInsert = vi.fn((_markdown: string, _transcript: string[]) => true);
 
 function Harness({
   documentName,
@@ -72,7 +74,7 @@ function Harness({
   box.current = useMeetingRecording({
     documentName,
     canEdit: true,
-    onInsert: () => true,
+    onInsert: harnessInsert,
     latestRecording,
     onSpeakersChanged,
     getNoteState,
@@ -189,10 +191,59 @@ afterEach(() => {
   act(() => root?.unmount());
   container?.remove();
   vi.unstubAllGlobals();
+  resetLiveSession();
   box.current = null;
 });
 
 describe("useMeetingRecording phase transitions (mocked fetch, no browser capture)", () => {
+  it("retryDesktopStart: deletes the stuck row before creating the new one", async () => {
+    const documentName = "doc-retry";
+    window.localStorage.setItem(
+      backupKey(documentName),
+      JSON.stringify({ id: "stuck", link: "l", aiEnabled: true, captureMode: "desktop" }),
+    );
+    const calls: string[] = [];
+    let release: () => void = () => {};
+    const deleted = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const method = init?.method ?? "GET";
+        if (method === "DELETE") {
+          calls.push(`DELETE ${url}`);
+          await deleted;
+          return jsonRes({});
+        }
+        if (method === "POST" && url === "/api/meeting-recordings") {
+          calls.push(`POST ${url}`);
+          return jsonRes({ id: "fresh", link: "about:blank", aiEnabled: true });
+        }
+        return jsonRes({ status: "Pending", channels: [], recordedSeconds: 0, lines: [], speakers: {} });
+      }),
+    );
+
+    await mount(documentName);
+    expect(box.current!.phase).toBe("starting");
+
+    let retry: Promise<void> = Promise.resolve();
+    await act(async () => {
+      retry = box.current!.retryDesktopStart();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(calls).toEqual(["DELETE /api/meeting-recordings/stuck"]);
+
+    await act(async () => {
+      release();
+      await retry;
+    });
+    expect(calls).toEqual(["DELETE /api/meeting-recordings/stuck", "POST /api/meeting-recordings"]);
+    expect(box.current!.recordingId).toBe("fresh");
+    expect(box.current!.phase).toBe("starting");
+    expect(box.current!.appUnreachable).toBe(false);
+  });
+
   it("recording -> stopping: stop() flips phase immediately for a desktop capture", async () => {
     const documentName = "doc-stop";
     window.localStorage.setItem(
@@ -468,7 +519,7 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
   });
 });
 
-describe("leaving mid-recording: only the capturing tab is guarded", () => {
+describe("leaving mid-recording: in-app navigation never prompts", () => {
   let navigateTo: (path: string) => void = () => {};
   const at: { path: string } = { path: "" };
 
@@ -581,7 +632,7 @@ describe("leaving mid-recording: only the capturing tab is guarded", () => {
     expect(awarenessWrites.filter(([field]) => field === "recording")).toEqual([]);
   });
 
-  it("still asks before leaving the tab that drives the recording, and announces it", async () => {
+  it("leaves the tab that drives the recording without any prompt, and announces it", async () => {
     window.localStorage.setItem(
       backupKey("doc-leave"),
       JSON.stringify({ id: "rMine", link: "", aiEnabled: false, captureMode: "desktop" }),
@@ -590,11 +641,11 @@ describe("leaving mid-recording: only the capturing tab is guarded", () => {
     expect(box.current!.phase).toBe("recording");
     expect(box.current!.remote).toBeNull();
 
-    expect(beforeUnloadPrevented()).toBe(true);
+    expect(beforeUnloadPrevented()).toBe(false);
     await leave();
 
-    expect(at.path).toBe("/test");
-    expect(document.body.textContent).toContain("Leave while recording?");
+    expect(at.path).toBe("/elsewhere");
+    expect(document.body.textContent).not.toContain("Leave while recording?");
     expect(awarenessWrites).toContainEqual(["recording", expect.objectContaining({ userId: "me" })]);
   });
 });
@@ -635,6 +686,34 @@ describe("setSpeaker: onSpeakersChanged + speakersChangedAt (Fix 4: stale names 
 
     expect(onSpeakersChanged).toHaveBeenCalledWith(["[00:00] Alex Kim: hi"]);
     expect(box.current!.speakersChangedAt).not.toBeNull();
+  });
+
+  it("does not touch the note or mark it inserted when there is nothing to insert", async () => {
+    const documentName = "doc-insert-empty";
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return jsonRes({ status: "Done", channels: [], recordedSeconds: 40, lines: [], speakers: {} });
+      }
+      return jsonRes({ ok: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.setItem(backupKey(documentName), JSON.stringify({ id: "rEmpty", link: "l", aiEnabled: true }));
+    harnessInsert.mockClear();
+
+    await mountWithOnSpeakersChanged(documentName, () => true);
+    expect(box.current!.hasTranscript).toBe(false);
+
+    let inserted = true;
+    act(() => {
+      inserted = box.current!.insert(null);
+    });
+
+    expect(inserted).toBe(false);
+    expect(harnessInsert).not.toHaveBeenCalled();
+    expect(box.current!.insertedAt).toBeNull();
+    expect(box.current!.error).toBe("There's nothing in this recording to insert.");
+    const posted = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST").map(([, init]) => init?.body);
+    expect(posted).not.toContainEqual(JSON.stringify({ action: "inserted" }));
   });
 
   it("does not call onSpeakersChanged when the transcript was never inserted or enhanced", async () => {

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { MonthDayDTO, MonthEvent } from "~/components/MonthCalendarPanel";
 import {
   monthDayIndex,

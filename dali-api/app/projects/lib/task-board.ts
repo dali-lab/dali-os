@@ -29,6 +29,18 @@ export const TASK_STATUSES = [
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 
+/** Who can be assigned on a project: the current term's team, or the most
+ *  recently staffed term's when the current term has nobody yet. */
+export function assignableAssignments<T extends { termId: string; term: { sortKey: number } }>(
+  assignments: T[],
+  currentTermId: string | null,
+): T[] {
+  const current = assignments.filter((a) => a.termId === currentTermId);
+  if (current.length > 0) return current;
+  const latest = Math.max(...assignments.map((a) => a.term.sortKey), Number.NEGATIVE_INFINITY);
+  return assignments.filter((a) => a.term.sortKey === latest);
+}
+
 export const TASK_STATUS_LABELS: Record<TaskStatus, string> = {
   Backlog: "Backlog",
   Todo: "To do",

@@ -1,6 +1,6 @@
 import { Form, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/portal.settings";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isValidTimezone } from "~/lib/timezone";

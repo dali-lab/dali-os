@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.domain-applications.$id.decisions";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin, isDomainLeadForCycle, hasCycleAccess } from "~/lib/roles";

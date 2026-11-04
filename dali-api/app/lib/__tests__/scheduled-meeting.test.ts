@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 vi.mock("~/lib/pages", () => ({
@@ -44,7 +44,7 @@ vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn(async () => []) }));
 vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn(() => "") }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { notify } from "~/lib/notify.server";

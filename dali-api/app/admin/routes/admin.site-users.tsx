@@ -4,7 +4,7 @@ import type { Route } from "./+types/admin.site-users";
 import type { Prisma } from "~/generated/prisma/client";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { EmptyState, Pill, adminTable } from "~/admin/components/console-ui";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isAdminViaEnv } from "~/lib/roles";
@@ -15,6 +15,8 @@ import { Avatar } from "~/components/ui/Avatar";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { Segmented } from "~/components/ui/Segmented";
 import { Tooltip } from "~/components/ui/floating";
+import { PagerLinks } from "~/components/ui/Pager";
+import { offsetPage, offsetWindow, parsePageParam } from "~/lib/pagination";
 import { ImpersonateButton } from "~/admin/components/admin-shared";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -25,9 +27,9 @@ export const handle = adminHandle("users");
 
 // Every account on the site, not just lab members. Admin-only, because its one
 // action is impersonation. The User table grows with every applicant, so the
-// search is server-side and bounded instead of loading it whole.
+// search is server-side and paged instead of loading it whole.
 
-const RESULT_LIMIT = 100;
+export const PAGE_SIZE = 50;
 
 export const SITE_USER_KINDS = ["Member", "Alumni", "Partner", "Dartmouth", "External"] as const;
 export type SiteUserKind = (typeof SITE_USER_KINDS)[number];
@@ -96,6 +98,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const q = (url.searchParams.get("q") ?? "").trim();
   const kind = parseKind(url.searchParams.get("kind"));
+  const page = parsePageParam(url.searchParams.get("page"));
 
   const search = searchWhere(q);
   const where: Prisma.UserWhereInput = kind ? { AND: [search, kindWhere(kind)] } : search;
@@ -121,8 +124,8 @@ export async function loader({ request }: Route.LoaderArgs) {
         adminMembership: { select: { id: true } },
         partnerContact: { select: { id: true } },
       },
-      orderBy: [{ lastActiveAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
-      take: RESULT_LIMIT,
+      orderBy: [{ lastActiveAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }, { id: "desc" }],
+      ...offsetWindow(page, PAGE_SIZE),
     }),
     Promise.all(SITE_USER_KINDS.map((k) => prisma.user.count({ where: { AND: [search, kindWhere(k)] } }))),
   ]);
@@ -134,12 +137,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   const all = kindTotals.reduce((a, b) => a + b, 0);
   const total = kind ? counts[kind] : all;
 
+  const { items: pageRows, hasNext } = offsetPage(rows, PAGE_SIZE);
   const photoUrls = new Map(
-    await Promise.all(rows.map(async (u) => [u.id, await resolvePhotoUrl(u.photoUrl)] as const)),
+    await Promise.all(pageRows.map(async (u) => [u.id, await resolvePhotoUrl(u.photoUrl)] as const)),
   );
 
   const now = new Date();
-  const users = rows.map((u) => ({
+  const users = pageRows.map((u) => ({
     id: u.id,
     firstName: u.firstName,
     lastName: u.lastName,
@@ -157,7 +161,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         },
   }));
 
-  return { users, total, all, counts, kind, q, viewerUserId: auth.user.sub, isAdmin: true };
+  return { users, total, all, counts, kind, q, page, hasNext, viewerUserId: auth.user.sub, isAdmin: true };
 }
 
 type SiteUser = ReturnType<typeof useLoaderData<typeof loader>>["users"][number];
@@ -182,7 +186,7 @@ function LastSeen({ lastSeen }: { lastSeen: SiteUser["lastSeen"] }) {
 type KindFilter = "all" | SiteUserKind;
 
 export default function AdminSiteUsers() {
-  const { users, total, all, counts, kind, q, viewerUserId } = useLoaderData<typeof loader>();
+  const { users, total, all, counts, kind, q, page, hasNext, viewerUserId } = useLoaderData<typeof loader>();
   const { panel } = useOsChrome();
   const submit = useSubmit();
   const [, setSearchParams] = useSearchParams();
@@ -202,11 +206,21 @@ export default function AdminSiteUsers() {
       const params = new URLSearchParams(prev);
       if (next === "all") params.delete("kind");
       else params.set("kind", next);
+      params.delete("page");
       return params;
     });
   }
 
-  const truncated = total > users.length;
+  function pageHref(nextPage: number): string {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (kind) params.set("kind", kind);
+    if (nextPage > 1) params.set("page", String(nextPage));
+    const qs = params.toString();
+    return qs ? `?${qs}` : "?";
+  }
+
+  const firstShown = (page - 1) * PAGE_SIZE + 1;
 
   return (
     <div className="flex flex-col gap-6">
@@ -243,8 +257,10 @@ export default function AdminSiteUsers() {
         <p className="text-xs text-os-muted">
           {total === 0
             ? "No users match that search."
-            : truncated
-              ? `Showing ${users.length} of ${total}. Narrow your search to see the rest.`
+            : total > PAGE_SIZE
+              ? users.length === 0
+                ? `No users on this page. ${total} in all.`
+                : `Showing ${firstShown}-${firstShown + users.length - 1} of ${total}`
               : `${total} ${total === 1 ? "user" : "users"}`}
         </p>
 
@@ -299,6 +315,8 @@ export default function AdminSiteUsers() {
           )}
         </div>
       </div>
+
+      <PagerLinks page={page} hasNext={hasNext} hrefFor={pageHref} label="Site users pagination" endLabel="End of list" />
     </div>
   );
 }

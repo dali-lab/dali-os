@@ -4,7 +4,7 @@
 
 import { loadDriveScope, buildLinkedProcessMap } from "~/lib/drive.server";
 import type { DriveItem, ProjectPageRow, ProjectFileRow } from "~/lib/drive.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isImpersonating, type AuthSuccess } from "~/lib/auth";
 import { favoritePageIds } from "~/lib/user-pages.server";
 import { withChildCounts } from "~/lib/drive-counts.server";

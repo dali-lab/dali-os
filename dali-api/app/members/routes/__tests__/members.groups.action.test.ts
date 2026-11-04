@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
@@ -11,7 +11,7 @@ vi.mock("~/lib/roles", () => ({
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { canViewForms } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

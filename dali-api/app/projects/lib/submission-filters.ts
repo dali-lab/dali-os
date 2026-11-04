@@ -65,6 +65,48 @@ export function toggleFilterValue(
   return filters.map((f) => (f.columnKey === columnKey ? { columnKey, values } : f));
 }
 
+const FILTER_PARAM_PREFIX = "f.";
+// Written when every filter is removed from a board that opens with defaults,
+// so a reload or a shared link keeps "no filters" instead of the defaults.
+const NO_FILTERS_PARAM = "f";
+
+const isFilterParam = (name: string) =>
+  name === NO_FILTERS_PARAM || name.startsWith(FILTER_PARAM_PREFIX);
+
+// One repeated param per filtered column (`?f.domain=Design&f.domain=Eng`), so
+// any column key or value survives without an escaping scheme of our own.
+export function readFilterParams(params: URLSearchParams): ColumnFilter[] {
+  const filters: ColumnFilter[] = [];
+  for (const name of new Set(params.keys())) {
+    if (!name.startsWith(FILTER_PARAM_PREFIX)) continue;
+    const values = params.getAll(name).filter((v) => v !== "");
+    if (values.length === 0) continue;
+    filters.push({ columnKey: name.slice(FILTER_PARAM_PREFIX.length), values });
+  }
+  return filters;
+}
+
+/** Whether the URL says anything about filters, including "none". */
+export function hasFilterParams(params: URLSearchParams): boolean {
+  return [...params.keys()].some(isFilterParam);
+}
+
+export function writeFilterParams(
+  params: URLSearchParams,
+  filters: readonly ColumnFilter[],
+  { markEmpty = false }: { markEmpty?: boolean } = {},
+): URLSearchParams {
+  const next = new URLSearchParams();
+  for (const [name, value] of params) {
+    if (!isFilterParam(name)) next.append(name, value);
+  }
+  for (const f of filters) {
+    for (const v of f.values) next.append(FILTER_PARAM_PREFIX + f.columnKey, v);
+  }
+  if (markEmpty && filters.every((f) => f.values.length === 0)) next.set(NO_FILTERS_PARAM, "");
+  return next;
+}
+
 export function clearFilterColumn(
   filters: readonly ColumnFilter[],
   columnKey: string,
@@ -72,14 +114,22 @@ export function clearFilterColumn(
   return filters.filter((f) => f.columnKey !== columnKey);
 }
 
-/** Distinct non-empty responses in a column, sorted, for the value picker. */
+/**
+ * The value picker's options. A column with a natural order (terms) passes
+ * `order`: every listed value shows in that order, row or not, and any other
+ * response follows sorted. Otherwise the distinct responses, sorted.
+ */
 export function columnResponses(
   rows: readonly { cells: FilterCells }[],
   columnKey: string,
+  order?: readonly string[],
 ): string[] {
   const values = new Set<string>();
   for (const r of rows) {
     for (const v of cellValues(r.cells[columnKey])) values.add(v);
   }
-  return [...values].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const rest = [...values]
+    .filter((v) => !order?.includes(v))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  return [...(order ?? []), ...rest];
 }

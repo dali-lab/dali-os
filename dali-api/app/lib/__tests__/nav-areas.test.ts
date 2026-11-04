@@ -30,7 +30,7 @@ describe("areaForPath", () => {
   });
 
   it("still resolves an area hub that carries a query string", () => {
-    // A favorited hub is stored as `pathname + search` (FavoriteRouteButton),
+    // A favorited hub is stored as `pathname + search` (the topbar star),
     // and in tab mode the sidebar matches the focused tab's url — which keeps
     // its query. Without trimming it, the hub matched no area and the sidebar
     // fell back to the last-visited area (Projects by default).
@@ -82,7 +82,7 @@ describe("isAreaSubtabPath", () => {
   });
 });
 
-// Regression: the tabless history arrows and the layout's flush top padding
+// Regression: the history arrows and the layout's flush top padding
 // both stand down when a page renders its own nav row. Layout used to decide
 // that from `handle.areaPills` alone, which broke both ways — calendar
 // (areaSubnav) got a standalone arrow bar stacked on top of its own subnav
@@ -183,7 +183,6 @@ describe("Core area", () => {
     const hrefs = core().subtabs.map((t) => t.href);
     expect(hrefs).toEqual(
       expect.arrayContaining([
-        "/core",
         "/core/staffing",
         "/core/intent-to-work",
         "/core/project-bids",
@@ -192,6 +191,8 @@ describe("Core area", () => {
         "/core/communications",
       ]),
     );
+    // The retired Milestones board owned /core; no subtab points there now.
+    expect(hrefs).not.toContain("/core");
   });
 
   it("no longer owns Attendance — it moved to the lab-wide surface under General", () => {
@@ -228,6 +229,7 @@ describe("Admin area", () => {
       "Messaging",
       "Insights",
       "Platform",
+      "Rooms",
       "Onboarding",
     ]);
   });
@@ -275,6 +277,7 @@ describe("areaForPath", () => {
     expect(areaForPath("/core/agreements", REGROUP)?.key).toBe("core");
     expect(areaForPath("/core/agreements/abc123", REGROUP)?.key).toBe("core");
     expect(areaForPath("/admin/messaging/senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/rooms", REGROUP)?.key).toBe("admin");
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 
@@ -515,10 +518,10 @@ describe("pinnedNavItems", () => {
   it("puts Room booking in the calendar header, not the pinned rail", () => {
     expect(pinnedNavItems().map((i) => i.href)).not.toContain("/rooms");
     expect(ROOM_BOOKING_NAV_ITEM.href).toBe("/rooms");
-    // Booking is not a General sub-tab; Core keeps room management.
     const areas = areasFor();
     expect(areas.find((a) => a.key === "projects")!.subtabs.map((t) => t.href)).not.toContain("/rooms");
-    expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).toContain("/core/rooms");
+    expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).not.toContain("/core/rooms");
+    expect(areas.find((a) => a.key === "admin")!.subtabs.map((t) => t.href)).toContain("/admin/rooms");
   });
 });
 

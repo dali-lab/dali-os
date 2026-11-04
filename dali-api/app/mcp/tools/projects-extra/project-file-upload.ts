@@ -15,7 +15,7 @@
 // Gate on both steps: canEditProject (Core, or staffed on the project) — the
 // same as upload_project_file.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { getUploadPost, headObject, isS3Configured } from "~/lib/s3";
 import {

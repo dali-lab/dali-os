@@ -4,7 +4,7 @@
 // resolve.
 
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -257,6 +257,201 @@ const TEXT_FIELDS = [
   "personalEmail",
 ] as const;
 
+async function loadProjectAssignments(
+  targetId: string,
+  canManageEligibility: boolean,
+  term: { id: string } | null,
+) {
+  const projectAssignmentRows = await prisma.projectAssignment.findMany({
+    where: { userId: targetId },
+    select: {
+      id: true,
+      level: true,
+      domainId: true,
+      projectId: true,
+      project: { select: { id: true, name: true, iconEmoji: true } },
+      domain: { select: { name: true } },
+      term: { select: { id: true, code: true, sortKey: true } },
+    },
+    orderBy: { project: { name: "asc" } },
+  });
+  // Inline level editing is Core-only; the demotion guard needs the mentee
+  // counts, so they are only fetched when the editor will render.
+  const menteeCountByProjectDomain = new Map<string, number>();
+  if (
+    canManageEligibility &&
+    term &&
+    projectAssignmentRows.some((a) => a.term.id === term.id)
+  ) {
+    const grouped = await prisma.mentorshipPair.groupBy({
+      by: ["projectId", "domainId"],
+      where: { mentorUserId: targetId, termId: term.id },
+      _count: { _all: true },
+    });
+    for (const g of grouped) {
+      menteeCountByProjectDomain.set(`${g.projectId}:${g.domainId}`, g._count._all);
+    }
+  }
+  return { projectAssignmentRows, menteeCountByProjectDomain };
+}
+
+// Admin is an access grant and "Lab Member" is what everyone on the page is,
+// so neither counts as a hired role.
+async function loadHiredRoles(targetId: string, term: { id: string } | null) {
+  if (!term) return [[], [], [], []] as const;
+  return Promise.all([
+    prisma.coreAssignment.findMany({
+      where: { userId: targetId, termId: term.id },
+      select: { leadTitle: true },
+    }),
+    prisma.domainLeadAssignment.findMany({
+      where: { userId: targetId, termId: term.id },
+      select: { domain: { select: { displayName: true } } },
+    }),
+    prisma.instructorAssignment.findMany({
+      where: { userId: targetId, termId: term.id },
+      select: { offering: { select: { title: true, type: true } } },
+    }),
+    prisma.technigalaAssignment.findMany({
+      where: { userId: targetId, termId: term.id },
+      select: { id: true },
+    }),
+  ]);
+}
+
+async function loadCompliance(
+  targetId: string,
+  term: { id: string; code: string } | null,
+  isStaff: boolean,
+): Promise<NonNullable<ProfilePageData["compliance"]>> {
+  const [staffedThisTerm, signed, staffingForms] = await Promise.all([
+    term
+      ? prisma.projectAssignment.findFirst({
+          where: { userId: targetId, termId: term.id },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+    listMySignedDocuments(targetId),
+    listMemberStaffingForms(targetId),
+  ]);
+  // Full-time staff are exempt from the student checklist, so they get no CE
+  // line even when staffed.
+  const ce =
+    term && staffedThisTerm && !isStaff
+      ? await (async () => {
+          const credits = await prisma.cECredit.count({
+            where: { userId: targetId, termId: term.id },
+          });
+          return { termCode: term.code, credits, compliant: credits >= 1 };
+        })()
+      : null;
+  return {
+    ce,
+    staffingForms,
+    agreements: signed.map((d) => ({
+      signatureId: d.signatureId,
+      bindingId: d.bindingId,
+      documentName: d.documentName,
+      context: d.context,
+      signedAt: d.signedAt.toISOString(),
+    })),
+  };
+}
+
+// Any lab mentor sees every pair and note here; the scope helpers only narrow
+// a non-mentor caller.
+async function loadMentorshipPanel(
+  viewerId: string,
+  targetId: string,
+): Promise<NonNullable<ProfilePageData["mentorshipPanel"]>> {
+  const [pairScope, noteScope] = await Promise.all([
+    mentorshipPairWhere(viewerId),
+    mentorNoteWhere(viewerId),
+  ]);
+  const [asMentor, asMentee, noteCount] = await Promise.all([
+    prisma.mentorshipPair.findMany({
+      where: { AND: [pairScope, { mentorUserId: targetId }] },
+      select: {
+        id: true,
+        mentee: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+        project: { select: { name: true } },
+        domain: { select: { code: true } },
+        term: { select: { code: true } },
+      },
+    }),
+    prisma.mentorshipPair.findMany({
+      where: { AND: [pairScope, { menteeUserId: targetId }] },
+      select: {
+        id: true,
+        mentor: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
+        project: { select: { name: true } },
+        domain: { select: { code: true } },
+        term: { select: { code: true } },
+      },
+    }),
+    prisma.mentorNote.count({
+      where: {
+        AND: [noteScope, { OR: [{ mentorId: targetId }, { menteeId: targetId }] }],
+      },
+    }),
+  ]);
+  const rawPairs = [
+    ...asMentor.map((p) => ({
+      id: p.id,
+      role: "mentor" as const,
+      counterpart: p.mentee,
+      projectName: p.project.name,
+      domainCode: p.domain.code,
+      termCode: p.term.code,
+    })),
+    ...asMentee.map((p) => ({
+      id: p.id,
+      role: "mentee" as const,
+      counterpart: p.mentor,
+      projectName: p.project.name,
+      domainCode: p.domain.code,
+      termCode: p.term.code,
+    })),
+  ];
+  // A member can appear in more than one pair; resolve each avatar once.
+  const counterpartPhotos = new Map(
+    await Promise.all(
+      [...new Map(rawPairs.map((p) => [p.counterpart.id, p.counterpart.photoUrl]))].map(
+        async ([id, raw]) => [id, await resolvePhotoUrl(raw)] as const,
+      ),
+    ),
+  );
+  return {
+    pairs: rawPairs.map((p) => ({
+      ...p,
+      counterpart: {
+        id: p.counterpart.id,
+        firstName: p.counterpart.firstName,
+        lastName: p.counterpart.lastName,
+        photoUrl: counterpartPhotos.get(p.counterpart.id) ?? null,
+      },
+    })),
+    recentNoteCount: noteCount,
+  };
+}
+
+async function redirectIfPendingOnboarding(userId: string): Promise<void> {
+  const membership = await prisma.dALIMember.findUnique({
+    where: { userId },
+    select: { onboardedAt: true },
+  });
+  if (!membership || membership.onboardedAt !== null) return;
+  const profileForm = await prisma.form.findFirst({
+    where: { name: NEW_MEMBER_PROFILE_FORM_NAME, published: true },
+    select: { publicToken: true },
+  });
+  if (!profileForm?.publicToken) return;
+  const submitted = await prisma.formSubmission.count({
+    where: { userId, form: { name: NEW_MEMBER_PROFILE_FORM_NAME } },
+  });
+  if (submitted === 0) throw redirect(`/forms/fill/${profileForm.publicToken}`);
+}
+
 export async function loadProfilePage({
   request,
   targetId,
@@ -271,34 +466,11 @@ export async function loadProfilePage({
 
   const isSelf = auth.user.sub === targetId;
 
-  // Onboarding gate: a member viewing their OWN profile while still pending
-  // the New Member Profile form gets bounced to the form. Other members
-  // viewing this profile do not trigger the gate.
-  if (isSelf) {
-    const membership = await prisma.dALIMember.findUnique({
-      where: { userId: targetId },
-      select: { onboardedAt: true },
-    });
-    if (membership && membership.onboardedAt === null) {
-      const profileForm = await prisma.form.findFirst({
-        where: { name: NEW_MEMBER_PROFILE_FORM_NAME, published: true },
-        select: { publicToken: true },
-      });
-      if (profileForm?.publicToken) {
-        const submitted = await prisma.formSubmission.count({
-          where: {
-            userId: targetId,
-            form: { name: NEW_MEMBER_PROFILE_FORM_NAME },
-          },
-        });
-        if (submitted === 0) {
-          throw redirect(`/forms/fill/${profileForm.publicToken}`);
-        }
-      }
-    }
-  }
+  const viewerId = auth.user.sub;
 
-  const member = await prisma.user.findUnique({
+  const [member, canManageEligibility, adminViewer, viewerIsLabMentor, term, roles, collabToken] =
+    await Promise.all([
+    prisma.user.findUnique({
     where: { id: targetId },
     select: {
       id: true,
@@ -354,88 +526,88 @@ export async function loadProfilePage({
         orderBy: { domain: { displayName: "asc" } },
       },
     },
-  });
+  }),
+      isCore(viewerId, request),
+      isAdmin(viewerId),
+      isSelf ? false : isLabMentor(viewerId, undefined, request),
+      currentTerm(request),
+      getUserRoles(targetId, request),
+      getCollabToken(request),
+      isSelf ? redirectIfPendingOnboarding(targetId) : undefined,
+    ]);
   if (!member) throw new Response("Not found", { status: 404 });
 
-  const [roles, term, allDomains, photoUrlResolved, presenceUser, canSeeGroups, memberGroups] =
-    await Promise.all([
-      getUserRoles(targetId),
-      currentTerm(),
-      prisma.domain.findMany({
-        where: { active: true },
-        select: { id: true, displayName: true },
-        orderBy: { displayName: "asc" },
-      }),
-      resolvePhotoUrl(member.photoUrl),
-      getPresenceUser(auth.user.sub),
-      canViewForms(auth.user.sub, request),
-      listActiveGroupsForUser(targetId, request),
-    ]);
+  const canEdit = adminViewer || isSelf;
+  const canSeeCompliance = isSelf || canManageEligibility;
+  const viewerCanSeeMentorshipPanel = !isSelf && (canManageEligibility || viewerIsLabMentor);
+  // Education engagement is for the member themself and Core, not peer browsing.
+  const canSeeEducation = isSelf || canManageEligibility;
+  const hideNotes = isImpersonating(auth);
+
+  const [
+    allDomains,
+    photoUrlResolved,
+    presenceUser,
+    canSeeGroups,
+    memberGroups,
+    { projectAssignmentRows, menteeCountByProjectDomain },
+    pendingReviews,
+    [coreTitles, domainLeadRows, instructorRows, technigalaRows],
+    notes,
+    sharedWithMe,
+    achievements,
+    favoriteIds,
+    compliance,
+    education,
+    coffeeChatSent,
+    resumeReviewSent,
+    mentorshipPanel,
+  ] = await Promise.all([
+    prisma.domain.findMany({
+      where: { active: true },
+      select: { id: true, displayName: true },
+      orderBy: { displayName: "asc" },
+    }),
+    resolvePhotoUrl(member.photoUrl),
+    getPresenceUser(viewerId),
+    canViewForms(viewerId, request),
+    listActiveGroupsForUser(targetId, request),
+    loadProjectAssignments(targetId, canManageEligibility, term),
+    prisma.applicationReview.count({
+      where: { cycleReviewer: { userId: targetId }, submittedAt: null },
+    }),
+    loadHiredRoles(targetId, term),
+    // An impersonating admin gets neither private notes on the profile they
+    // are wearing nor that member's "shared with me" inbox.
+    hideNotes ? Promise.resolve([]) : listProfileNotes(targetId, viewerId),
+    isSelf && !hideNotes ? listSharedWithMe(viewerId) : Promise.resolve([]),
+    achievementsForMember(targetId),
+    favoritePageIds(viewerId),
+    canSeeCompliance ? loadCompliance(targetId, term, roles.isStaff) : null,
+    canSeeEducation ? getEducationProfile(targetId) : null,
+    isSelf ? false : hasOutgoingCoffeeChat(viewerId, targetId),
+    isSelf ? false : hasOutgoingCoffeeChat(viewerId, targetId, "ResumeReview"),
+    viewerCanSeeMentorshipPanel ? loadMentorshipPanel(viewerId, targetId) : null,
+  ]);
 
   const profileGroups = memberGroups.filter((g) => {
     const kind = groupKind(g);
     return kind === "custom" || kind === "lab";
   });
-  // Keep every one: the member is in each, so none is an empty auto group.
   const groups = orderGroupsForPicker(profileGroups, profileGroups.map((g) => g.id)).map((g) => ({
     id: g.id,
     name: g.name,
     kind: groupKind(g),
   }));
 
-  const [projectAssignmentRows, pendingReviews] = await Promise.all([
-    prisma.projectAssignment.findMany({
-      where: { userId: targetId },
-      select: {
-        id: true,
-        level: true,
-        domainId: true,
-        projectId: true,
-        project: { select: { id: true, name: true, iconEmoji: true } },
-        domain: { select: { name: true } },
-        term: { select: { id: true, code: true, sortKey: true } },
-      },
-      orderBy: { project: { name: "asc" } },
-    }),
-    prisma.applicationReview.count({
-      where: { cycleReviewer: { userId: targetId }, submittedAt: null },
-    }),
-  ]);
-
-  const canManageEligibility = await isCore(auth.user.sub);
-  const adminViewer = await isAdmin(auth.user.sub);
-  const canEdit = adminViewer || isSelf;
-
-  // Wallet membership pass — only on your own profile. Core can also reset a
-  // member's pass.
   const wallet = isSelf
     ? { apple: walletAppleConfigured(), google: walletGoogleConfigured() }
     : null;
   const canRevokeWalletPass = isSelf || canManageEligibility;
 
-  // Inline level editing on the profile is Core-only and reuses the project-hub
-  // guards: a target level can't exceed the member's DomainEligibility ceiling
-  // for the domain, and a demotion is blocked while they still mentor someone
-  // on that (project, term, domain). The guard inputs are only fetched when the
-  // editor will actually render.
   const eligibilityByDomain = new Map(
     member.domainEligibilities.map((e) => [e.domain.id, e.level as string]),
   );
-  const menteeCountByProjectDomain = new Map<string, number>();
-  if (
-    canManageEligibility &&
-    term &&
-    projectAssignmentRows.some((a) => a.term.id === term.id)
-  ) {
-    const grouped = await prisma.mentorshipPair.groupBy({
-      by: ["projectId", "domainId"],
-      where: { mentorUserId: targetId, termId: term.id },
-      _count: { _all: true },
-    });
-    for (const g of grouped) {
-      menteeCountByProjectDomain.set(`${g.projectId}:${g.domainId}`, g._count._all);
-    }
-  }
   const projectHistory = groupAssignmentsByTerm(
     projectAssignmentRows,
     term?.id ?? null,
@@ -458,188 +630,14 @@ export async function loadProfilePage({
     ),
   }));
 
-  // Education engagement is for the member themself and Core — not peer
-  // browsing. Teaching history is public credit, but keeping one gate for the
-  // whole card is simpler until someone needs the split.
-  const education =
-    isSelf || canManageEligibility
-      ? await getEducationProfile(targetId)
-      : null;
-
-  // Mentorship panel: visible only when the viewer is a lab mentor (or Core)
-  // AND they are NOT looking at their own profile. Mentees never see
-  // anything about notes written about them. Any lab mentor sees every pair
-  // and note here — the scope helpers only narrow a non-mentor caller.
-  const viewerCanSeeMentorshipPanel = !isSelf
-    ? canManageEligibility || (await isLabMentor(auth.user.sub))
-    : false;
-  let mentorshipPanel: ProfilePageData["mentorshipPanel"] = null;
-  if (viewerCanSeeMentorshipPanel) {
-    const [pairScope, noteScope] = await Promise.all([
-      mentorshipPairWhere(auth.user.sub),
-      mentorNoteWhere(auth.user.sub),
-    ]);
-    const [asMentor, asMentee, noteCount] = await Promise.all([
-      prisma.mentorshipPair.findMany({
-        where: { AND: [pairScope, { mentorUserId: targetId }] },
-        select: {
-          id: true,
-          mentee: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
-          project: { select: { name: true } },
-          domain: { select: { code: true } },
-          term: { select: { code: true } },
-        },
-      }),
-      prisma.mentorshipPair.findMany({
-        where: { AND: [pairScope, { menteeUserId: targetId }] },
-        select: {
-          id: true,
-          mentor: { select: { id: true, firstName: true, lastName: true, photoUrl: true } },
-          project: { select: { name: true } },
-          domain: { select: { code: true } },
-          term: { select: { code: true } },
-        },
-      }),
-      prisma.mentorNote.count({
-        where: {
-          AND: [
-            noteScope,
-            { OR: [{ mentorId: targetId }, { menteeId: targetId }] },
-          ],
-        },
-      }),
-    ]);
-    const rawPairs = [
-      ...asMentor.map((p) => ({
-        id: p.id,
-        role: "mentor" as const,
-        counterpart: p.mentee,
-        projectName: p.project.name,
-        domainCode: p.domain.code,
-        termCode: p.term.code,
-      })),
-      ...asMentee.map((p) => ({
-        id: p.id,
-        role: "mentee" as const,
-        counterpart: p.mentor,
-        projectName: p.project.name,
-        domainCode: p.domain.code,
-        termCode: p.term.code,
-      })),
-    ];
-    // Resolve each distinct counterpart avatar once (a member can appear in
-    // more than one pair).
-    const counterpartPhotos = new Map(
-      await Promise.all(
-        [...new Map(rawPairs.map((p) => [p.counterpart.id, p.counterpart.photoUrl]))].map(
-          async ([id, raw]) => [id, await resolvePhotoUrl(raw)] as const,
-        ),
-      ),
-    );
-    mentorshipPanel = {
-      pairs: rawPairs.map((p) => ({
-        ...p,
-        counterpart: {
-          id: p.counterpart.id,
-          firstName: p.counterpart.firstName,
-          lastName: p.counterpart.lastName,
-          photoUrl: counterpartPhotos.get(p.counterpart.id) ?? null,
-        },
-      })),
-      recentNoteCount: noteCount,
-    };
-  }
-
-  // Hired roles: the positions this member actually holds this term. Admin is
-  // an access grant rather than a post, and "Lab Member" is what everyone on
-  // this page already is — neither is something you're hired into, so neither
-  // belongs here. Core titles and Domain Lead posts do, and they're listed by
-  // their real names rather than a generic label.
-  const [coreTitles, domainLeadRows, instructorRows, technigalaRows] = term
-    ? await Promise.all([
-        prisma.coreAssignment.findMany({
-          where: { userId: targetId, termId: term.id },
-          select: { leadTitle: true },
-        }),
-        prisma.domainLeadAssignment.findMany({
-          where: { userId: targetId, termId: term.id },
-          select: { domain: { select: { displayName: true } } },
-        }),
-        prisma.instructorAssignment.findMany({
-          where: { userId: targetId, termId: term.id },
-          select: { offering: { select: { title: true, type: true } } },
-        }),
-        prisma.technigalaAssignment.findMany({
-          where: { userId: targetId, termId: term.id },
-          select: { id: true },
-        }),
-      ])
-    : [[], [], [], []];
-
   const roleLabels = [
     ...coreTitles.map((c) => (c.leadTitle ? `Core — ${c.leadTitle}` : "Core")),
     ...domainLeadRows.map((d) => `${d.domain.displayName} Lead`),
     // Named by what they teach: "Instructor" alone doesn't identify a post, and
     // a member can hold several in one term.
     ...instructorRows.map((i) => instructorRoleLabel(i.offering.type, i.offering.title)),
-    // A termly Technigala-support hire (one row per member per term).
     ...(technigalaRows.length > 0 ? ["Technigala Support"] : []),
   ];
-
-  const collabToken = await getCollabToken(request);
-
-  // Personal notes for the rail. "Shared with me" is an inbox of your own, so
-  // it's only fetched when you're looking at your own profile.
-  // An impersonating admin gets neither: private notes on the profile they are
-  // wearing, nor that member's "shared with me" inbox.
-  const hideNotes = isImpersonating(auth);
-  const [notes, sharedWithMe, achievements, favoriteIds] = await Promise.all([
-    hideNotes ? Promise.resolve([]) : listProfileNotes(targetId, auth.user.sub),
-    isSelf && !hideNotes ? listSharedWithMe(auth.user.sub) : Promise.resolve([]),
-    achievementsForMember(targetId),
-    favoritePageIds(auth.user.sub),
-  ]);
-
-  // Own profile, or Core/Admin who need the compliance view. A peer has no
-  // business reading which agreements someone signed.
-  const canSeeCompliance = isSelf || canManageEligibility;
-  const compliance = canSeeCompliance
-    ? await (async () => {
-        const [staffedThisTerm, signed, staffingForms] = await Promise.all([
-          term
-            ? prisma.projectAssignment.findFirst({
-                where: { userId: targetId, termId: term.id },
-                select: { id: true },
-              })
-            : Promise.resolve(null),
-          listMySignedDocuments(targetId),
-          listMemberStaffingForms(targetId),
-        ]);
-        // Full-time staff are exempt from the student checklist, so they get no
-        // CE line even when staffed.
-        const exempt = roles.isStaff;
-        const ce =
-          term && staffedThisTerm && !exempt
-            ? await (async () => {
-                const credits = await prisma.cECredit.count({
-                  where: { userId: targetId, termId: term.id },
-                });
-                return { termCode: term.code, credits, compliant: credits >= 1 };
-              })()
-            : null;
-        return {
-          ce,
-          staffingForms,
-          agreements: signed.map((d) => ({
-            signatureId: d.signatureId,
-            bindingId: d.bindingId,
-            documentName: d.documentName,
-            context: d.context,
-            signedAt: d.signedAt.toISOString(),
-          })),
-        };
-      })()
-    : null;
 
   // Convert the raw People-API code to a label server-side; only the label
   // (gradProgram) crosses the wire, not the underlying department_class.
@@ -688,8 +686,8 @@ export async function loadProfilePage({
       resumeKey && resumeFileName && resumeUploadedAt && (isSelf || adminViewer)
         ? { fileName: resumeFileName, uploadedAt: resumeUploadedAt.toISOString(), sizeBytes: resumeSizeBytes }
         : null,
-    coffeeChatSent: isSelf ? false : await hasOutgoingCoffeeChat(auth.user.sub, targetId),
-    resumeReviewSent: isSelf ? false : await hasOutgoingCoffeeChat(auth.user.sub, targetId, "ResumeReview"),
+    coffeeChatSent,
+    resumeReviewSent,
     openTo: { coffeeChats: openToCoffeeChats, resumeReviews: openToResumeReviews },
     canEdit,
     canManageEligibility,

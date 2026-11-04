@@ -65,11 +65,16 @@ import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
-import { enhancePasteHandler } from "./enhance-render";
+import { docPasteHandler } from "./paste-embed";
+import { PasteAsMenu } from "./PasteAsMenu";
+import { createSelectAllPlugin } from "./select-all";
+import { createTableDragSelectPlugin } from "./table-drag-select";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
 import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { PageMentionTitleProvider, useMentionMenuItems } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
+import { TaskComposer } from "./task/TaskComposer";
+import { DocProjectProvider } from "./task/task-block-context";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
@@ -80,6 +85,7 @@ import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
 import { readEmojiSuggestionsPreference } from "~/lib/emoji-suggestions";
+import { isCommandKShortcut, paintFormatShortcut } from "~/lib/shortcuts";
 import { modalCardClass } from "~/components/os-chrome";
 
 export default function DocEditorImpl(props: DocEditorProps) {
@@ -99,7 +105,7 @@ function LocalDoc(props: ResolvedProps) {
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
   const toast = useToast();
-  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
+  const uploadFile = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   // Normalized once per (schema, content) pair; the editor is recreated on
   // schema/dictionary change anyway, so this rides the same memo.
   // Read-only embeds also drop the trailing blank line an author left; there
@@ -117,7 +123,7 @@ function LocalDoc(props: ResolvedProps) {
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
-      pasteHandler: enhancePasteHandler,
+      pasteHandler: docPasteHandler as never,
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
     },
     [schema, dictionary],
@@ -155,7 +161,7 @@ function CollabDocInner(
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
   const toast = useToast();
-  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
+  const uploadFile = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   const threadStore = useThreadStore(props.comments);
 
   const editor = useCreateBlockNote(
@@ -168,7 +174,7 @@ function CollabDocInner(
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
-      pasteHandler: enhancePasteHandler,
+      pasteHandler: docPasteHandler as never,
       // The edge-drop cursor is what turns "drag a block to the side of
       // another" into a column split; without it columns are slash-menu only.
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
@@ -537,8 +543,7 @@ function DocView(
     if (!pmView) return;
     const dom = pmView.dom as HTMLElement;
     const onKeyDown = (e: KeyboardEvent) => {
-      const isK = e.key === "k" || e.key === "K";
-      if (!isK || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (!isCommandKShortcut(e)) return;
       if (pmView.state.selection.empty) return; // nothing selected to link
       e.preventDefault();
       e.stopPropagation();
@@ -562,9 +567,9 @@ function DocView(
     return () => dom.removeEventListener("keydown", onKeyDown);
   }, [editor, editable, dialog]);
 
-  // Cmd/Ctrl+Shift+C / +V — paint format, the Google Docs pair. C snapshots the
-  // styles at the cursor, V replaces the selection's styles with that snapshot.
-  // Like Cmd+K above, BlockNote ships no binding for either.
+  // Cmd/Ctrl+Shift+C / +V — paint format. C snapshots the styles at the cursor,
+  // V replaces the selection's styles with that snapshot. Like Cmd+K above,
+  // BlockNote ships no binding for either.
   //
   // V CLEARS BEFORE IT APPLIES: paint format replaces formatting rather than
   // adding to it, and removeStyles only reads the KEYS of what it's handed
@@ -573,9 +578,8 @@ function DocView(
   // carry. Passing the snapshot alone would leave the target's existing bold
   // in place.
   //
-  // Both are gated on a non-empty selection, matching Cmd+K. Note Chrome binds
-  // Cmd+Shift+C to the DevTools inspector — preventDefault on the editor DOM is
-  // what keeps it from opening while the caret is in a document.
+  // Chrome binds Cmd+Shift+C to the DevTools inspector — preventDefault on the
+  // editor DOM is what keeps it from opening while the caret is in a document.
   const paintedStylesRef = useRef<Record<string, unknown> | null>(null);
   useEffect(() => {
     if (!editable) return;
@@ -583,18 +587,19 @@ function DocView(
     if (!pmView) return;
     const dom = pmView.dom as HTMLElement;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (key !== "c" && key !== "v") return;
-      if (pmView.state.selection.empty) return;
+      const painted = paintedStylesRef.current;
+      const intent = paintFormatShortcut(e, {
+        selection: !pmView.state.selection.empty,
+        copied: painted !== null,
+      });
+      if (!intent) return;
       e.preventDefault();
       e.stopPropagation();
-      if (key === "c") {
+      if (intent === "copy" || !painted) {
         paintedStylesRef.current = { ...editor.getActiveStyles() };
         return;
       }
-      const painted = paintedStylesRef.current;
-      if (!painted) return; // nothing copied yet — leave the selection alone
+      paintedStylesRef.current = null;
       const clearAll = Object.fromEntries(
         Object.keys(editor.schema.styleSchema).map((styleKey) => [styleKey, true]),
       );
@@ -624,6 +629,14 @@ function DocView(
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, props.findOpen]);
+
+  useEffect(() => {
+    const key = "dali-selection-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createTableDragSelectPlugin(), createSelectAllPlugin()] });
+    return () => {
+      editor.unregisterExtension(key);
+    };
+  }, [editor]);
 
   const hasComments = Boolean(props.comments);
   const panelOpen = props.comments?.panelOpen ?? false;
@@ -682,13 +695,18 @@ function DocView(
   const [emojiSuggestions] = useState(readEmojiSuggestionsPreference);
   const getMentionItems = useMentionMenuItems(editor);
 
+  const [taskAnchorId, setTaskAnchorId] = useState<string | null>(null);
+  const openTaskComposer = useCallback(() => setTaskAnchorId(editor.getTextCursorPosition().block.id), [editor]);
+  const taskBlock = props.taskBlock;
+
   const menus: ReactNode = (
     <>
+      <PasteAsMenu editor={editor} />
       {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
       <SuggestionMenuController
         triggerCharacter="/"
         getItems={(query) =>
-          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [])
+          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [], taskBlock ? openTaskComposer : undefined)
         }
       />
       {features.mentions && (
@@ -755,6 +773,15 @@ function DocView(
           )
         }
       </CommentEditorProvider>
+      {taskBlock && taskAnchorId && (
+        <TaskComposer
+          key={taskAnchorId}
+          editor={editor}
+          anchorId={taskAnchorId}
+          config={taskBlock}
+          onClose={() => setTaskAnchorId(null)}
+        />
+      )}
       {/* AI inline card — anchored to the trigger block via BlockPopover.
           Rendered inside BlockNoteView children so useBlockNoteEditor is in
           scope (BlockPopover requires the editor context). Only mounts when
@@ -780,6 +807,7 @@ function DocView(
   return (
     <PageMentionTitleProvider>
     <SigningContext.Provider value={props.signing ?? DEFAULT_SIGNING_CTX}>
+    <DocProjectProvider value={props.docProjectId}>
       <div
         ref={viewRef}
         className={[
@@ -848,6 +876,7 @@ function DocView(
           />
         </Modal>
       )}
+    </DocProjectProvider>
     </SigningContext.Provider>
     </PageMentionTitleProvider>
   );

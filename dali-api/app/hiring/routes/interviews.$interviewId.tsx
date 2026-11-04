@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useLoaderData, useSearchParams } from 'react-router'
 import { redirect } from 'react-router'
 import { Check, Video, MapPin, Users } from 'lucide-react'
-import { prisma } from '~/lib/db'
+import { prisma } from '~/lib/db.server'
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { resolvePhotoUrl } from '~/lib/photo'
@@ -15,7 +15,6 @@ import { safeParseJsonString } from '~/forms/lib/forms-data'
 import { DocEditor, EnhanceReviewContext } from '~/components/doc'
 import { interviewNotesRoomName } from '~/collab/roomName'
 import { latestRecordingFor } from '~/lib/meeting-recording.server'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { MeetingRecorder } from '~/components/MeetingRecorder'
 import { RecordingPresencePill } from '~/components/RecordingPresencePill'
 import { RecordingMount } from '~/components/meeting-recorder/RecordingMount'
@@ -33,14 +32,14 @@ import { buildCriteriaLabelMap } from '~/hiring/lib/rubric-criteria'
 import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_TONES } from '~/hiring/lib/labels'
+import { viewerAssignment } from '~/hiring/lib/interview-status'
 import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
 import { Select, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from '~/components/os-chrome'
 import { buttonClasses } from '~/components/ui/Button'
 import { cn } from '~/lib/cn'
 import { getUserRoles } from '~/lib/roles'
-import { isFeatureEnabled } from '~/lib/feature-flags.server'
-import { applicationBlindLabel } from '~/hiring/lib/anonymization.server'
+import { domainApplicationBlindLabel } from '~/hiring/lib/anonymization.server'
 import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
 import { getApplicantEmailEngagement } from '~/hiring/lib/email-engagement.server'
 import { getHiringEventEngagement } from '~/hiring/lib/hiring-events.server'
@@ -99,7 +98,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: {
               user: true,
               applicationFormVersion: { select: { questions: true, intro: true } },
-              applicationCycle: { select: { anonymizeReview: true, name: true } },
+              applicationCycle: { select: { name: true } },
             },
           },
           challengeFormVersion: { select: { questions: true, intro: true } },
@@ -118,9 +117,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (!interview) throw redirect('/hiring?view=interviews')
 
-  const myAssignment = interview.assignments.find(
-    (a: any) => a.cycleInterviewer.userId === auth.user.sub,
-  )
+  const myAssignment = viewerAssignment(interview, auth.user.sub)
 
   if (!myAssignment) throw redirect('/hiring?view=interviews')
 
@@ -217,22 +214,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
   const userName = presenceUser?.name ?? fallbackName
 
-  // Same applicant context the review page shows. Blinding follows the
-  // applicant-wide release, which is also what gates the email thread modal.
+  // Same applicant context the review page shows.
   const application = interview.domainApplication.application
   const blinded =
-    (await applicationBlindLabel({
+    (await domainApplicationBlindLabel({
       cycleId: interview.applicationCycleId,
-      applicationId: application.id,
-      anonymizeReview: application.applicationCycle.anonymizeReview,
+      domainApplicationId: interview.domainApplication.id,
     })) != null
   const roles = await getUserRoles(auth.user.sub, request)
   const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement, latestRecordingRow] =
     await Promise.all([
       getEducationEngagement(application.userId),
-      isFeatureEnabled('application-events', auth.user.sub, roles, request).then((on) =>
-        on ? getHiringEventEngagement(application.userId) : [],
-      ),
+      getHiringEventEngagement(application.userId),
       listPriorApplications({
         userId: application.userId,
         currentApplicationId: application.id,
@@ -380,7 +373,6 @@ export default function InterviewDetailPage() {
   const isCompleted = completedFlag === 'completed'
   const notesRoom = interviewNotesRoomName(interview.id)
   const [searchParams] = useSearchParams()
-  const recordingEnabled = useFeatureFlag('ai-meeting-notes')
   const hasTranscriptParam = Boolean(searchParams.get('transcript'))
   const { editorRef, onEditorReady, hookProps: recordingEditorProps } = useRecordingEditor({
     notePath: `/hiring/interviews/${interview.id}`,
@@ -555,7 +547,7 @@ export default function InterviewDetailPage() {
           )}
 
           <RecordingMount
-            enabled={recordingEnabled && !!collabToken && (!isCompleted || hasTranscriptParam)}
+            enabled={!!collabToken && (!isCompleted || hasTranscriptParam)}
             documentName={notesRoom}
             canEdit={!isCompleted}
             isCore={isCore}

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify-stream.server", () => ({
   publishNotificationChange: vi.fn(),
 }));
@@ -8,7 +8,7 @@ vi.mock("~/members/lib/welcome.server", () => ({
   ONBOARDING_EVENT_TYPE: "member.onboarding",
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import {
   runMarkNotificationRead,

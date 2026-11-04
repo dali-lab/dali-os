@@ -7,7 +7,8 @@
 import type { Route } from "./+types/api.members.$id.resume";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
+import { claimAiQuota } from "~/lib/ai-quota.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles, isAdmin } from "~/lib/roles";
@@ -17,7 +18,6 @@ import { checkRateLimit } from "~/lib/rate-limit";
 import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s3";
 import { extractJobsFromPdf } from "~/members/lib/resume-extract.server";
 import type { ImportedJob } from "~/members/lib/work-history-import";
-import { AI_DAILY_MAX, secondsToUtcMidnight } from "./api.ai.meeting-notes";
 
 export const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46, 0x2d];
@@ -84,13 +84,9 @@ async function extract(
   if (!isAiEnabled()) return { extractError: "ai_unavailable" };
   if (checkRateLimit(request, EXTRACT_BURST, `ai-work-history:${userId}`)) return { extractError: "rate" };
 
-  const day = new Date().toISOString().slice(0, 10);
-  const usage = await prisma.aiUsage.upsert({
-    where: { userId_day: { userId, day } },
-    create: { userId, day, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-  if (usage.count > AI_DAILY_MAX) return { extractError: "quota" };
+  const quota = await claimAiQuota(userId);
+  if (!quota.ok) return { extractError: "quota" };
+  const { day } = quota;
 
   try {
     const result = await extractJobsFromPdf(bytes);

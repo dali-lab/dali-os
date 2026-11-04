@@ -12,7 +12,7 @@
 //
 // What is NOT copied: DocComment rows (Notion behaviour — copies start clean).
 
-import { prisma, Prisma } from "~/lib/db";
+import { prisma, Prisma } from "~/lib/db.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { pageDocName } from "~/collab/roomName";
 import type { WorkspaceType, PageKind } from "~/generated/prisma/client";

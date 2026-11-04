@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.pages.$id.share";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isLabMember } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import {
   addPageShare,

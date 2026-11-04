@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn() },
     dALIMember: { findUnique: vi.fn() },
@@ -22,7 +22,7 @@ vi.mock("~/lib/outbound.server", () => ({
   drainNow: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import {
   acceptPartnerInvite,

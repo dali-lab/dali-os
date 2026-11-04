@@ -10,7 +10,6 @@ import {
   ClipboardPen,
   Clock,
   DoorOpen,
-  Flag,
   Files,
   FileSignature,
   FileText,
@@ -272,7 +271,6 @@ const REGROUPED_AREAS: NavArea[] = [
     description: "Staffing, payroll, processes",
     gate: (r) => r.isCore,
     subtabs: [
-      { label: "Milestones", href: "/core", icon: Flag },
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Partners", href: "/core/partners", icon: Handshake },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
@@ -284,9 +282,6 @@ const REGROUPED_AREAS: NavArea[] = [
       // system administration. It renders its own Core compliance console.
       { label: "Agreements", href: "/core/agreements", icon: FileSignature },
       { label: "Drive folders", href: "/core/drive-folders", icon: FolderCog },
-      // Room and door-display management. The member-facing booking page sits
-      // in the top bar (see ROOM_BOOKING_NAV_ITEM).
-      { label: "Rooms", href: "/core/rooms", icon: DoorOpen },
     ],
   },
   {
@@ -436,7 +431,7 @@ function areasForViewer(
 export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/rooms", icon: DoorOpen };
 
 // Both area sets at once. isAreaSubtabPath and the icon map are read from places
-// with no flag context — the favorites star (FavoriteRouteButton), the
+// with no flag context — the topbar favorites star, the
 // favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side. Both
 // the legacy (NAV_AREAS) and current (areasFor) regrouped sets are included so a
 // favorite saved under the old nav still resolves its area and icon.
@@ -445,10 +440,9 @@ const ALL_AREAS: NavArea[] = [
   ...areasFor({ community: true, "onboarding-journeys": true }),
 ];
 
-// These matchers are handed a live URL, not a bare pathname: in tab mode the
-// sidebar tracks the focused tab, whose url keeps its query string (layout.tsx
-// cleanUrl), and favorites are stored as `pathname + search`
-// (FavoriteRouteButton). An area and its sub-tab are a function of the path
+// These matchers are handed a live URL, not a bare pathname: the sidebar
+// keeps the query string, and favorites are stored as `pathname + search`
+// (the topbar star). An area and its sub-tab are a function of the path
 // alone, so trim the query/hash before matching — otherwise
 // /projects/staffing?term=25F matches no sub-tab and drops the sidebar back to
 // the bare area.
@@ -568,7 +562,7 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
 // sub-tab claims the exact filtered url: Core ▸ Agreements lives at
 // /drive?type=agreement but belongs to Core, so the Drive pin must NOT light up
 // there. Handed a live url (pathname + search) like the other matchers, so the
-// query is visible in tabless mode too (there `location.pathname` drops it).
+// query is visible (`location.pathname` alone drops it).
 export function isPinnedActive(
   path: string,
   href: string,
@@ -586,7 +580,7 @@ export function isPinnedActive(
  * Does this page render its own horizontal nav row? Only `areaSubnav` pages
  * (e.g. calendar) do — the dali.os shell owns every other area's sub-navigation
  * from the sidebar. Anything that stands down "because the page has its own
- * row" (the tabless history arrows) asks this so it doesn't double the row.
+ * row" (the history arrows) asks this so it doesn't double the row.
  */
 export function hasSubnavRow(
   matches: readonly { handle?: unknown }[],

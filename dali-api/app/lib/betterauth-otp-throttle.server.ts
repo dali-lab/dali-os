@@ -82,7 +82,7 @@ export async function throttleOtpSend(ctx: any): Promise<void> {
 
   let limited = false;
   try {
-    const { prisma } = await import("~/lib/db");
+    const { prisma } = await import("~/lib/db.server");
     const now = Date.now();
     const recent = { action: REQUEST_ACTION, createdAt: { gte: new Date(now - OTP_SEND_WINDOW_MS) } };
     const [emailRequests, byIp, byIpDay] = await Promise.all([
@@ -134,7 +134,7 @@ export async function throttleOtpSend(ctx: any): Promise<void> {
 
 async function maybeAutoBlock(ip: string): Promise<void> {
   try {
-    const { prisma } = await import("~/lib/db");
+    const { prisma } = await import("~/lib/db.server");
     const throttles = await prisma.auditLog.count({
       where: {
         action: THROTTLED_ACTION,

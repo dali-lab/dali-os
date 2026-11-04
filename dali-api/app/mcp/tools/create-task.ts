@@ -1,7 +1,7 @@
 // MCP `create_task` — create a Task on a project. Mirrors
 // api.projects.$id.tasks (Core or project member). Optionally mirrors to GitHub.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { isTaskStatus, TASK_STATUSES } from "~/projects/lib/task-board";
 import { createIssueForTask, normalizeRepo } from "~/projects/lib/github-task-sync";

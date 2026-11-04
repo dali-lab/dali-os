@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Prisma } from "~/generated/prisma/client";
 import { delibRounds, parseTimeline } from "./cycle-timeline";
 

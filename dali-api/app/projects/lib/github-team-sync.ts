@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { ensureTeam, addTeamMember, grantTeamRepo, isNotFound, isNo2fa } from "~/lib/github";
 import { normalizeRepo } from "~/projects/lib/github-task-sync";
 import { currentTerm } from "~/lib/roles";

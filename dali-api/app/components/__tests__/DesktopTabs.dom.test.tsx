@@ -183,6 +183,46 @@ describe("useDesktopTabs", () => {
     expect(tabs()).toEqual(["/b"]);
     expect(location).toBe("/b");
   });
+
+  it("cycles tabs with ⌘⇧[ ⌘⇧] and ⌃Tab ⌃⇧Tab, wrapping at the ends, and claims the key", async () => {
+    await mount();
+    await act(async () => {
+      mod.store.tabActions.open({ url: "/b", label: "B" });
+    });
+    await flush();
+    expect(location).toBe("/b");
+    const press = async (init: KeyboardEventInit) => {
+      const e = new KeyboardEvent("keydown", { cancelable: true, ...init });
+      await act(async () => {
+        window.dispatchEvent(e);
+      });
+      await flush();
+      return e;
+    };
+    expect((await press({ metaKey: true, shiftKey: true, key: "}" })).defaultPrevented).toBe(true);
+    expect(location).toBe("/a");
+    await press({ metaKey: true, shiftKey: true, key: "{" });
+    expect(location).toBe("/b");
+    await press({ ctrlKey: true, key: "Tab" });
+    expect(location).toBe("/a");
+    await press({ ctrlKey: true, shiftKey: true, key: "Tab" });
+    expect(location).toBe("/b");
+  });
+
+  it("leaves Tab for focus movement", async () => {
+    await mount();
+    await act(async () => {
+      mod.store.tabActions.open({ url: "/b", label: "B" });
+    });
+    await flush();
+    const e = new KeyboardEvent("keydown", { cancelable: true, key: "Tab" });
+    await act(async () => {
+      window.dispatchEvent(e);
+    });
+    await flush();
+    expect(e.defaultPrevented).toBe(false);
+    expect(location).toBe("/b");
+  });
 });
 
 describe("DesktopTabStrip", () => {
@@ -323,10 +363,68 @@ describe("DesktopTabStrip", () => {
     expect(second.querySelector("svg.h-4")).not.toBeNull();
   });
 
+  describe("the tab of a note being recorded", () => {
+    const withNotes = {
+      tabs: [
+        { ...snapshot.tabs[0], url: "/documents/a?tab=1", origin: "/documents/a", label: "Note A", emoji: "🌲" },
+        { ...snapshot.tabs[1], url: "/documents/b", origin: "/documents/b", label: "Note B" },
+      ],
+      activeId: "s2",
+      closed: [],
+    };
+    const dots = () => strip().querySelectorAll("[data-testid='tab-recording-dot']");
+
+    async function record(status: "Pending" | "Recording" | "Stopped") {
+      const live = await import("~/components/meeting-recorder/live-session");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          Response.json({
+            recording: { id: "r1", documentName: "doc:a:body", status, title: "Note A", href: "/documents/a", sessionSeconds: null },
+          }),
+        ),
+      );
+      await act(async () => {
+        live.adoptDesktopSession({ recordingId: "r1", documentName: "doc:a:body", status: "recording", startedAt: 1 });
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+
+    afterEach(async () => {
+      const live = await import("~/components/meeting-recorder/live-session");
+      live.resetLiveSession();
+      vi.unstubAllGlobals();
+    });
+
+    it("replaces that tab's emoji with a red dot and leaves the other tab alone", async () => {
+      await mountStrip({ enabled: false, initial: withNotes });
+      expect(dots()).toHaveLength(0);
+      await record("Recording");
+      expect(dots()).toHaveLength(1);
+      const [first, second] = tabButtons();
+      expect(first.querySelector("[data-testid='tab-recording-dot']")).not.toBeNull();
+      expect(first.textContent).not.toContain("🌲");
+      expect(second.querySelector("[data-testid='tab-recording-dot']")).toBeNull();
+    });
+
+    it("shows the dot while the recording is starting", async () => {
+      await mountStrip({ enabled: false, initial: withNotes });
+      await record("Pending");
+      expect(dots()).toHaveLength(1);
+    });
+
+    it("drops the dot once the recording has stopped", async () => {
+      await mountStrip({ enabled: false, initial: withNotes });
+      await record("Stopped");
+      expect(dots()).toHaveLength(0);
+      expect(tabButtons()[0].textContent).toContain("🌲");
+    });
+  });
+
   describe("looking up a background document's emoji", () => {
     let fetchMock: ReturnType<typeof vi.fn>;
     beforeEach(() => {
-      fetchMock = vi.fn(async () => Response.json({ iconEmoji: "🌲" }));
+      fetchMock = vi.fn(async () => Response.json({ emojis: { d1: "🌲" } }));
       vi.stubGlobal("fetch", fetchMock);
     });
     afterEach(() => vi.unstubAllGlobals());
@@ -337,9 +435,24 @@ describe("DesktopTabStrip", () => {
       await mountStrip();
       await act(async () => mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true }));
       await flush();
-      expect(fetchMock).toHaveBeenCalledWith("/api/documents/d1");
+      expect(fetchMock).toHaveBeenCalledWith("/api/documents/emojis?ids=d1");
       expect(docTab()?.emoji).toBe("🌲");
       expect(strip().textContent).toContain("🌲");
+    });
+
+    it("asks for several tabs in one request", async () => {
+      fetchMock.mockImplementation(async () => Response.json({ emojis: { d1: "🌲", d2: "🍂" } }));
+      await mountStrip();
+      await act(async () => {
+        mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true });
+        mod.store.tabActions.open({ url: "/documents/d2", label: "Doc 2" }, { background: true });
+      });
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const ids = new URL(fetchMock.mock.calls[0][0], "http://localhost").searchParams.get("ids");
+      expect(ids?.split(",").sort()).toEqual(["d1", "d2"]);
+      expect(docTab()?.emoji).toBe("🌲");
+      expect(mod.store.getTabsSnapshot().tabs.find((t) => t.url === "/documents/d2")?.emoji).toBe("🍂");
     });
 
     it("skips a tab that already has one, the active tab, and pages that aren't documents", async () => {
@@ -354,13 +467,16 @@ describe("DesktopTabStrip", () => {
     });
 
     it("asks once for a page with no emoji", async () => {
-      fetchMock.mockImplementation(async () => Response.json({ iconEmoji: null }));
+      fetchMock.mockImplementation(async () => Response.json({ emojis: { d1: null, d2: null } }));
       await mountStrip();
       await act(async () => mod.store.tabActions.open({ url: "/documents/d1", label: "Doc" }, { background: true }));
       await flush();
       await act(async () => mod.store.tabActions.open({ url: "/documents/d2", label: "Doc 2" }, { background: true }));
       await flush();
-      expect(fetchMock.mock.calls.filter(([url]) => url === "/api/documents/d1")).toHaveLength(1);
+      expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+        "/api/documents/emojis?ids=d1",
+        "/api/documents/emojis?ids=d2",
+      ]);
       expect(docTab()).not.toHaveProperty("emoji");
     });
 

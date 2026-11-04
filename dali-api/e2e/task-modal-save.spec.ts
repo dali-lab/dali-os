@@ -49,7 +49,7 @@ test.describe('Task modal save', () => {
     expect(created.ok()).toBe(true);
     const { id } = (await created.json()) as { id: string };
 
-    await page.goto(`/projects/${PROJECT_ID}?tab=board&embed=1&task=${id}`);
+    await page.goto(`/projects/${PROJECT_ID}?tab=board&task=${id}`);
     await page.waitForLoadState('networkidle');
 
     await page.getByRole('button', { name: 'Edit task' }).click();
@@ -65,7 +65,7 @@ test.describe('Task modal save', () => {
     expect((await saved).ok()).toBe(true);
 
     // Reload: what shows now is what the server kept, not the optimistic card.
-    await page.goto(`/projects/${PROJECT_ID}?tab=board&embed=1`);
+    await page.goto(`/projects/${PROJECT_ID}?tab=board`);
     await page.waitForLoadState('networkidle');
     const card = page
       .locator(COLUMN)

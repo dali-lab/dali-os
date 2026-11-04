@@ -13,9 +13,18 @@ export function resolveRange(raw: string | null) {
   return RANGE_OPTIONS.find((r) => r.key === raw) ?? RANGE_OPTIONS[1];
 }
 
+/** Insights only: the infra charts that share RANGE_OPTIONS stay on presets. */
+export const ALL_TIME = { key: "all", label: "All time" } as const;
+export const INSIGHTS_RANGE_OPTIONS = [...RANGE_OPTIONS, ALL_TIME] as const;
+export type InsightsRangeKey = RangeKey | typeof ALL_TIME.key;
+
+export function wantsAllTime(params: URLSearchParams): boolean {
+  return params.get("range") === ALL_TIME.key;
+}
+
 export type InsightsWindow = {
   /** The preset in use, or null for a dragged custom range. */
-  key: RangeKey | null;
+  key: InsightsRangeKey | null;
   since: Date;
   until: Date;
   firstDay: string;
@@ -31,7 +40,12 @@ export type InsightsWindow = {
  * `?from=&to=` (UTC days, both included) wins over `?range=` when both ends
  * are valid days in order and not in the future.
  */
-export function resolveWindow(params: URLSearchParams, now = new Date()): InsightsWindow {
+export function resolveWindow(
+  params: URLSearchParams,
+  now = new Date(),
+  /** Oldest recorded row, so `?range=all` charts from the first day of data. */
+  earliest: Date | null = null,
+): InsightsWindow {
   const today = dayKey(now);
   const from = params.get("from");
   const to = params.get("to");
@@ -46,6 +60,19 @@ export function resolveWindow(params: URLSearchParams, now = new Date()): Insigh
       days: daysInclusive(from, to),
       label,
       phrase: label,
+    };
+  }
+  if (wantsAllTime(params)) {
+    const firstDay = earliest && dayKey(earliest) < today ? dayKey(earliest) : today;
+    return {
+      key: ALL_TIME.key,
+      since: new Date(0),
+      until: new Date(`${addDays(today, 1)}T00:00:00Z`),
+      firstDay,
+      lastDay: today,
+      days: daysInclusive(firstDay, today),
+      label: ALL_TIME.label,
+      phrase: "the full history",
     };
   }
   const range = resolveRange(params.get("range"));

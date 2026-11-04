@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     pageShare: { findMany: vi.fn() },
     user: { findMany: vi.fn() },
@@ -21,7 +21,7 @@ vi.mock("~/lib/groups", () => ({
   listVisibleGroupIdsForUser: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { listVisibleGroupIdsForUser } from "~/lib/groups";
 import { loadSharedWithMe } from "~/lib/drive-shared.server";

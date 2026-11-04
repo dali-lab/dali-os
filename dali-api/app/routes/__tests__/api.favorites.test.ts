@@ -14,7 +14,7 @@ vi.mock("~/lib/user-pages.server", async (importOriginal) => ({
   setRouteFavorite: vi.fn(),
   reorderFavorites: vi.fn(),
 }));
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 import { requireMemberSession } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";

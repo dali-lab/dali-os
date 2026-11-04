@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Staffing is always open: exactly one StaffingCycle per term (enforced by
 // StaffingCycle.termId @unique), auto-created the first time that term's

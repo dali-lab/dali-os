@@ -4,27 +4,23 @@ import {
   redirect,
   useActionData,
   useLoaderData,
-  useNavigate,
   useSearchParams,
 } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/members";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createOrPromoteMember,
   MemberInputError,
   PROFILE_TEXT_FIELDS,
 } from "~/members/lib/membership.server";
-import { fullName, primaryEmail } from "~/lib/display";
-import { Avatar } from "~/components/ui/Avatar";
-import { MoreHorizontal } from "lucide-react";
-import { Menu, MenuItem } from "~/components/ui/floating";
-import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
-import { NewDot, BirthdayBadge } from "~/members/components/WarmthBadges";
+import { primaryEmail } from "~/lib/display";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { deriveCoreTitles } from "~/lib/core-titles";
@@ -48,32 +44,13 @@ import {
 } from "~/projects/components/ColumnFilters";
 import type { ColumnFilter } from "~/projects/lib/submission-filters";
 import { cn } from "~/lib/cn";
+import {
+  MembersTable,
+  type MemberRow,
+  type MemberStatus,
+} from "~/members/components/MembersTable";
 export const meta: Route.MetaFunction = () => [{ title: "Directory · People · DALI OS" }];
 
-type MemberRow = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  email: string | null;
-  pronouns: string | null;
-  classYear: number | null;
-  // Grad/professional school label ("Thayer" etc.) shown in place of a class
-  // year for enrolled grad students; null for undergrads and employees.
-  gradProgram: string | null;
-  photoUrl: string | null;
-  // Full-time staff (AdminMembership.isStaff) — shown as a Staff badge.
-  isStaff: boolean;
-  coreTitles: string[];
-  // Each domain the member is eligible for, with their level — rendered as
-  // pills in the Roles column. Same source as the staffing boards.
-  domainRoles: { domainName: string; level: string }[];
-  // Warmth surfaces: "New" pill (recently joined) + 🎂 on the day.
-  createdAt: string;
-  onboardedAt: string | null;
-  birthday: string | null;
-  // What the filter builder matches against, keyed by FILTER_COLUMNS.
-  cells: Record<string, string | string[]>;
-};
 
 // The filter bar's columns. A list-valued cell (domains, projects, roles,
 // companies) matches a picked value on any one of its entries.
@@ -88,10 +65,14 @@ const FILTER_COLUMNS: FilterColumn[] = [
   { key: "hometown", label: "Hometown", icon: Home },
 ];
 
-type MemberStatus = "active" | "alumni";
-
 function parseStatus(raw: string | null): MemberStatus {
   return raw === "alumni" ? "alumni" : "active";
+}
+
+// Search and the filter builder run in the browser. ?status= scopes the
+// loader; the old ?domain= / ?project= / ?class= links only seed filters.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["status", "domain", "project", "class"]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -272,9 +253,9 @@ export default function MembersList() {
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
 
-  const columnFilters = useColumnFilters(FILTER_COLUMNS, initialFilters);
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, initialFilters, { inUrl: true });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -408,7 +389,11 @@ export default function MembersList() {
             : "No members match."}
         </div>
       ) : (
-        <MembersTable rows={filtered} status={status} />
+        <MembersTable
+          rows={filtered}
+          status={status}
+          resetKey={JSON.stringify([status, query, columnFilters.active])}
+        />
       )}
     </div>
   );
@@ -472,133 +457,5 @@ function CreateField({
         className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
       />
     </label>
-  );
-}
-
-// A small, neutral role tag: quiet enough to sit several to a row, with a hairline
-// outline so neighbouring roles stay distinct.
-function RoleTag({ children, title }: { children: React.ReactNode; title?: string }) {
-  return (
-    <span
-      title={title}
-      className="inline-flex items-center rounded-md border border-border/60 px-1.5 py-px text-[11px] leading-4 text-muted-foreground"
-    >
-      {children}
-    </span>
-  );
-}
-
-function MembersTable({ rows, status }: { rows: MemberRow[]; status: MemberStatus }) {
-  const navigate = useNavigate();
-  // Alumni view swaps the Roles column for Class — roles are largely historical
-  // for alumni, and class year is the more useful axis.
-  const showClass = status === "alumni";
-  const open = (m: MemberRow) => {
-    const url = `/members/${m.id}`;
-    const label = fullName(m) || "Member";
-    if (!requestOpenTabIfEmbedded(url, label)) navigate(url);
-  };
-  return (
-    <div className="max-w-5xl overflow-x-auto">
-      <table className="w-full min-w-[520px] table-fixed text-sm">
-        <colgroup>
-          <col className="w-[46%]" />
-          <col />
-          <col className="w-12" />
-        </colgroup>
-        <thead>
-          <tr className="border-b border-border/40 text-[11px] font-medium text-muted-foreground/80">
-            <th className="px-3 py-2 text-left font-medium">Member</th>
-            <th className="px-3 py-2 text-left font-medium">{showClass ? "Class" : "Roles"}</th>
-            <th className="px-3 py-2">
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((m) => {
-            const name = fullName(m) || "Member";
-            const isNew =
-              status === "active" &&
-              isNewMember(
-                {
-                  onboardedAt: m.onboardedAt ? new Date(m.onboardedAt) : null,
-                  createdAt: new Date(m.createdAt),
-                },
-                new Date(),
-              );
-            return (
-              <tr
-                key={m.id}
-                onClick={() => open(m)}
-                className="cursor-pointer border-t border-border/30 first:border-t-0 transition-colors hover:bg-muted/30"
-              >
-                <td className="px-3 py-1.5">
-                  <div className="flex items-center gap-3">
-                    <Avatar photoUrl={m.photoUrl} name={name} size="sm" userId={m.id} className="flex-shrink-0" />
-                    <div className="flex min-w-0 flex-col leading-tight">
-                      <span className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium text-foreground">
-                          {m.firstName} {m.lastName}
-                        </span>
-                        {isNew && <NewDot />}
-                        {m.birthday && isBirthdayToday(new Date(m.birthday), new Date()) && <BirthdayBadge />}
-                        {m.isStaff && <RoleTag>Staff</RoleTag>}
-                      </span>
-                      {m.email && <span className="truncate text-xs text-muted-foreground">{m.email}</span>}
-                    </div>
-                  </div>
-                </td>
-                <td className="px-3 py-1.5">
-                  {showClass ? (
-                    <span className="text-xs text-muted-foreground">
-                      {m.classYear ? `Class of ${m.classYear}` : (m.gradProgram ?? "—")}
-                    </span>
-                  ) : m.coreTitles.length === 0 && m.domainRoles.length === 0 ? (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  ) : (
-                    <span className="flex flex-wrap gap-1">
-                      {m.coreTitles.map((t) => (
-                        <RoleTag key={`core-${t}`} title={`Core role: ${t}`}>
-                          {t}
-                        </RoleTag>
-                      ))}
-                      {m.domainRoles.map((r, i) => (
-                        <RoleTag
-                          key={`domain-${r.domainName}-${i}`}
-                          title={r.level ? `Domain Lead for ${r.domainName} (Level ${r.level})` : `Domain Lead for ${r.domainName}`}
-                        >
-                          {r.domainName}
-                        </RoleTag>
-                      ))}
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-1.5 text-right" onClick={(e) => e.stopPropagation()}>
-                  <Menu
-                    align="right"
-                    ariaLabel={`Actions for ${name}`}
-                    trigger={
-                      <button
-                        type="button"
-                        aria-label={`Actions for ${name}`}
-                        className="rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
-                      >
-                        <MoreHorizontal className="h-4 w-4" aria-hidden />
-                      </button>
-                    }
-                  >
-                    <MenuItem onSelect={() => open(m)}>View profile</MenuItem>
-                    {m.email && (
-                      <MenuItem onSelect={() => void navigator.clipboard?.writeText(m.email!)}>Copy email</MenuItem>
-                    )}
-                  </Menu>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
   );
 }

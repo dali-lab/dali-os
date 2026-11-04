@@ -348,7 +348,13 @@ describe("Rail compact sizing", () => {
 
 describe("Rail section order", () => {
   const fav = { id: "p1", title: "Roadmap", href: "/documents/p1", iconKind: "page", isRoute: false } as unknown as RailProps["favorites"][number];
-  const meeting = { meetingId: "m1", title: "Weekly sync", startsAt: "2026-10-14T18:00:00Z", href: "/documents/n1" };
+  const meeting = {
+    meetingId: "m1",
+    title: "Weekly sync",
+    startsAt: "2026-10-14T18:00:00Z",
+    endsAt: "2026-10-14T18:30:00Z",
+    href: "/documents/n1",
+  };
   const lab = area("lab");
 
   // Each section sits right after its own divider; the last divider belongs to the account row.

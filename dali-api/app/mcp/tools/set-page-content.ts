@@ -6,7 +6,7 @@
 // from Version history). Gate mirrors the web's getPageAccess canEdit check
 // — works for Project, Lab, and personal-note (Member) workspace pages.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
@@ -19,7 +19,7 @@ export const MAX_MARKDOWN_LENGTH = 300_000;
 export const SET_PAGE_CONTENT_TOOL = {
   name: "set_page_content",
   description:
-    "Replace a page's body with content rendered from Markdown (headings, lists, quotes, code blocks, links, bold/italic/strike, and images via ![alt](src) — use upload_project_file with purpose 'pageImage' to get a src). Works for Project, Lab, and personal-note (Member) workspace pages. OVERWRITES the existing body; read_page first to preserve content. The old body remains restorable from the page's version history. Requires edit access on the page (Core, staffed on the project, or page owner).",
+    "Replace a page's body with content rendered from Markdown (headings, lists, quotes, code blocks, links, bold/italic/strike, and images via ![alt](src) — use upload_project_file with purpose 'pageImage' to get a src). ![title](youtube url) adds a video player. Works for Project, Lab, and personal-note (Member) workspace pages. OVERWRITES the existing body; read_page first to preserve content. The old body remains restorable from the page's version history. Requires edit access on the page (Core, staffed on the project, or page owner).",
   inputSchema: {
     type: "object" as const,
     properties: {

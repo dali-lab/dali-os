@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   redirectPartnerToPortal: vi.fn(),
@@ -13,7 +13,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccessBulk: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { loader } from "../documents.$pageId";

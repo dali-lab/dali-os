@@ -13,7 +13,7 @@
 // list_project_chart_strings — the same reasoning that keeps the payroll
 // TimesheetEntry model out of the timesheet tools.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 export class ProjectSettingsNotFoundError extends Error {

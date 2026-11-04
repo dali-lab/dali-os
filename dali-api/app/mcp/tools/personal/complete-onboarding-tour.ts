@@ -4,7 +4,7 @@
 // no destructive effect on accounts that already completed the tour (updateMany
 // with `tourCompletedAt: null` is a no-op for those). Requires `mcp:write`.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const COMPLETE_ONBOARDING_TOUR_DEF = {
   name: "complete_onboarding_tour",

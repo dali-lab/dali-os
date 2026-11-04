@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   redirect,
   useLoaderData,
-  useNavigate,
   useSearchParams,
 } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   Activity,
   FolderKanban,
@@ -16,7 +19,7 @@ import {
 import type { Route } from "./+types/mentorship.browse";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import {
   canViewMentorship,
@@ -29,9 +32,11 @@ import { NudgeModal } from "../components/NudgeModal";
 import { MentorGridTable } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
 import { BackLink } from "../components/BackLink";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { Tooltip } from "~/components/ui/floating";
+import { TermFilter } from "~/components/TermFilter";
+import { browseTermId } from "../lib/browse-term";
+import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
@@ -80,7 +85,7 @@ type LoaderData = {
   initialFilters: ColumnFilter[];
   options: {
     domains: FilterOption[];
-    terms: FilterOption[];
+    terms: TermOption[];
   };
   grid: MentorGridResult;
   // Mentors with at least one unfilled note in the current term/project/domain
@@ -102,6 +107,20 @@ function pickFilter(value: string | null): string {
   return value ?? "";
 }
 
+// Search and the filter builder run in the browser; these params scope the
+// loader or seed it.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, [
+    "term",
+    "termId",
+    "menteeId",
+    "mentorId",
+    "projectId",
+    "domainId",
+    "status",
+  ]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -111,11 +130,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  // Term defaults to the current term when the URL doesn't pin one (first load).
-  // An explicit `termId=` (the "Any" option) clears it back to unfiltered.
-  const termParam = url.searchParams.get("termId");
   const current = await currentTerm(request);
-  const defaultTerm = termParam === null ? current : null;
   // A person search used to be two id-valued pickers, and the Members profile
   // still links here with ?menteeId=<id>. Both id params are accepted as a
   // seed for the search box so those links keep landing on the right person.
@@ -132,7 +147,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     query:
       url.searchParams.get("q") ??
       (seeded ? `${seeded.firstName} ${seeded.lastName}`.trim() : ""),
-    termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
+    termId: browseTermId(url.searchParams, current?.id ?? null),
   };
   const projectParam = pickFilter(url.searchParams.get("projectId"));
   const domainParam = pickFilter(url.searchParams.get("domainId"));
@@ -175,13 +190,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: d.id,
       label: `${d.displayName} (${d.code})`,
     })),
-    // Mentorship keeps its own single-term grid + "Any term" escape hatch (the
-    // grid's week axis needs exactly one term), so it isn't the shared
-    // TermFilter — but it labels the current term the same way for consistency.
-    terms: terms.map((t) => ({
-      id: t.id,
-      label: t.id === current?.id ? `${t.code} (current)` : t.code,
-    })),
+    terms: terms.map((t) => ({ id: t.id, code: t.code, isCurrent: t.id === current?.id })),
   };
 
   const linkedProject = projectsWithPairs.find((p) => p.id === projectParam);
@@ -304,8 +313,6 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 
-const FILTERS_STORAGE_KEY = "mentorship.browse.filters";
-
 function nameOf(p: { firstName: string; lastName: string }) {
   return `${p.firstName} ${p.lastName}`.trim().toLowerCase();
 }
@@ -333,13 +340,11 @@ export default function MentorshipBrowse() {
   const data = useLoaderData() as LoaderData;
   const { pageTitle } = useOsChrome();
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
-  const [query, setQuery] = useState(data.filters.query);
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const [linkFormsOpen, setLinkFormsOpen] = useState(false);
-  const restored = useRef(false);
   const toast = useToast();
 
   const canNudge = data.isCore;
@@ -348,11 +353,16 @@ export default function MentorshipBrowse() {
     [data.nudgeRecipients],
   );
 
-  // `q` only enters the URL on a deep link, so re-syncing on its value can't
-  // fight the keystrokes it isn't recording.
-  useEffect(() => setQuery(data.filters.query), [data.filters.query]);
+  // A ?menteeId= / ?mentorId= link seeds the search box with that person's name.
+  useEffect(() => {
+    if (!params.has("q") && data.filters.query) setQuery(data.filters.query);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.filters.query]);
 
-  const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters);
+  // Opening the page bare (sidebar, breadcrumb) reopens the last view.
+  useRememberedSearch("mentorship.browse.filters");
+
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters, { inUrl: true });
 
   // What the filter bar matches per row, keyed by the row's grid key: the
   // project name, the domain label (as the pickers once showed it), and every
@@ -434,29 +444,6 @@ export default function MentorshipBrowse() {
     }
   }
 
-  // Remember the last-applied filter query and restore it on a fresh visit (no
-  // filter params). Running once guards against clobbering an explicit "Clear".
-  // `embed` is a dev-preview marker, not a filter — ignore it either way.
-  useEffect(() => {
-    if (restored.current) return;
-    restored.current = true;
-    if (typeof window === "undefined") return;
-    const current = new URLSearchParams(window.location.search);
-    current.delete("embed");
-    if ([...current].length === 0) {
-      const saved = window.localStorage.getItem(FILTERS_STORAGE_KEY);
-      if (saved) navigate(`/mentorship/browse?${saved}`, { replace: true });
-    }
-  }, [navigate]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sp = new URLSearchParams(params);
-    sp.delete("embed");
-    sp.delete("mock");
-    const search = sp.toString();
-    if (search) window.localStorage.setItem(FILTERS_STORAGE_KEY, search);
-  }, [params]);
 
   return (
     <main className="flex flex-col gap-6">
@@ -502,19 +489,10 @@ export default function MentorshipBrowse() {
               Templates
             </button>
           )}
-          <Select
-            ariaLabel="Filter by term"
-            value={data.filters.termId}
-            onChange={(v) => {
-              const next = new URLSearchParams(params);
-              next.set("termId", v);
-              navigate(`/mentorship/browse?${next.toString()}`);
-            }}
-            options={[
-              { value: "", label: "Any term" },
-              ...data.options.terms.map((o) => ({ value: o.id, label: o.label })),
-            ]}
-            buttonClassName={cn(filterPillClass(), "sm:w-40")}
+          <TermFilter
+            terms={data.options.terms}
+            selected={data.filters.termId || ALL_TERMS}
+            clearOnChange={["termId"]}
           />
         </div>
       </header>

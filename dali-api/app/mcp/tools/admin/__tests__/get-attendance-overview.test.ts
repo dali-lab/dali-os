@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     term: { findUnique: vi.fn() },
-    scheduledMeeting: { findMany: vi.fn() },
+    scheduledMeeting: { findMany: vi.fn(), count: vi.fn() },
   },
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   runGetAttendanceOverview,
@@ -59,6 +59,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(isCore).mockResolvedValue(true);
   (prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([MEETING_ROW]);
+  (prisma.scheduledMeeting.count as ReturnType<typeof vi.fn>).mockResolvedValue(1);
   (prisma.term.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null);
 });
 
@@ -79,7 +80,7 @@ describe("get_attendance_overview", () => {
   it("returns meetings with computed check-in rates on happy path", async () => {
     const out = await runGetAttendanceOverview(makeCtx(), {});
     expect(out.termId).toBeNull();
-    expect(out.total).toBe(1);
+    expect(out.page).toEqual({ nextCursor: null, hasMore: false, limit: 100, total: 1 });
     expect(out.events[0]).toMatchObject({
       id: "meet-1",
       title: "Weekly Sync",
@@ -95,7 +96,7 @@ describe("get_attendance_overview", () => {
 
   it("includes attendee list with presence flags", async () => {
     const out = await runGetAttendanceOverview(makeCtx(), {});
-    const attendees = out.events[0].attendees;
+    const attendees = out.events[0].attendees!;
     expect(attendees).toHaveLength(2);
     expect(attendees[0]).toMatchObject({
       id: "u-1",
@@ -162,7 +163,54 @@ describe("get_attendance_overview", () => {
   it("returns empty events list when no meetings", async () => {
     (prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     const out = await runGetAttendanceOverview(makeCtx(), {});
-    expect(out.total).toBe(0);
+    expect(out.page.hasMore).toBe(false);
     expect(out.events).toEqual([]);
+  });
+
+  it("sorts undated meetings last and breaks ties on id", async () => {
+    await runGetAttendanceOverview(makeCtx(), {});
+    const call = (prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.orderBy).toEqual([
+      { selectedAt: { sort: "desc", nulls: "last" } },
+      { createdAt: "desc" },
+      { id: "asc" },
+    ]);
+  });
+
+  it("walks pages with the cursor and ends with a null cursor", async () => {
+    const findMany = prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>;
+    const count = prisma.scheduledMeeting.count as ReturnType<typeof vi.fn>;
+    count.mockResolvedValue(3);
+    const m = (id: string) => ({ ...MEETING_ROW, id });
+    findMany.mockResolvedValueOnce([m("meet-1"), m("meet-2"), m("meet-3")]);
+
+    const first = await runGetAttendanceOverview(makeCtx(), { limit: 2 });
+    expect(first.events.map((e) => e.id)).toEqual(["meet-1", "meet-2"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+    expect(findMany.mock.calls[0][0]).toMatchObject({ skip: 0, take: 3 });
+
+    findMany.mockResolvedValueOnce([m("meet-3")]);
+    const second = await runGetAttendanceOverview(makeCtx(), { limit: 2, cursor: first.page.nextCursor! });
+    expect(second.events.map((e) => e.id)).toEqual(["meet-3"]);
+    expect(second.page).toEqual({ nextCursor: null, hasMore: false, limit: 2, total: 3 });
+    expect(findMany.mock.calls[1][0]).toMatchObject({ skip: 2, take: 3 });
+  });
+
+  it("counts every matching meeting, not the page length", async () => {
+    (prisma.scheduledMeeting.count as ReturnType<typeof vi.fn>).mockResolvedValue(480);
+    const out = await runGetAttendanceOverview(makeCtx(), {});
+    expect(out.page.total).toBe(480);
+    expect(out).not.toHaveProperty("total");
+  });
+
+  it("returns counts without attendee rows when includeAttendees is false", async () => {
+    (prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { ...MEETING_ROW, attendance: [{ present: true }, { present: false }, { present: true }] },
+    ]);
+    const out = await runGetAttendanceOverview(makeCtx(), { includeAttendees: false });
+    expect(out.events[0]).toMatchObject({ invited: 3, checkedIn: 2, checkInRate: 67 });
+    expect(out.events[0]).not.toHaveProperty("attendees");
+    const call = (prisma.scheduledMeeting.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.select.attendance).toEqual({ select: { present: true } });
   });
 });

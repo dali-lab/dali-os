@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 
-// me.ts transitively imports ~/lib/db (via get-member-profile). Hoist the mock
+// me.ts transitively imports ~/lib/db.server (via get-member-profile). Hoist the mock
 // so vitest doesn't try to load the real Prisma client — its generated module
 // isn't on disk during CI's `npm test` step.
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 import { ME_RESOURCE } from "~/mcp/resources/me";
 

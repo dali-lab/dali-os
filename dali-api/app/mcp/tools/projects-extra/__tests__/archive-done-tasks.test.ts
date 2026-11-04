@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     project: { findUnique: vi.fn() },
   },
@@ -13,7 +13,7 @@ vi.mock("~/jobs/task-auto-archive.server", () => ({
   archiveTerminalTasks: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { archiveTerminalTasks } from "~/jobs/task-auto-archive.server";
 import {

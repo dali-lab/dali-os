@@ -18,7 +18,7 @@
 import { moveForm } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.move";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";

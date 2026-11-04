@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 // promoteToMember delegates eligibility to addOrUpdateEligibility — stub it so
 // this test stays focused on the membership upsert behavior.
 vi.mock("~/admin/lib/eligibility.server", () => ({
   addOrUpdateEligibility: vi.fn().mockResolvedValue({ id: "e1" }),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { promoteToMember } from "~/members/lib/membership.server";
 import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
 

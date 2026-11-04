@@ -1,7 +1,7 @@
 // MCP `manage_email_sender` — disable or set rate cap on a Gmail sender integration.
 // Reuses admin.email-senders.tsx actions. Requires mcp:admin (Core leads only).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   AdminForbiddenError as McpForbiddenError,

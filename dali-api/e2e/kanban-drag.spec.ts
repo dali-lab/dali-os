@@ -8,15 +8,9 @@ import type { Locator, Page } from '@playwright/test';
 // tests can't — @dnd-kit's PointerSensor needs real pointer movement, which we
 // drive with mouse steps.
 //
-// Two things the spec has to get right or the drag silently no-ops:
-//  1. The project page normally renders inside the TabWorkspace iframe shell; a
-//     top-level navigation lands on the empty "No tabs open" workspace. We append
-//     `?embed=1` (the same flag the iframe uses) so the route renders standalone,
-//     matching the pattern in calendar-settings.spec.ts.
-//  2. "To do" / "In progress" also appear as status labels elsewhere on the
-//     page, so columns must be scoped to the KanbanBoard shell
-//     (`div.w-64.rounded-lg` — see KanbanBoard.tsx BoardColumn shellClass),
-//     not matched by text anywhere on the page.
+// "To do" / "In progress" also appear as status labels elsewhere on the page,
+// so columns must be scoped to the KanbanBoard shell, not matched by text
+// anywhere on the page.
 //
 // dnd-kit's PointerSensor has an activation distance of 6px, so the drag must
 // move past that threshold before it engages; we step the mouse to be safe.
@@ -24,9 +18,8 @@ import type { Locator, Page } from '@playwright/test';
 // selectable text); a sub-threshold press still counts as the click that
 // opens the task modal.
 
-// Test ids, not Tailwind classes: both shells dress the column and the card
-// differently (radius, fill), and the selectors silently stopped matching when
-// the dali.os design landed.
+// Test ids, not Tailwind classes: the selectors silently stopped matching when
+// the dali.os design changed the column and card dress.
 const COLUMN = '[data-testid="board-column"]';
 // The card container — the sortable wrapper spreads the drag listeners onto it.
 const CARD = '[data-testid="task-card"]';
@@ -96,8 +89,7 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
     });
     expect(created.ok()).toBe(true);
 
-    // ?embed=1 renders the project route standalone (no workspace iframe shell).
-    await page.goto(`/projects/${PROJECT_ID}?tab=board&embed=1`);
+    await page.goto(`/projects/${PROJECT_ID}?tab=board`);
     await page.waitForLoadState('networkidle');
 
     const todoColumn = column(page, 'To do');

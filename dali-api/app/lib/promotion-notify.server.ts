@@ -9,7 +9,7 @@
 // other event. Callers wrap these in `void ...catch()` so delivery never fails
 // the underlying mutation.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { getAdminUserIdsFromEnv } from "~/lib/roles";
 import type { Level } from "~/lib/level";

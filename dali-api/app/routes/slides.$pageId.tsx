@@ -11,7 +11,7 @@ import { recordPageVisit } from "~/lib/user-pages.server";
 import { deckAccess, loadDeck, saveDeck } from "~/lib/slide-decks.server";
 import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
 import { loadDrivePageAncestry } from "~/lib/drive-page-trail.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { buttonClasses } from "~/components/ui/Button";
 import { Segmented } from "~/components/ui/Segmented";
 import { SlideViewer } from "~/components/slides/SlideViewer";

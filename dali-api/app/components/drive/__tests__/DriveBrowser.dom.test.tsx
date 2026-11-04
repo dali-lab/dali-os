@@ -47,6 +47,7 @@ const onMoveToScope = vi.fn();
 const onUploadFiles = vi.fn();
 
 let swapScopes: (scopes: DriveTreeScope[]) => void = () => {};
+let swapSearch: (search: string) => void = () => {};
 
 type MountOptions = {
   view?: "columns" | "list" | "grid";
@@ -70,13 +71,15 @@ async function mount(opts: MountOptions = {}) {
   function Harness() {
     const [scopesState, setScopesState] = useState(opts.scopes ?? [lab, mine]);
     swapScopes = setScopesState;
+    const [searchState, setSearchState] = useState(opts.search ?? "");
+    swapSearch = setSearchState;
     const [loc, setLoc] = useState({ scopeId: opts.scopeId === undefined ? "lab" : opts.scopeId, folderId: opts.folderId ?? null });
     return createElement(ToastProvider, null, createElement(DialogProvider, null, createElement(DriveBrowser, {
       scopes: scopesState,
       currentScopeId: loc.scopeId,
       currentFolderId: loc.folderId,
       typeFilter: opts.typeFilter ?? "all",
-      search: opts.search ?? "",
+      search: searchState,
       onSearchChange: vi.fn(),
       onNavigate: (scopeId: string | null, folderId: string | null) => {
         onNavigate(scopeId, folderId);
@@ -163,6 +166,19 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
+});
+
+describe("DriveBrowser: visible text", () => {
+  it.each([
+    ["columns", {}],
+    ["list", {}],
+    ["grid", {}],
+    ["search", { search: "Doc" }],
+  ] as const)("renders no source comment as text in the %s view", async (view, opts) => {
+    await mount({ view: view === "search" ? "list" : view, ...opts });
+    expect(container.textContent).toContain("Doc d1");
+    expect(container.textContent).not.toContain("/*");
+  });
 });
 
 describe.each(["columns", "list"] as const)("DriveBrowser %s: click selects, double-click opens", (view) => {
@@ -408,8 +424,16 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
   it("deletes the single selected item through the item path", async () => {
     await mount({ view });
     await click(row("doc", "d3"));
-    await key(pane(view), "#");
+    await key(pane(view), "Backspace", { metaKey: true });
     expect(actions.onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: "d3" }));
+    expect(onBulkDelete).not.toHaveBeenCalled();
+  });
+
+  it("leaves the selection alone on a bare # key", async () => {
+    await mount({ view });
+    await click(row("doc", "d3"));
+    await key(pane(view), "#");
+    expect(actions.onDelete).not.toHaveBeenCalled();
     expect(onBulkDelete).not.toHaveBeenCalled();
   });
 
@@ -733,6 +757,66 @@ describe("DriveBrowser bulk bar", () => {
     expect(onBulkMove.mock.calls[0][0].map((i: DriveItem) => i.id).sort()).toEqual(["d1", "d2"]);
     await click(container.querySelector('[data-testid="drive-bulk-delete"]')!);
     expect(onBulkDelete.mock.calls[0][0].map((i: DriveItem) => i.id).sort()).toEqual(["d1", "d2"]);
+  });
+
+  describe("download", () => {
+    const fileItem = (id: string) =>
+      ({ type: "file", id, title: id, parentFolderId: null, iconEmoji: null, updatedAt: new Date(), href: "/x", sizeBytes: 1 }) as unknown as DriveItem;
+    const withFiles: DriveTreeScope = { ...lab, items: [...lab.items, fileItem("x1"), fileItem("x2")] };
+    const button = () => container.querySelector<HTMLElement>('[data-testid="drive-bulk-download"]');
+
+    async function selectFiles() {
+      await mount({ scopes: [withFiles, mine] });
+      await click(row("file", "x1"), { metaKey: true });
+      await click(row("file", "x2"), { metaKey: true });
+    }
+
+    it("is absent when the selection holds no files", async () => {
+      await selectTwo();
+      expect(bar()).not.toBeNull();
+      expect(button()).toBeNull();
+    });
+
+    it("asks the server for a ZIP of the selected files", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "No" }, { status: 413 }));
+      vi.stubGlobal("fetch", fetchMock);
+      await selectFiles();
+      await click(button()!);
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("/api/drive/download");
+      expect(JSON.parse(init.body).fileIds.sort()).toEqual(["x1", "x2"]);
+      vi.unstubAllGlobals();
+    });
+
+    it("can't be pressed twice while a ZIP is being prepared", async () => {
+      let finish = (_r: Response) => {};
+      const fetchMock = vi.fn(() => new Promise<Response>((resolve) => (finish = resolve)));
+      vi.stubGlobal("fetch", fetchMock);
+      await selectFiles();
+      await click(button()!);
+
+      expect((button() as HTMLButtonElement).disabled).toBe(true);
+      expect(button()!.textContent).toContain("Preparing");
+      await act(async () => {
+        finish(Response.json({ error: "No" }, { status: 413 }));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect((button() as HTMLButtonElement).disabled).toBe(false);
+      vi.unstubAllGlobals();
+    });
+
+    it("offers Download in a file's menu and not a doc's", async () => {
+      await mount({ scopes: [withFiles, mine] });
+      await contextMenu(row("file", "x1"));
+      expect(menuLabels()).toContain("Download");
+      await key(document.body, "Escape");
+      await contextMenu(row("doc", "d1"));
+      expect(menuLabels()).not.toContain("Download");
+    });
   });
 
   it("clears the selection", async () => {
@@ -1177,9 +1261,10 @@ describe("DriveBrowser drag: dropping on a drive", () => {
       ["education", "lucide-graduation-cap"],
     ])("draws the %s drive with its own icon", async (id, iconClass) => {
       await mountScopeList();
-      const icon = byTestId(`drive-scope-${id}`).querySelector("svg");
+      const tile = byTestId(`drive-scope-${id}`).querySelector("[data-area-tile]");
+      expect(tile).not.toBeNull();
+      const icon = tile?.querySelector("svg");
       expect(icon?.getAttribute("class")).toContain(iconClass);
-      expect(icon?.getAttribute("class")).toContain("text-accent-coral/80");
       expect(icon?.getAttribute("class")).not.toContain("lucide-folder ");
     });
 
@@ -1861,5 +1946,79 @@ describe("DriveBrowser open to the side", () => {
     await mount({ view: "list", beside: true, entry: "/?side=doc:d2" });
     expect(row("doc", "d2").textContent).toContain("Open beside");
     expect(row("doc", "d1").textContent).not.toContain("Open beside");
+  });
+});
+
+describe("DriveBrowser columns: empty folder", () => {
+  it("pictures an empty folder's column", async () => {
+    await mount({ folderId: "f2" });
+    const empty = container.querySelector("[data-empty-folder-art]");
+    expect(empty).not.toBeNull();
+    expect(empty!.getAttribute("aria-hidden")).toBe("true");
+    expect(empty!.parentElement!.textContent).toBe("This folder is empty.");
+  });
+
+  it("keeps a full folder's column free of the empty art", async () => {
+    await mount({ folderId: "f1" });
+    expect(container.querySelector("[data-empty-folder-art]")).toBeNull();
+  });
+});
+
+describe("DriveBrowser: search results are sliced", { timeout: 30000 }, () => {
+  const manyDocs = (count: number): DriveTreeScope => ({
+    id: "big",
+    label: "Big drive",
+    iconEmoji: null,
+    items: Array.from({ length: count }, (_, i) => ({ ...doc(`b${String(i).padStart(3, "0")}`), title: `Doc ${String(i).padStart(3, "0")}` })),
+  });
+  const hitRows = () => container.querySelectorAll('[data-testid^="drive-search-hit-"]');
+  const loadMore = () =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === "Load more") as HTMLButtonElement | undefined;
+
+  it("renders 50 hits and reveals the next 50 with Load more", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    expect(hitRows()).toHaveLength(50);
+    expect(container.textContent).toContain("Showing 50 of 110");
+    await click(loadMore()!);
+    expect(hitRows()).toHaveLength(100);
+    await click(loadMore()!);
+    expect(hitRows()).toHaveLength(110);
+    expect(loadMore()).toBeUndefined();
+  });
+
+  it("selects only the rendered hits with select-all, then more after Load more", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    await key(byTestId("drive-list-pane"), "a", { metaKey: true });
+    expect(selectedCount()).toBe(50);
+    expect(bar()?.textContent).toContain("50 selected");
+    await click(loadMore()!);
+    expect(selectedCount()).toBe(50);
+    await key(byTestId("drive-list-pane"), "a", { metaKey: true });
+    expect(bar()?.textContent).toContain("100 selected");
+  });
+
+  it("stops arrow-down at the last rendered hit and continues after Load more", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    const pane = byTestId("drive-list-pane");
+    await click(byTestId("drive-search-hit-b049"));
+    await key(pane, "ArrowDown");
+    expect(isSelected("b049")).toBe(true);
+    await click(loadMore()!);
+    await key(pane, "ArrowDown");
+    expect(isSelected("b050")).toBe(true);
+  });
+
+  it("returns to the first slice when the query changes", async () => {
+    await mount({ scopes: [manyDocs(110)], search: "Doc" });
+    await click(loadMore()!);
+    expect(hitRows()).toHaveLength(100);
+    await act(async () => swapSearch("Doc 0"));
+    expect(hitRows()).toHaveLength(50);
+    expect(container.textContent).toContain("Showing 50 of 100");
+  });
+
+  it("keeps the Load more button out of the pane so Enter on it does not open a row", async () => {
+    await mount({ scopes: [manyDocs(60)], search: "Doc" });
+    expect(byTestId("drive-list-pane").contains(loadMore()!)).toBe(false);
   });
 });

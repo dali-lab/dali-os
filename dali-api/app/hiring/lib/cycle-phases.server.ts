@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { inReviewPipelineFilter } from "./application-pipeline-filter";
 import { FIRST_INTERVIEW_ROUND_ID as FIRST, delibRounds, interviewRounds, parseTimeline, type Timeline } from "./cycle-timeline";
 import { interviewTaskKey } from "./cycle-phases";

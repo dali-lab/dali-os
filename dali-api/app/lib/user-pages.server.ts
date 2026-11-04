@@ -5,7 +5,7 @@
 // is a bookmark, not a grant: if a doc is later restricted or moved, it drops
 // out of your list silently rather than becoming a way back in.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { pageOpenHref } from "~/lib/page-href";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk, type PageShape } from "~/lib/pageAccess.server";
 import { isNavbarRoute } from "~/lib/navbar-routes";

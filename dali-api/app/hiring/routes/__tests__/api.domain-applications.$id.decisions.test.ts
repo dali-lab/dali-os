@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
@@ -14,7 +14,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
   requireApiSignedOrForbidden: vi.fn().mockResolvedValue(null),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.domain-applications.$id.decisions";

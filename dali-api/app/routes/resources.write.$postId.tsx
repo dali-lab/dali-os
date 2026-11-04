@@ -6,11 +6,12 @@ import {
   DocEditor,
   IMAGE_UPLOAD_ACCEPT,
   uploadEditorImage,
+  uploadErrorMessage,
   type DocEditorInstance,
   type DocSyncState,
 } from "~/components/doc";
 import { blogPostRoomName } from "~/collab/roomName";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
 import {
@@ -214,9 +215,9 @@ export default function BlogWritePage() {
     if (!file) return;
     setUploading(true);
     try {
-      submit({ intent: "cover", url: await uploadEditorImage(file) });
-    } catch {
-      toast.error("Upload failed.");
+      submit({ intent: "cover", url: await uploadEditorImage(file, toast.info) });
+    } catch (err) {
+      toast.error(uploadErrorMessage(err));
     } finally {
       setUploading(false);
     }

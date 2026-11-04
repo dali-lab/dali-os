@@ -1,5 +1,5 @@
 import rrulePkg from "rrule";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { buildRule } from "~/lib/meeting-occurrences";
 import { formatDateShort } from "~/lib/display";
 import type { JobResult } from "~/jobs/registry";

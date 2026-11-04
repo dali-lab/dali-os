@@ -298,6 +298,47 @@ describe("EnhanceBar pending review", () => {
 });
 
 describe("EnhanceBar other states", () => {
+  it("recording: warns when no sound has been detected, and shows nothing otherwise", () => {
+    const silent = mountBar(makeRec({ phase: "recording", noSound: true }));
+    expect(silent.container.textContent).toContain("No sound detected");
+    silent.unmount();
+
+    const fine = mountBar(makeRec({ phase: "recording", noSound: false }));
+    expect(fine.container.textContent).toBe("");
+    fine.unmount();
+  });
+
+  it("recording: names the mic device when the desktop app reports it silent", () => {
+    const { container, unmount } = mountBar(makeRec({ phase: "recording", noSound: true, micDevice: "iPhone Microphone" }));
+    expect(container.textContent).toContain("Your mic isn't picking up sound");
+    expect(container.textContent).toContain("Nothing is coming from iPhone Microphone.");
+    unmount();
+  });
+
+  it("recording: says call audio is off when the permission is denied", () => {
+    const { container, unmount } = mountBar(makeRec({ phase: "recording", callAudioOff: true }));
+    expect(container.textContent).toContain("Call audio is off");
+    expect(container.textContent).toContain("Screen & System Audio Recording");
+    unmount();
+  });
+
+  it("recording: a silent mic outranks call audio being off", () => {
+    const { container, unmount } = mountBar(
+      makeRec({ phase: "recording", noSound: true, micDevice: "USB Mic", callAudioOff: true }),
+    );
+    expect(container.textContent).toContain("Your mic isn't picking up sound");
+    expect(container.textContent).not.toContain("Call audio is off");
+    unmount();
+  });
+
+  it("noSpeech: says nothing was captured and offers no Insert or Enhance", () => {
+    const { container } = mountBar(makeRec({ phase: "done", hasTranscript: false, aiEnabled: true }));
+    expect(container.textContent).toContain("No speech was captured");
+    expect(container.textContent).not.toContain("Transcript ready");
+    expect(container.textContent).not.toContain("Insert transcript");
+    expect(container.textContent).not.toContain("Enhance notes");
+  });
+
   it.each([
     ["recording", { phase: "recording" as const }],
     ["review", { phase: "review" as const }],
@@ -421,6 +462,21 @@ describe("EnhanceBar after Enhance is undone", () => {
   it("stays quiet when the note state is not available yet", () => {
     const { container, unmount } = mountBar(enhanced({ getNoteState: () => null }));
     expect(container.textContent).toBe("");
+    unmount();
+  });
+
+  it("stays quiet after an Enhance that found no action items", () => {
+    const { container, unmount } = mountBar(enhanced({ enhanceNotes: notes() }));
+    expect(container.textContent).toBe("");
+    unmount();
+  });
+
+  it("stays quiet after an Enhance with no action items once the transcript is inserted", () => {
+    const { container, unmount } = mountBar(
+      enhanced({ enhanceNotes: notes(), insertedAt: "2026-10-10T00:05:00Z" }),
+    );
+    expect(container.textContent).not.toContain("Transcript ready");
+    expect(container.textContent).not.toContain("Insert transcript");
     unmount();
   });
 });

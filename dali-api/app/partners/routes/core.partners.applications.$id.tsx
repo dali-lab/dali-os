@@ -22,12 +22,12 @@ import { IconButton } from "~/components/ui/IconButton";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Route } from "./+types/core.partners.applications.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { isCore, getActiveCoreCycleTermIds } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import {
   PARTNER_STAGE_LABELS as STAGE_LABEL,
@@ -56,8 +56,6 @@ import {
 } from "../lib/partner-activity.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getPartnerContactEmailThreads } from "../lib/partner-email.server";
 import {
   partnerContractStatus,
@@ -66,6 +64,10 @@ import {
 } from "../lib/partner-contract.server";
 import { handleSowIntent } from "../lib/partner-finance.server";
 import { PropertyRail } from "../components/application/PropertyRail";
+import { ProjectIcon } from "~/components/ProjectIcon";
+import { postPartnerApplicationIntent } from "../lib/partner-detail-fetch";
+import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
+import { listActiveCoreMembers, resolveApplicationIcon } from "../lib/core-members.server";
 import { DetailsLayout, RailGroup, STAGE_TONE } from "../components/application/rail";
 import { initialRecordTab, type RecordTab } from "../lib/record-tab";
 import { EvaluationTab } from "../components/application/EvaluationTab";
@@ -106,6 +108,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       title: true,
+      iconEmoji: true,
+      piUserId: true,
       summary: true,
       stage: true,
       sowDocId: true,
@@ -209,26 +213,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     auth.user.email;
 
   // Core member list for the meeter / attendee pickers.
-  let coreMembers: { userId: string; name: string }[] = [];
-  const cycleTermIds = await getActiveCoreCycleTermIds(request);
-  if (cycleTermIds.length > 0) {
-    const assignments = await prisma.coreAssignment.findMany({
-      where: { termId: { in: cycleTermIds } },
-      select: {
-        userId: true,
-        user: { select: { firstName: true, lastName: true, daliEmail: true } },
-      },
-      distinct: ["userId"],
-    });
-    coreMembers = assignments.map((a) => ({
-      userId: a.userId,
-      name:
-        [a.user.firstName, a.user.lastName].filter(Boolean).join(" ") ||
-        a.user.daliEmail ||
-        a.userId,
-    }));
-    coreMembers.sort((a, b) => a.name.localeCompare(b.name));
-  }
+  const coreMembers = await listActiveCoreMembers(request);
+  const iconEmoji = await resolveApplicationIcon(application);
 
   // Activity timeline (newest first) + a name map for the acting Core members.
   let activities: {
@@ -281,12 +267,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     );
   }
 
-  const roles = await getUserRoles(auth.user.sub, request);
-  const partnerEmailOn = await isFeatureEnabled("partner-email", auth.user.sub, roles, request);
-  const financeOn = await isFeatureEnabled("partner-finance", auth.user.sub, roles, request);
-  const emailThreads = partnerEmailOn
-    ? await getPartnerContactEmailThreads(application.applicantContact.id)
-    : [];
+  const emailThreads = await getPartnerContactEmailThreads(application.applicantContact.id);
   const contract = await partnerContractStatus(application.id);
   const contractDocuments = canEdit ? await listPartnerContractDocuments() : [];
 
@@ -294,6 +275,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     application: {
       id: application.id,
       title: application.title,
+      iconEmoji,
+      piUserId: application.piUserId,
       summary: application.summary,
       stage: application.stage,
       sowDocId: application.sowDocId,
@@ -364,8 +347,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     activities,
     actorNames,
     emailThreads,
-    partnerEmailOn,
-    financeOn,
     contract,
     contractDocuments,
     trailLabel: application.title,
@@ -390,6 +371,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       where: { id: params.id },
       data: { title },
     });
+  } else if (intent === "icon") {
+    const iconEmoji = (form.get("iconEmoji") as string | null)?.trim() || null;
+    const app = await prisma.partnerApplication.findUnique({
+      where: { id: params.id },
+      select: { resultingProjectId: true },
+    });
+    if (!app) return { error: "That application no longer exists." };
+    if (app.resultingProjectId) {
+      await prisma.project.update({ where: { id: app.resultingProjectId }, data: { iconEmoji } });
+    } else {
+      await prisma.partnerApplication.update({ where: { id: params.id }, data: { iconEmoji } });
+    }
+  } else if (intent === "pi") {
+    const piUserId = (form.get("piUserId") as string | null) || null;
+    if (piUserId && !(await isCore(piUserId))) return { error: "A PI must be a Core member." };
+    await prisma.partnerApplication.update({ where: { id: params.id }, data: { piUserId } });
   } else if (intent === "stage") {
     const stage = form.get("stage");
     if (!isPartnerStage(stage)) {
@@ -422,21 +419,21 @@ export async function action({ request, params }: Route.ActionArgs) {
         return { error: "One of those terms no longer exists." };
       }
     }
-    // Replace the whole target-term set in one transaction: scalar fields,
-    // then drop and recreate the join rows.
+    // Keep retained join rows: they now own term-specific planning metadata.
     await prisma.$transaction([
       prisma.partnerApplication.update({
         where: { id: params.id },
         data: { summary: summaryRaw === "" ? null : summaryRaw },
       }),
       prisma.partnerApplicationTargetTerm.deleteMany({
-        where: { applicationId: params.id },
+        where: { applicationId: params.id, termId: { notIn: termIds } },
       }),
       prisma.partnerApplicationTargetTerm.createMany({
         data: termIds.map((termId) => ({
           applicationId: params.id,
           termId,
         })),
+        skipDuplicates: true,
       }),
     ]);
   } else if (intent === "promote") {
@@ -448,6 +445,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       select: {
         id: true,
         title: true,
+        iconEmoji: true,
+        piUserId: true,
         summary: true,
         resultingProjectId: true,
         partnerOrgId: true,
@@ -526,11 +525,12 @@ export async function action({ request, params }: Route.ActionArgs) {
       const created = await tx.project.create({
         data: {
           name: app.title,
+          iconEmoji: app.iconEmoji,
           // Auto-derive the GitHub team slug from the title (editable later).
           githubTeamSlug: githubTeamSlug(app.title) || null,
           description: app.summary,
           ...(firstTermId
-            ? { projectTerms: { create: { termId: firstTermId } } }
+            ? { projectTerms: { create: { termId: firstTermId, piUserId: app.piUserId } } }
             : {}),
           partners: { create: { partnerOrgId: orgId } },
           ...(roleRequestRows.length > 0
@@ -952,8 +952,6 @@ export default function PartnerApplicationDetail() {
     activities,
     actorNames,
     emailThreads,
-    partnerEmailOn,
-    financeOn,
     contract,
     contractDocuments,
   } = useLoaderData() as LoaderData;
@@ -1043,7 +1041,7 @@ export default function PartnerApplicationDetail() {
       applicationId={application.id}
       activities={activities}
       actorNames={actorNames}
-      emailThreads={partnerEmailOn ? emailThreads : []}
+      emailThreads={emailThreads}
       canEdit={canEdit}
       onChanged={refresh}
     />
@@ -1057,6 +1055,7 @@ export default function PartnerApplicationDetail() {
         applicant: application.applicant,
         partner: application.partner,
         resultingProjectId: application.resultingProjectId,
+        piUserId: application.piUserId,
         source: application.source,
         nextStep: application.nextStep,
         nextStepDueAt: application.nextStepDueAt,
@@ -1078,13 +1077,13 @@ export default function PartnerApplicationDetail() {
       termOptions={terms.map((t) => ({ id: t.id, code: t.code }))}
       contract={contract}
       contractDocuments={contractDocuments}
-      financeOn={financeOn}
+      coreMembers={coreMembers}
       onChanged={refresh}
     />
   );
 
   const emailTab = (
-    <EmailTab contactId={application.applicant?.id ?? ""} threads={emailThreads} partnerEmailOn={partnerEmailOn} />
+    <EmailTab contactId={application.applicant?.id ?? ""} threads={emailThreads} />
   );
 
   const TABS = [
@@ -1169,6 +1168,7 @@ function Header({
   application: LoaderData["application"];
   canEdit: boolean;
 }) {
+  const revalidator = useRevalidator();
   const [editing, setEditing] = useState(false);
 
   return (
@@ -1201,6 +1201,17 @@ function Header({
           </Form>
         ) : (
           <>
+            {canEdit ? (
+              <ProjectIconPicker
+                iconEmoji={application.iconEmoji}
+                editing
+                onChange={(emoji) => {
+                  void postPartnerApplicationIntent(application.id, "icon", { iconEmoji: emoji }).then(() => revalidator.revalidate());
+                }}
+              />
+            ) : (
+              application.iconEmoji && <ProjectIcon iconEmoji={application.iconEmoji} size="lg" />
+            )}
             <h1 className="font-heading text-4xl text-foreground">{application.title}</h1>
             {canEdit && (
               <IconButton label="Edit title" icon={Pencil} onClick={() => setEditing(true)} />

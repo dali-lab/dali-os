@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: { id: true }, getPageAccess: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canBuildForm, canSeeForm, fillAccessByPage } from "~/forms/lib/form-access.server";
 import { formFillAccess } from "~/forms/lib/public-form";

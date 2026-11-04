@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { yDocToProsemirrorJSON } from "y-prosemirror";
 import type { Server as HocuspocusServer } from "@hocuspocus/server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { indexPageBody } from "~/lib/doc-search.server";
 import { isPresenceRoom } from "./roomName";
@@ -110,21 +110,17 @@ async function seedContent(name: string): Promise<string | null> {
   return null;
 }
 
-/**
- * LAZY CONVERSION — the in-app migration mechanism. If a loaded doc has legacy
- * Tiptap content in "default" but nothing in "blocknote" yet, map the PM JSON
- * to blocks and write them into the "blocknote" fragment the BlockNote editor
- * binds. The "default" fragment is left untouched (it simply goes stale) so
- * the conversion is one-way and re-runnable. Runs in-process on the
- * Hocuspocus-owned doc, so there is no cross-writer race.
- */
+// Decode from a clone: y-prosemirror deletes what it can't decode, and on the
+// live doc Hocuspocus would broadcast that deletion.
 function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
   const blocknote = doc.getXmlFragment(BLOCKNOTE_FRAGMENT);
   if (blocknote.length > 0) return false;
   if (doc.getXmlFragment(LEGACY_PM_FRAGMENT).length === 0) return false;
 
+  const clone = new Y.Doc();
   try {
-    const pmJson = yDocToProsemirrorJSON(doc, LEGACY_PM_FRAGMENT);
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    const pmJson = yDocToProsemirrorJSON(clone, LEGACY_PM_FRAGMENT);
     const { blocks, losses } = mapPmDocToBlocks(pmJson);
     doc.transact(() => {
       blocksToFragment(blocks, blocknote);
@@ -139,6 +135,8 @@ function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
     // BlockNote clients and the legacy state stays intact for another attempt.
     console.error(`[collab:convert] conversion failed for ${name}`, err);
     return false;
+  } finally {
+    clone.destroy();
   }
 }
 

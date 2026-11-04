@@ -4,18 +4,16 @@ import { ArrowLeft, KeyRound, Mail } from "lucide-react";
 import type { Route } from "./+types/login";
 import { humanDuration, EMAIL_OTP_TTL_SECONDS } from "~/email/lib/auth-email";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   pickSafeLoginNext,
   setLoginNextCookie,
 } from "~/lib/login-next";
-import { isFeatureSwitchedOn } from "~/lib/feature-flags.server";
 import { resolveLoginIdentifier } from "~/lib/user-email.server";
 import { auth } from "~/lib/betterauth.server";
-import AuthShell from "~/components/auth/AuthShell";
 import { AuthButton } from "~/components/auth/AuthButton";
 import { CodeInput } from "~/components/auth/CodeInput";
-import { AuthInput, AuthNotice } from "~/components/auth/v2";
+import { AuthInput, AuthNotice, AuthShellV2 } from "~/components/auth/v2";
 import { cn } from "~/lib/cn";
 
 export const meta: Route.MetaFunction = () => [{ title: "DALI OS · Sign in" }];
@@ -58,9 +56,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/portal");
   }
 
-  // Visitors here are signed out, so per-user targeting has no user to
-  // match: the dali.os auth dress follows the flag's master switch alone.
-  return { authV2: await isFeatureSwitchedOn("desktop-tabs", request) };
+  return null;
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -156,14 +152,11 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect("/login");
 }
 
-function LoginBetterAuth({ next, actionData, v2 = false }: {
+function LoginBetterAuth({ next, actionData }: {
   next: string | null;
   actionData: Awaited<ReturnType<typeof action>> | undefined;
-  v2?: boolean;
 }) {
-  const link = v2
-    ? "font-semibold text-os-accent transition-colors duration-150 hover:text-os-accent-hover"
-    : "font-semibold text-dark-blue transition-colors duration-150 hover:text-foreground";
+  const link = "font-semibold text-os-accent transition-colors duration-150 hover:text-os-accent-hover";
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const submittingProvider = submitting ? navigation.formData?.get("provider") : null;
@@ -247,36 +240,23 @@ function LoginBetterAuth({ next, actionData, v2 = false }: {
             mistyped address gets nothing but sees the same screen. Honest
             phrasing keeps the no-account case from waiting on a code that will
             never arrive. */}
-        <p
-          className={cn(
-            "text-sm leading-relaxed text-muted-foreground",
-            v2 && "rounded-xl border border-os-container bg-os-card p-4",
-          )}
-        >
+        <p className="rounded-xl border border-os-container bg-os-card p-4 text-sm leading-relaxed text-muted-foreground">
           If there's a DALI OS account for{" "}
-          <span className={cn("font-medium", v2 ? "text-foreground" : "text-dark-blue")}>{codeSent.email}</span>,
+          <span className="font-medium text-foreground">{codeSent.email}</span>,
           we've emailed a 6-digit code. Enter it below. Codes expire in{" "}
           {humanDuration(EMAIL_OTP_TTL_SECONDS)}.
         </p>
-        {actionError &&
-          (v2 ? (
-            <AuthNotice message={actionError} />
-          ) : (
-            <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
-              {actionError}
-            </p>
-          ))}
+        {actionError && <AuthNotice message={actionError} />}
         <Form method="post" className="flex flex-col gap-4">
           <input type="hidden" name="provider" value="verify-code" />
           <input type="hidden" name="identifier" value={codeSent.identifier} />
           <input type="hidden" name="displayEmail" value={codeSent.email} />
           {next && <input type="hidden" name="next" value={next} />}
           <div key={`code-${shakeCount}`} className={shakeCount > 0 ? "motion-safe:animate-auth-shake" : undefined}>
-            <CodeInput name="otp" invalid={Boolean(actionError)} disabled={submittingProvider === "verify-code"} v2={v2} />
+            <CodeInput name="otp" invalid={Boolean(actionError)} disabled={submittingProvider === "verify-code"} />
           </div>
           <AuthButton
             type="submit"
-            v2={v2}
             loading={submittingProvider === "verify-code"}
             loadingLabel="Verifying…"
             disabled={submitting}
@@ -304,11 +284,11 @@ function LoginBetterAuth({ next, actionData, v2 = false }: {
         </div>
         {/* Shown unconditionally (to real and no-account visitors alike), so it
             gives the no-account case a way forward without confirming existence. */}
-        <p className={cn("text-xs text-muted-foreground", v2 ? "text-left text-sm" : "text-center")}>
+        <p className="text-left text-sm text-muted-foreground">
           New to DALI OS?{" "}
           <Link
             to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-            className={v2 ? link : "underline hover:text-foreground"}
+            className={link}
           >
             Create an account
           </Link>
@@ -319,14 +299,7 @@ function LoginBetterAuth({ next, actionData, v2 = false }: {
 
   return (
     <div key="step-email" className="flex flex-col gap-4 motion-safe:animate-auth-step">
-      {(actionError || passkeyError) &&
-        (v2 ? (
-          <AuthNotice message={actionError ?? passkeyError} />
-        ) : (
-          <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3 motion-safe:animate-auth-rise">
-            {actionError ?? passkeyError}
-          </p>
-        ))}
+      {(actionError || passkeyError) && <AuthNotice message={actionError ?? passkeyError} />}
 
       {/* Primary path: enter your email, we send a 6-digit sign-in code. The
           `webauthn` autocomplete token lets a saved passkey surface in this
@@ -336,39 +309,21 @@ function LoginBetterAuth({ next, actionData, v2 = false }: {
         <input type="hidden" name="provider" value="email-code" />
         {next && <input type="hidden" name="next" value={next} />}
         <div key={`email-${shakeCount}`} className={shakeCount > 0 ? "motion-safe:animate-auth-shake" : undefined}>
-          {v2 ? (
-            <AuthInput
-              label="Email"
-              type="email"
-              name="email"
-              required
-              autoFocus
-              autoComplete="username webauthn"
-              placeholder="you@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-invalid={Boolean(actionError)}
-            />
-          ) : (
-            <input
-              type="email"
-              name="email"
-              required
-              autoFocus
-              autoComplete="username webauthn"
-              placeholder="you@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              aria-invalid={Boolean(actionError)}
-              className={`w-full rounded-xl border bg-card px-4 py-3 text-sm transition-[border-color] duration-150 focus:outline-none focus:ring-2 focus:ring-accent-coral ${
-                actionError ? "border-red-400" : "border-border hover:border-dark-blue/40"
-              }`}
-            />
-          )}
+          <AuthInput
+            label="Email"
+            type="email"
+            name="email"
+            required
+            autoFocus
+            autoComplete="username webauthn"
+            placeholder="you@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            aria-invalid={Boolean(actionError)}
+          />
         </div>
         <AuthButton
           type="submit"
-          v2={v2}
           icon={Mail}
           loading={submittingProvider === "email-code"}
           loadingLabel="Sending…"
@@ -389,7 +344,6 @@ function LoginBetterAuth({ next, actionData, v2 = false }: {
           returning user signs in with one tap (Face ID / Touch ID / device). */}
       <AuthButton
         variant="secondary"
-        v2={v2}
         icon={KeyRound}
         onClick={() => void signInWithPasskey()}
         loading={passkeyBusy}
@@ -400,11 +354,11 @@ function LoginBetterAuth({ next, actionData, v2 = false }: {
       </AuthButton>
 
       {/* Crossover to signup */}
-      <p className={cn("text-sm text-muted-foreground mt-2", v2 ? "text-left" : "text-center")}>
+      <p className="mt-2 text-left text-sm text-muted-foreground">
         New to DALI OS?{" "}
         <Link
           to={next ? `/signup?next=${encodeURIComponent(next)}` : "/signup"}
-          className={v2 ? link : "underline hover:text-foreground"}
+          className={link}
         >
           Create an account
         </Link>
@@ -413,12 +367,11 @@ function LoginBetterAuth({ next, actionData, v2 = false }: {
   );
 }
 
-export default function Login({ loaderData }: Route.ComponentProps) {
+export default function Login() {
   const actionData = useActionData<typeof action>();
   const [searchParams] = useSearchParams();
   const error = searchParams.get("error");
   const next = pickSafeLoginNext(searchParams.get("next"));
-  const v2 = loaderData?.authV2 ?? false;
 
   const errorMessages: Record<string, string> = {
     access_denied:
@@ -433,13 +386,12 @@ export default function Login({ loaderData }: Route.ComponentProps) {
   const onCodeStep = Boolean(actionData && "codeSent" in actionData && actionData.codeSent);
 
   return (
-    <AuthShell
-      heading={onCodeStep ? "Check your email" : "Sign in to DALI OS"}
+    <AuthShellV2
+      title={onCodeStep ? "Check your email" : "Sign in to DALI OS"}
       error={urlError}
-      v2={v2}
       stepKey={onCodeStep ? "code" : "email"}
     >
-      <LoginBetterAuth next={next} actionData={actionData} v2={v2} />
-    </AuthShell>
+      <LoginBetterAuth next={next} actionData={actionData} />
+    </AuthShellV2>
   );
 }

@@ -4,7 +4,7 @@
 // counts. Read access mirrors the project detail page: any authenticated DALI
 // OS member can load it. Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { currentSprintBand } from "~/projects/lib/task-board";

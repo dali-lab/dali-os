@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { scoreBoard } from "~/lib/game-scores.server";
 
 // The leaderboard for the tetris game on the week 5 ("Build") home landing

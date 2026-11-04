@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { outboundMessage: { update: vi.fn(), updateMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { outboundMessage: { update: vi.fn(), updateMany: vi.fn() } } }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
