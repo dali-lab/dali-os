@@ -649,6 +649,34 @@ describe("assignInterviewers", () => {
     expect(result.assignments).toHaveLength(2);
   });
 
+  describe("serialization conflicts", () => {
+    const conflict = Object.assign(new Error("write conflict"), { code: "P2034" });
+    const book = () =>
+      assignInterviewers("cycle1", "interviews", "app1", ["domain1"], new Date("2026-04-13T14:00:00Z"), new Date("2026-04-13T14:30:00Z"));
+
+    it("reruns the booking on a fresh transaction after a serialization conflict", async () => {
+      mockPrisma.$transaction
+        .mockRejectedValueOnce(conflict)
+        .mockRejectedValueOnce(conflict)
+        .mockResolvedValueOnce({ id: "int1" });
+      await expect(book()).resolves.toEqual({ id: "int1" });
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(3);
+    });
+
+    it("gives up after four conflicting attempts", async () => {
+      mockPrisma.$transaction.mockRejectedValue(conflict);
+      await expect(book()).rejects.toBe(conflict);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(4);
+    });
+
+    it("does not retry other errors", async () => {
+      const unique = Object.assign(new Error("dup"), { code: "P2002" });
+      mockPrisma.$transaction.mockRejectedValue(unique);
+      await expect(book()).rejects.toBe(unique);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("throws when no interview config exists", async () => {
     mockPrisma.$transaction.mockImplementation(async (fn: any) => {
       const tx = {

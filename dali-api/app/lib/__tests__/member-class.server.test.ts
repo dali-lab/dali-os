@@ -114,7 +114,7 @@ describe("createClass", () => {
   });
 
   it("uses custom meetings when there is no period code", async () => {
-    const custom = [{ kind: "main", days: [2], startMin: 600, endMin: 660 }];
+    const custom = [{ kind: "main" as const, days: [2], startMin: 600, endMin: 660 }];
     await createClass({ ...base, periodCode: null, customMeetings: custom });
     expect(prismaMock.memberClass.create.mock.calls[0][0].data.meetings).toEqual(custom);
   });

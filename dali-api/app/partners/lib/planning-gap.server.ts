@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { parseColumnMapping } from "~/projects/lib/slot-roles";
-import { personName } from "./core-members.server";
+import { listActiveCoreMembers, personName, type CoreMemberOption } from "./core-members.server";
 import {
   effectivePi,
   hasSpots,
@@ -16,6 +16,17 @@ import {
 
 export type PlanningTermOption = { id: string; code: string; isCurrent: boolean };
 
+// Per-project payload for the planning tab's project info popup. The modal
+// only shows this term + later ones (the PI picker drives staffing for the
+// upcoming cycle), so `plannedTerms` is pre-filtered to termSortKey ≥ picked.
+export type PlanningProjectInfo = {
+  description: string | null;
+  status: string;
+  partnerNames: string[];
+  plannedTerms: { id: string; code: string; sortKey: number }[];
+  pisByTerm: Record<string, { userId: string; name: string } | null>;
+};
+
 export type PlanningData = {
   terms: PlanningTermOption[];
   termId: string | null;
@@ -27,6 +38,8 @@ export type PlanningData = {
   roster: number;
   hasIntentData: boolean;
   intentSetup: IntentSetup;
+  projectInfo: Record<string, PlanningProjectInfo>;
+  coreMembers: CoreMemberOption[];
 };
 
 const APPLICATION_STAGES = ["Backlog", "New", "Interview", "Deciding", "Accepted"] as const;
@@ -47,7 +60,10 @@ function piNameFor(
   return pi ? personName(pi) : null;
 }
 
-export async function loadPlanningData(requestedTermId: string | null): Promise<PlanningData> {
+export async function loadPlanningData(
+  requestedTermId: string | null,
+  request?: Request,
+): Promise<PlanningData> {
   const [allTerms, current] = await Promise.all([
     prisma.term.findMany({
       orderBy: { sortKey: "asc" },
@@ -74,6 +90,8 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       roster: 0,
       hasIntentData: false,
       intentSetup: { kind: "no-form" },
+      projectInfo: {},
+      coreMembers: [],
     };
   }
   const prevTerm = [...allTerms].reverse().find((t) => t.sortKey < term.sortKey) ?? null;
@@ -88,8 +106,16 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
         name: true,
         iconEmoji: true,
         status: true,
+        description: true,
         projectTerms: {
-          select: { termId: true, pi: { select: { firstName: true, lastName: true, daliEmail: true } } },
+          select: {
+            termId: true,
+            pi: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
+          },
+        },
+        partners: {
+          where: { endedAt: null },
+          select: { partnerOrg: { select: { name: true } } },
         },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
         roleRequests: {
@@ -123,6 +149,38 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
     }),
     prisma.user.count({ where: ACTIVE_LAB_MEMBER_WHERE }),
   ]);
+
+  // Per-project payload for the planning tab's info popup. Scoped to the
+  // picked term and later so the PI picker drives the staffing cycle the
+  // planner is actually looking at; past-term PI stays visible on the project
+  // page itself, not in this planning flow.
+  const termById = new Map(allTerms.map((t) => [t.id, t]));
+  const projectInfo: Record<string, PlanningProjectInfo> = {};
+  for (const p of projects) {
+    const upcomingTerms = p.projectTerms
+      .map((pt) => termById.get(pt.termId))
+      .filter((t): t is (typeof allTerms)[number] => !!t && t.sortKey >= term.sortKey)
+      .sort((a, b) => a.sortKey - b.sortKey);
+    const pisByTerm: Record<string, { userId: string; name: string } | null> = {};
+    for (const ut of upcomingTerms) {
+      const pi = effectivePi(
+        p.projectTerms.map((pt) => ({
+          sortKey: sortKeyById.get(pt.termId) ?? Infinity,
+          pi: pt.pi,
+        })),
+        ut.sortKey,
+      );
+      pisByTerm[ut.id] = pi ? { userId: pi.id, name: personName(pi) } : null;
+    }
+    projectInfo[p.id] = {
+      description: p.description,
+      status: p.status,
+      partnerNames: p.partners.map((l) => l.partnerOrg.name),
+      plannedTerms: upcomingTerms.map((t) => ({ id: t.id, code: t.code, sortKey: t.sortKey })),
+      pisByTerm,
+    };
+  }
+  const coreMembers = request ? await listActiveCoreMembers(request) : [];
 
   const items: PlanningItem[] = [];
   const listOnlyItems: PlanningItem[] = [];
@@ -203,5 +261,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       submissions: cycle?._count.formSubmissions ?? 0,
       replied,
     }),
+    projectInfo,
+    coreMembers,
   };
 }

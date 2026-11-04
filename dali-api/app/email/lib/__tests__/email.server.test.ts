@@ -505,7 +505,7 @@ describe("submitEmailAction: connection and inbox archive", () => {
 describe("submitEmailAction: comment", () => {
   it("requires a thread and a body", async () => {
     for (const f of [{ body: "hi" }, { threadId: "t1" }, { threadId: "t1", body: "   " }]) {
-      const res = (await submitEmailAction(post({ intent: "comment", accountId: "a1", ...f }))) as Response;
+      const res = (await submitEmailAction(post({ intent: "comment", accountId: "a1", ...f } as Record<string, string>))) as Response;
       expect(res.status).toBe(400);
     }
     expect(db.mailComment.create).not.toHaveBeenCalled();

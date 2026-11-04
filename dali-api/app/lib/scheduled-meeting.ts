@@ -2056,7 +2056,6 @@ async function updateScheduledMeetingImpl(
       notebookId: true,
       attendanceMode: true,
       recurrenceRule: true,
-      startTime: true,
       scopeType: true,
       scopeId: true,
       isCoreMeeting: true,
@@ -2182,7 +2181,7 @@ async function updateScheduledMeetingImpl(
       }
     }
 
-    const newRule = followingRule(meeting.recurrenceRule ?? "FREQ=WEEKLY", meeting.startTime, new Date(occurrenceStart));
+    const newRule = followingRule(meeting.recurrenceRule ?? "FREQ=WEEKLY", meeting.selectedAt ?? meeting.createdAt, new Date(occurrenceStart));
 
     const ownerLink = meeting.organizerCalendarLinkId
       ? await prisma.userCalendarLink.findUnique({

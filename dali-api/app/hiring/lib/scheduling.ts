@@ -267,12 +267,21 @@ export async function assignInterviewers(
   if (tx) {
     return assignInterviewersWithTx(tx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars);
   }
-  return prisma.$transaction(
-    (innerTx) =>
-      assignInterviewersWithTx(innerTx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars),
-    { isolationLevel: "Serializable" },
-  );
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await prisma.$transaction(
+        (innerTx) =>
+          assignInterviewersWithTx(innerTx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars),
+        { isolationLevel: "Serializable" },
+      );
+    } catch (err) {
+      // A serializable snapshot taken before the FOR UPDATE wait can abort; rerun it fresh.
+      if ((err as { code?: string })?.code !== "P2034" || attempt >= SERIALIZABLE_ATTEMPTS) throw err;
+    }
+  }
 }
+
+const SERIALIZABLE_ATTEMPTS = 4;
 
 /** Every interviewer on a round's roster, read from their DALI OS calendars. */
 async function cycleInterviewerCalendars(cycleId: string, roundId: string): Promise<Map<string, InterviewerCalendar>> {
