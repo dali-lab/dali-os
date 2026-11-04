@@ -63,7 +63,7 @@ describe("claimAiQuota", () => {
 
   it("allows up to the daily max", async () => {
     vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: AI_DAILY_MAX } as never);
-    expect(await claimAiQuota("u1")).toEqual({ ok: true, day: "2026-11-04" });
+    expect(await claimAiQuota("u1")).toEqual({ ok: true, day: "2026-11-04", used: AI_DAILY_MAX });
   });
 
   it("refuses past the max with the message and seconds to midnight", async () => {
@@ -89,7 +89,7 @@ describe("claimAskQuota", () => {
   it("allows up to 50 questions a day", async () => {
     expect(ASK_DAILY_MAX).toBe(50);
     vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 0, askCount: 50 } as never);
-    expect(await claimAskQuota("u1")).toEqual({ ok: true, day: "2026-11-04" });
+    expect(await claimAskQuota("u1")).toEqual({ ok: true, day: "2026-11-04", used: 50 });
   });
 
   it("refuses the 51st question even when the assistant count is low", async () => {

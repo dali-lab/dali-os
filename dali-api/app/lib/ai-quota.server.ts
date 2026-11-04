@@ -7,7 +7,9 @@ export function secondsToUtcMidnight(now: Date = new Date()): number {
   return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
 }
 
-export type AiQuotaResult = { ok: true; day: string } | { ok: false; error: string; retryAfterSeconds: number };
+export type AiQuotaResult =
+  | { ok: true; day: string; used: number }
+  | { ok: false; error: string; retryAfterSeconds: number };
 
 export const ASK_DAILY_MAX = 50;
 
@@ -27,7 +29,7 @@ async function claimQuota(
   if (usage[field] > max) {
     return { ok: false, error, retryAfterSeconds: secondsToUtcMidnight() };
   }
-  return { ok: true, day };
+  return { ok: true, day, used: usage[field] };
 }
 
 export function claimAiQuota(userId: string): Promise<AiQuotaResult> {

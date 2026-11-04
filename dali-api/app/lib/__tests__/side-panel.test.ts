@@ -17,6 +17,24 @@ describe("side panel param", () => {
     expect(sidePanelHref(panel!)).toBe("/documents/abc_123-x");
   });
 
+  it("round-trips the Ask panel, which has no full page", () => {
+    const panel = parseSidePanel("ask:dali");
+    expect(panel).toEqual({ type: "ask", id: "dali" });
+    expect(formatSidePanel(panel!)).toBe("ask:dali");
+    expect(sidePanelHref(panel!)).toBeNull();
+  });
+
+  it.each(["ask:other", "ask:", "ask:dali/x"])("rejects the Ask panel with another id: %p", (value) => {
+    expect(parseSidePanel(value)).toBeNull();
+  });
+
+  it("keeps the Ask panel open beside any page, documents included", () => {
+    expect(visibleSidePanel({ pathname: "/documents/dali", search: "?side=ask:dali" }, null)).toEqual({
+      type: "ask",
+      id: "dali",
+    });
+  });
+
   it.each([null, undefined, "", "doc", ":abc", "doc:", "task:abc", "doc:a/b", "doc:a?b"])(
     "rejects %p",
     (value) => {

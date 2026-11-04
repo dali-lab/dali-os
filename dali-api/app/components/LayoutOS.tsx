@@ -46,6 +46,7 @@ import {
   type NavArea,
   type RoleFlags,
 } from '~/lib/nav-areas'
+import { useOpenAsk } from '~/ask/components/use-ask'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
@@ -225,6 +226,8 @@ export function LayoutOS({
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
+  const askEnabled = useFeatureFlag('ask-dali')
+  const { openAsk } = useOpenAsk()
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags, roleFlags)
@@ -557,6 +560,7 @@ export function LayoutOS({
         flags={navFlags}
         onOpen={openFromPalette}
         onOpenInDesktop={browserDesktop ? openCurrentPageInDesktop : undefined}
+        onAsk={askEnabled ? openAsk : undefined}
       />
       <OpenInDesktopRedirect />
     </div>

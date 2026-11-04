@@ -15,6 +15,7 @@ export const COPY_LINK_SHORTCUT = '⌘⇧C'
 export const FAVORITE_SHORTCUT = '⌘D'
 export const FIND_SHORTCUT = '⌘F'
 export const VERSION_HISTORY_SHORTCUT = '⌘⌥⇧H'
+export const ASK_SHORTCUT = '⌘J'
 
 const EDITING_SURFACE =
   'input, textarea, select, [contenteditable]:not([contenteditable="false"]), .bn-editor, .ProseMirror'
@@ -44,6 +45,10 @@ function modOnly(e: KeyEventLike): boolean {
 
 export function isCommandKShortcut(e: KeyEventLike): boolean {
   return modOnly(e) && (e.key === 'k' || e.key === 'K')
+}
+
+export function isAskShortcut(e: KeyEventLike): boolean {
+  return !e.defaultPrevented && modOnly(e) && (e.code === 'KeyJ' || e.key === 'j' || e.key === 'J')
 }
 
 export function isFavoriteShortcut(e: KeyEventLike): boolean {

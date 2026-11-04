@@ -6,6 +6,7 @@ import { formatSidePanel } from "~/lib/side-panel";
 
 // The editor is heavy and most pages never open a panel, so it loads on demand.
 const DocumentPanel = lazy(() => import("~/components/side-panel/DocumentPanel"));
+const AskPanel = lazy(() => import("~/ask/components/AskPanel"));
 
 /** The routed page with the side panel beside it, when the url names one. */
 export function SidePanelHost({ children }: { children: ReactNode }) {
@@ -25,7 +26,11 @@ export function SidePanelHost({ children }: { children: ReactNode }) {
             </PanelFrame>
           }
         >
-          <DocumentPanel key={formatSidePanel(panel)} panel={panel} onClose={close} />
+          {panel.type === "ask" ? (
+            <AskPanel panel={panel} onClose={close} />
+          ) : (
+            <DocumentPanel key={formatSidePanel(panel)} panel={panel} onClose={close} />
+          )}
         </Suspense>
               )}
     </div>

@@ -74,6 +74,7 @@ function PanelFrameInner({
   children: ReactNode;
 }) {
   const { actionsRef } = usePageBarTargetSetters();
+  const fullPage = sidePanelHref(panel);
   const [width, setWidth] = useState(PRE_MEASURE_WIDTH);
   const asideRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
@@ -162,11 +163,13 @@ function PanelFrameInner({
             <ChevronsRight className="h-[18px] w-[18px]" aria-hidden />
           </button>
         </Tooltip>
-        <Tooltip content="Open full page">
-          <Link to={sidePanelHref(panel)} aria-label="Open full page" className={HEADER_BUTTON}>
-            <Maximize2 className="h-4 w-4" aria-hidden />
-          </Link>
-        </Tooltip>
+        {fullPage && (
+          <Tooltip content="Open full page">
+            <Link to={fullPage} aria-label="Open full page" className={HEADER_BUTTON}>
+              <Maximize2 className="h-4 w-4" aria-hidden />
+            </Link>
+          </Tooltip>
+        )}
         {(icon || title) && (
           <span className="ml-1 flex min-w-0 items-center gap-1.5 text-[13px] text-os-grey">
             {icon && <span aria-hidden className="shrink-0">{icon}</span>}
