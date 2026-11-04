@@ -15,16 +15,29 @@ import { useMeetingRecording, type UseMeetingRecording } from "./use-meeting-rec
 import type { EnhanceBlockChange, EnhanceMarkEntry, SnapshotBlock } from "./enhance-plan";
 import type { LatestRecording } from "./types";
 import { resetLiveSession } from "./live-session";
+import { releaseRecordingPresence } from "./recording-presence";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const awarenessWrites = vi.hoisted(() => [] as Array<[string, unknown]>);
+const remoteAwareness = vi.hoisted(() => ({
+  states: new Map<number, unknown>(),
+  listeners: new Set<() => void>(),
+  set(clientId: number, state: unknown) {
+    this.states.set(clientId, state);
+    this.listeners.forEach((l) => l());
+  },
+}));
 vi.mock("~/components/doc/collab-doc", () => ({
   acquireCollabDoc: () => ({
+    ydoc: { clientID: 1 },
     provider: {
       awareness: {
         getLocalState: () => ({ user: { userId: "me" } }),
         setLocalStateField: (field: string, value: unknown) => void awarenessWrites.push([field, value]),
+        getStates: () => remoteAwareness.states,
+        on: (_event: string, listener: () => void) => void remoteAwareness.listeners.add(listener),
+        off: (_event: string, listener: () => void) => void remoteAwareness.listeners.delete(listener),
       },
     },
   }),
@@ -192,6 +205,9 @@ afterEach(() => {
   container?.remove();
   vi.unstubAllGlobals();
   resetLiveSession();
+  releaseRecordingPresence();
+  remoteAwareness.states.clear();
+  remoteAwareness.listeners.clear();
   box.current = null;
 });
 
@@ -646,7 +662,73 @@ describe("leaving mid-recording: in-app navigation never prompts", () => {
 
     expect(at.path).toBe("/elsewhere");
     expect(document.body.textContent).not.toContain("Leave while recording?");
-    expect(awarenessWrites).toContainEqual(["recording", expect.objectContaining({ userId: "me" })]);
+    expect(awarenessWrites).toContainEqual(["recording", expect.objectContaining({ userId: "me", recordingId: "rMine" })]);
+    expect(awarenessWrites).not.toContainEqual(["recording", null]);
+  });
+
+  it("clears the announcement when the recording stops on the note", async () => {
+    window.localStorage.setItem(
+      backupKey("doc-leave"),
+      JSON.stringify({ id: "rMine", link: "", aiEnabled: false, captureMode: "desktop" }),
+    );
+    await mountLeave(null);
+    expect(box.current!.phase).toBe("recording");
+    vi.stubGlobal("fetch", vi.fn(async () => jsonRes({ ...recordingRow, status: "Stopped" })));
+
+    await act(async () => {
+      await box.current!.stop();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.phase).toBe("review");
+    expect(awarenessWrites.at(-1)).toEqual(["recording", null]);
+  });
+
+  it("follows a recording another viewer starts after this page loaded", async () => {
+    await mountLeave(null);
+    expect(box.current!.phase).toBe("idle");
+
+    await act(async () => {
+      remoteAwareness.set(2, {
+        user: { name: "Priya" },
+        recording: { userId: "u-priya", since: Date.now(), recordingId: "rTheirs" },
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.phase).toBe("recording");
+    expect(box.current!.recordingId).toBe("rTheirs");
+    expect(box.current!.remote).toEqual({ ownerName: "Priya", ownerIsYou: false });
+    expect(awarenessWrites.filter(([field]) => field === "recording")).toEqual([]);
+  });
+
+  it("marks a recording from this user's other device as their own", async () => {
+    await mountLeave(null);
+
+    await act(async () => {
+      remoteAwareness.set(2, {
+        user: { name: "Me" },
+        recording: { userId: "me", since: Date.now(), recordingId: "rOtherDevice" },
+      });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.remote).toEqual({ ownerName: "Me", ownerIsYou: true });
+  });
+
+  it("ignores a remote recorder that carries no recording id", async () => {
+    const fetchMock = vi.fn(async () => jsonRes(recordingRow));
+    vi.stubGlobal("fetch", fetchMock);
+    await mountLeave(null);
+    fetchMock.mockClear();
+
+    await act(async () => {
+      remoteAwareness.set(2, { user: { name: "Priya" }, recording: { userId: "u-priya", since: Date.now() } });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(box.current!.phase).toBe("idle");
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/api/meeting-recordings/"), expect.anything());
   });
 });
 
