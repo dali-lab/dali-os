@@ -98,6 +98,18 @@ describe("help", () => {
     ]);
     expect(await sources("read_help", { articles: [{ slug: "rooms", title: "Booking rooms", summary: "s" }] })).toEqual([]);
   });
+
+  it("cites the in-site pages an article links to, so the answer can link to them", async () => {
+    const body =
+      "Book from [Rooms](/rooms) or the [Calendar](/calendar?view=week). See [Attendance](/help/articles/attendance). " +
+      "Ask [Google](https://google.com) or write [here](mailto:a@b.c).";
+    expect(await sources("read_help", { slug: "rooms", title: "Booking rooms", url: "/help/articles/rooms", body })).toEqual([
+      { kind: "helpArticle", title: "Booking rooms", url: "/help/articles/rooms" },
+      { kind: "page", title: "Rooms", url: "/rooms" },
+      { kind: "page", title: "Calendar", url: "/calendar?view=week" },
+      { kind: "helpArticle", title: "Attendance", url: "/help/articles/attendance" },
+    ]);
+  });
 });
 
 describe("people and projects", () => {

@@ -345,8 +345,7 @@ export async function generateAndVerifyEnhancePlan(params: {
   if (!quota.ok) return { status: 429, ...quota };
   const { day } = quota;
 
-  const provider = resolveAiProvider();
-  if (!provider) return { ok: false, aiEnabled: false };
+  if (!resolveAiProvider()) return { ok: false, aiEnabled: false };
 
   let raw: Awaited<ReturnType<typeof generateShortText>>;
   try {
@@ -355,6 +354,7 @@ export async function generateAndVerifyEnhancePlan(params: {
       system,
       prompt,
       maxTokens: ENHANCE_MAX_TOKENS,
+      accept: (r) => parseEnhancePlan(r.text) !== null,
     });
   } catch (err) {
     if (err instanceof Anthropic.APIError) {
@@ -368,17 +368,9 @@ export async function generateAndVerifyEnhancePlan(params: {
     return { ok: false, status: 422, error: "This meeting is too long to enhance in one pass." };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripJsonFences(raw.text));
-  } catch {
-    return { ok: false, status: 502, error: "AI response could not be parsed" };
-  }
-  const result = EnhancePlanSchema.safeParse(parsed);
-  if (!result.success) {
-    return { ok: false, status: 502, error: "AI response could not be parsed" };
-  }
-  const modelPlan: EnhancePlan = interviewId ? { ...result.data, actionItems: [] } : result.data;
+  const parsedPlan = parseEnhancePlan(raw.text);
+  if (!parsedPlan) return { ok: false, status: 502, error: "AI response could not be parsed" };
+  const modelPlan: EnhancePlan = interviewId ? { ...parsedPlan, actionItems: [] } : parsedPlan;
 
   const { plan, verified } = verifyEnhancePlan(modelPlan, lines, roster, rec.userId, blocks);
   const actionItems = await carryOverTaskIds(plan.actionItems, rec);
@@ -394,6 +386,15 @@ export async function generateAndVerifyEnhancePlan(params: {
   await prisma.meetingRecording.update({ where: { id: rec.id }, data: { notes: notes as Prisma.InputJsonValue } });
 
   return { ok: true, notes };
+}
+
+function parseEnhancePlan(text: string): EnhancePlan | null {
+  try {
+    const result = EnhancePlanSchema.safeParse(JSON.parse(stripJsonFences(text)));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

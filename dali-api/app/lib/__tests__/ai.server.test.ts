@@ -6,7 +6,8 @@ vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
   class FakeAnthropic extends actual.default {
     constructor(opts?: ConstructorParameters<typeof actual.default>[0]) {
       super(opts);
-      (this.messages as unknown as { create: typeof create }).create = create;
+      (this.messages as unknown as { create: unknown }).create = (params: unknown, options: unknown) =>
+        create(params, options, this.baseURL);
     }
   }
   return { ...actual, default: FakeAnthropic };
@@ -15,6 +16,7 @@ vi.mock("@anthropic-ai/sdk", async (importOriginal) => {
 import {
   AI_MODELS,
   AI_TASKS,
+  aiProvidersFor,
   generateShortText,
   isAiEnabled,
   modelParams,
@@ -140,7 +142,7 @@ describe("generateShortText", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it("sends the task's model and effort and returns text, usage and stop reason", async () => {
+  it("sends the task's model and effort and returns text, usage, stop reason and provider", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test";
     create.mockResolvedValue({
       content: [
@@ -153,7 +155,8 @@ describe("generateShortText", () => {
 
     const result = await generateShortText({ task: "projectTldr", system: "sys", prompt: "facts", maxTokens: 400 });
 
-    expect(create).toHaveBeenCalledWith({
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][0]).toEqual({
       model: "claude-haiku-5-5",
       output_config: { effort: "low" },
       max_tokens: 400,
@@ -161,6 +164,108 @@ describe("generateShortText", () => {
       messages: [{ role: "user", content: "facts" }],
       stream: false,
     });
+    expect(create.mock.calls[0][1]).toBeUndefined();
     expect(result).toEqual({ text: "Hello", inputTokens: 12, outputTokens: 3, stopReason: "end_turn" });
+  });
+});
+
+const GATEWAY = "https://chat.dartmouth.edu/api";
+const reply = (text: string, stop = "end_turn") => ({
+  content: [{ type: "text", text }],
+  usage: { input_tokens: 5, output_tokens: 2 },
+  stop_reason: stop,
+});
+
+describe("aiProvidersFor", () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test";
+  });
+
+  it("tries the gateway first for enhance, email, release notes and the TL;DR", () => {
+    for (const task of ["enhance", "email", "releaseNotes", "projectTldr"] as const) {
+      expect(aiProvidersFor(task).map((p) => p.name)).toEqual(["dartmouth", "anthropic"]);
+    }
+  });
+
+  it("keeps Ask DALI and the other tasks on Anthropic first", () => {
+    for (const task of ["ask", "doc", "meetingNotes", "resumeExtract"] as const) {
+      expect(aiProvidersFor(task).map((p) => p.name)).toEqual(["anthropic", "dartmouth"]);
+    }
+  });
+
+  it("uses only the provider that has a key", () => {
+    delete process.env.DARTMOUTH_CHAT_API_KEY;
+    expect(aiProvidersFor("enhance").map((p) => p.name)).toEqual(["anthropic"]);
+  });
+
+  it("uses only the forced provider", () => {
+    process.env.AI_PROVIDER = "anthropic";
+    expect(aiProvidersFor("enhance").map((p) => p.name)).toEqual(["anthropic"]);
+  });
+});
+
+describe("generateShortText fallback", () => {
+  beforeEach(() => {
+    process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+    process.env.DARTMOUTH_CHAT_API_KEY = "dartmouth-test";
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  const call = (opts: Partial<Parameters<typeof generateShortText>[0]> = {}) =>
+    generateShortText({ task: "enhance", system: "s", prompt: "p", maxTokens: 100, ...opts });
+
+  it("returns the gateway's result without calling Anthropic", async () => {
+    create.mockResolvedValueOnce(reply("from gateway"));
+    const result = await call();
+    expect(result).toMatchObject({ text: "from gateway" });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(create.mock.calls[0][2]).toBe(GATEWAY);
+  });
+
+  it("gives the gateway attempt no retries and a bounded timeout", async () => {
+    create.mockResolvedValueOnce(reply("ok"));
+    await call();
+    expect(create.mock.calls[0][1]).toEqual({ maxRetries: 0, timeout: 180_000 });
+  });
+
+  it("switches to Anthropic when the gateway throws", async () => {
+    create.mockRejectedValueOnce(new Error("rate limited")).mockResolvedValueOnce(reply("from anthropic"));
+    const result = await call();
+    expect(result).toMatchObject({ text: "from anthropic" });
+    expect(create.mock.calls[1][2]).not.toBe(GATEWAY);
+    expect(create.mock.calls[1][0]).toMatchObject({ model: "claude-sonnet-5-5", output_config: { effort: "medium" } });
+    expect(create.mock.calls[1][1]).toBeUndefined();
+  });
+
+  it("switches to Anthropic when the gateway stops at its token cap", async () => {
+    create.mockResolvedValueOnce(reply("{\"half", "max_tokens")).mockResolvedValueOnce(reply("whole"));
+    expect(await call()).toMatchObject({ text: "whole" });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("switches to Anthropic when accept rejects the gateway's result", async () => {
+    create.mockResolvedValueOnce(reply("not json")).mockResolvedValueOnce(reply("{}"));
+    const accept = vi.fn((r: { text: string }) => r.text === "{}");
+    expect(await call({ accept })).toMatchObject({ text: "{}" });
+    expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns the last provider's result even when accept rejects it", async () => {
+    create.mockResolvedValueOnce(reply("bad")).mockResolvedValueOnce(reply("also bad", "max_tokens"));
+    expect(await call({ accept: () => false })).toMatchObject({ text: "also bad", stopReason: "max_tokens" });
+  });
+
+  it("throws the last provider's error when both fail", async () => {
+    create.mockRejectedValueOnce(new Error("gateway down")).mockRejectedValueOnce(new Error("anthropic down"));
+    await expect(call()).rejects.toThrow("anthropic down");
+  });
+
+  it("falls back to the gateway when Anthropic fails for an Anthropic-first task", async () => {
+    create.mockRejectedValueOnce(new Error("anthropic down")).mockResolvedValueOnce(reply("from gateway"));
+    const result = await call({ task: "meetingNotes" });
+    expect(result).toMatchObject({ text: "from gateway" });
+    expect(create.mock.calls[0][2]).not.toBe(GATEWAY);
+    expect(create.mock.calls[1][2]).toBe(GATEWAY);
   });
 });

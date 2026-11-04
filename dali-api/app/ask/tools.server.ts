@@ -6,9 +6,13 @@ import type { AskSourceInput, AskSourceKind } from "./sources";
 
 type Args = Record<string, unknown>;
 
+export const ASK_TRANSCRIPT_PAGE_LINES = 300;
+export const ASK_TRANSCRIPT_MAX_LINES = 500;
+
 export type AskTool = {
   status: (args: Args) => string;
   guard?: (args: Args) => string | null;
+  args?: (args: Args) => Args;
   filter?: (payload: unknown) => unknown;
   sources: (args: Args, payload: unknown) => AskSourceInput[] | Promise<AskSourceInput[]>;
 };
@@ -51,6 +55,17 @@ function task(t: Obj, projectId: string | null): AskSourceInput[] {
   const id = str(t.id);
   if (!id || !projectId) return [];
   return [{ kind: "task", title: str(t.title) ?? "Task", url: taskUrl(projectId, id), date: str(t.dueAt) }];
+}
+
+const ARTICLE_LINK = /\[([^\]]+)\]\((\/[^)\s]*)\)/g;
+
+/** The in-site pages a help article links to, so an answer can send someone straight there. */
+function articleLinks(body: string): AskSourceInput[] {
+  return [...body.matchAll(ARTICLE_LINK)].map(([, title, url]) => ({
+    kind: url.startsWith("/help/articles/") ? "helpArticle" : "page",
+    title,
+    url,
+  }));
 }
 
 function flattenPages(nodes: Obj[]): Obj[] {
@@ -115,6 +130,10 @@ export const ASK_TOOLS: Record<string, AskTool> = {
   },
   get_meeting_transcript: {
     status: () => "Reading a transcript",
+    args: (args) => ({
+      ...args,
+      limit: Math.min(typeof args.limit === "number" && args.limit > 0 ? args.limit : ASK_TRANSCRIPT_PAGE_LINES, ASK_TRANSCRIPT_MAX_LINES),
+    }),
     sources: async (_args, payload) => {
       const recordingId = str(obj(payload).recordingId);
       if (!recordingId) return [];
@@ -177,7 +196,8 @@ export const ASK_TOOLS: Record<string, AskTool> = {
     sources: (_args, payload) => {
       const a = obj(payload);
       const url = str(a.url);
-      return url ? [{ kind: "helpArticle", title: str(a.title) ?? "Help", url }] : [];
+      if (!url) return [];
+      return [{ kind: "helpArticle", title: str(a.title) ?? "Help", url }, ...articleLinks(str(a.body) ?? "")];
     },
   },
   get_project_overview: {

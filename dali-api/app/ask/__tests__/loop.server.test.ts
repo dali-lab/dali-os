@@ -140,6 +140,10 @@ describe("askSystemPrompt", () => {
     expect(p).toMatch(/\[s3\]/);
   });
 
+  it("tells the model to cite the page for where to do something", () => {
+    expect(askSystemPrompt("Ada", new Date())).toContain("cite the page source for that place");
+  });
+
   it("leaves the help out when there are no articles", () => {
     expect(askSystemPrompt("Ada", new Date())).not.toMatch(/read_help/);
   });
@@ -219,6 +223,23 @@ describe("runAskTool", () => {
     const out = await runAskTool("read_page", {}, CALLER, new SourceRegistry());
     expect(out.content.length).toBeLessThan(ASK_TOOL_RESULT_MAX_CHARS + 500);
     expect(out.content).toContain("[Result cut off here.");
+  });
+
+  it("pages a transcript read at 300 lines unless the model asks for fewer, and never past 500", async () => {
+    const lim = async (input: Record<string, unknown>) => {
+      h.dispatchTool.mockClear();
+      await runAskTool("get_meeting_transcript", { recordingId: "r1", ...input }, CALLER, new SourceRegistry());
+      return (h.dispatchTool.mock.calls[0][1] as { limit: number }).limit;
+    };
+    expect(await lim({})).toBe(300);
+    expect(await lim({ limit: 100 })).toBe(100);
+    expect(await lim({ limit: 2000 })).toBe(500);
+    expect(await lim({ limit: "lots" })).toBe(300);
+  });
+
+  it("keeps each tool result and each question's input small", () => {
+    expect(ASK_TOOL_RESULT_MAX_CHARS).toBe(15_000);
+    expect(ASK_INPUT_TOKEN_BUDGET).toBe(60_000);
   });
 });
 
