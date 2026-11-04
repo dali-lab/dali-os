@@ -472,12 +472,17 @@ describe("alumni nav", () => {
       "/community/opportunities",
       "/community/gallery",
       "/resources",
+      "/refer",
     ]);
   });
 
   it("drops the community pages from the alumni Lab while the community flag is off", () => {
     const lab = visibleAreas(ALUM, REGROUP)[0];
-    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual(["/projects", "/members"]);
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
+      "/projects",
+      "/members",
+      "/refer",
+    ]);
     expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();
   });
 
