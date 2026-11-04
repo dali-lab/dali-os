@@ -93,7 +93,21 @@ export default function AskPanel({
   }, [turns.length, last?.status]);
 
   return (
-    <PanelFrame panel={panel} title="Ask DALI" onClose={onClose}>
+    <PanelFrame
+      panel={panel}
+      title="Ask DALI"
+      onClose={onClose}
+      footer={
+        <Composer
+          busy={busy}
+          limitedUntil={limitedUntil}
+          placeholder={turns.length ? "Ask a follow-up" : "Ask about docs, meetings or tasks"}
+          remaining={remaining}
+          onAsk={(q) => void thread.ask(q)}
+          onStop={() => thread.stop()}
+        />
+      }
+    >
       {turns.length > 0 && (
         <PageBarPortal slot="actions">
           <Button variant="secondary" size="sm" onClick={() => thread.reset()}>
@@ -101,7 +115,7 @@ export default function AskPanel({
           </Button>
         </PageBarPortal>
       )}
-      <div className="flex min-h-full flex-col">
+      <div className="flex flex-1 flex-col">
         {turns.length === 0 ? (
           <EmptyState onAsk={(q) => void thread.ask(q)} />
         ) : (
@@ -112,14 +126,6 @@ export default function AskPanel({
           </div>
         )}
         <div ref={endRef} />
-        <Composer
-          busy={busy}
-          limitedUntil={limitedUntil}
-          placeholder={turns.length ? "Ask a follow-up" : "Ask about docs, meetings or tasks"}
-          remaining={remaining}
-          onAsk={(q) => void thread.ask(q)}
-          onStop={() => thread.stop()}
-        />
       </div>
     </PanelFrame>
   );
@@ -289,7 +295,7 @@ function Composer({
   };
 
   return (
-    <div className="sticky bottom-0 mt-auto flex flex-col gap-2 bg-os-bg pb-1 pt-4 md:px-4">
+    <div className="flex flex-col gap-2 pb-3 pt-3 md:px-4">
       <div
         className={cn(
           "flex items-end gap-2.5 rounded-os-card border py-2.5 pl-4 pr-2.5 transition-colors",
