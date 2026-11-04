@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from "react";
+import { createContext, useCallback, useContext, useMemo, useRef } from "react";
 import { useToast } from "~/components/ui/toast";
 import {
   emptyStack,
@@ -10,7 +10,7 @@ import {
   stackView,
   type UndoEntry,
 } from "~/components/drive/undo-stack";
-import { OPEN_DIALOG_SELECTOR, undoKeyIntent } from "~/components/drive/undo-keys";
+import { useUndoKeys } from "~/hooks/useUndoKeys";
 
 export type DriveHistory = {
   /** Remember an action that just happened. Returns the entry so a toast can undo exactly this one. */
@@ -78,18 +78,6 @@ export function useDriveHistory({ onChange }: { onChange?: () => void } = {}): D
   );
 }
 
-/** Cmd or Ctrl+Z and the redo chords drive `history` for as long as the host is mounted. */
 export function useDriveHistoryKeys(history: DriveHistory): void {
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const intent = undoKeyIntent(e, { dialogOpen: document.querySelector(OPEN_DIALOG_SELECTOR) !== null });
-      if (!intent) return;
-      const available = intent === "undo" ? history.canUndo() : history.canRedo();
-      if (!available) return;
-      e.preventDefault();
-      void (intent === "undo" ? history.undo() : history.redo());
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [history]);
+  useUndoKeys(history);
 }
