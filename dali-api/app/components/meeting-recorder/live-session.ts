@@ -88,7 +88,7 @@ function patch(changes: Partial<LiveSession>) {
   if (session) set({ ...session, ...changes });
 }
 
-function subscribe(listener: () => void) {
+export function subscribeLiveSession(listener: () => void) {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 }
@@ -98,7 +98,7 @@ export function getLiveSession(): LiveSession | null {
 }
 
 export function useLiveSession(): LiveSession | null {
-  return useSyncExternalStore(subscribe, getLiveSession, () => null);
+  return useSyncExternalStore(subscribeLiveSession, getLiveSession, () => null);
 }
 
 /** Refreshes once per page load, for whichever surface mounts first. */
