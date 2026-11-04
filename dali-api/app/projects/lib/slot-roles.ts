@@ -135,9 +135,6 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
   ],
-  // Pure database view: no interpreter, no staffing writes. Every column is a
-  // display column plus the server-derived submitter identity.
-  referrals: [DISPLAY_ROLE, SUBMITTER_ROLE],
   "level-up": [
     {
       role: "target-domain",
@@ -171,7 +168,6 @@ export const REQUIRED_BUILTINS: Record<Slot, BuiltinSource[]> = {
   "project-bids": ["submitter", "hiredRoles"],
   "intent-to-work": [],
   "level-up": ["submitter"],
-  referrals: ["submitter"],
 };
 
 // A column is filled from one of two source kinds: a form question, or a

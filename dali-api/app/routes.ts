@@ -157,7 +157,7 @@ export default [
     route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
     route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
-    route("core/partners/referrals/:userId", "partners/routes/core.partners.referrals.$userId.tsx"),
+    route("core/partners/referrals/:id", "partners/routes/core.partners.referrals.$id.tsx"),
     route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
@@ -206,6 +206,12 @@ export default [
     route("api/resources/blog-posts", "routes/api.resources.blog-posts.ts"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
+
+    // Partner Bounty — member-facing referral hub. Quiz-gated entry at /refer;
+    // /refer/new is the tier-specific submission form.
+    route("refer", "partners/routes/refer.tsx"),
+    route("refer/new", "partners/routes/refer.new.tsx"),
+    route("refer/done", "partners/routes/refer.done.tsx"),
     route("release-notes", "routes/release-notes._index.tsx"),
     route("release-notes/:id", "routes/release-notes.$id.tsx"),
 
