@@ -23,17 +23,17 @@ export type SegmentedSize = "sm" | "toolbar" | "md";
 
 function osSegmentedTrackClass(size: SegmentedSize) {
   return cn(
-    "os-seg-track inline-flex w-fit max-w-full items-center overflow-x-auto no-scrollbar rounded-full border border-border bg-os-card",
+    "inline-flex w-fit max-w-full items-center overflow-x-auto no-scrollbar rounded-[10px] border border-border bg-os-card",
     size === "md" ? "gap-1 p-1" : "gap-0.5 p-0.5",
   );
 }
 
 function osSegmentedItemClass(active: boolean, size: SegmentedSize) {
   return cn(
-    "os-seg-item inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium transition-colors",
+    "inline-flex shrink-0 items-center gap-1.5 rounded-[8px] font-medium transition-colors",
     size === "sm" && "px-3 py-1 text-xs",
     size === "toolbar" && "h-[30px] px-3.5 text-sm",
-    size === "md" && "os-seg-item-md px-4 py-2 text-sm",
+    size === "md" && "px-[14px] py-[6px] text-[13px]/[calc(1.25/0.875)]",
     active
       ? "bg-os-container text-foreground"
       : "text-muted-foreground hover:text-foreground",
