@@ -20,6 +20,7 @@ import type { ProjectShowcaseStatus } from "~/generated/prisma/client";
 const STATUSES = ["NotStarted", "InProgress", "NeedsReview", "Published", "Archive"] as const;
 
 export class ShowcaseNotFoundError extends Error {
+  status = 404;
   constructor(id: string) {
     super(`Project ${id} not found`);
     this.name = "ShowcaseNotFoundError";
@@ -27,6 +28,7 @@ export class ShowcaseNotFoundError extends Error {
 }
 
 export class ShowcaseForbiddenError extends Error {
+  status = 403;
   constructor(message: string) {
     super(message);
     this.name = "ShowcaseForbiddenError";
@@ -34,6 +36,7 @@ export class ShowcaseForbiddenError extends Error {
 }
 
 export class ShowcaseInvalidError extends Error {
+  status = 400;
   constructor(message: string) {
     super(message);
     this.name = "ShowcaseInvalidError";

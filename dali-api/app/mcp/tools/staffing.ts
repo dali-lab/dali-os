@@ -22,6 +22,7 @@ import type { Level } from "~/generated/prisma/client";
 const LEVELS = ["P1", "P2", "P3"] as const;
 
 export class StaffingForbiddenError extends Error {
+  status = 403;
   constructor() {
     super("Only staffing managers can read or change the staffing board");
     this.name = "StaffingForbiddenError";
@@ -29,6 +30,7 @@ export class StaffingForbiddenError extends Error {
 }
 
 export class StaffingNotFoundError extends Error {
+  status = 404;
   constructor(what: string) {
     super(`${what} not found`);
     this.name = "StaffingNotFoundError";
@@ -36,6 +38,7 @@ export class StaffingNotFoundError extends Error {
 }
 
 export class StaffingInvalidError extends Error {
+  status = 400;
   constructor(message: string) {
     super(message);
     this.name = "StaffingInvalidError";
