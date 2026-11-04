@@ -36,12 +36,24 @@ import type { ToolCaller } from "~/mcp/dispatch.server";
 import type { AiProvider } from "~/lib/ai.server";
 
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: unknown };
-type Turn = { blocks: Block[]; stop: string; usage?: { input_tokens: number; output_tokens: number } };
+type Turn = {
+  blocks: Block[];
+  stop: string;
+  usage?: { input_tokens: number; output_tokens: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number };
+};
+type Call = {
+  model: string;
+  max_tokens: number;
+  system: unknown;
+  tools: { name: string; cache_control?: unknown }[];
+  messages: unknown[];
+  cache_control?: unknown;
+};
 
-function fakeProvider(turns: Turn[]) {
-  const calls: { model: string; max_tokens: number; system: string; tools: { name: string }[]; messages: unknown[] }[] = [];
+function fakeProvider(turns: Turn[], name: "anthropic" | "dartmouth" = "dartmouth") {
+  const calls: Call[] = [];
   const countTokens = vi.fn().mockResolvedValue({ input_tokens: 7 });
-  const stream = vi.fn((params: { model: string; max_tokens: number; system: string; tools: { name: string }[]; messages: unknown[] }) => {
+  const stream = vi.fn((params: Call) => {
     calls.push(structuredClone(params));
     const turn = turns.shift();
     if (!turn) throw new Error("no more turns");
@@ -60,7 +72,7 @@ function fakeProvider(turns: Turn[]) {
     };
   });
   const provider = {
-    name: "dartmouth",
+    name,
     client: { messages: { stream, countTokens } },
   } as unknown as AiProvider;
   return { provider, calls, stream, countTokens };
@@ -79,8 +91,8 @@ const CALLER: ToolCaller = {
 const text = (t: string): Block => ({ type: "text", text: t });
 const use = (id: string, name: string, input: unknown = {}): Block => ({ type: "tool_use", id, name, input });
 
-async function ask(turns: Turn[], opts: { signal?: AbortSignal } = {}) {
-  const fake = fakeProvider(turns);
+async function ask(turns: Turn[], opts: { signal?: AbortSignal; provider?: "anthropic" | "dartmouth" } = {}) {
+  const fake = fakeProvider(turns, opts.provider);
   const events: AskEvent[] = [];
   const usage = { inputTokens: 0, outputTokens: 0 };
   await runAsk({
@@ -337,5 +349,72 @@ describe("runAsk", () => {
       { role: "assistant", content: "May 4 [1]." },
       { role: "user", content: "And after that?" },
     ]);
+  });
+});
+
+describe("prompt caching", () => {
+  const lookupThenAnswer = (): Turn[] => [
+    { blocks: [use("t0", "read_page")], stop: "tool_use" },
+    { blocks: [text("May 4 [s1].")], stop: "end_turn" },
+  ];
+
+  it("caches the shared tools, the system prompt, and the growing tail on first-party", async () => {
+    const { calls } = await ask(lookupThenAnswer(), { provider: "anthropic" });
+    for (const call of calls) {
+      expect(call.cache_control).toEqual({ type: "ephemeral" });
+      expect(call.system).toEqual([
+        { type: "text", text: askSystemPrompt("Ada", new Date("2026-11-04T12:00:00Z")), cache_control: { type: "ephemeral" } },
+      ]);
+      expect(call.tools.map((t) => t.cache_control ?? null)).toEqual([null, null, { type: "ephemeral" }]);
+    }
+  });
+
+  it("sends a byte-identical prefix every round so later rounds read the cache", async () => {
+    const { calls } = await ask(lookupThenAnswer(), { provider: "anthropic" });
+    expect(calls[1].tools).toEqual(calls[0].tools);
+    expect(calls[1].system).toEqual(calls[0].system);
+    expect(calls[1].messages.slice(0, calls[0].messages.length)).toEqual(calls[0].messages);
+  });
+
+  it("sends the gateway a plain request with no cache markers", async () => {
+    const { calls } = await ask(lookupThenAnswer());
+    expect(calls[0]).not.toHaveProperty("cache_control");
+    expect(typeof calls[0].system).toBe("string");
+    expect(calls[0].tools.every((t) => !("cache_control" in t))).toBe(true);
+  });
+
+  it("counts cached input tokens toward usage", async () => {
+    const { usage } = await ask(
+      [
+        {
+          blocks: [use("t0", "read_page")],
+          stop: "tool_use",
+          usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 2000 },
+        },
+        {
+          blocks: [text("Done.")],
+          stop: "end_turn",
+          usage: { input_tokens: 30, output_tokens: 7, cache_creation_input_tokens: 400, cache_read_input_tokens: 2000 },
+        },
+      ],
+      { provider: "anthropic" },
+    );
+    expect(usage).toEqual({ inputTokens: 4440, outputTokens: 12 });
+  });
+
+  it("spends the token budget on cached input too", async () => {
+    const { calls } = await ask(
+      [
+        {
+          blocks: [use("t0", "read_page")],
+          stop: "tool_use",
+          usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: ASK_INPUT_TOKEN_BUDGET },
+        },
+        { blocks: [text("May 4 [s1].")], stop: "end_turn" },
+      ],
+      { provider: "anthropic" },
+    );
+    const last = (calls[1].messages as { content: unknown }[]).at(-1)!.content as { type: string }[];
+    expect(last.at(-1)).toEqual({ type: "text", text: "That was your last lookup. Answer now from what you have." });
   });
 });
