@@ -19,7 +19,7 @@ describe("findRemoteRecording", () => {
       [1, { user: { name: "Alex" } }],
       [2, { user: { name: "Sam" }, recording: { userId: "u2", since: 1000 } }],
     ]);
-    expect(findRemoteRecording(map, 1)).toEqual({ name: "Sam", since: 1000 });
+    expect(findRemoteRecording(map, 1)).toEqual({ name: "Sam", since: 1000, userId: "u2", recordingId: null });
   });
 
   it("excludes the local client even when it is recording", () => {
@@ -33,12 +33,17 @@ describe("findRemoteRecording", () => {
       [2, { user: { name: "Sam" }, recording: { userId: "u2", since: 2000 } }],
       [3, { user: { name: "Jo" }, recording: { userId: "u3", since: 500 } }],
     ]);
-    expect(findRemoteRecording(map, 1)).toEqual({ name: "Jo", since: 500 });
+    expect(findRemoteRecording(map, 1)).toEqual({ name: "Jo", since: 500, userId: "u3", recordingId: null });
   });
 
   it("falls back to 'Someone' when the recorder's name is missing", () => {
     const map = states([[2, { recording: { userId: "u2", since: 1000 } }]]);
-    expect(findRemoteRecording(map, 1)).toEqual({ name: "Someone", since: 1000 });
+    expect(findRemoteRecording(map, 1)).toEqual({ name: "Someone", since: 1000, userId: "u2", recordingId: null });
+  });
+
+  it("carries the recording id when the recorder announces one", () => {
+    const map = states([[2, { user: { name: "Sam" }, recording: { userId: "u2", since: 1000, recordingId: "r9" } }]]);
+    expect(findRemoteRecording(map, 1)).toEqual({ name: "Sam", since: 1000, userId: "u2", recordingId: "r9" });
   });
 
   it("ignores a cleared (null) recording field", () => {
