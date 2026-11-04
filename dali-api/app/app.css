@@ -601,6 +601,12 @@ html:has([data-tab-workspace]) {
   scrollbar-gutter: auto;
 }
 
+@media (min-width: 48rem) {
+  html:has([data-side-panel-page]) {
+    scrollbar-gutter: auto;
+  }
+}
+
 /* The sidebar shell is dark navy in both color modes. Force a dark scrollbar
    for its scroll area so the (light-mode) browser scrollbar track doesn't paint
    a pale strip against the dark nav. `color-scheme: dark` covers WebKit/Blink;

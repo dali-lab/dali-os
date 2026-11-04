@@ -1,7 +1,8 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { PanelFrame } from "~/components/side-panel/PanelFrame";
-import { useAltClickOpensBeside, useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
+import { useAltClickOpensBeside, useCarryPageScroll, useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
+import { cn } from "~/lib/cn";
 import { formatSidePanel } from "~/lib/side-panel";
 import { loadAskPanel } from "~/ask/components/load-ask-panel";
 
@@ -14,9 +15,24 @@ export function SidePanelHost({ children }: { children: ReactNode }) {
   const { panel, close } = useSidePanel();
   useAltClickOpensBeside();
   useKeepSidePanel();
+  const pageRef = useCarryPageScroll(panel !== null);
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 items-start">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col self-stretch">{children}</div>
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-1 items-start",
+        panel && "md:h-[calc(100dvh-var(--os-shell-header-h,0px))]",
+      )}
+    >
+      <div
+        ref={pageRef}
+        data-side-panel-page={panel ? "" : undefined}
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col self-stretch",
+          panel && "md:overflow-y-auto md:[--os-shell-header-h:0px]",
+        )}
+      >
+        {children}
+      </div>
       {panel && (
                 <Suspense
           fallback={

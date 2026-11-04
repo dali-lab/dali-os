@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import {
   SIDE_PARAM,
@@ -117,4 +117,50 @@ export function useAltClickOpensBeside() {
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
   }, []);
+}
+
+export function useCarryPageScroll(open: boolean) {
+  const pageRef = useRef<HTMLDivElement>(null);
+  const windowY = useRef(0);
+  const pageY = useRef(0);
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    if (open) return;
+    const record = () => {
+      windowY.current = window.scrollY;
+    };
+    record();
+    window.addEventListener("scroll", record, { passive: true });
+    return () => window.removeEventListener("scroll", record);
+  }, [open]);
+
+  const wasOpen = useRef(false);
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    const closing = wasOpen.current && !open;
+    wasOpen.current = open;
+    if (!page || panelCoversPage()) return;
+    if (open) {
+      page.scrollTop = windowY.current;
+      const record = () => {
+        pageY.current = page.scrollTop;
+      };
+      record();
+      page.addEventListener("scroll", record, { passive: true });
+      return () => page.removeEventListener("scroll", record);
+    }
+    if (closing) window.scrollTo(0, pageY.current);
+  }, [open]);
+
+  const firstPath = useRef(true);
+  useLayoutEffect(() => {
+    if (firstPath.current) {
+      firstPath.current = false;
+      return;
+    }
+    if (open && pageRef.current) pageRef.current.scrollTop = 0;
+  }, [pathname]);
+
+  return pageRef;
 }
