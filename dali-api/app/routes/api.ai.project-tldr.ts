@@ -236,7 +236,7 @@ export async function action({ request }: Route.ActionArgs) {
       task: "projectTldr",
       system: SYSTEM_PROMPT,
       prompt: factsToPrompt(project.name, facts, detail),
-      maxTokens: 400,
+      maxTokens: 1000,
     });
     if (!result) {
       return Response.json({ aiEnabled: false } satisfies ProjectTldrDisabledResponse, {

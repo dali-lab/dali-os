@@ -37,9 +37,9 @@ type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; na
 type Turn = { blocks: Block[]; stop: string; usage?: { input_tokens: number; output_tokens: number } };
 
 function fakeProvider(turns: Turn[]) {
-  const calls: { model: string; tools: { name: string }[]; messages: unknown[] }[] = [];
+  const calls: { model: string; max_tokens: number; tools: { name: string }[]; messages: unknown[] }[] = [];
   const countTokens = vi.fn().mockResolvedValue({ input_tokens: 7 });
-  const stream = vi.fn((params: { model: string; tools: { name: string }[]; messages: unknown[] }) => {
+  const stream = vi.fn((params: { model: string; max_tokens: number; tools: { name: string }[]; messages: unknown[] }) => {
     calls.push(structuredClone(params));
     const turn = turns.shift();
     if (!turn) throw new Error("no more turns");
@@ -186,6 +186,7 @@ describe("runAsk", () => {
       { type: "done", answer: "I couldn't find that.", sources: [] },
     ]);
     expect(calls[0].model).toBe("anthropic.claude-sonnet-5-5");
+    expect(calls[0].max_tokens).toBe(8000);
     expect(calls[0].messages).toEqual([{ role: "user", content: "When is the launch?" }]);
   });
 

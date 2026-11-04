@@ -97,7 +97,7 @@ export async function action({ request }: Route.ActionArgs) {
       task: "meetingNotes",
       system: SYSTEM_PROMPT,
       prompt: `${title ? `Document: ${title}\n\n` : ""}Transcript:\n${transcript}`,
-      maxTokens: 2000,
+      maxTokens: 4000,
     });
     if (!result) return Response.json({ aiEnabled: false }, { status: 503 });
     await recordTokenUsage(auth.user.sub, day, result.inputTokens, result.outputTokens);

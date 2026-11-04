@@ -12,7 +12,7 @@ export type { AskEvent };
 export const ASK_MAX_TOOL_ROUNDS = 6;
 export const ASK_INPUT_TOKEN_BUDGET = 150_000;
 export const ASK_TOOL_RESULT_MAX_CHARS = 40_000;
-const MAX_TOKENS = 2048;
+const MAX_TOKENS = 8000;
 
 export const OUT_OF_STEPS =
   "I ran out of steps before I could put an answer together. Try a narrower question.";

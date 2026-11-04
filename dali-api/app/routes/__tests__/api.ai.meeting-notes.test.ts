@@ -66,6 +66,7 @@ describe("POST /api/ai/meeting-notes", () => {
     expect(res.status).toBe(200);
     expect(vi.mocked(generateShortText).mock.calls[0]![0].prompt).toMatch(/^Transcript:/);
     expect(vi.mocked(generateShortText).mock.calls[0]![0].task).toBe("meetingNotes");
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(4000);
   });
 
   it("rejects an empty transcript before calling the model", async () => {

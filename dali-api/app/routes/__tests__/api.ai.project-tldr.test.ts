@@ -216,7 +216,7 @@ describe("generation and cache", () => {
     expect(call.data.aiTldrInputHash).toBe("fp-1");
     expect(call.data.aiTldrGeneratedAt.toISOString()).toBe(body.generatedAt);
     expect(recordTokenUsage).toHaveBeenCalledWith("ada", day, 30, 9);
-    expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(400);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(1000);
     expect(vi.mocked(generateShortText).mock.calls[0]![0].task).toBe("projectTldr");
     expect(vi.mocked(generateShortText).mock.calls[0]![0].prompt).toContain('Project "Deserto"');
   });
