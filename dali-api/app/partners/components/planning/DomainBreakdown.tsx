@@ -10,15 +10,28 @@ export const PLANNING_GRID =
 // Lines project names up under their domain's: the chevron (14px) + its gap (8px).
 const INDENT = "pl-[22px]";
 
-export function breakdownHref(row: Pick<PlanningBreakdownRow, "kind" | "refId">): string {
-  return row.kind === "application"
-    ? `/core/partners?application=${row.refId}`
-    : `/projects/${row.refId}`;
+// Applications still jump to the Partners board (where their card lives);
+// projects open the planning info popup inline, so this helper only resolves
+// application links. Project rows hand off to `onProjectClick` instead.
+export function applicationHref(refId: string): string {
+  return `/core/partners?application=${refId}`;
 }
 
-export function DomainBreakdown({ items }: { items: PlanningBreakdownRow[] }) {
+export function DomainBreakdown({
+  items,
+  onProjectClick,
+}: {
+  items: PlanningBreakdownRow[];
+  onProjectClick: (projectId: string) => void;
+}) {
   const renewals = items.filter((i) => i.source === "renewing");
   const fresh = items.filter((i) => i.source === "new");
+  const rowClass = (counted: boolean) =>
+    cn(
+      PLANNING_GRID,
+      "py-1.5 text-left text-sm transition-colors hover:bg-os-hover",
+      !counted && "opacity-45",
+    );
   return (
     <div className="bg-os-well py-1">
       {[renewals, fresh].map((group, gi) =>
@@ -27,28 +40,39 @@ export function DomainBreakdown({ items }: { items: PlanningBreakdownRow[] }) {
             <p className={cn(PLANNING_GRID, "pb-0.5 pt-1.5 text-xs font-medium text-muted-foreground")}>
               <span className={INDENT}>{gi === 0 ? "Renewing" : "New"}</span>
             </p>
-            {group.map((row) => (
-              <Link
-                key={row.key}
-                to={breakdownHref(row)}
-                className={cn(
-                  PLANNING_GRID,
-                  "py-1.5 text-sm transition-colors hover:bg-os-hover",
-                  !row.counted && "opacity-45",
-                )}
-              >
-                <span className={cn(INDENT, "min-w-0 truncate text-foreground")}>
-                  {row.iconEmoji && <span aria-hidden className="mr-1.5">{row.iconEmoji}</span>}
-                  {row.name}
-                </span>
-                <span className="tabular-nums text-foreground">{row.count}</span>
-                <span />
-                <span className="text-xs text-muted-foreground">{planningStateLabel(row)}</span>
-              </Link>
-            ))}
+            {group.map((row) =>
+              row.kind === "application" ? (
+                <Link key={row.key} to={applicationHref(row.refId)} className={rowClass(row.counted)}>
+                  <BreakdownCells row={row} />
+                </Link>
+              ) : (
+                <button
+                  key={row.key}
+                  type="button"
+                  onClick={() => onProjectClick(row.refId)}
+                  className={cn(rowClass(row.counted), "w-full")}
+                >
+                  <BreakdownCells row={row} />
+                </button>
+              ),
+            )}
           </div>
         ),
       )}
     </div>
+  );
+}
+
+function BreakdownCells({ row }: { row: PlanningBreakdownRow }) {
+  return (
+    <>
+      <span className={cn(INDENT, "min-w-0 truncate text-foreground")}>
+        {row.iconEmoji && <span aria-hidden className="mr-1.5">{row.iconEmoji}</span>}
+        {row.name}
+      </span>
+      <span className="tabular-nums text-foreground">{row.count}</span>
+      <span />
+      <span className="text-xs text-muted-foreground">{planningStateLabel(row)}</span>
+    </>
   );
 }
