@@ -1,10 +1,5 @@
-// Extracted core of POST /api/staffing/finalize so both the route action and
-// the MCP `finalize_staffing` tool can call the same logic without duplicating
-// the ~300-line automation body.
-//
-// Callers supply: actorId (the user executing the operation), body (validated
-// request payload), and a Request object for logAuditEvent (may be a synthetic
-// Request in the MCP path).
+// Shared by POST /api/staffing/finalize, finalize-all and the MCP
+// `finalize_staffing` tool. `request` feeds logAuditEvent and may be synthetic.
 
 import { prisma } from "~/lib/db.server";
 import {
@@ -69,6 +64,9 @@ export type FinalizeStaffingResult =
   | { saved: true }
   | { results: Record<Automation, StepResult> };
 
+export class FinalizeNotFoundError extends Error {}
+export class FinalizeInputError extends Error {}
+
 export async function finalizeStaffing(
   actorId: string,
   body: FinalizeStaffingBody,
@@ -80,11 +78,15 @@ export async function finalizeStaffing(
     ),
   );
 
+  if (!body.saveFieldsOnly && selected.size === 0) {
+    throw new FinalizeInputError("No automations selected");
+  }
+
   const cycle = await prisma.staffingCycle.findUnique({
     where: { id: body.cycleId },
     select: { id: true, termId: true, name: true },
   });
-  if (!cycle) throw new Error("Cycle not found");
+  if (!cycle) throw new FinalizeNotFoundError("Cycle not found");
 
   const project = await prisma.project.findUnique({
     where: { id: body.projectId },
@@ -98,7 +100,7 @@ export async function finalizeStaffing(
       teamGroupEmail: true,
     },
   });
-  if (!project) throw new Error("Project not found");
+  if (!project) throw new FinalizeNotFoundError("Project not found");
 
   // ── saveFieldsOnly ──────────────────────────────────────────────────────────
   if (body.saveFieldsOnly) {

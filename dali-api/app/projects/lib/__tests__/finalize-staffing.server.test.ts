@@ -64,7 +64,7 @@ vi.mock("../mentorship-pairings", () => ({
 }));
 vi.mock("../github-team-sync", () => ({ grantTeamRepos: vi.fn() }));
 
-import { finalizeStaffing } from "../finalize-staffing.server";
+import { finalizeStaffing, FinalizeInputError, FinalizeNotFoundError } from "../finalize-staffing.server";
 import { ensureChannel, inviteUsersToChannel, postMessage, slackConfigured } from "~/slack/lib/slack-client";
 import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
 import { ensureTeam, addTeamMember } from "~/lib/github";
@@ -137,13 +137,30 @@ beforeEach(() => {
 describe("finalizeStaffing guards", () => {
   it("throws when the cycle does not exist", async () => {
     prismaMock.staffingCycle.findUnique.mockResolvedValue(null);
+    await expect(run()).rejects.toThrow(FinalizeNotFoundError);
     await expect(run()).rejects.toThrow("Cycle not found");
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it("throws when the project does not exist", async () => {
     prismaMock.project.findUnique.mockResolvedValue(null);
+    await expect(run()).rejects.toThrow(FinalizeNotFoundError);
     await expect(run()).rejects.toThrow("Project not found");
+  });
+
+  it.each([[[]], [["bogus"]]])(
+    "rejects an empty selection (%j) before touching the database, auditing or publishing",
+    async (automations) => {
+      await expect(run({ automations })).rejects.toThrow(FinalizeInputError);
+      await expect(run({ automations })).rejects.toThrow("No automations selected");
+      expect(prismaMock.staffingCycle.findUnique).not.toHaveBeenCalled();
+      expect(logAuditEvent).not.toHaveBeenCalled();
+      expect(publishCycleChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it("allows an empty selection when only saving fields", async () => {
+    await expect(run({ automations: [], saveFieldsOnly: true })).resolves.toEqual({ saved: true });
   });
 
   it("ignores unknown automation names and returns results only for known ones", async () => {
