@@ -7,7 +7,7 @@
     "@expo-google-fonts/inter": "^0.4.2",
     "@expo-google-fonts/pt-sans": "^0.4.1",
     "date-fns": "^4.4.0",
-    "expo": "~57.0.31",
+    "expo": "~58.0.23",
     "expo-asset": "~57.0.20",
     "expo-audio": "~57.0.5",
     "expo-clipboard": "~57.0.2",
