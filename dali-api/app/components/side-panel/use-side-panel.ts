@@ -124,6 +124,7 @@ export function useCarryPageScroll(open: boolean) {
   const windowY = useRef(0);
   const pageY = useRef(0);
   const { pathname } = useLocation();
+  const last = useRef({ open: false, pathname });
 
   useEffect(() => {
     if (open) return;
@@ -135,14 +136,14 @@ export function useCarryPageScroll(open: boolean) {
     return () => window.removeEventListener("scroll", record);
   }, [open]);
 
-  const wasOpen = useRef(false);
   useLayoutEffect(() => {
     const page = pageRef.current;
-    const closing = wasOpen.current && !open;
-    wasOpen.current = open;
+    // A tab switch or navigation that also opens or closes the panel restores its own scroll.
+    const toggledInPlace = last.current.open !== open && last.current.pathname === pathname;
+    last.current = { open, pathname };
     if (!page || panelCoversPage()) return;
     if (open) {
-      page.scrollTop = windowY.current;
+      if (toggledInPlace) page.scrollTop = windowY.current;
       const record = () => {
         pageY.current = page.scrollTop;
       };
@@ -150,17 +151,8 @@ export function useCarryPageScroll(open: boolean) {
       page.addEventListener("scroll", record, { passive: true });
       return () => page.removeEventListener("scroll", record);
     }
-    if (closing) window.scrollTo(0, pageY.current);
-  }, [open]);
-
-  const firstPath = useRef(true);
-  useLayoutEffect(() => {
-    if (firstPath.current) {
-      firstPath.current = false;
-      return;
-    }
-    if (open && pageRef.current) pageRef.current.scrollTop = 0;
-  }, [pathname]);
+    if (toggledInPlace) window.scrollTo(0, pageY.current);
+  }, [open, pathname]);
 
   return pageRef;
 }

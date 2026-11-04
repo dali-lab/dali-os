@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter, useNavigate } from "react-router";
+import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { useCarryPageScroll } from "~/components/side-panel/use-side-panel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,7 +13,8 @@ let navigate: ReturnType<typeof useNavigate>;
 let page: HTMLDivElement | null = null;
 const scrollTo = vi.fn();
 
-function Harness({ open }: { open: boolean }) {
+function Harness() {
+  const open = new URLSearchParams(useLocation().search).has("side");
   const ref = useCarryPageScroll(open);
   navigate = useNavigate();
   return (
@@ -30,20 +31,21 @@ function setCovers(covers: boolean) {
   window.matchMedia = ((query: string) => ({ matches: covers, media: query })) as unknown as typeof window.matchMedia;
 }
 
-function render(open: boolean) {
-  act(() =>
-    root.render(
-      <MemoryRouter initialEntries={["/admin"]}>
-        <Harness open={open} />
-      </MemoryRouter>,
-    ),
-  );
-}
-
 function setWindowY(y: number) {
   Object.defineProperty(window, "scrollY", { value: y, configurable: true });
   act(() => {
     window.dispatchEvent(new Event("scroll"));
+  });
+}
+
+function go(to: string) {
+  act(() => navigate(to));
+}
+
+function scrollColumn(y: number) {
+  page!.scrollTop = y;
+  act(() => {
+    page!.dispatchEvent(new Event("scroll"));
   });
 }
 
@@ -53,6 +55,13 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
+  act(() =>
+    root.render(
+      <MemoryRouter initialEntries={["/admin"]}>
+        <Harness />
+      </MemoryRouter>,
+    ),
+  );
 });
 
 afterEach(() => {
@@ -64,43 +73,41 @@ afterEach(() => {
 
 describe("useCarryPageScroll", () => {
   it("leaves the window alone when the page mounts with no panel", () => {
-    render(false);
     expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it("moves the window's scroll into the page column when the panel opens", () => {
-    render(false);
     setWindowY(640);
-    render(true);
+    go("/admin?side");
     expect(page!.scrollTop).toBe(640);
   });
 
   it("hands the column's scroll back to the window when the panel closes", () => {
-    render(false);
-    render(true);
-    page!.scrollTop = 900;
-    act(() => {
-      page!.dispatchEvent(new Event("scroll"));
-    });
-    render(false);
+    go("/admin?side");
+    scrollColumn(900);
+    go("/admin");
     expect(scrollTo).toHaveBeenCalledWith(0, 900);
   });
 
-  it("starts a new page at the top of the column while the panel stays open", () => {
-    render(false);
-    render(true);
-    page!.scrollTop = 300;
-    act(() => navigate("/admin/audit"));
+  it("leaves the column to the tab's own restore when the panel opens on a different page", () => {
+    setWindowY(640);
+    go("/admin/audit?side");
     expect(page!.scrollTop).toBe(0);
+  });
+
+  it("leaves the window to the tab's own restore when the panel closes on a different page", () => {
+    go("/admin?side");
+    scrollColumn(900);
+    go("/admin/audit");
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it("does nothing when the panel covers the page on a narrow screen", () => {
     setCovers(true);
-    render(false);
     setWindowY(640);
-    render(true);
+    go("/admin?side");
     expect(page!.scrollTop).toBe(0);
-    render(false);
+    go("/admin");
     expect(scrollTo).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import { useAltClickOpensBeside, useCarryPageScroll, useKeepSidePanel, useSidePa
 import { cn } from "~/lib/cn";
 import { formatSidePanel } from "~/lib/side-panel";
 import { loadAskPanel } from "~/ask/components/load-ask-panel";
+import { PAGE_SCROLLER_ATTR } from "~/lib/page-scroll";
 
 // The editor is heavy and most pages never open a panel, so it loads on demand.
 const DocumentPanel = lazy(() => import("~/components/side-panel/DocumentPanel"));
@@ -25,7 +26,7 @@ export function SidePanelHost({ children }: { children: ReactNode }) {
     >
       <div
         ref={pageRef}
-        data-side-panel-page={panel ? "" : undefined}
+        {...(panel ? { [PAGE_SCROLLER_ATTR]: "" } : {})}
         className={cn(
           "flex min-h-0 min-w-0 flex-1 flex-col self-stretch",
           panel && "md:overflow-y-auto md:[--os-shell-header-h:0px]",

@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { redirect, useLoaderData, useLocation, useMatches, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
+import { isPageScroll, pageScrollY, scrollPageTo } from '~/lib/page-scroll'
 import { areaForPath, areaInk, areaTint } from '~/lib/nav-areas'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -364,7 +365,7 @@ export default function AppLayoutRoute() {
       try {
         const saved = window.sessionStorage.getItem(key);
         raf = window.requestAnimationFrame(() => {
-          window.scrollTo(0, saved ? parseInt(saved, 10) || 0 : 0);
+          scrollPageTo(saved ? parseInt(saved, 10) || 0 : 0);
         });
       } catch {
         // sessionStorage disabled — nothing to restore.
@@ -373,18 +374,19 @@ export default function AppLayoutRoute() {
 
     // Continuously record this entry's scroll while it's the active location,
     // so a later back-navigation lands where the user left off.
-    const onScroll = () => {
+    const onScroll = (event?: Event) => {
+      if (event && !isPageScroll(event)) return;
       try {
-        window.sessionStorage.setItem(key, String(window.scrollY));
+        window.sessionStorage.setItem(key, String(pageScrollY()));
       } catch {
         // ignore quota / disabled storage
       }
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true, capture: true });
     return () => {
       window.cancelAnimationFrame(raf);
       onScroll(); // capture final position for this entry before it changes
-      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll, { capture: true });
     };
   }, [location.key, navigationType]);
 
