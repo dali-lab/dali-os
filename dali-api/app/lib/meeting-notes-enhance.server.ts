@@ -16,6 +16,7 @@ import { verifyEnhancePlan, type VerifyRosterUser } from "~/lib/meeting-notes-ve
 import { fullName } from "~/lib/display";
 import { currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
+import { claimAiQuota } from "~/lib/ai-quota.server";
 import type { MeetingRecording, Prisma } from "~/generated/prisma/client";
 import {
   actionItemMatchesBlock,
@@ -24,7 +25,7 @@ import {
   type SnapshotBlock,
   type StoredEnhanceNotes,
 } from "~/components/meeting-recorder/enhance-plan";
-import { AI_DAILY_MAX, secondsToUtcMidnight, TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
+import { TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
 import { z } from "zod";
 
 const MAX_BLOCKS = 500;
@@ -223,20 +224,9 @@ export async function generateAndVerifyEnhancePlan(params: {
 
   const { roster, meetingTypeLabel, occurrenceDate, recorderName } = await resolveMeetingEnhanceContext(rec);
 
-  const day = new Date().toISOString().slice(0, 10);
-  const usage = await prisma.aiUsage.upsert({
-    where: { userId_day: { userId, day } },
-    create: { userId, day, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-  if (usage.count > AI_DAILY_MAX) {
-    return {
-      ok: false,
-      status: 429,
-      error: `You've reached today's AI limit (${AI_DAILY_MAX} requests). It resets at midnight UTC.`,
-      retryAfterSeconds: secondsToUtcMidnight(),
-    };
-  }
+  const quota = await claimAiQuota(userId);
+  if (!quota.ok) return { status: 429, ...quota };
+  const { day } = quota;
 
   const prompt = [
     `Meeting type: ${meetingTypeLabel}`,

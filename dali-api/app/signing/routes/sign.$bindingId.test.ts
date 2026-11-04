@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   getBindingStateForUser: vi.fn(),
   getSignerCohortsForBinding: vi.fn(),
+  resolveGroupMembers: vi.fn(),
   menteeCountersignState: vi.fn(),
   getSignedCopyBody: vi.fn(),
   includes: vi.fn(),
@@ -44,7 +45,10 @@ vi.mock("~/signing/lib/state.server", () => ({
   menteeCountersignState: h.menteeCountersignState,
   getSignedCopyBody: h.getSignedCopyBody,
 }));
-vi.mock("~/signing/lib/audiences", () => ({ AUDIENCE_RESOLVERS: { Members: { includes: h.includes } } }));
+vi.mock("~/signing/lib/audiences", () => ({
+  AUDIENCE_RESOLVERS: { Members: { includes: h.includes }, Group: { includes: h.includes } },
+}));
+vi.mock("~/lib/groups", () => ({ resolveGroupMembers: h.resolveGroupMembers }));
 vi.mock("~/signing/lib/sign.server", () => ({ recordSignature: h.recordSignature }));
 vi.mock("~/signing/lib/notify.server", () => ({
   notifyCountersignRequest: h.notifyCountersignRequest,
@@ -120,6 +124,37 @@ describe("loader access", () => {
     await load();
     expect(h.getSignerCohortsForBinding).toHaveBeenCalledWith("u1", "t1");
     expect(h.getBindingStateForUser).toHaveBeenCalledWith("u1", "b1", "member");
+  });
+});
+
+describe("fixed-group audience", () => {
+  const groupBinding = { ...BINDING, document: { ...BINDING.document, audience: "Group", audienceGroupId: "g1" } };
+
+  it("checks the audience against the fixed group, so a group member who isn't staffed this term can open it", async () => {
+    h.prisma.signingBinding.findUnique.mockResolvedValue(groupBinding);
+    h.resolveGroupMembers.mockResolvedValue(["u1"]);
+    await load();
+    expect(h.resolveGroupMembers).toHaveBeenCalledWith("g1");
+    expect(h.includes).toHaveBeenCalledWith(expect.anything(), { audienceGroupId: "g1", userGroupIds: new Set(["g1"]) });
+  });
+
+  it("gives a non-member of the group no group membership", async () => {
+    h.prisma.signingBinding.findUnique.mockResolvedValue(groupBinding);
+    h.resolveGroupMembers.mockResolvedValue(["someone-else"]);
+    await load();
+    expect(h.includes).toHaveBeenCalledWith(expect.anything(), { audienceGroupId: "g1", userGroupIds: new Set() });
+  });
+
+  it("uses the same group check when signing", async () => {
+    h.prisma.signingBinding.findUnique.mockResolvedValue(groupBinding);
+    h.resolveGroupMembers.mockResolvedValue(["u1"]);
+    await submit({ intent: "sign", fieldValues: "{}" });
+    expect(h.includes).toHaveBeenCalledWith(expect.anything(), { audienceGroupId: "g1", userGroupIds: new Set(["g1"]) });
+  });
+
+  it("doesn't look up group members for audiences without a fixed group", async () => {
+    await load();
+    expect(h.resolveGroupMembers).not.toHaveBeenCalled();
   });
 });
 

@@ -4,7 +4,7 @@ vi.mock("~/lib/db.server", () => ({
   prisma: {
     mailCategory: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
     mailCategoryAccount: { findMany: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
-    mailAccount: { upsert: vi.fn() },
+    mailAccount: { upsert: vi.fn(), findUniqueOrThrow: vi.fn() },
     mailAccountConnection: { deleteMany: vi.fn() },
     user: { findMany: vi.fn() },
     groupDefinition: { findMany: vi.fn() },
@@ -19,7 +19,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { MAX_CATEGORY_DESCRIPTION, MAX_CATEGORY_NAME } from "~/email/lib/categories";
 import { handleInboxCategoryAction, loadInboxCategories } from "~/email/lib/categories.server";
 
-const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+const db = prisma as any;
 const request = new Request("http://localhost/admin/email");
 
 function form(fields: Record<string, string | string[]>) {
@@ -146,6 +146,25 @@ describe("save-category create", () => {
         metadata: { name: "Admissions", inboxes: ["apply@example.edu"], users: 1, groups: 1 },
       }),
     );
+  });
+
+  it("reuses the inbox another save created at the same moment", async () => {
+    db.mailAccount.upsert.mockRejectedValueOnce(Object.assign(new Error("Unique constraint"), { code: "P2002" }));
+    db.mailAccount.findUniqueOrThrow.mockResolvedValue({ id: "acct-race" });
+    const res = await run({ intent: "save-category", name: "Admissions", inbox: ["race@example.edu"] });
+    expect(res.status).toBe(200);
+    expect(db.mailAccount.findUniqueOrThrow).toHaveBeenCalledWith({
+      where: { scopeKey_address: { scopeKey: "shared", address: "race@example.edu" } },
+      select: { id: true },
+    });
+    expect(db.mailCategory.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ accounts: { create: [{ accountId: "acct-race" }] } }),
+    });
+  });
+
+  it("still fails on other database errors", async () => {
+    db.mailAccount.upsert.mockRejectedValueOnce(Object.assign(new Error("boom"), { code: "P1001" }));
+    await expect(run({ intent: "save-category", name: "Admissions", inbox: ["x@example.edu"] })).rejects.toThrow("boom");
   });
 
   it("treats addresses that differ only by case or spacing as one inbox", async () => {

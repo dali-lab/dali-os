@@ -36,8 +36,11 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
       if (daliEmail) params.set('daliEmail', daliEmail);
       else if (personalEmail) params.set('personalEmail', personalEmail);
       else if (netId) params.set('netId', netId);
-      await page.goto(`/dev-login-as?${params}`);
-      await page.waitForLoadState('networkidle');
+      // Not networkidle: the notification stream and collab socket keep connections open.
+      const res = await page.goto(`/dev-login-as?${params}`, { waitUntil: 'domcontentloaded' });
+      if (new URL(page.url()).pathname.startsWith('/dev-login-as')) {
+        throw new Error(`loginAs(${params}) failed: ${res?.status()} ${await res?.text()}`);
+      }
     });
   },
 });

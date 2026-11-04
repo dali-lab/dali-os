@@ -381,7 +381,7 @@ describe("reorderWaitlist", () => {
         applicationCycle: { id: "c1", name: "26F", applicants, statusUpdates: [] },
       },
     });
-  const reorder = (order: string[], visible = () => true) =>
+  const reorder = (order: string[], visible: (e: any) => boolean = () => true) =>
     reorderWaitlist({ domainId: "dom1", order, visible, actorId: "lead", request });
 
   beforeEach(() => {

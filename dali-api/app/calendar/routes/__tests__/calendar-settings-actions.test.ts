@@ -621,7 +621,7 @@ describe("meeting attachments", () => {
       createdNotebook: true,
       seriesNotebookId: null,
     } as never);
-    vi.mocked(meetingNotePath).mockResolvedValue("/drive/n1");
+    vi.mocked(meetingNotePath).mockResolvedValue("/drive/n1" as never);
 
     const res = await post({
       intent: "add-meeting-note",

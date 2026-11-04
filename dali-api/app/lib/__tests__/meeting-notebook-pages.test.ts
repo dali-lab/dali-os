@@ -20,6 +20,7 @@ const input = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(prisma.$transaction).mockImplementation(((fn: (tx: unknown) => unknown) => fn(prisma)) as never);
   page.findFirst.mockResolvedValue(null);
   page.create.mockResolvedValue({ id: "nb-new" } as never);
 });

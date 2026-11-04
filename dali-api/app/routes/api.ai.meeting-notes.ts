@@ -16,6 +16,7 @@ import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db.server";
+import { aiQuotaResponse, claimAiQuota } from "~/lib/ai-quota.server";
 
 export interface MeetingNotesResponse {
   markdown: string;
@@ -26,7 +27,6 @@ export interface MeetingNotesResponse {
 // §2: "Same per-user burst and daily caps as api/ai/meeting-notes").
 export const AI_BURST_MAX = 10;
 export const AI_BURST_WINDOW_MS = 60_000;
-export const AI_DAILY_MAX = 200;
 
 // Roughly two hours of speech. Longer recordings keep their most recent part.
 export const TRANSCRIPT_MAX = 120_000;
@@ -37,12 +37,6 @@ Write in Markdown with exactly these sections, in order: "### Summary" (2-5 sent
 Write "None noted." under a section with nothing in it. \
 Only include what the transcript supports. Don't invent names, dates, or numbers, and fix obvious transcription errors only when the meaning is clear. \
 No preamble, no title, no closing remarks.`;
-
-export function secondsToUtcMidnight(): number {
-  const now = new Date();
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
-}
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -94,18 +88,9 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const title = await documentTitle(documentName);
 
-  const day = new Date().toISOString().slice(0, 10);
-  const usage = await prisma.aiUsage.upsert({
-    where: { userId_day: { userId: auth.user.sub, day } },
-    create: { userId: auth.user.sub, day, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-  if (usage.count > AI_DAILY_MAX) {
-    return Response.json(
-      { error: `You've reached today's AI limit (${AI_DAILY_MAX} requests). It resets at midnight UTC.` },
-      { status: 429, headers: { "Retry-After": String(secondsToUtcMidnight()) } },
-    );
-  }
+  const quota = await claimAiQuota(auth.user.sub);
+  if (!quota.ok) return aiQuotaResponse(quota);
+  const { day } = quota;
 
   try {
     const result = await generateShortText({
