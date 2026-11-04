@@ -3,10 +3,11 @@ import { Loader2 } from "lucide-react";
 import { PanelFrame } from "~/components/side-panel/PanelFrame";
 import { useAltClickOpensBeside, useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
 import { formatSidePanel } from "~/lib/side-panel";
+import { loadAskPanel } from "~/ask/components/load-ask-panel";
 
 // The editor is heavy and most pages never open a panel, so it loads on demand.
 const DocumentPanel = lazy(() => import("~/components/side-panel/DocumentPanel"));
-const AskPanel = lazy(() => import("~/ask/components/AskPanel"));
+const AskPanel = lazy(loadAskPanel);
 
 /** The routed page with the side panel beside it, when the url names one. */
 export function SidePanelHost({ children }: { children: ReactNode }) {

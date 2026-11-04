@@ -13,6 +13,7 @@ export const OVERFLOW_BUTTON =
 export function OverflowMenu({ shellItems }: { shellItems?: ReactNode }) {
   const pageItems = usePageBarMenuItems()
   const hasPageItems = pageItems.length > 0
+  if (!hasPageItems && !shellItems) return null
   return (
     <Menu
       align="right"
