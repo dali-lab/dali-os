@@ -110,9 +110,7 @@ test.describe('editing a meeting', () => {
     await ctx.dispose();
   });
 
-  // App bug: updateScheduledMeeting selects a nonexistent `startTime` field (app/lib/scheduled-meeting.ts:2059),
-  // so every edit of a meeting 500s with PrismaClientValidationError.
-  test.fixme('the organizer renames it and the guest sees the new name', async ({ page, loginAs }) => {
+  test('the organizer renames it and the guest sees the new name', async ({ page, loginAs }) => {
     await loginAs({ daliEmail: ORGANIZER.email });
     await page.goto(`/calendar/meeting/${meetingId}`);
     await page.getByRole('button', { name: 'Edit event' }).click();

@@ -128,14 +128,12 @@ test.describe('signing agreements: enforced for a fixed group', () => {
     await expect(page.getByRole('link', { name: new RegExp(fx.documentName) })).toBeVisible();
   });
 
-  // App bug: resolveSigning() in app/signing/routes/sign.$bindingId.tsx calls
-  // AUDIENCE_RESOLVERS[audience].includes(cohorts) without the AudienceContext
-  // (audienceGroupId / userGroupIds) that listOutstandingBindings passes. For a
-  // Group audience with a fixed group it falls back to "active this term", so a
-  // group member who is not staffed this term is bounced from /sign/:id to "/",
-  // which the app gate bounces back: an endless redirect.
-  test.fixme('a fixed-group member can open and sign the agreement they are gated on', async ({ page }) => {
+  test('a fixed-group member can open and sign the agreement they are gated on', async ({ page }) => {
     await page.goto(`/dev-login-as?daliEmail=${encodeURIComponent(fx.signer.daliEmail)}&redirect=/sign/${fx.bindingId}`, DOM);
     await expect(page.getByRole('heading', { name: fx.documentName })).toBeVisible();
+    await page.getByPlaceholder('Type your full name to sign').fill(fx.signer.fullName);
+    await page.getByRole('button', { name: 'I agree and sign' }).click();
+    await expect(page.getByRole('heading', { name: `You have signed ${fx.documentName}` })).toBeVisible();
+    expect(await countSignatures(fx.bindingId, fx.signer.id)).toBe(1);
   });
 });
