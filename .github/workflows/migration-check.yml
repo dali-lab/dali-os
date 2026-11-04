@@ -44,7 +44,7 @@ jobs:
             --to-schema ./prisma/schema.prisma \
             --exit-code
         env:
-          DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
+          DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/postgres"
           SHADOW_DATABASE_URL: "postgresql://prisma:prisma@localhost:5432/prisma_shadow"
 
       - name: Check for deleted migration files
