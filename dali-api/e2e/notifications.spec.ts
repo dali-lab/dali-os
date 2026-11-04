@@ -44,12 +44,16 @@ async function createTask(page: Page, title: string): Promise<string> {
 async function comment(page: Page, taskId: string, text: string) {
   await page.goto(`/projects/${PROJECT_ID}?tab=board&task=${taskId}`);
   const box = page.getByPlaceholder(/Write a comment/);
-  await expect(box).toBeVisible();
-  await box.fill(text);
+  const send = page.getByRole('button', { name: 'Comment', exact: true });
+  // A fill that lands before hydration is wiped, leaving the button disabled.
+  await expect(async () => {
+    await box.fill(text);
+    await expect(send).toBeEnabled({ timeout: 1500 });
+  }).toPass();
   const posted = page.waitForResponse(
     (r) => r.url().includes(`/api/tasks/${taskId}/comments`) && r.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Comment', exact: true }).click();
+  await send.click();
   expect((await posted).ok()).toBe(true);
 }
 
