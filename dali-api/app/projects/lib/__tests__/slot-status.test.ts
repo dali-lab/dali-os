@@ -58,7 +58,7 @@ describe("deriveSlotStatus", () => {
     expect(itw.sentToCount).toBe(3);
     // Every registered slot is reported.
     expect(out.map((s) => s.slot).sort()).toEqual(
-      ["intent-to-work", "level-up", "project-bids", "referrals"].sort(),
+      ["intent-to-work", "level-up", "project-bids"].sort(),
     );
   });
 

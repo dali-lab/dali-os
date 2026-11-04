@@ -77,7 +77,7 @@ describe("submitMemberForm on a bound staffing form", () => {
       formRow({
         cycleBindings: [
           {
-            slot: "referrals",
+            slot: "level-up",
             columnMapping: null,
             updatedAt: new Date(),
             staffingCycle: { id: "c1", termId: "t1", maxPreferencesPerMember: 3, term: { code: "27W" } },

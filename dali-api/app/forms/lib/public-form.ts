@@ -880,7 +880,7 @@ export async function submitMemberForm(args: {
     return { ok: true };
   }
 
-  if (slot === "level-up" || slot === "referrals") {
+  if (slot === "level-up") {
     const recorded = await recordBoundSubmission(() =>
       prisma.$transaction(async (tx) => {
         submissionId = (

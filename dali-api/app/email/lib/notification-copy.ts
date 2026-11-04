@@ -618,6 +618,14 @@ export const NOTIFICATION_COPY = {
     subject: "Feedback received: {{itemTitle}}",
     body: "",
   },
+  "partner.referral_received": {
+    eventType: "partner.referral_received",
+    label: "New partner referral",
+    description: "Sent to Core when a member refers a potential partner through the bounty program.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "New partner referral: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
 
   // ── Announcements ────────────────────────────────────────────────────────
   // No `body`: Core and instructors author these per send, so only the framing

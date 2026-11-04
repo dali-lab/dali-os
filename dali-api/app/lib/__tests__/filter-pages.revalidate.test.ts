@@ -5,7 +5,6 @@ vi.mock("~/lib/db.server");
 
 import * as partnersBoard from "~/partners/routes/core.partners";
 import * as partnersDirectory from "~/partners/routes/core.partners.directory";
-import * as partnersReferrals from "~/partners/routes/core.partners.referrals";
 import * as members from "~/members/routes/members";
 import * as mentorship from "~/mentorship/routes/mentorship.browse";
 import * as infrastructure from "~/admin/routes/admin.infrastructure";
@@ -30,7 +29,6 @@ const PAGES: {
   { name: "Partners directory", path: "/core/partners/directory", shouldRevalidate: partnersDirectory.shouldRevalidate, loaderParams: [] },
   { name: "Renewals", path: "/core/partners/renewals", shouldRevalidate: partnersRenewals.shouldRevalidate, loaderParams: ["term"] },
   { name: "Applications", path: "/hiring/applications", shouldRevalidate: applications.shouldRevalidate, loaderParams: ["cycle"] },
-  { name: "Referrals", path: "/core/partners/referrals", shouldRevalidate: partnersReferrals.shouldRevalidate, loaderParams: ["term"] },
   { name: "Members", path: "/members", shouldRevalidate: members.shouldRevalidate, loaderParams: ["status", "domain", "project", "class"] },
   {
     name: "Mentorship browse",
