@@ -10,6 +10,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 // Page-body search is raw SQL against tsvector/pg_trgm, which the Prisma mock
 // can't stand in for — its own behavior is covered in doc-search.test.ts.
 vi.mock("~/lib/doc-search.server", () => ({ searchPageContent: vi.fn() }));
+vi.mock("~/help/library.server", () => ({ visibleHelpArticles: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/pageAccess.server", () => ({
   PAGE_ACCESS_SELECT: { id: true, accessMarker: true },
   getPageAccessBulk: vi.fn(),
@@ -18,6 +19,8 @@ vi.mock("~/lib/pageAccess.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { searchPageContent } from "~/lib/doc-search.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
+import { visibleHelpArticles } from "~/help/library.server";
+import { parseHelpArticle } from "~/help/article-format";
 import { CATEGORY_RAW_TAKE, runCategorySearch, runSearch, runSearchWithOverflow } from "~/lib/search.server";
 import type { UserRoles } from "~/lib/roles";
 
@@ -621,27 +624,27 @@ describe("runSearch — partner orgs and contacts", () => {
 });
 
 describe("runSearch — help articles", () => {
-  it("surfaces a /help article by title", async () => {
-    const help = (await runSearch({ userId: "u1", roles: MEMBER, q: "shortcuts" })).filter(
-      (r) => r.type === "helpArticle",
-    );
+  const rooms = parseHelpArticle("rooms", "---\ntitle: Booking rooms\nsummary: Find a room.\nkeywords: [reserve]\n---\nBody");
+  const help = async (q: string, roles = MEMBER) =>
+    (await runSearch({ userId: "u1", roles, q })).filter((r) => r.type === "helpArticle");
 
-    expect(help).toContainEqual({
-      type: "helpArticle",
-      id: "shortcuts",
-      title: "Keyboard shortcuts",
-      subtitle: "Help",
-      url: "/help/shortcuts",
-    });
+  beforeEach(() => vi.mocked(visibleHelpArticles).mockResolvedValue([rooms]));
+
+  it("finds an article the viewer can see, by title or keyword", async () => {
+    const result = { type: "helpArticle", id: "rooms", title: "Booking rooms", subtitle: "Help", url: "/help/articles/rooms" };
+    expect(await help("booking")).toContainEqual(result);
+    expect(await help("reserve")).toContainEqual(result);
+    expect(vi.mocked(visibleHelpArticles)).toHaveBeenCalledWith({ userId: "u1", roles: MEMBER, request: undefined });
   });
 
-  it("matches on a keyword the title doesn't contain", async () => {
-    // "MCP" is only a keyword of the AI-assistants article, not its title.
-    const help = (await runSearch({ userId: "u1", roles: MEMBER, q: "mcp" })).filter(
-      (r) => r.type === "helpArticle",
-    );
+  it("leaves out articles the viewer can't see", async () => {
+    vi.mocked(visibleHelpArticles).mockResolvedValue([]);
+    expect(await help("booking")).toEqual([]);
+  });
 
-    expect(help.map((r) => r.id)).toContain("mcp");
+  it("still finds the help pages that aren't articles", async () => {
+    // "MCP" is only a keyword of the AI-assistants setup page, not its title.
+    expect((await help("mcp")).map((r) => r.url)).toContain("/help/mcp");
   });
 });
 

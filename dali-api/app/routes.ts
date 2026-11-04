@@ -352,12 +352,11 @@ export default [
 
     // Help pages (same convention as Settings).
     route("help", "routes/help._index.tsx"),
-    route("help/getting-started", "routes/help.getting-started.tsx"),
     route("help/shortcuts", "routes/help.shortcuts.tsx"),
-    route("help/calendar", "routes/help.calendar.tsx"),
-    route("help/staffing", "routes/help.staffing.tsx"),
-    route("help/notifications", "routes/help.notifications.tsx"),
     route("help/mcp", "routes/help.mcp.tsx"),
+    route("help/articles", "routes/help.articles._index.tsx"),
+    route("help/articles/:slug", "routes/help.articles.$slug.tsx"),
+    route("help/:slug", "routes/help.$slug.tsx"),
   ]),
 
   // Applicant portal (lightweight layout). /portal is the non-member home

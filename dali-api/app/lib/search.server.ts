@@ -23,6 +23,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
+import { visibleHelpArticles } from "~/help/library.server";
 import { categorize } from "~/lib/file-type";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
@@ -59,10 +60,8 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "task", enabled: true, run: (b) => searchTasks(q, like, b) },
     { type: "education", enabled: true, run: (b) => searchOfferings(q, like, b) },
     { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b, opts.request) },
-    // Page guides ("Docs") and /help articles — both readable by every lab
-    // member, so ungated like docs.
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
-    { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(q, b) },
+    { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(opts, q, b) },
     { type: "document", enabled: true, run: (b) => searchProjectFiles(q, like, b) },
     { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
@@ -452,17 +451,18 @@ async function searchGuides(q: string, b: SearchBudget): Promise<SearchResult[]>
   );
 }
 
-// Help-center articles (/help/*). A fully static set (HELP_ARTICLES), so there's
-// no query — just rank its title/summary/keywords in memory.
-async function searchHelpArticles(q: string, b: SearchBudget): Promise<SearchResult[]> {
+async function searchHelpArticles(opts: SearchOpts, q: string, b: SearchBudget): Promise<SearchResult[]> {
+  const articles = await visibleHelpArticles({ userId: opts.userId, roles: opts.roles, request: opts.request });
+  const covered = new Set(articles.map((a) => a.slug));
+  const pages = HELP_ARTICLES.filter((c) => !covered.has(c.slug));
   return rankResults(
-    HELP_ARTICLES.map((a) => ({
+    [...articles, ...pages].map((a) => ({
       result: {
         type: "helpArticle" as const,
         id: a.slug,
         title: a.title,
         subtitle: "Help",
-        url: buildUrl.helpArticle(a.slug),
+        url: "url" in a ? a.url : a.href,
       },
       text: [a.title, a.summary, ...(a.keywords ?? [])],
     })),

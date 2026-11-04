@@ -6,6 +6,9 @@ import { dispatchTool, type ToolCaller } from "~/mcp/dispatch.server";
 import { ASK_TOOLS, ASK_TOOL_NAMES } from "./tools.server";
 import { finalizeAnswer, SourceRegistry, type AskSource } from "./sources";
 import type { AskEvent } from "./events";
+import { visibleHelpArticles } from "~/help/library.server";
+import type { HelpArticleDoc } from "~/help/article-format";
+import { getUserRoles } from "~/lib/roles";
 
 export type { AskEvent };
 
@@ -19,8 +22,18 @@ export const OUT_OF_STEPS =
 
 export type AskUsage = { inputTokens: number; outputTokens: number };
 
-export function askSystemPrompt(firstName: string, now: Date): string {
-  return `You answer questions from members of DALI, a lab at Dartmouth, using the lab's own records. You are speaking with ${firstName || "a member"}. Today is ${now.toISOString().slice(0, 10)}.
+export function askSystemPrompt(
+  firstName: string,
+  now: Date,
+  articles: Pick<HelpArticleDoc, "slug" | "title" | "summary">[] = [],
+): string {
+  const help = articles.length
+    ? `
+
+DALI OS is the platform you're part of. When the question is how DALI OS works or how to do something in it, read the matching help article with read_help and answer from it. Help articles this person can read:
+${articles.map((a) => `- ${a.slug}: ${a.title}. ${a.summary}`).join("\n")}`
+    : "";
+  return `You answer questions from members of DALI, a lab at Dartmouth, using the lab's own records and the DALI OS help. You are speaking with ${firstName || "a member"}. Today is ${now.toISOString().slice(0, 10)}.${help}
 
 How to answer:
 - Look things up with the tools before answering. Don't write anything before your tool calls.
@@ -109,7 +122,12 @@ export async function runAsk(opts: {
   now?: Date;
 }): Promise<AskUsage> {
   const { provider, caller, emit, signal } = opts;
-  const system = askSystemPrompt(caller.user.firstName, opts.now ?? new Date());
+  const articles = await visibleHelpArticles({
+    userId: caller.user.id,
+    roles: await getUserRoles(caller.user.id, caller.request),
+    request: caller.request,
+  });
+  const system = askSystemPrompt(caller.user.firstName, opts.now ?? new Date(), articles);
   const tools = askToolDefs();
   const registry = new SourceRegistry();
   const messages: Anthropic.MessageParam[] = [

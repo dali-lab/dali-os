@@ -31,6 +31,7 @@ describe("ASK_TOOLS", () => {
         "list_my_projects",
         "get_project_overview",
         "get_member_profile",
+        "read_help",
       ].sort(),
     );
   });
@@ -82,6 +83,20 @@ describe("search", () => {
         ],
       }),
     ).toEqual([{ kind: "document", title: "Plan", url: "/documents/p1", detail: "Harbor" }]);
+  });
+});
+
+describe("help", () => {
+  it("says whether it's listing or reading", () => {
+    expect(ASK_TOOLS.read_help.status({})).toBe("Checking the help");
+    expect(ASK_TOOLS.read_help.status({ slug: "rooms" })).toBe("Reading the help");
+  });
+
+  it("cites an article it read, and nothing for the list", async () => {
+    expect(await sources("read_help", { slug: "rooms", title: "Booking rooms", url: "/help/articles/rooms", body: "x" })).toEqual([
+      { kind: "helpArticle", title: "Booking rooms", url: "/help/articles/rooms" },
+    ]);
+    expect(await sources("read_help", { articles: [{ slug: "rooms", title: "Booking rooms", summary: "s" }] })).toEqual([]);
   });
 });
 
