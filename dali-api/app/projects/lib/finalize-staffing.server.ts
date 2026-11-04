@@ -1,5 +1,4 @@
-// Shared by POST /api/staffing/finalize, finalize-all and the MCP
-// `finalize_staffing` tool. `request` feeds logAuditEvent and may be synthetic.
+// `request` only feeds logAuditEvent; the MCP caller passes a synthetic one.
 
 import { prisma } from "~/lib/db.server";
 import {

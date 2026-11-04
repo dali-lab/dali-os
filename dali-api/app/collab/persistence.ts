@@ -110,14 +110,8 @@ async function seedContent(name: string): Promise<string | null> {
   return null;
 }
 
-/**
- * LAZY CONVERSION — the in-app migration mechanism. If a loaded doc has legacy
- * Tiptap content in "default" but nothing in "blocknote" yet, map the PM JSON
- * to blocks and write them into the "blocknote" fragment the BlockNote editor
- * binds. The "default" fragment is left untouched (it simply goes stale) so
- * the conversion is one-way and re-runnable. Runs in-process on the
- * Hocuspocus-owned doc, so there is no cross-writer race.
- */
+// Decode from a clone: y-prosemirror deletes what it can't decode, and on the
+// live doc Hocuspocus would broadcast that deletion.
 function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
   const blocknote = doc.getXmlFragment(BLOCKNOTE_FRAGMENT);
   if (blocknote.length > 0) return false;

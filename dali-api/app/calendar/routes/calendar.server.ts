@@ -409,8 +409,6 @@ function hhmmToMinute(s: string): number | null {
   return h * 60 + min;
 }
 
-// A custom (non-period) class: a single main meeting from picked weekdays + a
-// start/end time. The client submits weekdays as a "1,3,5" getDay() list.
 function parseCustomMeetings(raw: Record<string, FormDataEntryValue>): PeriodMeeting[] | undefined {
   const daysStr = typeof raw.customDays === "string" ? raw.customDays : "";
   const days = daysStr
@@ -1282,7 +1280,6 @@ function coerceFormToAction(raw: Record<string, FormDataEntryValue>): unknown {
         try {
           segments = JSON.parse(segmentsRaw);
         } catch {
-          // Not [] — an empty array is a valid "clear this day" and would wipe it.
           segments = null;
         }
       }
