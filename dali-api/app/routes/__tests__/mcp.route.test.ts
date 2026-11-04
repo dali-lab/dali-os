@@ -18,12 +18,10 @@ const h = vi.hoisted(() => {
     logAuditEvent: vi.fn(),
     logMcpToolCall: vi.fn(),
     enterAgentContext: vi.fn(),
-    runWhoami: vi.fn(),
-    runGetMemberProfile: vi.fn(),
-    runUpdateTaskStatus: vi.fn(),
     readMe: vi.fn(),
     readBoard: vi.fn(),
     registryRun: vi.fn(),
+    readRun: vi.fn(),
   };
 });
 
@@ -36,53 +34,32 @@ vi.mock("~/collab/agent-presence.server", () => ({ enterAgentContext: h.enterAge
 
 // Fully mocked: the real registry loads every tool module, several of which
 // import the generated Prisma client (absent in CI's unit job).
-vi.mock("~/mcp/registry", () => ({
-  findRegistryTool: (n: string) =>
-    n === "reg_tool"
-      ? {
-          def: {
-            name: "reg_tool",
-            description: "d",
-            requiredScope: "mcp:write",
-            inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
-          },
-          run: h.registryRun,
-        }
-      : undefined,
-  registryToolDefs: () => [{ name: "reg_tool", description: "d", inputSchema: { type: "object" } }],
-  mapToolError: (err: unknown) =>
-    err instanceof h.StatusError ? { code: -32003, message: err.message } : null,
-}));
+vi.mock("~/mcp/registry", async () => {
+  const { mapToolError } = await import("~/mcp/errors");
+  const tools: Record<string, unknown> = {
+    reg_tool: {
+      def: {
+        name: "reg_tool",
+        description: "d",
+        requiredScope: "mcp:write",
+        inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      },
+      run: h.registryRun,
+    },
+    read_tool: {
+      def: { name: "read_tool", description: "r", requiredScope: "mcp:read", inputSchema: { type: "object" } },
+      run: h.readRun,
+    },
+  };
+  return {
+    findRegistryTool: (n: string) => tools[n],
+    registryToolDefs: () =>
+      Object.values(tools).map((t) => (t as { def: object }).def),
+    mapToolError,
+  };
+});
 
-vi.mock("~/mcp/tools/whoami", () => ({
-  WHOAMI_TOOL: {
-    name: "whoami",
-    description: "w",
-    requiredScope: "mcp:read",
-    inputSchema: { type: "object", properties: {}, required: [] },
-  },
-  runWhoami: h.runWhoami,
-}));
-vi.mock("~/mcp/tools/get-member-profile", () => ({
-  GET_MEMBER_PROFILE_TOOL: {
-    name: "get_member_profile",
-    description: "g",
-    requiredScope: "mcp:read",
-    inputSchema: { type: "object", properties: { memberId: { type: "string" } }, required: ["memberId"] },
-  },
-  runGetMemberProfile: h.runGetMemberProfile,
-  MemberNotFoundError: h.NotFound,
-}));
-vi.mock("~/mcp/tools/update-task-status", () => ({
-  UPDATE_TASK_STATUS_TOOL: {
-    name: "update_task_status",
-    description: "u",
-    requiredScope: "mcp:write",
-    inputSchema: { type: "object", properties: { taskId: { type: "string" } }, required: ["taskId"] },
-  },
-  runUpdateTaskStatus: h.runUpdateTaskStatus,
-  UpdateTaskStatusError: h.StatusError,
-}));
+vi.mock("~/mcp/tools/get-member-profile", () => ({ MemberNotFoundError: h.NotFound }));
 vi.mock("~/mcp/resources/me", () => ({
   ME_RESOURCE: {
     uri: "dali://me",
@@ -224,10 +201,9 @@ describe("mcp transport gate", () => {
 });
 
 describe("tools/list", () => {
-  it("lists legacy and registry tools with only name, description and schema", async () => {
+  it("lists registry tools with only name, description and schema", async () => {
     const { result } = await (await rpc("tools/list")).json();
-    const names = result.tools.map((t: { name: string }) => t.name);
-    expect(names).toEqual(expect.arrayContaining(["whoami", "update_task_status", "reg_tool"]));
+    expect(result.tools.map((t: { name: string }) => t.name)).toEqual(["reg_tool", "read_tool"]);
     for (const t of result.tools) {
       expect(Object.keys(t).sort()).toEqual(["description", "inputSchema", "name"]);
     }
@@ -236,8 +212,8 @@ describe("tools/list", () => {
 
 describe("tools/call", () => {
   it("enters the agent context with the caller's identity", async () => {
-    h.runWhoami.mockResolvedValue({});
-    await rpc("tools/call", { name: "whoami" });
+    h.readRun.mockResolvedValue({});
+    await rpc("tools/call", { name: "read_tool" });
     expect(h.enterAgentContext).toHaveBeenCalledWith({
       clientName: "Test Client",
       userId: "u1",
@@ -254,117 +230,79 @@ describe("tools/call", () => {
     expect(h.logMcpToolCall).not.toHaveBeenCalled();
   });
 
-  describe("legacy tools", () => {
-    it("runs a tool with the caller and returns text plus structured content", async () => {
-      h.runWhoami.mockResolvedValue({ hello: "ada" });
-      const res = await rpc("tools/call", { name: "whoami" }, "abc");
-      const json = await res.json();
-      expect(json.id).toBe("abc");
-      expect(json.result).toEqual({
-        content: [{ type: "text", text: JSON.stringify({ hello: "ada" }) }],
-        structuredContent: { hello: "ada" },
-      });
-      expect(h.runWhoami).toHaveBeenCalledWith(AUTH.user);
-      expect(h.logMcpToolCall).toHaveBeenCalledWith(
-        expect.objectContaining({ toolName: "whoami", scope: "mcp:read", args: {} }),
-      );
-      expect(h.logMcpToolCall.mock.calls[0][0].errorCode).toBeUndefined();
+  it("runs with user, scopes and request, returning text plus structured content", async () => {
+    h.registryRun.mockResolvedValue({ done: true });
+    const json = await (
+      await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } }, "abc")
+    ).json();
+    expect(json.id).toBe("abc");
+    expect(json.result).toEqual({
+      content: [{ type: "text", text: JSON.stringify({ done: true }) }],
+      structuredContent: { done: true },
     });
-
-    it("passes validated args and the caller id to the tool", async () => {
-      h.runGetMemberProfile.mockResolvedValue({ ok: 1 });
-      await rpc("tools/call", { name: "get_member_profile", arguments: { memberId: "m1" } });
-      expect(h.runGetMemberProfile).toHaveBeenCalledWith("u1", { memberId: "m1" });
-    });
-
-    it("denies a tool whose scope the grant lacks, without running it", async () => {
-      h.authenticate.mockResolvedValue({ ...AUTH, scopes: ["mcp:read"] });
-      const err = await errorOf(
-        await rpc("tools/call", { name: "update_task_status", arguments: { taskId: "t" } }),
-      );
-      expect(err).toEqual({ code: -32002, message: "Missing required scope: mcp:write" });
-      expect(h.runUpdateTaskStatus).not.toHaveBeenCalled();
-      expect(h.logMcpToolCall).toHaveBeenCalledWith(expect.objectContaining({ errorCode: -32002 }));
-    });
-
-    it("rejects invalid params without running the tool", async () => {
-      const err = await errorOf(
-        await rpc("tools/call", { name: "get_member_profile", arguments: {} }),
-      );
-      expect(err.code).toBe(-32602);
-      expect(err.message).toMatch(/^Invalid params: /);
-      expect(h.runGetMemberProfile).not.toHaveBeenCalled();
-      expect(h.logMcpToolCall).toHaveBeenCalledWith(expect.objectContaining({ errorCode: -32602 }));
-    });
-
-    it.each([
-      [403, -32003],
-      [404, -32004],
-      [400, -32602],
-      [422, -32602],
-    ])("maps a tool error with status %i to %i", async (status, code) => {
-      h.runUpdateTaskStatus.mockRejectedValue(new h.StatusError("boom", status));
-      const err = await errorOf(
-        await rpc("tools/call", { name: "update_task_status", arguments: { taskId: "t" } }),
-      );
-      expect(err).toEqual({ code, message: "boom" });
-      expect(h.logMcpToolCall).toHaveBeenCalledWith(expect.objectContaining({ errorCode: code }));
-    });
-
-    it("maps not-found classes to -32004", async () => {
-      h.runGetMemberProfile.mockRejectedValue(new h.NotFound("no member"));
-      const err = await errorOf(
-        await rpc("tools/call", { name: "get_member_profile", arguments: { memberId: "m" } }),
-      );
-      expect(err).toEqual({ code: -32004, message: "no member" });
-    });
-
-    it("maps unknown errors to -32000 with the message, or a generic one for non-errors", async () => {
-      h.runWhoami.mockRejectedValueOnce(new Error("kaput"));
-      expect(await errorOf(await rpc("tools/call", { name: "whoami" }))).toEqual({
-        code: -32000,
-        message: "kaput",
-      });
-      h.runWhoami.mockRejectedValueOnce("string thrown");
-      expect(await errorOf(await rpc("tools/call", { name: "whoami" }))).toEqual({
-        code: -32000,
-        message: "Tool execution failed",
-      });
-      expect(h.logMcpToolCall).toHaveBeenLastCalledWith(expect.objectContaining({ errorCode: -32000 }));
-    });
+    expect(h.registryRun).toHaveBeenCalledWith(
+      { user: AUTH.user, scopes: AUTH.scopes, request: expect.any(Request) },
+      { id: "x" },
+    );
   });
 
-  describe("registry tools", () => {
-    it("runs with user, scopes and request, returning structured content", async () => {
-      h.registryRun.mockResolvedValue({ done: true });
-      const json = await (await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } })).json();
-      expect(json.result.structuredContent).toEqual({ done: true });
-      expect(h.registryRun).toHaveBeenCalledWith(
-        { user: AUTH.user, scopes: AUTH.scopes, request: expect.any(Request) },
-        { id: "x" },
-      );
-    });
+  it("audits a successful call with the tool, scope and args and no error code", async () => {
+    h.registryRun.mockResolvedValue({});
+    await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } });
+    expect(h.logMcpToolCall).toHaveBeenCalledTimes(1);
+    const entry = h.logMcpToolCall.mock.calls[0][0];
+    expect(entry).toMatchObject({ toolName: "reg_tool", scope: "mcp:write", args: { id: "x" } });
+    expect(entry.errorCode).toBeUndefined();
+  });
 
-    it("enforces scope and validation before running", async () => {
-      h.authenticate.mockResolvedValue({ ...AUTH, scopes: ["mcp:read"] });
-      expect((await errorOf(await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } }))).code).toBe(-32002);
-      h.authenticate.mockResolvedValue(AUTH);
-      expect((await errorOf(await rpc("tools/call", { name: "reg_tool", arguments: {} }))).code).toBe(-32602);
-      expect(h.registryRun).not.toHaveBeenCalled();
-    });
+  it("treats missing arguments as an empty object", async () => {
+    h.readRun.mockResolvedValue({});
+    await rpc("tools/call", { name: "read_tool" });
+    expect(h.readRun).toHaveBeenCalledWith(expect.anything(), {});
+  });
 
-    it("maps registry errors and falls back to -32000", async () => {
-      h.registryRun.mockRejectedValueOnce(new h.StatusError("nope", 403));
-      expect(await errorOf(await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } }))).toEqual({
-        code: -32003,
-        message: "nope",
-      });
-      h.registryRun.mockRejectedValueOnce(new Error("bad"));
-      expect(await errorOf(await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } }))).toEqual({
-        code: -32000,
-        message: "bad",
-      });
+  it("denies a tool whose scope the grant lacks, without running it", async () => {
+    h.authenticate.mockResolvedValue({ ...AUTH, scopes: ["mcp:read"] });
+    const err = await errorOf(await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } }));
+    expect(err).toEqual({ code: -32002, message: "Missing required scope: mcp:write" });
+    expect(h.registryRun).not.toHaveBeenCalled();
+    expect(h.logMcpToolCall).toHaveBeenCalledWith(expect.objectContaining({ errorCode: -32002 }));
+  });
+
+  it("rejects invalid params without running the tool", async () => {
+    const err = await errorOf(await rpc("tools/call", { name: "reg_tool", arguments: {} }));
+    expect(err.code).toBe(-32602);
+    expect(err.message).toMatch(/^Invalid params: /);
+    expect(h.registryRun).not.toHaveBeenCalled();
+    expect(h.logMcpToolCall).toHaveBeenCalledWith(expect.objectContaining({ errorCode: -32602 }));
+  });
+
+  it.each([
+    [403, -32003],
+    [404, -32004],
+    [400, -32602],
+    [422, -32602],
+  ])("maps a tool error with status %i to %i and audits the code", async (status, code) => {
+    h.registryRun.mockRejectedValue(new h.StatusError("boom", status));
+    const err = await errorOf(await rpc("tools/call", { name: "reg_tool", arguments: { id: "x" } }));
+    expect(err).toEqual({ code, message: "boom" });
+    expect(h.logMcpToolCall).toHaveBeenCalledWith(
+      expect.objectContaining({ args: { id: "x" }, errorCode: code }),
+    );
+  });
+
+  it("maps unknown errors to -32000 with the message, or a generic one for non-errors", async () => {
+    h.readRun.mockRejectedValueOnce(new Error("kaput"));
+    expect(await errorOf(await rpc("tools/call", { name: "read_tool" }))).toEqual({
+      code: -32000,
+      message: "kaput",
     });
+    h.readRun.mockRejectedValueOnce("string thrown");
+    expect(await errorOf(await rpc("tools/call", { name: "read_tool" }))).toEqual({
+      code: -32000,
+      message: "Tool execution failed",
+    });
+    expect(h.logMcpToolCall).toHaveBeenLastCalledWith(expect.objectContaining({ errorCode: -32000 }));
   });
 });
 

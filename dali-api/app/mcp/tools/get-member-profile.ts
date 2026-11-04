@@ -45,6 +45,7 @@ export const GET_MEMBER_PROFILE_TOOL = {
 type Input = { memberId: string };
 
 export class MemberNotFoundError extends Error {
+  status = 404;
   constructor(memberId: string) {
     super(`No DALI member found with id ${memberId}`);
     this.name = "MemberNotFoundError";
