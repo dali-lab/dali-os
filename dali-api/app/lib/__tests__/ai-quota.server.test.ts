@@ -1,0 +1,78 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("~/lib/db.server");
+
+import { prisma } from "~/lib/db.server";
+import { AI_DAILY_MAX, aiQuotaResponse, claimAiQuota, secondsToUtcMidnight } from "../ai-quota.server";
+
+const MESSAGE = "You've reached today's AI limit (200 requests). It resets at midnight UTC.";
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-04T12:00:00Z"));
+  vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 1 } as never);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+});
+
+describe("secondsToUtcMidnight", () => {
+  it("counts down to the next UTC midnight", () => {
+    expect(secondsToUtcMidnight(new Date("2026-11-04T12:00:00Z"))).toBe(12 * 3600);
+  });
+
+  it("is a full day just after midnight", () => {
+    expect(secondsToUtcMidnight(new Date("2026-11-04T00:00:00Z"))).toBe(86_400);
+    expect(secondsToUtcMidnight(new Date("2026-11-04T00:00:01Z"))).toBe(86_399);
+  });
+
+  it("rounds up and never drops below 1 just before midnight", () => {
+    expect(secondsToUtcMidnight(new Date("2026-11-04T23:59:59Z"))).toBe(1);
+    expect(secondsToUtcMidnight(new Date("2026-11-04T23:59:59.999Z"))).toBe(1);
+  });
+
+  it("rolls over month and year ends", () => {
+    expect(secondsToUtcMidnight(new Date("2026-12-31T23:00:00Z"))).toBe(3600);
+  });
+
+  it("defaults to the current time", () => {
+    expect(secondsToUtcMidnight()).toBe(12 * 3600);
+  });
+});
+
+describe("claimAiQuota", () => {
+  it("creates the day's row at count 1 and increments afterwards, keyed by UTC day", async () => {
+    vi.setSystemTime(new Date("2026-11-04T23:30:00-05:00"));
+    await claimAiQuota("u1");
+    expect(prisma.aiUsage.upsert).toHaveBeenCalledWith({
+      where: { userId_day: { userId: "u1", day: "2026-11-05" } },
+      create: { userId: "u1", day: "2026-11-05", count: 1 },
+      update: { count: { increment: 1 } },
+    });
+  });
+
+  it("allows up to the daily max", async () => {
+    vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: AI_DAILY_MAX } as never);
+    expect(await claimAiQuota("u1")).toEqual({ ok: true, day: "2026-11-04" });
+  });
+
+  it("refuses past the max with the message and seconds to midnight", async () => {
+    vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: AI_DAILY_MAX + 1 } as never);
+    expect(await claimAiQuota("u1")).toEqual({ ok: false, error: MESSAGE, retryAfterSeconds: 12 * 3600 });
+  });
+
+  it("caps at 200", () => {
+    expect(AI_DAILY_MAX).toBe(200);
+  });
+});
+
+describe("aiQuotaResponse", () => {
+  it("builds a 429 with the error body and Retry-After", async () => {
+    const res = aiQuotaResponse({ ok: false, error: MESSAGE, retryAfterSeconds: 42 });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("42");
+    expect(await res.json()).toEqual({ error: MESSAGE });
+  });
+});

@@ -14,7 +14,7 @@ import { requireAuth } from "~/lib/auth";
 import { resolveAiProvider } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { prisma } from "~/lib/db.server";
+import { aiQuotaResponse, claimAiQuota } from "~/lib/ai-quota.server";
 
 // ── Contract ──────────────────────────────────────────────────────────────────
 
@@ -52,17 +52,6 @@ const HISTORY_ENTRIES_MAX = 12;
 
 const AI_BURST_MAX = 10;
 const AI_BURST_WINDOW_MS = 60_000;
-const AI_DAILY_MAX = 200;
-
-function secondsToUtcMidnight(): number {
-  const now = new Date();
-  const next = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate() + 1,
-  );
-  return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
-}
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 
@@ -255,24 +244,10 @@ export async function action({ request }: Route.ActionArgs) {
     messages,
   };
 
-  // ── Daily quota — last gate before the model call, so invalid requests
-  // (400s) never consume it. Increment-then-check: concurrent requests can't
-  // slip past the cap.
-  const day = new Date().toISOString().slice(0, 10);
-  const usage = await prisma.aiUsage.upsert({
-    where: { userId_day: { userId: auth.user.sub, day } },
-    create: { userId: auth.user.sub, day, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-  if (usage.count > AI_DAILY_MAX) {
-    const retryAfter = secondsToUtcMidnight();
-    return Response.json(
-      {
-        error: `You've reached today's AI limit (${AI_DAILY_MAX} requests). It resets at midnight UTC.`,
-      },
-      { status: 429, headers: { "Retry-After": String(retryAfter) } },
-    );
-  }
+  // Last gate before the model call, so invalid requests (400s) never consume quota.
+  const quota = await claimAiQuota(auth.user.sub);
+  if (!quota.ok) return aiQuotaResponse(quota);
+  const { day } = quota;
 
   // ── Non-streaming path ────────────────────────────────────────────────────
   if (!wantStream) {
