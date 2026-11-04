@@ -235,8 +235,8 @@ const REGROUPED_AREAS: NavArea[] = [
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },
-      // Partner Bounty — members refer potential partners for the lab.
-      { label: "Refer a partner", href: "/refer", icon: Handshake, gate: (r) => !r.isAlumni },
+      // Partner Bounty — members (and alumni) refer potential partners for the lab.
+      { label: "Refer a partner", href: "/refer", icon: Handshake },
       ONBOARDING_NAV_ITEM,
     ],
   },
@@ -403,6 +403,7 @@ const ALUMNI_AREAS: NavArea[] = [
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
       { label: "Blogs", href: "/resources", icon: Newspaper },
+      { label: "Refer a partner", href: "/refer", icon: Handshake },
     ],
   },
 ];
