@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   isFeatureEnabled: vi.fn(),
   resolveAiProvider: vi.fn(),
   claimAskQuota: vi.fn(),
+  releaseAskQuota: vi.fn(),
   recordTokenUsage: vi.fn(),
   checkRateLimit: vi.fn(),
   runAsk: vi.fn(),
@@ -23,7 +24,7 @@ vi.mock("~/ask/loop.server", () => ({ runAsk: h.runAsk }));
 vi.mock("~/lib/ai-quota.server", async () => {
   const quotaResponse = (r: { error: string; retryAfterSeconds: number }) =>
     Response.json({ error: r.error }, { status: 429, headers: { "Retry-After": String(r.retryAfterSeconds) } });
-  return { claimAskQuota: h.claimAskQuota, aiQuotaResponse: quotaResponse };
+  return { claimAskQuota: h.claimAskQuota, releaseAskQuota: h.releaseAskQuota, aiQuotaResponse: quotaResponse };
 });
 
 import { action, ASK_QUESTION_MAX } from "../api.ask";
@@ -178,6 +179,27 @@ describe("POST /api/ask stream", () => {
     expect(out).toEqual([{ type: "error", message: "Something went wrong. Try again." }]);
     expect(JSON.stringify(out)).not.toContain("secret detail");
     expect(h.recordTokenUsage).toHaveBeenCalledWith("u1", "2026-11-04", 300, 0);
+  });
+
+  it("gives the question back when the turn fails", async () => {
+    h.runAsk.mockRejectedValue(new Error("gateway down"));
+    await (await post({ question: "x" })).text();
+    expect(h.releaseAskQuota).toHaveBeenCalledWith("u1", "2026-11-04");
+  });
+
+  it("keeps the question counted when the turn answers", async () => {
+    await (await post({ question: "x" })).text();
+    expect(h.releaseAskQuota).not.toHaveBeenCalled();
+  });
+
+  it("keeps the question counted when the member cancels mid-turn", async () => {
+    const controller = new AbortController();
+    h.runAsk.mockImplementation(async () => {
+      controller.abort();
+      throw new Error("aborted");
+    });
+    await (await post({ question: "x" }, { signal: controller.signal })).text().catch(() => "");
+    expect(h.releaseAskQuota).not.toHaveBeenCalled();
   });
 
   it("refuses a session whose user row is gone", async () => {

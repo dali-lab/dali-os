@@ -44,8 +44,19 @@ export function claimAskQuota(userId: string): Promise<AiQuotaResult> {
     userId,
     "askCount",
     ASK_DAILY_MAX,
-    `You've asked ${ASK_DAILY_MAX} questions today, the daily limit. It resets at midnight UTC.`,
+    "You've used today's questions. They reset at midnight UTC.",
   );
+}
+
+export async function releaseAskQuota(userId: string, day: string): Promise<void> {
+  try {
+    await prisma.aiUsage.updateMany({
+      where: { userId, day, askCount: { gt: 0 } },
+      data: { askCount: { decrement: 1 } },
+    });
+  } catch {
+    // Best effort: a failed refund only costs the member one question.
+  }
 }
 
 export function aiQuotaResponse(result: Extract<AiQuotaResult, { ok: false }>): Response {

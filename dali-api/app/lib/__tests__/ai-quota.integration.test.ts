@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "../../../integration/db";
-import { AI_DAILY_MAX, ASK_DAILY_MAX, claimAiQuota, claimAskQuota } from "../ai-quota.server";
+import { AI_DAILY_MAX, ASK_DAILY_MAX, claimAiQuota, claimAskQuota, releaseAskQuota } from "../ai-quota.server";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -66,5 +66,17 @@ describe("claimAskQuota against the database", () => {
   it("keeps working after the assistant's limit is reached", async () => {
     await Promise.all(Array.from({ length: AI_DAILY_MAX + 1 }, () => claimAiQuota("u1")));
     expect(await claimAskQuota("u1")).toEqual({ ok: true, day: "2026-11-04" });
+  });
+
+  it("refunds a question, and a refund with nothing claimed stays at zero", async () => {
+    await claimAskQuota("u1");
+    await claimAskQuota("u1");
+    await releaseAskQuota("u1", "2026-11-04");
+    expect((await row("u1"))?.askCount).toBe(1);
+    await releaseAskQuota("u1", "2026-11-04");
+    await releaseAskQuota("u1", "2026-11-04");
+    expect((await row("u1"))?.askCount).toBe(0);
+    await releaseAskQuota("u2", "2026-11-04");
+    expect(await row("u2")).toBeNull();
   });
 });
