@@ -87,6 +87,16 @@ describe("mcp tools/call audit", () => {
     });
   });
 
+  it("marks the call as coming from an MCP client with its grant", async () => {
+    await call("fake_read", { taskId: "t1" });
+    expect(loggedEvent().metadata).toMatchObject({
+      origin: "mcp",
+      clientId: "c1",
+      clientName: "Client",
+      grantId: "g1",
+    });
+  });
+
   it("logs a write tool as mcp.tool_called with target and arg keys but no values", async () => {
     await call("fake_write", { taskId: "t1", note: "private" });
     const event = loggedEvent();
