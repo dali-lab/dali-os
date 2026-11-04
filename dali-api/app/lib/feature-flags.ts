@@ -109,6 +109,12 @@ export const FEATURE_FLAGS = [
     description:
       "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
   },
+  {
+    key: "ask-dali",
+    label: "Ask DALI",
+    description:
+      "Ask a question in plain language and get a short answer that cites the docs, meetings and tasks it came from, drawn only from what the member can already open. Read-only. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

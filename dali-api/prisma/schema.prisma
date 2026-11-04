@@ -2149,6 +2149,7 @@ model AiUsage {
   userId       String
   day          String // UTC date "YYYY-MM-DD"
   count        Int    @default(0)
+  askCount     Int    @default(0)
   inputTokens  Int    @default(0)
   outputTokens Int    @default(0)
 
