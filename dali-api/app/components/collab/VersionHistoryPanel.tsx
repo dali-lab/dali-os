@@ -31,6 +31,7 @@ interface VersionDetail {
 
 interface VersionHistoryPanelProps {
   documentName: string;
+  canEdit: boolean;
   onClose: () => void;
 }
 
@@ -104,7 +105,7 @@ function InlineLabelEditor({
   );
 }
 
-export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPanelProps) {
+export function VersionHistoryPanel({ documentName, canEdit, onClose }: VersionHistoryPanelProps) {
   const dialog = useDialog();
   const toast = useToast();
   const [versions, setVersions] = useState<VersionListItem[] | null>(null);
@@ -264,6 +265,8 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                 {authorLabel(v.authors)}
               </div>
             </div>
+            {canEdit && (
+              <>
             {/* Label edit button — visible on hover or when this row is selected */}
             <Tooltip content={v.label ? "Rename version" : "Name this version"} placement="right">
               <button
@@ -280,8 +283,10 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                 <Pencil className="w-3 h-3" aria-hidden />
               </button>
             </Tooltip>
+              </>
+            )}
           </div>
-          {isEditingLabel ? (
+          {canEdit && isEditingLabel ? (
             <InlineLabelEditor
               initialValue={v.label ?? ""}
               onSave={(label) => handleSaveLabel(v.id, label)}
@@ -383,6 +388,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                     {authorLabel(detail.authors)}
                   </div>
                 </div>
+                {canEdit && (
                 <Tooltip
                   content={restoring ? "Restore in progress — please wait." : undefined}
                   variant="rich"
@@ -398,6 +404,7 @@ export function VersionHistoryPanel({ documentName, onClose }: VersionHistoryPan
                     </button>
                   </span>
                 </Tooltip>
+                )}
               </div>
               {/* Rich HTML preview — uses blocknote/prose container for on-brand
                   rendering; falls back to monospace plainText if html is empty. */}

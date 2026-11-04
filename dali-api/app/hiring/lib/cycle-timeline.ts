@@ -243,7 +243,7 @@ export function newInterviewRound(t: Timeline, weeks: [number, number]): PhaseBl
 
 export const INTERVIEW_ROUND_COLUMNS = ["No Decision", "Interview", "Reject"] as const;
 export const ADVANCE_ROUND_COLUMNS = ["No Decision", "Advance", "Reject"] as const;
-export const FINAL_ROUND_COLUMNS = ["Accept", "Waitlist", "Reject"] as const;
+export const FINAL_ROUND_COLUMNS = ["No Decision", "Accept", "Waitlist", "Reject"] as const;
 
 export type Round = DelibBlock & {
   /** 0-based position among the rounds. */
@@ -290,6 +290,17 @@ export function delibRounds(t: Timeline): Round[] {
     sinceLastRound = [];
   });
   return rounds;
+}
+
+/** The close confirmation's body: what each column gets, and who gets no decision. */
+export function closeSummary(round: Pick<Round, "columns" | "advanceColumn">, columnOrder: Record<string, string[]>): string {
+  const [first] = round.columns;
+  const counts = round.columns
+    .filter((c) => c !== first)
+    .map((c) => `${(columnOrder[c] ?? []).length} ${c.toLowerCase()}`)
+    .join(", ");
+  const noDecision = round.advanceColumn === "Advance" ? `"${first}" or "Advance"` : `"${first}"`;
+  return `${counts}. Anyone left in ${noDecision} gets no decision.`;
 }
 
 export function findRound(t: Timeline, roundId: string): Round | null {

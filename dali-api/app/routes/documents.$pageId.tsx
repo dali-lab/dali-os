@@ -790,6 +790,7 @@ function DocumentPage() {
             subtitle={subtitle}
             canEdit={canEdit}
             canComment={canComment}
+            isCore={isCore}
             canManageAccess={canManageAccess}
             workspaceType={workspaceType}
             workspaceId={workspaceId}

@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -8,7 +9,7 @@ import remarkGfm from "remark-gfm";
 //
 // No Tailwind typography plugin in this project, so element styles are mapped
 // explicitly to the app's design tokens. Links open in a new tab.
-export function Markdown({ children }: { children: string }) {
+export function Markdown({ children, internalLinks = false }: { children: string; internalLinks?: boolean }) {
   return (
     <div className="text-sm text-foreground leading-relaxed [word-break:break-word]">
       <ReactMarkdown
@@ -24,14 +25,22 @@ export function Markdown({ children }: { children: string }) {
             <h3 className="font-heading text-sm font-semibold text-foreground mt-2.5 mb-1 first:mt-0" {...props} />
           ),
           p: (props) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
-          a: (props) => (
-            <a
-              target="_blank"
-              rel="noreferrer"
-              className="text-os-accent hover:underline break-all"
-              {...props}
-            />
-          ),
+          a: ({ href, children: label, ...props }) =>
+            internalLinks && href?.startsWith("/") ? (
+              <Link to={href} className="text-os-accent hover:underline">
+                {label}
+              </Link>
+            ) : (
+              <a
+                href={href}
+                target="_blank"
+                rel="noreferrer"
+                className="text-os-accent hover:underline break-all"
+                {...props}
+              >
+                {label}
+              </a>
+            ),
           ul: (props) => <ul className="list-disc pl-5 my-1.5 flex flex-col gap-0.5" {...props} />,
           ol: (props) => <ol className="list-decimal pl-5 my-1.5 flex flex-col gap-0.5" {...props} />,
           li: (props) => <li className="marker:text-muted-foreground" {...props} />,

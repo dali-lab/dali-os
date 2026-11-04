@@ -172,6 +172,14 @@ export const ASK_TOOLS: Record<string, AskTool> = {
     status: () => "Checking your projects",
     sources: (_args, payload) => list(obj(payload).projects).flatMap(project),
   },
+  read_help: {
+    status: (args) => (str(args.slug) ? "Reading the help" : "Checking the help"),
+    sources: (_args, payload) => {
+      const a = obj(payload);
+      const url = str(a.url);
+      return url ? [{ kind: "helpArticle", title: str(a.title) ?? "Help", url }] : [];
+    },
+  },
   get_project_overview: {
     status: () => "Reading a project",
     sources: (_args, payload) => project(obj(payload)),

@@ -37,6 +37,7 @@ import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
 import { Select, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from '~/components/os-chrome'
 import { buttonClasses } from '~/components/ui/Button'
+import { ReopenButton } from '~/hiring/components/ReopenButton'
 import { cn } from '~/lib/cn'
 import { getUserRoles } from '~/lib/roles'
 import { domainApplicationBlindLabel } from '~/hiring/lib/anonymization.server'
@@ -620,9 +621,7 @@ export default function InterviewDetailPage() {
                     {interview.recommendation ?? recommendation}
                   </span>
                 </span>
-                <button onClick={handleReopen} disabled={completing} className={buttonClasses('secondary', 'md')}>
-                  {completing ? 'Reopening…' : 'Reopen'}
-                </button>
+                <ReopenButton canReopen={!!isCore} reopening={completing} onReopen={handleReopen} />
                 {interview.recommendationNotes && (
                   <p className="w-full text-sm text-os-grey">{interview.recommendationNotes}</p>
                 )}

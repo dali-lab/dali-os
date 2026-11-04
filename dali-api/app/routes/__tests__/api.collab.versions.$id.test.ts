@@ -78,3 +78,20 @@ describe("POST /api/collab/versions/:id restore", () => {
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/collab/versions/:id read-only callers", () => {
+  beforeEach(() => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: true });
+  });
+
+  it("rejects restore without touching the document", async () => {
+    expect((await run({ intent: "restore" })).status).toBe(403);
+    expect(restoreVersion).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects naming a version", async () => {
+    expect((await run({ intent: "name", label: "Final" })).status).toBe(403);
+    expect(prisma.collabDocumentVersion.update).not.toHaveBeenCalled();
+  });
+});

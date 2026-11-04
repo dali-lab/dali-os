@@ -72,6 +72,7 @@ import { FACETED_TOOLS } from "./tools/faceted";
 import { PERSONAL_TOOLS } from "./tools/personal";
 import { JOURNEYS_TOOLS } from "./tools/journeys";
 import { COMMUNITY_TOOLS } from "./tools/community";
+import { HELP_TOOLS } from "./tools/help";
 
 export const REGISTRY_TOOLS: McpTool[] = [
   ...BASE_TOOLS,
@@ -89,6 +90,7 @@ export const REGISTRY_TOOLS: McpTool[] = [
   ...PERSONAL_TOOLS,
   ...JOURNEYS_TOOLS,
   ...COMMUNITY_TOOLS,
+  ...HELP_TOOLS,
 ];
 
 const BY_NAME = new Map<string, McpTool>(REGISTRY_TOOLS.map((t) => [t.def.name, t]));

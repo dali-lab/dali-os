@@ -27,6 +27,8 @@ import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import {
   EpicsTimeline,
   LEVEL_COLOR,
+  EPIC_STATUS_LABEL,
+  STORY_STATUS_LABEL,
   type TimelineEpic,
   type TimelineTerm,
   type StoryDependencyEdge,
@@ -982,11 +984,11 @@ export function EpicDetail({
             <Select
               value={epic.status}
               onChange={(value) => void saveEpic({ status: value })}
-              options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
+              options={EPIC_STATUSES.map((st) => ({ value: st, label: EPIC_STATUS_LABEL[st] }))}
               buttonClassName={EPIC_FIELD}
             />
           ) : (
-            <span className="text-sm text-foreground">{epic.status}</span>
+            <span className="text-sm text-foreground">{EPIC_STATUS_LABEL[epic.status]}</span>
           )}
           </div>
         </div>
@@ -1342,7 +1344,7 @@ function EpicForm({
     <Select
       value={status}
       onChange={(value) => setStatus(value as EditableEpic["status"])}
-      options={EPIC_STATUSES.map((st) => ({ value: st, label: st }))}
+      options={EPIC_STATUSES.map((st) => ({ value: st, label: EPIC_STATUS_LABEL[st] }))}
       buttonClassName={EPIC_FIELD}
     />
   );
@@ -1499,7 +1501,7 @@ function StoryForm({
     <Select
       value={status}
       onChange={(value) => setStatus(value as EditableStory["status"])}
-      options={STORY_STATUSES.map((st) => ({ value: st, label: st }))}
+      options={STORY_STATUSES.map((st) => ({ value: st, label: STORY_STATUS_LABEL[st] }))}
       buttonClassName="w-full"
     />
   );
