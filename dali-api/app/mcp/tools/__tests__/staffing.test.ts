@@ -5,7 +5,9 @@ vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
+import { validateInput } from "~/lib/mcp-input";
 import {
+  SET_STAFFING_ASSIGNMENT_TOOL,
   runGetStaffingBoard,
   runSetStaffingAssignment,
   runSetDomainEligibility,
@@ -129,6 +131,14 @@ describe("get_staffing_board", () => {
 });
 
 describe("set_staffing_assignment", () => {
+  it("accepts a project id or null for projectId at the input gate", () => {
+    const schema = SET_STAFFING_ASSIGNMENT_TOOL.inputSchema;
+    const base = { cycleId: "cyc-1", userId: "u" };
+    expect(validateInput({ ...base, projectId: "p1" }, schema).ok).toBe(true);
+    expect(validateInput({ ...base, projectId: null }, schema).ok).toBe(true);
+    expect(validateInput({ ...base, projectId: 1 }, schema).ok).toBe(false);
+  });
+
   beforeEach(() => {
     mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
     mockPrisma.domain.count.mockResolvedValue(1);

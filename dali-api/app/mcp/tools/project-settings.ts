@@ -17,6 +17,7 @@ import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 export class ProjectSettingsNotFoundError extends Error {
+  status = 404;
   constructor(id: string) {
     super(`Project ${id} not found`);
     this.name = "ProjectSettingsNotFoundError";

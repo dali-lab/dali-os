@@ -52,6 +52,7 @@ type Input = {
 };
 
 export class NotificationNotFoundError extends Error {
+  status = 404;
   constructor(id: string) {
     super(`Notification ${id} not found`);
     this.name = "NotificationNotFoundError";
@@ -59,6 +60,7 @@ export class NotificationNotFoundError extends Error {
 }
 
 export class NotificationForbiddenError extends Error {
+  status = 403;
   constructor() {
     super("Notification belongs to another user");
     this.name = "NotificationForbiddenError";
