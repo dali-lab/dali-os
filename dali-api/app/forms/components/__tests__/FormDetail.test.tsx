@@ -4,6 +4,8 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 
+const history = vi.hoisted(() => ({ undo: vi.fn(), redo: vi.fn() }));
+
 // The rich-text editor and the collab room need a real browser + server.
 vi.mock("~/components/doc", () => ({ DocEditor: () => null }));
 vi.mock("~/components/collab/useSharedCollection", async () => {
@@ -17,10 +19,10 @@ vi.mock("~/components/collab/useSharedCollection", async () => {
         push: (item: unknown) => setItems((p) => [...p, item]),
         remove: (i: number) => setItems((p) => p.filter((_, j) => j !== i)),
         move: () => {},
-        undo: () => {},
-        redo: () => {},
-        canUndo: false,
-        canRedo: false,
+        undo: history.undo,
+        redo: history.redo,
+        canUndo: true,
+        canRedo: true,
         synced: true,
       };
     },
@@ -114,6 +116,18 @@ describe("FormDetail", () => {
     await mount(loaderData());
     expect(container.textContent).toContain("Questions");
     expect(container.textContent).toContain("Name");
+  });
+
+  it("undoes and redoes the builder's edits from the keyboard", async () => {
+    const data = loaderData({ collabToken: "token" });
+    data.form.draft = { questions: [question], description: null } as never;
+    await mount(data);
+    history.undo.mockClear();
+    history.redo.mockClear();
+    act(() => void document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true })));
+    expect(history.undo).toHaveBeenCalledTimes(1);
+    act(() => void document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, shiftKey: true, bubbles: true })));
+    expect(history.redo).toHaveBeenCalledTimes(1);
   });
 
   it("renders the builder for a form with a draft", async () => {

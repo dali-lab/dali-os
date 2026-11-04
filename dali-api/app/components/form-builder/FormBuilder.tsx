@@ -68,6 +68,7 @@ import {
 import { isLayoutOnly } from '~/lib/form-answers'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
+import { useUndoKeys } from '~/hooks/useUndoKeys'
 import { SearchInput } from '~/components/ui/SearchInput'
 import { useOsChrome } from '~/components/os-chrome'
 
@@ -365,6 +366,7 @@ export function FormBuilderTab({
     initialQuestions,
     'key',
   )
+  useUndoKeys({ undo, redo, canUndo, canRedo })
 
   // Unified question list + mutators: route to the collab surface when active,
   // else to plain React state so the hiring challenge builder keeps working.

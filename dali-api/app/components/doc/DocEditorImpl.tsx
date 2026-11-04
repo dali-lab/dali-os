@@ -30,7 +30,6 @@ import {
 } from "y-prosemirror";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
-import type { EditorState } from "prosemirror-state";
 import { withCollaboration } from "@blocknote/core/yjs";
 import { en } from "@blocknote/core/locales";
 import {
@@ -67,6 +66,7 @@ import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
 import { docPasteHandler } from "./paste-embed";
 import { PasteAsMenu } from "./PasteAsMenu";
+import { keepCollabUndoAlive } from "./collab-undo";
 import { createSelectAllPlugin } from "./select-all";
 import { createTableDragSelectPlugin } from "./table-drag-select";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
@@ -215,22 +215,7 @@ function CollabDocInner(
     [schema, dictionary, entry, threadStore],
   );
 
-  // FIX (undo no-ops in collab): y-prosemirror's yUndoPlugin creates its
-  // UndoManager in plugin-STATE init but destroys it from the plugin VIEW's
-  // destroy(). BlockNote 0.52 / tiptap v3 keep the EditorState — plugin state
-  // included — across editor.unmount()/mount() (StrictMode's simulated
-  // remount, BlockNoteView's editable-change remount), so the first unmount
-  // kills the manager and every later mount reuses the dead instance: undo
-  // permanently no-ops. Neuter destroy() so the manager's lifetime matches the
-  // EditorState that owns it; its real end of life is releaseCollabDoc's
-  // ydoc.destroy(). Found by duck-typing over the live plugin list rather than
-  // yUndoPluginKey.getState() — the prod bundle can inline y-prosemirror's key
-  // module twice, making key-based lookup silently return null (the same trap
-  // the deleted TipTap CollaborativeEditor hit).
-  useEffect(() => {
-    const um = findCollabUndoManager(editor.prosemirrorState);
-    if (um) um.destroy = () => {};
-  }, [editor]);
+  useMemo(() => keepCollabUndoAlive(editor), [editor]);
 
   // One-shot seed: if the caller supplied seedContent (e.g. the latest agreement
   // version body) and the Y.Doc is empty after the server syncs, write the seed
@@ -274,16 +259,6 @@ function CollabDocInner(
   useReportSyncState(entry.provider, props.onSyncStateChange);
 
   return <DocView {...props} editor={editor} collabEntry={entry} />;
-}
-
-function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
-  for (const plugin of state.plugins) {
-    const pluginState = plugin.getState(state) as { undoManager?: Y.UndoManager } | undefined;
-    if (pluginState && typeof pluginState.undoManager?.undo === "function") {
-      return pluginState.undoManager;
-    }
-  }
-  return null;
 }
 
 // ─── Comments helpers ────────────────────────────────────────────────────────
