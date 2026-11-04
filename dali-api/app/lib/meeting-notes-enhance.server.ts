@@ -29,6 +29,8 @@ import { TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
 import { z } from "zod";
 
 const MAX_BLOCKS = 500;
+// The SDK refuses non-streaming requests above ~21k max tokens.
+export const ENHANCE_MAX_TOKENS = 16_000;
 
 export const EnhanceBlocksSchema = z
   .array(z.object({ id: z.string().min(1), type: z.string().min(1), text: z.string(), parentId: z.string().min(1).optional() }))
@@ -246,7 +248,7 @@ export async function generateAndVerifyEnhancePlan(params: {
     raw = await generateShortText({
       system: SYSTEM_PROMPT,
       prompt,
-      maxTokens: 8000,
+      maxTokens: ENHANCE_MAX_TOKENS,
       model: provider.sonnetModel,
     });
   } catch (err) {
@@ -257,6 +259,9 @@ export async function generateAndVerifyEnhancePlan(params: {
   }
   if (!raw) return { ok: false, aiEnabled: false };
   await recordTokenUsage(userId, day, raw.inputTokens, raw.outputTokens);
+  if (raw.stopReason === "max_tokens") {
+    return { ok: false, status: 422, error: "This meeting is too long to enhance in one pass." };
+  }
 
   let parsed: unknown;
   try {
