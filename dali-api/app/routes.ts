@@ -898,7 +898,7 @@ export default [
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
   route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
 
-  // BetterAuth admin impersonation (flag-gated on `betterauth`).
+  // BetterAuth admin impersonation.
   route("admin/impersonate", "routes/admin.impersonate.ts"),
   route("admin/stop-impersonating", "routes/admin.stop-impersonating.ts"),
 
