@@ -144,6 +144,9 @@ describe("runReleaseNotesDraft", () => {
     expect(vi.mocked(generateShortText).mock.calls[0][0].prompt).toContain('number="10"');
     expect(vi.mocked(generateShortText).mock.calls[0][0].prompt).not.toContain('number="11"');
     expect(vi.mocked(generateShortText).mock.calls[0][0].task).toBe("releaseNotes");
+    const { accept } = vi.mocked(generateShortText).mock.calls[0][0];
+    expect(accept?.({ text: JSON.stringify([entry([10])]), inputTokens: 0, outputTokens: 0 })).toBe(true);
+    expect(accept?.({ text: "Sorry, here are the notes:", inputTokens: 0, outputTokens: 0 })).toBe(false);
     expect(recordTokenUsage).toHaveBeenCalledWith("system:release-notes-draft", expect.any(String), 10, 5);
 
     const data = p.releaseNote.create.mock.calls[0][0].data;

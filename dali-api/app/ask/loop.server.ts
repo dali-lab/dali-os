@@ -13,8 +13,8 @@ import { getUserRoles } from "~/lib/roles";
 export type { AskEvent };
 
 export const ASK_MAX_TOOL_ROUNDS = 6;
-export const ASK_INPUT_TOKEN_BUDGET = 150_000;
-export const ASK_TOOL_RESULT_MAX_CHARS = 40_000;
+export const ASK_INPUT_TOKEN_BUDGET = 60_000;
+export const ASK_TOOL_RESULT_MAX_CHARS = 15_000;
 const MAX_TOKENS = 8000;
 
 export const OUT_OF_STEPS =
@@ -97,7 +97,8 @@ export async function runAskTool(
 ): Promise<{ content: string; isError: boolean; sources: AskSource[] }> {
   const tool = ASK_TOOLS[name];
   if (!tool) return { content: `The tool ${name} isn't available here.`, isError: true, sources: [] };
-  const args = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const given = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const args = tool.args ? tool.args(given) : given;
   const refusal = tool.guard?.(args);
   if (refusal) return { content: refusal, isError: true, sources: [] };
 

@@ -6,9 +6,13 @@ import type { AskSourceInput, AskSourceKind } from "./sources";
 
 type Args = Record<string, unknown>;
 
+export const ASK_TRANSCRIPT_PAGE_LINES = 300;
+export const ASK_TRANSCRIPT_MAX_LINES = 500;
+
 export type AskTool = {
   status: (args: Args) => string;
   guard?: (args: Args) => string | null;
+  args?: (args: Args) => Args;
   filter?: (payload: unknown) => unknown;
   sources: (args: Args, payload: unknown) => AskSourceInput[] | Promise<AskSourceInput[]>;
 };
@@ -115,6 +119,10 @@ export const ASK_TOOLS: Record<string, AskTool> = {
   },
   get_meeting_transcript: {
     status: () => "Reading a transcript",
+    args: (args) => ({
+      ...args,
+      limit: Math.min(typeof args.limit === "number" && args.limit > 0 ? args.limit : ASK_TRANSCRIPT_PAGE_LINES, ASK_TRANSCRIPT_MAX_LINES),
+    }),
     sources: async (_args, payload) => {
       const recordingId = str(obj(payload).recordingId);
       if (!recordingId) return [];
