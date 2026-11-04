@@ -1,13 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { prisma } from "~/lib/db.server";
-import { JOBS, type JobDefinition } from "~/jobs/registry";
+import { JOBS, type JobDefinition, type JobResult } from "~/jobs/registry";
 import { runJob, startJobRunner, tick } from "~/jobs/runner.server";
 
 const savedJobs = [...JOBS];
 const NOW = new Date("2026-07-15T12:00:00Z");
 const minutes = (n: number) => n * 60_000;
 
-let handler: ReturnType<typeof vi.fn>;
+let handler: Mock<(ctx: unknown) => Promise<JobResult>>;
 
 function fakeJob(overrides: Partial<JobDefinition> = {}): JobDefinition {
   return {

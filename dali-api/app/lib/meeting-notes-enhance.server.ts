@@ -225,7 +225,7 @@ export async function generateAndVerifyEnhancePlan(params: {
   const { roster, meetingTypeLabel, occurrenceDate, recorderName } = await resolveMeetingEnhanceContext(rec);
 
   const quota = await claimAiQuota(userId);
-  if (!quota.ok) return { ok: false, status: 429, ...quota };
+  if (!quota.ok) return { status: 429, ...quota };
   const { day } = quota;
 
   const prompt = [

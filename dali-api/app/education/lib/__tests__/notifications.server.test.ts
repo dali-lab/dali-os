@@ -81,7 +81,7 @@ describe("educationLink", () => {
 });
 
 describe("notifyApplicationStatus", () => {
-  function appRow(status: string, applicant = member) {
+  function appRow(status: string, applicant: Record<string, unknown> = member) {
     mockPrisma.educationApplication.findUnique.mockResolvedValue({
       status,
       applicant,

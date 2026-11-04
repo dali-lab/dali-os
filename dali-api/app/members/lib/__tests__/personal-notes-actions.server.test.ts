@@ -235,13 +235,13 @@ describe("addNoteShare", () => {
   });
 
   it("lets the owner share it with a group whose id equals their user id", async () => {
-    vi.mocked(addPageShare).mockResolvedValue({ ok: true, alreadyShared: false });
+    vi.mocked(addPageShare).mockResolvedValue({ ok: true, alreadyShared: false } as never);
     await addNoteShare("n1", OWNER, "Group", OWNER);
     expect(addPageShare).toHaveBeenCalledWith("n1", OWNER, "Group", OWNER);
   });
 
   it("returns the share result", async () => {
-    vi.mocked(addPageShare).mockResolvedValue({ ok: true, alreadyShared: true });
+    vi.mocked(addPageShare).mockResolvedValue({ ok: true, alreadyShared: true } as never);
     expect(await addNoteShare("n1", OWNER, "User", "friend")).toEqual({ ok: true, alreadyShared: true });
   });
 

@@ -208,7 +208,7 @@ describe("event-rsvp", () => {
   });
 
   it("answers 400 with Google's message when the user is not a guest", async () => {
-    vi.mocked(respondToGoogleEventAsSelf).mockRejectedValue(new NotAGuestError("You are not a guest"));
+    vi.mocked(respondToGoogleEventAsSelf).mockRejectedValue(new (NotAGuestError as unknown as new (m: string) => Error)("You are not a guest"));
 
     const res = await post(rsvp);
 

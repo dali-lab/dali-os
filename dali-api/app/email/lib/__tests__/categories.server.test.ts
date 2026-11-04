@@ -19,7 +19,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { MAX_CATEGORY_DESCRIPTION, MAX_CATEGORY_NAME } from "~/email/lib/categories";
 import { handleInboxCategoryAction, loadInboxCategories } from "~/email/lib/categories.server";
 
-const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+const db = prisma as any;
 const request = new Request("http://localhost/admin/email");
 
 function form(fields: Record<string, string | string[]>) {
