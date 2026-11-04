@@ -11,6 +11,7 @@ import { TablessHistoryNav } from '~/components/TablessHistoryNav'
 import { usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
 import { pageBarCrumbs } from '~/components/shell/page-bar-model'
 import { useFeatureFlag } from '~/components/FeatureFlags'
+import { AskButton } from '~/ask/components/AskButton'
 import { UNSAFE_DataRouterStateContext, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation } from 'react-router'
 import { useDisplayedTab } from '~/components/shell/displayed-tab'
 import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
@@ -119,6 +120,7 @@ export function PageBar({
         <DisplayedPage>
           <PageBarTrailAction />
         </DisplayedPage>
+        <AskButton />
         <PageDocButton variant="pagebar" />
         <Tooltip content={`${labels.tooltip} · ${FAVORITE_SHORTCUT}`}>
           <button

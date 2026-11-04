@@ -24,7 +24,12 @@ vi.mock("~/ask/loop.server", () => ({ runAsk: h.runAsk }));
 vi.mock("~/lib/ai-quota.server", async () => {
   const quotaResponse = (r: { error: string; retryAfterSeconds: number }) =>
     Response.json({ error: r.error }, { status: 429, headers: { "Retry-After": String(r.retryAfterSeconds) } });
-  return { claimAskQuota: h.claimAskQuota, releaseAskQuota: h.releaseAskQuota, aiQuotaResponse: quotaResponse };
+  return {
+    claimAskQuota: h.claimAskQuota,
+    releaseAskQuota: h.releaseAskQuota,
+    aiQuotaResponse: quotaResponse,
+    ASK_DAILY_MAX: 50,
+  };
 });
 
 import { action, ASK_QUESTION_MAX } from "../api.ask";
@@ -64,7 +69,7 @@ beforeEach(() => {
   h.checkRateLimit.mockReturnValue(null);
   h.resolveAiProvider.mockReturnValue(PROVIDER);
   h.findUser.mockResolvedValue(USER);
-  h.claimAskQuota.mockResolvedValue({ ok: true, day: "2026-11-04" });
+  h.claimAskQuota.mockResolvedValue({ ok: true, day: "2026-11-04", used: 47 });
   h.runAsk.mockImplementation(async (opts) => {
     opts.emit({ type: "status", label: "Searching" });
     opts.emit({ type: "done", answer: "May 4 [1].", sources: [] });
@@ -138,6 +143,7 @@ describe("POST /api/ask stream", () => {
   it("streams the loop's events as SSE", async () => {
     const res = await post({ question: "  When is the launch?  " });
     expect(res.headers.get("Content-Type")).toBe("text/event-stream");
+    expect(res.headers.get("X-Ask-Remaining")).toBe("3");
     expect(await events(res)).toEqual([
       { type: "status", label: "Searching" },
       { type: "done", answer: "May 4 [1].", sources: [] },

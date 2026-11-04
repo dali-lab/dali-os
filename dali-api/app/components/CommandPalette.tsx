@@ -34,10 +34,12 @@ import {
   Link as LinkIcon,
   AppWindow,
   Download,
+  Sparkles,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
 import { createSearchCache } from "~/lib/search-cache";
+import { looksLikeQuestion } from "~/ask/thread";
 import { setFocusPreference } from "~/lib/focus-mode";
 import { COPY_PAGE_LINK_EVENT } from "~/lib/page-link";
 import type { SearchResult, SearchResultType } from "~/lib/search";
@@ -69,6 +71,8 @@ interface CommandPaletteProps {
   onOpenInDesktop?: () => void;
   /** Open a result. `toSide` = ⌘/Ctrl+Enter (side panel, background desktop tab, or a new browser tab). */
   onOpen: (url: string, label: string, toSide: boolean) => void;
+  /** Set when Ask DALI is on for the viewer; adds the Ask row carrying the typed text. */
+  onAsk?: (question: string) => void;
 }
 
 type PaletteAction =
@@ -166,7 +170,7 @@ export const paletteSearchCache = createSearchCache<SearchResult>({
   debounceMs: 150,
 });
 
-export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen, onOpenInDesktop }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, flags = {}, portalNav, onOpen, onOpenInDesktop, onAsk }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   // The query `results` belong to. Compared against the live query during
@@ -385,8 +389,26 @@ export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, fla
         .map((r) => resultItem(r));
       if (items.length) out.push({ key: section, label: section, items });
     }
+    const question = query.trim();
+    if (onAsk && question.length >= 2) {
+      const ask = {
+        key: "ask",
+        label: "Ask",
+        items: [
+          {
+            id: "ask-dali",
+            title: "Ask DALI",
+            subtitle: "Get an answer from DALI docs, meetings and tasks",
+            icon: Sparkles,
+            action: { kind: "run", run: () => onAsk(question) } as const,
+          },
+        ],
+      };
+      if (looksLikeQuestion(question)) out.unshift(ask);
+      else out.push(ask);
+    }
     return out;
-  }, [staticSections, results, effectiveMeta, effectiveSectionOrder]);
+  }, [staticSections, results, effectiveMeta, effectiveSectionOrder, query, onAsk]);
 
   const flatItems = useMemo(() => sections.flatMap((s) => s.items), [sections]);
 

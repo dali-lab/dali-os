@@ -7,7 +7,7 @@ import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { resolveAiProvider } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { aiQuotaResponse, claimAskQuota, releaseAskQuota } from "~/lib/ai-quota.server";
+import { aiQuotaResponse, ASK_DAILY_MAX, claimAskQuota, releaseAskQuota } from "~/lib/ai-quota.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { validateHistory } from "~/lib/ai-history";
 import { runAsk, type AskEvent } from "~/ask/loop.server";
@@ -114,6 +114,7 @@ export async function action({ request }: Route.ActionArgs) {
   return new Response(readable, {
     headers: {
       "Content-Type": "text/event-stream",
+      "X-Ask-Remaining": String(Math.max(0, ASK_DAILY_MAX - quota.used)),
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
     },

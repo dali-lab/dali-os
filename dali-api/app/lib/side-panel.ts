@@ -5,9 +5,11 @@
 
 export const SIDE_PARAM = "side";
 
-export type SidePanel = { type: "doc"; id: string };
+export type SidePanel = { type: "doc"; id: string } | { type: "ask"; id: "dali" };
 
-const TYPES = new Set<SidePanel["type"]>(["doc"]);
+export const ASK_PANEL: SidePanel = { type: "ask", id: "dali" };
+
+const TYPES = new Set<SidePanel["type"]>(["doc", "ask"]);
 
 export function parseSidePanel(value: string | null | undefined): SidePanel | null {
   if (!value) return null;
@@ -16,6 +18,7 @@ export function parseSidePanel(value: string | null | undefined): SidePanel | nu
   const type = value.slice(0, at) as SidePanel["type"];
   const id = value.slice(at + 1);
   if (!TYPES.has(type) || !/^[\w-]+$/.test(id)) return null;
+  if (type === "ask") return id === ASK_PANEL.id ? ASK_PANEL : null;
   return { type, id };
 }
 
@@ -23,9 +26,9 @@ export function formatSidePanel(panel: SidePanel): string {
   return `${panel.type}:${panel.id}`;
 }
 
-/** The page a panel item opens as when promoted to the main view. */
-export function sidePanelHref(panel: SidePanel): string {
-  return `/documents/${panel.id}`;
+/** The page a panel item opens as when promoted to the main view, if it has one. */
+export function sidePanelHref(panel: SidePanel): string | null {
+  return panel.type === "doc" ? `/documents/${panel.id}` : null;
 }
 
 /** The side panel a url asks to open beside its page, e.g. a palette result. */
@@ -54,7 +57,7 @@ export function visibleSidePanel(
   const state = location.state as { tabSwitch?: boolean; keepPanel?: boolean } | null | undefined;
   const leftTab = state?.tabSwitch === true && state.keepPanel !== true;
   const panel = parseSidePanel(new URLSearchParams(location.search).get(SIDE_PARAM)) ?? (leftTab ? null : parseSidePanel(kept));
-  return panel && sidePanelForUrl(location.pathname)?.id === panel.id ? null : panel;
+  return panel && panel.type === "doc" && sidePanelForUrl(location.pathname)?.id === panel.id ? null : panel;
 }
 
 let kept: string | null = null;

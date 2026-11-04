@@ -4,7 +4,10 @@ import type { AiHistoryEntry } from "~/lib/ai-history";
 import { findRegistryTool } from "~/mcp/registry";
 import { dispatchTool, type ToolCaller } from "~/mcp/dispatch.server";
 import { ASK_TOOLS, ASK_TOOL_NAMES } from "./tools.server";
-import { finalizeAnswer, SourceRegistry, type AskSource, type CitedSource } from "./sources";
+import { finalizeAnswer, SourceRegistry, type AskSource } from "./sources";
+import type { AskEvent } from "./events";
+
+export type { AskEvent };
 
 export const ASK_MAX_TOOL_ROUNDS = 6;
 export const ASK_INPUT_TOKEN_BUDGET = 150_000;
@@ -13,14 +16,6 @@ const MAX_TOKENS = 2048;
 
 export const OUT_OF_STEPS =
   "I ran out of steps before I could put an answer together. Try a narrower question.";
-
-export type AskEvent =
-  | { type: "status"; label: string }
-  | { type: "sources"; sources: AskSource[] }
-  | { type: "text"; delta: string }
-  | { type: "retract" }
-  | { type: "done"; answer: string; sources: CitedSource[] }
-  | { type: "error"; message: string };
 
 export type AskUsage = { inputTokens: number; outputTokens: number };
 

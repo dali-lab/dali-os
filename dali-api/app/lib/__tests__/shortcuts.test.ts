@@ -7,6 +7,7 @@ import {
   isCopyPageLinkShortcut,
   isEditingTarget,
   isFavoriteShortcut,
+  isAskShortcut,
   isFindShortcut,
   isToggleSidebarShortcut,
   isVersionHistoryShortcut,
@@ -234,5 +235,24 @@ describe("isVersionHistoryShortcut", () => {
   });
   it("respects defaultPrevented", () => {
     expect(isVersionHistoryShortcut({ ...press, metaKey: true, defaultPrevented: true })).toBe(false);
+  });
+});
+
+describe("isAskShortcut", () => {
+  const key = { metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, key: "j", code: "KeyJ" };
+  it("matches ⌘J", () => {
+    expect(isAskShortcut({ ...key, metaKey: true })).toBe(true);
+    expect(isAskShortcut({ ...key, metaKey: true, key: "J" })).toBe(true);
+  });
+  it("matches by key code on other layouts", () => {
+    expect(isAskShortcut({ ...key, metaKey: true, key: "∆" })).toBe(true);
+  });
+  it.each([
+    ["plain J", {}],
+    ["⌘⇧J", { metaKey: true, shiftKey: true }],
+    ["⌘⌥J", { metaKey: true, altKey: true }],
+    ["an already handled press", { metaKey: true, defaultPrevented: true }],
+  ])("ignores %s", (_label, over) => {
+    expect(isAskShortcut({ ...key, ...over })).toBe(false);
   });
 });
