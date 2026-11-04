@@ -459,7 +459,7 @@ export function CardShell({
   return (
     <article
       className={cn(
-        "os-task-card relative flex h-full min-w-0 flex-col rounded-os-card border border-os-container px-[18px] py-4",
+        "relative flex h-full min-w-0 flex-col rounded-os-card border border-os-container px-[14px] py-[12px]",
         filled && "bg-os-card",
       )}
     >
@@ -515,7 +515,7 @@ export function Meta({
 }
 
 export const ctaClass = (primary: boolean) =>
-  buttonClasses(primary ? "primary" : "secondary", "sm", "os-cta min-h-9 px-3.5");
+  buttonClasses(primary ? "primary" : "secondary", "sm", "os-cta");
 export const ctaIcon = "h-[15px] w-[15px] [stroke-width:1.5]";
 
 export function CtaLink({
