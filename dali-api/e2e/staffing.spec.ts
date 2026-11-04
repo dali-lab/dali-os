@@ -3,15 +3,16 @@ import { confirmDialog } from './helpers';
 import {
   createStaffingFixture,
   deleteStaffingFixture,
+  devLogin,
   projectAssignmentCount,
   type StaffingFixture,
 } from './staffing.helpers';
 
-const MANAGER = { daliEmail: 'admin@dali.dartmouth.edu' };
+const MANAGER = 'admin@dali.dartmouth.edu';
 
 test.describe('Staffing board and finalize', () => {
-  // The shared server is busy with other suites; the default 30s is too tight.
-  test.describe.configure({ mode: 'serial', timeout: 120_000 });
+  // The shared server is busy with other suites; the default 30s is tight.
+  test.describe.configure({ mode: 'serial', timeout: 60_000 });
   let f: StaffingFixture;
 
   test.beforeAll(async () => {
@@ -21,9 +22,9 @@ test.describe('Staffing board and finalize', () => {
     await deleteStaffingFixture(f);
   });
 
-  test('non-manager cannot open the board or finalize', async ({ page, loginAs }) => {
-    await loginAs({ daliEmail: f.email });
-    await page.goto('/projects/staffing');
+  test('non-manager cannot open the board or finalize', async ({ page }) => {
+    await devLogin(page, f.email);
+    await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/staffing/);
 
     const res = await page.request.post('/api/staffing/finalize', {
@@ -33,9 +34,9 @@ test.describe('Staffing board and finalize', () => {
     expect(await projectAssignmentCount(f)).toBe(0);
   });
 
-  test('manager proposes a member, finalizes, and the roster persists', async ({ page, loginAs }) => {
-    await loginAs(MANAGER);
-    await page.goto('/projects/staffing');
+  test('manager proposes a member, finalizes, and the roster persists', async ({ page }) => {
+    await devLogin(page, MANAGER);
+    await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
 
     await page.getByRole('button', { name: `View ${f.fullName}'s bid` }).click();
     const dialog = page.getByRole('dialog');
@@ -75,20 +76,16 @@ test.describe('Staffing board and finalize', () => {
 
     expect(await projectAssignmentCount(f)).toBe(1);
 
-    await page.goto(`/projects/${f.projectId}`);
+    await page.goto(`/projects/${f.projectId}?tab=details`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByText(f.fullName).first()).toBeVisible();
     await page.reload();
     await expect(page.getByText(f.fullName).first()).toBeVisible();
   });
 
-  test('taking a confirmed member off the project removes them from the roster', async ({
-    page,
-    loginAs,
-  }) => {
-    await loginAs(MANAGER);
-    await page.goto('/projects/staffing');
-    const card = page.getByRole('button', { name: `View ${f.fullName}'s bid` });
-    await card.getByRole('button', { name: /remove/i }).click();
+  test('taking a confirmed member off the project removes them from the roster', async ({ page }) => {
+    await devLogin(page, MANAGER);
+    await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: `Remove ${f.fullName} from project` }).click();
     const assign = page.waitForResponse(
       (r) => r.url().includes('/api/staffing/assign') && r.request().method() === 'POST',
     );
@@ -96,7 +93,8 @@ test.describe('Staffing board and finalize', () => {
     expect((await assign).ok()).toBe(true);
 
     expect(await projectAssignmentCount(f)).toBe(0);
-    await page.goto(`/projects/${f.projectId}`);
+    await page.goto(`/projects/${f.projectId}?tab=details`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('No team assignments yet.')).toBeVisible();
     await expect(page.getByText(f.fullName)).toHaveCount(0);
   });
 });

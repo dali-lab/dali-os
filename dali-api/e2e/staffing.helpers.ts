@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import type { Page } from '@playwright/test';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dali:dali@localhost:5432/dali';
 
@@ -104,4 +105,11 @@ export async function projectAssignmentCount(f: StaffingFixture): Promise<number
     );
     return rows[0].n;
   });
+}
+
+/** Dev login that waits for the redirect instead of networkidle, which stalls
+ *  while the signed-in shell holds its SSE streams open. */
+export async function devLogin(page: Page, email: string) {
+  await page.goto(`/dev-login-as?${new URLSearchParams({ daliEmail: email })}`, { waitUntil: 'commit' });
+  await page.waitForURL((u) => !u.pathname.startsWith('/dev-login-as'), { waitUntil: 'commit' });
 }
