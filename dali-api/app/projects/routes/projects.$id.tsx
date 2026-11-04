@@ -78,6 +78,8 @@ import {
   unlinkProjectPartner,
   updateProjectPartnerDates,
 } from "~/partners/lib/partner-access";
+import { listActiveCoreMembers, personName } from "~/partners/lib/core-members.server";
+import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard, type TaskCreateSeed } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
@@ -311,6 +313,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       prdPageId: true,
       projectTerms: {
         select: {
+          piUserId: true,
+          pi: {
+            select: { id: true, firstName: true, lastName: true, daliEmail: true },
+          },
           term: {
             select: {
               id: true,
@@ -873,6 +879,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .map((pt) => pt.term)
     .sort((a, b) => b.sortKey - a.sortKey);
 
+  // Per-term Principal Investigator (Core lead on this project for the term).
+  // Keyed by termId so the team section can label each term with its PI and
+  // (for Core viewers) swap it inline.
+  const pisByTerm: Record<string, { userId: string; name: string } | null> =
+    Object.fromEntries(
+      project.projectTerms.map((pt) => [
+        pt.term.id,
+        pt.pi
+          ? { userId: pt.pi.id, name: personName(pt.pi) }
+          : null,
+      ]),
+    );
+  // Core-only member list fuels the PI picker; everyone else sees a read-only
+  // label so we skip the query.
+  const coreMembers = core ? await listActiveCoreMembers(request) : [];
+
   // Start term is derived as the earliest term in the set (lowest sortKey),
   // not a stored field. Null when the project has no terms yet.
   const startTerm =
@@ -1242,6 +1264,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       code: t.code,
       sortKey: t.sortKey,
     })),
+    pisByTerm,
+    coreMembers,
     allTermOptions: [...allTerms]
       .sort((a, b) => b.sortKey - a.sortKey)
       .map((t) => ({ id: t.id, code: t.code })),
@@ -1356,6 +1380,23 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
+
+  // Per-term Principal Investigator. Core-only on both sides: only Core can
+  // write it, and the PI themselves must be an active Core member — same gate
+  // the renewals board uses so the two surfaces can't drift.
+  if (intent === "pi") {
+    if (!core) return { error: "Only Core can set the project PI." };
+    const termId = String(form.get("termId") ?? "");
+    const piUserId = String(form.get("piUserId") ?? "") || null;
+    if (!termId) return { error: "Missing term." };
+    if (piUserId && !(await isCore(piUserId, request))) {
+      return { error: "A PI must be a Core member." };
+    }
+    if (!(await setTermPi(prisma, { projectId: params.id, termId, piUserId }))) {
+      return { error: "That project is not active in that term." };
+    }
+    return redirect(`/projects/${params.id}`);
+  }
 
   const SCOPE_INTENTS = [
     "scopesBulk",
@@ -1685,6 +1726,8 @@ export default function ProjectDetail() {
     boardOptions,
     allDomainOptions,
     plannedTerms,
+    pisByTerm,
+    coreMembers,
     allTermOptions,
     chartStrings,
     domainScopeGrid,
@@ -1929,6 +1972,8 @@ export default function ProjectDetail() {
           linkablePartnerOrgs={linkablePartnerOrgs}
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
+          pisByTerm={pisByTerm}
+          coreMembers={coreMembers}
           currentTerm={currentTerm}
           chartStrings={chartStrings}
           allTermOptions={allTermOptions}
@@ -3275,6 +3320,84 @@ function TeamTermGroup({
   );
 }
 
+function PrincipalInvestigatorsSection({
+  plannedTerms,
+  pisByTerm,
+  coreMembers,
+  canEdit,
+  currentTermId,
+}: {
+  plannedTerms: LoaderData["plannedTerms"];
+  pisByTerm: LoaderData["pisByTerm"];
+  coreMembers: LoaderData["coreMembers"];
+  canEdit: boolean;
+  currentTermId: string | null;
+}) {
+  const submit = useSubmit();
+  const { sectionTitle } = useOsChrome();
+  if (plannedTerms.length === 0) return null;
+  const upcoming = currentTermId
+    ? plannedTerms.filter((t) => {
+        const current = plannedTerms.find((p) => p.id === currentTermId);
+        return !current || t.sortKey >= current.sortKey;
+      })
+    : plannedTerms;
+  const rows = upcoming.length > 0 ? upcoming : plannedTerms.slice(0, 1);
+  return (
+    <div className="flex flex-col gap-2">
+      <h2 className={sectionTitle}>
+        Principal Investigators
+      </h2>
+      <div className="flex flex-col gap-2 rounded-os-card bg-os-container/40 p-3">
+        {rows.map((t) => {
+          const pi = pisByTerm[t.id] ?? null;
+          const isCurrent = currentTermId !== null && t.id === currentTermId;
+          const options = [
+            { value: "", label: "No PI" },
+            ...(pi && !coreMembers.some((m) => m.userId === pi.userId)
+              ? [{ value: pi.userId, label: pi.name }]
+              : []),
+            ...coreMembers.map((m) => ({ value: m.userId, label: m.name })),
+          ];
+          return (
+            <div
+              key={t.id}
+              className="grid grid-cols-[minmax(80px,120px)_minmax(0,1fr)] items-center gap-3"
+            >
+              <div className="text-xs font-medium text-muted-foreground">
+                {t.code}
+                {isCurrent && (
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-accent-teal/40 bg-accent-teal/15 text-accent-teal">
+                    Current
+                  </span>
+                )}
+              </div>
+              {canEdit ? (
+                <Select
+                  ariaLabel={`PI for ${t.code}`}
+                  value={pi?.userId ?? ""}
+                  onChange={(v) => {
+                    const form = new FormData();
+                    form.set("intent", "pi");
+                    form.set("termId", t.id);
+                    form.set("piUserId", v);
+                    submit(form, { method: "post" });
+                  }}
+                  options={options}
+                />
+              ) : (
+                <div className="text-sm text-foreground">
+                  {pi?.name ?? <span className="italic text-muted-foreground">No PI</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TeamSection({
   teams,
   canEdit,
@@ -3477,6 +3600,8 @@ function OverviewTab({
   linkablePartnerOrgs,
   domainScopeGrid,
   plannedTerms,
+  pisByTerm,
+  coreMembers,
   currentTerm,
   chartStrings,
   allTermOptions,
@@ -3507,6 +3632,8 @@ function OverviewTab({
   linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
+  pisByTerm: LoaderData["pisByTerm"];
+  coreMembers: LoaderData["coreMembers"];
   currentTerm: LoaderData["currentTerm"];
   chartStrings: LoaderData["chartStrings"];
   allTermOptions: LoaderData["allTermOptions"];
@@ -3664,6 +3791,19 @@ function OverviewTab({
         knownOrgs={infra.knownOrgs}
         setupErrors={infra.setupErrors}
       />
+
+      {/* Principal Investigators — the Core member in charge of this project
+          per term. Core (canEditFinance, mirroring the renewals surface) can
+          reassign; everyone else sees a read-only roster. */}
+      <section className={sectionShell}>
+        <PrincipalInvestigatorsSection
+          plannedTerms={plannedTerms}
+          pisByTerm={pisByTerm}
+          coreMembers={coreMembers}
+          canEdit={canEditFinance}
+          currentTermId={currentTerm?.id ?? null}
+        />
+      </section>
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className={sectionShell}>

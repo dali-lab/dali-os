@@ -26,7 +26,7 @@ const TERMS = [
   { id: "t26f", code: "26F", sortKey: 4 },
 ];
 
-const ada = { firstName: "Ada", lastName: "Lovelace", daliEmail: "ada@example.edu" };
+const ada = { id: "u-ada", firstName: "Ada", lastName: "Lovelace", daliEmail: "ada@example.edu" };
 
 function project(over: Record<string, unknown> = {}) {
   return {
@@ -34,9 +34,11 @@ function project(over: Record<string, unknown> = {}) {
     name: "Example Project",
     iconEmoji: null,
     status: "Active",
+    description: null,
     projectTerms: [{ termId: "t26w", pi: ada }],
     termStatuses: [],
     roleRequests: [],
+    partners: [],
     ...over,
   };
 }
@@ -159,7 +161,7 @@ describe("loadPlanningData projects", () => {
   });
 
   it("keeps the PI from the latest term at or before the planned term", async () => {
-    const grace = { firstName: "Grace", lastName: "Hopper", daliEmail: "grace@example.edu" };
+    const grace = { id: "u-grace", firstName: "Grace", lastName: "Hopper", daliEmail: "grace@example.edu" };
     db.project.findMany.mockResolvedValue([
       project({
         projectTerms: [
