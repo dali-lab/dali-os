@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "~/lib/db.server";
 import { maybeSnapshot } from "~/collab/persistence";
 
@@ -6,11 +6,8 @@ const NAME = "doc:page1:body";
 const stored = (text = "hello") => ({ state: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer>, plainText: text });
 
 beforeEach(async () => {
-  vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
   await prisma.collabDocument.create({ data: { name: NAME, state: new Uint8Array([0]) } });
 });
-afterEach(() => vi.useRealTimers());
 
 const versions = (name = NAME) => prisma.collabDocumentVersion.findMany({ where: { name }, orderBy: { createdAt: "asc" } });
 
@@ -23,12 +20,15 @@ describe("maybeSnapshot", () => {
     expect(Array.from(v.state)).toEqual([1, 2, 3]);
   });
 
+  const setLatestAge = (ms: number) =>
+    prisma.collabDocumentVersion.updateMany({ where: { name: NAME }, data: { createdAt: new Date(Date.now() - ms) } });
+
   it("throttles inside the 30s window and snapshots again after it", async () => {
     expect(await maybeSnapshot(NAME, stored(), [])).toBe(true);
-    vi.setSystemTime(new Date("2026-10-01T12:00:29Z"));
+    await setLatestAge(29_000);
     expect(await maybeSnapshot(NAME, stored(), [])).toBe(false);
     expect(await versions()).toHaveLength(1);
-    vi.setSystemTime(new Date("2026-10-01T12:00:31Z"));
+    await setLatestAge(31_000);
     expect(await maybeSnapshot(NAME, stored("later"), [])).toBe(true);
     expect(await versions()).toHaveLength(2);
   });
