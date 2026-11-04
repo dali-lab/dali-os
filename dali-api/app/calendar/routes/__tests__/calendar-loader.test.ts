@@ -204,3 +204,65 @@ describe("loadCalendarData", () => {
     expect(where.date.lte.getTime()).toBeGreaterThan(where.date.gte.getTime());
   });
 });
+
+describe("loadCalendarData window and cookies", () => {
+  const at = (qs: string, headers: Record<string, string> = {}) =>
+    loadCalendarData(new Request(`http://localhost/calendar${qs}`, { headers }), {}) as Promise<any>;
+
+  it("anchors a YYYY-MM-DD param to that local calendar day, so the week containing the fall-back DST change is 169 hours", async () => {
+    const d = await at("?anchor=2026-11-01");
+
+    expect(d.view).toBe("week");
+    expect(d.weekStartIso).toBe("2026-11-01T04:00:00.000Z");
+    expect(d.weekEndIso).toBe("2026-11-08T05:00:00.000Z");
+    expect(d.rangeStartIso).toBe(d.weekStartIso);
+  });
+
+  it("still honours the legacy weekStart param", async () => {
+    const d = await at("?weekStart=2026-11-04");
+
+    expect(d.weekStartIso).toBe("2026-11-01T04:00:00.000Z");
+  });
+
+  it("prefers anchor over weekStart", async () => {
+    const d = await at("?anchor=2026-11-15&weekStart=2026-11-01");
+
+    expect(d.weekStartIso).toBe("2026-11-15T05:00:00.000Z");
+  });
+
+  it("falls back to parsing a full ISO instant as the anchor", async () => {
+    const d = await at("?anchor=2026-11-04T17:00:00.000Z");
+
+    expect(d.weekStartIso).toBe("2026-11-01T04:00:00.000Z");
+  });
+
+  it("ignores an unparseable anchor and shows the current week", async () => {
+    const d = await at("?anchor=not-a-date");
+    const current = await at("");
+
+    expect(d.weekStartIso).toBe(current.weekStartIso);
+  });
+
+  it("narrows the visible range to one day in day view while the week stays whole", async () => {
+    const d = await at("?anchor=2026-11-04&view=day");
+
+    expect(d.view).toBe("day");
+    expect(d.weekStartIso).toBe("2026-11-01T04:00:00.000Z");
+    expect(d.rangeStartIso).toBe("2026-11-04T05:00:00.000Z");
+    expect(d.rangeEndIso).toBe("2026-11-05T05:00:00.000Z");
+  });
+
+  it("reads the last-used destination and a valid default duration from cookies", async () => {
+    const d = await at("", { Cookie: "a=1; dali_event_dest=l1%3Acal1; dali_event_duration=90" });
+
+    expect(d.defaultEventDest).toBe("l1:cal1");
+    expect(d.defaultEventDurationMin).toBe(90);
+  });
+
+  it.each(["77", "abc", ""])("falls back to 60 minutes for a duration cookie of %j", async (v) => {
+    const d = await at("", { Cookie: `dali_event_duration=${v}` });
+
+    expect(d.defaultEventDurationMin).toBe(60);
+    expect(d.defaultEventDest).toBeNull();
+  });
+});
