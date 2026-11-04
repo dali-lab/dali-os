@@ -20,7 +20,7 @@ test.describe('mentor notes', () => {
 
     await loginAs({ daliEmail: MENTOR });
     await page.goto('/mentorship');
-    await expect(page.getByRole('heading', { name: 'My mentees' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'My mentees' })).toBeVisible();
     await expect(page.getByText('Mira Chen')).toBeVisible();
 
     const created = page.waitForResponse(
@@ -31,17 +31,19 @@ test.describe('mentor notes', () => {
     expect(createdRes.ok()).toBe(true);
     noteId = ((await createdRes.json()) as { id: string }).id;
 
-    await expect(page).toHaveURL(new RegExp(`/mentorship/notes/${noteId}$`));
-    await expect(page.getByRole('heading', { name: 'Notes on Mira Chen' })).toBeVisible();
-    await expect(page.getByText('Author: Admin User')).toBeVisible();
+    const overlay = page.getByRole('dialog', { name: 'Mira Chen' });
+    await expect(overlay).toBeVisible();
+    await expect(page).toHaveURL(/\/mentorship$/);
+    await expect(overlay.getByText('Author: Admin User')).toBeVisible();
 
     const saved = page.waitForResponse(
       (r) => r.request().method() === 'PATCH' && r.url().includes(`/api/mentorship/notes/${noteId}`),
     );
-    await page.getByRole('button', { name: 'Excellent' }).click();
+    await overlay.getByRole('button', { name: 'Excellent' }).click();
     expect((await saved).ok()).toBe(true);
 
-    await page.reload();
+    await page.goto(`/mentorship/notes/${noteId}`);
+    await expect(page.getByRole('heading', { name: 'Notes on Mira Chen' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Excellent' })).toHaveAttribute('aria-pressed', 'true');
     expect(await readMentorNote(noteId)).toEqual({ vibe: 'Good', mentorId });
 
@@ -49,7 +51,7 @@ test.describe('mentor notes', () => {
     await loginAs({ daliEmail: OUTSIDER });
     await page.goto('/mentorship');
     await expect(page.getByRole('heading', { name: 'Error 403' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'My mentees' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'My mentees' })).toHaveCount(0);
     await page.goto(`/mentorship/notes/${noteId}`);
     await expect(page.getByRole('heading', { name: 'Error 403' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Notes on Mira Chen' })).toHaveCount(0);

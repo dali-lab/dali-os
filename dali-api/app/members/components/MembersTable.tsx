@@ -62,7 +62,7 @@ export function MembersTable({
   const showClass = status === "alumni";
   const open = (m: MemberRow) => navigate(`/members/${m.id}`);
   return (
-    <div className="max-w-5xl overflow-x-auto">
+    <div className="relative max-w-5xl overflow-x-auto">
       <table className="w-full min-w-[520px] table-fixed text-sm">
         <colgroup>
           <col className="w-[46%]" />
