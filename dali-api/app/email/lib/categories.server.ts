@@ -87,7 +87,7 @@ export async function handleInboxCategoryAction(request: Request, form: FormData
     const id = text("id");
     const name = text("name");
     const description = text("description");
-    const addresses = list("inbox").map((a) => a.toLowerCase());
+    const addresses = [...new Set(list("inbox").map((a) => a.trim().toLowerCase()))];
     if (!name) return fail("Give the category a name.");
     if (name.length > MAX_CATEGORY_NAME) return fail(`Keep the name under ${MAX_CATEGORY_NAME} characters.`);
     if (description.length > MAX_CATEGORY_DESCRIPTION) return fail(`Keep the description under ${MAX_CATEGORY_DESCRIPTION} characters.`);

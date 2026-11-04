@@ -71,7 +71,9 @@ vi.mock("~/mentorship/lib/visibility", () => ({
   mentorNoteWhere: vi.fn(async () => ({})),
 }));
 
-import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
+import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
+import { listProfileNotes, listSharedWithMe } from "~/members/lib/personal-notes.server";
+import { walletAppleConfigured } from "~/lib/wallet-apple.server";
 import { isAdmin, isCore, isLabMentor } from "~/lib/roles";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import { mentorshipPairWhere } from "~/mentorship/lib/visibility";
@@ -189,5 +191,141 @@ describe("loadProfilePage", () => {
   it("lets an admin edit someone else's profile", async () => {
     vi.mocked(isAdmin).mockResolvedValue(true);
     expect((await run()).canEdit).toBe(true);
+  });
+});
+
+describe("loadProfilePage private data", () => {
+  const RESUME = {
+    resumeKey: "k",
+    resumeFileName: "ada.pdf",
+    resumeSizeBytes: 10,
+    resumeUploadedAt: new Date("2026-02-01T00:00:00Z"),
+  };
+
+  it("never sends the resume file key and shows the resume only to the member or an admin", async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, ...RESUME });
+    const peer = await run();
+    expect(peer.resume).toBeNull();
+    expect(JSON.stringify(peer)).not.toContain('"resumeKey"');
+
+    vi.mocked(isAdmin).mockResolvedValue(true);
+    expect((await run()).resume).toEqual({
+      fileName: "ada.pdf",
+      uploadedAt: "2026-02-01T00:00:00.000Z",
+      sizeBytes: 10,
+    });
+  });
+
+  it("does not offer the resume to Core alone", async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, ...RESUME });
+    vi.mocked(isCore).mockResolvedValue(true);
+    expect((await run()).resume).toBeNull();
+  });
+
+  it("asks for the profile's notes as the viewer and skips the inbox on someone else's profile", async () => {
+    await run();
+    expect(listProfileNotes).toHaveBeenCalledWith("u2", "u1");
+    expect(listSharedWithMe).not.toHaveBeenCalled();
+  });
+
+  it("shows the viewer's 'shared with me' inbox only on their own profile", async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.dALIMember.findUnique.mockResolvedValue({ onboardedAt: new Date() });
+    await run("u1");
+    expect(listSharedWithMe).toHaveBeenCalledWith("u1");
+  });
+
+  it("hides every note and the inbox while an admin is impersonating", async () => {
+    vi.mocked(isImpersonating).mockReturnValue(true);
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.dALIMember.findUnique.mockResolvedValue({ onboardedAt: new Date() });
+    vi.mocked(listProfileNotes).mockResolvedValue([{ id: "private" }] as never);
+    const data = await run("u1");
+    expect(data.notes).toEqual([]);
+    expect(data.sharedWithMe).toEqual([]);
+    expect(listProfileNotes).not.toHaveBeenCalled();
+    expect(listSharedWithMe).not.toHaveBeenCalled();
+    vi.mocked(isImpersonating).mockReturnValue(false);
+  });
+
+  it("gives wallet details only to the member, and pass revocation to the member or Core", async () => {
+    vi.mocked(walletAppleConfigured).mockReturnValue(true);
+    const peer = await run();
+    expect(peer.wallet).toBeNull();
+    expect(peer.canRevokeWalletPass).toBe(false);
+
+    vi.mocked(isCore).mockResolvedValue(true);
+    const core = await run();
+    expect(core.wallet).toBeNull();
+    expect(core.canRevokeWalletPass).toBe(true);
+
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.dALIMember.findUnique.mockResolvedValue({ onboardedAt: new Date() });
+    vi.mocked(isCore).mockResolvedValue(false);
+    const self = await run("u1");
+    expect(self.wallet).toEqual({ apple: true, google: false });
+    expect(self.canRevokeWalletPass).toBe(true);
+    vi.mocked(walletAppleConfigured).mockReturnValue(false);
+  });
+
+  it("shows the eligibility ceiling and mentee counts only to Core, for the current term", async () => {
+    const row = {
+      id: "a1",
+      level: "P2",
+      domainId: "d1",
+      projectId: "p1",
+      project: { id: "p1", name: "Analytical Engine", iconEmoji: null },
+      domain: { name: "Engineering" },
+      term: { id: "t1", code: "26F", sortKey: 20263 },
+    };
+    prisma.projectAssignment.findMany.mockResolvedValue([row]);
+    prisma.user.findUnique.mockResolvedValue({
+      ...MEMBER,
+      domainEligibilities: [{ id: "e1", level: "P3", domain: { id: "d1", displayName: "Engineering" } }],
+    });
+    prisma.mentorshipPair.groupBy.mockResolvedValue([{ projectId: "p1", domainId: "d1", _count: { _all: 2 } }]);
+
+    const peer = await run();
+    expect(peer.projectHistory[0].assignments[0]).toMatchObject({ eligibilityLevel: null, activeMenteeCount: 0 });
+    expect(prisma.mentorshipPair.groupBy).not.toHaveBeenCalled();
+
+    vi.mocked(isCore).mockResolvedValue(true);
+    const core = await run();
+    expect(prisma.mentorshipPair.groupBy.mock.calls[0][0].where).toEqual({ mentorUserId: "u2", termId: "t1" });
+    expect(core.projectHistory[0].assignments[0]).toMatchObject({ eligibilityLevel: "P3", activeMenteeCount: 2 });
+  });
+
+  it("labels the hired roles held this term", async () => {
+    prisma.coreAssignment.findMany.mockResolvedValue([{ leadTitle: "Director" }, { leadTitle: null }]);
+    prisma.domainLeadAssignment.findMany.mockResolvedValue([{ domain: { displayName: "Engineering" } }]);
+    prisma.instructorAssignment.findMany.mockResolvedValue([{ offering: { title: "Intro", type: "Class" } }]);
+    prisma.technigalaAssignment.findMany.mockResolvedValue([{ id: "t" }]);
+    const data = await run();
+    expect(data.roleLabels).toEqual([
+      "Core — Director",
+      "Core",
+      "Engineering Lead",
+      "Instructor",
+      "Technigala Support",
+    ]);
+  });
+
+  it("only flags the reviews row when the member has unsubmitted reviews", async () => {
+    prisma.applicationReview.count.mockResolvedValue(3);
+    const data = await run();
+    expect(data).toMatchObject({ pendingReviews: 3, showReviewsRow: true });
+  });
+
+  it("serialises dates and omits the raw department class", async () => {
+    prisma.user.findUnique.mockResolvedValue({
+      ...MEMBER,
+      birthday: new Date("1815-12-10T00:00:00Z"),
+      dartmouthDepartmentClass: "GR_TH",
+    });
+    const data = await run();
+    expect(data.member.birthday).toBe("1815-12-10T00:00:00.000Z");
+    expect(data.member.createdAt).toBe("2026-01-01T00:00:00.000Z");
+    expect(data.member.onboardedAt).toBe("2026-01-02T00:00:00.000Z");
+    expect(data.member).not.toHaveProperty("dartmouthDepartmentClass");
   });
 });

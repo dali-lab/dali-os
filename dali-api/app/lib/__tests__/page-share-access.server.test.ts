@@ -4,6 +4,9 @@ vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
     groupDefinition: { findUnique: vi.fn() },
+    user: { findUnique: vi.fn() },
+    instructorAssignment: { findFirst: vi.fn() },
+    projectPartner: { findFirst: vi.fn() },
     $transaction: vi.fn().mockResolvedValue([]),
   },
 }));
@@ -12,11 +15,32 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/page-sharing.server", () => ({ sharePermissionFor: vi.fn() }));
 vi.mock("~/lib/pages", () => ({ collectSubtree: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
+vi.mock("~/lib/lab-documents.server", () => ({ labDocAccess: vi.fn() }));
+vi.mock("~/members/lib/personal-notes.server", () => ({ noteAccess: vi.fn() }));
+vi.mock("~/partners/lib/partner-access", () => ({
+  activeProjectPartnerWhere: () => ({ status: "Active" }),
+}));
+vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { collectSubtree } from "~/lib/pages";
 import { resolveGroupMembers } from "~/lib/groups";
-import { setFolderScope, setGeneralAccess } from "~/lib/page-share-access.server";
+import { isCore, isProjectMember } from "~/lib/roles";
+import { sharePermissionFor } from "~/lib/page-sharing.server";
+import { labDocAccess } from "~/lib/lab-documents.server";
+import { noteAccess } from "~/members/lib/personal-notes.server";
+import { logAuditEvent } from "~/lib/audit";
+import { notify } from "~/lib/notify.server";
+import {
+  setFolderScope,
+  setGeneralAccess,
+  canManageSharing,
+  requirePageShareManager,
+  notifyDocumentShared,
+  PageShareForbiddenError,
+  PageShareNotFoundError,
+  GeneralAccessError,
+} from "~/lib/page-share-access.server";
 
 const m = prisma as any;
 
@@ -194,5 +218,276 @@ describe("setGeneralAccess — Drive roots", () => {
     await expect(
       setGeneralAccess("p1", "u1", { linkAccess: "Public", linkPermission: "View" }),
     ).resolves.toEqual({ linkAccess: "Public", linkPermission: "View" });
+  });
+});
+
+describe("setGeneralAccess — invariants", () => {
+  beforeEach(() => {
+    m.page.findUnique.mockResolvedValue({ folderType: null });
+    m.page.update.mockResolvedValue({});
+  });
+
+  it("refuses a link that grants full access, before touching the page", async () => {
+    await expect(
+      setGeneralAccess("p1", "u1", { linkAccess: "LabMembers", linkPermission: "FullAccess" }),
+    ).rejects.toBeInstanceOf(GeneralAccessError);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("forces a Public link to view-only whatever role was asked for", async () => {
+    await expect(
+      setGeneralAccess("p1", "u1", { linkAccess: "Public", linkPermission: "Edit" }),
+    ).resolves.toEqual({ linkAccess: "Public", linkPermission: "View" });
+    expect(m.page.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { linkAccess: "Public", linkPermission: "View" },
+    });
+  });
+
+  it("resets a Restricted page's stale higher role to View", async () => {
+    await setGeneralAccess("p1", "u1", { linkAccess: "Restricted", linkPermission: "Edit" });
+    expect(m.page.update).toHaveBeenCalledWith({
+      where: { id: "p1" },
+      data: { linkAccess: "Restricted", linkPermission: "View" },
+    });
+  });
+
+  it("keeps the chosen role for lab-wide and signed-in links", async () => {
+    await expect(
+      setGeneralAccess("p1", "u1", { linkAccess: "LabMembers", linkPermission: "Comment" }),
+    ).resolves.toEqual({ linkAccess: "LabMembers", linkPermission: "Comment" });
+    await expect(
+      setGeneralAccess("p1", "u1", { linkAccess: "SignedIn", linkPermission: "Edit" }),
+    ).resolves.toEqual({ linkAccess: "SignedIn", linkPermission: "Edit" });
+  });
+
+  it("audits the change with the actor and the stored values", async () => {
+    await setGeneralAccess("p1", "actor", { linkAccess: "Public", linkPermission: "Edit" });
+    expect(logAuditEvent).toHaveBeenCalledWith({
+      action: "page.general-access",
+      userId: "actor",
+      targetId: "p1",
+      metadata: { linkAccess: "Public", linkPermission: "View" },
+    });
+  });
+});
+
+describe("setFolderScope — stored values", () => {
+  beforeEach(() => {
+    m.page.update.mockResolvedValue({});
+  });
+
+  it("clears every scope column when scopeKind is null", async () => {
+    await expect(setFolderScope("f1", "u1", { scopeKind: null })).resolves.toEqual({
+      scopeKind: null,
+      scopeGroupId: null,
+      scopePermission: null,
+    });
+    expect(m.page.update).toHaveBeenCalledWith({
+      where: { id: "f1" },
+      data: { scopeKind: null, scopeGroupId: null, scopePermission: null },
+    });
+  });
+
+  it("defaults a Lab scope to View and other scopes to Edit", async () => {
+    expect((await setFolderScope("f1", "u1", { scopeKind: "Lab" })).scopePermission).toBe("View");
+    expect((await setFolderScope("f1", "u1", { scopeKind: "Private" })).scopePermission).toBe("Edit");
+  });
+
+  it("downgrades a requested FullAccess base grant to Edit", async () => {
+    const out = await setFolderScope("f1", "u1", { scopeKind: "Private", scopePermission: "FullAccess" });
+    expect(out.scopePermission).toBe("Edit");
+  });
+
+  it("refuses an unknown group", async () => {
+    m.groupDefinition.findUnique.mockResolvedValue(null);
+    await expect(
+      setFolderScope("f1", "u1", { scopeKind: "Group", scopeGroupId: "nope" }),
+    ).rejects.toThrow("Unknown group");
+    expect(m.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("throws not-found for a missing page", async () => {
+    m.page.findUnique.mockResolvedValue(null);
+    await expect(setFolderScope("gone", "u1", { scopeKind: "Lab" })).rejects.toBeInstanceOf(
+      PageShareNotFoundError,
+    );
+  });
+
+  it("ignores a stray group id on a non-Group scope", async () => {
+    const out = await setFolderScope("f1", "u1", { scopeKind: "Lab", scopeGroupId: "g1" });
+    expect(out.scopeGroupId).toBeNull();
+  });
+});
+
+describe("canManageSharing — who may change a page's sharing", () => {
+  const page = (over: Record<string, unknown>) =>
+    ({ id: "p1", workspaceType: "Lab", workspaceId: null, createdById: "creator", ...over }) as never;
+
+  beforeEach(() => {
+    vi.mocked(sharePermissionFor).mockResolvedValue(null as never);
+    vi.mocked(labDocAccess).mockResolvedValue({ canManageAccess: false } as never);
+    vi.mocked(noteAccess).mockResolvedValue({ isOwner: false } as never);
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    m.instructorAssignment.findFirst.mockResolvedValue(null);
+  });
+
+  it("Lab: allows whoever labDocAccess lets manage access, and asks with the page's creator", async () => {
+    vi.mocked(labDocAccess).mockResolvedValue({ canManageAccess: true } as never);
+    expect(await canManageSharing(page({}), "u1")).toBe(true);
+    expect(labDocAccess).toHaveBeenCalledWith({ id: "p1", createdById: "creator" }, "u1");
+  });
+
+  it("Lab: refuses someone labDocAccess does not allow", async () => {
+    expect(await canManageSharing(page({}), "u1")).toBe(false);
+  });
+
+  it("Member: only the note's owner", async () => {
+    vi.mocked(noteAccess).mockResolvedValue({ isOwner: true } as never);
+    expect(await canManageSharing(page({ workspaceType: "Member", workspaceId: "u1" }), "u1")).toBe(true);
+    vi.mocked(noteAccess).mockResolvedValue({ isOwner: false } as never);
+    expect(await canManageSharing(page({ workspaceType: "Member", workspaceId: "u1" }), "u2")).toBe(false);
+  });
+
+  it("Project: Core or a project member, nobody else", async () => {
+    const p = page({ workspaceType: "Project", workspaceId: "proj" });
+    expect(await canManageSharing(p, "u1")).toBe(false);
+    vi.mocked(isCore).mockResolvedValue(true);
+    expect(await canManageSharing(p, "u1")).toBe(true);
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    expect(await canManageSharing(p, "u1")).toBe(true);
+    expect(isProjectMember).toHaveBeenCalledWith("u1", "proj");
+  });
+
+  it("Project doc with no project id is not manageable by role", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    expect(await canManageSharing(page({ workspaceType: "Project", workspaceId: null }), "u1")).toBe(false);
+  });
+
+  it("Education: Core or an instructor of that offering, nobody else", async () => {
+    const p = page({ workspaceType: "EducationOffering", workspaceId: "off1" });
+    expect(await canManageSharing(p, "u1")).toBe(false);
+    expect(m.instructorAssignment.findFirst).toHaveBeenCalledWith({
+      where: { userId: "u1", offeringId: "off1" },
+      select: { id: true },
+    });
+    m.instructorAssignment.findFirst.mockResolvedValue({ id: "ia" });
+    expect(await canManageSharing(p, "u1")).toBe(true);
+    m.instructorAssignment.findFirst.mockResolvedValue(null);
+    vi.mocked(isCore).mockResolvedValue(true);
+    expect(await canManageSharing(p, "u1")).toBe(true);
+  });
+
+  it("a FullAccess grantee may re-share in any workspace", async () => {
+    vi.mocked(sharePermissionFor).mockResolvedValue("FullAccess" as never);
+    expect(await canManageSharing(page({}), "u1")).toBe(true);
+    expect(sharePermissionFor).toHaveBeenCalledWith("p1", "u1");
+  });
+
+  it("an Edit grantee may not re-share", async () => {
+    vi.mocked(sharePermissionFor).mockResolvedValue("Edit" as never);
+    expect(await canManageSharing(page({}), "u1")).toBe(false);
+  });
+});
+
+describe("requirePageShareManager", () => {
+  const row = (over: Record<string, unknown> = {}) => ({
+    id: "p1",
+    title: "Plan",
+    kind: "Doc",
+    workspaceType: "Lab",
+    workspaceId: null,
+    createdById: "creator",
+    archivedAt: null,
+    profileVisible: false,
+    labListing: "Listed",
+    partnerVisible: false,
+    publicVisible: false,
+    studentEditable: false,
+    linkAccess: "Restricted",
+    linkPermission: "View",
+    scopeKind: null,
+    scopeGroupId: null,
+    scopePermission: null,
+    ...over,
+  });
+
+  beforeEach(() => {
+    vi.mocked(sharePermissionFor).mockResolvedValue(null as never);
+    vi.mocked(labDocAccess).mockResolvedValue({ canManageAccess: true } as never);
+    m.user.findUnique.mockResolvedValue({ id: "creator", firstName: "Ada", lastName: "Lovelace" });
+  });
+
+  it("404s for a missing page and for an archived page", async () => {
+    m.page.findUnique.mockResolvedValue(null);
+    await expect(requirePageShareManager("p1", "u1")).rejects.toBeInstanceOf(PageShareNotFoundError);
+    m.page.findUnique.mockResolvedValue(row({ archivedAt: new Date() }));
+    await expect(requirePageShareManager("p1", "u1")).rejects.toBeInstanceOf(PageShareNotFoundError);
+  });
+
+  it("403s a user who cannot manage the page and loads no owner for them", async () => {
+    m.page.findUnique.mockResolvedValue(row());
+    vi.mocked(labDocAccess).mockResolvedValue({ canManageAccess: false } as never);
+    await expect(requirePageShareManager("p1", "u1")).rejects.toBeInstanceOf(PageShareForbiddenError);
+    expect(m.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("returns the dialog context with the creator as owner", async () => {
+    m.page.findUnique.mockResolvedValue(row({ linkAccess: "LabMembers", linkPermission: "Comment" }));
+    const ctx = await requirePageShareManager("p1", "creator");
+    expect(ctx).toMatchObject({
+      page: { id: "p1", title: "Plan", kind: "Doc", workspaceType: "Lab", workspaceId: null },
+      owner: { id: "creator", name: "Ada Lovelace", isYou: true },
+      linkAccess: "LabMembers",
+      linkPermission: "Comment",
+      hasActivePartner: false,
+    });
+    expect(m.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "creator" } }));
+  });
+
+  it("marks the owner as not-you for another manager", async () => {
+    m.page.findUnique.mockResolvedValue(row());
+    expect((await requirePageShareManager("p1", "someone-else")).owner?.isYou).toBe(false);
+  });
+
+  it("names a Member note's owner by the workspace id, not the creator", async () => {
+    m.page.findUnique.mockResolvedValue(row({ workspaceType: "Member", workspaceId: "owner-1" }));
+    vi.mocked(noteAccess).mockResolvedValue({ isOwner: true } as never);
+    m.user.findUnique.mockResolvedValue({ id: "owner-1", firstName: "Grace", lastName: "" });
+    const ctx = await requirePageShareManager("p1", "owner-1");
+    expect(m.user.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "owner-1" } }));
+    expect(ctx.owner).toEqual({ id: "owner-1", name: "Grace", isYou: true });
+  });
+
+  it("has no owner when the creator is gone", async () => {
+    m.page.findUnique.mockResolvedValue(row({ createdById: null }));
+    expect((await requirePageShareManager("p1", "u1")).owner).toBeNull();
+    expect(m.user.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("reports an active partner only for a Project doc whose project has one", async () => {
+    m.page.findUnique.mockResolvedValue(row({ workspaceType: "Project", workspaceId: "proj" }));
+    vi.mocked(isCore).mockResolvedValue(true);
+    m.projectPartner.findFirst.mockResolvedValue({ id: "pp" });
+    expect((await requirePageShareManager("p1", "u1")).hasActivePartner).toBe(true);
+    expect(m.projectPartner.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { projectId: "proj", status: "Active" } }),
+    );
+    m.projectPartner.findFirst.mockResolvedValue(null);
+    expect((await requirePageShareManager("p1", "u1")).hasActivePartner).toBe(false);
+  });
+});
+
+describe("notifyDocumentShared", () => {
+  it("notifies only the recipient, attributed to the actor, linking to the document", async () => {
+    await notifyDocumentShared({ pageId: "p1", pageTitle: "Plan", recipientUserId: "u2", actorId: "u1" });
+    expect(notify).toHaveBeenCalledWith({
+      eventType: "document.shared_with_you",
+      createdByUserId: "u1",
+      message: { vars: { itemTitle: "Plan" }, link: "/documents/p1" },
+      recipients: [{ userId: "u2" }],
+    });
   });
 });
