@@ -14,6 +14,7 @@
 //   DARTMOUTH_CHAT_MODEL    — defaults to a known-good Claude id; list the
 //                             current catalog with GET {base}/models
 //                             (Authorization: bearer <key>).
+//   DARTMOUTH_CHAT_ASK_MODEL — Ask DALI's model, independent of the others.
 
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -27,6 +28,7 @@ export interface AiProvider {
    * that want more headroom than the doc assistant's default. Same provider,
    * no separate key or Admin toggle (specs/meeting-notes-model.md §2). */
   sonnetModel: string;
+  askModel: string;
   /** First-party Claude supports adaptive thinking. The Dartmouth gateway
    * serves Bedrock-style model ids (anthropic.claude-…) that may predate or
    * reject the thinking param — skip it there. */
@@ -35,6 +37,7 @@ export interface AiProvider {
 
 const DARTMOUTH_DEFAULT_BASE_URL = "https://chat.dartmouth.edu/api";
 const DARTMOUTH_DEFAULT_MODEL = "anthropic.claude-haiku-4-5-20251001";
+const DARTMOUTH_ASK_MODEL = "anthropic.claude-sonnet-5-5";
 const ANTHROPIC_SONNET_MODEL = "claude-sonnet-5";
 
 export function resolveAiProvider(): AiProvider | null {
@@ -59,6 +62,7 @@ export function resolveAiProvider(): AiProvider | null {
       // No Dartmouth-hosted Sonnet 5 id is known yet — fall back to whatever
       // chat model is configured rather than guessing a catalog id.
       sonnetModel: process.env.DARTMOUTH_CHAT_SONNET_MODEL ?? process.env.DARTMOUTH_CHAT_MODEL ?? DARTMOUTH_DEFAULT_MODEL,
+      askModel: process.env.DARTMOUTH_CHAT_ASK_MODEL ?? DARTMOUTH_ASK_MODEL,
       adaptiveThinking: false,
     };
   }
@@ -69,6 +73,7 @@ export function resolveAiProvider(): AiProvider | null {
       client: new Anthropic(),
       model: "claude-opus-4-8",
       sonnetModel: ANTHROPIC_SONNET_MODEL,
+      askModel: ANTHROPIC_SONNET_MODEL,
       adaptiveThinking: true,
     };
   }
