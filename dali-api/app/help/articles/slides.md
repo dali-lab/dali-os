@@ -52,3 +52,7 @@ When the live deck editor is on for you, **Comments** in the top bar opens a pan
 - **Comment on words**: select text in a text box and choose **Add comment**.
 
 Click a comment in the panel to jump to its slide. Replies and @mentions notify people, and the link in the notification opens the slide and the comment. A slide with comments shows a count on its thumbnail. If a slide is deleted, its comments stay under **Deleted slide** until you restore it. You can delete your own comments.
+
+## Work on a deck with an AI assistant
+
+A connected AI assistant, such as Claude, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text. It can also place text boxes, pictures and shapes, then align, group, layer and set build steps for them the way you can in the editor. Its changes show up live for everyone who has the deck open. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.

@@ -14,7 +14,7 @@ vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: live.isFeatureE
 vi.mock("~/lib/roles", () => ({ getUserRoles: live.getUserRoles }));
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: {}, getPageAccess: access.getPageAccess }));
 
-import { DECK_CONFLICT, deckAccess, deckStorage, editDeck, loadDeck, migrateDeckOnOpen, saveDeck } from "~/lib/slide-decks.server";
+import { DECK_CONFLICT, deckAccess, deckStorage, editDeck, loadDeck, migrateDeckOnOpen, readDeckModel, saveDeck } from "~/lib/slide-decks.server";
 import type { Slide } from "~/components/slides/types";
 
 const V1 = "2026-10-23T12:00:00.000Z";
@@ -91,6 +91,26 @@ describe("live decks", () => {
   it("the JSON save and edit paths refuse a yjs deck, since the write is scoped to storage json", async () => {
     db.slideDeck.updateMany.mockResolvedValue({ count: 0 });
     expect(await saveDeck("u1", "p1", [slide("s2")], V1)).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("readDeckModel returns the live read of a yjs deck", async () => {
+    db.slideDeck.upsert.mockResolvedValue({ slides: [], updatedAt: new Date(V1), storage: "yjs" });
+    live.readLiveDeck.mockResolvedValue({ read, updatedAt: null });
+    expect(await readDeckModel("p1")).toBe(read);
+  });
+
+  it("readDeckModel reads a JSON deck in the live model without converting it", async () => {
+    db.slideDeck.upsert.mockResolvedValue({
+      slides: [{ id: "s1", layout: "split", title: "Legacy", notes: "old notes" }],
+      updatedAt: new Date(V1),
+      storage: "json",
+    });
+    const out = await readDeckModel("p1");
+    expect(out.slides.map((s) => [s.id, s.layoutId])).toEqual([["s1", "split"]]);
+    expect(out.slides[0].elements.find((e) => e.slot === "title")?.text).toBe("Legacy");
+    expect(out.slides[0].notes.text).toBe("old notes");
+    expect(live.readLiveDeck).not.toHaveBeenCalled();
+    expect(live.convertDeckToYjs).not.toHaveBeenCalled();
   });
 
   it("deckStorage is json for a missing row and yjs once converted", async () => {
