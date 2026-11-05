@@ -194,6 +194,18 @@ describe("Inspector", () => {
     expect(onTheme).toHaveBeenCalledWith("dali-light");
   });
 
+  it("downloads the deck as a PDF from the Deck tab", () => {
+    const { snap } = deck(1);
+    const onDownloadPdf = vi.fn();
+    const el = render(createElement(Inspector, { ...base, slide: snap.slides[0], onDownloadPdf }));
+    expect(el.textContent).not.toContain("Download PDF");
+    click([...el.querySelectorAll("[aria-label='Inspector'] button")].find((b) => b.textContent === "Deck") ?? null);
+    const buttons = [...el.querySelectorAll("button")].filter((b) => b.textContent?.startsWith("Download PDF"));
+    click(buttons[0]);
+    click(buttons[1]);
+    expect(onDownloadPdf.mock.calls).toEqual([[false], [true]]);
+  });
+
   it("offers image controls only on layouts with an image slot", () => {
     const { snap } = deck(1);
     expect(render(createElement(Inspector, { ...base, slide: snap.slides[0] })).textContent).toContain("Add image");

@@ -24,3 +24,7 @@ Open a deck and use the **Mode** switch at the top:
 Changes save as you go, and a status next to the switch shows the state. If someone else saved first, you see **Reload**. If saving failed, click **Try again**.
 
 If you only have view access, the deck opens straight into the viewer.
+
+## Download as PDF
+
+Open the **⋯** menu and choose **Download PDF** to get every slide as a page, with all builds showing. The **Deck** tab in the inspector has the same button. People who can edit a deck also get **Download PDF with notes**, which adds a page of speaker notes after each slide. Decks over 200 slides can't be exported.
