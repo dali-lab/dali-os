@@ -39,6 +39,12 @@ export interface SlideRenderProps {
   renderFree?: (ctx: FreeContext) => ReactNode;
   /** The build step to show while presenting. Leave it out to show everything, as the editor and thumbnails do. */
   step?: number;
+  /** Element ids and slot names drawn invisible, for a transition that moves them on another layer. */
+  hide?: ReadonlySet<string>;
+  /** Leaves out the slide background, so a layer can fade over another slide. */
+  transparent?: boolean;
+  /** Lets elements glide when their place changes. */
+  morph?: boolean;
 }
 
 const FLEX_ALIGN = { top: "flex-start", center: "center", bottom: "flex-end" } as const;
@@ -172,6 +178,15 @@ function FreeBox({ element, placed, placeholders, theme }: { element: RenderElem
   return null;
 }
 
+const SAFE_ID = /^[\w-]+$/;
+
+export function hiddenCss(ids: ReadonlySet<string>): string {
+  return [...ids]
+    .filter((id) => SAFE_ID.test(id))
+    .map((id) => `[data-element="${id}"],[data-slot="${id}"]{opacity:0!important}`)
+    .join("");
+}
+
 const slotName = (slot: string) => slot.charAt(0).toUpperCase() + slot.slice(1);
 
 function SlotGhost({ slot }: { slot: LayoutSlot }) {
@@ -204,7 +219,7 @@ type Item =
  * A slide drawn from data and the theme alone. It fills the width of its parent at 16:9 and sizes everything
  * from `--slide-u`, one stage unit of the 1920 by 1080 design, so text and popups inside it keep their real size.
  */
-export function SlideRender({ slide, theme, placeholders = false, renderSlot, renderFree, step, className }: SlideRenderProps & { className?: string }) {
+export function SlideRender({ slide, theme, placeholders = false, renderSlot, renderFree, step, hide, transparent = false, morph = false, className }: SlideRenderProps & { className?: string }) {
   const def = typeof theme === "string" ? themeById(theme) : theme;
   const layout = layoutById(slide.layoutId);
   const visible = (el: RenderElement | undefined) => !(step !== undefined && el && !isVisibleAt(el, step));
@@ -231,12 +246,22 @@ export function SlideRender({ slide, theme, placeholders = false, renderSlot, re
           position: "absolute",
           inset: 0,
           overflow: "hidden",
-          background: "var(--slide-ground)",
+          background: transparent ? "transparent" : slide.background?.kind === "color" ? `var(--slide-${slide.background.token})` : "var(--slide-ground)",
           color: "var(--slide-fg)",
           fontFamily: "var(--slide-font-body)",
           fontSize: u(40),
         }}
+        {...(morph ? { "data-slide-morph": "" } : {})}
       >
+        {!transparent && slide.background?.kind === "image" && (
+          <img
+            data-slide-background
+            src={slide.background.url}
+            alt=""
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: slide.background.fit }}
+          />
+        )}
+        {hide && hide.size > 0 && <style>{hiddenCss(hide)}</style>}
         {items.map((item) => {
           if (item.kind === "free") {
             const fallback = <FreeBox element={item.element} placed={item.placed} placeholders={placeholders} theme={def} />;

@@ -5,6 +5,8 @@ import { Button } from "~/components/ui/Button";
 import { movePosition, samePosition, type DeckPosition } from "~/components/slides/deck/builds";
 import { navActionFor, nextIndex } from "./keys";
 import type { RenderSlide } from "./types";
+import type { RenderSlide as DeckSlide } from "~/components/slides/deck/snapshot";
+import { SlideTransitionStage } from "./SlideTransitionStage";
 
 export interface PresentStageProps {
   slideIds: string[];
@@ -15,6 +17,7 @@ export interface PresentStageProps {
   stepsOf?: (index: number) => number;
   onPositionChange?: (pos: DeckPosition) => void;
   renderSlide: RenderSlide;
+  transitions?: { slides: DeckSlide[]; themeId: string };
   onExit?: () => void;
   navigable?: boolean;
   children?: React.ReactNode;
@@ -22,7 +25,7 @@ export interface PresentStageProps {
 
 const ASPECT = 16 / 9;
 
-export function PresentStage({ slideIds, index, onIndexChange, step, stepsOf, onPositionChange, renderSlide, onExit, navigable = true, children }: PresentStageProps) {
+export function PresentStage({ slideIds, index, onIndexChange, step, stepsOf, onPositionChange, renderSlide, transitions, onExit, navigable = true, children }: PresentStageProps) {
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const desktop = useDesktopVersion() != null;
@@ -79,7 +82,13 @@ export function PresentStage({ slideIds, index, onIndexChange, step, stepsOf, on
         onClick={() => go("next")}
         data-testid="present-slide"
       >
-        {slideId && width > 0 ? renderSlide(slideId, { width, step }) : null}
+        {slideId && width > 0 ? (
+          transitions ? (
+            <SlideTransitionStage slides={transitions.slides} themeId={transitions.themeId} slideId={slideId} step={step} width={width} renderSlide={renderSlide} />
+          ) : (
+            renderSlide(slideId, { width, step })
+          )
+        ) : null}
       </div>
       <div className="absolute right-3 top-3 flex items-center gap-2">
         {desktop ? (

@@ -14,6 +14,7 @@ import {
   textOf,
 } from "~/components/slides/deck/model";
 import { buildOf } from "~/components/slides/deck/builds";
+import { slideMetaFields } from "~/components/slides/deck/slide-meta";
 import { contentFields, type ChartSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
@@ -55,6 +56,9 @@ export interface DeckReadSlide {
   pos: number;
   layoutId: string;
   skipped?: boolean;
+  background?: RenderSlide["background"];
+  transition?: RenderSlide["transition"];
+  section?: string;
   elements: DeckReadElement[];
   notes: { blocks: DocBlock[]; text: string };
 }
@@ -107,6 +111,7 @@ export function readDeck(live: Y.Doc): DeckRead {
         pos: Number(slide.get("pos")),
         layoutId: String(slide.get("layoutId")),
         ...(slide.get("skipped") === true ? { skipped: true } : {}),
+        ...slideMetaFields((k) => slide.get(k)),
         elements,
         notes: { blocks: notesBlocks, text: blocksToPlainText(notesBlocks as never) },
       });
@@ -164,6 +169,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
       pos: s.pos,
       layoutId: s.layoutId,
       ...(s.skipped ? { skipped: true } : {}),
+      ...slideMetaFields((k) => (s as unknown as Record<string, unknown>)[k]),
       elements: withParents(s.elements.map((e) => ({
         id: e.id,
         kind: e.kind,

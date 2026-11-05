@@ -88,6 +88,14 @@ Everything here is a free item. You can move, resize, rotate, group, copy, comme
 - **Code block**: adds a text box with a code block in it. Pick the language from the block's own menu.
 - **Video**: paste a YouTube link. The slide shows a video card while you edit. When you present, click the card to play the video on the slide.
 
+## Layouts, backgrounds, sections and the grid
+
+- **Layout gallery**: **New slide** adds a slide with the same layout as the one you are on. Click the arrow next to it to pick from layouts drawn in your deck's theme. **Change layout** (right-click a slide or empty space, or the **Slide** tab) has **Browse layouts** at the top of its list. Changing the layout keeps your content, and items you moved keep their spot.
+- **Background**: in the **Slide** tab, choose a theme color or add an image, and pick whether the image fills or fits the slide. Right-click empty space and choose **Background** for the same colors. Backgrounds show in the filmstrip, when presenting, in PDF and in PowerPoint downloads.
+- **Sections**: right-click a slide in the filmstrip and choose **Add section here** to start a named section. Click a section's header to collapse it. Right-click the header to rename it, move it up or down with its slides, or remove it. A section moves with its first slide when you drag that slide. PowerPoint downloads keep sections.
+- **Grid**: click **Grid** in the toolbar, or press **G**, to see every slide at once. Drag to reorder (the slides you selected move together), double-click a slide to open it, and right-click for the same menu as in the filmstrip.
+- **Transitions**: in the **Slide** tab, choose **Dissolve**, **Push** or **Magic Move** for how a slide appears, and click **Preview**. Magic Move glides items that match the slide before it (the same item after **Duplicate slide**, or the same text or picture) and fades the rest. Transitions play when presenting and when following a presenter. They are skipped if your device is set to reduce motion, and builds still run after the transition.
+
 ## Find and replace
 
 Press **⌘F**, or choose **Find and replace** in the **⋯** menu. It searches the text on every slide and the speaker notes. The arrows step through matches and show each one's slide. **Replace** changes the current match, and **Replace all** changes every match, and one **Undo** puts them all back. Turn on **Match case** to match capital letters exactly.

@@ -28,6 +28,7 @@ export function FollowStage({
       step={pos.step}
       onIndexChange={noop}
       renderSlide={renderSlide}
+      transitions={{ slides: deck.slides, themeId: deck.themeId }}
       navigable={false}
       onExit={onBrowse}
     >

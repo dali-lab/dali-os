@@ -1,10 +1,9 @@
-import { Plus, Redo2, Undo2 } from "lucide-react";
-import { IconButton } from "~/components/ui/IconButton";
+import { LayoutGrid as GridIcon, Redo2, Undo2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
-import { Popover } from "~/components/ui/floating";
+import { IconButton } from "~/components/ui/IconButton";
 import type { ArmedTool } from "./FreeformLayer";
 import { InsertMenu, type InsertItem } from "./InsertMenu";
-import { LayoutGrid } from "./LayoutPicker";
+import { NewSlideSplit } from "./NewSlideSplit";
 
 export function EditorToolbar({
   canUndo,
@@ -14,6 +13,10 @@ export function EditorToolbar({
   onAdd,
   onInsert,
   armed = null,
+  themeId = "dali-dark",
+  currentLayoutId = null,
+  grid = false,
+  onGrid,
 }: {
   canUndo: boolean;
   canRedo: boolean;
@@ -22,33 +25,24 @@ export function EditorToolbar({
   onAdd: (layoutId: string) => void;
   onInsert?: (item: InsertItem) => void;
   armed?: ArmedTool | null;
+  themeId?: string;
+  currentLayoutId?: string | null;
+  grid?: boolean;
+  onGrid?: () => void;
 }) {
   return (
     <div role="toolbar" aria-label="Slide tools" className="flex shrink-0 items-center gap-1 border-b border-os-container px-3 py-1.5">
       <IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
       <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} />
       <span aria-hidden className="mx-1 h-5 w-px bg-os-container" />
-      <Popover
-        trigger={
-          <Button variant="ghost" size="sm">
-            <Plus className="h-3.5 w-3.5" aria-hidden />
-            New slide
-          </Button>
-        }
-        ariaLabel="Choose a layout"
-      >
-        {(close) => (
-          <div className="w-56 p-2">
-            <LayoutGrid
-              onPick={(id) => {
-                onAdd(id);
-                close();
-              }}
-            />
-          </div>
-        )}
-      </Popover>
+      <NewSlideSplit themeId={themeId} layoutId={currentLayoutId} onAdd={onAdd} />
       {onInsert && <InsertMenu armed={armed !== null} onInsert={onInsert} />}
+      {onGrid && (
+        <Button variant="ghost" size="sm" aria-pressed={grid} onClick={onGrid} className="ml-auto">
+          <GridIcon className="h-3.5 w-3.5" aria-hidden />
+          Grid
+        </Button>
+      )}
     </div>
   );
 }

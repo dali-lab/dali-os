@@ -98,7 +98,7 @@ describe("right click on the stage", () => {
   it("offers the empty-space menu on the background, with the point the pointer was at", () => {
     const d = deck();
     const insert = vi.fn();
-    const stageHandlers = vi.fn((): StageHandlers => ({ paste: vi.fn(), insert, changeLayout: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn() }));
+    const stageHandlers = vi.fn((): StageHandlers => ({ paste: vi.fn(), insert, changeLayout: vi.fn(), openLayoutGallery: vi.fn(), setBackground: vi.fn(), pickBackgroundImage: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn() }));
     const onContext = vi.fn(() => []);
     const el = render(stage(d, stageFreeform([], { stageHandlers, onContext })));
     rightClick(el.querySelector("[data-freeform-layer]")!, 480, 270);

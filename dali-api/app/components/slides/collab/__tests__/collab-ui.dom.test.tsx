@@ -297,7 +297,7 @@ describe("Inspector", () => {
     const onLayout = vi.fn();
     const onTheme = vi.fn();
     const el = render(createElement(Inspector, { ...base, slide: snap.slides[0], onLayout, onTheme }));
-    click([...el.querySelectorAll("[aria-label='Layouts'] button")].find((b) => b.textContent === "Big number") ?? null);
+    click(el.querySelector("[aria-label='Layouts'] [data-layout-thumb=bignumber]")!.closest("button"));
     click([...el.querySelectorAll("[aria-label='Theme'] button")].find((b) => b.textContent === "DALI Light") ?? null);
     expect(onLayout).toHaveBeenCalledWith("bignumber");
     expect(onTheme).toHaveBeenCalledWith("dali-light");

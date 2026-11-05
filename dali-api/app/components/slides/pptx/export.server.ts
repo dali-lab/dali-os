@@ -1,6 +1,8 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import JSZip from "jszip";
 import PptxGenJS from "pptxgenjs";
+import { sectionsOf, type SlideTransition } from "~/components/slides/deck/slide-meta";
 import { chartColors } from "~/components/slides/deck/content";
 import { ICONS } from "~/components/slides/deck/icon-set";
 import { parseVideoEmbed } from "~/lib/video-embed";
@@ -361,6 +363,55 @@ function addVideoElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckRe
   });
 }
 
+const MORPH_TRANSITION =
+  '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p159="http://schemas.microsoft.com/office/powerpoint/2015/09/main" Requires="p159"><p:transition spd="slow" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" p14:dur="2000"><p159:morph option="byObject"/></p:transition></mc:Choice><mc:Fallback><p:transition spd="slow"><p:fade/></p:transition></mc:Fallback></mc:AlternateContent>';
+
+export function transitionXml(t: SlideTransition, forward = true): string | null {
+  const speed = (t.duration ?? 500) <= 400 ? "fast" : (t.duration ?? 500) <= 800 ? "med" : "slow";
+  if (t.kind === "dissolve") return `<p:transition spd="${speed}"><p:fade/></p:transition>`;
+  if (t.kind === "push") return `<p:transition spd="${speed}"><p:push dir="${forward ? "l" : "r"}"/></p:transition>`;
+  if (t.kind === "magic") return MORPH_TRANSITION;
+  return null;
+}
+
+async function withTransitions(buffer: Buffer, transitions: Array<SlideTransition | undefined>): Promise<Buffer> {
+  if (!transitions.some(Boolean)) return buffer;
+  const zip = await JSZip.loadAsync(buffer);
+  for (let i = 0; i < transitions.length; i++) {
+    const t = transitions[i];
+    const xml = t && transitionXml(t);
+    const file = zip.file(`ppt/slides/slide${i + 1}.xml`);
+    if (!xml || !file) continue;
+    const source = await file.async("string");
+    zip.file(`ppt/slides/slide${i + 1}.xml`, source.replace("</p:sld>", `${xml}</p:sld>`));
+  }
+  return Buffer.from(await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+}
+
+async function addBackground(pptxSlide: PptxGenJS.Slide, slide: DeckRead["slides"][number], theme: ThemeDef, load: BuildPptxOptions["loadImage"]): Promise<boolean> {
+  const bg = slide.background;
+  if (!bg) return true;
+  if (bg.kind === "color") {
+    pptxSlide.background = { color: resolveThemeColor(theme.colors[bg.token]) ?? "000000" };
+    return true;
+  }
+  const image = await load(bg.url);
+  if (!image) return false;
+  const full = { x: 0, y: 0, w: unitsToInches(STAGE_W), h: unitsToInches(STAGE_H) };
+  const size = image.size;
+  const scale = size && size.width > 0 && size.height > 0 ? (bg.fit === "cover" ? Math.max(STAGE_W / size.width, STAGE_H / size.height) : Math.min(STAGE_W / size.width, STAGE_H / size.height)) : 1;
+  const sized = size ? { w: unitsToInches(size.width * scale), h: unitsToInches(size.height * scale) } : { w: full.w, h: full.h };
+  pptxSlide.addImage({
+    data: image.data,
+    altText: "",
+    x: full.x + (full.w - sized.w) / 2,
+    y: full.y + (full.h - sized.h) / 2,
+    ...sized,
+    ...(bg.fit === "cover" && size ? { sizing: { type: "crop" as const, x: Math.max(0, (sized.w - full.w) / 2), y: Math.max(0, (sized.h - full.h) / 2), w: full.w, h: full.h } } : {}),
+  });
+  return true;
+}
+
 export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Promise<BuiltPptx> {
   const theme = themeById(deck.themeId);
   const pptx = new PptxGenJS();
@@ -379,8 +430,26 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
 
   let skippedImages = 0;
   const slides = deck.slides;
+  const { lead, sections } = sectionsOf(slides.map((x) => ({ id: x.id, section: x.section })));
+  const titleOf = new Map<string, string>();
+  if (sections.length) {
+    const taken = new Set<string>();
+    const unique = (name: string) => {
+      let candidate = name;
+      for (let n = 2; taken.has(candidate); n++) candidate = `${name} ${n}`;
+      taken.add(candidate);
+      return candidate;
+    };
+    const entries = [...(lead.length ? [{ name: "Slides", slideIds: lead }] : []), ...sections];
+    for (const entry of entries) {
+      const title = unique(entry.name);
+      pptx.addSection({ title });
+      for (const id of entry.slideIds) titleOf.set(id, title);
+    }
+  }
   for (const slide of slides) {
-    const pptxSlide = pptx.addSlide({ masterName: MASTER });
+    const pptxSlide = pptx.addSlide({ masterName: MASTER, ...(titleOf.has(slide.id) ? { sectionTitle: titleOf.get(slide.id) } : {}) });
+    if (!(await addBackground(pptxSlide, slide, theme, opts.loadImage))) skippedImages++;
     if (slide.skipped) pptxSlide.hidden = true;
     const layout = layoutById(slide.layoutId);
     for (const el of slide.elements) {
@@ -407,5 +476,6 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
   }
 
   const out = (await pptx.write({ outputType: "nodebuffer" })) as Buffer;
-  return { buffer: Buffer.from(out), slideCount: slides.length, skippedImages };
+  const buffer = await withTransitions(Buffer.from(out), slides.map((x) => x.transition));
+  return { buffer, slideCount: slides.length, skippedImages };
 }

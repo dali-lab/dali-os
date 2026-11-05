@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { Fragment, memo, useMemo, useState } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -9,17 +9,17 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { Copy, EyeOff, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy, EyeOff, MessageSquare, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
-import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
-import { ContextMenu, Popover } from "~/components/ui/floating";
+import { ContextMenu } from "~/components/ui/floating";
 import { ActionMenuItems } from "./ActionMenuItems";
 import type { ActionSpec } from "./actions";
 import { ScaledSlide } from "~/components/slides/deck/SlideRender";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { cn } from "~/lib/cn";
-import { LayoutGrid } from "./LayoutPicker";
+import { NewSlideSplit } from "./NewSlideSplit";
+import { sectionsOf } from "~/components/slides/deck/slide-meta";
 import type { SlidePeer } from "./useDeckDoc";
 
 const Thumb = memo(function Thumb({ slide, themeId }: { slide: RenderSlide; themeId: string }) {
@@ -48,6 +48,33 @@ function CommentCount({ count }: { count: number }) {
       <MessageSquare className="h-2.5 w-2.5" aria-hidden />
       {count}
     </span>
+  );
+}
+
+function SectionHeader({ name, count, collapsed, actions, onToggle }: { name: string; count: number; collapsed: boolean; actions?: () => ActionSpec[]; onToggle: () => void }) {
+  const header = (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      aria-label={`${name}, ${count} ${count === 1 ? "slide" : "slides"}`}
+      className="flex w-full items-center gap-1 rounded-md px-1 py-0.5 text-left text-xs font-medium text-os-grey hover:bg-os-hover"
+    >
+      {collapsed ? <ChevronRight className="h-3 w-3 shrink-0" aria-hidden /> : <ChevronDown className="h-3 w-3 shrink-0" aria-hidden />}
+      <span className="min-w-0 flex-1 truncate">{name}</span>
+      <span className="tabular-nums text-os-muted">{count}</span>
+    </button>
+  );
+  return (
+    <li data-section-header={name}>
+      {actions ? (
+        <ContextMenu ariaLabel={name} items={<ActionMenuItems actions={actions()} />}>
+          {header}
+        </ContextMenu>
+      ) : (
+        header
+      )}
+    </li>
   );
 }
 
@@ -150,6 +177,8 @@ export function Filmstrip({
   commentCounts,
   selectedIds = [],
   actionsFor,
+  sectionActionsFor,
+  currentLayoutId = null,
   onSelect,
   onAdd,
   onDuplicate,
@@ -170,7 +199,14 @@ export function Filmstrip({
   commentCounts?: Map<string, number>;
   selectedIds?: string[];
   actionsFor?: (id: string) => ActionSpec[];
+  sectionActionsFor?: (firstId: string) => ActionSpec[];
+  currentLayoutId?: string | null;
 }) {
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const { sections } = useMemo(() => sectionsOf(slides), [slides]);
+  const hidden = useMemo(() => new Set(sections.filter((x) => collapsed.has(x.firstId)).flatMap((x) => x.slideIds)), [sections, collapsed]);
+  const shown = slides.filter((x) => !hidden.has(x.id));
+  const toggle = (id: string) => setCollapsed((prev) => (prev.has(id) ? new Set([...prev].filter((x) => x !== id)) : new Set([...prev, id])));
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
@@ -183,11 +219,25 @@ export function Filmstrip({
     <nav aria-label="Slides" className="flex min-h-0 w-44 shrink-0 flex-col gap-2 border-r border-os-container p-2">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={slides.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={shown.map((s) => s.id)} strategy={verticalListSortingStrategy}>
             <ol className="flex flex-col gap-2">
-              {slides.map((slide, i) => (
+              {slides.map((slide, i) => {
+                const section = sections.find((x) => x.firstId === slide.id);
+                const header = section ? (
+                  <SectionHeader
+                    key={`section-${slide.id}`}
+                    name={section.name}
+                    count={section.slideIds.length}
+                    collapsed={collapsed.has(slide.id)}
+                    actions={sectionActionsFor ? () => sectionActionsFor(slide.id) : undefined}
+                    onToggle={() => toggle(slide.id)}
+                  />
+                ) : null;
+                if (hidden.has(slide.id)) return header;
+                return (
+                  <Fragment key={slide.id}>
+                    {header}
                 <Item
-                  key={slide.id}
                   slide={slide}
                   index={i}
                   themeId={themeId}
@@ -202,33 +252,14 @@ export function Filmstrip({
                   onDuplicate={() => onDuplicate(slide.id)}
                   onDelete={() => onDelete(slide.id)}
                 />
-              ))}
+                  </Fragment>
+                );
+              })}
             </ol>
           </SortableContext>
         </DndContext>
       </div>
-      {editable && (
-        <Popover
-          trigger={
-            <Button variant="secondary" size="sm" className="w-full">
-              <Plus className="h-3.5 w-3.5" aria-hidden />
-              New slide
-            </Button>
-          }
-          ariaLabel="Choose a layout"
-        >
-          {(close) => (
-            <div className="w-56 p-2">
-              <LayoutGrid
-                onPick={(id) => {
-                  onAdd(id);
-                  close();
-                }}
-              />
-            </div>
-          )}
-        </Popover>
-      )}
+      {editable && <NewSlideSplit themeId={themeId} layoutId={currentLayoutId} onAdd={onAdd} variant="secondary" className="w-full" />}
     </nav>
   );
 }
