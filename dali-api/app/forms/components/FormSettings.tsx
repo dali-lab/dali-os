@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { Link, useFetcher } from "react-router";
-import { Lock, Settings, Unlink } from "lucide-react";
+import { Lock, Unlink } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
-import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -18,40 +17,33 @@ type Usage = { kind: string; label: string; href?: string | null };
 // publish schedule, and where it's in use — behind the editor's
 // settings button. A managed form (its distribution owned by a hiring cycle,
 // offering, etc.) shows only where it's managed and used.
-export function FormSettingsButton({
+export function FormSettingsDialog({
+  open,
+  onClose,
   managing,
   usages,
   hiringLinks,
   ...fields
 }: {
+  open: boolean;
+  onClose: () => void;
   managing: { kind?: string; label: string; href?: string | null } | null;
   usages: Usage[];
   hiringLinks: HiringFormLink[];
 } & Parameters<typeof FormSettingsFields>[0]) {
-  const [open, setOpen] = useState(false);
   const { heading } = useOsChrome();
   return (
     <>
-      <Tooltip content="Settings">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Settings"
-          className="inline-flex items-center justify-center w-10 h-10 rounded-full text-os-grey hover:bg-os-container hover:text-foreground transition-colors"
-        >
-          <Settings className="w-5 h-5" />
-        </button>
-      </Tooltip>
       <Modal
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={onClose}
         labelledBy="form-settings-title"
         containerClassName={modalCardClass("max-w-lg os-form")}
       >
         <ModalHeader
           titleId="form-settings-title"
           title="Settings"
-          onClose={() => setOpen(false)}
+          onClose={onClose}
         />
         <div className="flex flex-col gap-6">
           {managing ? (

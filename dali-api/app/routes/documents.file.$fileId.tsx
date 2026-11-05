@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Download, Upload } from "lucide-react";
-import { Tooltip } from "~/components/ui/floating";
+import { Menu, Tooltip } from "~/components/ui/floating";
+import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
@@ -238,12 +239,51 @@ export default function FilePage() {
     }
   }
 
+  async function rename(next: string) {
+    await fetch(`/api/files/${fileId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "rename", title: next }),
+    });
+    revalidator.revalidate();
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      <PageBarTitle title={title} onRename={canEdit ? rename : undefined} />
+      {selected && (
+        <PageBarPortal slot="status">
+          <span className="text-[13px] text-os-muted">
+            {selected.label.toLowerCase()} · {formatBytes(selected.sizeBytes)}
+          </span>
+        </PageBarPortal>
+      )}
+      {selected && (
+        <PageBarPortal slot="actions">
+          <a href={selected.downloadUrl} className={pageBarTextButton()}>
+            <Download className="h-4 w-4" />
+            Download
+          </a>
+        </PageBarPortal>
+      )}
+      {canEdit && (
+        <>
+          <input ref={fileInputRef} type="file" className="hidden" onChange={onPick} />
+          <PageBarMenuItems>
+            <Menu.Item
+              icon={<Upload className="h-3.5 w-3.5" />}
+              disabled={uploading}
+              onSelect={() => fileInputRef.current?.click()}
+            >
+              {uploading ? "Uploading…" : "Upload new version"}
+            </Menu.Item>
+          </PageBarMenuItems>
+        </>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
         <div className="min-w-0">
-          <h1 className="font-heading text-3xl font-bold text-foreground">{title}</h1>
-          <div className="mt-2">
+          <div>
             <TagPicker
               targetType="file"
               targetId={fileId}
@@ -268,25 +308,6 @@ export default function FilePage() {
 
           <div className="flex items-center justify-between mt-6 mb-2">
             <h2 className="text-sm font-semibold text-foreground">Versions</h2>
-            {canEdit && (
-              <>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={onPick}
-                />
-                <button
-                  type="button"
-                  disabled={uploading}
-                  onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:underline disabled:opacity-60"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  {uploading ? "Uploading…" : "Upload new version"}
-                </button>
-              </>
-            )}
           </div>
 
           {error && (

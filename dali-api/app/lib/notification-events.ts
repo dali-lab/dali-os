@@ -530,16 +530,16 @@ export const EVENT_TYPES = {
   "blog.submitted": {
     kind: "General",
     area: "Documents",
-    label: "Blog posts to review",
-    description: "When a member submits a blog post for approval.",
+    label: "Stories to review",
+    description: "When a member submits a story for approval.",
     adminOnly: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "blog.approved": {
     kind: "General",
     area: "Documents",
-    label: "Blog post approvals",
-    description: "When a blog post you submitted is approved and published.",
+    label: "Story approvals",
+    description: "When a story you submitted is approved and published.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "coffee_chat.invite": {

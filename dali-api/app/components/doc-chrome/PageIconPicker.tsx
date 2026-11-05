@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Popover, Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
@@ -20,12 +21,17 @@ export function PageIconPicker({
   // Legacy compat: editing was the old prop name — if canEdit is absent but
   // editing is present, treat them the same. Callers should migrate to canEdit.
   editing,
+  compact = false,
+  fallback,
 }: {
   iconEmoji: string | null;
   canEdit?: boolean;
   onChange: (emoji: string | null) => void;
   /** @deprecated use canEdit */
   editing?: boolean;
+  /** A small trigger for the page bar's crumb; `fallback` shows while no emoji is set. */
+  compact?: boolean;
+  fallback?: ReactNode;
 }) {
   const editable = canEdit ?? editing ?? false;
 
@@ -48,12 +54,14 @@ export function PageIconPicker({
           <button
             type="button"
             className={
-              iconEmoji
+              compact
+                ? "flex items-center text-base leading-none hover:opacity-80"
+                : iconEmoji
                 ? "text-4xl leading-none hover:opacity-80"
                 : "text-xs text-muted-foreground hover:text-foreground rounded border border-dashed border-border px-2 py-1"
             }
           >
-            {iconEmoji ?? "Add icon"}
+            {iconEmoji ?? (compact ? fallback : null) ?? "Add icon"}
           </button>
         </Tooltip>
       }

@@ -37,7 +37,7 @@ To turn self check-in on for an existing meeting, open the meeting page and clic
 
 ## Mark people present
 
-The organizer, Core and project members can mark attendance from the meeting page. Open the meeting from Calendar or from the clipboard button on [Attendance](/attendance). The page shows **X of Y present** and a checklist where you tick each person. Click the sort menu to order names.
+The organizer, Core and project members can mark attendance from the meeting page. Open the meeting from Calendar or from the clipboard button on [Attendance](/attendance). On a meeting's note or whiteboard, the **Attendance** button in the meeting strip shows how many people came out of how many were expected. The page shows **X of Y present** and a checklist where you tick each person. Click the sort menu to order names.
 
 You can also scan wallet passes:
 

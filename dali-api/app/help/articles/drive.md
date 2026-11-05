@@ -41,7 +41,7 @@ Open a drive or folder, then click **New**.
 
 ## Whiteboards
 
-**New whiteboard** creates a freeform canvas you can pan and zoom, with shapes, text and images. Several people can draw on it at once. It is shared and moved like a document.
+**New whiteboard** creates a freeform canvas you can pan and zoom, with shapes, text and images. Several people can draw on it at once. It is shared and moved like a document. **Full screen** and **Share** are in the top bar. Click the board's name in the breadcrumb to rename it, or the icon beside it to change its emoji.
 
 ## Move and rename
 

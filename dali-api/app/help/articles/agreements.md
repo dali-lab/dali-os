@@ -27,13 +27,13 @@ Click **Issue all** at the top of the console (or **Issue term agreements** on t
 ## Create an agreement
 
 1. In the [Drive](/drive), open the **Core** drive and choose **New** then **New agreement**. Type a name and click **Create**. The agreement opens with no enforcement and no audience, so nothing is sent yet.
-2. Set who it applies to with the pills under the title:
+2. Set who it applies to with the pills at the top of the page. The agreement's name is in the breadcrumb, and the status next to it reads, for example, **v4 · In force** or **v2 · Draft**. To rename it, click its name in the breadcrumb, type a new name and press Enter:
    - **Enforcement**: not enforced, hard-gate the app until signed, or gate hiring data (confidentiality).
    - **Audience**: manual (nobody is required automatically), new members, returning members, mentors, hiring participants, or everyone active this term.
    - **Cadence**: one time, each term, or each hiring cycle.
    - **Mentee countersign** appears when the audience is mentors. Set it to **Required (mentees countersign)** and add a mentee signature field to the text with **+ Mentee field**. Countersign requests go to mentees only when enforcement is set to hard-gate the app.
-3. Click **New Version** and write the agreement. The **Insert** row places fields: signature, date, initials, checkbox, text field. **Supervisor signature** puts in a pre-signed signature for a named person, which is added when the agreement is issued. The merge menu inserts values such as the term and the signer's name.
-4. Click **Preview as signer** to check how it looks. Pick a term in the preview picker to see the term filled in.
+3. Click **New version** in the top bar (it reads **Edit draft** when a draft exists) and write the agreement. The **Insert** row places fields: signature, date, initials, checkbox, text field. **Supervisor signature** puts in a pre-signed signature for a named person, which is added when the agreement is issued. The merge menu inserts values such as the term and the signer's name.
+4. Click **Preview as signer** in the top bar to check how it looks. Pick a term in the preview picker to see the term filled in.
 5. Click **Save Version** (it reads **Save draft** when you are editing an existing draft). A draft can be edited again with **Edit draft** or removed with **Delete**.
 6. Click **Publish** when it is final. Published versions can't be edited. Make a new version instead.
 7. Click **Put in force**, confirm, and sign requests go out to the audience.
@@ -46,7 +46,7 @@ Open a version that is already in force. The button says **In force**, and **Re-
 
 ## Archive
 
-The archive button at the top of an agreement moves it out of the active list and stops it taking signatures. It can't be undone. Signatures already collected are kept.
+**Archive**, in the three-dot menu at the top of an agreement, moves it out of the active list and stops it taking signatures. It can't be undone. Signatures already collected are kept.
 
 ## Partner contracts
 
