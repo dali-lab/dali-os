@@ -9,6 +9,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { setTermPi } from "../lib/partner-renewals.server";
+import { setTermSpots } from "../lib/planning-spots.server";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PlanningTable } from "../components/PlanningTable";
 import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
@@ -40,26 +41,52 @@ export async function loader({ request }: Route.LoaderArgs) {
   return loadPlanningData(termParam, request);
 }
 
-// Per-term Principal Investigator. Core-only on both sides, matching the
-// renewals board — one helper writes the row from either surface so they
-// cannot drift.
+const DESCRIPTION_MAX = 5000;
+
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub, request))) {
-    return Response.json({ error: "Only Core can set the project PI." }, { status: 403 });
+    return Response.json({ error: "Only Core can edit projects from planning." }, { status: 403 });
   }
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
+  const projectId = String(form.get("projectId") ?? "");
+  if (!projectId) return Response.json({ error: "Missing project." }, { status: 400 });
+
+  if (intent === "description") {
+    const description = String(form.get("description") ?? "").trim();
+    if (description.length > DESCRIPTION_MAX) {
+      return Response.json({ error: `Keep the description under ${DESCRIPTION_MAX} characters.` }, { status: 400 });
+    }
+    const { count } = await prisma.project.updateMany({
+      where: { id: projectId },
+      data: { description: description || null },
+    });
+    if (count === 0) return Response.json({ error: "That project no longer exists." }, { status: 404 });
+    return Response.json({ ok: true });
+  }
+
+  const termId = String(form.get("termId") ?? "");
+  if (!termId) return Response.json({ error: "Missing project or term." }, { status: 400 });
+
+  if (intent === "spots") {
+    const roles = parseRoles(form.get("roles"));
+    if (!roles) return Response.json({ error: "Spots were not readable. Try again." }, { status: 400 });
+    const result = await setTermSpots(prisma, { projectId, termId, roles });
+    if (result === "unknown-domain") {
+      return Response.json({ error: "One of those domains is no longer available." }, { status: 400 });
+    }
+    if (result === "not-in-term") {
+      return Response.json({ error: "That project is not active in that term." }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  }
+
   if (intent !== "pi") {
     return Response.json({ error: "Unknown action." }, { status: 400 });
   }
-  const projectId = String(form.get("projectId") ?? "");
-  const termId = String(form.get("termId") ?? "");
   const piUserId = String(form.get("piUserId") ?? "") || null;
-  if (!projectId || !termId) {
-    return Response.json({ error: "Missing project or term." }, { status: 400 });
-  }
   if (piUserId && !(await isCore(piUserId, request))) {
     return Response.json({ error: "A PI must be a Core member." }, { status: 400 });
   }
@@ -70,6 +97,22 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
   return Response.json({ ok: true });
+}
+
+function parseRoles(raw: FormDataEntryValue | null): { domainId: string; slots: number }[] | null {
+  try {
+    const parsed: unknown = JSON.parse(String(raw ?? "[]"));
+    if (!Array.isArray(parsed)) return null;
+    const roles = parsed.map((r) => ({
+      domainId: typeof r?.domainId === "string" ? r.domainId : "",
+      slots: Number(r?.slots),
+    }));
+    return roles.every((r) => r.domainId && Number.isFinite(r.slots) && r.slots >= 0 && r.slots <= 50)
+      ? roles
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 const GROUP_BY = ["project", "domain"] as const;
@@ -198,8 +241,9 @@ export default function PartnersPlanning() {
           project={openProject.project}
           info={openProject.info}
           coreMembers={data.coreMembers}
+          domains={data.spotDomains}
           currentTermId={data.termId}
-          canEditPi
+          canEdit
           onClose={() => setOpenProjectId(null)}
         />
       )}

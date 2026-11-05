@@ -25,6 +25,7 @@ export type PlanningProjectInfo = {
   partnerNames: string[];
   plannedTerms: { id: string; code: string; sortKey: number }[];
   pisByTerm: Record<string, { userId: string; name: string } | null>;
+  spotsByTerm: Record<string, { domainId: string; name: string; slots: number }[]>;
 };
 
 export type PlanningData = {
@@ -33,6 +34,7 @@ export type PlanningData = {
   items: PlanningItem[];
   listOnlyItems: PlanningItem[];
   domains: { id: string; name: string }[];
+  spotDomains: { id: string; name: string }[];
   returning: ReturningPerson[];
   replied: number;
   roster: number;
@@ -85,6 +87,7 @@ export async function loadPlanningData(
       items: [],
       listOnlyItems: [],
       domains: [],
+      spotDomains: [],
       returning: [],
       replied: 0,
       roster: 0,
@@ -98,7 +101,10 @@ export async function loadPlanningData(
   const sortKeyById = new Map(allTerms.map((t) => [t.id, t.sortKey]));
 
   const [domains, projects, applications, cycle, roster] = await Promise.all([
-    prisma.domain.findMany({ select: { id: true, displayName: true }, orderBy: { displayName: "asc" } }),
+    prisma.domain.findMany({
+      select: { id: true, displayName: true, active: true, isSystem: true },
+      orderBy: { displayName: "asc" },
+    }),
     prisma.project.findMany({
       where: { projectTerms: { some: { term: { sortKey: { lte: term.sortKey } } } } },
       select: {
@@ -119,7 +125,7 @@ export async function loadPlanningData(
         },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
         roleRequests: {
-          where: { termId: { in: [term.id, ...(prevTerm ? [prevTerm.id] : [])] } },
+          where: { term: { sortKey: { gte: (prevTerm ?? term).sortKey } } },
           select: { termId: true, domainId: true, slots: true },
         },
       },
@@ -156,6 +162,7 @@ export async function loadPlanningData(
   // page itself, not in this planning flow.
   const termById = new Map(allTerms.map((t) => [t.id, t]));
   const projectInfo: Record<string, PlanningProjectInfo> = {};
+  const domainName = new Map(domains.map((d) => [d.id, d.displayName]));
   for (const p of projects) {
     const upcomingTerms = p.projectTerms
       .map((pt) => termById.get(pt.termId))
@@ -172,12 +179,22 @@ export async function loadPlanningData(
       );
       pisByTerm[ut.id] = pi ? { userId: pi.id, name: personName(pi) } : null;
     }
+    const spotsByTerm: PlanningProjectInfo["spotsByTerm"] = {};
+    for (const ut of upcomingTerms) {
+      const totals: Record<string, number> = {};
+      for (const r of p.roleRequests) if (r.termId === ut.id) addSpots(totals, r.domainId, r.slots);
+      spotsByTerm[ut.id] = Object.entries(totals)
+        .filter(([, slots]) => slots > 0)
+        .map(([domainId, slots]) => ({ domainId, name: domainName.get(domainId) ?? "Unknown domain", slots }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
     projectInfo[p.id] = {
       description: p.description,
       status: p.status,
       partnerNames: p.partners.map((l) => l.partnerOrg.name),
       plannedTerms: upcomingTerms.map((t) => ({ id: t.id, code: t.code, sortKey: t.sortKey })),
       pisByTerm,
+      spotsByTerm,
     };
   }
   const coreMembers = request ? await listActiveCoreMembers(request) : [];
@@ -188,7 +205,8 @@ export async function loadPlanningData(
     const thisTermSpots: Record<string, number> = {};
     const previousTermSpots: Record<string, number> = {};
     for (const r of p.roleRequests) {
-      addSpots(r.termId === term.id ? thisTermSpots : previousTermSpots, r.domainId, r.slots);
+      if (r.termId === term.id) addSpots(thisTermSpots, r.domainId, r.slots);
+      else if (r.termId === prevTerm?.id) addSpots(previousTermSpots, r.domainId, r.slots);
     }
     const sortKeys = p.projectTerms
       .map((pt) => sortKeyById.get(pt.termId))
@@ -251,6 +269,7 @@ export async function loadPlanningData(
     items,
     listOnlyItems,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    spotDomains: domains.filter((d) => d.active && !d.isSystem).map((d) => ({ id: d.id, name: d.displayName })),
     returning,
     replied,
     roster,

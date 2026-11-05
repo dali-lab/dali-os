@@ -23,11 +23,13 @@ Renewal decisions feed the planning page.
 
 ## Principal investigators
 
-A principal investigator (PI) is the Core member responsible for a partner project in a term. A PI must be a Core member. You can set it on an application's side panel, on a renewal card, and on the project's term. The PI belongs to the term, so a project can have a different PI next term.
+A principal investigator (PI) is the Core member responsible for a partner project in a term. A PI must be a Core member. You can set it on an application's side panel, on a renewal card, in a project's popup on the planning page, and on the project's term. The PI belongs to the term, so a project can have a different PI next term.
 
 ## Planning
 
 [Planning](/core/partners/planning) shows how many team spots partner work will need in a term. Use the term picker to change term. It opens grouped by **Project**, with each project and application on its own. Group by **Domain** to see the spots wanted in each domain next to the number of members who said they intend to work, and the gap between them. The domain view needs an intent to work form bound to the term, and it says so when one isn't set up. By default only decided work counts: continuing renewals and accepted applications. **Include potential** also counts undecided renewals and applications still in New, Interview or Deciding. **Include backlog** adds backlog applications that target the term.
+
+Click a project to open it without leaving the page. You can edit its description, and for each upcoming term set the PI and the spots it needs in each domain. Add a domain with **+ Domain**, use the minus and plus buttons to change how many spots, then click **Save** for that term. Mentor and other higher-level spots a project already has stay as they are; new spots are added as learner spots, and spots you remove come off the learner spots first.
 
 ## Reports
 
