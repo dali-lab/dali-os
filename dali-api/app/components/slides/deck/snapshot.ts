@@ -33,10 +33,13 @@ export interface RenderSlide {
 }
 
 export interface DeckSnapshot {
+  v: unknown;
   themeId: string;
   epoch: number;
   slides: RenderSlide[];
   deletedIds: string[];
+  /** Who tombstoned each deleted slide, when they said. */
+  deletedBy: Record<string, string | null>;
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
@@ -65,11 +68,18 @@ export function snapshotSlide(id: string, slide: SlideMap): RenderSlide {
 export function snapshotDeck(doc: Y.Doc): DeckSnapshot {
   const slides: RenderSlide[] = [];
   const deletedIds: string[] = [];
+  const deletedBy: Record<string, string | null> = {};
   slidesMap(doc).forEach((slide, id) => {
-    if (isDeleted(slide)) deletedIds.push(id);
-    else slides.push(snapshotSlide(id, slide));
+    if (isDeleted(slide)) {
+      deletedIds.push(id);
+      deletedBy[id] = str(slide.get("deletedBy"));
+    } else slides.push(snapshotSlide(id, slide));
   });
   slides.sort(comparePos);
+  return { ...deckFields(doc), slides, deletedIds, deletedBy };
+}
+
+export function deckFields(doc: Y.Doc): Pick<DeckSnapshot, "v" | "themeId" | "epoch"> {
   const themeId = deckMap(doc).get("themeId");
-  return { themeId: typeof themeId === "string" ? themeId : "dali-dark", epoch: restoreEpochOf(doc), slides, deletedIds };
+  return { v: deckMap(doc).get("v"), themeId: typeof themeId === "string" ? themeId : "dali-dark", epoch: restoreEpochOf(doc) };
 }

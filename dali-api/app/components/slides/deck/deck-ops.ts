@@ -105,9 +105,13 @@ export function duplicateSlide(doc: Y.Doc, sourceId: string): string | null {
 }
 
 /** Slides are never removed from the map: a peer may still be typing in one. */
-export function deleteSlide(doc: Y.Doc, id: string): void {
+export function deleteSlide(doc: Y.Doc, id: string, by?: string): void {
   const slide = slidesMap(doc).get(id);
-  if (slide && !isDeleted(slide)) doc.transact(() => tombstoneSlide(slide), DECK_LOCAL);
+  if (!slide || isDeleted(slide)) return;
+  doc.transact(() => {
+    tombstoneSlide(slide);
+    if (by) slide.set("deletedBy", by);
+  }, DECK_LOCAL);
 }
 
 export function undeleteSlide(doc: Y.Doc, id: string): void {
