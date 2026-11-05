@@ -3,6 +3,8 @@ import { writeBlocks } from "~/components/slides/pptx/fragment-write";
 import type { ClipItem } from "./clipboard";
 import { cleanChart, cleanIcon, cleanVideoUrl, DEFAULT_CHART_DATA, type ChartSpec, type ChartType } from "./content";
 import type { ImportBlock } from "~/components/slides/pptx/import-types";
+import { cleanCrop, type Crop } from "./crop";
+import type { StyleClip } from "./style-clip";
 import { cloneValue, DECK_CREATE, DECK_LOCAL, newId } from "./deck-ops";
 import { expandToLeaves, FREE_DEFAULTS, MIN_SIZE, LINE_MIN_SIZE, placementOf, type Placed } from "./freeform";
 import { alignDeltas, boundsOf, distributeDeltas, rotatedBounds, SLIDE_RECT, type AlignMode, type Axis, type Rect } from "./geometry";
@@ -186,17 +188,82 @@ export function setVideoUrl(doc: Y.Doc, slideId: string, id: string, url: string
   return true;
 }
 
-/** Writes geometry for elements. A slot element that gets geometry is detached from its slot's place. */
-export function setPlacements(doc: Y.Doc, slideId: string, updates: Record<string, Placed>): void {
+export type PlacedUpdate = Placed & { crop?: Crop | null };
+
+const isLocked = (el: ElementMap) => el.get("locked") === true;
+
+/**
+ * Writes geometry for elements. A slot element that gets geometry is detached from its slot's place.
+ * Locked elements are skipped, and a free text box whose height is set by hand stops growing with its text.
+ */
+export function setPlacements(doc: Y.Doc, slideId: string, updates: Record<string, PlacedUpdate>): void {
   const slide = slideOf(doc, slideId);
   if (!slide) return;
   doc.transact(() => {
     for (const [id, placed] of Object.entries(updates)) {
       const el = elementsOf(slide).get(id);
-      if (!el || isDeleted(el)) continue;
+      if (!el || isDeleted(el) || isLocked(el)) continue;
+      const before = el.get("h");
       writePlacement(el, placed);
+      if (el.get("kind") === "text" && typeof before === "number" && Math.abs(before - placed.h) > 0.5 && el.get("hFixed") !== true) el.set("hFixed", true);
+      if ("crop" in placed) {
+        const crop = cleanCrop(placed.crop);
+        if (crop) el.set("crop", { l: round(crop.l * 1e4) / 1e4, t: round(crop.t * 1e4) / 1e4, r: round(crop.r * 1e4) / 1e4, b: round(crop.b * 1e4) / 1e4 });
+        else el.delete("crop");
+      }
     }
   }, DECK_LOCAL);
+}
+
+/** Grows a free text box to fit its text. Not an undo step, and never shrinks or touches a box whose height was set by hand. */
+export function setAutoHeight(doc: Y.Doc, slideId: string, id: string, needed: number): boolean {
+  const slide = slideOf(doc, slideId);
+  const el = slide && elementsOf(slide).get(id);
+  if (!el || isDeleted(el) || isLocked(el) || el.get("kind") !== "text" || typeof el.get("slot") === "string" || el.get("hFixed") === true) return false;
+  const h = Number(el.get("h"));
+  if (!Number.isFinite(h) || needed <= h + 1) return false;
+  doc.transact(() => el.set("h", round(Math.min(needed, STAGE_H * 2))), DECK_CREATE);
+  return true;
+}
+
+export function setLocked(doc: Y.Doc, slideId: string, ids: string[], locked: boolean): void {
+  const slide = slideOf(doc, slideId);
+  if (!slide) return;
+  doc.transact(() => {
+    for (const id of expandToLeaves(view(slideId, slide), ids)) {
+      const el = elementsOf(slide).get(id);
+      if (!el || isDeleted(el)) continue;
+      if (locked) el.set("locked", true);
+      else el.delete("locked");
+    }
+  }, DECK_LOCAL);
+}
+
+export function setCrop(doc: Y.Doc, slideId: string, id: string, crop: Crop | null): void {
+  const slide = slideOf(doc, slideId);
+  const el = slide && elementsOf(slide).get(id);
+  if (!el || isDeleted(el) || el.get("kind") !== "image") return;
+  const clean = cleanCrop(crop);
+  doc.transact(() => (clean ? el.set("crop", clean) : el.delete("crop")), DECK_LOCAL);
+}
+
+export function applyStyle(doc: Y.Doc, slideId: string, ids: string[], clip: StyleClip): number {
+  const slide = slideOf(doc, slideId);
+  if (!slide) return 0;
+  let applied = 0;
+  doc.transact(() => {
+    for (const id of expandToLeaves(view(slideId, slide), ids)) {
+      const el = elementsOf(slide).get(id);
+      if (!el || isDeleted(el) || isLocked(el) || el.get("kind") !== clip.kind) continue;
+      if (clip.kind === "shape") {
+        if (clip.fill) el.set("fill", clip.fill);
+        const thin = (k: string) => k === "line" || k === "arrow";
+        if (clip.shape && thin(clip.shape) === thin(String(el.get("shape")))) el.set("shape", clip.shape);
+      } else if (clip.textStyle) el.set("textStyle", clip.textStyle);
+      applied++;
+    }
+  }, DECK_LOCAL);
+  return applied;
 }
 
 function currentPlacements(slideId: string, slide: SlideMap, ids: string[]): Map<string, Placed> {
@@ -302,7 +369,7 @@ export function deleteElements(doc: Y.Doc, slideId: string, ids: string[]): stri
   doc.transact(() => {
     const kill = (id: string) => {
       const el = elementsOf(slide).get(id);
-      if (!el || isDeleted(el)) return;
+      if (!el || isDeleted(el) || isLocked(el)) return;
       if (typeof el.get("slot") === "string") {
         if (el.get("kind") === "image") el.set("src", "");
         return;
@@ -374,14 +441,15 @@ export function setFreeTextStyle(doc: Y.Doc, slideId: string, id: string, style:
 export const DUPLICATE_OFFSET = 24;
 
 /** Copies elements next to the originals. Copies of slot elements become free elements at the place the slot draws. Returns the new selection. */
-export function duplicateElements(doc: Y.Doc, slideId: string, ids: string[], offset = DUPLICATE_OFFSET): string[] {
+export function duplicateElements(doc: Y.Doc, slideId: string, ids: string[], offset = DUPLICATE_OFFSET, mapping?: Map<string, string>): string[] {
   const slide = slideOf(doc, slideId);
   if (!slide) return [];
   const snap = view(slideId, slide);
   const leaves = expandToLeaves(snap, ids);
   if (leaves.length === 0) return [];
   const groupsInSelection = snap.elements.filter((e) => e.kind === "group" && (ids.includes(e.id) || (e.children ?? []).every((c) => leaves.includes(c)) && (e.children ?? []).some((c) => ids.includes(c))));
-  const idMap = new Map<string, string>(leaves.map((l) => [l, newId()]));
+  const idMap = mapping ?? new Map<string, string>();
+  for (const l of leaves) idMap.set(l, newId());
   const result: string[] = [];
   doc.transact(() => {
     let z = topZ(slide);
@@ -421,44 +489,60 @@ export function duplicateElements(doc: Y.Doc, slideId: string, ids: string[], of
   return result;
 }
 
-/** Writes sanitized clipboard items as new free elements, offset so a paste into the same spot is visible. Returns the new selection. */
-export function pasteItems(doc: Y.Doc, slideId: string, items: ClipItem[], offset = DUPLICATE_OFFSET): string[] {
-  const slide = slideOf(doc, slideId);
-  if (!slide || items.length === 0) return [];
+function pasteShift(items: ClipItem[], offset: number | { at: Point }): { dx: number; dy: number } {
+  if (typeof offset === "number") return { dx: offset, dy: offset };
+  const boxes = items.filter((i) => i.kind !== "group").map((i) => rotatedBounds(i.placed));
+  if (boxes.length === 0) return { dx: 0, dy: 0 };
+  const b = boundsOf(boxes);
+  const dx = Math.min(Math.max(offset.at.x - b.w / 2, 0), Math.max(0, STAGE_W - b.w)) - b.x;
+  const dy = Math.min(Math.max(offset.at.y - b.h / 2, 0), Math.max(0, STAGE_H - b.h)) - b.y;
+  return { dx, dy };
+}
+
+export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: number; dy: number }): string[] {
   const idMap = new Map<string, string>(items.map((i) => [i.key, newId()]));
   const result: string[] = [];
+  let z = topZ(slide);
+  for (const item of items) {
+    if (item.kind === "group") continue;
+    const id = idMap.get(item.key)!;
+    const fields: Record<string, unknown> = {};
+    if (item.kind === "image") Object.assign(fields, { src: item.src ?? "", alt: item.alt ?? "", ...(item.crop ? { crop: item.crop } : {}) });
+    if (item.kind === "shape") Object.assign(fields, { shape: item.shape ?? "rect", fill: item.fill ?? "accent" });
+    if (item.kind === "text" && item.textStyle) fields.textStyle = item.textStyle;
+    if (item.kind === "chart" && item.chart) fields.chart = item.chart;
+    if (item.kind === "icon" && item.icon) Object.assign(fields, { icon: item.icon, fill: item.fill ?? "accent" });
+    if (item.kind === "video" && item.videoUrl) fields.videoUrl = item.videoUrl;
+    const el = newElementMap(id, item.kind, z++, fields);
+    writePlacement(el, { ...item.placed, x: item.placed.x + shift.dx, y: item.placed.y + shift.dy });
+    elementsOf(slide).set(id, el);
+    if (item.kind === "text") {
+      const fragment = new Y.XmlFragment();
+      textOf(slide).set(id, fragment);
+      writeBlocks(fragment, item.blocks ?? []);
+    }
+  }
+  const grouped = new Set<string>();
+  for (const item of items) {
+    if (item.kind !== "group") continue;
+    const children = (item.children ?? []).map((c) => idMap.get(c)).filter((c): c is string => Boolean(c));
+    if (children.length < 2) continue;
+    const gid = newId();
+    elementsOf(slide).set(gid, newElementMap(gid, "group", z++, { children }));
+    children.forEach((c) => grouped.add(c));
+    result.push(gid);
+  }
+  for (const item of items) if (item.kind !== "group" && !grouped.has(idMap.get(item.key)!)) result.push(idMap.get(item.key)!);
+  return result;
+}
+
+/** Writes sanitized clipboard items as new free elements. A number offsets them so a paste into the same spot is visible; `at` centres them on a point. Returns the new selection. */
+export function pasteItems(doc: Y.Doc, slideId: string, items: ClipItem[], offset: number | { at: Point } = DUPLICATE_OFFSET): string[] {
+  const slide = slideOf(doc, slideId);
+  if (!slide || items.length === 0) return [];
+  let result: string[] = [];
   doc.transact(() => {
-    let z = topZ(slide);
-    for (const item of items) {
-      if (item.kind === "group") continue;
-      const id = idMap.get(item.key)!;
-      const fields: Record<string, unknown> = {};
-      if (item.kind === "image") Object.assign(fields, { src: item.src ?? "", alt: item.alt ?? "" });
-      if (item.kind === "shape") Object.assign(fields, { shape: item.shape ?? "rect", fill: item.fill ?? "accent" });
-      if (item.kind === "text" && item.textStyle) fields.textStyle = item.textStyle;
-      if (item.kind === "chart" && item.chart) fields.chart = item.chart;
-      if (item.kind === "icon" && item.icon) Object.assign(fields, { icon: item.icon, fill: item.fill ?? "accent" });
-      if (item.kind === "video" && item.videoUrl) fields.videoUrl = item.videoUrl;
-      const el = newElementMap(id, item.kind, z++, fields);
-      writePlacement(el, { ...item.placed, x: item.placed.x + offset, y: item.placed.y + offset });
-      elementsOf(slide).set(id, el);
-      if (item.kind === "text") {
-        const fragment = new Y.XmlFragment();
-        textOf(slide).set(id, fragment);
-        writeBlocks(fragment, item.blocks ?? []);
-      }
-    }
-    const grouped = new Set<string>();
-    for (const item of items) {
-      if (item.kind !== "group") continue;
-      const children = (item.children ?? []).map((c) => idMap.get(c)).filter((c): c is string => Boolean(c));
-      if (children.length < 2) continue;
-      const gid = newId();
-      elementsOf(slide).set(gid, newElementMap(gid, "group", z++, { children }));
-      children.forEach((c) => grouped.add(c));
-      result.push(gid);
-    }
-    for (const item of items) if (item.kind !== "group" && !grouped.has(idMap.get(item.key)!)) result.push(idMap.get(item.key)!);
+    result = writeClipItems(slide, items, pasteShift(items, offset));
   }, DECK_CREATE);
   return result;
 }

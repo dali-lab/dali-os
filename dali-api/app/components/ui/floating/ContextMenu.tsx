@@ -23,7 +23,7 @@ import {
   FloatingList,
   FloatingPortal,
 } from "@floating-ui/react";
-import { MenuContext } from "./Menu";
+import { MenuContext, outsidePressExceptSubmenus } from "./Menu";
 import { usePanelClass } from "./os-styles";
 
 // Right-click menu anchored to the pointer via a floating-ui virtual element.
@@ -70,7 +70,7 @@ export function ContextMenu({
     ],
   });
 
-  const dismiss = useDismiss(context);
+  const dismiss = useDismiss(context, { outsidePress: outsidePressExceptSubmenus });
   const role = useRole(context, { role: "menu" });
   const listNav = useListNavigation(context, {
     listRef,
@@ -120,7 +120,7 @@ export function ContextMenu({
       {child}
       {open && (
         <FloatingPortal>
-          <FloatingFocusManager context={context} modal={false}>
+          <FloatingFocusManager context={context} modal={false} closeOnFocusOut={false}>
             <div
               ref={refs.setFloating}
               style={floatingStyles}

@@ -1,6 +1,7 @@
 import type { ImportBlock, ImportInline, ImportTable } from "~/components/slides/pptx/import-types";
 import { cleanChart, cleanIcon, cleanVideoUrl, type ChartSpec } from "./content";
 import { placementOf, expandToLeaves, type Placed } from "./freeform";
+import { cleanCrop, type Crop } from "./crop";
 import { boundsOf, rotatedBounds } from "./geometry";
 import { FILL_IDS, SHAPE_KINDS, type FillId, type ShapeKind } from "./model";
 import type { RenderElement, RenderSlide } from "./snapshot";
@@ -25,6 +26,7 @@ export interface ClipItem {
   fill?: FillId;
   src?: string;
   alt?: string;
+  crop?: Crop;
   textStyle?: TextStyleId;
   blocks?: ImportBlock[];
   children?: string[];
@@ -115,7 +117,7 @@ function itemOf(slide: RenderSlide, el: RenderElement): ClipItem | null {
   const base = { key: el.id, placed };
   if (el.kind === "group") return { ...base, kind: "group", children: el.children ?? [] };
   if (el.kind === "text") return { ...base, kind: "text", blocks: importBlocksOf(el.blocks), ...(el.textStyle ? { textStyle: el.textStyle } : {}) };
-  if (el.kind === "image") return { ...base, kind: "image", src: el.src ?? "", alt: el.alt ?? "" };
+  if (el.kind === "image") return { ...base, kind: "image", src: el.src ?? "", alt: el.alt ?? "", ...(el.crop ? { crop: el.crop } : {}) };
   if (el.kind === "shape") return { ...base, kind: "shape", shape: el.shape ?? "rect", ...(el.fill ? { fill: el.fill } : {}) };
   if (el.kind === "chart" && el.chart) return { ...base, kind: "chart", chart: el.chart };
   if (el.kind === "icon" && el.icon) return { ...base, kind: "icon", icon: el.icon, ...(el.fill ? { fill: el.fill } : {}) };
@@ -212,10 +214,19 @@ export function parseClipboard(text: string): ClipItem[] | null {
     return null;
   }
   if (!isObj(data) || data.mark !== CLIP_MARK || data.v !== CLIP_VERSION || !Array.isArray(data.items)) return null;
+  return cleanItems(data.items);
+}
+
+export function cleanBlocksFor(blocks: unknown): ImportBlock[] {
+  return cleanBlocks(blocks, { chars: MAX_TEXT, blocks: MAX_BLOCKS });
+}
+
+/** Items from raw clipboard data with every field checked. Null when nothing survives. */
+export function cleanItems(rawItems: unknown[]): ClipItem[] | null {
   const budget = { chars: MAX_TEXT, blocks: MAX_BLOCKS };
   const out: ClipItem[] = [];
   const seen = new Set<string>();
-  for (const raw of data.items.slice(0, MAX_CLIP_ITEMS)) {
+  for (const raw of rawItems.slice(0, MAX_CLIP_ITEMS)) {
     if (!isObj(raw) || typeof raw.key !== "string" || seen.has(raw.key)) continue;
     const placed = cleanPlaced(raw.placed);
     if (!placed) continue;
@@ -230,7 +241,8 @@ export function parseClipboard(text: string): ClipItem[] | null {
     } else if (raw.kind === "image") {
       const src = safeImageUrl(raw.src);
       if (!src) continue;
-      out.push({ ...base, kind: "image", src, alt: typeof raw.alt === "string" ? raw.alt.slice(0, MAX_ALT) : "" });
+      const crop = cleanCrop(raw.crop);
+      out.push({ ...base, kind: "image", src, alt: typeof raw.alt === "string" ? raw.alt.slice(0, MAX_ALT) : "", ...(crop ? { crop } : {}) });
     } else if (raw.kind === "shape") {
       out.push({
         ...base,

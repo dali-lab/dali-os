@@ -6,6 +6,7 @@ import { ICONS } from "~/components/slides/deck/icon-set";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import type { DeckRead, DeckReadElement } from "~/collab/read-deck.server";
 import type { DocBlock, DocInline } from "~/collab/blocknote-server";
+import { cropFrame, type Crop } from "~/components/slides/deck/crop";
 import { layoutById, STAGE_H, STAGE_W, type LayoutSlot } from "~/components/slides/deck/layouts";
 import { TEXT_STYLE_IDS, themeById, type TextStyleDef, type TextStyleId, type ThemeDef } from "~/components/slides/deck/themes";
 import { resolveThemeColor, resolveThemeFont } from "./theme-colors";
@@ -178,8 +179,28 @@ function addText(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, place: Place, 
   });
 }
 
-function placeImage(rect: LayoutSlot["rect"], size: ImageSize | null) {
+export function placeImage(rect: LayoutSlot["rect"], size: ImageSize | null, crop?: Crop | null) {
   const area = { x: unitsToInches(rect.x), y: unitsToInches(rect.y), w: unitsToInches(rect.w), h: unitsToInches(rect.h) };
+  if (crop) {
+    const f = cropFrame(rect, crop);
+    const known = size && size.width > 0 && size.height > 0 ? size : null;
+    const scale = known ? Math.max(f.w / known.width, f.h / known.height) : 0;
+    const w = known ? known.width * scale : f.w;
+    const h = known ? known.height * scale : f.h;
+    return {
+      x: area.x,
+      y: area.y,
+      w: unitsToInches(w),
+      h: unitsToInches(h),
+      sizing: {
+        type: "crop" as const,
+        x: unitsToInches((w - f.w) / 2 - f.left),
+        y: unitsToInches((h - f.h) / 2 - f.top),
+        w: area.w,
+        h: area.h,
+      },
+    };
+  }
   if (!size || size.width <= 0 || size.height <= 0) return area;
   const scale = Math.max(rect.w / size.width, rect.h / size.height);
   const w = unitsToInches(size.width * scale);
@@ -197,7 +218,7 @@ async function addImage(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, place: 
   if (!el.src) return true;
   const image = await load(el.src);
   if (!image) return false;
-  pptxSlide.addImage({ data: image.data, altText: el.alt ?? "", ...placeImage(place.rect, image.size), ...rotation(place.rot) });
+  pptxSlide.addImage({ data: image.data, altText: el.alt ?? "", ...placeImage(place.rect, image.size, el.crop), ...rotation(place.rot) });
   return true;
 }
 
@@ -360,6 +381,7 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
   const slides = deck.slides;
   for (const slide of slides) {
     const pptxSlide = pptx.addSlide({ masterName: MASTER });
+    if (slide.skipped) pptxSlide.hidden = true;
     const layout = layoutById(slide.layoutId);
     for (const el of slide.elements) {
       if (el.kind === "group") continue;

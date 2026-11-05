@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { stageFreeform } from "./stage-fixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -66,6 +67,7 @@ const api = (over: Partial<InspectorFreeform> = {}): InspectorFreeform => ({
   onReorder: vi.fn(),
   onSnapBack: vi.fn(),
   onFill: vi.fn(),
+  onLock: vi.fn(),
   onDeselect: vi.fn(),
   prefs: { items: true, margins: true, grid: false },
   onPrefs: vi.fn(),
@@ -150,8 +152,8 @@ describe("Inspector element tab", () => {
     expect(freeform.onFill).toHaveBeenCalledWith("muted");
     expect(el.querySelector("button[aria-label=Accent]")!.getAttribute("aria-pressed")).toBe("true");
     const grid = [...el.querySelectorAll<HTMLInputElement>("input[role=switch]")];
-    expect(grid).toHaveLength(3);
-    click(grid[2]);
+    expect(grid).toHaveLength(4);
+    click(grid[3]);
     expect(freeform.onPrefs).toHaveBeenCalledWith({ grid: true });
     click([...el.querySelectorAll("button")].find((b) => b.textContent === "Delete")!);
     expect(freeform.onDelete).toHaveBeenCalled();
@@ -287,19 +289,7 @@ describe("EditorToolbar insert tools", () => {
 
 describe("SlideStage with free elements", () => {
   const collab: SlotCollab = { room: "slides:p:deck", token: "t", user: { userId: "u", name: "Ada", color: "#336699", photoUrl: null }, undoExtension: {} };
-  const freeformFor = (selection: string[], over: Record<string, unknown> = {}) => ({
-    selection,
-    onSelect: noop,
-    editingId: null,
-    onEdit: noop,
-    prefs: { items: true, margins: true, grid: false },
-    armed: null,
-    onPlace: noop,
-    onCommit: noop,
-    peerDrags: new Map(),
-    onPublishDrag: noop,
-    ...over,
-  });
+  const freeformFor = (selection: string[], over: Record<string, unknown> = {}) => stageFreeform(selection, over);
   const stage = (d: ReturnType<typeof deck>, over: Record<string, unknown> = {}) =>
     createElement(SlideStage, { slide: d.slide(), themeId: "dali-dark", doc: d.doc, collab, editable: true, freeform: freeformFor([]), onPickImage: noop, ...over } as never);
 
@@ -351,16 +341,16 @@ describe("SlideStage with free elements", () => {
     expect(onStart).toHaveBeenCalledWith({ slideId: d.slideId, elementId: t });
   });
 
-  it("opens the image picker for a double-clicked free image only", () => {
+  it("reports a double click on any element so the editor can go inside it", () => {
     const d = deck();
     const img = addFreeImage(d.doc, d.slideId, "https://x/y.png", "y")!;
     const shape = addShape(d.doc, d.slideId, "rect")!;
-    const onPickImage = vi.fn();
-    const el = render(stage(d, { onPickImage }));
+    const onActivate = vi.fn();
+    const el = render(stage(d, { freeform: freeformFor([], { onActivate }) }));
     act(() => void el.querySelector(`[data-hit="${shape}"]`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-    expect(onPickImage).not.toHaveBeenCalled();
+    expect(onActivate).toHaveBeenCalledWith(shape, expect.any(Object));
     act(() => void el.querySelector(`[data-hit="${img}"]`)!.dispatchEvent(new MouseEvent("dblclick", { bubbles: true })));
-    expect(onPickImage).toHaveBeenCalledWith(img);
+    expect(onActivate).toHaveBeenCalledWith(img, expect.any(Object));
   });
 
   it("keeps the layout's own editors and image button for a slot layout", () => {

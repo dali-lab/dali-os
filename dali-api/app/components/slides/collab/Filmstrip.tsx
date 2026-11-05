@@ -9,11 +9,13 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { Copy, MessageSquare, MessageSquarePlus, Plus, Trash2 } from "lucide-react";
+import { Copy, EyeOff, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
-import { ContextMenu, MenuItem, Popover } from "~/components/ui/floating";
+import { ContextMenu, Popover } from "~/components/ui/floating";
+import { ActionMenuItems } from "./ActionMenuItems";
+import type { ActionSpec } from "./actions";
 import { ScaledSlide } from "~/components/slides/deck/SlideRender";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { cn } from "~/lib/cn";
@@ -57,10 +59,12 @@ function Item({
   peers,
   editable,
   commentCount,
+  selected,
+  actions,
   onSelect,
+  onContext,
   onDuplicate,
   onDelete,
-  onComment,
 }: {
   slide: RenderSlide;
   index: number;
@@ -69,36 +73,34 @@ function Item({
   peers: SlidePeer[];
   editable: boolean;
   commentCount: number;
-  onSelect: () => void;
+  selected: boolean;
+  actions?: () => ActionSpec[];
+  onSelect: (mods: { shift: boolean; meta: boolean }) => void;
+  onContext: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
-  onComment?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slide.id, disabled: !editable });
   const thumbButton = (
     <button
       type="button"
-      onClick={onSelect}
+      onClick={(e) => onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })}
+      onContextMenu={onContext}
       aria-current={active ? "true" : undefined}
+      aria-selected={selected || undefined}
       aria-label={`Slide ${index + 1}`}
       className={cn(
         "block w-full overflow-hidden rounded-lg ring-2 transition-shadow",
-        active ? "ring-os-accent" : "ring-transparent hover:ring-os-container",
+        active ? "ring-os-accent" : selected ? "ring-os-accent/50" : "ring-transparent hover:ring-os-container",
+        slide.skipped && "opacity-50",
       )}
       {...(editable ? { ...attributes, ...listeners } : {})}
     >
       <Thumb slide={slide} themeId={themeId} />
     </button>
   );
-  const thumb = onComment ? (
-    <ContextMenu
-      ariaLabel={`Slide ${index + 1}`}
-      items={
-        <MenuItem icon={<MessageSquarePlus className="h-4 w-4" aria-hidden />} onSelect={onComment}>
-          Comment on this slide
-        </MenuItem>
-      }
-    >
+  const thumb = actions ? (
+    <ContextMenu ariaLabel={`Slide ${index + 1}`} items={<ActionMenuItems actions={actions()} />}>
       {thumbButton}
     </ContextMenu>
   ) : (
@@ -115,6 +117,12 @@ function Item({
         <div className="relative min-w-0 flex-1">
           {thumb}
           <CommentCount count={commentCount} />
+          {slide.skipped && (
+            <span data-testid="slide-skipped" className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded-full bg-os-card/90 px-1.5 text-[10px] font-medium text-os-grey" aria-label="Skipped">
+              <EyeOff className="h-2.5 w-2.5" aria-hidden />
+              Skipped
+            </span>
+          )}
           <PresenceDots peers={peers} />
           {editable && (
             <span
@@ -140,25 +148,28 @@ export function Filmstrip({
   peers,
   editable,
   commentCounts,
+  selectedIds = [],
+  actionsFor,
   onSelect,
   onAdd,
   onDuplicate,
   onDelete,
   onMove,
-  onComment,
 }: {
   slides: RenderSlide[];
   themeId: string;
   currentId: string | null;
   peers: Map<string, SlidePeer[]>;
   editable: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, mods: { shift: boolean; meta: boolean }) => void;
   onAdd: (layoutId: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
-  onMove: (id: string, index: number) => void;
+  /** Drops `id` (and the thumbnails selected with it) onto the thumbnail `overId`. */
+  onMove: (id: string, overId: string) => void;
   commentCounts?: Map<string, number>;
-  onComment?: (id: string) => void;
+  selectedIds?: string[];
+  actionsFor?: (id: string) => ActionSpec[];
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -166,8 +177,7 @@ export function Filmstrip({
   );
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;
-    const to = slides.findIndex((s) => s.id === over.id);
-    if (to >= 0) onMove(String(active.id), to);
+    onMove(String(active.id), String(over.id));
   };
   return (
     <nav aria-label="Slides" className="flex min-h-0 w-44 shrink-0 flex-col gap-2 border-r border-os-container p-2">
@@ -185,10 +195,12 @@ export function Filmstrip({
                   peers={peers.get(slide.id) ?? []}
                   editable={editable}
                   commentCount={commentCounts?.get(slide.id) ?? 0}
-                  onSelect={() => onSelect(slide.id)}
+                  selected={selectedIds.includes(slide.id)}
+                  actions={actionsFor ? () => actionsFor(slide.id) : undefined}
+                  onSelect={(mods) => onSelect(slide.id, mods)}
+                  onContext={() => !selectedIds.includes(slide.id) && onSelect(slide.id, { shift: false, meta: false })}
                   onDuplicate={() => onDuplicate(slide.id)}
                   onDelete={() => onDelete(slide.id)}
-                  onComment={onComment ? () => onComment(slide.id) : undefined}
                 />
               ))}
             </ol>

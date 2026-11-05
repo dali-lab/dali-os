@@ -60,7 +60,7 @@ export function repairDeckSlots(doc: Y.Doc): void {
   }, "repair-slots");
 }
 
-function posAfter(doc: Y.Doc, afterId: string | null): number {
+export function posAfter(doc: Y.Doc, afterId: string | null): number {
   const ids = visibleSlideIds(doc);
   const map = slidesMap(doc);
   const pos = (id: string) => Number(map.get(id)!.get("pos"));
@@ -197,4 +197,39 @@ export function setBuildBullets(doc: Y.Doc, slideId: string, slot: string, on: b
   const slide = slidesMap(doc).get(slideId);
   const el = slide && elementsOf(slide).get(slot);
   if (el) doc.transact(() => el.set("buildBullets", on), DECK_LOCAL);
+}
+
+export function setSlideSkipped(doc: Y.Doc, ids: string[], skipped: boolean): void {
+  doc.transact(() => {
+    for (const id of ids) {
+      const slide = slidesMap(doc).get(id);
+      if (!slide || isDeleted(slide)) continue;
+      if (skipped) slide.set("skipped", true);
+      else slide.delete("skipped");
+    }
+  }, DECK_LOCAL);
+}
+
+/**
+ * Moves several slides, kept in their current order, so they sit together at `index` among the slides left over.
+ * Only the moved slides get a new `pos`, spread evenly between their new neighbours.
+ */
+export function moveSlides(doc: Y.Doc, ids: string[], index: number): void {
+  const map = slidesMap(doc);
+  const order = visibleSlideIds(doc);
+  const moving = order.filter((id) => ids.includes(id));
+  if (moving.length === 0) return;
+  const others = order.filter((id) => !moving.includes(id));
+  const at = Math.max(0, Math.min(index, others.length));
+  const pos = (id: string) => Number(map.get(id)!.get("pos"));
+  const before = at > 0 ? pos(others[at - 1]) : undefined;
+  const after = at < others.length ? pos(others[at]) : undefined;
+  doc.transact(() => {
+    moving.forEach((id, i) => {
+      const k = i + 1;
+      const next =
+        before !== undefined && after !== undefined ? before + ((after - before) * k) / (moving.length + 1) : before !== undefined ? before + k : after !== undefined ? after - (moving.length + 1 - k) : k;
+      map.get(id)!.set("pos", next);
+    });
+  }, DECK_LOCAL);
 }

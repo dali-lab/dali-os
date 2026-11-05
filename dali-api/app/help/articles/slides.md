@@ -31,11 +31,49 @@ When the live deck editor is on for you, you can put text, images and shapes any
 
 - **Add an item**: open **Insert** in the toolbar. Choose **Text box** or a shape, then click the slide where it should go. Shapes are rectangles, rounded rectangles, ellipses, lines and arrows. **Image** and everything in the next section is added in the middle of the slide.
 - **Move, resize and rotate**: drag an item to move it, drag a handle to resize it, and drag the dot above it to turn it. Pictures keep their proportions when you drag a corner. Hold **Shift** while resizing to flip that, and while turning to move in 15 degree steps. Guides show when edges and centers line up with other items or the slide margins, and numbers show the space between items. Hold **⌘** to skip snapping. Turn snapping and the grid on or off in the inspector.
-- **Edit text**: click a selected text box again to type in it. Drag its border to move it.
+- **Edit text**: double-click a text box, or select it and press **Enter**, and the cursor lands where you clicked. Press **Esc** once to step back out to the box, and again to deselect. Drag a text box's border to move it while you type. A text box grows taller as you type, until you drag its height yourself.
 - **Move a layout box**: dragging a title, body or image box lifts it off the layout. It keeps its spot if you change layouts. Select it and choose **Snap back to layout** in the inspector to put it back.
 - **Select several**: Shift-click items, or drag across empty space. The inspector then offers align, distribute, **Group** and **Duplicate**. A group moves as one item, and **Ungroup** breaks it up.
 - **Fine tuning**: the inspector tab for the selected item has X, Y, width, height and rotation, align to the slide, **Bring forward** and **Send back**, and a theme fill for shapes. Arrow keys nudge by 1, and Shift with an arrow nudges by 10.
 - **Delete, copy and paste**: Delete removes the selected item. ⌘C, ⌘X and ⌘V copy, cut and paste, also into another deck, and ⌘D duplicates.
+
+### Right-click menus and the format bar
+
+Right-click (or two-finger click) almost anything for the actions that fit it.
+
+- **An item**: **Cut**, **Copy**, **Paste**, **Duplicate**, **Delete**, **Copy style** and **Paste style**, **Arrange** (bring to front, forward, backward, to back), **Align** (to the slide, or to the selection when several are selected), **Group** or **Ungroup**, **Lock** or **Unlock**, **Add build** and **Comment**. Pictures also have **Replace image**, **Crop** and **Reset size**, text boxes have **Add link**, and a layout box you moved has **Snap back to layout**. Right-clicking an item selects it first, and right-clicking inside a selection keeps the whole selection.
+- **Empty space on the slide**: **Paste here** puts the copied items at the pointer, **Add text box here**, **Add shape here** and **Add image here**, **Change layout**, **Select all**, **Comment here**, and **Show guides** and **Show grid**.
+- **A slide in the list**: **New slide after**, **Duplicate slide**, **Delete slide**, **Skip slide**, **Change layout**, **Copy slide**, **Paste slide** (also into another deck), **Move to top**, **Move to bottom** and **Comment**.
+- **Text you are typing in**: the normal text menu stays as it is.
+
+A small bar floats above the selected item with the things you reach for most: text style, bold, italic, underline, link and bullets for text, fill colors for shapes, **Replace image** and **Crop** for pictures. **Arrange** and **More** are always there, and **More** has the same actions as the right-click menu. The bar hides while you drag.
+
+### Shortcuts for moving
+
+- Hold **Option** while you drag to drag a copy and leave the original. Hold **Shift** to keep the drag on one line.
+- Hold **Option** while the pointer is over another item to see how far it is from the selected one.
+- Hover an item to see its outline.
+
+### Pictures
+
+- **Add**: drop picture files from your computer onto the slide, or paste a picture. It lands where you dropped it. Dropping onto a picture replaces it.
+- **Crop**: double-click a picture, drag the handles to show less of it, and press **Esc** or **Done**. **Reset crop** shows the whole picture again. Crops show in the filmstrip, PDF and PowerPoint downloads.
+
+### Lock
+
+**Lock** keeps an item where it is: it can't be dragged, resized, turned, nudged or deleted until you **Unlock** it from the right-click menu or the bar. A small lock shows when you point at it.
+
+### Skip a slide
+
+**Skip slide** keeps a slide in the deck but leaves it out when presenting, for people following along, and in PDF downloads. It shows dimmed in the list with a **Skipped** tag, and it downloads to PowerPoint as a hidden slide. **Unskip slide** brings it back.
+
+### Zoom
+
+Use **⌘+**, **⌘−** and **⌘0** (or pinch on a trackpad, or the zoom control in the corner of the slide) to zoom in and out. **⌘0** fits the slide to the window. When the slide is larger than the window you can scroll around it.
+
+### Select and reorder slides
+
+Click a slide in the list, Shift-click to select a range, and ⌘-click to add or remove one. Drag any selected slide to move all of them together. Slide menu actions apply to everything selected. Moving slides is one step for **Undo**.
 
 Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate or group is one step for **Undo**. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, tables, rectangles, ellipses and lines where they were on the slide.
 

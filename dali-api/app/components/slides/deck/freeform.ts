@@ -1,9 +1,13 @@
+import type { Crop } from "./crop";
 import { layoutById, STAGE_H, STAGE_W, type LayoutSlot, type SlotRect } from "./layouts";
 import type { RenderElement, RenderSlide } from "./snapshot";
 
 export interface Placed extends SlotRect {
   rot: number;
 }
+
+/** A placement that may also carry the crop the element is drawn with, for a drag in progress. */
+export type PlacedLive = Placed & { crop?: Crop | null };
 
 export const MIN_SIZE = 24;
 export const LINE_MIN_SIZE = 4;
@@ -94,16 +98,19 @@ export function selectionTarget(slide: RenderSlide, id: string): string {
 export const STAGE_CENTER = { x: STAGE_W / 2, y: STAGE_H / 2 };
 
 /** The slide with some elements drawn at other places, for a drag in progress that the doc does not hold yet. */
-export function withPlacements(slide: RenderSlide, overrides: Iterable<ReadonlyMap<string, Placed> | null | undefined>): RenderSlide {
-  const maps = [...overrides].filter((m): m is ReadonlyMap<string, Placed> => Boolean(m && m.size));
+export function withPlacements(slide: RenderSlide, overrides: Iterable<ReadonlyMap<string, PlacedLive> | null | undefined>): RenderSlide {
+  const maps = [...overrides].filter((m): m is ReadonlyMap<string, PlacedLive> => Boolean(m && m.size));
   if (maps.length === 0) return slide;
   return {
     ...slide,
     elements: slide.elements.map((el) => {
-      let placed: Placed | undefined;
+      let placed: PlacedLive | undefined;
       for (const m of maps) placed = m.get(el.id) ?? placed;
       if (!placed) return el;
-      return { ...el, x: placed.x, y: placed.y, w: placed.w, h: placed.h, rot: placed.rot || undefined };
+      const next = { ...el, x: placed.x, y: placed.y, w: placed.w, h: placed.h, rot: placed.rot || undefined };
+      if (placed.crop === null) delete next.crop;
+      else if (placed.crop) next.crop = placed.crop;
+      return next;
     }),
   };
 }

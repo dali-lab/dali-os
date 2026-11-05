@@ -1,4 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { presentable } from "~/components/slides/deck/skip";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
 import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
@@ -65,7 +66,7 @@ export interface DeckPrintInput {
 
 /** Every slide at 1920 by 1080 on its own page with all builds showing, each followed by a notes page when `notes` is given. */
 export async function deckToPrintHtml({ title, themeId, slides, notes }: DeckPrintInput): Promise<string> {
-  const pages = slides.map((slide, i) => {
+  const pages = presentable(slides).map((slide, i) => {
     const page = `<section class="pdf-page" data-slide-id="${escapeHtml(slide.id)}">${renderToStaticMarkup(
       SlideRender({ slide, theme: themeId }),
     )}</section>`;

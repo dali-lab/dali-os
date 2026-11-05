@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { stageFreeform } from "./stage-fixture";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -57,18 +58,7 @@ function deck(n: number) {
   return { doc, ids, snap: snapshotDeck(doc) };
 }
 const click = (el: Element | null) => act(() => void (el as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
-const freeformFor = (selection: string[]) => ({
-  selection,
-  onSelect: () => {},
-  editingId: null,
-  onEdit: () => {},
-  prefs: { items: true, margins: true, grid: false },
-  armed: null,
-  onPlace: () => {},
-  onCommit: () => {},
-  peerDrags: new Map(),
-  onPublishDrag: () => {},
-});
+const freeformFor = (selection: string[]) => stageFreeform(selection);
 const noop = () => {};
 const collab: SlotCollab = { room: "slides:p:deck", token: "t", user: { userId: "u", name: "Ada", color: "#336699", photoUrl: null }, undoExtension: {} };
 
@@ -104,7 +94,7 @@ describe("Filmstrip", () => {
     click(el.querySelector("button[aria-label='Slide 2']"));
     click(el.querySelectorAll("button[aria-label='Duplicate slide']")[1]);
     click(el.querySelectorAll("button[aria-label='Delete slide']")[0]);
-    expect(onSelect).toHaveBeenCalledWith(snap.slides[1].id);
+    expect(onSelect).toHaveBeenCalledWith(snap.slides[1].id, { shift: false, meta: false });
     expect(onDuplicate).toHaveBeenCalledWith(snap.slides[1].id);
     expect(onDelete).toHaveBeenCalledWith(snap.slides[0].id);
   });
@@ -179,22 +169,23 @@ describe("slide comments in the filmstrip", () => {
     expect([...el.querySelectorAll("[data-testid=slide-comment-count]")].map((n) => n.textContent)).toEqual(["2", "1"]);
   });
 
-  it("offers Comment on this slide from the thumbnail's context menu", () => {
+  it("offers Comment from the thumbnail's context menu", () => {
     const { snap } = deck(2);
-    const onComment = vi.fn();
-    const el = render(createElement(Filmstrip, filmProps(snap.slides, { onComment }) as never));
+    const run = vi.fn();
+    const actions = () => [{ id: "comment", label: "Comment", run }];
+    const el = render(createElement(Filmstrip, filmProps(snap.slides, { actionsFor: actions }) as never));
     act(() => void el.querySelector("button[aria-label='Slide 2']")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })));
-    const item = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.includes("Comment on this slide"));
+    const item = [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Comment");
     expect(item).toBeTruthy();
     click(item!);
-    expect(onComment).toHaveBeenCalledWith(snap.slides[1].id);
+    expect(run).toHaveBeenCalled();
   });
 
-  it("has no comment menu when commenting is off", () => {
+  it("has no menu when the filmstrip is given no actions", () => {
     const { snap } = deck(1);
     const el = render(createElement(Filmstrip, filmProps(snap.slides) as never));
     act(() => void el.querySelector("button[aria-label='Slide 1']")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
-    expect(document.body.textContent).not.toContain("Comment on this slide");
+    expect(document.body.querySelector("[role=menu]")).toBeNull();
   });
 });
 
