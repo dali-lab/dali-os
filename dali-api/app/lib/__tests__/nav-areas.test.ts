@@ -652,3 +652,17 @@ describe("shellPageIcon", () => {
     expect(shellPageIcon("/emails", "/")).toBeUndefined();
   });
 });
+
+describe("core-taskboard flag", () => {
+  const coreHrefs = (flags: object) =>
+    visibleSubtabs(visibleAreas(CORE, flags).find((a) => a.key === "core")!, CORE).map((t) => t.href);
+
+  it("puts Taskboard first in the Core area while the flag is on", () => {
+    expect(coreHrefs({ "core-taskboard": true })[0]).toBe("/core");
+  });
+
+  it("hides Taskboard while the flag is off", () => {
+    expect(coreHrefs({})).not.toContain("/core");
+    expect(coreHrefs({})[0]).toBe("/core/staffing");
+  });
+});

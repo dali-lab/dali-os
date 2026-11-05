@@ -3907,6 +3907,7 @@ model Project {
   // earliest term in `projectTerms` (by Term.sortKey), not stored.
   termCount      Int           @default(1)
   status         ProjectStatus @default(Active)
+  kind           ProjectKind   @default(Standard)
 
   // Core-only opt-out: hides the Record button and all three "Record this
   // meeting?" prompts for this project's meetings.
@@ -4199,6 +4200,11 @@ model ProjectDomainScope {
   @@index([projectId])
   @@index([domainId])
   @@index([termId])
+}
+
+enum ProjectKind {
+  Standard
+  CoreBoard
 }
 
 enum ProjectStatus {

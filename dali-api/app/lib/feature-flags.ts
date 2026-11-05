@@ -110,6 +110,12 @@ export const FEATURE_FLAGS = [
       "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
   },
   {
+    key: "core-taskboard",
+    label: "Core taskboard",
+    description:
+      "A kanban of Core's own tasks on the Core landing page at /core, with a Taskboard tab first in the Core area. Core members only. Turning this off sends /core back to Staffing and hides the tab; tasks already created stay. Ships off.",
+  },
+  {
     key: "refer-a-partner",
     label: "Refer a partner",
     description:
