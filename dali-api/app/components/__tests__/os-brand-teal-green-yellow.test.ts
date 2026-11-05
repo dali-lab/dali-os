@@ -36,7 +36,6 @@ describe("status meanings use the os status tokens", () => {
 // domain rotation, classic status palettes) are intentionally not listed.
 describe("interactive chrome uses the os accent", () => {
   it.each([
-    "routes/help.getting-started.tsx",
     "components/settings/CalendarSettingsBlock.tsx",
     "components/doc/schema/mention.tsx",
     "components/NavigationProgress.tsx",

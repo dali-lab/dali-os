@@ -59,10 +59,10 @@ describe("domain-lead delibs board loader", () => {
     expect(vi.mocked(delibsQualifier).mock.calls[0][1]).toBe("first");
   });
 
-  it("uses accept/waitlist/reject on the last round", async () => {
+  it("starts the last round in No Decision, then accept/waitlist/reject", async () => {
     board("final");
     const res = await callLoader();
-    expect(res.columns).toEqual(["Accept", "Waitlist", "Reject"]);
+    expect(res.columns).toEqual(["No Decision", "Accept", "Waitlist", "Reject"]);
   });
 
   it("shows no board when the round is gone from the timeline", async () => {
