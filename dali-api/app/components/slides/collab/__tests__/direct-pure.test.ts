@@ -156,13 +156,13 @@ describe("element menu", () => {
 
 describe("stage menu", () => {
   const sh = (): StageHandlers => ({
-    paste: vi.fn(), addText: vi.fn(), addShape: vi.fn(), addImage: vi.fn(), changeLayout: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn(),
+    paste: vi.fn(), insert: vi.fn(), changeLayout: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn(),
   });
   const base = (h: StageHandlers, over = {}) => stageActions({ layoutId: "content", canPaste: true, canComment: true, guides: true, grid: false, handlers: h, ...over });
 
   it("lists paste here, the adders, layouts, select all, comment and the snap toggles", () => {
     const list = base(sh());
-    expect(labels(list)).toEqual(["Paste here", "Add text box here", "Add shape here", "Add image here", "Change layout", "Select all", "Comment here", "Show guides", "Show grid"]);
+    expect(labels(list)).toEqual(["Paste here", "Add text box here", "Add shape here", "Add image here", "Insert here", "Change layout", "Select all", "Comment here", "Show guides", "Show grid"]);
     expect(findAction(list, "add-shape")!.children!.map((a) => a.label)).toEqual(["Rectangle", "Rounded rectangle", "Ellipse", "Line", "Arrow"]);
   });
 
@@ -179,7 +179,14 @@ describe("stage menu", () => {
     findAction(list, "grid")!.run!();
     expect(h.setGrid).toHaveBeenCalledWith(true);
     findAction(list, "add-shape-ellipse")!.run!();
-    expect(h.addShape).toHaveBeenCalledWith("ellipse");
+    expect(h.insert).toHaveBeenCalledWith({ type: "shape", shape: "ellipse" });
+    findAction(list, "add-text")!.run!();
+    expect(h.insert).toHaveBeenCalledWith({ type: "text" });
+    findAction(list, "add-image")!.run!();
+    expect(h.insert).toHaveBeenCalledWith({ type: "image" });
+    findAction(list, "insert-chart-pie")!.run!();
+    expect(h.insert).toHaveBeenCalledWith({ type: "chart", chart: "pie" });
+    expect(findAction(list, "insert-here")!.children!.map((c) => c.label)).toEqual(["Table", "Bar chart", "Line chart", "Pie chart", "Code block", "Icon", "Emoji", "Video"]);
   });
 
   it("disables Paste here without a clipboard and hides Comment here when commenting is off", () => {
@@ -442,5 +449,28 @@ describe("text format", () => {
     expect(formatWholeText("missing", "bold")).toBe(false);
     registerTextEditor("boom", { document: [], focus: () => { throw new Error("x"); } });
     expect(formatWholeText("boom", "bold")).toBe(false);
+  });
+});
+
+describe("new content kinds", () => {
+  it("lock, copy style and the menu work with chart, icon and video", async () => {
+    const { addChart, addIcon, addVideo } = await import("~/components/slides/deck/freeform-ops");
+    const { styleOf } = await import("~/components/slides/deck/style-clip");
+    const { doc, slideId, slide } = setup();
+    const chart = addChart(doc, slideId, "bar")!;
+    const icon = addIcon(doc, slideId, "star")!;
+    const video = addVideo(doc, slideId, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")!;
+    for (const id of [chart, icon, video]) {
+      expect(styleOf(slide().elements.find((e) => e.id === id))).toBeNull();
+      const list = elementActions(ctx(slide(), [id]));
+      expect(findAction(list, "copy-style")!.disabled).toBe(true);
+      expect(actionIds(list)).toEqual(expect.arrayContaining(["duplicate", "arrange", "align", "lock", "build", "comment"]));
+      expect(actionIds(list)).not.toContain("crop");
+    }
+    setLocked(doc, slideId, [chart, icon, video], true);
+    expect(slide().elements.filter((e) => e.locked)).toHaveLength(3);
+    const before = JSON.stringify(slide().elements.map((e) => [e.x, e.y]));
+    setPlacements(doc, slideId, { [chart]: { x: 5, y: 5, w: 50, h: 50, rot: 0 } });
+    expect(JSON.stringify(slide().elements.map((e) => [e.x, e.y]))).toBe(before);
   });
 });

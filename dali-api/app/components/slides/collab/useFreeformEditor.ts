@@ -29,7 +29,6 @@ import {
   setFreeTextStyle,
   setIconName,
   setLocked,
-  setVideoUrl,
   setPlacements,
   setVideoUrl,
   snapBack,

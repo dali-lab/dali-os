@@ -97,8 +97,8 @@ describe("right click on the stage", () => {
 
   it("offers the empty-space menu on the background, with the point the pointer was at", () => {
     const d = deck();
-    const addText = vi.fn();
-    const stageHandlers = vi.fn((): StageHandlers => ({ paste: vi.fn(), addText, addShape: vi.fn(), addImage: vi.fn(), changeLayout: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn() }));
+    const insert = vi.fn();
+    const stageHandlers = vi.fn((): StageHandlers => ({ paste: vi.fn(), insert, changeLayout: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn() }));
     const onContext = vi.fn(() => []);
     const el = render(stage(d, stageFreeform([], { stageHandlers, onContext })));
     rightClick(el.querySelector("[data-freeform-layer]")!, 480, 270);
@@ -106,7 +106,7 @@ describe("right click on the stage", () => {
     expect(rows().map((r) => r.textContent)).toEqual(expect.arrayContaining(["Add text box here", "Select all⌘A"]));
     expect(stageHandlers).toHaveBeenLastCalledWith({ x: 960, y: 540 });
     click(row("Add text box here")!);
-    expect(addText).toHaveBeenCalled();
+    expect(insert).toHaveBeenCalledWith({ type: "text" });
   });
 
   it("checks the current layout in Change layout and flips the grid toggle", () => {

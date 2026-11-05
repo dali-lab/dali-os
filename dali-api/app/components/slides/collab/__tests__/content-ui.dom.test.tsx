@@ -72,7 +72,7 @@ function deck() {
 }
 const api = (over: Partial<InspectorFreeform> = {}): InspectorFreeform => ({
   onPlace: vi.fn(), onAlign: vi.fn(), onDistribute: vi.fn(), onGroup: vi.fn(), onUngroup: vi.fn(), onDuplicate: vi.fn(), onDelete: vi.fn(), onReorder: vi.fn(),
-  onSnapBack: vi.fn(), onFill: vi.fn(), onDeselect: vi.fn(), prefs: { items: true, margins: true, grid: false }, onPrefs: vi.fn(),
+  onSnapBack: vi.fn(), onFill: vi.fn(), onLock: vi.fn(), onDeselect: vi.fn(), prefs: { items: true, margins: true, grid: false }, onPrefs: vi.fn(),
   onChart: vi.fn(), onIcon: vi.fn(), onVideo: vi.fn(() => true), ...over,
 });
 

@@ -45,7 +45,7 @@ beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  ext = { pickReplace: vi.fn(), pickAt: vi.fn(), addImages: vi.fn(), comment: vi.fn(), changeLayout: vi.fn() };
+  ext = { pickReplace: vi.fn(), pickAt: vi.fn(), insertAt: vi.fn(), addImages: vi.fn(), comment: vi.fn(), changeLayout: vi.fn() };
   clipboard = "";
   vi.stubGlobal("navigator", { clipboard: { writeText: async (t: string) => void (clipboard = t), readText: async () => clipboard } });
   vi.stubGlobal("requestAnimationFrame", (fn: () => void) => (fn(), 1));
@@ -328,13 +328,12 @@ describe("menu handlers", () => {
 
   it("stage handlers add a text box and shape at the point, ask for an image there, and comment with fractions", () => {
     const { doc, slideId } = setup();
-    const h = editor.stage.stageHandlers({ x: 960, y: 540 });
-    act(() => h.addShape("ellipse"));
+    act(() => editor.insert.shape("ellipse", { x: 960, y: 540 }));
     expect(els(doc).find((e) => e.shape === "ellipse")).toBeDefined();
-    act(() => editor.stage.stageHandlers({ x: 960, y: 540 }).addText());
+    act(() => editor.insert.text({ x: 960, y: 540 }));
     expect(editor.stage.editingId).toBe(els(doc).find((e) => e.kind === "text")!.id);
-    act(() => editor.stage.stageHandlers({ x: 100, y: 200 }).addImage());
-    expect(ext.pickAt).toHaveBeenCalledWith({ x: 100, y: 200 });
+    act(() => editor.stage.stageHandlers({ x: 100, y: 200 }).insert({ type: "image" }));
+    expect(ext.insertAt).toHaveBeenCalledWith({ type: "image" }, { x: 100, y: 200 });
     act(() => editor.stage.stageHandlers({ x: 480, y: 270 }).comment());
     expect(ext.comment).toHaveBeenCalledWith({ slideId, x: 0.25, y: 0.25 });
     act(() => editor.stage.stageHandlers({ x: 0, y: 0 }).changeLayout("title"));
