@@ -74,9 +74,10 @@ describe("a scoped DaliThreadStore", () => {
   });
 
   it("keeps one store per text box", () => {
-    const a = getOrCreateStore("pg", { ...config, pageId: undefined as never, scope: title });
-    const b = getOrCreateStore("pg", { ...config, pageId: undefined as never, scope: body });
-    const a2 = getOrCreateStore("pg", { ...config, pageId: undefined as never, scope: title });
+    const { pageId: _pageId, ...rest } = config;
+    const a = getOrCreateStore("pg", { ...rest, scope: title });
+    const b = getOrCreateStore("pg", { ...rest, scope: body });
+    const a2 = getOrCreateStore("pg", { ...rest, scope: title });
     const doc = getOrCreateStore("pg");
     expect(a).toBe(a2);
     expect(a).not.toBe(b);
