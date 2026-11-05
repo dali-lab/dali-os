@@ -75,7 +75,7 @@ Use **⌘+**, **⌘−** and **⌘0** (or pinch on a trackpad, or the zoom contr
 
 Click a slide in the list, Shift-click to select a range, and ⌘-click to add or remove one. Drag any selected slide to move all of them together. Slide menu actions apply to everything selected. Moving slides is one step for **Undo**.
 
-Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate or group is one step for **Undo**. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, tables, rectangles, ellipses and lines where they were on the slide.
+Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate, group or insert (a new item, a duplicate, a paste or a new slide) is one step for **Undo**. Undoing an insert removes it, and **Redo** brings it back. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, tables, rectangles, ellipses and lines where they were on the slide.
 
 ## Insert tables, charts, icons, emoji, code and video
 

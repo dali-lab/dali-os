@@ -277,7 +277,9 @@ describe("inserting from the editor", () => {
     }
     expect(elements(doc).map((e) => e.kind)).toEqual(["text", "chart", "text"]);
     undo.manager.undo();
-    expect(elements(doc).map((e) => e.kind)).toEqual(["text", "text"]);
+    expect(elements(doc).map((e) => e.kind)).toEqual(["text", "chart"]);
+    undo.manager.redo();
+    expect(elements(doc).map((e) => e.kind)).toEqual(["text", "chart", "text"]);
   });
 
   it("opens a picker for icons, emoji and video and places the element on choosing", () => {

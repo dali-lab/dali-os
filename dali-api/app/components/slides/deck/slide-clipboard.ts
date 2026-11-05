@@ -2,7 +2,7 @@ import * as Y from "yjs";
 import { writeBlocks } from "~/components/slides/pptx/fragment-write";
 import type { ImportBlock } from "~/components/slides/pptx/import-types";
 import { cleanBlocksFor, cleanItems, importBlocksOf, safeImageUrl, serializeSelection, type ClipItem } from "./clipboard";
-import { ensureLayoutSlots, posAfter, DECK_CREATE, newId } from "./deck-ops";
+import { ensureLayoutSlots, insertTracked, posAfter, newId } from "./deck-ops";
 import { explicitPlacement } from "./freeform";
 import { writeClipItems } from "./freeform-ops";
 import { LAYOUTS, layoutById } from "./layouts";
@@ -106,10 +106,10 @@ export function parseSlideClipboard(text: string): SlideClip[] | null {
   return out.length ? out : null;
 }
 
-/** Adds the clipped slides after `afterId` in order. Creation is not an undo step. Returns the new slide ids. */
+/** Adds the clipped slides after `afterId` in order. One undo step when run inside `deckUndo.step()`. Returns the new slide ids. */
 export function pasteSlides(doc: Y.Doc, clips: SlideClip[], afterId: string | null): string[] {
   const ids: string[] = [];
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     let after = afterId;
     for (const clip of clips) {
       const id = newId();
@@ -132,8 +132,9 @@ export function pasteSlides(doc: Y.Doc, clips: SlideClip[], afterId: string | nu
       }
       writeClipItems(slide, clip.items, { dx: 0, dy: 0 });
       ids.push(id);
+      hide(slide);
       after = id;
     }
-  }, DECK_CREATE);
+  });
   return ids;
 }
