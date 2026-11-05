@@ -6,7 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 const dialog = vi.hoisted(() => ({ confirm: vi.fn() }));
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => dialog }));
 
-import { NewSlidePicker } from "~/components/slides/collab/NewSlideSplit";
+import { NewSlideSplit } from "~/components/slides/collab/NewSlideSplit";
 import { NewDeckFromTemplate } from "../NewDeckFromTemplate";
 import { SaveTemplateModal } from "../SaveTemplateModal";
 import { TemplateLibrary, templateMeta } from "../TemplateLibrary";
@@ -75,23 +75,24 @@ describe("TemplateLibrary", () => {
   });
 });
 
-describe("NewSlidePicker", () => {
+describe("New slide gallery", () => {
   const library = (onPick = vi.fn()) => ({ templates: [row()], loaded: true, onPick, onDelete: vi.fn() });
+  const open = (props: Record<string, unknown>) => {
+    render(createElement(NewSlideSplit, { themeId: "dali-dark", layoutId: "content", onAdd: vi.fn(), ...props }));
+    click(container.querySelector("[aria-label='Choose a layout']"));
+  };
 
   it("shows only layouts when the deck has no library", () => {
-    render(createElement(NewSlidePicker, { onPick: vi.fn() }));
-    expect(container.querySelector("[role=radiogroup]")).toBeNull();
-    expect(container.querySelector("[aria-label=Layouts]")).not.toBeNull();
+    open({});
+    expect(document.querySelector("[role=radiogroup]")).toBeNull();
+    expect(document.querySelector("[aria-label=Layouts]")).not.toBeNull();
   });
 
-  it("switches to the library and inserts the one picked", () => {
+  it("switches to the library tab and inserts the one picked", () => {
     const onPick = vi.fn();
-    const onLayout = vi.fn();
-    render(createElement(NewSlidePicker, { onPick: onLayout, library: library(onPick) }));
-    click(container.querySelector("[aria-label=Layouts] button"));
-    expect(onLayout).toHaveBeenCalled();
-    click(container.querySelector("input[value=library]") ?? byText("Library", container));
-    click(byText("Agenda1 slide · Lab", container));
+    open({ library: library(onPick) });
+    click(byText("Library"));
+    click(byText("Agenda1 slide · Lab"));
     expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: "t1" }));
   });
 });

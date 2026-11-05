@@ -115,7 +115,7 @@ describe("thumbnail menu", () => {
     count: 2,
     canPaste: false,
     canComment: false,
-    handlers: { newAfter: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), skip: vi.fn(), changeLayout: vi.fn(), copy: vi.fn(), paste: vi.fn(), moveTo: vi.fn(), comment: vi.fn(), saveToLibrary },
+    handlers: { newAfter: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), skip: vi.fn(), changeLayout: vi.fn(), copy: vi.fn(), paste: vi.fn(), moveTo: vi.fn(), comment: vi.fn(), saveToLibrary } as never,
   });
 
   it("offers Save slides to library for the acting slides when the editor can", () => {
