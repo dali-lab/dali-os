@@ -77,6 +77,7 @@ import { MeetingsTab } from "../components/application/MeetingsTab";
 import { StageActions } from "../components/application/StageActions";
 import { SowTab } from "../components/application/SowTab";
 import { ScheduleInterviewModal } from "../components/ScheduleInterviewModal";
+import { movePlanningNoteToProject } from "../lib/planning-notes.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -558,6 +559,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         data: { resultingProjectId: created.id, partnerOrgId: orgId },
         meta: { projectId: created.id },
       });
+      await movePlanningNoteToProject(tx, { applicationId: app.id, projectId: created.id });
       return created;
     });
     return redirect(`/projects/${project.id}`);

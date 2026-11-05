@@ -49,13 +49,13 @@ function DomainRow({
   scale,
   isOpen,
   onToggle,
-  onProjectClick,
+  onRowClick,
 }: {
   row: PlanningDomainRow;
   scale: number;
   isOpen: boolean;
   onToggle: () => void;
-  onProjectClick: (projectId: string) => void;
+  onRowClick: (kind: "project" | "application", refId: string) => void;
 }) {
   const hasBar = row.spots > 0 || row.intent > 0;
   return (
@@ -100,7 +100,7 @@ function DomainRow({
         </span>
       </div>
       {isOpen && row.items.length > 0 && (
-        <DomainBreakdown items={row.items} onProjectClick={onProjectClick} />
+        <DomainBreakdown items={row.items} onRowClick={onRowClick} />
       )}
     </div>
   );
@@ -109,11 +109,11 @@ function DomainRow({
 export function PlanningTable({
   model,
   noDomainNote = true,
-  onProjectClick,
+  onRowClick,
 }: {
   model: PlanningGapModel;
   noDomainNote?: boolean;
-  onProjectClick: (projectId: string) => void;
+  onRowClick: (kind: "project" | "application", refId: string) => void;
 }) {
   const { open, toggle } = useOpenDomains();
   const [emptyOpen, setEmptyOpen] = useState(false);
@@ -162,7 +162,7 @@ export function PlanningTable({
               scale={scale}
               isOpen={open.has(row.domainId)}
               onToggle={() => toggle(row.domainId)}
-              onProjectClick={onProjectClick}
+              onRowClick={onRowClick}
             />
           ))}
 

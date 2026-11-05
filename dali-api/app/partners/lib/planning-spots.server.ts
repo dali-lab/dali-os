@@ -21,7 +21,7 @@ export async function setTermSpots(
   return db.$transaction(async (tx) => {
     const term = await tx.projectTerm.findUnique({
       where: { projectId_termId: { projectId: input.projectId, termId: input.termId } },
-      select: { id: true },
+      select: { projectId: true },
     });
     if (!term) return "not-in-term";
     const existing = await tx.projectRoleRequest.findMany({

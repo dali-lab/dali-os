@@ -13,6 +13,7 @@ vi.mock("~/lib/github-slug", () => ({
 vi.mock("~/partners/lib/partner-activity.server", () => ({
   setApplicationStage: vi.fn().mockResolvedValue("New"),
 }));
+vi.mock("~/partners/lib/planning-notes.server", () => ({ movePlanningNoteToProject: vi.fn() }));
 // Stub the registry so the BY_NAME map side-effect doesn't pull in every
 // tool module. We only need the error classes here.
 vi.mock("~/mcp/registry", () => {
@@ -45,6 +46,7 @@ vi.mock("~/mcp/registry", () => {
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { setApplicationStage } from "~/partners/lib/partner-activity.server";
+import { movePlanningNoteToProject } from "~/partners/lib/planning-notes.server";
 import {
   runPromotePartnerApplication,
   PROMOTE_PARTNER_APPLICATION_TOOL,
@@ -134,6 +136,8 @@ describe("promote_partner_application", () => {
         data: expect.objectContaining({ resultingProjectId: "proj-new" }),
       }),
     );
+    const tx = vi.mocked(setApplicationStage).mock.calls[0][0];
+    expect(movePlanningNoteToProject).toHaveBeenCalledWith(tx, { applicationId: "app-1", projectId: "proj-new" });
   });
 
   it("creates role requests for every target term", async () => {

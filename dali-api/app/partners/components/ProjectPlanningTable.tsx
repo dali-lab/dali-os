@@ -1,17 +1,15 @@
-import { Link } from "react-router";
 import { cn } from "~/lib/cn";
 import { planningStateLabel, type PlanningProjectModel, type PlanningProjectRow } from "../lib/planning-gap";
-import { applicationHref } from "./planning/DomainBreakdown";
 import { spotsLabel } from "./PlanningTable";
 
 const GRID = "grid grid-cols-[minmax(200px,1.6fr)_minmax(110px,0.7fr)_minmax(120px,0.8fr)_60px_minmax(200px,1.6fr)] items-center gap-4 px-4";
 
 function ProjectRow({
   row,
-  onProjectClick,
+  onRowClick,
 }: {
   row: PlanningProjectRow;
-  onProjectClick: (projectId: string) => void;
+  onRowClick: (kind: "project" | "application", refId: string) => void;
 }) {
   const cells = (
     <>
@@ -32,17 +30,10 @@ function ProjectRow({
     "border-t border-os-container py-2.5 text-left text-sm transition-colors hover:bg-os-card-hover",
     !row.counted && "opacity-45",
   );
-  if (row.kind === "application") {
-    return (
-      <Link to={applicationHref(row.refId)} className={rowClass}>
-        {cells}
-      </Link>
-    );
-  }
   return (
     <button
       type="button"
-      onClick={() => onProjectClick(row.refId)}
+      onClick={() => onRowClick(row.kind, row.refId)}
       className={cn(rowClass, "w-full")}
     >
       {cells}
@@ -53,11 +44,11 @@ function ProjectRow({
 function Group({
   label,
   rows,
-  onProjectClick,
+  onRowClick,
 }: {
   label: string;
   rows: PlanningProjectRow[];
-  onProjectClick: (projectId: string) => void;
+  onRowClick: (kind: "project" | "application", refId: string) => void;
 }) {
   if (rows.length === 0) return null;
   return (
@@ -69,7 +60,7 @@ function Group({
         </span>
       </div>
       {rows.map((row) => (
-        <ProjectRow key={row.key} row={row} onProjectClick={onProjectClick} />
+        <ProjectRow key={row.key} row={row} onRowClick={onRowClick} />
       ))}
     </>
   );
@@ -78,11 +69,11 @@ function Group({
 export function ProjectPlanningTable({
   model,
   termCode,
-  onProjectClick,
+  onRowClick,
 }: {
   model: PlanningProjectModel;
   termCode: string;
-  onProjectClick: (projectId: string) => void;
+  onRowClick: (kind: "project" | "application", refId: string) => void;
 }) {
   const { renewing, fresh, totals } = model;
   if (renewing.length === 0 && fresh.length === 0) {
@@ -102,8 +93,8 @@ export function ProjectPlanningTable({
           <span>Spots</span>
           <span>Domains</span>
         </div>
-        <Group label="Renewing" rows={renewing} onProjectClick={onProjectClick} />
-        <Group label="New" rows={fresh} onProjectClick={onProjectClick} />
+        <Group label="Renewing" rows={renewing} onRowClick={onRowClick} />
+        <Group label="New" rows={fresh} onRowClick={onRowClick} />
         <div className={cn(GRID, "border-t border-os-container-hi py-3 text-sm font-semibold text-foreground")}>
           <span>Total</span>
           <span />
