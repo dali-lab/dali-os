@@ -9,7 +9,7 @@ Who can open a document depends first on where it lives, and then on sharing you
 
 ## Share with people and groups
 
-Open a document and click **Share**. If you don't see it, you can't manage that document's sharing.
+Open a document, form or whiteboard and click **Share** in the top bar. If you don't see it, you can't manage that document's sharing.
 
 1. Type a name in **Add people by name**, or pick a group under **Or add a group**.
 2. Choose a role for them.
