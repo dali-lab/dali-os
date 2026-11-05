@@ -1,11 +1,15 @@
 import { prisma } from "~/lib/db.server";
 import { markdownToBlocks, type DocBlock, type DocInline } from "~/collab/blocknote-server";
 import { collectInlineRefs, downgradeInlineRefs, type DowngradedInlineRef } from "~/collab/inline-refs";
+import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { McpInvalidError } from "./errors";
 
 export type CheckedBlocks = { blocks: DocBlock[]; warnings: string[] };
 
 function describeDowngrade(ref: DowngradedInlineRef): string {
+  if (ref.reason === "projectMismatch") {
+    return `Task ${ref.id} is not in the project its link names: "${ref.label}" was written as plain text`;
+  }
   const what = ref.type === "mention" ? "member" : ref.type === "pageMention" ? "page" : "task";
   return `No ${what} with id ${ref.id}: "${ref.label}" was written as plain text`;
 }
@@ -17,28 +21,32 @@ export async function checkInlineRefs(blocks: DocBlock[]): Promise<CheckedBlocks
   }
   const [users, pages, tasks] = await Promise.all([
     refs.userIds.length
-      ? prisma.user.findMany({ where: { id: { in: refs.userIds } }, select: { id: true } })
+      ? prisma.user.findMany({
+          where: { id: { in: refs.userIds }, ...LAB_MEMBER_WHERE, handle: { not: null } },
+          select: { id: true, handle: true },
+        })
       : [],
     refs.pageIds.length
       ? prisma.page.findMany({ where: { id: { in: refs.pageIds } }, select: { id: true } })
       : [],
     refs.taskIds.length
-      ? prisma.task.findMany({ where: { id: { in: refs.taskIds } }, select: { id: true } })
+      ? prisma.task.findMany({ where: { id: { in: refs.taskIds } }, select: { id: true, projectId: true } })
       : [],
   ]);
-  const known = {
+  const result = downgradeInlineRefs(blocks, {
     userIds: new Set(users.map((u) => u.id)),
     pageIds: new Set(pages.map((p) => p.id)),
     taskIds: new Set(tasks.map((t) => t.id)),
-  };
-  const result = downgradeInlineRefs(blocks, known);
+    userLabels: new Map(users.map((u) => [u.id, u.handle!])),
+    taskProjects: new Map(tasks.map((t) => [t.id, t.projectId])),
+  });
   return { blocks: result.blocks, warnings: result.downgraded.map(describeDowngrade) };
 }
 
 export async function parseMarkdown(markdown: string): Promise<CheckedBlocks> {
   let blocks: DocBlock[];
   try {
-    blocks = await markdownToBlocks(markdown);
+    blocks = await markdownToBlocks(markdown, { inlineRefs: true });
   } catch {
     throw new McpInvalidError("Markdown could not be parsed");
   }

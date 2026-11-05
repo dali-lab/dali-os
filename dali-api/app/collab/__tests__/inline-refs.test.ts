@@ -87,6 +87,26 @@ describe("downgradeInlineRefs", () => {
     expect(downgraded).toEqual([{ type: "pageMention", id: "p9", label: "" }]);
   });
 
+  it("relabels kept user mentions from userLabels", () => {
+    const { blocks } = downgradeInlineRefs([para([user("u1", "Kiran Patel"), user("u2", "ana")])], {
+      ...known,
+      userIds: new Set(["u1", "u2"]),
+      userLabels: new Map([["u1", "kiran"]]),
+    });
+    expect(blocks[0]!.content).toEqual([user("u1", "kiran"), user("u2", "ana")]);
+  });
+
+  it("downgrades a task mention whose project does not match", () => {
+    const { blocks, downgraded } = downgradeInlineRefs([para([task("t1", "Ship it")]), para([task("t3", "Other")])], {
+      ...known,
+      taskIds: new Set(["t1", "t3"]),
+      taskProjects: new Map([["t1", "pr2"], ["t3", "pr1"]]),
+    });
+    expect(blocks[0]!.content).toEqual([text("Ship it")]);
+    expect(blocks[1]!.content).toEqual([task("t3", "Other")]);
+    expect(downgraded).toEqual([{ type: "taskMention", id: "t1", label: "Ship it", reason: "projectMismatch" }]);
+  });
+
   it("leaves blocks without inline content without a content key", () => {
     const { blocks } = downgradeInlineRefs(doc(), known);
     expect(blocks[3]).toEqual({ id: "i", type: "image", props: { url: "x" }, children: [] });
@@ -115,6 +135,11 @@ describe("linksToInlineRefs", () => {
   it("converts matching links in bare-array cells", () => {
     const [block] = linksToInlineRefs([table([[link("/members/u1", [text("@kiran")])]])]);
     expect((block!.content as DocTableContent).rows[0]!.cells[0]).toEqual([user("u1", "kiran")]);
+  });
+
+  it("unescapes \\< in a converted label", () => {
+    const [block] = linksToInlineRefs([para([link("/documents/p1", [text("a \\<b>")])])]);
+    expect(block!.content).toEqual([page("p1", "a <b>")]);
   });
 
   it("leaves a link with no text run alone", () => {

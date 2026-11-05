@@ -31,6 +31,8 @@ import { loadEditablePage } from "../set-page-content";
 import { requireViewer } from "./blog-posts";
 
 const FLAG = "mcp-block-edits";
+const MARKDOWN = { inlineRefs: true };
+const STYLE_PROPS = new Set(["backgroundColor", "textColor", "textAlignment", "isToggleable"]);
 const MAX_OPS = 50;
 const MAX_GET_BLOCKS = 100;
 const OUTLINE_LIMITS = { defaultLimit: 200, maxLimit: 1000 };
@@ -90,7 +92,7 @@ async function resolveTarget(callerId: string, target: Target, mode: "read" | "w
 export const OUTLINE_CONTENT_TOOL = {
   name: "outline_content",
   description:
-    "List a page's or blog post's blocks, one row each: id, type, depth, parentId, an 80-character text preview, childCount, table size, and hash. Start here before edit_content: it gives you block ids and the hashes edit_content checks. Then fetch only the blocks you need with get_content_blocks.",
+    "List a page's or blog post's blocks, one row each: id, type, depth, parentId, an 80-character text preview, childCount, table size, hash, and for blocks with children a treeHash covering the block and everything under it. Start here before edit_content: it gives you block ids and the hashes edit_content checks. Then fetch only the blocks you need with get_content_blocks.",
   inputSchema: {
     type: "object" as const,
     properties: { target: TARGET_SCHEMA, ...pageProps(OUTLINE_LIMITS) },
@@ -114,7 +116,7 @@ export async function runOutlineContent(ctx: McpCtx, input: PageArgs & { target:
 export const GET_CONTENT_BLOCKS_TOOL = {
   name: "get_content_blocks",
   description:
-    "Read chosen blocks of a page or blog post, each with its hash. format 'markdown' (default) returns each block as Markdown, including its children; mentions read as [@Name](/members/<id>), page links as [Title](/documents/<id>). markdownSafe: false means Markdown can't hold that block exactly (callouts, toggles, columns, embeds, signing fields); edit those with JSON (the 'json' field is included for them). format 'json' returns BlockNote JSON for every block. Omit blockIds for every top-level block.",
+    "Read chosen blocks of a page or blog post, each with its hash (and treeHash when it has children). format 'markdown' (default) returns each block as Markdown, including its children; mentions read as [@Name](/members/<id>), page links as [Title](/documents/<id>). markdownSafe: false means Markdown can't hold that block exactly (callouts, toggles, columns, embeds, signing fields); edit those with JSON (the 'json' field is included for them). format 'json' returns BlockNote JSON for every block. Omit blockIds for every top-level block.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -130,7 +132,7 @@ export const GET_CONTENT_BLOCKS_TOOL = {
 
 async function isMarkdownSafe(block: DocBlock): Promise<boolean> {
   try {
-    const own = await markdownToBlocks(await blocksToMarkdown([{ ...block, children: [] }]));
+    const own = await markdownToBlocks(await blocksToMarkdown([{ ...block, children: [] }], MARKDOWN), MARKDOWN);
     return own.length === 1 && blockHash(own[0]!) === blockHash(block);
   } catch {
     return false;
@@ -150,14 +152,15 @@ export async function runGetContentBlocks(
     throw toMcpError(err);
   }
   const blocks = await Promise.all(
-    found.map(async ({ block, hash }) => {
-      if (input.format === "json") return { id: block.id, type: block.type, hash, json: block };
-      const markdown = await blocksToMarkdown([block]);
+    found.map(async ({ block, hash, treeHash }) => {
+      const hashes = { hash, ...(treeHash ? { treeHash } : {}) };
+      if (input.format === "json") return { id: block.id, type: block.type, ...hashes, json: block };
+      const markdown = await blocksToMarkdown([block], MARKDOWN);
       const markdownSafe = await isMarkdownSafe(block);
       return {
         id: block.id,
         type: block.type,
-        hash,
+        ...hashes,
         markdown,
         markdownSafe,
         ...(markdownSafe ? {} : { json: block }),
@@ -183,6 +186,7 @@ type InputOp = {
   op: string;
   blockId?: string;
   expectedHash?: string;
+  expectedTreeHash?: string;
   position?: InputPosition;
   markdown?: string;
   block?: { type?: string; props?: Record<string, unknown>; content?: unknown };
@@ -225,17 +229,18 @@ const POSITION_SCHEMA = {
 export const EDIT_CONTENT_TOOL = {
   name: "edit_content",
   description: [
-    "Edit part of a page or blog post without resending the whole body. Ops apply in order, all or none, live to anyone who has it open (they see your caret and the blocks you touched), and the old version stays in version history. Read block ids and hashes with outline_content / get_content_blocks first; every op on an existing block needs that block's expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content and hash.",
+    "Edit part of a page or blog post without resending the whole body. Ops apply in order, all or none, live to anyone who has it open (they see your caret and the blocks you touched). Before a delete, replace_all or children replacement the page's current state is saved to version history, so people can restore it. Read block ids and hashes with outline_content / get_content_blocks first; every op on an existing block needs that block's expectedHash, and a stale one fails with BLOCK_CHANGED plus the block's current content and hashes. A block you already changed earlier in the same call needs no new hash.",
+    "Blocks with children: delete, move, and update with children also need expectedTreeHash (the block's treeHash), so you don't remove or move children someone else just changed.",
     "Ops:",
     "replace_text {blockId, expectedHash, find, replace}: find must occur exactly once in the block's own text (not in children, not across a mention or line break). The cheapest edit; keeps formatting and comments around it.",
     "update {blockId, expectedHash, markdown | block}: replace one block's content (markdown must be one block); its children stay unless you pass children.",
-    "insert {position, markdown | blocks}: new blocks at position.",
+    "insert {position, markdown | blocks}: new blocks at position. Leave ids out to get new ones (returned in results); an id that already exists fails with ID_EXISTS, so retrying an insert that went through can't duplicate it.",
     "delete {blockId, expectedHash}: a block and its children.",
     "move {blockId, expectedHash, position}.",
     "replace_all {markdown | blocks}: the whole body; must be the only op.",
-    "Tables: insert_row {blockId, expectedHash, index?, cells: [markdown per cell]} (index omitted appends), delete_row {blockId, expectedHash, index}, set_cell {blockId, expectedHash, row, col, markdown}. Rows and columns count from 0, header row included.",
+    "Tables: insert_row {blockId, expectedHash, index?, cells: [markdown per cell]} (index omitted appends), delete_row {blockId, expectedHash, index}, set_cell {blockId, expectedHash, row, col, markdown}. Rows and columns count from 0, header row included. Tables with merged cells fail with TABLE_HAS_MERGED_CELLS; update the whole table instead.",
     "Markdown: mentions are [@Name](/members/<userId>), page links [Title](/documents/<pageId>); an unknown id is written as plain text and reported in warnings. Use <br> for a line break in a table cell. JSON blocks use BlockNote's block shape.",
-    "Returns the new hash of every block you touched, so a follow-up edit needs no re-read, and seenBy: how many people have it open (null when unknown).",
+    "Returns the new hash (and treeHash) of every block you touched, so a follow-up edit needs no re-read, and seenBy: how many people had it open when your edit landed (null when unknown).",
   ].join("\n"),
   inputSchema: {
     type: "object" as const,
@@ -251,6 +256,7 @@ export const EDIT_CONTENT_TOOL = {
             op: { type: "string", enum: [...OP_NAMES] },
             blockId: { type: "string" },
             expectedHash: { type: "string" },
+            expectedTreeHash: { type: "string" },
             position: POSITION_SCHEMA,
             markdown: { type: "string", maxLength: 300_000 },
             block: { type: "object" },
@@ -312,6 +318,7 @@ async function bodyBlocks(op: InputOp, i: number, warnings: string[]): Promise<D
 async function toEngineOp(op: InputOp, i: number, warnings: string[]): Promise<DocOp> {
   const blockId = () => need(op.blockId, op, i, "blockId");
   const base = () => ({ blockId: blockId(), expectedHash: op.expectedHash });
+  const tree = () => ({ ...base(), ...(op.expectedTreeHash !== undefined ? { expectedTreeHash: op.expectedTreeHash } : {}) });
   switch (op.op) {
     case "replace_text":
       return { op: "replace_text", ...base(), find: need(op.find, op, i, "find"), replace: need(op.replace, op, i, "replace") };
@@ -324,7 +331,8 @@ async function toEngineOp(op: InputOp, i: number, warnings: string[]): Promise<D
           throw new McpInvalidError(`ops[${i}] (update) markdown must be exactly one block; use insert to add more`);
         }
         const { type, props, content } = parsed.blocks[0]!;
-        block = { type, props, content };
+        const shape = Object.fromEntries(Object.entries(props ?? {}).filter(([key]) => !STYLE_PROPS.has(key)));
+        block = { type, content, ...(Object.keys(shape).length ? { props: shape } : {}) };
       } else {
         const given = need(op.block, op, i, "markdown or block");
         const checked = await checkInlineRefs([{ id: "x", type: given.type ?? "paragraph", props: given.props ?? {}, content: given.content as DocBlock["content"], children: [] }]);
@@ -337,14 +345,14 @@ async function toEngineOp(op: InputOp, i: number, warnings: string[]): Promise<D
         warnings.push(...checked.warnings);
         children = checked.blocks;
       }
-      return { op: "update", ...base(), block, ...(children ? { children } : {}) };
+      return { op: "update", ...tree(), block, ...(children ? { children } : {}) };
     }
     case "insert":
       return { op: "insert", position: toPosition(op.position, op, i), blocks: await bodyBlocks(op, i, warnings) };
     case "delete":
-      return { op: "delete", ...base() };
+      return { op: "delete", ...tree() };
     case "move":
-      return { op: "move", ...base(), position: toPosition(op.position, op, i) };
+      return { op: "move", ...tree(), position: toPosition(op.position, op, i) };
     case "replace_all":
       return { op: "replace_all", blocks: await bodyBlocks(op, i, warnings) };
     case "insert_row": {
@@ -378,7 +386,9 @@ function toMcpError(err: unknown): unknown {
   const where = err.opIndex !== null ? ` (ops[${err.opIndex}])` : "";
   let message = `${err.code}${where}: ${err.message}`;
   if (err.code === "BLOCK_CHANGED" && err.current) {
-    message += `\nCurrent hash: ${err.current.hash}\nCurrent block (JSON): ${JSON.stringify(err.current.block)}`;
+    message += `\nCurrent hash: ${err.current.hash}`;
+    if (err.current.treeHash) message += `\nCurrent treeHash: ${err.current.treeHash}`;
+    message += `\nCurrent block (JSON): ${JSON.stringify(err.current.block)}`;
   }
   if (err.code === "BLOCK_NOT_FOUND") message += " See outline_content.";
   return NOT_FOUND_CODES.has(err.code) ? new McpNotFoundError(message) : new McpError(message, 409);
@@ -392,31 +402,39 @@ export async function runEditContent(ctx: McpCtx, input: { target: Target; ops: 
   for (const [i, op] of input.ops.entries()) ops.push(await toEngineOp(op, i, warnings));
 
   const announce = await agentAnnouncer();
+  let seenBy: number | null = null;
   let result;
   try {
     result = await applyDocOps(resolved.docName, ops, ctx.user.id, {
-      onApplied: (r) =>
+      onApplied: (r) => {
+        seenBy = docViewerCount(resolved.docName);
         announce({
           action: "editing",
           docRoom: resolved.docName,
           presenceRoom: resolved.presenceRoom,
           range: r.range,
           touched: r.touched,
-        }),
+        });
+      },
     });
   } catch (err) {
     throw toMcpError(err);
   }
 
   if (resolved.pageId) {
-    await prisma.page.update({ where: { id: resolved.pageId }, data: { lastEditedById: ctx.user.id } });
+    try {
+      await prisma.page.update({ where: { id: resolved.pageId }, data: { lastEditedById: ctx.user.id } });
+    } catch (err) {
+      console.error(`[mcp:edit_content] lastEditedById update failed page=${resolved.pageId}`, err);
+    }
   }
 
   return {
     target: input.target,
     results: result.results,
     hashes: result.hashes,
-    seenBy: docViewerCount(resolved.docName),
+    ...(Object.keys(result.treeHashes ?? {}).length ? { treeHashes: result.treeHashes } : {}),
+    seenBy,
     ...(warnings.length ? { warnings } : {}),
   };
 }
@@ -459,6 +477,11 @@ export async function runPointAtContent(
   await requireFlag(ctx);
   const resolved = await resolveTarget(ctx.user.id, input.target, "write");
   try {
+    const { blocks } = await outlineDoc(resolved.docName);
+    const ids = new Set(blocks.map((b) => b.id));
+    for (const id of [input.blockId, input.selectTo?.blockId]) {
+      if (id && !ids.has(id)) throw new DocEditError("BLOCK_NOT_FOUND", `No block with id ${id}`, { blockId: id });
+    }
     const { seen } = pointAgent({
       docRoom: resolved.docName,
       presenceRoom: resolved.presenceRoom,

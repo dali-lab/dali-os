@@ -82,6 +82,8 @@ export function createAgentTouchPlugin(
         if (tracker.update(awareness.getStates(), awareness.clientID)) refresh();
       };
       awareness.on("change", onChange);
+      // A reconfigure rebuilds this view while touches still show; their expiry must carry over.
+      schedule();
       queueMicrotask(onChange);
       return {
         destroy() {

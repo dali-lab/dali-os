@@ -12,12 +12,15 @@ export interface KnownInlineRefs {
   userIds: Set<string>;
   pageIds: Set<string>;
   taskIds: Set<string>;
+  userLabels?: Map<string, string>;
+  taskProjects?: Map<string, string>;
 }
 
 export interface DowngradedInlineRef {
   type: InlineRefType;
   id: string;
   label: string;
+  reason?: "projectMismatch";
 }
 
 export type InlineArrayKind = "block" | "cell";
@@ -94,13 +97,22 @@ export function downgradeInlineRefs(
     pageMention: known.pageIds,
     taskMention: known.taskIds,
   };
+  const downgrade = (ref: DowngradedInlineRef): DocInline[] => {
+    downgraded.push(ref);
+    const text = ref.type === "mention" ? `@${ref.label}` : ref.label;
+    return text ? [{ type: "text", text, styles: {} }] : [];
+  };
   const next = mapInlineArrays(blocks, (inlines) =>
     inlines.flatMap((inline): DocInline[] => {
       const ref = refOf(inline);
-      if (!ref || knownFor[ref.type].has(ref.id)) return [inline];
-      downgraded.push(ref);
-      const text = ref.type === "mention" ? `@${ref.label}` : ref.label;
-      return text ? [{ type: "text", text, styles: {} }] : [];
+      if (!ref) return [inline];
+      if (!knownFor[ref.type].has(ref.id)) return downgrade(ref);
+      const projectId = ref.type === "taskMention" ? known.taskProjects?.get(ref.id) : undefined;
+      if (projectId !== undefined && projectId !== inline.props?.projectId) {
+        return downgrade({ ...ref, reason: "projectMismatch" });
+      }
+      const label = ref.type === "mention" ? known.userLabels?.get(ref.id) : undefined;
+      return [label === undefined ? inline : { ...inline, props: { ...inline.props, label } }];
     }),
   );
   return { blocks: next, downgraded };
@@ -116,7 +128,7 @@ function linkToRef(inline: DocInline): DocInline | null {
   const [run] = inline.content;
   if (run!.type !== "text" || typeof run!.text !== "string") return null;
   if (Object.keys(run!.styles ?? {}).length > 0) return null;
-  const text = run!.text;
+  const text = run!.text.replaceAll("\\<", "<");
   const member = MEMBER_HREF.exec(inline.href);
   if (member && text.startsWith("@")) {
     return { type: "mention", props: { id: member[1], label: text.slice(1) } };

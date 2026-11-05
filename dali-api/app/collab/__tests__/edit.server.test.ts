@@ -7,7 +7,9 @@ const getCollabServer = vi.fn();
 vi.mock("../server", () => ({ getCollabServer }));
 const storeDocument = vi.fn();
 const maybeSnapshot = vi.fn();
-vi.mock("../persistence", () => ({ storeDocument, maybeSnapshot }));
+const loadDocument = vi.fn();
+const saveVersion = vi.fn();
+vi.mock("../persistence", () => ({ storeDocument, maybeSnapshot, loadDocument, saveVersion }));
 vi.mock("../agent-presence.server", () => ({
   agentAnnouncer: vi.fn(async () => () => {}),
   bodyTexts: () => [],
@@ -21,6 +23,7 @@ const {
   applyDocOps,
   applyOpsToDoc,
   blockHash,
+  blockTreeHash,
   getDocBlocks,
   outlineDoc,
 } = await import("../edit.server");
@@ -88,6 +91,10 @@ function find(blocks: DocBlock[], id: string): DocBlock | undefined {
 
 function hashOf(doc: Y.Doc, id: string): string {
   return blockHash(find(read(doc), id)!);
+}
+
+function treeOf(doc: Y.Doc, id: string): string {
+  return blockTreeHash(find(read(doc), id)!);
 }
 
 function container(doc: Y.Doc, id: string): Y.XmlElement {
@@ -250,7 +257,7 @@ describe("insert", () => {
     expect(find(blocks, "b")!.children.map((b) => b.id)).toEqual(["x7"]);
   });
 
-  it("keeps given ids, generates missing ones and replaces duplicates", () => {
+  it("keeps given ids and generates missing ones", () => {
     const doc = makeDoc([para("a", "A")]);
     const result = applyOpsToDoc(doc, [
       {
@@ -258,20 +265,45 @@ describe("insert", () => {
         position: { end: true },
         blocks: [
           { id: "mine", type: "paragraph", content: "kept" },
-          { type: "paragraph", content: "generated" },
-          { id: "a", type: "paragraph", content: "duplicate" },
-          { id: "mine", type: "paragraph", content: "duplicate in call" },
+          { type: "paragraph", content: "generated", children: [{ type: "paragraph", content: "kid" }] },
         ],
       },
     ]);
     const ids = result.results[0]!.blockIds;
     expect(ids[0]).toBe("mine");
-    expect(new Set(ids).size).toBe(4);
-    expect(ids.slice(1).every((id) => id !== "a" && id !== "mine")).toBe(true);
+    expect(ids[1]).toMatch(/^[0-9a-f-]{36}$/);
     expect(read(doc).map((b) => b.id)).toEqual(["a", ...ids]);
+    expect(find(read(doc), ids[1]!)!.children[0]!.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(result.touched).toEqual(ids);
     expect(Object.keys(result.hashes).sort()).toEqual([...ids].sort());
     expect(result.hashes.mine).toBe(hashOf(doc, "mine"));
+    expect(Object.keys(result.treeHashes)).toEqual([ids[1]]);
+    expect(result.treeHashes[ids[1]!]).toBe(treeOf(doc, ids[1]!));
+  });
+
+  it("refuses an id that already exists, so a retried insert doesn't duplicate content", () => {
+    const doc = makeDoc([para("a", "A")]);
+    applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [para("n", "once")] }]);
+    const before = Y.encodeStateAsUpdate(doc);
+    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [para("n", "once")] }]))).toMatchObject({
+      code: "ID_EXISTS",
+      blockId: "n",
+      opIndex: 0,
+    });
+    expect(Y.encodeStateAsUpdate(doc)).toEqual(before);
+  });
+
+  it("refuses an id used twice in one call, nested ones included", () => {
+    const doc = makeDoc([para("a", "A")]);
+    expect(
+      attempt(() =>
+        applyOpsToDoc(doc, [
+          { op: "insert", position: { end: true }, blocks: [para("n", "x")] },
+          { op: "insert", position: { end: true }, blocks: [para("m", "y", [para("n", "z")])] },
+        ]),
+      ),
+    ).toMatchObject({ code: "ID_EXISTS", blockId: "n", opIndex: 1 });
+    expect(attempt(() => applyOpsToDoc(doc, [{ op: "replace_all", blocks: [para("d", "1"), para("d", "2")] }])).code).toBe("ID_EXISTS");
   });
 
   it("returns a range over the inserted text", () => {
@@ -343,6 +375,19 @@ describe("update", () => {
     expect(result.range).not.toBeNull();
   });
 
+  it("keeps a block's colour and alignment when new content comes without props", () => {
+    const styled = { backgroundColor: "yellow", textColor: "red", textAlignment: "center" };
+    const doc = makeDoc([{ id: "a", type: "paragraph", props: styled, content: "old", children: [] }]);
+    applyOpsToDoc(doc, [
+      { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "paragraph", content: [{ type: "text", text: "new", styles: {} }] } },
+    ]);
+    const a = find(read(doc), "a")!;
+    expect(a.props).toEqual(styled);
+    expect(text(a)).toBe("new");
+    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "heading", props: { level: 2 }, content: "title" } }]);
+    expect(find(read(doc), "a")!.props).toMatchObject({ ...styled, level: 2 });
+  });
+
   it("changes only props on the live node when content is omitted, keeping comments", () => {
     const doc = makeDoc([{ id: "t", type: "checkListItem", props: { ...BASE, checked: false }, content: "ship it", children: [] }]);
     comment(doc, "t", 0, 4);
@@ -362,13 +407,13 @@ describe("update", () => {
   it("replaces children when given, freeing their old ids", () => {
     const doc = makeDoc([para("a", "A", [para("c", "old child")])]);
     applyOpsToDoc(doc, [
-      { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: {}, children: [para("c", "new child"), para("d", "two")] },
+      { op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [para("c", "new child"), para("d", "two")] },
     ]);
     expect(find(read(doc), "a")!.children.map((c) => [c.id, text(c)])).toEqual([
       ["c", "new child"],
       ["d", "two"],
     ]);
-    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: {}, children: [] }]);
+    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [] }]);
     expect(find(read(doc), "a")!.children).toEqual([]);
   });
 
@@ -381,13 +426,13 @@ describe("update", () => {
 describe("delete", () => {
   it("removes the block and its children, and drops an emptied child group", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C", [para("g", "G")])]), para("b", "B")]);
-    const result = applyOpsToDoc(doc, [{ op: "delete", blockId: "c", expectedHash: hashOf(doc, "c") }]);
+    const result = applyOpsToDoc(doc, [{ op: "delete", blockId: "c", expectedHash: hashOf(doc, "c"), expectedTreeHash: treeOf(doc, "c") }]);
     const blocks = read(doc);
     expect(find(blocks, "c")).toBeUndefined();
     expect(find(blocks, "g")).toBeUndefined();
     expect(find(blocks, "a")!.children).toEqual([]);
     expect((container(doc, "a").toArray() as Y.XmlElement[]).map((n) => n.nodeName)).toEqual(["paragraph"]);
-    expect(result).toEqual({ touched: [], hashes: {}, range: null, results: [{ op: "delete", blockIds: ["c"] }] });
+    expect(result).toEqual({ touched: [], hashes: {}, treeHashes: {}, range: null, results: [{ op: "delete", blockIds: ["c"] }] });
   });
 
   it("leaves one empty paragraph when every block is deleted", () => {
@@ -403,13 +448,14 @@ describe("move", () => {
   it("moves a block with its children and comments", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C")]), para("b", "B")]);
     comment(doc, "a", 0, 1);
-    const result = applyOpsToDoc(doc, [{ op: "move", blockId: "a", expectedHash: hashOf(doc, "a"), position: { after: "b" } }]);
+    const result = applyOpsToDoc(doc, [{ op: "move", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), position: { after: "b" } }]);
     const blocks = read(doc);
     expect(blocks.map((b) => b.id)).toEqual(["b", "a"]);
     expect(find(blocks, "a")!.children.map((c) => c.id)).toEqual(["c"]);
     expect(delta(doc, "a")[0]).toEqual({ insert: "A", attributes: { [COMMENT]: COMMENT_VALUE } });
     expect(result.touched).toEqual([]);
     expect(result.hashes).toEqual({ a: hashOf(doc, "a") });
+    expect(result.treeHashes).toEqual({ a: treeOf(doc, "a") });
     expect(result.results).toEqual([{ op: "move", blockIds: ["a"] }]);
   });
 
@@ -423,9 +469,9 @@ describe("move", () => {
 
   it("refuses to move a block next to or into itself", () => {
     const doc = makeDoc([para("a", "A", [para("c", "C")]), para("b", "B")]);
-    const h = hashOf(doc, "a");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "move", blockId: "a", expectedHash: h, position: { after: "a" } }])).code).toBe("INVALID_OP");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "move", blockId: "a", expectedHash: h, position: { firstChildOf: "c" } }])).code).toBe("INVALID_OP");
+    const h = { expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a") };
+    expect(attempt(() => applyOpsToDoc(doc, [{ op: "move", blockId: "a", ...h, position: { after: "a" } }])).message).toMatch(/itself/);
+    expect(attempt(() => applyOpsToDoc(doc, [{ op: "move", blockId: "a", ...h, position: { firstChildOf: "c" } }])).message).toMatch(/itself/);
   });
 });
 
@@ -512,7 +558,7 @@ describe("replace_text", () => {
 
 describe("table ops", () => {
   const rows = (doc: Y.Doc) =>
-    (find(read(doc), "t")!.content as { rows: { cells: { content: never[] }[] }[] }).rows.map((r) =>
+    (find(read(doc), "t")!.content as unknown as { rows: { cells: { content: never[] }[] }[] }).rows.map((r) =>
       r.cells.map((c) => text({ content: c.content } as unknown as DocBlock)),
     );
   const mentionSurvives = (doc: Y.Doc) => {
@@ -755,12 +801,17 @@ describe("column blocks", () => {
     expect(ins({ firstChildOf: "cl" })).toBe("INVALID_OP");
     expect(attempt(() => applyOpsToDoc(doc, [{ op: "delete", blockId: "col1", expectedHash: "x" }])).code).toBe("INVALID_OP");
     expect(attempt(() => applyOpsToDoc(doc, [{ op: "update", blockId: "cl", expectedHash: "x", block: {} }])).code).toBe("INVALID_OP");
-    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { firstChildOf: "p" }, blocks: columns().slice(0, 1) }])).code).toBe("INVALID_OP");
+    const freshColumns = { type: "columnList", children: [{ type: "column", children: [{ type: "paragraph" }] }, { type: "column", children: [{ type: "paragraph" }] }] };
+    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { firstChildOf: "p" }, blocks: [freshColumns] }])).message).toMatch(/top level/);
+    expect(attempt(() => applyOpsToDoc(doc, [{ op: "insert", position: { end: true }, blocks: [{ type: "paragraph", children: [freshColumns] }] }])).message).toMatch(/top level/);
+    expect(
+      attempt(() => applyOpsToDoc(doc, [{ op: "update", blockId: "p", expectedHash: hashOf(doc, "p"), block: {}, children: [freshColumns] }])).message,
+    ).toMatch(/top level/);
   });
 
   it("moves a whole column list", () => {
     const doc = makeDoc(columns());
-    applyOpsToDoc(doc, [{ op: "move", blockId: "cl", expectedHash: hashOf(doc, "cl"), position: { end: true } }]);
+    applyOpsToDoc(doc, [{ op: "move", blockId: "cl", expectedHash: hashOf(doc, "cl"), expectedTreeHash: treeOf(doc, "cl"), position: { end: true } }]);
     const blocks = read(doc);
     expect(blocks.map((b) => b.id)).toEqual(["p", "cl"]);
     expect(find(blocks, "col2")!.children.map((b) => b.id)).toEqual(["r"]);
@@ -814,7 +865,7 @@ describe("applyDocOps", () => {
       { onApplied },
     );
 
-    expect(openDirectConnection).toHaveBeenCalledWith("doc:p1:body");
+    expect(openDirectConnection).toHaveBeenCalledWith("doc:p1:body", { authorId: "u-ada" });
     expect(text(find(read(live), "a"))).toBe("B");
     expect(onApplied).toHaveBeenCalledWith(result);
     expect(conn.disconnect).toHaveBeenCalled();
@@ -844,3 +895,255 @@ describe("applyDocOps", () => {
     expect(conn.disconnect).toHaveBeenCalled();
   });
 });
+
+describe("merged table cells", () => {
+  function mergedTable(): DocBlock {
+    const t = table("t");
+    const content = t.content as { rows: { cells: { props?: Record<string, unknown> }[] }[] };
+    content.rows[0]!.cells = [{ ...content.rows[0]!.cells[0]!, props: { colspan: 2 } }] as never;
+    return t;
+  }
+
+  it("refuses row and cell ops on a table with merged cells", () => {
+    const doc = makeDoc([mergedTable()]);
+    const h = hashOf(doc, "t");
+    for (const op of [
+      { op: "insert_row", blockId: "t", expectedHash: h, cells: [[], []] },
+      { op: "delete_row", blockId: "t", expectedHash: h, index: 1 },
+      { op: "set_cell", blockId: "t", expectedHash: h, row: 1, col: 0, content: [] },
+    ] as DocOp[]) {
+      expect(attempt(() => applyOpsToDoc(doc, [op]))).toMatchObject({
+        code: "TABLE_HAS_MERGED_CELLS",
+        blockId: "t",
+        message: expect.stringContaining("update on the whole table"),
+      });
+    }
+  });
+
+  it("counts outline columns the way insert_row does", async () => {
+    findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(makeDoc([mergedTable(), table("plain")])) });
+    const { blocks } = await outlineDoc("doc:p1:body");
+    expect(blocks.map((b) => b.table)).toEqual([
+      { rows: 2, cols: 2 },
+      { rows: 2, cols: 2 },
+    ]);
+  });
+});
+
+describe("subtree hashes", () => {
+  const nested = () => makeDoc([para("a", "parent", [para("c", "child", [para("g", "grandchild")])]), para("s", "solo")]);
+
+  it("adds a tree hash to outline rows and blocks that have children", async () => {
+    const doc = nested();
+    findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(doc) });
+    const { blocks } = await outlineDoc("doc:p1:body");
+    expect(blocks.map((b) => [b.id, b.treeHash])).toEqual([
+      ["a", treeOf(doc, "a")],
+      ["c", treeOf(doc, "c")],
+      ["g", undefined],
+      ["s", undefined],
+    ]);
+    const got = await getDocBlocks("doc:p1:body", ["a", "s"]);
+    expect(got[0]!.treeHash).toBe(treeOf(doc, "a"));
+    expect(got[1]).not.toHaveProperty("treeHash");
+  });
+
+  it("changes when any descendant changes, unlike the block hash", () => {
+    const doc = nested();
+    const before = { hash: hashOf(doc, "a"), tree: treeOf(doc, "a") };
+    applyOpsToDoc(doc, [{ op: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" }]);
+    expect(hashOf(doc, "a")).toBe(before.hash);
+    expect(treeOf(doc, "a")).not.toBe(before.tree);
+  });
+
+  it("requires it to delete, move or replace the children of a block that has them", () => {
+    const doc = nested();
+    const own = { blockId: "a", expectedHash: hashOf(doc, "a") };
+    for (const op of [
+      { op: "delete", ...own },
+      { op: "move", ...own, position: { end: true } },
+      { op: "update", ...own, block: {}, children: [] },
+    ] as DocOp[]) {
+      expect(attempt(() => applyOpsToDoc(doc, [op]))).toMatchObject({ code: "INVALID_OP", blockId: "a", message: expect.stringContaining("expectedTreeHash") });
+    }
+    applyOpsToDoc(doc, [{ op: "update", ...own, block: { content: "no tree hash needed" } }]);
+    applyOpsToDoc(doc, [{ op: "delete", blockId: "s", expectedHash: hashOf(doc, "s") }]);
+  });
+
+  it("rejects a stale tree hash with the current block and both hashes", () => {
+    const doc = nested();
+    const stale = { expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a") };
+    applyOpsToDoc(doc, [{ op: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" }]);
+    const err = attempt(() => applyOpsToDoc(doc, [{ op: "delete", blockId: "a", ...stale }]));
+    expect(err).toMatchObject({ code: "BLOCK_CHANGED", blockId: "a", opIndex: 0 });
+    expect(err.current).toEqual({ block: find(read(doc), "a"), hash: hashOf(doc, "a"), treeHash: treeOf(doc, "a") });
+  });
+
+  it("doesn't ask again after an earlier op in the call changed the subtree", () => {
+    const doc = nested();
+    const tree = { expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a") };
+    applyOpsToDoc(doc, [
+      { op: "replace_text", blockId: "g", expectedHash: hashOf(doc, "g"), find: "grand", replace: "great" },
+      { op: "move", blockId: "a", ...tree, position: { end: true } },
+    ]);
+    expect(read(doc).map((b) => b.id)).toEqual(["s", "a"]);
+  });
+});
+
+describe("update conversions", () => {
+  it("turns inline content into plain text when switching to a code block", () => {
+    const doc = makeDoc([
+      {
+        id: "a",
+        type: "paragraph",
+        props: BASE,
+        content: [
+          { type: "text", text: "call ", styles: { bold: true } },
+          { type: "mention", props: { id: "u1", label: "Kiran" } },
+          { type: "text", text: " now", styles: { italic: true } },
+        ],
+        children: [],
+      },
+    ]);
+    applyOpsToDoc(doc, [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { type: "codeBlock" } }]);
+    const a = find(read(doc), "a")!;
+    expect(a.type).toBe("codeBlock");
+    expect(a.content).toEqual([{ type: "text", text: "call @Kiran now", styles: {} }]);
+  });
+
+  it("keeps a code block's text when switching back to a paragraph", () => {
+    const doc = makeDoc([{ id: "c", type: "codeBlock", props: { language: "ts" }, content: "let x = 1;", children: [] }]);
+    applyOpsToDoc(doc, [{ op: "update", blockId: "c", expectedHash: hashOf(doc, "c"), block: { type: "paragraph" } }]);
+    expect(text(find(read(doc), "c"))).toBe("let x = 1;");
+  });
+});
+
+describe("returned range", () => {
+  const abs = (doc: Y.Doc, rel: unknown) =>
+    Y.createAbsolutePositionFromRelativePosition(Y.createRelativePositionFromJSON(rel), doc)!;
+
+  it("keeps the caret after its own text when someone types right there", () => {
+    const doc = makeDoc([para("a", "Ship beta on Friday")]);
+    const { range } = applyOpsToDoc(doc, [{ op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "beta", replace: "v2" }]);
+    const t = firstText(container(doc, "a"));
+    t.insert(7, "XYZ");
+    expect(plainTextOf(t)).toBe("Ship v2XYZ on Friday");
+    expect(abs(doc, range!.end).index).toBe(7);
+    expect(abs(doc, range!.start).index).toBe(5);
+  });
+
+  it("points at the last span still in the doc", () => {
+    const doc = makeDoc([para("a", "alpha"), para("b", "beta")]);
+    const { range } = applyOpsToDoc(doc, [
+      { op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "alpha", replace: "ALPHA" },
+      { op: "replace_text", blockId: "b", expectedHash: hashOf(doc, "b"), find: "beta", replace: "BETA" },
+      { op: "delete", blockId: "b", expectedHash: "ignored" },
+    ]);
+    expect(abs(doc, range!.start).type).toBe(firstText(container(doc, "a")));
+  });
+
+  it("follows a block that a later op moved", () => {
+    const doc = makeDoc([para("a", "alpha"), para("b", "beta")]);
+    const { range } = applyOpsToDoc(doc, [
+      { op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "alpha", replace: "ALPHA" },
+      { op: "move", blockId: "a", expectedHash: "ignored", position: { end: true } },
+    ]);
+    const moved = firstText(container(doc, "a"));
+    expect(abs(doc, range!.start)).toMatchObject({ type: moved, index: 0 });
+    expect(abs(doc, range!.end)).toMatchObject({ type: moved, index: 5 });
+  });
+});
+
+describe("reads", () => {
+  function legacyDoc() {
+    const doc = new Y.Doc();
+    const p = new Y.XmlElement("paragraph");
+    p.insert(0, [new Y.XmlText("old")]);
+    doc.getXmlFragment("default").insert(0, [p]);
+    return doc;
+  }
+
+  it("refuses legacy docs and points at set_page_content", async () => {
+    findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(legacyDoc()) });
+    await expect(outlineDoc("doc:p1:body")).rejects.toMatchObject({ code: "LEGACY_DOC", message: expect.stringContaining("set_page_content") });
+    await expect(getDocBlocks("doc:p1:body")).rejects.toMatchObject({ code: "LEGACY_DOC" });
+    expect(attempt(() => applyOpsToDoc(legacyDoc(), [{ op: "delete", blockId: "x", expectedHash: "h" }])).message).toContain("set_page_content");
+  });
+
+  it("reads a doc with no saved state through the same seeding the editor uses", async () => {
+    loadDocument.mockImplementation(async (_name: string, doc: Y.Doc) => {
+      doc.transact(() => blocksToFragment([para("seeded", "from contentJson")], doc.getXmlFragment("blocknote")));
+    });
+    const { blocks } = await outlineDoc("blogPost:bp1:body");
+    expect(loadDocument).toHaveBeenCalledWith("blogPost:bp1:body", expect.any(Y.Doc));
+    expect(blocks.map((b) => [b.id, b.preview])).toEqual([["seeded", "from contentJson"]]);
+  });
+});
+
+describe("undo point and author", () => {
+  it("saves the exact pre-edit state as a version before a delete", async () => {
+    const original = makeDoc([para("a", "A"), para("b", "B")]);
+    findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(original) });
+    const order: string[] = [];
+    let savedIds: string[] = [];
+    saveVersion.mockImplementation(async (_name: string, doc: Y.Doc) => {
+      order.push("version");
+      savedIds = read(doc).map((b) => b.id);
+    });
+    storeDocument.mockImplementation(async () => {
+      order.push("store");
+      return null;
+    });
+
+    await applyDocOps("doc:p1:body", [{ op: "delete", blockId: "b", expectedHash: hashOf(original, "b") }], "u-ada");
+
+    expect(saveVersion).toHaveBeenCalledWith("doc:p1:body", expect.any(Y.Doc), "Before agent edit", ["u-ada"]);
+    expect(savedIds).toEqual(["a", "b"]);
+    expect(order).toEqual(["version", "store"]);
+  });
+
+  it("saves one for replace_all and for replacing children, not for smaller edits", async () => {
+    const doc = makeDoc([para("a", "A", [para("c", "C")])]);
+    findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(doc) });
+    await applyDocOps("doc:p1:body", [{ op: "replace_text", blockId: "a", expectedHash: hashOf(doc, "a"), find: "A", replace: "Z" }], "u");
+    await applyDocOps("doc:p1:body", [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), block: { content: "x" } }], "u");
+    expect(saveVersion).not.toHaveBeenCalled();
+    await applyDocOps("doc:p1:body", [{ op: "replace_all", blocks: [para("n", "new")] }], "u");
+    await applyDocOps(
+      "doc:p1:body",
+      [{ op: "update", blockId: "a", expectedHash: hashOf(doc, "a"), expectedTreeHash: treeOf(doc, "a"), block: {}, children: [] }],
+      "u",
+    );
+    expect(saveVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it("saves no version when the ops fail validation", async () => {
+    findUnique.mockResolvedValue({ state: Y.encodeStateAsUpdate(makeDoc([para("a", "A")])) });
+    await expect(applyDocOps("doc:p1:body", [{ op: "delete", blockId: "a", expectedHash: "stale" }], "u")).rejects.toMatchObject({
+      code: "BLOCK_CHANGED",
+    });
+    expect(saveVersion).not.toHaveBeenCalled();
+    expect(storeDocument).not.toHaveBeenCalled();
+  });
+
+  it("snapshots the live doc before writing to it", async () => {
+    const live = makeDoc([para("a", "A"), para("b", "B")]);
+    const conn = {
+      document: live,
+      transact: vi.fn(async (fn: (d: Y.Doc) => void) => fn(live)),
+      disconnect: vi.fn(async () => {}),
+    };
+    getCollabServer.mockReturnValue({ hocuspocus: { openDirectConnection: vi.fn(async () => conn), documents: new Map() } });
+    let savedIds: string[] = [];
+    saveVersion.mockImplementation(async (_n: string, doc: Y.Doc) => {
+      savedIds = read(doc).map((b) => b.id);
+    });
+    await applyDocOps("doc:p1:body", [{ op: "delete", blockId: "b", expectedHash: hashOf(live, "b") }], "u-ada");
+    expect(savedIds).toEqual(["a", "b"]);
+    expect(read(live).map((b) => b.id)).toEqual(["a"]);
+  });
+});
+
+function plainTextOf(t: Y.XmlText): string {
+  return (t.toDelta() as Array<{ insert: string }>).map((d) => d.insert).join("");
+}

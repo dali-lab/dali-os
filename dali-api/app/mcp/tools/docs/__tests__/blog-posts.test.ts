@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({
-  prisma: { blogPost: { findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() } },
+  prisma: {
+    blogPost: { findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
+    user: { findMany: vi.fn() },
+    page: { findMany: vi.fn() },
+    task: { findMany: vi.fn() },
+  },
 }));
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 vi.mock("~/lib/resources.server", () => ({ resourcesAccess: vi.fn() }));
@@ -157,7 +162,7 @@ describe("read_blog_post", () => {
   it("returns the body as Markdown", async () => {
     found();
     const res = await runReadBlogPost("me", { postId: "p1" });
-    expect(blocksToMarkdown).toHaveBeenCalledWith(BLOCKS);
+    expect(blocksToMarkdown).toHaveBeenCalledWith(BLOCKS, { inlineRefs: true });
     expect(res).toMatchObject({ id: "p1", status: "draft", canEdit: true, markdown: "Hi" });
   });
 
@@ -182,7 +187,27 @@ describe("manage_blog_post", () => {
       select: { id: true },
     });
     expect(replaceCollabDocContent).toHaveBeenCalledWith("blogPost:new:body", BLOCKS, "me");
+    expect(markdownToBlocks).toHaveBeenCalledWith("Hi", { inlineRefs: true });
     expect(res).toEqual({ id: "new", status: "draft" });
+  });
+
+  it("writes an unknown mention as plain text and returns a warning", async () => {
+    vi.mocked(markdownToBlocks).mockResolvedValue([
+      { id: "b", type: "paragraph", props: {}, content: [{ type: "mention", props: { id: "u9", label: "Ghost" } }], children: [] },
+    ] as any);
+    db.user.findMany.mockResolvedValue([]);
+    db.blogPost.create.mockResolvedValue({ id: "new" });
+    const res = await runManageBlogPost("me", { action: "create", title: "T", markdown: "[@Ghost](/members/u9)" });
+    expect(replaceCollabDocContent).toHaveBeenCalledWith(
+      "blogPost:new:body",
+      [expect.objectContaining({ content: [{ type: "text", text: "@Ghost", styles: {} }] })],
+      "me",
+    );
+    expect(res).toEqual({
+      id: "new",
+      status: "draft",
+      warnings: ['No member with id u9: "Ghost" was written as plain text'],
+    });
   });
 
   it("create needs a title", async () => {

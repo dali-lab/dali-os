@@ -6,8 +6,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-import { markdownToBlocks } from "~/collab/blocknote-server";
-import { checkInlineRefs } from "../doc-markdown.server";
+import { parseMarkdown } from "../doc-markdown.server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
 import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
@@ -37,7 +36,7 @@ export const CREATE_PAGE_TOOL = {
         type: "string",
         maxLength: MAX_MARKDOWN_LENGTH,
         description:
-          "Optional initial body as Markdown (FreeForm only) — same dialect as set_page_content.",
+          "Optional initial body as Markdown (FreeForm only), same dialect as set_page_content: mention a member as [@handle](/members/<userId>), not @Name. Unknown ids are written as plain text and listed in warnings.",
       },
       fromTemplatePageId: {
         type: "string",
@@ -153,16 +152,10 @@ export async function runCreatePage(callerId: string, input: Input) {
   }
 
   // Parse before creating so bad markdown doesn't leave an empty page behind.
-  let blocks = null;
-  let warnings: string[] = [];
-  if (input.content !== undefined && input.content !== "") {
-    try {
-      blocks = await markdownToBlocks(input.content);
-    } catch {
-      throw new CreatePageError("content markdown could not be parsed", 400);
-    }
-    ({ blocks, warnings } = await checkInlineRefs(blocks));
-  }
+  const { blocks, warnings } =
+    input.content !== undefined && input.content !== ""
+      ? await parseMarkdown(input.content)
+      : { blocks: null, warnings: [] as string[] };
 
   const last = await prisma.page.findFirst({
     where: {

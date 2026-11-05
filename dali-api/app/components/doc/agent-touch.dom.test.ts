@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BlockNoteEditor } from "@blocknote/core";
 import { DecorationSet } from "prosemirror-view";
+import { Plugin } from "prosemirror-state";
 import * as Y from "yjs";
 import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import { agentTouchPluginKey, createAgentTouchPlugin } from "./agent-touch";
@@ -107,6 +108,17 @@ describe("agent touch decorations", () => {
     t.mount();
     flush();
     expect(t.touchedIds()).toEqual(["b2"]);
+  });
+
+  it("still removes the tint when the editor is reconfigured during the fade", () => {
+    const t = setup();
+    t.mount();
+    t.touch(["b1"], 1);
+    vi.advanceTimersByTime(1_000);
+    t.editor.registerExtension({ key: "another", prosemirrorPlugins: [new Plugin({})] });
+    expect(t.touchedIds()).toEqual(["b1"]);
+    vi.advanceTimersByTime(AGENT_TOUCH_EXPIRE_MS - 1_000);
+    expect(t.touchedIds()).toEqual([]);
   });
 
   it("stays inert while nothing is touched", () => {

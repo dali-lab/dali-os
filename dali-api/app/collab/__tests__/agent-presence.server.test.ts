@@ -24,10 +24,12 @@ const {
   blockPosition,
   bodyTexts,
   changedTextRange,
+  agentDocKey,
   docViewerCount,
   enterAgentContext,
   pagePresenceRoom,
   pointAgent,
+  republishAgents,
 } = await import("../agent-presence.server");
 const { AGENT_COLORS, AGENT_SESSION_COLORS, agentClientId } = await import("~/components/collab/agent");
 type Announcement = Parameters<typeof applyAgentAnnouncement>[1];
@@ -507,6 +509,20 @@ describe("touched blocks", () => {
     expect(doc.awareness.getStates().get(ID)!.touched.ids).toEqual(["b1"]);
   });
 
+  it("keeps the last caret through a delete or move that wrote no text", () => {
+    const doc = liveDoc(["Intro", "Outro"]);
+    const before = rewrite(doc, ["Intro", "Added", "Outro"]);
+    const range = changedTextRange(before, doc);
+    const hp = fakeHocuspocus({ "doc:p1:body": doc });
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body", range, touched: ["b2"] }));
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body", range: null }));
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body" }));
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body", touched: ["b3"] }));
+    const cursor = doc.awareness.getStates().get(ID)!.cursor;
+    expect(resolve(doc, cursor.anchor)).toEqual({ text: "Added", index: 5 });
+    expect(resolve(doc, cursor.head)).toEqual({ text: "Added", index: 5 });
+  });
+
   it("puts the caret straight at the end of the edit, since the block tint is the highlight", () => {
     const doc = liveDoc(["Intro", "Outro"]);
     const before = rewrite(doc, ["Intro", "Added", "Outro"]);
@@ -634,14 +650,39 @@ describe("agent sessions", () => {
     ]);
   });
 
-  it("orders sessions by the publisher's clock, not by arrival", () => {
-    const room = liveDoc([]);
-    const hp = fakeHocuspocus({ "presence:doc:p1": room });
-    applyAgentAnnouncement(hp, announcement({ presenceRoom: "presence:doc:p1", session: "late", at: 20 }));
-    applyAgentAnnouncement(hp, announcement({ presenceRoom: "presence:doc:p1", session: "early", at: 10 }));
-    const byId = new Map(agentsIn(room).map((a) => [a.id, a.name]));
-    expect(byId.get(agentClientId("u-ada", "claude", "early"))).toBe("Claude");
-    expect([...byId.values()].sort()).toEqual(["Claude", "Claude 2"]);
+  it("numbers by session key, so machines that saw sessions in a different order agree", async () => {
+    vi.resetModules();
+    const other = await import("../agent-presence.server");
+    const roomA = liveDoc([]);
+    const roomB = liveDoc([]);
+    const say = (apply: typeof applyAgentAnnouncement, room: LiveDoc, session: string) =>
+      apply(fakeHocuspocus({ "presence:doc:p1": room }), announcement({ presenceRoom: "presence:doc:p1", session }));
+    say(applyAgentAnnouncement, roomA, "g2");
+    say(applyAgentAnnouncement, roomA, "g1");
+    say(other.applyAgentAnnouncement, roomB, "g1");
+    say(other.applyAgentAnnouncement, roomB, "g2");
+
+    const sorted = (room: LiveDoc) => agentsIn(room).sort((a, b) => a.id - b.id);
+    expect(sorted(roomA)).toEqual(sorted(roomB));
+    expect(sorted(roomA).map((a) => a.name).sort()).toEqual(["Claude", "Claude 2"]);
+    expect(agentsIn(roomA).find((a) => a.name === "Claude")!.id).toBe(agentClientId("u-ada", "claude", "g1"));
+    vi.advanceTimersByTime(AGENT_LINGER_MS);
+  });
+
+  it("gives a session the same name and colour in the page's presence bar and its body", () => {
+    const bar = liveDoc([]);
+    const body = liveDoc(["Hello"]);
+    const hp = fakeHocuspocus({ "presence:doc:p1": bar, "doc:p1:body": body });
+    applyAgentAnnouncement(hp, announcement({ action: "reading", presenceRoom: "presence:doc:p1", session: "g1" }));
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body", session: "g2" }));
+    expect(agentsIn(body).map((a) => a.name)).toEqual(["Claude 2"]);
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body", session: "g1" }));
+
+    const look = (room: LiveDoc) =>
+      Object.fromEntries(agentsIn(room).map((a) => [a.name, a.color]));
+    expect(look(bar)).toEqual({ Claude: AGENT_COLORS.claude });
+    expect(look(body)).toEqual({ Claude: AGENT_COLORS.claude, "Claude 2": expect.any(String) });
+    expect(agentsIn(body).find((a) => a.name === "Claude")!.id).toBe(agentClientId("u-ada", "claude", "g1"));
   });
 
   it("numbers separately per room, per person and per agent kind", () => {
@@ -666,6 +707,71 @@ describe("agent sessions", () => {
     const [only] = [...doc.awareness.getStates().values()].filter((s) => s.user?.agent);
     expect(only!.user.name).toBe("Claude");
     expect(only).not.toHaveProperty("touched");
+  });
+});
+
+describe("agentDocKey", () => {
+  it("maps a page's presence room and body room to one document", () => {
+    expect(agentDocKey("presence:doc:p1")).toBe("doc:p1");
+    expect(agentDocKey("doc:p1:body")).toBe("doc:p1");
+    expect(agentDocKey("blogPost:b1:body")).toBe("blogPost:b1");
+    expect(agentDocKey("slides:p1:deck")).toBe("slides:p1:deck");
+  });
+});
+
+describe("across machines", () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  /** Another machine's copy of the same agent entry, forwarded by Redis with a higher clock. */
+  function forwardFromElsewhere(room: LiveDoc, clock: number, state: Record<string, unknown>) {
+    const elsewhere = new Awareness(Object.assign(new Y.Doc(), { clientID: ID }));
+    elsewhere.meta.set(ID, { clock, lastUpdated: Date.now() });
+    elsewhere.setLocalState(state);
+    applyAwarenessUpdate(room.awareness, encodeAwarenessUpdate(elsewhere, [ID]), "redis");
+    elsewhere.destroy();
+  }
+
+  it("publishes above a newer clock another machine forwarded, so its next batch still lands", () => {
+    const room = liveDoc(["Hello"]);
+    const { viewer } = viewerOf(room);
+    const hp = fakeHocuspocus({ "doc:p1:body": room });
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body", touched: ["b1"] }));
+    const ahead = room.awareness.meta.get(ID)!.clock + 50;
+    forwardFromElsewhere(room, ahead, { user: { name: "Claude" }, touched: { ids: ["old"], seq: 1 } });
+
+    applyAgentAnnouncement(hp, announcement({ docRoom: "doc:p1:body", touched: ["b2"] }));
+    expect(room.awareness.meta.get(ID)!.clock).toBeGreaterThan(ahead);
+    expect(viewer.getStates().get(ID)!.touched.ids).toEqual(["b2"]);
+  });
+
+  it("renews above a forwarded clock too, and still leaves", () => {
+    const room = liveDoc([]);
+    const { viewer } = viewerOf(room);
+    const hp = fakeHocuspocus({ "presence:doc:p1": room });
+    applyAgentAnnouncement(hp, announcement({ presenceRoom: "presence:doc:p1" }));
+    forwardFromElsewhere(room, 1_000, { user: { name: "Stale" } });
+    vi.advanceTimersByTime(AGENT_RENEW_MS);
+    expect(viewer.getStates().get(ID)!.user.name).toBe("Claude");
+
+    forwardFromElsewhere(room, room.awareness.meta.get(ID)!.clock + 50, { user: { name: "Claude" } });
+    vi.advanceTimersByTime(AGENT_LINGER_MS - AGENT_RENEW_MS);
+    expect(room.awareness.getStates().has(ID)).toBe(false);
+    expect(viewer.getStates().has(ID)).toBe(false);
+  });
+});
+
+describe("republishAgents", () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  it("re-sends a room's agents as newer, for a client that just reconnected", () => {
+    const room = liveDoc(["Hello"]);
+    const { viewer } = viewerOf(room);
+    applyAgentAnnouncement(fakeHocuspocus({ "doc:p1:body": room }), announcement({ docRoom: "doc:p1:body" }));
+    removeAwarenessStates(viewer, [ID], "timeout");
+    republishAgents("presence:doc:other");
+    expect(viewer.getStates().has(ID)).toBe(false);
+    republishAgents("doc:p1:body");
+    expect(viewer.getStates().has(ID)).toBe(true);
   });
 });
 
@@ -749,8 +855,7 @@ describe("pointAgent", () => {
     const doc = blockDoc([{ id: "b1", runs: ["Hello world"] }]);
     machine({ [ROOM]: doc });
     await asAgent(async () => pointAgent({ docRoom: ROOM, blockId: "b1", offset: 6 }));
-    const text = (doc.getXmlFragment("blocknote").get(0) as Y.XmlElement)
-      .get(0)
+    const text = ((doc.getXmlFragment("blocknote").get(0) as Y.XmlElement).get(0) as Y.XmlElement)
       .get(0) as Y.XmlElement;
     (text.get(0) as Y.XmlText).insert(0, ">> ");
     expect(landing(doc, doc.awareness.getStates().get(ID)!.cursor.head)).toEqual({ text: ">> Hello world", index: 9 });

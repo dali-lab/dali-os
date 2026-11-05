@@ -15,13 +15,18 @@ vi.mock("../blog-posts", () => ({ requireViewer: vi.fn() }));
 vi.mock("../../set-page-content", () => ({ loadEditablePage: vi.fn() }));
 vi.mock("~/collab/edit.server", () => {
   class DocEditError extends Error {
+    readonly opIndex: number | null;
+    readonly blockId?: string;
+    readonly current?: { block: unknown; hash: string; treeHash?: string };
     constructor(
       readonly code: string,
       message: string,
-      readonly opIndex: number | null,
-      readonly current?: { block: unknown; hash: string },
+      details: { opIndex?: number | null; blockId?: string; current?: { block: unknown; hash: string; treeHash?: string } } = {},
     ) {
       super(message);
+      this.opIndex = details.opIndex ?? null;
+      this.blockId = details.blockId;
+      this.current = details.current;
     }
   }
   return {
@@ -77,7 +82,8 @@ const ctx = { user: { id: "me" }, scopes: ["mcp:write"], request: new Request("h
 const PAGE = { type: "page" as const, id: "pg1" };
 const POST = { type: "blogPost" as const, id: "bp1" };
 const announce = vi.fn();
-const EDITED = { touched: ["b1"], hashes: { b1: "h2" }, range: { start: 1, end: 2 }, results: [{ op: "update", blockIds: ["b1"] }] };
+const EDITED = { touched: ["b1"], hashes: { b1: "h2" }, treeHashes: {}, range: { start: 1, end: 2 }, results: [{ op: "update", blockIds: ["b1"] }] };
+const OUTLINE_ROW = { type: "paragraph", depth: 0, parentId: null, preview: "", childCount: 0, hash: "h" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -185,6 +191,16 @@ describe("get_content_blocks", () => {
     expect(blocks[1]).toMatchObject({ id: "c1", markdownSafe: false, json: callout });
   });
 
+  it("passes through the tree hash of blocks with children", async () => {
+    const parent = { ...para, children: [{ ...para, id: "c1" }] };
+    vi.mocked(getDocBlocks).mockResolvedValue([{ block: parent, hash: "h1", treeHash: "t1" }, { block: para, hash: "h2" }] as any);
+    const md = await runGetContentBlocks(ctx, { target: PAGE });
+    expect(md.blocks[0]).toMatchObject({ hash: "h1", treeHash: "t1" });
+    expect(md.blocks[1]).not.toHaveProperty("treeHash");
+    const json = await runGetContentBlocks(ctx, { target: PAGE, format: "json" });
+    expect(json.blocks[0]).toMatchObject({ hash: "h1", treeHash: "t1" });
+  });
+
   it("returns JSON only when asked", async () => {
     vi.mocked(getDocBlocks).mockResolvedValue([{ block: para, hash: "h1" }] as any);
     const { blocks } = await runGetContentBlocks(ctx, { target: PAGE, format: "json" });
@@ -192,7 +208,7 @@ describe("get_content_blocks", () => {
   });
 
   it("maps a missing block to not found", async () => {
-    vi.mocked(getDocBlocks).mockRejectedValue(new (DocEditError as any)("BLOCK_NOT_FOUND", "Block 'zz' is not in the document", null));
+    vi.mocked(getDocBlocks).mockRejectedValue(new (DocEditError as any)("BLOCK_NOT_FOUND", "Block 'zz' is not in the document"));
     await expect(runGetContentBlocks(ctx, { target: PAGE, blockIds: ["zz"] })).rejects.toMatchObject({ status: 404, message: expect.stringMatching(/^BLOCK_NOT_FOUND/) });
   });
 });
@@ -222,6 +238,30 @@ describe("edit_content", () => {
     expect(op.block.type).toBe("heading");
     expect(op.block.content[0].text).toBe("New heading");
     expect(op).not.toHaveProperty("children");
+  });
+
+  it("leaves out props Markdown can't express, so colour and alignment stay", async () => {
+    await runEditContent(ctx, { target: PAGE, ops: [{ op: "update", blockId: "b1", expectedHash: "h", markdown: "Plain words" }] });
+    expect(engineOps()[0].block).toEqual({ type: "paragraph", content: [{ type: "text", text: "Plain words", styles: {} }] });
+    vi.mocked(applyDocOps).mockClear();
+    await runEditContent(ctx, { target: PAGE, ops: [{ op: "update", blockId: "b1", expectedHash: "h", markdown: "### Smaller" }] });
+    expect(engineOps()[0].block.props).toEqual({ level: 3 });
+  });
+
+  it("passes expectedTreeHash to delete, move and update only", async () => {
+    await runEditContent(ctx, {
+      target: PAGE,
+      ops: [
+        { op: "delete", blockId: "a", expectedHash: "h", expectedTreeHash: "t" },
+        { op: "move", blockId: "b", expectedHash: "h", expectedTreeHash: "t", position: { end: true } },
+        { op: "update", blockId: "c", expectedHash: "h", expectedTreeHash: "t", markdown: "x" },
+        { op: "replace_text", blockId: "d", expectedHash: "h", expectedTreeHash: "t", find: "a", replace: "b" },
+        { op: "delete", blockId: "e", expectedHash: "h" },
+      ],
+    });
+    const ops = engineOps();
+    expect(ops.map((o) => o.expectedTreeHash)).toEqual(["t", "t", "t", undefined, undefined]);
+    expect(ops[4]).not.toHaveProperty("expectedTreeHash");
   });
 
   it("refuses update Markdown that makes several blocks", async () => {
@@ -280,7 +320,35 @@ describe("edit_content", () => {
     const result = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
     expect(result).toMatchObject({ hashes: { b1: "h2" }, seenBy: 2, results: EDITED.results });
     expect(result).not.toHaveProperty("warnings");
+    expect(result).not.toHaveProperty("treeHashes");
     expect(db.page.update).toHaveBeenCalledWith({ where: { id: "pg1" }, data: { lastEditedById: "me" } });
+  });
+
+  it("reports how many people had it open when the edit landed, or null without a live doc", async () => {
+    vi.mocked(applyDocOps).mockImplementation(async (_n, _o, _a, opts) => {
+      vi.mocked(docViewerCount).mockReturnValue(4);
+      opts?.onApplied?.(EDITED);
+      vi.mocked(docViewerCount).mockReturnValue(0);
+      return EDITED;
+    });
+    expect((await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] })).seenBy).toBe(4);
+
+    vi.mocked(applyDocOps).mockResolvedValue(EDITED);
+    expect((await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] })).seenBy).toBeNull();
+  });
+
+  it("returns tree hashes when touched blocks have children", async () => {
+    vi.mocked(applyDocOps).mockResolvedValue({ ...EDITED, treeHashes: { b1: "t2" } });
+    const result = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
+    expect(result.treeHashes).toEqual({ b1: "t2" });
+  });
+
+  it("still reports success when marking the page edited fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    db.page.update.mockRejectedValueOnce(new Error("db blip"));
+    const result = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b9", expectedHash: "h" }] });
+    expect(result.hashes).toEqual({ b1: "h2" });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("lastEditedById"), expect.any(Error));
   });
 
   it("doesn't touch the page table for blog posts", async () => {
@@ -292,23 +360,44 @@ describe("edit_content", () => {
 
   it("returns the current block and hash on BLOCK_CHANGED", async () => {
     vi.mocked(applyDocOps).mockRejectedValue(
-      new (DocEditError as any)("BLOCK_CHANGED", "Block 'b1' changed since you read it", 1, { block: { id: "b1", type: "paragraph" }, hash: "fresh" }),
+      new (DocEditError as any)("BLOCK_CHANGED", "Block 'b1' changed since you read it", {
+        opIndex: 1,
+        current: { block: { id: "b1", type: "paragraph" }, hash: "fresh", treeHash: "fresh-tree" },
+      }),
     );
     const err = await runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "b1", expectedHash: "old" }] }).catch((e) => e);
     expect(err.status).toBe(409);
     expect(err.message).toMatch(/^BLOCK_CHANGED \(ops\[1\]\)/);
     expect(err.message).toContain("Current hash: fresh");
+    expect(err.message).toContain("Current treeHash: fresh-tree");
     expect(err.message).toContain('"id":"b1"');
     expect(db.page.update).not.toHaveBeenCalled();
   });
 
   it("maps a missing block to not found", async () => {
-    vi.mocked(applyDocOps).mockRejectedValue(new (DocEditError as any)("BLOCK_NOT_FOUND", "Block 'zz' is not in the document", 0));
+    vi.mocked(applyDocOps).mockRejectedValue(new (DocEditError as any)("BLOCK_NOT_FOUND", "Block 'zz' is not in the document", { opIndex: 0 }));
     await expect(runEditContent(ctx, { target: PAGE, ops: [{ op: "delete", blockId: "zz", expectedHash: "h" }] })).rejects.toMatchObject({ status: 404 });
   });
 });
 
 describe("point_at_content", () => {
+  beforeEach(() => {
+    vi.mocked(outlineDoc).mockResolvedValue({ blocks: ["b1", "b2", "zz"].map((id) => ({ id, ...OUTLINE_ROW })) });
+  });
+
+  it("checks the blocks exist before pointing, even when the doc isn't open here", async () => {
+    await expect(runPointAtContent(ctx, { target: PAGE, blockId: "ghost" })).rejects.toMatchObject({
+      status: 404,
+      message: expect.stringMatching(/^BLOCK_NOT_FOUND/),
+    });
+    await expect(runPointAtContent(ctx, { target: PAGE, blockId: "b1", selectTo: { blockId: "ghost2" } })).rejects.toMatchObject({
+      status: 404,
+      message: expect.stringContaining("ghost2"),
+    });
+    expect(outlineDoc).toHaveBeenCalledWith("doc:pg1:body");
+    expect(pointAgent).not.toHaveBeenCalled();
+  });
+
   it("points and reports who saw it", async () => {
     vi.mocked(pointAgent).mockReturnValue({ seen: 3 });
     const result = await runPointAtContent(ctx, { target: PAGE, blockId: "b1", offset: 4, selectTo: { at: "end" } });

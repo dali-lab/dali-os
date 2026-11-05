@@ -137,7 +137,7 @@ export async function runListBlogPosts(callerId: string, input: ListInput) {
 export const READ_BLOG_POST_TOOL = {
   name: "read_blog_post",
   description:
-    "Read one story (blog post): its metadata and its body as Markdown. A draft is readable only by its author and Core. Lossy for editor-only blocks, like read_page; mentions read as [@Name](/members/<userId>). Round-trips with manage_blog_post's markdown.",
+    "Read one story (blog post): its metadata and its body as Markdown. A draft is readable only by its author and Core. Lossy for editor-only blocks, like read_page; member mentions read as [@handle](/members/<userId>), page mentions as [Title](/documents/<pageId>) and task mentions as [Title](/projects/<projectId>?tab=progress&task=<taskId>). Round-trips with manage_blog_post's markdown.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -159,7 +159,7 @@ export async function runReadBlogPost(callerId: string, input: ReadInput) {
     ...describePost(post, callerId),
     summary: post.summary,
     canEdit,
-    markdown: await blocksToMarkdown(ensureBlocks(post.contentJson)),
+    markdown: await blocksToMarkdown(ensureBlocks(post.contentJson), { inlineRefs: true }),
   };
 }
 
@@ -168,7 +168,7 @@ export async function runReadBlogPost(callerId: string, input: ReadInput) {
 export const MANAGE_BLOG_POST_TOOL = {
   name: "manage_blog_post",
   description:
-    "Write a story (blog post). Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as set_page_content); to change part of an existing post, use edit_content with target { type: 'blogPost', id } (when available), otherwise read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
+    "Write a story (blog post). Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as set_page_content: mention a member as [@handle](/members/<userId>), not @Name, a page as [Title](/documents/<pageId>), a task as [Title](/projects/<projectId>?tab=progress&task=<taskId>); unknown ids are written as plain text and come back in warnings); to change part of an existing post, use edit_content with target { type: 'blogPost', id } (when available), otherwise read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
   inputSchema: {
     type: "object" as const,
     properties: {

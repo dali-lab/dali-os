@@ -4,11 +4,12 @@ import {
   Awareness,
   applyAwarenessUpdate,
   encodeAwarenessUpdate,
+  removeAwarenessStates,
 } from "y-protocols/awareness";
 import type { Hocuspocus } from "@hocuspocus/server";
 import { publish, subscribe } from "~/lib/realtime-bus.server";
 import { BLOCKNOTE_FRAGMENT } from "~/components/doc/schema/configs";
-import { presenceRoomName } from "./roomName";
+import { PRESENCE_ROOM_PREFIX, presenceRoomName } from "./roomName";
 import {
   agentClientId,
   agentKindFromClientName,
@@ -47,7 +48,7 @@ export type AgentAnnouncement = {
   ownerName: string;
   action: AgentAction;
   session?: string;
-  /** Publisher clock: orders a person's sessions the same way on every machine. */
+  /** Publisher clock: numbers touched batches the same way on every machine. */
   at?: number;
   presenceRoom?: string;
   docRoom?: string;
@@ -316,6 +317,7 @@ export function docRoomState(
 }
 
 type Timer = ReturnType<typeof setTimeout>;
+type Range = { start: unknown; end: unknown };
 
 type Live = {
   key: string;
@@ -323,14 +325,15 @@ type Live = {
   room: string;
   role: "presence" | "doc";
   session: string | undefined;
-  firstAt: number;
   hocuspocus: Hocuspocus;
   msg: AgentAnnouncement;
   look: Look;
   clientId: number;
   awareness: Awareness | null;
-  /** Resolved against this machine's doc; undefined until the doc is here. */
-  range: { start: unknown; end: unknown } | null | undefined;
+  /** The announcement whose caret this machine hasn't resolved yet (its doc wasn't here). */
+  pending: AgentAnnouncement | null;
+  range: Range | null;
+  selection: boolean;
   highlight: boolean;
   touched: AgentTouched | null;
   seq: number;
@@ -341,25 +344,40 @@ type Live = {
 };
 
 // One synthetic awareness client per (room, person, agent kind, session) on
-// every machine, tracked even where the room isn't loaded so each machine
-// numbers sessions alike. The clientId is derived, not random, so every
-// machine injects the SAME entry and the Redis-forwarded copy collapses into it.
+// every machine, tracked even where the room isn't loaded. The clientId is
+// derived, not random, so every machine injects the SAME entry and the
+// Redis-forwarded copy collapses into it.
 const live = new Map<string, Live>();
 
-function push(target: Awareness, source: Awareness) {
-  applyAwarenessUpdate(target, encodeAwarenessUpdate(source, [source.clientID]), null);
+function unref<T>(timer: T): T {
+  (timer as { unref?: () => void }).unref?.();
+  return timer;
 }
 
-function resolveRange(entry: Live, doc: Y.Doc) {
-  if (entry.range !== undefined) return entry.range;
-  const { msg } = entry;
-  if (msg.action === "editing") {
-    entry.range = msg.range !== undefined ? msg.range : changedTextRange([], doc);
-  } else if (msg.action === "pointing" && msg.point) {
+/** The logical document a room belongs to: a page's presence and body rooms share one. */
+export function agentDocKey(room: string): string {
+  const name = room.startsWith(PRESENCE_ROOM_PREFIX) ? room.slice(PRESENCE_ROOM_PREFIX.length) : room;
+  return name.endsWith(":body") ? name.slice(0, -":body".length) : name;
+}
+
+function resolveRange(entry: Live, doc: Y.Doc): Range | null {
+  const msg = entry.pending;
+  if (!msg) return entry.range;
+  entry.pending = null;
+  const prior = entry.range;
+  if (msg.action === "pointing" && msg.point) {
     const cursor = pointCursor(doc, msg.point);
-    entry.range = cursor && { start: cursor.anchor, end: cursor.head };
-  } else {
-    entry.range = null;
+    if (cursor) {
+      entry.range = { start: cursor.anchor, end: cursor.head };
+      entry.selection = true;
+    }
+  } else if (msg.action === "editing") {
+    const fresh =
+      msg.range ?? (msg.range === undefined && !prior && !msg.touched?.length ? changedTextRange([], doc) : null);
+    if (fresh) {
+      entry.range = fresh;
+      entry.selection = false;
+    }
   }
   return entry.range;
 }
@@ -368,7 +386,7 @@ function stateFor(entry: Live, doc: Y.Doc): Record<string, unknown> {
   if (entry.role === "presence") return presenceRoomState(entry.msg, entry.look);
   const range = resolveRange(entry, doc);
   const cursor = range
-    ? { anchor: entry.highlight || entry.msg.action === "pointing" ? range.start : range.end, head: range.end }
+    ? { anchor: entry.highlight || entry.selection ? range.start : range.end, head: range.end }
     : null;
   return docRoomState(entry.msg, entry.look, cursor, entry.touched);
 }
@@ -381,47 +399,55 @@ function publishEntry(entry: Live) {
     const ydoc = new Y.Doc();
     ydoc.clientID = entry.clientId;
     entry.awareness = new Awareness(ydoc);
-    // Peers drop awareness updates whose clock isn't above the last one they
-    // saw for this id, and they remember it after the agent leaves.
-    const prior = doc.awareness.meta.get(entry.clientId);
-    if (prior) entry.awareness.meta.set(entry.clientId, { clock: prior.clock, lastUpdated: Date.now() });
+  }
+  // Every machine injects this id and Redis forwards each copy, so the room
+  // may hold a newer clock than ours; peers drop anything not above it.
+  const room = doc.awareness.meta.get(entry.clientId)?.clock;
+  const own = entry.awareness.meta.get(entry.clientId)?.clock;
+  if (room !== undefined && (own === undefined || own < room)) {
+    entry.awareness.meta.set(entry.clientId, { clock: room, lastUpdated: Date.now() });
   }
   entry.awareness.setLocalState(stateFor(entry, doc));
-  push(doc.awareness, entry.awareness);
+  applyAwarenessUpdate(
+    doc.awareness,
+    encodeAwarenessUpdate(entry.awareness, [entry.clientId]),
+    "agent",
+  );
 }
 
 function retire(entry: Live) {
   const awareness = entry.awareness;
   if (!awareness) return;
   entry.awareness = null;
-  awareness.setLocalState(null);
   const doc = entry.hocuspocus.documents.get(entry.room);
-  if (doc) push(doc.awareness, awareness);
+  if (doc) removeAwarenessStates(doc.awareness, [entry.clientId], "agent");
   awareness.destroy();
   awareness.doc.destroy();
 }
 
-function siblings(group: string): Live[] {
-  return [...live.values()]
-    .filter((e) => e.group === group)
-    .sort((a, b) => a.firstAt - b.firstAt || (a.session ?? "").localeCompare(b.session ?? ""));
-}
-
 /**
- * Re-number one person's sessions of one agent kind in a room. A session whose
- * name or colour changes comes back under a new clientId: editors build a
- * caret's label once per client and never update it.
+ * Number and colour one person's sessions of one agent kind in a document,
+ * ordered by session key so every machine agrees whatever it saw first. A
+ * session whose name or colour changes comes back under a new clientId:
+ * editors build a caret's label once per client and never update it.
  */
 function renumber(group: string, quiet?: Live) {
+  const entries = [...live.values()].filter((e) => e.group === group);
+  const sessions = [...new Set(entries.map((e) => e.session ?? ""))].sort();
   const taken: string[] = [];
-  siblings(group).forEach((entry, index) => {
-    const color = agentSessionColor(entry.msg.kind, index, `${entry.msg.userId}|${entry.session ?? "-"}`, taken);
+  const looks = new Map<string, { look: Look; variant: string | undefined }>();
+  sessions.forEach((session, index) => {
+    const sample = entries.find((e) => (e.session ?? "") === session)!;
+    const color = agentSessionColor(sample.msg.kind, index, `${sample.msg.userId}|${session || "-"}`, taken);
     taken.push(color);
-    const look = { label: agentSessionLabel(entry.msg.name, index), color };
-    const clientId =
-      index === 0
-        ? agentClientId(entry.msg.userId, entry.msg.kind, entry.session)
-        : agentClientId(entry.msg.userId, entry.msg.kind, entry.session, `${index}|${color}`);
+    looks.set(session, {
+      look: { label: agentSessionLabel(sample.msg.name, index), color },
+      variant: index === 0 ? undefined : `${index}|${color}`,
+    });
+  });
+  for (const entry of entries) {
+    const { look, variant } = looks.get(entry.session ?? "")!;
+    const clientId = agentClientId(entry.msg.userId, entry.msg.kind, entry.session, variant);
     const changed = look.label !== entry.look.label || look.color !== entry.look.color;
     entry.look = look;
     if (entry.clientId !== 0 && clientId !== entry.clientId) {
@@ -431,7 +457,7 @@ function renumber(group: string, quiet?: Live) {
     }
     entry.clientId = clientId;
     if (entry !== quiet && (changed || !entry.awareness)) publishEntry(entry);
-  });
+  }
 }
 
 function clearTimer(entry: Live, name: "linger" | "collapse" | "touch") {
@@ -453,8 +479,8 @@ function drop(entry: Live) {
 }
 
 function track(hocuspocus: Hocuspocus, room: string, role: Live["role"], msg: AgentAnnouncement) {
-  const group = [room, msg.userId, msg.kind].join("\0");
-  const key = `${group}\0${msg.session ?? "-"}`;
+  const group = [agentDocKey(room), msg.userId, msg.kind].join("\0");
+  const key = `${room}\0${msg.userId}\0${msg.kind}\0${msg.session ?? "-"}`;
   let entry = live.get(key);
   if (!entry) {
     entry = {
@@ -463,13 +489,14 @@ function track(hocuspocus: Hocuspocus, room: string, role: Live["role"], msg: Ag
       room,
       role,
       session: msg.session,
-      firstAt: msg.at ?? Date.now(),
       hocuspocus,
       msg,
       look: { label: "", color: "" },
       clientId: 0,
       awareness: null,
-      range: undefined,
+      pending: null,
+      range: null,
+      selection: false,
       highlight: false,
       touched: null,
       seq: 0,
@@ -484,34 +511,41 @@ function track(hocuspocus: Hocuspocus, room: string, role: Live["role"], msg: Ag
   const current = entry;
   current.hocuspocus = hocuspocus;
   current.msg = msg;
-  current.range = undefined;
 
   clearTimer(current, "collapse");
   if (role === "doc") {
+    current.pending = msg;
     const touched = msg.touched?.slice(-AGENT_TOUCHED_MAX) ?? [];
-    current.highlight = msg.action === "editing" && touched.length === 0;
+    current.highlight =
+      msg.action === "editing" &&
+      touched.length === 0 &&
+      (msg.range ? true : msg.range === undefined && !current.range);
     if (touched.length > 0) {
       current.seq = Math.max(current.seq + 1, msg.at ?? 0);
       current.touched = { ids: touched, seq: current.seq };
       clearTimer(current, "touch");
-      current.touch = setTimeout(() => {
-        current.touch = null;
-        current.touched = null;
-        publishEntry(current);
-      }, AGENT_TOUCH_MS);
+      current.touch = unref(
+        setTimeout(() => {
+          current.touch = null;
+          current.touched = null;
+          publishEntry(current);
+        }, AGENT_TOUCH_MS),
+      );
     }
     if (current.highlight) {
-      current.collapse = setTimeout(() => {
-        current.collapse = null;
-        current.highlight = false;
-        publishEntry(current);
-      }, AGENT_HIGHLIGHT_MS);
+      current.collapse = unref(
+        setTimeout(() => {
+          current.collapse = null;
+          current.highlight = false;
+          publishEntry(current);
+        }, AGENT_HIGHLIGHT_MS),
+      );
     }
   }
 
   clearTimer(current, "linger");
-  current.linger = setTimeout(() => drop(current), AGENT_LINGER_MS);
-  current.renew ??= setInterval(() => publishEntry(current), AGENT_RENEW_MS);
+  current.linger = unref(setTimeout(() => drop(current), AGENT_LINGER_MS));
+  current.renew ??= unref(setInterval(() => publishEntry(current), AGENT_RENEW_MS));
 
   publishEntry(current);
 }
@@ -519,6 +553,11 @@ function track(hocuspocus: Hocuspocus, room: string, role: Live["role"], msg: Ag
 export function applyAgentAnnouncement(hocuspocus: Hocuspocus, msg: AgentAnnouncement) {
   if (msg.presenceRoom) track(hocuspocus, msg.presenceRoom, "presence", msg);
   if (msg.docRoom) track(hocuspocus, msg.docRoom, "doc", msg);
+}
+
+/** Send every agent in a room again, as newer, so a client that just (re)connected sees them now. */
+export function republishAgents(room: string): void {
+  for (const entry of live.values()) if (entry.room === room) publishEntry(entry);
 }
 
 /** Every machine applies announcements to the rooms it has open. */

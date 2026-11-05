@@ -18,7 +18,7 @@ import { prisma } from "~/lib/db.server";
 import { getCollabServer } from "./server";
 import { formDraftName } from "./roomName";
 import { agentAnnouncer, bodyTexts, changedTextRange } from "./agent-presence.server";
-import { maybeSnapshot, storeDocument } from "./persistence";
+import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import {
   BLOCKNOTE_FRAGMENT,
   blocksToFragment,
@@ -47,26 +47,42 @@ export async function replaceCollabDocContent(
       blocksToFragment(blocks, live.getXmlFragment(BLOCKNOTE_FRAGMENT));
       return changedTextRange(before, live);
     },
-    (range) => void announcer.then((announce) => announce({ action: "editing", docRoom: name, range })),
+    {
+      afterLiveChange: (range) =>
+        void announcer.then((announce) => announce({ action: "editing", docRoom: name, range })),
+    },
   );
+}
+
+export async function loadPersistedDoc(name: string, doc: Y.Doc): Promise<void> {
+  const row = await prisma.collabDocument.findUnique({
+    where: { name },
+    select: { state: true },
+  });
+  if (row) Y.applyUpdate(doc, new Uint8Array(row.state));
+  else await loadDocument(name, doc);
 }
 
 export async function transactCollabDoc<T>(
   name: string,
   authorId: string,
   mutate: (doc: Y.Doc) => T,
-  afterLiveChange?: (result: T) => void,
+  options: {
+    afterLiveChange?: (result: T) => void;
+    prepare?: (doc: Y.Doc) => Promise<void>;
+  } = {},
 ): Promise<T> {
   const server = getCollabServer();
   if (server) {
-    const conn = await server.hocuspocus.openDirectConnection(name);
+    const conn = await server.hocuspocus.openDirectConnection(name, { authorId });
     try {
+      if (options.prepare && conn.document) await options.prepare(conn.document);
       let outcome: { value: T } | undefined;
       const stored = conn.transact((live) => {
         outcome = { value: mutate(live) };
       });
       const applied = outcome as { value: T } | undefined;
-      if (applied) afterLiveChange?.(applied.value);
+      if (applied) options.afterLiveChange?.(applied.value);
       await stored;
       return applied!.value;
     } finally {
@@ -76,11 +92,8 @@ export async function transactCollabDoc<T>(
 
   const live = new Y.Doc();
   try {
-    const row = await prisma.collabDocument.findUnique({
-      where: { name },
-      select: { state: true },
-    });
-    if (row) Y.applyUpdate(live, new Uint8Array(row.state));
+    await loadPersistedDoc(name, live);
+    await options.prepare?.(live);
     let result!: T;
     live.transact(() => {
       result = mutate(live);

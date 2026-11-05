@@ -439,14 +439,23 @@ export async function forceSnapshot(
   try {
     const doc = conn.document;
     if (!doc) throw new Error("Document not found for this name");
-    const state = Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>;
-    const plainText = roomPlainText(name, doc);
-    await prisma.collabDocumentVersion.create({
-      data: { name, state, plainText, authorIds, label },
-    });
+    await saveVersion(name, doc, label, authorIds);
   } finally {
     await conn.disconnect();
   }
+}
+
+export async function saveVersion(
+  name: string,
+  doc: Y.Doc,
+  label: string,
+  authorIds: string[],
+): Promise<void> {
+  const state = Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>;
+  const plainText = roomPlainText(name, doc);
+  await prisma.collabDocumentVersion.create({
+    data: { name, state, plainText, authorIds, label },
+  });
 }
 
 /**

@@ -24,14 +24,33 @@ function inlineTypes(blocks: any[]): string[] {
   return blocks.flatMap((b) => (Array.isArray(b.content) ? b.content.map((c: any) => c.type) : []));
 }
 
+const MEMBER_QUERY = (ids: string[]) => ({
+  where: { id: { in: ids }, daliMember: { isNot: null }, handle: { not: null } },
+  select: { id: true, handle: true },
+});
+
 describe("parseMarkdown", () => {
-  it("keeps mentions whose ids exist", async () => {
-    db.user.findMany.mockResolvedValue([{ id: "u1" }]);
+  it("keeps mentions of lab members and pages that exist", async () => {
+    db.user.findMany.mockResolvedValue([{ id: "u1", handle: "tim" }]);
     db.page.findMany.mockResolvedValue([{ id: "p1" }]);
-    const { blocks, warnings } = await parseMarkdown("Hi [@Tim](/members/u1) see [Plan](/documents/p1)");
+    const { blocks, warnings } = await parseMarkdown("Hi [@tim](/members/u1) see [Plan](/documents/p1)");
     expect(inlineTypes(blocks)).toEqual(["text", "mention", "text", "pageMention"]);
     expect(warnings).toEqual([]);
-    expect(db.user.findMany).toHaveBeenCalledWith({ where: { id: { in: ["u1"] } }, select: { id: true } });
+    expect(db.user.findMany).toHaveBeenCalledWith(MEMBER_QUERY(["u1"]));
+  });
+
+  it("stores the member's handle as the mention label, like a web chip", async () => {
+    db.user.findMany.mockResolvedValue([{ id: "u1", handle: "tim" }]);
+    const { blocks } = await parseMarkdown("Hi [@Tim Tregubov](/members/u1)");
+    expect((blocks[0]!.content as any[])[1]).toEqual({ type: "mention", props: { id: "u1", label: "tim" } });
+  });
+
+  it("writes a non-member or unknown user as plain text and says so", async () => {
+    db.user.findMany.mockResolvedValue([]);
+    const { blocks, warnings } = await parseMarkdown("Hi [@Partner](/members/u7)");
+    expect(inlineTypes(blocks)).not.toContain("mention");
+    expect((blocks[0]!.content as any[]).map((c) => c.text).join("")).toBe("Hi @Partner");
+    expect(warnings).toEqual(['No member with id u7: "Partner" was written as plain text']);
   });
 
   it("writes unknown ids as plain text and says so", async () => {
@@ -56,8 +75,22 @@ describe("parseMarkdown", () => {
 
   it("checks task references", async () => {
     const { warnings } = await parseMarkdown("[Fix it](/projects/pr1?tab=progress&task=t1)");
-    expect(db.task.findMany).toHaveBeenCalledWith({ where: { id: { in: ["t1"] } }, select: { id: true } });
+    expect(db.task.findMany).toHaveBeenCalledWith({ where: { id: { in: ["t1"] } }, select: { id: true, projectId: true } });
     expect(warnings).toEqual(['No task with id t1: "Fix it" was written as plain text']);
+  });
+
+  it("keeps a task link whose project matches", async () => {
+    db.task.findMany.mockResolvedValue([{ id: "t1", projectId: "pr1" }]);
+    const { blocks, warnings } = await parseMarkdown("[Fix it](/projects/pr1?tab=progress&task=t1)");
+    expect(inlineTypes(blocks)).toEqual(["taskMention"]);
+    expect(warnings).toEqual([]);
+  });
+
+  it("writes a task link naming the wrong project as plain text", async () => {
+    db.task.findMany.mockResolvedValue([{ id: "t1", projectId: "pr2" }]);
+    const { blocks, warnings } = await parseMarkdown("[Fix it](/projects/pr1?tab=progress&task=t1)");
+    expect(inlineTypes(blocks)).toEqual(["text"]);
+    expect(warnings).toEqual(['Task t1 is not in the project its link names: "Fix it" was written as plain text']);
   });
 });
 
@@ -83,7 +116,7 @@ describe("checkInlineRefs", () => {
 
 describe("parseInlineMarkdown", () => {
   it("returns inline content for one line", async () => {
-    db.user.findMany.mockResolvedValue([{ id: "u1" }]);
+    db.user.findMany.mockResolvedValue([{ id: "u1", handle: "tim" }]);
     const { content } = await parseInlineMarkdown("Owner [@Tim](/members/u1)");
     expect(content.map((c) => c.type)).toEqual(["text", "mention"]);
   });
