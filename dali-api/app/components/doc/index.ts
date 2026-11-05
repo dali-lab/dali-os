@@ -38,7 +38,6 @@ export {
 export {
   renderEnhanceOps,
   citationHref,
-  appendTaskMentionContent,
   transcriptToggleBlock,
   enhanceSnapshotBlocks,
   noteBodyText,

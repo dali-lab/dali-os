@@ -173,10 +173,11 @@ export type ApplyEnhancePlanResult = {
   hiddenHeadings: number;
 };
 
-const ACTION_ITEMS_HEADING = "Action items";
+const TASKS_HEADING = "Tasks";
 
-function isActionItemsHeading(text: string): boolean {
-  return text.trim().toLowerCase().replace(/[:\s]+$/, "") === "action items";
+function isTasksHeading(text: string): boolean {
+  const name = text.trim().toLowerCase().replace(/[:\s]+$/, "");
+  return name === "tasks" || name === "action items";
 }
 
 function isHeading(block: SnapshotBlock): boolean {
@@ -202,6 +203,27 @@ function sectionEnd(blocks: SnapshotBlock[], start: number): number {
     if (isHeading(blocks[i]!)) return i;
   }
   return blocks.length;
+}
+
+/** The live suggestion line for each action item (index-aligned, null when
+ *  none): a paragraph or checklist block under a Tasks or Action items heading
+ *  whose text matches the item. A block belongs to at most one item. */
+export function findSuggestionLines(blocks: readonly SnapshotBlock[], items: readonly EnhanceActionItem[]): (SnapshotBlock | null)[] {
+  const candidates: SnapshotBlock[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    if (!isHeading(blocks[i]!) || !isTasksHeading(blocks[i]!.text)) continue;
+    const end = sectionEnd(blocks as SnapshotBlock[], i);
+    for (let j = i + 1; j < end; j++) {
+      const b = blocks[j]!;
+      if (b.type === "paragraph" || b.type === "checkListItem") candidates.push(b);
+    }
+  }
+  const used = new Set<string>();
+  return items.map((item) => {
+    const hit = candidates.find((b) => !used.has(b.id) && actionItemMatchesBlock(item.text, b.text));
+    if (hit) used.add(hit.id);
+    return hit ?? null;
+  });
 }
 
 /**
@@ -286,7 +308,7 @@ export function applyEnhancePlan(
     }
 
     // op === "insert"
-    if (blockOp.type === "checkListItem" || (blockOp.type === "heading" && isActionItemsHeading(blockOp.text))) {
+    if (blockOp.type === "checkListItem" || (blockOp.type === "heading" && isTasksHeading(blockOp.text))) {
       continue;
     }
     const newBlock: EnhanceOpBlock = {
@@ -304,21 +326,23 @@ export function applyEnhancePlan(
     addInsert({ afterId }, [newBlock]);
   }
 
+  const suggested = findSuggestionLines(current, plan.actionItems);
+  const taskLabels = current.filter((b) => b.type === "task");
   const newItems = plan.actionItems.filter(
-    (item) => !current.some((b) => b.type === "checkListItem" && actionItemMatchesBlock(item.text, b.text)),
+    (item, i) => !item.taskId && !suggested[i] && !taskLabels.some((b) => actionItemMatchesBlock(item.text, b.text)),
   );
   if (newItems.length > 0) {
     const items: EnhanceOpBlock[] = newItems.map((item) => ({
-      type: "checkListItem",
+      type: "paragraph",
       text: item.text,
       cites: item.cites ?? [],
       added: true,
     }));
-    const headingIndex = topLevel.findIndex((b) => isHeading(b) && isActionItemsHeading(b.text));
+    const headingIndex = topLevel.findIndex((b) => isHeading(b) && isTasksHeading(b.text));
     if (headingIndex >= 0) {
       addInsert({ afterId: topLevel[sectionEnd(topLevel, headingIndex) - 1]!.id }, items);
     } else {
-      const heading: EnhanceOpBlock = { type: "heading", text: ACTION_ITEMS_HEADING, cites: [], added: true };
+      const heading: EnhanceOpBlock = { type: "heading", text: TASKS_HEADING, cites: [], added: true };
       ops.push({ kind: "appendAtEnd", blocks: [heading, ...items] });
     }
   }
