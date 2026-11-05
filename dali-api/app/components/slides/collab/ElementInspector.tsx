@@ -28,6 +28,8 @@ import { cn } from "~/lib/cn";
 import type { SnapPrefs } from "./snap-prefs";
 import type { ReorderDirection } from "~/components/slides/deck/freeform-ops";
 import { useState } from "react";
+import type { ChartSpec } from "~/components/slides/deck/content";
+import { ContentSection } from "./ContentInspector";
 
 export interface InspectorFreeform {
   onPlace: (id: string, placed: Placed) => void;
@@ -40,6 +42,9 @@ export interface InspectorFreeform {
   onReorder: (dir: ReorderDirection) => void;
   onSnapBack: (id: string) => void;
   onFill: (fill: FillId) => void;
+  onChart?: (id: string, chart: ChartSpec) => void;
+  onIcon?: (id: string, name: string) => void;
+  onVideo?: (id: string, url: string) => boolean;
   onDeselect: () => void;
   prefs: SnapPrefs;
   onPrefs: (patch: Partial<SnapPrefs>) => void;
@@ -73,7 +78,7 @@ export function AlignRow({ onAlign, disabled = false }: { onAlign: (mode: AlignM
   );
 }
 
-export const KIND_LABELS: Record<string, string> = { text: "Text", image: "Image", shape: "Shape", group: "Group" };
+export const KIND_LABELS: Record<string, string> = { text: "Text", image: "Image", shape: "Shape", group: "Group", chart: "Chart", icon: "Icon", video: "Video" };
 
 /** What the element tab is called: the kind of the one selected item, or a count. */
 export function elementTabLabel(slide: RenderSlide | null, selection: string[]): string {
@@ -86,7 +91,7 @@ export function elementTabLabel(slide: RenderSlide | null, selection: string[]):
 function selectionNoun(slide: RenderSlide, ids: string[]): string {
   const els = ids.map((id) => slide.elements.find((e) => e.id === id)).filter((e): e is RenderElement => Boolean(e));
   const kinds = new Set(els.map((e) => e.kind));
-  const noun = kinds.size === 1 ? { text: "text boxes", image: "images", shape: "shapes", group: "groups" }[els[0].kind] ?? "items" : "items";
+  const noun = kinds.size === 1 ? { text: "text boxes", image: "images", shape: "shapes", group: "groups", chart: "charts", icon: "icons", video: "videos" }[els[0].kind] ?? "items" : "items";
   return `${ids.length} ${noun}`;
 }
 
@@ -253,7 +258,8 @@ export function ElementView({ slide, themeId, selection, editable, freeform }: {
         <AlignRow disabled={!editable} onAlign={(mode) => freeform.onAlign(mode, "slide")} />
       </Section>
       <OrderButtons freeform={freeform} />
-      {el.kind === "shape" && <FillSwatches value={el.fill ?? "accent"} themeId={themeId} onPick={freeform.onFill} />}
+      <ContentSection element={el} editable={editable} freeform={freeform} />
+      {(el.kind === "shape" || el.kind === "icon") && <FillSwatches value={el.fill ?? "accent"} themeId={themeId} onPick={freeform.onFill} />}
       <SnapToggles prefs={freeform.prefs} onPrefs={freeform.onPrefs} />
       {editable && (
         <div className="flex flex-wrap gap-2">

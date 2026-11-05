@@ -1,6 +1,8 @@
 import * as Y from "yjs";
 import { writeBlocks } from "~/components/slides/pptx/fragment-write";
 import type { ClipItem } from "./clipboard";
+import { cleanChart, cleanIcon, cleanVideoUrl, DEFAULT_CHART_DATA, type ChartSpec, type ChartType } from "./content";
+import type { ImportBlock } from "~/components/slides/pptx/import-types";
 import { cloneValue, DECK_CREATE, DECK_LOCAL, newId } from "./deck-ops";
 import { expandToLeaves, FREE_DEFAULTS, MIN_SIZE, LINE_MIN_SIZE, placementOf, type Placed } from "./freeform";
 import { alignDeltas, boundsOf, distributeDeltas, rotatedBounds, SLIDE_RECT, type AlignMode, type Axis, type Rect } from "./geometry";
@@ -97,6 +99,91 @@ export function addShape(doc: Y.Doc, slideId: string, shape: ShapeKind, at?: Poi
     elementsOf(slide).set(id, el);
   }, DECK_LOCAL);
   return id;
+}
+
+function addTextWith(doc: Y.Doc, slideId: string, size: { w: number; h: number }, blocks: ImportBlock[], at?: Point, style?: TextStyleId): string | null {
+  const slide = slideOf(doc, slideId);
+  if (!slide) return null;
+  const id = newId();
+  doc.transact(() => {
+    const el = newElementMap(id, "text", topZ(slide), style ? { textStyle: style } : {});
+    writePlacement(el, centeredAt(size, at));
+    elementsOf(slide).set(id, el);
+    const fragment = new Y.XmlFragment();
+    textOf(slide).set(id, fragment);
+    writeBlocks(fragment, blocks);
+  }, DECK_CREATE);
+  return id;
+}
+
+export const TABLE_DEFAULT = { rows: 3, cols: 3 };
+
+export function addTable(doc: Y.Doc, slideId: string, at?: Point, rows = TABLE_DEFAULT.rows, cols = TABLE_DEFAULT.cols): string | null {
+  const r = Math.min(Math.max(1, Math.floor(rows)), 50);
+  const c = Math.min(Math.max(1, Math.floor(cols)), 20);
+  const table = { header: true, rows: Array.from({ length: r }, () => Array.from({ length: c }, () => [])) };
+  const size = { w: FREE_DEFAULTS.table.w, h: Math.max(120, r * 100) };
+  return addTextWith(doc, slideId, size, [{ type: "table", content: [], children: [], table }], at);
+}
+
+export function addCodeBlock(doc: Y.Doc, slideId: string, at?: Point): string | null {
+  return addTextWith(doc, slideId, FREE_DEFAULTS.code, [{ type: "codeBlock", content: [], children: [], language: "text" }], at);
+}
+
+export function addEmoji(doc: Y.Doc, slideId: string, emoji: string, at?: Point): string | null {
+  const glyph = emoji.trim();
+  if (!glyph || glyph.length > 32) return null;
+  return addTextWith(doc, slideId, FREE_DEFAULTS.emoji, [{ type: "paragraph", content: [{ type: "text", text: glyph, styles: {} }], children: [] }], at, "title");
+}
+
+function addContent(doc: Y.Doc, slideId: string, kind: "chart" | "icon" | "video", size: { w: number; h: number }, fields: Record<string, unknown>, at?: Point): string | null {
+  const slide = slideOf(doc, slideId);
+  if (!slide) return null;
+  const id = newId();
+  doc.transact(() => {
+    const el = newElementMap(id, kind, topZ(slide), fields);
+    writePlacement(el, centeredAt(size, at));
+    elementsOf(slide).set(id, el);
+  }, DECK_LOCAL);
+  return id;
+}
+
+export function addChart(doc: Y.Doc, slideId: string, type: ChartType = "bar", at?: Point): string | null {
+  return addContent(doc, slideId, "chart", FREE_DEFAULTS.chart, { chart: { type, data: DEFAULT_CHART_DATA } }, at);
+}
+
+export function addIcon(doc: Y.Doc, slideId: string, name: string, at?: Point, fill: FillId = "accent"): string | null {
+  const icon = cleanIcon(name);
+  return icon ? addContent(doc, slideId, "icon", FREE_DEFAULTS.icon, { icon, fill }, at) : null;
+}
+
+export function addVideo(doc: Y.Doc, slideId: string, url: string, at?: Point): string | null {
+  const videoUrl = cleanVideoUrl(url);
+  return videoUrl ? addContent(doc, slideId, "video", FREE_DEFAULTS.video, { videoUrl }, at) : null;
+}
+
+function setOnKind(doc: Y.Doc, slideId: string, id: string, kind: string, write: (el: ElementMap) => void): void {
+  const slide = slideOf(doc, slideId);
+  const el = slide && elementsOf(slide).get(id);
+  if (!el || isDeleted(el) || el.get("kind") !== kind) return;
+  doc.transact(() => write(el), DECK_LOCAL);
+}
+
+export function setChart(doc: Y.Doc, slideId: string, id: string, chart: ChartSpec): void {
+  const clean = cleanChart(chart);
+  if (clean) setOnKind(doc, slideId, id, "chart", (el) => el.set("chart", clean));
+}
+
+export function setIconName(doc: Y.Doc, slideId: string, id: string, name: string): void {
+  const icon = cleanIcon(name);
+  if (icon) setOnKind(doc, slideId, id, "icon", (el) => el.set("icon", icon));
+}
+
+export function setVideoUrl(doc: Y.Doc, slideId: string, id: string, url: string): boolean {
+  const videoUrl = cleanVideoUrl(url);
+  if (!videoUrl) return false;
+  setOnKind(doc, slideId, id, "video", (el) => el.set("videoUrl", videoUrl));
+  return true;
 }
 
 /** Writes geometry for elements. A slot element that gets geometry is detached from its slot's place. */
@@ -273,7 +360,7 @@ export function setFill(doc: Y.Doc, slideId: string, ids: string[], fill: FillId
   doc.transact(() => {
     for (const id of expandToLeaves(view(slideId, slide), ids)) {
       const el = elementsOf(slide).get(id);
-      if (el && el.get("kind") === "shape") el.set("fill", fill);
+      if (el && (el.get("kind") === "shape" || el.get("kind") === "icon")) el.set("fill", fill);
     }
   }, DECK_LOCAL);
 }
@@ -349,6 +436,9 @@ export function pasteItems(doc: Y.Doc, slideId: string, items: ClipItem[], offse
       if (item.kind === "image") Object.assign(fields, { src: item.src ?? "", alt: item.alt ?? "" });
       if (item.kind === "shape") Object.assign(fields, { shape: item.shape ?? "rect", fill: item.fill ?? "accent" });
       if (item.kind === "text" && item.textStyle) fields.textStyle = item.textStyle;
+      if (item.kind === "chart" && item.chart) fields.chart = item.chart;
+      if (item.kind === "icon" && item.icon) Object.assign(fields, { icon: item.icon, fill: item.fill ?? "accent" });
+      if (item.kind === "video" && item.videoUrl) fields.videoUrl = item.videoUrl;
       const el = newElementMap(id, item.kind, z++, fields);
       writePlacement(el, { ...item.placed, x: item.placed.x + offset, y: item.placed.y + offset });
       elementsOf(slide).set(id, el);

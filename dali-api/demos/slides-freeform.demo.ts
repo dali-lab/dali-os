@@ -23,13 +23,14 @@ test('Place and arrange items anywhere on a slide', async ({ page, stage, loginA
   const box = (await layer.boundingBox())!;
   const at = (fx: number, fy: number) => ({ x: box.x + box.width * fx, y: box.y + box.height * fy });
 
-  await stage.click(page.getByRole('button', { name: 'Text box' }));
+  await stage.click(page.getByRole('button', { name: 'Insert' }));
+  await stage.click(page.getByRole('menuitem', { name: 'Text box' }));
   const text = at(0.3, 0.3);
   await page.mouse.click(text.x, text.y);
   await page.keyboard.type('Launch plan', { delay: 70 });
   await page.keyboard.press('Escape');
 
-  await stage.click(page.getByRole('button', { name: 'Shape' }));
+  await stage.click(page.getByRole('button', { name: 'Insert' }));
   await stage.click(page.getByRole('menuitem', { name: 'Ellipse' }));
   const shape = at(0.7, 0.55);
   await page.mouse.click(shape.x, shape.y);

@@ -238,3 +238,32 @@ describe("mapPresentation free items", () => {
 });
 
 type ImportBlockLike = Parameters<typeof blocksText>[0][number];
+
+describe("mapPresentation tables", () => {
+  const cell = (text: string, fontBold = false) => ({ text, fontBold, vAlign: "top", borders: {} });
+  const table = (data: unknown[][], box: Record<string, unknown> = {}) =>
+    ({ type: "table", id: "tbl", left: 100, top: 150, width: 600, height: 200, order: 3, data, borders: {}, rowHeights: [], colWidths: [], ...box }) as unknown as Element;
+
+  it("brings a table in as a free text box holding a table block, with a header row when the first row is bold", () => {
+    const plan = map([slide([table([[cell("Name", true), cell("Role", true)], [cell("Ada"), cell("Lead")]])])]);
+    expect(plan.skipped).toEqual({});
+    const free = plan.slides[0].free!;
+    expect(free).toHaveLength(1);
+    expect(free[0]).toMatchObject({ kind: "text", placed: { x: 200, y: 300, w: 1200, h: 400 } });
+    const block = (free[0] as { blocks: Array<{ type: string; table: { header: boolean; rows: Array<Array<Array<{ text: string }>>> } }> }).blocks[0];
+    expect(block.type).toBe("table");
+    expect(block.table.header).toBe(true);
+    expect(block.table.rows.map((r) => r.map((c) => c[0]?.text))).toEqual([["Name", "Role"], ["Ada", "Lead"]]);
+  });
+
+  it("pads ragged rows and treats a table without a bold first row as headerless", () => {
+    const plan = map([slide([table([[cell("a")], [cell("b"), cell("c")]])])]);
+    const block = (plan.slides[0].free![0] as { blocks: Array<{ table: { header: boolean; rows: unknown[][] } }> }).blocks[0];
+    expect(block.table.header).toBe(false);
+    expect(block.table.rows.map((r) => r.length)).toEqual([2, 2]);
+  });
+
+  it("still counts a table with no cells as skipped", () => {
+    expect(map([slide([table([])])]).skipped).toEqual({ table: 1 });
+  });
+});

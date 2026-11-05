@@ -3,7 +3,7 @@ import "~/components/doc/theme.css";
 import "./slide-editor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
-import { MessageSquare } from "lucide-react";
+import { Keyboard, MessageSquare, Search } from "lucide-react";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
@@ -56,6 +56,11 @@ import { anchorElementId, anchorSlideId, threadCountsBySlide, type SlideThread }
 import type { SlotCollab } from "./SlotEditor";
 import type { SlidesEditorProps } from "./SlidesEditor";
 import { useFreeformEditor } from "./useFreeformEditor";
+import { useInsertItems } from "./useInsertItems";
+import { FindBar } from "./FindBar";
+import { ShortcutsSheet } from "./ShortcutsSheet";
+import { shortcutFor } from "./shortcuts";
+import { useDeckFind } from "./useDeckFind";
 import { useDeckDoc, useDeckSnapshot, useDeckSync, useSlidePresence, useUndoState } from "./useDeckDoc";
 
 function naturalSize(src: string): Promise<{ width: number; height: number } | null> {
@@ -196,15 +201,16 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   const undo = () => deck?.undo.manager.undo();
   const redo = () => deck?.undo.manager.redo();
 
+  const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
     if (!editable) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target?.closest("[contenteditable='true'], input, textarea")) return;
-      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
-      const k = e.key.toLowerCase();
-      if (k === "z") (e.preventDefault(), e.shiftKey ? redo() : undo());
-      else if (k === "y") (e.preventDefault(), redo());
+      const id = shortcutFor(e);
+      if (id === "undo") (e.preventDefault(), undo());
+      else if (id === "redo") (e.preventDefault(), redo());
+      else if (id === "help") (e.preventDefault(), setHelpOpen(true));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -242,6 +248,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     }
     openPicker({ type: "slot" });
   };
+  const { insertItem, pickers } = useInsertItems({ insert: freeform.insert, arm: freeform.arm, pickImage: () => openPicker({ type: "free" }) });
   const upload = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   const onFile = async (file: File | undefined) => {
     if (!file || !deck || !current) return;
@@ -271,6 +278,26 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     if (pending) void importPrepared(pending.slides, pending.skipped);
   }, [deck, synced, editable, pageId, importPrepared]);
 
+  const pendingReveal = useRef<{ slideId: string; key: string | null } | null>(null);
+  const find = useDeckFind({
+    deck,
+    snap,
+    editable,
+    onReveal: (slideId, key) => {
+      if (slideId === current?.id) freeform.setSelection(key ? [key] : []);
+      else {
+        pendingReveal.current = { slideId, key };
+        select(slideId);
+      }
+    },
+  });
+  useEffect(() => {
+    const pending = pendingReveal.current;
+    if (!pending || current?.id !== pending.slideId) return;
+    pendingReveal.current = null;
+    freeform.setSelection(pending.key ? [pending.key] : []);
+  }, [current?.id, freeform.setSelection]);
+
   const pageBar = (
     <>
       <PageBarTitle
@@ -292,6 +319,12 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
         <PageBarMenuItems>
           <Menu.Item icon={<Upload className="h-3.5 w-3.5" />} disabled={pptx.busy} onSelect={pptx.pick}>
             Import slides
+          </Menu.Item>
+          <Menu.Item icon={<Search className="h-3.5 w-3.5" />} onSelect={() => find.show()}>
+            Find and replace
+          </Menu.Item>
+          <Menu.Item icon={<Keyboard className="h-3.5 w-3.5" />} onSelect={() => setHelpOpen(true)}>
+            Keyboard shortcuts
           </Menu.Item>
         </PageBarMenuItems>
       )}
@@ -358,7 +391,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-os-card bg-os-card">
       {pageBar}
-      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onImage={() => openPicker({ type: "free" })} armed={freeform.armed} onArm={freeform.arm} />
+      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onInsert={insertItem} armed={freeform.armed} />
       <div className="flex min-h-0 flex-1">
         <Filmstrip
           slides={snap.slides}
@@ -374,7 +407,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           onDelete={remove}
           onMove={(id, index) => moveSlide(deck.doc, id, index)}
         />
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-w-0 flex-1 flex-col">
+          {find.open && <FindBar find={find} />}
           <div className="flex min-h-0 flex-1 flex-col p-4">
             {current && slotCollab ? (
               <SlideStage
@@ -417,6 +451,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
         />
         {commentsPanel}
       </div>
+      {pickers}
+      <ShortcutsSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
       <input {...pptx.inputProps} />
       <input ref={fileRef} type="file" accept={IMAGE_UPLOAD_ACCEPT} hidden onChange={(e) => (onFile(e.target.files?.[0]), (e.target.value = ""))} />
     </div>

@@ -92,8 +92,8 @@ export function buildSchema(features: Features = {}) {
     delete blocks.file;
     delete blocks.video;
   }
+  if (!features.richBlocks && !features.tables) delete blocks.table;
   if (!features.richBlocks) {
-    delete blocks.table;
     delete blocks.toggleListItem;
     delete blocks.callout;
     delete blocks.embed;

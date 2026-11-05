@@ -17,6 +17,7 @@ import {
   type SlideMap,
 } from "./model";
 import { buildOf } from "./builds";
+import { contentFields, type ChartSpec } from "./content";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
 
 export interface RenderElement {
@@ -41,6 +42,9 @@ export interface RenderElement {
   fill?: FillId;
   children?: string[];
   parentId?: string;
+  chart?: ChartSpec;
+  icon?: string;
+  videoUrl?: string;
 }
 
 export interface RenderSlide {
@@ -104,6 +108,7 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
       ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
       ...geometryFields((k) => el.get(k)),
       ...shapeFields((k) => el.get(k)),
+      ...contentFields((k) => el.get(k)),
     });
   });
   elements.sort(compareZ);

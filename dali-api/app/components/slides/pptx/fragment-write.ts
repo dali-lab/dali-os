@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import type { ImportBlock, ImportInline } from "./import-types";
+import type { ImportBlock, ImportInline, ImportTable } from "./import-types";
 
 const BASE_ATTRS = { backgroundColor: "default", textColor: "default", textAlignment: "left" } as const;
 
@@ -20,12 +20,39 @@ function textNodes(content: ImportInline[], inherited: Record<string, unknown> =
   return out;
 }
 
+function tableOf(table: ImportTable): Y.XmlElement {
+  const node = new Y.XmlElement("table");
+  node.setAttribute("textColor", "default");
+  node.insert(
+    0,
+    table.rows.map((cells, r) => {
+      const row = new Y.XmlElement("tableRow");
+      row.insert(
+        0,
+        cells.map((inlines) => {
+          const cell = new Y.XmlElement(table.header && r === 0 ? "tableHeader" : "tableCell");
+          cell.setAttribute("colspan", 1 as never);
+          cell.setAttribute("rowspan", 1 as never);
+          const paragraph = new Y.XmlElement("tableParagraph");
+          const nodes = textNodes(inlines);
+          if (nodes.length) paragraph.insert(0, nodes);
+          cell.insert(0, [paragraph]);
+          return cell;
+        }),
+      );
+      return row;
+    }),
+  );
+  return node;
+}
+
 function containerOf(block: ImportBlock): Y.XmlElement {
   const container = new Y.XmlElement("blockContainer");
   container.setAttribute("id", crypto.randomUUID());
-  const content = new Y.XmlElement(block.type);
-  for (const [k, v] of Object.entries(BASE_ATTRS)) content.setAttribute(k, v);
-  const nodes = textNodes(block.content);
+  const content = block.type === "table" && block.table ? tableOf(block.table) : new Y.XmlElement(block.type === "table" ? "paragraph" : block.type);
+  if (block.type !== "table") for (const [k, v] of Object.entries(BASE_ATTRS)) content.setAttribute(k, v);
+  if (block.type === "codeBlock") content.setAttribute("language", block.language || "text");
+  const nodes = block.type === "table" ? [] : textNodes(block.content);
   if (nodes.length) content.insert(0, nodes);
   const parts: Y.XmlElement[] = [content];
   if (block.children.length > 0) parts.push(groupOf(block.children));

@@ -253,28 +253,35 @@ describe("Inspector multi-select", () => {
 });
 
 describe("EditorToolbar insert tools", () => {
-  const props = { canUndo: false, canRedo: false, onUndo: noop, onRedo: noop, onAdd: noop, onImage: noop };
+  const props = { canUndo: false, canRedo: false, onUndo: noop, onRedo: noop, onAdd: noop };
+  const open = (el: HTMLElement) => click([...el.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Insert")!);
+  const items = () => [...document.querySelectorAll("[role=menuitem]")].map((n) => n.textContent?.trim());
 
-  it("arms and disarms the text box tool", () => {
-    const onArm = vi.fn();
-    const el = render(createElement(EditorToolbar, { ...props, onArm, armed: null }));
-    const button = [...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Text box"))!;
-    expect(button.getAttribute("aria-pressed")).toBe("false");
-    click(button);
-    expect(onArm).toHaveBeenCalledWith({ type: "text" });
-    const armed = render(createElement(EditorToolbar, { ...props, onArm, armed: { type: "text" } }));
-    const pressed = [...armed.querySelectorAll("button")].find((b) => b.textContent?.includes("Text box"))!;
-    expect(pressed.getAttribute("aria-pressed")).toBe("true");
-    click(pressed);
-    expect(onArm).toHaveBeenLastCalledWith(null);
+  it("has one Insert menu holding every kind of element", () => {
+    const el = render(createElement(EditorToolbar, { ...props, onInsert: vi.fn() }));
+    expect([...el.querySelectorAll("button")].filter((b) => b.textContent?.trim() === "Insert")).toHaveLength(1);
+    expect([...el.querySelectorAll("button")].some((b) => ["Text box", "Shape", "Image"].includes(b.textContent?.trim() ?? ""))).toBe(false);
+    open(el);
+    expect(items()).toEqual([
+      "Text box", "Image", "Video", "Table", "Bar chart", "Line chart", "Pie chart", "Code block", "Icon", "Emoji",
+      "Rectangle", "Rounded rectangle", "Ellipse", "Line", "Arrow",
+    ]);
   });
 
-  it("has a shape menu and an image button", () => {
-    const onImage = vi.fn();
-    const el = render(createElement(EditorToolbar, { ...props, onArm: noop, armed: null, onImage }));
-    expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes("Shape"))).toBe(true);
-    click([...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Image"))!);
-    expect(onImage).toHaveBeenCalled();
+  it("reports what was chosen", () => {
+    const onInsert = vi.fn();
+    const el = render(createElement(EditorToolbar, { ...props, onInsert }));
+    open(el);
+    click([...document.querySelectorAll("[role=menuitem]")].find((n) => n.textContent?.trim() === "Ellipse")!);
+    expect(onInsert).toHaveBeenLastCalledWith({ type: "shape", shape: "ellipse" });
+    open(el);
+    click([...document.querySelectorAll("[role=menuitem]")].find((n) => n.textContent?.trim() === "Line chart")!);
+    expect(onInsert).toHaveBeenLastCalledWith({ type: "chart", chart: "line" });
+  });
+
+  it("shows the Insert button pressed while a tool is armed", () => {
+    const el = render(createElement(EditorToolbar, { ...props, onInsert: noop, armed: { type: "text" } }));
+    expect([...el.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Insert")!.getAttribute("aria-pressed")).toBe("true");
   });
 });
 

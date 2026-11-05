@@ -41,8 +41,9 @@ describe("serializeSelection", () => {
   });
 
   it("flattens rich blocks to the supported subset", () => {
-    const blocks = importBlocksOf([{ type: "checkListItem", content: [{ type: "text", text: "a", styles: { bold: true, code: true } }], children: [] }, { type: "codeBlock", content: [], children: [] }]);
-    expect(blocks.map((b) => b.type)).toEqual(["bulletListItem", "paragraph"]);
+    const blocks = importBlocksOf([{ type: "checkListItem", content: [{ type: "text", text: "a", styles: { bold: true, code: true } }], children: [] }, { type: "callout", content: [], children: [] }, { type: "codeBlock", content: [], props: { language: "ts" }, children: [] }]);
+    expect(blocks.map((b) => b.type)).toEqual(["bulletListItem", "paragraph", "codeBlock"]);
+    expect(blocks[2].language).toBe("ts");
     expect(blocks[0].content).toEqual([{ type: "text", text: "a", styles: { bold: true } }]);
   });
 });

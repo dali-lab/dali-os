@@ -10,11 +10,13 @@ type Styles = { bold?: boolean; italic?: boolean; underline?: boolean; strike?: 
 type Inline =
   | { type: "text"; text: string; styles?: Styles }
   | { type: "link"; href: string; content?: Inline[] | string };
+type TableCell = Inline[] | { content?: Inline[] | string };
+type TableData = { headerRows?: number; rows?: Array<{ cells?: TableCell[] }> };
 type Block = {
   id?: string;
   type?: string;
   props?: Record<string, unknown>;
-  content?: Inline[] | string;
+  content?: Inline[] | string | TableData;
   children?: Block[];
 };
 
@@ -66,7 +68,7 @@ const THEMED_LOOK: Look = {
   quote: "border-l-[6px] pl-[0.8em]",
   quoteStyle: { borderColor: "var(--slide-accent)", color: "var(--slide-muted)" },
   pre: "overflow-hidden rounded-xl px-[0.8em] py-[0.6em] font-mono text-[0.8em] leading-relaxed",
-  preStyle: { background: "var(--slide-surface)" },
+  preStyle: { background: "var(--slide-surface)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
   image: "max-w-full rounded-xl",
   rule: "",
   ruleStyle: { borderColor: "var(--slide-rule)" },
@@ -86,11 +88,11 @@ function renderText(item: { text: string; styles?: Styles }, key: number, look: 
   return <Fragment key={key}>{node}</Fragment>;
 }
 
-function renderInline(content: Block["content"], look: Look): ReactNode {
+function renderInline(content: Block["content"] | Inline[], look: Look): ReactNode {
   if (content == null) return null;
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return null;
-  return content.map((item, i) => {
+  return (content as Inline[]).map((item, i) => {
     if (item?.type === "text") return renderText(item, i, look);
     if (item?.type === "link") {
       const inner = typeof item.content === "string" ? item.content : (item.content ?? []).map((t, j) => (t.type === "text" ? renderText(t, j, look) : null));
@@ -107,7 +109,47 @@ function renderInline(content: Block["content"], look: Look): ReactNode {
 function plainText(content: Block["content"]): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
-  return content.map((c) => (c.type === "text" ? c.text : plainText(c.content as Block["content"]))).join("");
+  return (content as Inline[]).map((c) => (c.type === "text" ? c.text : plainText(c.content as Block["content"]))).join("");
+}
+
+const cellInline = (cell: TableCell): Inline[] | string | undefined => (Array.isArray(cell) ? cell : cell?.content);
+
+export const TABLE_CELL_BORDER = "var(--slide-rule)";
+
+function renderTable(block: Block, key: string, look: Look): ReactNode {
+  const data = block.content as TableData;
+  const rows = Array.isArray(data?.rows) ? data.rows : [];
+  if (rows.length === 0) return null;
+  const headerRows = data.headerRows ?? 0;
+  return (
+    <table key={key} data-slide-table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: "0.8em" }}>
+      <tbody>
+        {rows.map((row, r) => (
+          <tr key={r}>
+            {(row.cells ?? []).map((cell, c) => {
+              const header = r < headerRows;
+              const Tag = header ? "th" : "td";
+              return (
+                <Tag
+                  key={c}
+                  style={{
+                    border: `${look === LEGACY_LOOK ? "1px" : "calc(3 * var(--slide-u))"} solid ${TABLE_CELL_BORDER}`,
+                    padding: "0.35em 0.6em",
+                    textAlign: "left",
+                    verticalAlign: "top",
+                    fontWeight: header ? 700 : "inherit",
+                    background: header ? "var(--slide-surface)" : "transparent",
+                  }}
+                >
+                  {renderInline(cellInline(cell) as Block["content"], look)}
+                </Tag>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 function renderItem(block: Block, key: string, look: Look): ReactNode {
@@ -160,6 +202,8 @@ function renderBlock(block: Block, key: string, look: Look): ReactNode {
           <code>{plainText(block.content)}</code>
         </pre>
       );
+    case "table":
+      return renderTable(block, key, look);
     case "image": {
       const url = typeof block.props?.url === "string" ? block.props.url : "";
       if (!url) return null;

@@ -5,10 +5,12 @@ import { cn } from "~/lib/cn";
 import { isVisibleAt, visibleBlocks } from "./builds";
 import { explicitPlacement, isFreeRendered, type Placed } from "./freeform";
 import { layoutById, SLOT_Z, STAGE_H, STAGE_W, type LayoutSlot } from "./layouts";
-import type { FillId } from "./model";
 import { placedStyle, rectStyle, u } from "./units";
 import type { RenderElement, RenderSlide } from "./snapshot";
+import { ChartBox, IconBox, VideoBox, fillVar } from "./content-render";
 import { textStyleCss, themeById, themeVars, type TextStyleId, type ThemeDef } from "./themes";
+
+export { fillVar };
 
 export interface SlotContext {
   slot: LayoutSlot;
@@ -110,16 +112,6 @@ function ImageBox({ placed, element, placeholders, label, dataKey }: { placed: P
   );
 }
 
-const FILL_VAR: Record<FillId, string> = {
-  accent: "var(--slide-accent)",
-  fg: "var(--slide-fg)",
-  muted: "var(--slide-muted)",
-  surface: "var(--slide-surface)",
-  rule: "var(--slide-rule)",
-};
-
-export const fillVar = (fill: FillId | undefined): string => FILL_VAR[fill ?? "accent"];
-
 function ShapeBox({ placed, element }: { placed: Placed; element: RenderElement }) {
   const shape = element.shape ?? "rect";
   const color = fillVar(element.fill);
@@ -143,7 +135,7 @@ function ShapeBox({ placed, element }: { placed: Placed; element: RenderElement 
   return <div {...dataKey} style={{ ...placedStyle(placed), background: color, borderRadius: radius }} />;
 }
 
-function FreeBox({ element, placed, placeholders }: { element: RenderElement; placed: Placed; placeholders: boolean }) {
+function FreeBox({ element, placed, placeholders, theme }: { element: RenderElement; placed: Placed; placeholders: boolean; theme: ThemeDef }) {
   const dataKey = { "data-element": element.id };
   if (element.kind === "text") {
     return (
@@ -161,6 +153,9 @@ function FreeBox({ element, placed, placeholders }: { element: RenderElement; pl
   }
   if (element.kind === "image") return <ImageBox placed={placed} element={element} placeholders={placeholders} label="Add an image" dataKey={dataKey} />;
   if (element.kind === "shape") return <ShapeBox placed={placed} element={element} />;
+  if (element.kind === "chart") return <ChartBox placed={placed} element={element} theme={theme} />;
+  if (element.kind === "icon") return <IconBox placed={placed} element={element} />;
+  if (element.kind === "video") return <VideoBox placed={placed} element={element} />;
   return null;
 }
 
@@ -231,7 +226,7 @@ export function SlideRender({ slide, theme, placeholders = false, renderSlot, re
       >
         {items.map((item) => {
           if (item.kind === "free") {
-            const fallback = <FreeBox element={item.element} placed={item.placed} placeholders={placeholders} />;
+            const fallback = <FreeBox element={item.element} placed={item.placed} placeholders={placeholders} theme={def} />;
             return <Fragment key={item.element.id}>{renderFree ? renderFree({ element: item.element, placed: item.placed, fallback }) : fallback}</Fragment>;
           }
           const { slot, element: found } = item;

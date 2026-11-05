@@ -3,6 +3,7 @@ import { requireAuth, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { deckAccess, readDeckModel } from "~/lib/slide-decks.server";
 import { buildDeckPptx } from "~/components/slides/pptx/export.server";
+import { renderSvgToPng } from "~/lib/pdf/render.server";
 import { createImageLoader } from "~/components/slides/pptx/export-images.server";
 
 const PPTX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -24,6 +25,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const built = await buildDeckPptx(read, {
     title: access.page.title,
     loadImage: createImageLoader(),
+    rasterize: renderSvgToPng,
     origin: new URL(request.url).origin,
   });
   await logAuditEvent({

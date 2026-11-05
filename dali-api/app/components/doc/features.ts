@@ -15,6 +15,8 @@ export interface Features {
   files?: boolean;
   /** Rich extras: callout, table, toggle list — and their slash-menu items. */
   richBlocks?: boolean;
+  /** The table block alone, for surfaces that want tables without callouts and toggles. richBlocks includes it. */
+  tables?: boolean;
   /**
    * Side-by-side layout: the columnList/column block pair from
    * @blocknote/xl-multi-column, its "/" items and the edge-drop cursor.
@@ -63,7 +65,7 @@ export const EDITOR_PRESETS: Record<EditorPresetName, Features> = {
   agreement: { images: true, signing: true }, // signing document body
   guide: { mentions: true, images: true, files: true, pageBreak: true, columns: true }, // page-doc guides
   document: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true, tasks: true }, // full document
-  slide: { mentions: true, images: true }, // slide text boxes: formatting toolbar and mentions, no gutter
+  slide: { mentions: true, images: true, tables: true }, // slide text boxes: formatting toolbar and mentions, no gutter
   resource: { mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true, components: true }, // Resources pages + blog posts
 };
 
