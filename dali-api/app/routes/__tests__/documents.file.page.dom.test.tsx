@@ -20,6 +20,7 @@ vi.mock("~/components/TagPicker", () => ({ TagPicker: () => null }));
 const { default: FilePage } = await import("../documents.file.$fileId");
 const { PageBarSlotProvider, usePageBarTargetSetters } = await import("~/components/shell/page-bar-slot");
 const { OverflowMenu } = await import("~/components/shell/OverflowMenu");
+const { PageBarTrail } = await import("~/components/Breadcrumbs");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -31,11 +32,31 @@ function Bar() {
   return createElement(
     "header",
     null,
+    createElement(PageBarTrail, { crumbs }),
     createElement("div", { "data-testid": "status", ref: statusRef }),
     createElement("div", { "data-testid": "actions", ref: actionsRef }),
     createElement(OverflowMenu),
   );
 }
+
+
+const crumbs = [{ label: "Drive", to: "/drive" }, { label: "Budget", icon: createElement("span", { "data-testid": "glyph" }, "G") }];
+const typeName = async (value: string) => {
+  const input = document.body.querySelector<HTMLInputElement>("input[aria-label='Page name']")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => void input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+};
+const originalFetch = globalThis.fetch;
+function mockFetch() {
+  const fn = vi.fn(async () => new Response("{}"));
+  globalThis.fetch = fn as unknown as typeof fetch;
+  return fn;
+}
+const bodies = (fn: ReturnType<typeof mockFetch>, url: string) =>
+  (fn.mock.calls as unknown as [string, RequestInit][]).filter(([u]) => u === url).map(([, i]) => JSON.parse(i.body as string));
 
 const data = (canEdit: boolean) => ({
   fileId: "f1",
@@ -73,6 +94,7 @@ async function mount(canEdit: boolean) {
 }
 
 afterEach(() => {
+  globalThis.fetch = originalFetch;
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -102,5 +124,25 @@ describe("uploaded file page", () => {
   it("has no overflow for a viewer", async () => {
     await mount(false);
     expect(container.querySelector("[aria-label='More actions']")).toBeNull();
+  });
+});
+
+describe("uploaded file title crumb", () => {
+  it("renames with the /api/files/:id rename intent on Enter", async () => {
+    const fetchMock = mockFetch();
+    await mount(true);
+    await act(async () => container.querySelector<HTMLElement>("button[aria-label='Rename']")!.click());
+    await typeName("Budget v2.pdf");
+    expect(bodies(fetchMock, "/api/files/f1")).toEqual([{ intent: "rename", title: "Budget v2.pdf" }]);
+  });
+
+  it("has no icon picker, since files carry no emoji", async () => {
+    await mount(true);
+    expect(container.querySelector("[data-testid=glyph]")!.closest("button")).toBeNull();
+  });
+
+  it("keeps a static crumb for a viewer", async () => {
+    await mount(false);
+    expect(container.querySelector("button[aria-label='Rename']")).toBeNull();
   });
 });

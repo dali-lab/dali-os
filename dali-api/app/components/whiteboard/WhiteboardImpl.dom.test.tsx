@@ -37,6 +37,7 @@ vi.mock("~/components/sharing/ShareDialog", () => ({
 const { default: WhiteboardImpl } = await import("./WhiteboardImpl");
 const { PageBarSlotProvider, usePageBarTargetSetters } = await import("~/components/shell/page-bar-slot");
 const { DialogProvider } = await import("~/components/ui/dialog");
+const { PageBarTrail } = await import("~/components/Breadcrumbs");
 const { ToastProvider } = await import("~/components/ui/toast");
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -47,8 +48,27 @@ let root: Root;
 
 function Bar() {
   const { actionsRef } = usePageBarTargetSetters();
-  return createElement("div", { "data-testid": "actions", ref: actionsRef });
+  return createElement("div", null, createElement(PageBarTrail, { crumbs }), createElement("div", { "data-testid": "actions", ref: actionsRef }));
 }
+
+
+const crumbs = [{ label: "Drive", to: "/drive" }, { label: "Budget", icon: createElement("span", { "data-testid": "glyph" }, "G") }];
+const typeName = async (value: string) => {
+  const input = document.body.querySelector<HTMLInputElement>("input[aria-label='Page name']")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await act(async () => void input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+};
+const originalFetch = globalThis.fetch;
+function mockFetch() {
+  const fn = vi.fn(async () => new Response("{}"));
+  globalThis.fetch = fn as unknown as typeof fetch;
+  return fn;
+}
+const bodies = (fn: ReturnType<typeof mockFetch>, url: string) =>
+  (fn.mock.calls as unknown as [string, RequestInit][]).filter(([u]) => u === url).map(([, i]) => JSON.parse(i.body as string));
 
 const meeting = {
   id: "m1",
@@ -107,6 +127,7 @@ async function mount(over: Record<string, unknown> = {}) {
 const actions = () => container.querySelector("[data-testid=actions]")!;
 
 afterEach(() => {
+  globalThis.fetch = originalFetch;
   act(() => root.unmount());
   container.remove();
   document.body.innerHTML = "";
@@ -161,5 +182,29 @@ describe("WhiteboardImpl meeting strip", () => {
   it("omits Record when the board has no note or the viewer cannot edit", async () => {
     await mount({ meeting: { ...meeting, notePageId: null } });
     expect(container.querySelector("[data-testid=meeting-strip]")!.textContent).not.toContain("Record");
+  });
+});
+
+describe("WhiteboardImpl title crumb", () => {
+  it("renames through /api/documents/:id on Enter", async () => {
+    const fetchMock = mockFetch();
+    await mount();
+    await act(async () => container.querySelector<HTMLElement>("button[aria-label='Rename']")!.click());
+    await typeName("Renamed board");
+    expect(bodies(fetchMock, "/api/documents/w1")).toEqual([{ title: "Renamed board" }]);
+  });
+
+  it("saves the icon from the crumb glyph through /api/documents/:id", async () => {
+    const fetchMock = mockFetch();
+    await mount();
+    await act(async () => container.querySelector("[data-testid=glyph]")!.closest("button")!.click());
+    await act(async () => [...document.body.querySelectorAll("button")].find((b) => b.textContent === "🚀")!.click());
+    expect(bodies(fetchMock, "/api/documents/w1")).toEqual([{ iconEmoji: "🚀" }]);
+  });
+
+  it("keeps a static crumb for a viewer", async () => {
+    await mount({ canEdit: false });
+    expect(container.querySelector("button[aria-label='Rename']")).toBeNull();
+    expect(container.querySelector("[data-testid=glyph]")!.closest("button")).toBeNull();
   });
 });
