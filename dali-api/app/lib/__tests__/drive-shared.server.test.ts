@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/db.server", () => ({
   prisma: {
     pageShare: { findMany: vi.fn() },
+    fileShare: { findMany: vi.fn().mockResolvedValue([]) },
     user: { findMany: vi.fn() },
     page: { findUnique: vi.fn() },
     instructorAssignment: { findFirst: vi.fn() },
@@ -95,6 +96,7 @@ beforeEach(() => {
   vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
   m.user.findMany.mockResolvedValue([{ id: "alice", firstName: "Alice", lastName: "Ng" }]);
   m.instructorAssignment.findFirst.mockResolvedValue(null);
+  m.fileShare.findMany.mockResolvedValue([]);
   seed();
 });
 
@@ -275,6 +277,77 @@ describe("loadSharedWithMe", () => {
         .find((w: any) => w.createdById);
       expect(grantedWhere.createdById).toBe(VIEWER);
       expect(grantedWhere.NOT).toEqual({ principalType: "User", principalId: VIEWER });
+    });
+  });
+
+  describe("uploaded files", () => {
+    const file = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      title: `File ${id}`,
+      projectId: null,
+      workspaceType: "Member",
+      workspaceId: "owner",
+      folderPageId: null,
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+      currentVersion: { sizeBytes: 42 },
+      ...overrides,
+    });
+    const fileShares = (received: unknown[], granted: unknown[] = []) =>
+      m.fileShare.findMany.mockImplementation(async ({ where }: any) => (where.createdById ? granted : received));
+
+    it("lists a file shared with the viewer, flagged sharedWithMe with the sharer", async () => {
+      fileShares([{ fileId: "f1", createdAt: new Date("2026-03-01T00:00:00Z"), createdById: "alice", file: file("f1") }]);
+      expect(await load()).toEqual([
+        expect.objectContaining({
+          type: "file",
+          id: "f1",
+          href: "/documents/file/f1",
+          sizeBytes: 42,
+          sharedWithMe: true,
+          sharedBy: { name: "Alice Ng" },
+        }),
+      ]);
+    });
+
+    it("looks up shares for the viewer directly and through their groups", async () => {
+      vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([{ id: "g1", archivedAt: null }] as never);
+      await load();
+      const where = m.fileShare.findMany.mock.calls[0][0].where;
+      expect(where.OR).toEqual([
+        { principalType: "User", principalId: VIEWER },
+        { principalType: "Group", principalId: { in: ["g1"] } },
+      ]);
+      expect(where.file).toEqual({ archivedAt: null });
+    });
+
+    it("skips a file the viewer already reaches through where it lives", async () => {
+      vi.mocked(isLabMember).mockResolvedValue(true);
+      fileShares([
+        {
+          fileId: "f1",
+          createdAt: new Date("2026-03-01T00:00:00Z"),
+          createdById: "alice",
+          file: file("f1", { workspaceType: "Lab", workspaceId: null }),
+        },
+      ]);
+      expect(await load()).toEqual([]);
+    });
+
+    it("lists a file the viewer shared out, flagged sharedByMe", async () => {
+      vi.mocked(isLabMember).mockResolvedValue(true);
+      fileShares(
+        [],
+        [{ fileId: "f2", createdAt: new Date("2026-03-01T00:00:00Z"), file: file("f2", { workspaceType: "Lab", workspaceId: null }) }],
+      );
+      expect(await load()).toEqual([
+        expect.objectContaining({ type: "file", id: "f2", sharedByMe: true, sharedBy: { name: "You" } }),
+      ]);
+    });
+
+    it("mixes pages and files newest share first", async () => {
+      seed({ received: [received(page("note-1"), "2026-03-01T00:00:00Z")] });
+      fileShares([{ fileId: "f1", createdAt: new Date("2026-03-05T00:00:00Z"), createdById: "alice", file: file("f1") }]);
+      expect((await load()).map((i) => i.id)).toEqual(["f1", "note-1"]);
     });
   });
 });

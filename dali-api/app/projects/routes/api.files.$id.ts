@@ -56,6 +56,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       workspaceType: true,
       workspaceId: true,
       folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       versions: {
         orderBy: { createdAt: "desc" },
         select: {
@@ -118,6 +120,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       workspaceType: true,
       workspaceId: true,
       folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
     },
   });
   if (!file || file.archivedAt !== null) {

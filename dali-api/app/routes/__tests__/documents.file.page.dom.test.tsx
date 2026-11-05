@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), redirectPartnerToPortal: vi.fn(), isNonMember: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
-vi.mock("~/lib/fileAccess.server", () => ({ canViewFile: vi.fn(), canEditFile: vi.fn() }));
+vi.mock("~/lib/fileAccess.server", () => ({ canViewFile: vi.fn(), canEditFile: vi.fn(), canManageFileSharing: vi.fn() }));
 vi.mock("~/lib/s3", () => ({ getDownloadUrl: vi.fn() }));
 vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn() }));
 vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
@@ -16,6 +16,7 @@ vi.mock("~/lib/upload-client", () => ({ formatBytes: (n: number) => `${Math.roun
 vi.mock("~/components/collab/CommentsRail", () => ({ CommentsRail: () => null }));
 vi.mock("~/components/FilePreview", () => ({ FilePreview: () => null }));
 vi.mock("~/components/TagPicker", () => ({ TagPicker: () => null }));
+vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn() }) }));
 
 const { default: FilePage } = await import("../documents.file.$fileId");
 const { PageBarSlotProvider, usePageBarTargetSetters } = await import("~/components/shell/page-bar-slot");
@@ -58,13 +59,14 @@ function mockFetch() {
 const bodies = (fn: ReturnType<typeof mockFetch>, url: string) =>
   (fn.mock.calls as unknown as [string, RequestInit][]).filter(([u]) => u === url).map(([, i]) => JSON.parse(i.body as string));
 
-const data = (canEdit: boolean) => ({
+const data = (canEdit: boolean, canShare = false) => ({
   fileId: "f1",
   projectId: null,
   title: "Budget.pdf",
   tags: [],
   allTags: [],
   canEdit,
+  canShare,
   canManageTags: false,
   currentUserId: "u1",
   versions: [
@@ -73,11 +75,11 @@ const data = (canEdit: boolean) => ({
   ],
 });
 
-async function mount(canEdit: boolean) {
+async function mount(canEdit: boolean, canShare = false) {
   const Stub = createRoutesStub([
     {
       path: "/documents/file/:fileId",
-      loader: () => data(canEdit),
+      loader: () => data(canEdit, canShare),
       Component: () =>
         createElement(PageBarSlotProvider, { children: createElement("div", null, createElement(Bar), createElement(FilePage)) }),
     },
@@ -112,6 +114,29 @@ describe("uploaded file page", () => {
     const link = container.querySelector<HTMLAnchorElement>("[data-testid=actions] a")!;
     expect(link.textContent).toBe("Download");
     expect(link.getAttribute("href")).toBe("/api/files/f1/download?version=v2");
+  });
+
+  it("shows the standard Share button before Download for someone who can manage sharing", async () => {
+    await mount(true, true);
+    const actions = container.querySelector("[data-testid=actions]")!;
+    const share = actions.querySelector<HTMLElement>("button[aria-label='Share']")!;
+    expect(share).not.toBeNull();
+    expect(share.compareDocumentPosition(actions.querySelector("a")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("opens the file share dialog from the Share button", async () => {
+    const fetchMock = mockFetch();
+    await mount(true, true);
+    await act(async () => container.querySelector<HTMLElement>("button[aria-label='Share']")!.click());
+    const urls = (fetchMock.mock.calls as unknown as [string][]).map(([u]) => u);
+    expect(urls).toContain("/api/files/f1/share");
+    expect(document.body.textContent).toContain("Share “Budget.pdf”");
+  });
+
+  it("hides Share from someone who cannot manage sharing, even an editor", async () => {
+    await mount(true, false);
+    expect(container.querySelector("button[aria-label='Share']")).toBeNull();
+    expect(container.querySelector("[data-testid=actions] a")).not.toBeNull();
   });
 
   it("moves Upload new version into the overflow for editors only", async () => {

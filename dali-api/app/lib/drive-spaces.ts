@@ -179,9 +179,9 @@ export function isVirtualSpace(scopeId: string): boolean {
   return scopeId === SHARED_SPACE_KEY || scopeId === FAVORITES_SPACE_KEY;
 }
 
-/** The "Shared with me" space: the pages shared with the viewer by name. */
+/** The "Shared with me" space: the pages and files shared with the viewer by name. */
 export function sharedSpaceItems(items: DriveItem[]): DriveItem[] {
-  return items.filter((it) => it.type === "doc" && it.sharedWithMe === true);
+  return items.filter((it) => (it.type === "doc" || it.type === "file") && it.sharedWithMe === true);
 }
 
 export const DRIVE_SPACE_AREA: Record<string, string> = {

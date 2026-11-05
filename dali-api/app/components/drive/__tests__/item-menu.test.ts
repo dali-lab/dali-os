@@ -38,8 +38,13 @@ describe("menuEntries", () => {
     expect(menuEntries(item("form"), { ...none })).not.toContain("share");
   });
 
-  it("does not offer Share on files or agreements", () => {
-    for (const type of ["file", "agreement", "rubric"]) {
+  it("offers Share on files, after Download, when the row can share", () => {
+    expect(menuEntries(item("file"), all)).toEqual(["open", "download", "share", "partner", "rename", "move", "delete"]);
+    expect(menuEntries(item("file"), none)).not.toContain("share");
+  });
+
+  it("does not offer Share on agreements or rubrics", () => {
+    for (const type of ["agreement", "rubric"]) {
       expect(menuEntries(item(type), all)).not.toContain("share");
     }
   });

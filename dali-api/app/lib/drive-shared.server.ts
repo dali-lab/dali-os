@@ -7,6 +7,7 @@ import { DRIVE_PAGE_KINDS } from "~/lib/drive.server";
 import type { DriveItem } from "~/lib/drive.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
+import { inheritedFileView } from "~/lib/fileAccess.server";
 
 /** A shared Folder would open onto children this flat space never loads, so
  *  only leaf pages are listed. */
@@ -31,6 +32,7 @@ type SharedPage = {
 };
 
 type DocItem = Extract<DriveItem, { type: "doc" }>;
+type FileItem = Extract<DriveItem, { type: "file" }>;
 
 function docItem(page: SharedPage, extra: Partial<DocItem>): DriveItem {
   return {
@@ -60,6 +62,122 @@ function docItem(page: SharedPage, extra: Partial<DocItem>): DriveItem {
  * sees nothing for Lab or project pages (its base is already full).
  */
 export async function loadSharedWithMe({
+  userSub,
+  request,
+}: {
+  userSub: string;
+  request?: Request;
+}): Promise<DriveItem[]> {
+  const [pageItems, fileItems] = await Promise.all([
+    loadSharedPages({ userSub, request }),
+    loadSharedFiles({ userSub, request }),
+  ]);
+  return [...pageItems, ...fileItems].sort(
+    (a, b) => (b as { sharedAt?: Date }).sharedAt!.getTime() - (a as { sharedAt?: Date }).sharedAt!.getTime(),
+  );
+}
+
+const FILE_SELECT = {
+  id: true,
+  title: true,
+  projectId: true,
+  workspaceType: true,
+  workspaceId: true,
+  folderPageId: true,
+  updatedAt: true,
+  currentVersion: { select: { sizeBytes: true } },
+} as const;
+
+/**
+ * Uploaded files shared with the viewer by name that they would not reach
+ * through where the file lives, plus the files the viewer shared with others.
+ * Link access does not list a file here, same as for pages.
+ */
+async function loadSharedFiles({
+  userSub,
+  request,
+}: {
+  userSub: string;
+  request?: Request;
+}): Promise<DriveItem[]> {
+  const groupIds = await groupIdsForUser(userSub, request);
+  const live = { archivedAt: null };
+
+  const [received, granted] = await Promise.all([
+    prisma.fileShare.findMany({
+      where: {
+        OR: [
+          { principalType: "User", principalId: userSub },
+          ...(groupIds.length ? [{ principalType: "Group" as const, principalId: { in: groupIds } }] : []),
+        ],
+        file: live,
+      },
+      orderBy: { createdAt: "desc" },
+      take: MAX_ROWS,
+      select: { fileId: true, createdAt: true, createdById: true, file: { select: FILE_SELECT } },
+    }),
+    prisma.fileShare.findMany({
+      where: {
+        createdById: userSub,
+        NOT: { principalType: "User", principalId: userSub },
+        file: live,
+      },
+      orderBy: { createdAt: "desc" },
+      take: MAX_ROWS,
+      select: { fileId: true, createdAt: true, file: { select: FILE_SELECT } },
+    }),
+  ]);
+
+  const receivedByFile = new Map<string, (typeof received)[number]>();
+  for (const row of received) if (!receivedByFile.has(row.fileId)) receivedByFile.set(row.fileId, row);
+  const grantedByFile = new Map<string, (typeof granted)[number]>();
+  for (const row of granted) if (!grantedByFile.has(row.fileId)) grantedByFile.set(row.fileId, row);
+
+  const sharerRows = receivedByFile.size
+    ? await prisma.user.findMany({
+        where: { id: { in: [...new Set([...receivedByFile.values()].map((r) => r.createdById))] } },
+        select: { id: true, firstName: true, lastName: true },
+      })
+    : [];
+  const sharerName = new Map(sharerRows.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
+
+  const fileItem = (f: (typeof received)[number]["file"], extra: Partial<FileItem>): FileItem => ({
+    type: "file",
+    id: f.id,
+    title: f.title,
+    parentFolderId: null,
+    iconEmoji: null,
+    updatedAt: f.updatedAt,
+    href: `/documents/file/${f.id}`,
+    sizeBytes: f.currentVersion?.sizeBytes ?? null,
+    ...extra,
+  });
+
+  const items = new Map<string, FileItem>();
+  for (const row of receivedByFile.values()) {
+    if (await inheritedFileView(userSub, row.file, request)) continue;
+    const name = sharerName.get(row.createdById);
+    items.set(
+      row.fileId,
+      fileItem(row.file, { sharedBy: name ? { name } : null, sharedAt: row.createdAt, sharedWithMe: true }),
+    );
+  }
+  for (const row of grantedByFile.values()) {
+    const existing = items.get(row.fileId);
+    if (existing) {
+      existing.sharedByMe = true;
+      continue;
+    }
+    if (!(await inheritedFileView(userSub, row.file, request))) continue;
+    items.set(
+      row.fileId,
+      fileItem(row.file, { sharedBy: { name: "You" }, sharedAt: row.createdAt, sharedByMe: true }),
+    );
+  }
+  return [...items.values()];
+}
+
+async function loadSharedPages({
   userSub,
   request,
 }: {

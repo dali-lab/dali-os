@@ -19,7 +19,7 @@ export function menuEntries(
   const entries: MenuEntry[] = ["open"];
   if (item.type === "file") entries.push("download");
   if ((isPage || item.type === "form") && caps.favorite) entries.push("favorite");
-  if ((isPage || item.type === "form") && caps.share) entries.push("share");
+  if ((isPage || item.type === "form" || item.type === "file") && caps.share) entries.push("share");
   if ((item.type === "doc" || item.type === "file") && caps.partner) entries.push("partner");
   if (!caps.readOnly && (isPage || item.type === "file" || item.type === "form" || item.type === "agreement")) {
     entries.push("rename");
