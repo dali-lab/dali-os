@@ -4,7 +4,7 @@ import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 import { PageBar } from "~/components/shell/PageBar";
-import { PageBarMenuItems, PageBarPortal, PageBarSlotProvider } from "~/components/shell/page-bar-slot";
+import { PageBarHideCopyLink, PageBarMenuItems, PageBarPortal, PageBarSlotProvider } from "~/components/shell/page-bar-slot";
 import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ToastProvider } from "~/components/ui/toast";
 import { Menu } from "~/components/ui/floating";
@@ -183,6 +183,57 @@ describe("PageBar overflow", () => {
       starButton.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
     });
     expect(document.body.querySelector("[role='tooltip']")?.textContent).toContain("⌘D");
+  });
+});
+
+describe("PageBar status slot and copy link opt-out", () => {
+  it("renders the status slot right after the crumbs, on the left side", async () => {
+    await mount({
+      page: createElement(PageBarPortal, { slot: "status", children: createElement("span", { "data-testid": "status" }, "Saved") }),
+    });
+    const left = bar().firstElementChild!;
+    expect(left.lastElementChild?.textContent).toBe("Saved");
+    expect(bar().lastElementChild!.textContent).not.toContain("Saved");
+  });
+
+  it("keeps the right side in order: actions, presence, then the fixed tail", async () => {
+    await mount({
+      page: createElement(
+        "div",
+        null,
+        createElement(PageBarPortal, { slot: "actions", children: createElement("button", { "aria-label": "Share" }) }),
+        createElement(PageBarPortal, { slot: "presence", children: createElement("button", { "aria-label": "Presence" }) }),
+      ),
+    });
+    expect(barButtons()).toEqual([
+      "Share",
+      "Presence",
+      "Open this page's guide",
+      "Add this page to favorites",
+      "More actions",
+    ]);
+  });
+
+  it("drops the shell's Copy link row when a page opts out, keeping its own rows", async () => {
+    await mount({
+      page: createElement(
+        "div",
+        null,
+        createElement(PageBarHideCopyLink),
+        createElement(PageBarMenuItems, null, createElement(Menu.Item, null, "Form settings")),
+      ),
+    });
+    await openMenu();
+    expect(menuItems().map((el) => el.textContent)).toEqual(["Form settings"]);
+  });
+
+  it("brings the Copy link row back when the opting-out page unmounts", async () => {
+    function Toggle({ on }: { on: boolean }) {
+      return createElement("div", null, on ? createElement(PageBarHideCopyLink) : null, createElement(PageBarMenuItems, null, createElement(Menu.Item, null, "Duplicate")));
+    }
+    await mount({ page: createElement(Toggle, { on: false }) });
+    await openMenu();
+    expect(menuItems().map((el) => el.textContent)).toContain("Copy link⌘⇧C");
   });
 });
 

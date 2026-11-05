@@ -271,9 +271,9 @@ export function RubricDetail() {
         !isCreatingVersion ? (
           <button
             onClick={handleStartCreate}
-            className={buttonClasses("primary", "md")}
+            className={buttonClasses("primary", "sm")}
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4" />
             New Version
           </button>
         ) : null

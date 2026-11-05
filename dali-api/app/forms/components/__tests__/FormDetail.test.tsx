@@ -32,6 +32,10 @@ vi.mock("~/hooks/useUserTimeZone", () => ({ useUserTimeZone: () => "America/New_
 
 import { FormDetail } from "../FormDetail";
 import { DialogProvider } from "~/components/ui/dialog";
+import { ToastProvider } from "~/components/ui/toast";
+import { PageBarSlotProvider, usePageBarTargetSetters } from "~/components/shell/page-bar-slot";
+import { OverflowMenu } from "~/components/shell/OverflowMenu";
+import { PageBarTrail } from "~/components/Breadcrumbs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -88,12 +92,32 @@ let root: Root;
 const submitted: Array<Record<string, string>> = [];
 let actionResult: Record<string, unknown> = { ok: true };
 
+function Bar() {
+  const { statusRef, actionsRef } = usePageBarTargetSetters();
+  return createElement(
+    "header",
+    null,
+    createElement(PageBarTrail, { crumbs: [{ label: "Forms", to: "/forms" }, { label: "My form", icon: createElement("span", { "data-testid": "glyph" }, "G") }] }),
+    createElement("div", { "data-testid": "status", ref: statusRef }),
+    createElement("div", { "data-testid": "actions", ref: actionsRef }),
+    createElement(OverflowMenu, { shellItems: createElement("span", null, "shell") }),
+  );
+}
+
 async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1") {
   const Stub = createRoutesStub([
     {
       path: "/forms/edit/:formId",
       Component: () =>
-        createElement(DialogProvider, null, createElement(FormDetail)),
+        createElement(
+          ToastProvider,
+          null,
+          createElement(
+            DialogProvider,
+            null,
+            createElement(PageBarSlotProvider, { children: createElement("div", null, createElement(Bar), createElement(FormDetail)) }),
+          ),
+        ),
       loader: () => data,
       action: async ({ request }) => {
         submitted.push(Object.fromEntries(await request.formData()) as Record<string, string>);
@@ -165,19 +189,6 @@ describe("FormDetail", () => {
     await mount(data);
     expect(container.textContent).toContain("Name");
     expect(container.textContent).not.toContain("Unexpected Application Error");
-  });
-
-  it("offers Add icon on a form without one", async () => {
-    await mount(loaderData());
-    expect(container.textContent).toContain("Add icon");
-  });
-
-  it("shows the form's icon before its name", async () => {
-    const data = loaderData();
-    (data.form as Record<string, unknown>).iconEmoji = "📋";
-    await mount(data);
-    expect(container.textContent).toContain("📋");
-    expect(container.textContent).not.toContain("Add icon");
   });
 
   it("renders the builder for a brand-new form", async () => {
@@ -256,6 +267,11 @@ describe("FormDetail", () => {
       const item = [...document.body.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent?.includes("Short answer"));
       await click(item);
     };
+    const openOverflow = async () => {
+      await click(document.body.querySelector("[aria-label='More actions']") ?? undefined);
+    };
+    const menuItem = (label: string) =>
+      [...document.body.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent?.trim() === label);
     const withDraft = () => {
       const data = loaderData();
       data.form.draft = { questions: [question], description: null } as never;
@@ -266,14 +282,17 @@ describe("FormDetail", () => {
       await mount(withDraft());
       expect(button("Save")).toBeUndefined();
       expect(button("Cancel")).toBeUndefined();
-      expect(button("Discard draft")).toBeTruthy();
+      expect(button("Discard draft")).toBeUndefined();
+      await openOverflow();
+      expect(menuItem("Discard draft")).toBeTruthy();
     });
 
     it("hides Discard draft when no draft exists yet", async () => {
       const data = loaderData();
       data.form.versions = [];
       await mount(data);
-      expect(button("Discard draft")).toBeUndefined();
+      await openOverflow();
+      expect(menuItem("Discard draft")).toBeUndefined();
     });
 
     it("saves the draft once after edits stop and shows Saved", async () => {
@@ -309,7 +328,8 @@ describe("FormDetail", () => {
 
     it("confirms before discarding a draft, then submits discard-draft", async () => {
       await mount(withDraft());
-      await click(button("Discard draft"));
+      await openOverflow();
+      await click(menuItem("Discard draft"));
       expect(submitted).toHaveLength(0);
       const confirm = [...document.body.querySelectorAll('[role="dialog"] button, [role="alertdialog"] button')].find(
         (b) => b.textContent?.trim() === "Discard draft",
@@ -317,14 +337,14 @@ describe("FormDetail", () => {
       await click(confirm);
       await wait(50);
       expect(submitted).toEqual([{ intent: "discard-draft", id: "f1" }]);
-      await until(() => button("Discard draft") === undefined);
-      expect(button("Discard draft")).toBeUndefined();
+      await until(() => text().includes("Results"));
       expect(text()).toContain("Results");
     });
 
     it("does not discard when the confirm is cancelled", async () => {
       await mount(withDraft());
-      await click(button("Discard draft"));
+      await openOverflow();
+      await click(menuItem("Discard draft"));
       const cancel = [...document.body.querySelectorAll('[role="dialog"] button, [role="alertdialog"] button')].find(
         (b) => b.textContent?.trim() === "Cancel",
       );
@@ -337,8 +357,9 @@ describe("FormDetail", () => {
       await mount(loaderData());
       await click(button("Versions") ?? [...document.body.querySelectorAll("button")].find((b) => b.textContent?.includes("v1")));
       await click(button("Edit v1"));
-      expect(button("Discard draft")).toBeUndefined();
-      expect(text()).toContain("Draft");
+      await openOverflow();
+      expect(menuItem("Discard draft")).toBeUndefined();
+      expect(text()).toContain("Editing v2 draft");
       await addQuestion();
       await wait(1200);
       expect(submitted.map((s) => s.intent)).toEqual(["save-draft"]);
@@ -351,6 +372,148 @@ describe("FormDetail", () => {
       await wait(100);
       expect(submitted.map((s) => s.intent)).toEqual(["save-draft", "save-version"]);
       expect(submitted[1].publish).toBe("true");
+    });
+  });
+
+  describe("page bar", () => {
+    const click = async (el: Element | null | undefined) => {
+      expect(el).toBeTruthy();
+      await act(async () => {
+        el!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    };
+    const actions = () => container.querySelector("[data-testid=actions]")!;
+    const actionLabels = () => [...actions().querySelectorAll("button")].map((b) => b.textContent?.trim());
+    const status = () => container.querySelector("[data-testid=status]")!.textContent;
+    const overflow = async () => {
+      await click(container.querySelector("[aria-label='More actions']"));
+      return [...document.body.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent?.trim());
+    };
+    const published = () => {
+      const data = loaderData();
+      Object.assign(data.form, { published: true, publicToken: "tok" });
+      return data;
+    };
+
+    it("has no title row in the page", async () => {
+      await mount(loaderData());
+      expect(container.querySelector("input[aria-label='Form name']")).toBeNull();
+    });
+
+    it("shows a published version in the status slot", async () => {
+      await mount(published());
+      expect(status()).toContain("v1 · Published");
+    });
+
+    it("shows an unpublished version as not published", async () => {
+      await mount(loaderData());
+      expect(status()).toContain("v1 · Not published");
+    });
+
+    it("shows the editing status with the autosave state", async () => {
+      const data = loaderData();
+      data.form.draft = { questions: [question], description: null } as never;
+      await mount(data);
+      expect(status()).toContain("Editing v2 draft");
+    });
+
+    it("viewing a published version: Preview, Copy link, Share, then a filled New version", async () => {
+      await mount(published());
+      expect(actionLabels()).toEqual(["Preview", "Copy link", "Share", "New version"]);
+      expect(actions().querySelector("button:last-child")!.className).toContain("bg-accent-coral");
+    });
+
+    it("drafting: the primary is Publish, not New version", async () => {
+      const data = published();
+      data.form.draft = { questions: [question], description: null } as never;
+      await mount(data);
+      expect(actionLabels()).toEqual(["Preview", "Copy link", "Share", "Publish"]);
+    });
+
+    it("viewing an unpublished version: the primary is Publish", async () => {
+      await mount(loaderData());
+      expect(actionLabels()).toEqual(["Preview", "Copy link", "Share", "Publish"]);
+    });
+
+    it("disables Copy link until the form is published", async () => {
+      await mount(loaderData());
+      const copy = [...actions().querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy link")!;
+      expect(copy.hasAttribute("disabled")).toBe(true);
+    });
+
+    it("copies the fill link when published", async () => {
+      const writeText = vi.fn(async () => {});
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+      await mount(published());
+      const copy = [...actions().querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy link")!;
+      await click(copy);
+      expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/forms/fill/tok`);
+    });
+
+    it("moves settings, QR code and Unpublish into the overflow", async () => {
+      await mount(published());
+      expect(await overflow()).toEqual(["Form settings", "QR code", "Unpublish"]);
+    });
+
+    it("offers no QR code or Unpublish before publishing", async () => {
+      await mount(loaderData());
+      expect(await overflow()).toEqual(["Form settings"]);
+    });
+
+    it("adds Discard draft to the overflow when a draft exists", async () => {
+      const data = loaderData();
+      data.form.draft = { questions: [question], description: null } as never;
+      await mount(data);
+      expect(await overflow()).toContain("Discard draft");
+    });
+
+    it("renames from the title crumb with the existing rename action", async () => {
+      await mount(loaderData());
+      await click(container.querySelector("button[aria-label='Rename']"));
+      const input = container.querySelector<HTMLInputElement>("input[aria-label='Page name']")!;
+      expect(input.value).toBe("My form");
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Renamed form");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => void input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+      expect(submitted).toContainEqual({ intent: "rename-form", id: "f1", name: "Renamed form" });
+    });
+
+    it("sets the form icon from the crumb glyph with set-form-icon", async () => {
+      await mount(loaderData());
+      await click(container.querySelector("[data-testid=glyph]")!.closest("button"));
+      await click([...document.body.querySelectorAll("button")].find((b) => b.textContent === "🚀"));
+      await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+      expect(submitted).toContainEqual({ intent: "set-form-icon", id: "f1", iconEmoji: "🚀" });
+    });
+
+    it("has no Rename row in the overflow", async () => {
+      await mount(loaderData());
+      expect(await overflow()).not.toContain("Rename");
+    });
+
+    it("hides Copy link and Share for a managed form and offers Publish only while drafting", async () => {
+      const data = loaderData({ managing: { label: "Fall hiring" } });
+      await mount(data);
+      expect(actionLabels()).toEqual(["Preview"]);
+      expect(actions().textContent).toContain("Managed by Fall hiring");
+      expect(actions().textContent).not.toContain("Share");
+    });
+
+    it("shows Publish for a managed form while drafting", async () => {
+      const data = loaderData({ managing: { label: "Fall hiring" } });
+      data.form.draft = { questions: [question], description: null } as never;
+      await mount(data);
+      expect(actionLabels()).toEqual(["Preview", "Publish"]);
+    });
+
+    it("uses the Segmented control for Questions and Results", async () => {
+      await mount(loaderData());
+      const group = container.querySelector("[role=radiogroup][aria-label='Form view']")!;
+      expect(group.textContent).toContain("Questions");
+      expect(group.textContent).toContain("Results");
     });
   });
 });
