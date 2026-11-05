@@ -129,6 +129,7 @@ const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewSt
 const REGROUP = {};
 // The `community` flag: the Community area appears and Connect moves into it.
 const COMMUNITY = { community: true };
+const REFER = { "refer-a-partner": true };
 
 describe("area sets", () => {
   it("collapses to five areas", () => {
@@ -455,6 +456,42 @@ describe("Community area", () => {
   });
 });
 
+describe("refer-a-partner flag", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+  const labHrefs = (r: RoleFlags, flags: object) =>
+    visibleSubtabs(visibleAreas(r, flags).find((a) => a.key === "projects")!, r).map((t) => t.href);
+
+  it("shows Refer a partner under Lab for members and alumni while the flag is on", () => {
+    for (const flags of [REFER, { ...COMMUNITY, ...REFER }]) {
+      expect(labHrefs(NOBODY, flags)).toContain("/refer");
+      expect(labHrefs(ALUM, flags)).toContain("/refer");
+    }
+  });
+
+  it("hides Refer a partner from members and alumni while the flag is off", () => {
+    for (const flags of [REGROUP, COMMUNITY]) {
+      expect(labHrefs(NOBODY, flags)).not.toContain("/refer");
+      expect(labHrefs(ALUM, flags)).not.toContain("/refer");
+      expect(areaForPath("/refer", flags, NOBODY)).toBeUndefined();
+      expect(areaForPath("/refer", flags, ALUM)).toBeUndefined();
+    }
+  });
+
+  it("keeps the alumni community pages filtered independently of the refer flag", () => {
+    expect(labHrefs(ALUM, COMMUNITY)).toEqual([
+      "/projects",
+      "/members",
+      "/community/opportunities",
+      "/community/gallery",
+      "/resources",
+    ]);
+  });
+
+  it("still resolves the Refer a partner icon for favorites with no flag context", () => {
+    expect(isAreaSubtabPath("/refer")).toBe(true);
+  });
+});
+
 describe("alumni nav", () => {
   const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
 
@@ -465,7 +502,7 @@ describe("alumni nav", () => {
   });
 
   it("gives alumni Projects, People and the community pages, but not Connect", () => {
-    const lab = visibleAreas(ALUM, COMMUNITY)[0];
+    const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
       "/members",
@@ -477,7 +514,7 @@ describe("alumni nav", () => {
   });
 
   it("drops the community pages from the alumni Lab while the community flag is off", () => {
-    const lab = visibleAreas(ALUM, REGROUP)[0];
+    const lab = visibleAreas(ALUM, REFER)[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
       "/members",

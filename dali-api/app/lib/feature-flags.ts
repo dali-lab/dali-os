@@ -110,6 +110,14 @@ export const FEATURE_FLAGS = [
       "Self-paced onboarding at /journeys: per-domain journeys of modules on a prerequisite map, each with lesson pages, slides, an in-browser coding lab and a quiz, with progress saved per member. First-term members find Journeys pinned under Drive; everyone else finds it in the Lab area. Core and domain leads create journeys and share edit access per journey. Ships off.",
   },
   {
+    key: "refer-a-partner",
+    label: "Refer a partner",
+    description:
+      "The Refer a partner page at /refer, where members and alumni pass along leads for project partners after a short quiz, and its Lab sidebar item. Turning this off hides the page and the sidebar item; referrals already sent stay in Core > Partners > Referrals. Ships on.",
+    defaultEnabled: true,
+    defaultEveryone: true,
+  },
+  {
     key: "ask-dali",
     label: "Ask DALI",
     description:
