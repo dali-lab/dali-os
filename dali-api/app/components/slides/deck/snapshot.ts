@@ -17,6 +17,7 @@ import {
   type SlideMap,
 } from "./model";
 import { buildOf } from "./builds";
+import { slideMetaFields, type SlideBackground, type SlideTransition } from "./slide-meta";
 import { contentFields, type ChartSpec } from "./content";
 import { cleanCrop, type Crop } from "./crop";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
@@ -56,6 +57,9 @@ export interface RenderSlide {
   pos: number;
   layoutId: string;
   skipped?: boolean;
+  background?: SlideBackground;
+  transition?: SlideTransition;
+  section?: string;
   elements: RenderElement[];
 }
 
@@ -133,6 +137,7 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
     pos: Number(slide.get("pos") ?? 0),
     layoutId: String(slide.get("layoutId") ?? "content"),
     ...(slide.get("skipped") === true ? { skipped: true as const } : {}),
+    ...slideMetaFields((k) => slide.get(k)),
     elements,
   };
 }

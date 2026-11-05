@@ -64,6 +64,13 @@ import type { SlotCollab } from "./SlotEditor";
 import type { SlidesEditorProps } from "./SlidesEditor";
 import { canReadClip, readClip, useFreeformEditor, writeClip, type FreeformExternal } from "./useFreeformEditor";
 import { useInsertItems } from "./useInsertItems";
+import { GridView } from "./GridView";
+import { LayoutGalleryModal } from "./LayoutPicker";
+import { SectionNameModal } from "./SectionNameModal";
+import { TransitionPreview } from "./TransitionPreview";
+import { sectionActions } from "./actions";
+import { moveSection, setSectionStart, setSlideBackground, setSlideTransition } from "~/components/slides/deck/deck-ops";
+import { sectionsOf } from "~/components/slides/deck/slide-meta";
 import { FindBar } from "./FindBar";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import { shortcutFor } from "./shortcuts";
@@ -224,6 +231,10 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   const redo = () => deck?.undo.manager.redo();
 
   const [helpOpen, setHelpOpen] = useState(false);
+  const [gridOpen, setGridOpen] = useState(false);
+  const [gallery, setGallery] = useState<{ ids: string[] } | null>(null);
+  const [sectionModal, setSectionModal] = useState<{ slideId: string; initial: string } | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   useEffect(() => {
     if (!editable) return;
     const onKey = (e: KeyboardEvent) => {
@@ -233,6 +244,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
       if (id === "undo") (e.preventDefault(), undo());
       else if (id === "redo") (e.preventDefault(), redo());
       else if (id === "help") (e.preventDefault(), setHelpOpen(true));
+      else if (id === "grid") (e.preventDefault(), setGridOpen((g) => !g));
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -282,6 +294,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
       count: order.length,
       canPaste: canReadClip(),
       canComment,
+      startsSection: Boolean(snap.slides.find((x) => x.id === id)?.section),
       handlers: {
         newAfter: () => select(step(() => addSlide(deck.doc, "content", last))),
         duplicate: () => {
@@ -298,6 +311,10 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
         },
         skip: (skipped) => step(() => setSlideSkipped(deck.doc, ids, skipped)),
         changeLayout: (layoutId) => step(() => ids.forEach((sid) => setLayout(deck.doc, sid, layoutId))),
+        openLayoutGallery: () => setGallery({ ids }),
+        addSection: () => setSectionModal({ slideId: id, initial: "" }),
+        renameSection: () => setSectionModal({ slideId: id, initial: snap.slides.find((x) => x.id === id)?.section ?? "" }),
+        removeSection: () => step(() => setSectionStart(deck.doc, id, null)),
         copy: () => {
           const text = serializeSlides(targets);
           if (text) void writeClip(text);
@@ -322,8 +339,28 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     if (to !== null) deck.undo.step(() => moveSlides(deck.doc, ids, to));
   };
 
+  const sectionMenu = (firstId: string) => {
+    if (!deck) return [];
+    const { sections } = sectionsOf(snap.slides);
+    const at = sections.findIndex((x) => x.firstId === firstId);
+    const section = sections[at];
+    if (!section) return [];
+    const others = order.filter((sid) => !section.slideIds.includes(sid));
+    const before = sections[at - 1];
+    const after = sections[at + 1];
+    return sectionActions(
+      {
+        rename: () => setSectionModal({ slideId: firstId, initial: section.name }),
+        remove: () => deck.undo.step(() => setSectionStart(deck.doc, firstId, null)),
+        moveUp: () => before && deck.undo.step(() => moveSection(deck.doc, firstId, others.indexOf(before.firstId))),
+        moveDown: () => after && deck.undo.step(() => moveSection(deck.doc, firstId, others.indexOf(after.slideIds[after.slideIds.length - 1]) + 1)),
+      },
+      { first: at === 0, last: at === sections.length - 1 },
+    );
+  };
+
   const fileRef = useRef<HTMLInputElement>(null);
-  type PickTarget = { type: "slot" } | { type: "free"; at?: { x: number; y: number } } | { type: "replace"; id: string };
+  type PickTarget = { type: "slot" } | { type: "background" } | { type: "free"; at?: { x: number; y: number } } | { type: "replace"; id: string };
   const pickTarget = useRef<PickTarget>({ type: "slot" });
   const hasImageSlot = current ? layoutById(current.layoutId).slots.some((s) => s.kind === "image") : false;
   const openPicker = (target: PickTarget) => {
@@ -347,7 +384,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     try {
       const url = await upload(file);
       const alt = file.name.replace(/\.[^.]*$/, "");
-      if (target.type === "slot") setSlotImage(deck.doc, slideId, url, alt);
+      if (target.type === "background") deck.undo.step(() => setSlideBackground(deck.doc, [slideId], { kind: "image", url, fit: "cover" }));
+      else if (target.type === "slot") setSlotImage(deck.doc, slideId, url, alt);
       else if (target.type === "replace") deck.undo.step(() => setImageSource(deck.doc, slideId, target.id, url, alt));
       else {
         const natural = await naturalSize(url);
@@ -376,6 +414,9 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     addImages: (files, at) => void addImages(files, at),
     comment: startComment,
     changeLayout: (layoutId) => current && deck && deck.undo.step(() => setLayout(deck.doc, current.id, layoutId)),
+    openLayoutGallery: () => current && setGallery({ ids: [current.id] }),
+    setBackground: (background) => current && deck && deck.undo.step(() => setSlideBackground(deck.doc, [current.id], background)),
+    pickBackgroundImage: () => openPicker({ type: "background" }),
   };
 
   const appendImported = useCallback((slides: Parameters<typeof appendSlides>[1]) => (deck ? appendSlides(deck.doc, slides) : []), [deck]);
@@ -500,7 +541,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-os-card bg-os-card">
       {pageBar}
-      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onInsert={insertItem} armed={freeform.armed} />
+      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onInsert={insertItem} armed={freeform.armed} themeId={snap.themeId} currentLayoutId={current?.layoutId ?? null} grid={gridOpen} onGrid={() => setGridOpen((g) => !g)} />
       <div className="flex min-h-0 flex-1">
         <Filmstrip
           slides={snap.slides}
@@ -511,6 +552,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           editable
           commentCounts={canComment ? threadCountsBySlide(slideComments.comments) : undefined}
           actionsFor={thumbnailMenu}
+          sectionActionsFor={sectionMenu}
+          currentLayoutId={current?.layoutId ?? null}
           onSelect={onThumbSelect}
           onAdd={add}
           onDuplicate={duplicate}
@@ -519,6 +562,19 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
         />
         <div className="relative flex min-w-0 flex-1 flex-col">
           {find.open && <FindBar find={find} />}
+          {gridOpen ? (
+            <GridView
+              slides={snap.slides}
+              themeId={snap.themeId}
+              currentId={current?.id ?? null}
+              selectedIds={thumbSel.selected}
+              editable
+              actionsFor={thumbnailMenu}
+              onSelect={onThumbSelect}
+              onMove={onMoveSlides}
+              onOpen={(sid) => (select(sid), setGridOpen(false))}
+            />
+          ) : (
           <div className="flex min-h-0 flex-1 flex-col p-4">
             {current && slotCollab ? (
               <SlideStage
@@ -540,7 +596,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
               <EmptyState actions={<Button size="sm" onClick={() => add("title")}>New slide</Button>}>This deck doesn't have any slides yet.</EmptyState>
             )}
           </div>
-          {current && notes && slotCollab && <NotesPane key={stageKey(snap.epoch, current.id)} fragment={notes} collab={slotCollab} />}
+          )}
+          {!gridOpen && current && notes && slotCollab && <NotesPane key={stageKey(snap.epoch, current.id)} fragment={notes} collab={slotCollab} />}
         </div>
         <Inspector
           slide={current}
@@ -560,10 +617,43 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           onImport={pptx.pick}
           importing={pptx.busy}
           downloadHref={pptxDownloadHref(pageId)}
+          onBackground={(background) => current && deck.undo.step(() => setSlideBackground(deck.doc, [current.id], background))}
+          onPickBackground={() => openPicker({ type: "background" })}
+          onTransition={(transition) => current && deck.undo.step(() => setSlideTransition(deck.doc, [current.id], transition))}
+          onPreviewTransition={() => setPreviewOpen(true)}
         />
         {commentsPanel}
       </div>
       {pickers}
+      {gallery && (
+        <LayoutGalleryModal
+          title="Choose a layout"
+          themeId={snap.themeId}
+          value={gallery.ids.length === 1 ? snap.slides.find((x) => x.id === gallery.ids[0])?.layoutId : undefined}
+          onClose={() => setGallery(null)}
+          onPick={(layoutId) => {
+            const ids = gallery.ids;
+            deck.undo.step(() => ids.forEach((sid) => setLayout(deck.doc, sid, layoutId)));
+            setGallery(null);
+          }}
+        />
+      )}
+      {sectionModal && (
+        <SectionNameModal
+          title={sectionModal.initial ? "Rename section" : "Add section"}
+          initial={sectionModal.initial}
+          confirmLabel={sectionModal.initial ? "Rename" : "Add section"}
+          onClose={() => setSectionModal(null)}
+          onSubmit={(name) => {
+            const target = sectionModal.slideId;
+            deck.undo.step(() => setSectionStart(deck.doc, target, name));
+            setSectionModal(null);
+          }}
+        />
+      )}
+      {previewOpen && current && (
+        <TransitionPreview previous={snap.slides[snap.slides.findIndex((x) => x.id === current.id) - 1] ?? null} slide={current} themeId={snap.themeId} onClose={() => setPreviewOpen(false)} />
+      )}
       <ShortcutsSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
       <input {...pptx.inputProps} />
       <input ref={fileRef} type="file" accept={IMAGE_UPLOAD_ACCEPT} hidden onChange={(e) => (onFile(e.target.files?.[0]), (e.target.value = ""))} />

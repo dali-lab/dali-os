@@ -14,6 +14,11 @@ import {
   EyeOff,
   Group,
   Image as ImageIcon,
+  LayoutGrid as GalleryIcon,
+  Pencil,
+  PanelTop,
+  Palette,
+  SeparatorHorizontal,
   Layers,
   LayoutTemplate,
   Link,
@@ -38,6 +43,7 @@ import type { ReorderDirection } from "~/components/slides/deck/freeform-ops";
 import { LAYOUTS } from "~/components/slides/deck/layouts";
 import { SHAPE_KINDS, SHAPE_LABELS } from "~/components/slides/deck/model";
 import type { InsertItem } from "./InsertMenu";
+import { BACKGROUND_LABELS, BACKGROUND_TOKENS, type SlideBackground } from "~/components/slides/deck/slide-meta";
 import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
 
 type IconType = ComponentType<{ className?: string; "aria-hidden"?: boolean }>;
@@ -188,6 +194,9 @@ export interface StageHandlers {
   paste: () => void;
   insert: (item: InsertItem) => void;
   changeLayout: (layoutId: string) => void;
+  openLayoutGallery: () => void;
+  setBackground: (background: SlideBackground | null) => void;
+  pickBackgroundImage: () => void;
   selectAll: () => void;
   comment: () => void;
   setGuides: (on: boolean) => void;
@@ -196,6 +205,7 @@ export interface StageHandlers {
 
 export interface StageActionContext {
   layoutId: string;
+  background?: SlideBackground;
   canPaste: boolean;
   canComment: boolean;
   guides: boolean;
@@ -236,7 +246,24 @@ export function stageActions(ctx: StageActionContext): ActionSpec[] {
       label: "Change layout",
       icon: LayoutTemplate,
       dividerBefore: true,
-      children: LAYOUTS.map((l) => ({ id: `layout-${l.id}`, label: l.name, checked: l.id === ctx.layoutId, run: () => h.changeLayout(l.id) })),
+      children: [
+        { id: "layout-gallery", label: "Browse layouts", icon: GalleryIcon, run: h.openLayoutGallery },
+        ...LAYOUTS.map((l, i) => ({ id: `layout-${l.id}`, label: l.name, dividerBefore: i === 0, checked: l.id === ctx.layoutId, run: () => h.changeLayout(l.id) })),
+      ],
+    },
+    {
+      id: "background",
+      label: "Background",
+      icon: Palette,
+      children: [
+        ...BACKGROUND_TOKENS.map((token) => ({
+          id: `background-${token}`,
+          label: BACKGROUND_LABELS[token],
+          checked: token === "ground" ? !ctx.background : ctx.background?.kind === "color" && ctx.background.token === token,
+          run: () => h.setBackground(token === "ground" ? null : { kind: "color", token }),
+        })),
+        { id: "background-image", label: "Image", icon: ImageIcon, dividerBefore: true, checked: ctx.background?.kind === "image", run: h.pickBackgroundImage },
+      ],
     },
     { id: "select-all", label: "Select all", shortcut: "⌘A", icon: MousePointerSquareDashed, run: h.selectAll },
     ctx.canComment && { id: "comment-here", label: "Comment here", icon: MessageSquarePlus, run: h.comment },
@@ -251,6 +278,10 @@ export interface ThumbnailHandlers {
   remove: () => void;
   skip: (skipped: boolean) => void;
   changeLayout: (layoutId: string) => void;
+  openLayoutGallery: () => void;
+  addSection: () => void;
+  renameSection: () => void;
+  removeSection: () => void;
   copy: () => void;
   paste: () => void;
   moveTo: (where: "top" | "bottom") => void;
@@ -263,6 +294,7 @@ export interface ThumbnailActionContext {
   count: number;
   canPaste: boolean;
   canComment: boolean;
+  startsSection?: boolean;
   handlers: ThumbnailHandlers;
 }
 
@@ -283,12 +315,34 @@ export function thumbnailActions(ctx: ThumbnailActionContext): ActionSpec[] {
       id: "change-layout",
       label: "Change layout",
       icon: LayoutTemplate,
-      children: LAYOUTS.map((l) => ({ id: `layout-${l.id}`, label: l.name, checked: layouts.size === 1 && layouts.has(l.id), run: () => h.changeLayout(l.id) })),
+      children: [
+        { id: "layout-gallery", label: "Browse layouts", icon: GalleryIcon, run: h.openLayoutGallery },
+        ...LAYOUTS.map((l, i) => ({ id: `layout-${l.id}`, label: l.name, dividerBefore: i === 0, checked: layouts.size === 1 && layouts.has(l.id), run: () => h.changeLayout(l.id) })),
+      ],
     },
+    !many && !ctx.startsSection && { id: "add-section", label: "Add section here", icon: SeparatorHorizontal, run: h.addSection },
+    !many && ctx.startsSection && { id: "rename-section", label: "Rename section", icon: Pencil, run: h.renameSection },
+    !many && ctx.startsSection && { id: "remove-section", label: "Remove section", icon: PanelTop, run: h.removeSection },
     { id: "copy-slide", label: `Copy ${noun}`, icon: Copy, dividerBefore: true, run: h.copy },
     { id: "paste-slide", label: "Paste slide", icon: ClipboardPaste, disabled: !ctx.canPaste, run: h.paste },
     { id: "move-top", label: "Move to top", icon: ArrowUpToLine, dividerBefore: true, disabled: atTop, run: () => h.moveTo("top") },
     { id: "move-bottom", label: "Move to bottom", icon: ArrowDownToLine, disabled: !many && ctx.index === ctx.count - 1, run: () => h.moveTo("bottom") },
     !many && ctx.canComment && { id: "comment", label: "Comment", icon: MessageSquarePlus, dividerBefore: true, run: h.comment },
   ]);
+}
+
+export interface SectionHandlers {
+  rename: () => void;
+  remove: () => void;
+  moveUp: () => void;
+  moveDown: () => void;
+}
+
+export function sectionActions(h: SectionHandlers, position: { first: boolean; last: boolean }): ActionSpec[] {
+  return [
+    { id: "section-rename", label: "Rename section", icon: Pencil, run: h.rename },
+    { id: "section-up", label: "Move section up", icon: ArrowUpToLine, disabled: position.first, run: h.moveUp },
+    { id: "section-down", label: "Move section down", icon: ArrowDownToLine, disabled: position.last, run: h.moveDown },
+    { id: "section-remove", label: "Remove section", icon: Trash2, destructive: true, dividerBefore: true, run: h.remove },
+  ];
 }

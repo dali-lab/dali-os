@@ -15,6 +15,7 @@ import {
   deckMap,
   type SlideMap,
 } from "./model";
+import { cleanBackground, cleanSection, cleanTransition, sectionsOf, type SlideBackground, type SlideTransition } from "./slide-meta";
 import type { TextStyleId } from "./themes";
 
 export const DECK_LOCAL = Symbol("deck-local");
@@ -127,7 +128,7 @@ export function duplicateSlide(doc: Y.Doc, sourceId: string): string | null {
   insertTracked(doc, (hide) => {
     const copy = newSlideMap(id, posAfter(doc, sourceId), String(source.get("layoutId")));
     source.forEach((value, key) => {
-      if (key === "id" || key === "pos" || key === "deleted") return;
+      if (key === "id" || key === "pos" || key === "deleted" || key === "section") return;
       copy.set(key, cloneValue(value));
     });
     slidesMap(doc).set(id, copy);
@@ -259,4 +260,46 @@ export function moveSlides(doc: Y.Doc, ids: string[], index: number): void {
       map.get(id)!.set("pos", next);
     });
   }, DECK_LOCAL);
+}
+
+function setSlideField(doc: Y.Doc, ids: string[], key: string, value: unknown | null): void {
+  doc.transact(() => {
+    for (const id of ids) {
+      const slide = slidesMap(doc).get(id);
+      if (!slide || isDeleted(slide)) continue;
+      if (value === null) slide.delete(key);
+      else slide.set(key, value);
+    }
+  }, DECK_LOCAL);
+}
+
+/** Sets or clears (null) the background of slides. A background that fails validation is ignored. */
+export function setSlideBackground(doc: Y.Doc, ids: string[], background: SlideBackground | null): void {
+  if (background === null) return setSlideField(doc, ids, "background", null);
+  const clean = cleanBackground(background);
+  if (clean) setSlideField(doc, ids, "background", clean);
+}
+
+export function setSlideTransition(doc: Y.Doc, ids: string[], transition: SlideTransition | null): void {
+  const clean = transition === null ? null : cleanTransition(transition);
+  setSlideField(doc, ids, "transition", clean);
+}
+
+/** Starts, renames (a name) or ends (null) the section that begins at a slide. */
+export function setSectionStart(doc: Y.Doc, slideId: string, name: string | null): void {
+  const clean = name === null ? null : cleanSection(name);
+  if (name !== null && clean === null) return;
+  setSlideField(doc, [slideId], "section", clean);
+}
+
+/** The slides of the section that begins at `firstId`, in order. */
+export function sectionSlideIds(doc: Y.Doc, firstId: string): string[] {
+  const rows = visibleSlideIds(doc).map((id) => ({ id, section: cleanSection(slidesMap(doc).get(id)!.get("section")) ?? undefined }));
+  return sectionsOf(rows).sections.find((s) => s.firstId === firstId)?.slideIds ?? [];
+}
+
+/** Moves a whole section so it starts at `index` among the slides left over. */
+export function moveSection(doc: Y.Doc, firstId: string, index: number): void {
+  const ids = sectionSlideIds(doc, firstId);
+  if (ids.length) moveSlides(doc, ids, index);
 }

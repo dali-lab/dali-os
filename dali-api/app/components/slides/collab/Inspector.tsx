@@ -9,6 +9,8 @@ import { TEXT_STYLE_IDS, TEXT_STYLE_LABELS, THEMES, type TextStyleId } from "~/c
 import { cn } from "~/lib/cn";
 import { ElementView, elementTabLabel, type InspectorFreeform } from "./ElementInspector";
 import { LayoutGrid } from "./LayoutPicker";
+import { BackgroundSection, TransitionSection } from "./SlideSettings";
+import type { SlideBackground, SlideTransition } from "~/components/slides/deck/slide-meta";
 
 type Tab = "slide" | "text" | "deck";
 
@@ -111,6 +113,10 @@ export function Inspector({
   onImport,
   importing = false,
   downloadHref,
+  onBackground,
+  onPickBackground,
+  onTransition,
+  onPreviewTransition,
 }: {
   slide: RenderSlide | null;
   themeId: string;
@@ -129,6 +135,10 @@ export function Inspector({
   onImport?: () => void;
   importing?: boolean;
   downloadHref?: string;
+  onBackground?: (background: SlideBackground | null) => void;
+  onPickBackground?: () => void;
+  onTransition?: (transition: SlideTransition | null) => void;
+  onPreviewTransition?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("slide");
   const selectionKey = selection.join("|");
@@ -158,7 +168,7 @@ export function Inspector({
       {tab === "slide" && (
         <>
           <Section title="Layout">
-            {slide ? <LayoutGrid value={slide.layoutId} onPick={editable ? onLayout : () => {}} /> : <p className="text-sm text-os-grey">No slide selected.</p>}
+            {slide ? <LayoutGrid value={slide.layoutId} themeId={themeId} onPick={editable ? onLayout : () => {}} /> : <p className="text-sm text-os-grey">No slide selected.</p>}
           </Section>
           {imageSlot && editable && (
             <Section title="Image">
@@ -184,6 +194,8 @@ export function Inspector({
               onBuildBullets={() => {}}
             />
           )}
+          {slide && onBackground && onPickBackground && <BackgroundSection slide={slide} themeId={themeId} editable={editable} onChange={onBackground} onPickImage={onPickBackground} />}
+          {slide && onTransition && <TransitionSection slide={slide} editable={editable} onChange={onTransition} onPreview={onPreviewTransition ?? (() => {})} />}
           <Section title="Theme">
             <ThemeCards value={themeId} onPick={editable ? onTheme : () => {}} />
           </Section>

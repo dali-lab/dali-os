@@ -7,6 +7,7 @@ import { explicitPlacement } from "./freeform";
 import { writeClipItems } from "./freeform-ops";
 import { LAYOUTS, layoutById } from "./layouts";
 import { elementsOf, isDeleted, newSlideMap, slidesMap, textOf } from "./model";
+import { cleanBackground, cleanTransition, type SlideBackground, type SlideTransition } from "./slide-meta";
 import type { RenderSlide } from "./snapshot";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
 
@@ -26,6 +27,8 @@ export interface SlotClip {
 export interface SlideClip {
   layoutId: string;
   skipped?: boolean;
+  background?: SlideBackground;
+  transition?: SlideTransition;
   slots: SlotClip[];
   items: ClipItem[];
 }
@@ -52,7 +55,7 @@ export function serializeSlides(slides: RenderSlide[]): string | null {
     const raw = free.length ? serializeSelection(slide, free) : null;
     const items = raw ? (JSON.parse(raw) as { items: unknown[] }).items : [];
     const slots = slide.elements.filter((e) => e.slot).map((e) => slotClip(slide, e.id)).filter((c): c is SlotClip => Boolean(c));
-    return { layoutId: slide.layoutId, ...(slide.skipped ? { skipped: true } : {}), slots, items };
+    return { layoutId: slide.layoutId, ...(slide.skipped ? { skipped: true } : {}), ...(slide.background ? { background: slide.background } : {}), ...(slide.transition ? { transition: slide.transition } : {}), slots, items };
   });
   return JSON.stringify({ mark: SLIDE_CLIP_MARK, v: SLIDE_CLIP_VERSION, slides: clips });
 }
@@ -101,7 +104,9 @@ export function parseSlideClipboard(text: string): SlideClip[] | null {
     const layoutId = LAYOUTS.some((l) => l.id === raw.layoutId) ? String(raw.layoutId) : layoutById(undefined).id;
     const slots = (Array.isArray(raw.slots) ? raw.slots : []).map((s) => cleanSlot(s, layoutId)).filter((s): s is SlotClip => Boolean(s));
     const items = Array.isArray(raw.items) ? (cleanItems(raw.items) ?? []) : [];
-    out.push({ layoutId, ...(raw.skipped === true ? { skipped: true } : {}), slots, items });
+    const background = cleanBackground(raw.background);
+    const transition = cleanTransition(raw.transition);
+    out.push({ layoutId, ...(raw.skipped === true ? { skipped: true } : {}), ...(background ? { background } : {}), ...(transition ? { transition } : {}), slots, items });
   }
   return out.length ? out : null;
 }
@@ -117,6 +122,8 @@ export function pasteSlides(doc: Y.Doc, clips: SlideClip[], afterId: string | nu
       slidesMap(doc).set(id, slide);
       ensureLayoutSlots(slide, clip.layoutId);
       if (clip.skipped) slide.set("skipped", true);
+      if (clip.background) slide.set("background", clip.background);
+      if (clip.transition) slide.set("transition", clip.transition);
       for (const s of clip.slots) {
         const el = elementsOf(slide).get(s.slot);
         if (!el || isDeleted(el)) continue;

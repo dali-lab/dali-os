@@ -89,6 +89,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
       onIndexChange={ignore}
       onPositionChange={move}
       renderSlide={renderSlide}
+      transitions={{ slides: deck.slides, themeId: deck.themeId }}
       onExit={finish}
     />
   );

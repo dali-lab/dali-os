@@ -40,6 +40,7 @@ import { nudgeDelta } from "~/components/slides/deck/geometry";
 import type { ChartSpec, ChartType } from "~/components/slides/deck/content";
 import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
+import type { SlideBackground } from "~/components/slides/deck/slide-meta";
 import { getStyleClip, setStyleClip, styleOf } from "~/components/slides/deck/style-clip";
 import type { ShapeKind } from "~/components/slides/deck/model";
 import type { InsertItem } from "./InsertMenu";
@@ -112,6 +113,9 @@ export interface FreeformExternal {
   addImages?: (files: File[], at: Point | null) => void;
   comment?: (target: CommentTarget) => void;
   changeLayout?: (layoutId: string) => void;
+  openLayoutGallery?: () => void;
+  setBackground?: (background: SlideBackground | null) => void;
+  pickBackgroundImage?: () => void;
 }
 
 export interface FreeformEditor {
@@ -302,6 +306,9 @@ export function useFreeformEditor({
       paste: () => void pasteClipboard(at),
       insert: (item) => latest.current.external?.insertAt?.(item, at),
       changeLayout: (id) => latest.current.external?.changeLayout?.(id),
+      openLayoutGallery: () => latest.current.external?.openLayoutGallery?.(),
+      setBackground: (background) => latest.current.external?.setBackground?.(background),
+      pickBackgroundImage: () => latest.current.external?.pickBackgroundImage?.(),
       selectAll: () => {
         const s = latest.current.slide;
         if (s) setEdit((e) => ({ ...e, selection: [...new Set(s.elements.filter((x) => x.kind !== "group").map((x) => selectionTarget(s, x.id)))] }));
