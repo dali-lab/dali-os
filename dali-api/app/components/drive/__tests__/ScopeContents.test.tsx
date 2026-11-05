@@ -100,7 +100,7 @@ describe("ScopeContents folder band", () => {
 describe("ScopeContents empty folder", () => {
   it.each(["list", "grid"] as const)("pictures an empty folder with the drop hint in %s view", (viewMode) => {
     const out = render([], { atScopeTop: false, viewMode });
-    expect(out).toContain("data-empty-folder-art");
+    expect(out).toContain("data-empty-state-art");
     expect(out).toContain("This folder is empty. Drop files here to upload.");
   });
 
@@ -123,7 +123,7 @@ describe("ScopeContents empty folder", () => {
       </DndContext>,
     );
     expect(out).toContain("Documents shared with you by name appear here.");
-    expect(out).not.toContain("data-empty-folder-art");
+    expect(out).not.toContain("data-empty-state-art");
   });
 });
 

@@ -124,6 +124,7 @@ export default [
     // (app/core/routes/), so there is one implementation per surface and the
     // old URL keeps working; the source loaders redirect flag-on viewers here.
     route("core", "core/routes/core.hub.tsx"),
+    route("core/milestones", "core/routes/core.milestones.tsx"),
     route("core/staffing", "core/routes/core.staffing.tsx"),
     route("core/intent-to-work", "core/routes/core.intent-to-work.tsx"),
     route("core/intent-to-work/:userId", "core/routes/core.intent-to-work.$userId.tsx"),

@@ -5,6 +5,9 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
+vi.mock("~/core/lib/taskboard.server", () => ({
+  getCoreBoardProject: vi.fn().mockResolvedValue({ id: "core1", name: "Core" }),
+}));
 vi.mock("~/projects/lib/task-notifications.server", () => ({
   notifyTaskAssigned: vi.fn().mockResolvedValue(undefined),
 }));
@@ -16,6 +19,7 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { createIssueForTask } from "~/projects/lib/github-task-sync";
+import { getCoreBoardProject } from "~/core/lib/taskboard.server";
 import {
   runCreateTask,
   CREATE_TASK_TOOL,
@@ -151,5 +155,45 @@ describe("create_task", () => {
     });
     expect(out).toMatchObject({ id: "t-new", status: "Todo", position: 5 });
     expect(createIssueForTask).toHaveBeenCalledWith("t-new", "dali/alpha");
+  });
+});
+
+describe("create_task core: true", () => {
+  function stubCreate() {
+    const create = vi.fn().mockResolvedValue({ id: "t-core" });
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "core1", repoUrls: [] });
+    mockPrisma.task.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) =>
+      (fn as (tx: typeof prisma) => Promise<unknown>)({
+        task: { create },
+        taskAssignee: { createMany: vi.fn() },
+      } as unknown as typeof prisma),
+    );
+    return create;
+  }
+
+  it("makes projectId optional in the input schema and adds core", () => {
+    expect(CREATE_TASK_TOOL.inputSchema.required).toEqual(["title"]);
+    expect(CREATE_TASK_TOOL.inputSchema.properties.core.type).toBe("boolean");
+  });
+
+  it("rejects a non-Core caller", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    await expect(runCreateTask("u1", { core: true, title: "x" })).rejects.toMatchObject({ status: 403 });
+    expect(getCoreBoardProject).not.toHaveBeenCalled();
+  });
+
+  it("files the task on the Core board project, ignoring a passed projectId", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const create = stubCreate();
+    const out = await runCreateTask("u1", { core: true, projectId: "other", title: "Plan retreat" });
+    expect(out).toMatchObject({ id: "t-core" });
+    expect(getCoreBoardProject).toHaveBeenCalled();
+    expect(mockPrisma.project.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "core1" } }));
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ projectId: "core1" }) }));
+  });
+
+  it("requires a projectId when core is not set", async () => {
+    await expect(runCreateTask("u1", { title: "x" })).rejects.toMatchObject({ status: 400 });
   });
 });

@@ -1952,7 +1952,7 @@ describe("DriveBrowser open to the side", () => {
 describe("DriveBrowser columns: empty folder", () => {
   it("pictures an empty folder's column", async () => {
     await mount({ folderId: "f2" });
-    const empty = container.querySelector("[data-empty-folder-art]");
+    const empty = container.querySelector("[data-empty-state-art]");
     expect(empty).not.toBeNull();
     expect(empty!.getAttribute("aria-hidden")).toBe("true");
     expect(empty!.parentElement!.textContent).toBe("This folder is empty.");
@@ -1960,7 +1960,7 @@ describe("DriveBrowser columns: empty folder", () => {
 
   it("keeps a full folder's column free of the empty art", async () => {
     await mount({ folderId: "f1" });
-    expect(container.querySelector("[data-empty-folder-art]")).toBeNull();
+    expect(container.querySelector("[data-empty-state-art]")).toBeNull();
   });
 });
 
