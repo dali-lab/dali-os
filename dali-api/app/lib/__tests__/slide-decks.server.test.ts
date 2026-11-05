@@ -2,14 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const db = vi.hoisted(() => ({
   page: { findUnique: vi.fn(), update: vi.fn() },
-  slideDeck: { upsert: vi.fn(), updateMany: vi.fn(), findUniqueOrThrow: vi.fn() },
+  slideDeck: { findUnique: vi.fn(), upsert: vi.fn(), updateMany: vi.fn(), findUniqueOrThrow: vi.fn() },
 }));
 const access = vi.hoisted(() => ({ getPageAccess: vi.fn() }));
+const live = vi.hoisted(() => ({ readLiveDeck: vi.fn(), convertDeckToYjs: vi.fn(), isFeatureEnabled: vi.fn(), getUserRoles: vi.fn() }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: db, Prisma: {} }));
+vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: live.readLiveDeck }));
+vi.mock("~/collab/deck-convert.server", () => ({ convertDeckToYjs: live.convertDeckToYjs }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: live.isFeatureEnabled }));
+vi.mock("~/lib/roles", () => ({ getUserRoles: live.getUserRoles }));
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: {}, getPageAccess: access.getPageAccess }));
 
-import { DECK_CONFLICT, deckAccess, editDeck, loadDeck, saveDeck } from "~/lib/slide-decks.server";
+import { DECK_CONFLICT, deckAccess, deckStorage, editDeck, loadDeck, migrateDeckOnOpen, saveDeck } from "~/lib/slide-decks.server";
 import type { Slide } from "~/components/slides/types";
 
 const V1 = "2026-10-23T12:00:00.000Z";
@@ -55,7 +60,7 @@ describe("deckAccess", () => {
 
 describe("loadDeck", () => {
   it("creates the deck row on first read and returns its slides and version", async () => {
-    expect(await loadDeck("p1")).toEqual({ slides: [slide("s1")], version: V1 });
+    expect(await loadDeck("p1")).toEqual({ slides: [slide("s1")], version: V1, storage: "json" });
     expect(db.slideDeck.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { pageId: "p1" }, create: { pageId: "p1" }, update: {} }),
     );
@@ -67,11 +72,67 @@ describe("loadDeck", () => {
   });
 });
 
+describe("live decks", () => {
+  const read = { v: 1, plainText: "", slides: [{ id: "a", pos: 1, layoutId: "title", elements: [{ id: "title", kind: "text", slot: "title", z: 1, src: null, alt: null, blocks: [], text: "Hi" }], notes: { blocks: [], text: "" } }] };
+
+  it("loadDeck projects a yjs deck to the legacy shape and versions it by the room's last store", async () => {
+    db.slideDeck.upsert.mockResolvedValue({ slides: [], updatedAt: new Date(V1), storage: "yjs" });
+    live.readLiveDeck.mockResolvedValue({ read, updatedAt: new Date(V2) });
+    expect(await loadDeck("p1")).toEqual({ slides: [{ id: "a", layout: "title", title: "Hi" }], version: V2, storage: "yjs" });
+  });
+
+  it("loadDeck falls back to the row's version when the room was never stored", async () => {
+    db.slideDeck.upsert.mockResolvedValue({ slides: [], updatedAt: new Date(V1), storage: "yjs" });
+    live.readLiveDeck.mockResolvedValue({ read, updatedAt: null });
+    expect((await loadDeck("p1")).version).toBe(V1);
+  });
+
+  it("the JSON save and edit paths refuse a yjs deck, since the write is scoped to storage json", async () => {
+    db.slideDeck.updateMany.mockResolvedValue({ count: 0 });
+    expect(await saveDeck("u1", "p1", [slide("s2")], V1)).toMatchObject({ ok: false, status: 409 });
+  });
+
+  it("deckStorage is json for a missing row and yjs once converted", async () => {
+    db.slideDeck.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce({ storage: "yjs" });
+    expect(await deckStorage("p1")).toBe("json");
+    expect(await deckStorage("p1")).toBe("yjs");
+  });
+
+  describe("migrateDeckOnOpen", () => {
+    beforeEach(() => {
+      db.slideDeck.findUnique.mockResolvedValue({ storage: "json" });
+      live.getUserRoles.mockResolvedValue({});
+      live.convertDeckToYjs.mockResolvedValue({ converted: true });
+    });
+
+    it("converts a json deck when the flag is on", async () => {
+      live.isFeatureEnabled.mockResolvedValue(true);
+      expect(await migrateDeckOnOpen("u1", "p1")).toBe("yjs");
+      expect(live.isFeatureEnabled).toHaveBeenCalledWith("slides-collab", "u1", {}, undefined);
+      expect(live.convertDeckToYjs).toHaveBeenCalledWith("p1");
+    });
+
+    it("leaves a json deck alone when the flag is off", async () => {
+      live.isFeatureEnabled.mockResolvedValue(false);
+      expect(await migrateDeckOnOpen("u1", "p1")).toBe("json");
+      expect(live.convertDeckToYjs).not.toHaveBeenCalled();
+    });
+
+    it("keeps a converted deck live without consulting the flag", async () => {
+      db.slideDeck.findUnique.mockResolvedValue({ storage: "yjs" });
+      live.isFeatureEnabled.mockResolvedValue(false);
+      expect(await migrateDeckOnOpen("u1", "p1")).toBe("yjs");
+      expect(live.isFeatureEnabled).not.toHaveBeenCalled();
+      expect(live.convertDeckToYjs).not.toHaveBeenCalled();
+    });
+  });
+});
+
 describe("saveDeck", () => {
   it("writes only when the version still matches, and returns the new one", async () => {
     expect(await saveDeck("u1", "p1", [slide("s2")], V1)).toEqual({ ok: true, version: V2 });
     expect(db.slideDeck.updateMany).toHaveBeenCalledWith({
-      where: { pageId: "p1", updatedAt: new Date(V1) },
+      where: { pageId: "p1", updatedAt: new Date(V1), storage: "json" },
       data: { slides: [slide("s2")], lastEditedById: "u1" },
     });
     expect(db.page.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { lastEditedById: "u1" } });
@@ -103,7 +164,7 @@ describe("editDeck", () => {
   it("applies the edit to the current slides and saves against their version", async () => {
     const result = await editDeck("u1", "p1", (slides) => [...slides, slide("s2")]);
     expect(result).toEqual({ ok: true, slides: [slide("s1"), slide("s2")], version: V2 });
-    expect(db.slideDeck.updateMany.mock.calls[0][0].where).toEqual({ pageId: "p1", updatedAt: new Date(V1) });
+    expect(db.slideDeck.updateMany.mock.calls[0][0].where).toEqual({ pageId: "p1", updatedAt: new Date(V1), storage: "json" });
   });
 
   it("retries once on a conflict, re-reading the deck", async () => {

@@ -206,15 +206,20 @@ export async function authorizeCollabDoc(
   // getPageAccess so viewer-only users connect read-only (live view) rather
   // than being denied. Enrolled students co-edit a studentEditable offering
   // whiteboard while the offering is live, mirroring the doc: branch.
-  if (entity === "whiteboard") {
+  // slides:{pageId}:deck — same access model, but only for a deck that has
+  // moved to live storage; a JSON deck has no room to open.
+  if (entity === "whiteboard" || (entity === "slides" && field === "deck")) {
     const page = await prisma.page.findUnique({
       where: { id },
       select: {
         ...PAGE_ACCESS_SELECT,
         studentEditable: true,
+        kind: true,
+        slideDeck: { select: { storage: true } },
       },
     });
     if (!page || page.archivedAt !== null) return deny;
+    if (entity === "slides" && (page.kind !== "Slides" || page.slideDeck?.storage !== "yjs")) return deny;
 
     const access = await getPageAccess(userSub, page);
     if (access.canView) return { allowed: true, readOnly: !access.canEdit };

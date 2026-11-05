@@ -97,3 +97,12 @@ describe("refer-a-partner flag", () => {
     expect(def).toMatchObject({ defaultEnabled: true, defaultEveryone: true });
   });
 });
+
+describe("slides-collab", () => {
+  it("is registered and ships off", () => {
+    const flag = FEATURE_FLAGS.find((f) => f.key === "slides-collab") as FeatureFlagDef | undefined;
+    expect(flag).toBeDefined();
+    expect(flag!.defaultEnabled).toBeUndefined();
+    expect(flag!.defaultEveryone).toBeUndefined();
+  });
+});
