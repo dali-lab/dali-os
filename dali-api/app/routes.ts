@@ -715,6 +715,8 @@ export default [
   route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
+  route("api/slides/:pageId/live", "routes/api.slides.$pageId.live.ts"),
+  route("api/slides/:pageId/live/stream", "routes/api.slides.$pageId.live.stream.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
