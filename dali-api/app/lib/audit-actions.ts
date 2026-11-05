@@ -59,6 +59,7 @@ export const AUDIT_ACTIONS = [
   "waitlist.remove",
   "waitlist.reorder",
   "interview.invite-reminder.sent",
+  "interview.reopen-scheduling",
   "interview.schedule",
   "interview.reschedule",
   "interview.cancel",
@@ -155,6 +156,8 @@ export const AUDIT_ACTIONS = [
   "projectFile.version",
   "projectFile.delete",
   "projectFile.partner-visibility",
+  "projectFile.download",
+  "projectFile.bulk-download",
   "doctag.create",
   "email.send",
   "email.extension_notice",
@@ -262,6 +265,9 @@ export const AUDIT_ACTIONS = [
   "drive.item.move",
   // Trash actions; metadata carries the item kind and title (purge is permanent).
   "drive.trash.archive-form",
+  "form.response.delete",
+  "form.response.edit",
+  "form.reminder.send",
   "drive.trash.restore",
   "drive.trash.purge",
   "collab.version.restore",
@@ -314,6 +320,9 @@ export const AUDIT_ACTIONS = [
   "recording.discard",
   "release_note.publish",
   "release_note.dismiss",
+  // metadata.name on add; the row itself keeps the name after a delete.
+  "custom_emoji.add",
+  "custom_emoji.delete",
   // Communications. listserv.config targets the singleton "default" row.
   "listserv.config",
   "banner.save",

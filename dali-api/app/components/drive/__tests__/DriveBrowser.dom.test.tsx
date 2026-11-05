@@ -168,6 +168,19 @@ afterEach(() => {
   document.body.innerHTML = "";
 });
 
+describe("DriveBrowser: visible text", () => {
+  it.each([
+    ["columns", {}],
+    ["list", {}],
+    ["grid", {}],
+    ["search", { search: "Doc" }],
+  ] as const)("renders no source comment as text in the %s view", async (view, opts) => {
+    await mount({ view: view === "search" ? "list" : view, ...opts });
+    expect(container.textContent).toContain("Doc d1");
+    expect(container.textContent).not.toContain("/*");
+  });
+});
+
 describe.each(["columns", "list"] as const)("DriveBrowser %s: click selects, double-click opens", (view) => {
   it("selects a document alone on a plain click, opening nothing", async () => {
     await mount({ view });
@@ -411,8 +424,16 @@ describe.each(["columns", "list"] as const)("DriveBrowser %s: keyboard", (view) 
   it("deletes the single selected item through the item path", async () => {
     await mount({ view });
     await click(row("doc", "d3"));
-    await key(pane(view), "#");
+    await key(pane(view), "Backspace", { metaKey: true });
     expect(actions.onDelete).toHaveBeenCalledWith(expect.objectContaining({ id: "d3" }));
+    expect(onBulkDelete).not.toHaveBeenCalled();
+  });
+
+  it("leaves the selection alone on a bare # key", async () => {
+    await mount({ view });
+    await click(row("doc", "d3"));
+    await key(pane(view), "#");
+    expect(actions.onDelete).not.toHaveBeenCalled();
     expect(onBulkDelete).not.toHaveBeenCalled();
   });
 
@@ -736,6 +757,66 @@ describe("DriveBrowser bulk bar", () => {
     expect(onBulkMove.mock.calls[0][0].map((i: DriveItem) => i.id).sort()).toEqual(["d1", "d2"]);
     await click(container.querySelector('[data-testid="drive-bulk-delete"]')!);
     expect(onBulkDelete.mock.calls[0][0].map((i: DriveItem) => i.id).sort()).toEqual(["d1", "d2"]);
+  });
+
+  describe("download", () => {
+    const fileItem = (id: string) =>
+      ({ type: "file", id, title: id, parentFolderId: null, iconEmoji: null, updatedAt: new Date(), href: "/x", sizeBytes: 1 }) as unknown as DriveItem;
+    const withFiles: DriveTreeScope = { ...lab, items: [...lab.items, fileItem("x1"), fileItem("x2")] };
+    const button = () => container.querySelector<HTMLElement>('[data-testid="drive-bulk-download"]');
+
+    async function selectFiles() {
+      await mount({ scopes: [withFiles, mine] });
+      await click(row("file", "x1"), { metaKey: true });
+      await click(row("file", "x2"), { metaKey: true });
+    }
+
+    it("is absent when the selection holds no files", async () => {
+      await selectTwo();
+      expect(bar()).not.toBeNull();
+      expect(button()).toBeNull();
+    });
+
+    it("asks the server for a ZIP of the selected files", async () => {
+      const fetchMock = vi.fn().mockResolvedValue(Response.json({ error: "No" }, { status: 413 }));
+      vi.stubGlobal("fetch", fetchMock);
+      await selectFiles();
+      await click(button()!);
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("/api/drive/download");
+      expect(JSON.parse(init.body).fileIds.sort()).toEqual(["x1", "x2"]);
+      vi.unstubAllGlobals();
+    });
+
+    it("can't be pressed twice while a ZIP is being prepared", async () => {
+      let finish = (_r: Response) => {};
+      const fetchMock = vi.fn(() => new Promise<Response>((resolve) => (finish = resolve)));
+      vi.stubGlobal("fetch", fetchMock);
+      await selectFiles();
+      await click(button()!);
+
+      expect((button() as HTMLButtonElement).disabled).toBe(true);
+      expect(button()!.textContent).toContain("Preparing");
+      await act(async () => {
+        finish(Response.json({ error: "No" }, { status: 413 }));
+        await new Promise((r) => setTimeout(r, 0));
+      });
+      expect((button() as HTMLButtonElement).disabled).toBe(false);
+      vi.unstubAllGlobals();
+    });
+
+    it("offers Download in a file's menu and not a doc's", async () => {
+      await mount({ scopes: [withFiles, mine] });
+      await contextMenu(row("file", "x1"));
+      expect(menuLabels()).toContain("Download");
+      await key(document.body, "Escape");
+      await contextMenu(row("doc", "d1"));
+      expect(menuLabels()).not.toContain("Download");
+    });
   });
 
   it("clears the selection", async () => {
@@ -1180,9 +1261,10 @@ describe("DriveBrowser drag: dropping on a drive", () => {
       ["education", "lucide-graduation-cap"],
     ])("draws the %s drive with its own icon", async (id, iconClass) => {
       await mountScopeList();
-      const icon = byTestId(`drive-scope-${id}`).querySelector("svg");
+      const tile = byTestId(`drive-scope-${id}`).querySelector("[data-area-tile]");
+      expect(tile).not.toBeNull();
+      const icon = tile?.querySelector("svg");
       expect(icon?.getAttribute("class")).toContain(iconClass);
-      expect(icon?.getAttribute("class")).toContain("text-accent-coral/80");
       expect(icon?.getAttribute("class")).not.toContain("lucide-folder ");
     });
 

@@ -12,9 +12,7 @@ import {
 import { useLocation, useMatches, useSearchParams } from "react-router";
 import { BookOpen } from "lucide-react";
 import type { DocHandle } from "~/components/Breadcrumbs";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Tooltip } from "~/components/ui/floating";
-import { GUIDE_OPEN_MESSAGE, postGuideState } from "./guide-bridge";
 
 const PageDocPage = lazy(() =>
   import("./PageDocPage").then((m) => ({ default: m.PageDocPage })),
@@ -83,27 +81,6 @@ export function PageDocProvider({ children }: { children: ReactNode }) {
     [searchParams, setSearchParams],
   );
 
-  // Inside a workspace iframe the shell's top bar carries this page's CTA, so
-  // keep it told what this frame has. No-op in a top-level document, where the
-  // shell reads the route itself.
-  useEffect(() => {
-    postGuideState({
-      hasGuide: Boolean(docKey),
-      open: Boolean(docKey && open),
-    });
-  }, [docKey, open]);
-
-  // …and take the click back from the shell's copy.
-  useEffect(() => {
-    function onMessage(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return;
-      if ((e.data as { type?: unknown } | null)?.type !== GUIDE_OPEN_MESSAGE) return;
-      setOpen(true);
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [setOpen]);
-
   const focusCommentId = searchParams.get("comment") ?? undefined;
 
   const value = useMemo(
@@ -126,25 +103,10 @@ function usePageDoc(): PageDocContextValue {
   return ctx;
 }
 
-// True inside a shell that carries its own Guide CTA above the page (the
-// dali.os top bar). Every page-row copy under it stands down, or the page shows
-// two. A workspace iframe is a separate document with no shell wrapped around
-// it, so the embedded layout provides it there itself: the top bar above that
-// iframe owns the CTA too, reached over the guide bridge.
-const ShellGuideContext = createContext(false);
-
-export function ShellGuideProvider({ children }: { children: ReactNode }) {
-  return <ShellGuideContext.Provider value>{children}</ShellGuideContext.Provider>;
-}
-
 /**
  * The top-bar CTA itself. Lives in the dali.os top bar beside the task bell
  * rather than on a page row, so it takes the bell's plate (`.os-topbar-btn`).
  *
- * Takes its click as a prop because the two shells reach the guide by
- * different routes: tabless mode shares a document with the page and opens it
- * straight through the context, while in tab mode the page is an iframe and
- * the shell posts to it over the guide bridge.
  */
 export function GuideTopbarButton({ onClick, compact = false }: { onClick: () => void; compact?: boolean }) {
   if (compact) {
@@ -176,58 +138,18 @@ export function GuideTopbarButton({ onClick, compact = false }: { onClick: () =>
 }
 
 /**
- * Guide CTA. On pill pages AreaPillNav owns it; layout uses suppressWhenPills.
- *
- * `variant="topbar"` is the dali.os shell's copy for tabless mode, where the
- * shell shares this document with the page. It skips the page-row suppression
- * rules, which are about not stacking two CTAs on one row and don't apply
- * above the page, and it renders outside ShellGuideProvider, since it's the
- * copy that provider defers to.
+ * Guide CTA for the shell: `topbar` is the dali.os top bar's copy, `pagebar`
+ * the compact one in the page bar.
  */
-export function PageDocButton({
-  suppressWhenPills = false,
-  variant = "default",
-}: {
-  suppressWhenPills?: boolean;
-  variant?: "default" | "topbar" | "pagebar";
-}) {
-  const matches = useMatches();
+export function PageDocButton({ variant }: { variant: "topbar" | "pagebar" }) {
   const { docKey, open, setOpen } = usePageDoc();
-  const shellOwnsGuide = useContext(ShellGuideContext);
-  // The in-page pill row no longer renders under the dali.os shell.
-  const hasAreaPills = false;
-  // `areaSubnav` routes (e.g. calendar) render their own subnav row that owns
-  // the guide CTA, regardless of the redesign flag — so the layout's copy must
-  // stand down there too, or the page shows two Guide buttons.
-  const hasAreaSubnav = matches.some(
-    (m) => (m as { handle?: { areaSubnav?: boolean } }).handle?.areaSubnav,
-  );
 
   if (!docKey) return null;
   // The open guide renders its own Close (X) in the page header, so this CTA
   // only ever opens.
   if (open) return null;
 
-  if (variant === "topbar") {
-    return <GuideTopbarButton onClick={() => setOpen(true)} />;
-  }
-  if (variant === "pagebar") {
-    return <GuideTopbarButton compact onClick={() => setOpen(true)} />;
-  }
-
-  if (shellOwnsGuide) return null;
-  if (suppressWhenPills && (hasAreaPills || hasAreaSubnav)) return null;
-
-  return (
-    <button
-      type="button"
-      onClick={() => setOpen(true)}
-      className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-os-accent/10 px-3 py-1.5 text-sm font-semibold font-heading text-os-accent ring-1 ring-inset ring-os-accent/30 transition-colors hover:bg-os-accent/20 hover:ring-os-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
-    >
-      <BookOpen className="h-4 w-4 shrink-0" aria-hidden />
-      Guide
-    </button>
-  );
+  return <GuideTopbarButton compact={variant === "pagebar"} onClick={() => setOpen(true)} />;
 }
 
 /** When the guide is open, replace the route outlet with the full-page guide. */

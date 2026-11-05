@@ -12,7 +12,13 @@ import {
   mcpToolAction,
 } from "../audit.server";
 
-const auth = { user: { id: "u1" }, clientId: "c1", clientName: "Client", grantId: "g1" };
+const auth = {
+  user: { id: "u1" },
+  origin: "mcp" as const,
+  clientId: "c1",
+  clientName: "Client",
+  grantId: "g1",
+};
 
 describe("mcpToolAction", () => {
   it("maps read scope to mcp.tool_read", () => {
@@ -71,6 +77,7 @@ describe("buildMcpToolCallEvent", () => {
       targetId: "t1",
       metadata: {
         toolName: "update_task",
+        origin: "mcp",
         clientId: "c1",
         clientName: "Client",
         grantId: "g1",
@@ -90,6 +97,21 @@ describe("buildMcpToolCallEvent", () => {
     expect(event.action).toBe("mcp.tool_read");
     expect(event.targetId).toBeUndefined();
     expect(event.metadata).toMatchObject({ outcome: "error", errorCode: -32002, argKeys: [] });
+  });
+
+  it("records an in-app call's origin with no grant", () => {
+    const event = buildMcpToolCallEvent({
+      auth: { ...auth, origin: "ask", clientId: "ask-dali", clientName: "Ask DALI", grantId: null },
+      toolName: "read_page",
+      scope: "mcp:read",
+      args: { pageId: "pg1" },
+    });
+    expect(event.metadata).toMatchObject({
+      origin: "ask",
+      clientId: "ask-dali",
+      clientName: "Ask DALI",
+      grantId: null,
+    });
   });
 });
 

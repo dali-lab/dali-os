@@ -5,7 +5,6 @@
 // page, where hidden (not-in-table) columns are also shown.
 
 import { useNavigate } from "react-router";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 export type DbColumn = { key: string; label: string };
 
@@ -66,7 +65,7 @@ export function SubmissionDatabase({
               key={r.userId}
               onClick={() => {
                 const url = detailUrl(r.userId);
-                if (!requestOpenTabIfEmbedded(url, r.name)) navigate(url);
+                navigate(url);
               }}
               className="border-t border-border hover:bg-muted/20 cursor-pointer"
             >

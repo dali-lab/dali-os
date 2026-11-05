@@ -3,9 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { RECORDING_FAVICON, RecordingPill } from "./RecordingPill";
-import { adoptDesktopSession, getLiveSession, resetLiveSession } from "./live-session";
+import { adoptDesktopSession, getLiveSession, refreshLiveSession, resetLiveSession } from "./live-session";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 vi.mock("./worklet-processor.js?url", () => ({ default: "worklet.js" }));
@@ -37,15 +36,11 @@ async function show(status: "Pending" | "Recording" | "Stopped", over: Record<st
   });
 }
 
-async function mount(opts: { at?: string; flag?: boolean } = {}) {
+async function mount(opts: { at?: string } = {}) {
   const Stub = createRoutesStub([
     {
       path: "*",
-      Component: () =>
-        createElement(FeatureFlagsProvider, {
-          flags: { "ai-meeting-notes": opts.flag ?? true },
-          children: createElement(RecordingPill),
-        }),
+      Component: () => createElement(RecordingPill),
     },
   ]);
   container = document.createElement("div");
@@ -89,21 +84,35 @@ describe("RecordingPill", () => {
     expect(container.textContent).toBe("");
   });
 
+  it("flags a recording with no sound, and clears it once sound arrives", async () => {
+    serverRow = row({ noSound: true });
+    await mount();
+    expect(container.textContent).toContain("No sound");
+    expect(stopButton()).not.toBeNull();
+
+    serverRow = row({ noSound: false });
+    await act(async () => {
+      await refreshLiveSession();
+    });
+    expect(container.textContent).not.toContain("No sound");
+  });
+
+  it("carries the mic device and call audio state from the server into the session", async () => {
+    serverRow = row({ noSound: true, micDevice: "iPhone Microphone", callAudioOff: true });
+    await mount();
+    expect(getLiveSession()).toMatchObject({ noSound: true, micDevice: "iPhone Microphone", callAudioOff: true });
+  });
+
+  it("treats a server without capture fields as no device and call audio on", async () => {
+    serverRow = row();
+    await mount();
+    expect(getLiveSession()).toMatchObject({ micDevice: null, callAudioOff: false });
+  });
+
   it("picks up a recording the server already has on first load", async () => {
     serverRow = row();
     await mount();
     expect(container.textContent).toContain("Weekly sync");
-  });
-
-  it("does not ask the server anything when the flag is off", async () => {
-    await mount({ flag: false });
-    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
-  });
-
-  it("renders nothing when the flag is off, even with a session", async () => {
-    await show("Recording");
-    await mount({ flag: false });
-    expect(container.textContent).toBe("");
   });
 
   it("shows the timer, the note title as a link, and Stop while recording", async () => {

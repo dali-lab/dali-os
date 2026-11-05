@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { desktopVersion } from "~/lib/desktop";
+import { desktopVersion, hasNativeRecorder } from "~/lib/desktop";
 import { acquireCollabDoc, releaseCollabDoc } from "~/components/doc/collab-doc";
 import { captureCallAudio, describeMicError, listMicDevices, openMic, startLevelMeter } from "./capture";
 import {
@@ -20,6 +20,8 @@ import {
   stopLiveSession,
   useLiveSession,
 } from "./live-session";
+import { holdRecordingPresence, releaseRecordingPresence } from "./recording-presence";
+import { findRemoteRecording, type RecordingAwarenessState } from "./awareness";
 import {
   countSpeakersByChannel,
   formatClock,
@@ -375,7 +377,7 @@ export function useMeetingRecording({
   const [scrollTarget, setScrollTarget] = useState<number | null>(null);
 
   // Start-sheet config.
-  const [useDesktopApp, setUseDesktopApp] = useState(desktopVer != null);
+  const [useDesktopApp, setUseDesktopApp] = useState(hasNativeRecorder);
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(undefined);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [micLevel, setMicLevel] = useState(0);
@@ -392,6 +394,10 @@ export function useMeetingRecording({
     liveSession && liveSession.recordingId === recordingId && liveSession.captureMode === "browser" && !remote
       ? liveSession
       : null;
+  const ownLive = phase === "recording" && liveSession?.recordingId === recordingId ? liveSession : null;
+  const noSound = Boolean(ownLive?.noSound);
+  const micDevice = ownLive?.micDevice ?? null;
+  const callAudioOff = Boolean(ownLive?.callAudioOff);
   const channelsActive = ownSession ? ownSession.channelsActive : polledChannels;
   const levels = ownSession ? ownSession.levels : emptyLevels;
   const stalled = ownSession ? ownSession.stalled : emptyStalled;
@@ -459,6 +465,93 @@ export function useMeetingRecording({
   }
 
   // ─── Pick a left-behind recording back up ──────────────────────────────
+  async function pickUp(
+    saved: Backup,
+    own: Backup | null,
+    following: Pick<LatestRecording, "ownerName" | "ownerIsYou" | "since"> | null,
+    isCancelled: () => boolean,
+  ) {
+    const res = await fetch(`/api/meeting-recordings/${saved.id}`, { credentials: "include" }).catch(() => null);
+    if (isCancelled() || claimed.current) return;
+    if (!res) return;
+    if (!res.ok) {
+      if (res.status === 404) writeBackup(documentName, null);
+      return;
+    }
+    const data = (await res.json()) as PollRecordingResponse;
+    if (isCancelled() || claimed.current) return;
+    claimed.current = true;
+    setRecordingId(saved.id);
+    setLink(saved.link || null);
+    setAiEnabled(saved.aiEnabled);
+    setChannelsActive(data.channels as Channel[]);
+    setRecordedSeconds(data.recordedSeconds);
+    setLines(data.lines);
+    setSpeakers(data.speakers);
+    setSpeakerNames(data.speakerNames ?? {});
+    setLastChunkAt(data.lastChunkAt ?? null);
+    setInsertedAt(data.insertedAt ?? null);
+    setFinalized(Boolean(data.finalizedAt));
+    setEnhanceNotes(data.notes ?? null);
+    setEnhancedAt(data.enhancedAt ?? null);
+    setEnhancedByName(data.enhancedBy ?? null);
+    setReviewedAt(data.reviewedAt ?? null);
+    segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
+    if (data.error) setError(data.error);
+    const liveStart = liveSessionStart(data);
+    if (following) {
+      setRemote({ ownerName: following.ownerName, ownerIsYou: following.ownerIsYou });
+      setStartedAt(liveStart ?? new Date(following.since).getTime());
+    }
+    const inMemory = getLiveSession();
+    const adoptable =
+      own?.captureMode === "browser" && inMemory?.recordingId === saved.id && inMemory.captureMode === "browser"
+        ? inMemory
+        : null;
+    if (adoptable && (data.status === "Pending" || data.status === "Recording" || data.status === "Stopped")) {
+      setCaptureMode("browser");
+      setStartedAt(adoptable.startedAt);
+      if (adoptable.status === "stopped") handledStop.current = `${adoptable.recordingId}:${adoptable.startedAt}`;
+      if (adoptable.conflicted) {
+        setError(CONFLICT_MESSAGE);
+        setPhase("processing");
+      } else {
+        setPhase(adoptable.status === "stopped" ? "review" : adoptable.status);
+      }
+      setOpen(true);
+    } else if ((data.status === "Pending" || data.status === "Recording") && own?.captureMode === "browser") {
+      // The tab that was capturing reloaded, so its mic is gone. Stop the
+      // session rather than show a clock over nothing; Continue picks it up.
+      setCaptureMode("browser");
+      void fetch(`/api/meeting-recordings/${saved.id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      }).catch(() => null);
+      setError("Recording stopped when this page reloaded. Continue to pick it up.");
+      setPhase("review");
+      setOpen(true);
+    } else if (data.status === "Pending" || data.status === "Recording") {
+      setCaptureMode("desktop"); // no local capture to drive: follow the row by polling
+      if (!following) setStartedAt(liveStart ?? Date.now());
+      setPhase(data.status === "Pending" ? "starting" : "recording");
+      if (!following) setOpen(true);
+    } else if (data.status === "Stopped") {
+      setCaptureMode((m) => m ?? own?.captureMode ?? "desktop");
+      setPhase("review");
+      if (!following) setOpen(true);
+    } else if (data.status === "Processing") {
+      setPhase("processing");
+    } else if (data.status === "Done") {
+      setPhase("done");
+      if (transcriptParam) setOpen(true);
+    } else {
+      setPhase("failed");
+      if (transcriptParam) setOpen(true);
+    }
+  }
+
   useEffect(() => {
     if (claimed.current) return;
     const own = readBackup(documentName);
@@ -472,87 +565,7 @@ export function useMeetingRecording({
         ? latestRecording
         : null;
     let cancelled = false;
-    void (async () => {
-      const res = await fetch(`/api/meeting-recordings/${saved.id}`, { credentials: "include" }).catch(() => null);
-      if (cancelled || claimed.current) return;
-      if (!res) return;
-      if (!res.ok) {
-        if (res.status === 404) writeBackup(documentName, null);
-        return;
-      }
-      const data = (await res.json()) as PollRecordingResponse;
-      if (cancelled || claimed.current) return;
-      claimed.current = true;
-      setRecordingId(saved.id);
-      setLink(saved.link || null);
-      setAiEnabled(saved.aiEnabled);
-      setChannelsActive(data.channels as Channel[]);
-      setRecordedSeconds(data.recordedSeconds);
-      setLines(data.lines);
-      setSpeakers(data.speakers);
-      setSpeakerNames(data.speakerNames ?? {});
-      setLastChunkAt(data.lastChunkAt ?? null);
-      setInsertedAt(data.insertedAt ?? null);
-      setFinalized(Boolean(data.finalizedAt));
-      setEnhanceNotes(data.notes ?? null);
-      setEnhancedAt(data.enhancedAt ?? null);
-      setEnhancedByName(data.enhancedBy ?? null);
-      setReviewedAt(data.reviewedAt ?? null);
-      segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
-      if (data.error) setError(data.error);
-      const liveStart = liveSessionStart(data);
-      if (following) {
-        setRemote({ ownerName: following.ownerName, ownerIsYou: following.ownerIsYou });
-        setStartedAt(liveStart ?? new Date(following.since).getTime());
-      }
-      const inMemory = getLiveSession();
-      const adoptable =
-        own?.captureMode === "browser" && inMemory?.recordingId === saved.id && inMemory.captureMode === "browser"
-          ? inMemory
-          : null;
-      if (adoptable && (data.status === "Pending" || data.status === "Recording" || data.status === "Stopped")) {
-        setCaptureMode("browser");
-        setStartedAt(adoptable.startedAt);
-        if (adoptable.status === "stopped") handledStop.current = `${adoptable.recordingId}:${adoptable.startedAt}`;
-        if (adoptable.conflicted) {
-          setError(CONFLICT_MESSAGE);
-          setPhase("processing");
-        } else {
-          setPhase(adoptable.status === "stopped" ? "review" : adoptable.status);
-        }
-        setOpen(true);
-      } else if ((data.status === "Pending" || data.status === "Recording") && own?.captureMode === "browser") {
-        // The tab that was capturing reloaded, so its mic is gone. Stop the
-        // session rather than show a clock over nothing; Continue picks it up.
-        setCaptureMode("browser");
-        void fetch(`/api/meeting-recordings/${saved.id}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "stop" }),
-        }).catch(() => null);
-        setError("Recording stopped when this page reloaded. Continue to pick it up.");
-        setPhase("review");
-        setOpen(true);
-      } else if (data.status === "Pending" || data.status === "Recording") {
-        setCaptureMode("desktop"); // no local capture to drive: follow the row by polling
-        if (!following) setStartedAt(liveStart ?? Date.now());
-        setPhase(data.status === "Pending" ? "starting" : "recording");
-        if (!following) setOpen(true);
-      } else if (data.status === "Stopped") {
-        setCaptureMode((m) => m ?? own?.captureMode ?? "desktop");
-        setPhase("review");
-        if (!following) setOpen(true);
-      } else if (data.status === "Processing") {
-        setPhase("processing");
-      } else if (data.status === "Done") {
-        setPhase("done");
-        if (transcriptParam) setOpen(true);
-      } else {
-        setPhase("failed");
-        if (transcriptParam) setOpen(true);
-      }
-    })();
+    void pickUp(saved, own, following, () => cancelled);
     return () => {
       cancelled = true;
     };
@@ -560,6 +573,45 @@ export function useMeetingRecording({
     // claimed shouldn't be re-evaluated when the URL changes later).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentName]);
+
+  // ─── Follow a recording someone starts after this page loaded ──────────
+  useEffect(() => {
+    if (!collabToken || phase !== "idle" || claimed.current) return;
+    const entry = acquireCollabDoc(documentName, collabToken);
+    const awareness = entry.provider.awareness;
+    if (!awareness) {
+      releaseCollabDoc(documentName);
+      return;
+    }
+    let cancelled = false;
+    let tried: string | null = null;
+    const check = () => {
+      if (claimed.current) return;
+      const states = awareness.getStates() as Map<number, RecordingAwarenessState>;
+      const found = findRemoteRecording(states, entry.ydoc.clientID);
+      if (!found?.recordingId || found.recordingId === tried) return;
+      tried = found.recordingId;
+      const localUserId = (awareness.getLocalState()?.user as { userId?: string } | undefined)?.userId;
+      void pickUp(
+        { id: found.recordingId, link: "", aiEnabled: false },
+        null,
+        {
+          ownerName: found.name,
+          ownerIsYou: Boolean(localUserId) && found.userId === localUserId,
+          since: new Date(found.since).toISOString(),
+        },
+        () => cancelled,
+      );
+    };
+    awareness.on("change", check);
+    check();
+    return () => {
+      cancelled = true;
+      awareness.off("change", check);
+      releaseCollabDoc(documentName);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase === "idle", documentName, collabToken]);
 
   // ─── This tab's browser capture, which lives in live-session.ts ────────
   useEffect(() => {
@@ -588,19 +640,17 @@ export function useMeetingRecording({
   }, [phase, recordingId]);
 
   // ─── Recording presence: tell every other viewer via collab awareness ──
+  const presenceIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!collabToken || remote) return;
-    if (phase !== "recording" && phase !== "stopping") return;
-    const entry = acquireCollabDoc(documentName, collabToken);
-    const awareness = entry.provider.awareness;
-    const localUser = awareness?.getLocalState()?.user as { userId?: string } | undefined;
-    awareness?.setLocalStateField("recording", { userId: localUser?.userId ?? "", since: Date.now() });
-    return () => {
-      awareness?.setLocalStateField("recording", null);
-      releaseCollabDoc(documentName);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase === "recording" || phase === "stopping", documentName, collabToken, Boolean(remote)]);
+    const announcing = phase === "recording" || phase === "stopping";
+    if (announcing && collabToken && !remote && recordingId) {
+      holdRecordingPresence({ recordingId, documentName, collabToken });
+      presenceIdRef.current = recordingId;
+    } else if (!announcing && presenceIdRef.current) {
+      releaseRecordingPresence(presenceIdRef.current);
+      presenceIdRef.current = null;
+    }
+  }, [phase, recordingId, documentName, collabToken, remote]);
 
   // ─── Elapsed-time tick while live (both capture modes) ─────────────────
   useEffect(() => {
@@ -818,13 +868,20 @@ export function useMeetingRecording({
     }
   }
 
-  async function createRow(): Promise<StartRecordingResponse | null> {
+  async function createRow(captureSource: "desktop" | "browser"): Promise<StartRecordingResponse | null> {
     try {
       const res = await fetch("/api/meeting-recordings", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentName, scheduledMeetingId, occurrenceStart }),
+        body: JSON.stringify({
+          documentName,
+          scheduledMeetingId,
+          occurrenceStart,
+          captureSource,
+          appVersion: desktopVer,
+          clientPlatform: navigator.platform,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (res.status === 409 && json?.error === "alreadyRecording" && typeof json.recordingId === "string") {
@@ -851,7 +908,7 @@ export function useMeetingRecording({
 
   async function startDesktop() {
     setError(null);
-    const created = await createRow();
+    const created = await createRow("desktop");
     if (!created) {
       setOpen(true);
       return;
@@ -896,7 +953,7 @@ export function useMeetingRecording({
       setOpen(true);
       return;
     }
-    const created = await createRow();
+    const created = await createRow("browser");
     if (!created) {
       setOpen(true);
       return;
@@ -1052,7 +1109,12 @@ export function useMeetingRecording({
    *  the "inserted" state (specs/meeting-recording-rail.md) until Discard. */
   function insert(notes: string | null) {
     const paragraphs = transcriptParagraphs(lines, speakers, roster);
-    if (!onInsert(meetingNotesMarkdown(notes), paragraphs)) {
+    const markdown = meetingNotesMarkdown(notes);
+    if (!markdown && paragraphs.length === 0) {
+      setError("There's nothing in this recording to insert.");
+      return false;
+    }
+    if (!onInsert(markdown, paragraphs)) {
       setError("The note is still loading. Try again in a moment.");
       return false;
     }
@@ -1336,6 +1398,21 @@ export function useMeetingRecording({
 
   // The desktop app never answered the deep link: drop that row and reset to
   // the idle sheet with the browser radio selected, ready for Start recording.
+  // The old row has to be gone before the new start, or the server answers
+  // alreadyRecording and this client ends up following its own dead row.
+  async function retryDesktopStart() {
+    const stale = recordingId;
+    setAppUnreachable(false);
+    setRecordingId(null);
+    setPhase("idle");
+    writeBackup(documentName, null);
+    if (stale) {
+      clearLiveSession(stale);
+      await fetch(`/api/meeting-recordings/${stale}`, { method: "DELETE", credentials: "include" }).catch(() => null);
+    }
+    await startDesktop();
+  }
+
   function switchToBrowserAfterUnreachable() {
     if (recordingId) {
       void fetch(`/api/meeting-recordings/${recordingId}`, { method: "DELETE", credentials: "include" }).catch(
@@ -1405,6 +1482,9 @@ export function useMeetingRecording({
     channelsActive,
     levels,
     stalled,
+    noSound,
+    micDevice,
+    callAudioOff,
     recordedSeconds,
     now,
     lines,
@@ -1435,7 +1515,6 @@ export function useMeetingRecording({
 
     // Start-sheet config.
     useDesktopApp,
-    setUseDesktopApp,
     micDeviceId,
     setMicDeviceId,
     micDevices,
@@ -1488,6 +1567,7 @@ export function useMeetingRecording({
     setSpeaker,
     jumpToTranscript,
     cancelStart,
+    retryDesktopStart,
     switchToBrowserAfterUnreachable,
   };
 }

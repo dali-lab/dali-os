@@ -1,8 +1,6 @@
 import type { Route } from "./+types/api.mobile.notes";
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isTranscriptionEnabled } from "~/lib/transcription/provider";
 import { pageDocName } from "~/collab/roomName";
 import { parseJson } from "~/lib/validate";
@@ -30,11 +28,6 @@ const NewNoteSchema = z.union([
   z.object({ scheduledMeetingId: z.string().min(1), occurrenceStart: z.string().datetime() }),
 ]);
 
-async function canRecord(userId: string, request: Request): Promise<boolean> {
-  const roles = await getUserRoles(userId, request);
-  return isTranscriptionEnabled() && (await isFeatureEnabled("ai-meeting-notes", userId, roles, request));
-}
-
 export async function loader({ request }: Route.LoaderArgs) {
   const guard = await requireMobileUser(request);
   if (!guard.ok) return guard.response;
@@ -42,8 +35,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const cursors = parseNotesCursor(new URL(request.url).searchParams.get("cursor"));
 
-  const [recordingEnabled, recordingRows, typedRows] = await Promise.all([
-    canRecord(userId, request),
+  const recordingEnabled = isTranscriptionEnabled();
+  const [recordingRows, typedRows] = await Promise.all([
     cursors.recordings === CURSOR_DONE
       ? []
       : prisma.meetingRecording.findMany({

@@ -20,7 +20,7 @@ import type { Slot } from "./form-slots";
 export type QuestionTypeConstraint =
   | "reference-project" // reference question, project source
   | "reference-domain" // reference question, domain source
-  | "choice" // select/text answer coerced to a fixed enum (intent status)
+  | "choice" // select/radio/text answer coerced to a fixed enum (intent status)
   | "text" // free text/textarea
   | "person" // not a question — the authenticated submitter (builtin source)
   | "display" // not staffing-feeding — view-only (builtin or any question)
@@ -135,9 +135,6 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
   ],
-  // Pure database view: no interpreter, no staffing writes. Every column is a
-  // display column plus the server-derived submitter identity.
-  referrals: [DISPLAY_ROLE, SUBMITTER_ROLE],
   "level-up": [
     {
       role: "target-domain",
@@ -171,7 +168,6 @@ export const REQUIRED_BUILTINS: Record<Slot, BuiltinSource[]> = {
   "project-bids": ["submitter", "hiredRoles"],
   "intent-to-work": [],
   "level-up": ["submitter"],
-  referrals: ["submitter"],
 };
 
 // A column is filled from one of two source kinds: a form question, or a
@@ -330,6 +326,12 @@ export function validateMapping(
           ok: false,
           reason:
             "The form was changed and the column mapping is out of date — re-map its questions.",
+        };
+      }
+      if (q.data.showIf) {
+        return {
+          ok: false,
+          reason: `Question "${q.data.label}" is only shown sometimes, so it can't fill the "${def.defaultLabel}" column.`,
         };
       }
       if (!questionFitsConstraint(q, def.constraint)) {

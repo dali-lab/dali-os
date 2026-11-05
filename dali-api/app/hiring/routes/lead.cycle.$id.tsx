@@ -10,8 +10,7 @@ import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles, isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isAdmin, isCore, isCycleAdmin } from "~/lib/roles";
 import { listHiringEvents, isEventCheckInOpen } from "~/hiring/lib/hiring-events.server";
 import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { countAnnouncementRecipients } from "~/hiring/lib/hiring-event-notice";
@@ -77,8 +76,7 @@ import {
 } from "~/hiring/lib/email-variables";
 import { pendingForHiringLead } from "~/hiring/lib/decision-pills";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { reassignCandidates } from "~/hiring/lib/interviewer-pool";
+import { canOverrideAvailability, seatEligible, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
@@ -162,11 +160,20 @@ interface CycleReviewer {
   domain: { id: string; name: string }
 }
 
+const AVAILABILITY_ORDER: InterviewerAvailability[] = ['free', 'busy', 'no-calendar', 'booked']
+const AVAILABILITY_NOTE: Record<InterviewerAvailability, string | undefined> = {
+  free: undefined,
+  busy: 'Busy on their calendar',
+  'no-calendar': 'No calendar set up',
+  booked: 'Has another interview then',
+}
+
 interface InterviewRow {
   id: string
   startTime: string
   endTime: string
   status: string
+  availability: Record<string, InterviewerAvailability>
   room: { id: string; name: string } | null
   zoomJoinUrl: string | null
   videoUrl: string | null
@@ -191,6 +198,7 @@ interface InterviewRow {
 interface PendingInviteRow {
   id: string
   invitedAt: string
+  withdrawn: boolean
   domainApplication: {
     id: string
     domain: { name: string }
@@ -443,22 +451,20 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (continuedInterestEmail) hiringEmails[CONTINUED_INTEREST_SLOT] = continuedInterestEmail;
 
   const memberSetup = isMemberCycle ? await loadMemberCycleSetup(params.id) : null;
-  const [progress, termOptions, phaseStatusByDomain, startTermCandidates, viewerRoles] = await Promise.all([
+  const [progress, termOptions, phaseStatusByDomain, startTermCandidates] = await Promise.all([
     getCycleProgress(params.id),
     loadTermOptions(request),
     confidentialityRequired ? null : loadPhaseStatusByDomain(params.id),
     loadStartTermCandidates(),
-    getUserRoles(auth.user.sub, request),
   ]);
 
-  // Application events (help hours, socials, info sessions): flag-gated, so
-  // the event list itself is fetched only once the flag resolves. QR SVGs are
-  // built only for events whose check-in is currently open, to keep this
-  // loader cheap on cycles with a long event history.
-  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, viewerRoles, request);
-  const [hiringEventRows, announcementRecipientCount] = applicationEventsEnabled
-    ? await Promise.all([listHiringEvents(params.id!), countAnnouncementRecipients(params.id!)])
-    : [[], 0];
+  // Application events (help hours, socials, info sessions). QR SVGs are built
+  // only for events whose check-in is currently open, to keep this loader cheap
+  // on cycles with a long event history.
+  const [hiringEventRows, announcementRecipientCount] = await Promise.all([
+    listHiringEvents(params.id!),
+    countAnnouncementRecipients(params.id!),
+  ]);
   const hiringEvents: HiringEventRow[] = hiringEventRows.map((e) => ({
     id: e.id,
     kind: e.kind,
@@ -507,7 +513,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       currentConfidentialityBinding,
       confidentialitySignatures,
       confidentialityRequired,
-      applicationEventsEnabled,
       hiringEvents,
       hiringEventCheckIns,
       announcementRecipientCount,
@@ -1552,6 +1557,7 @@ export default function HiringLeadCycleDetails() {
   const [pendingInvites, setPendingInvites] = useState<PendingInviteRow[]>([])
   // Per-row id while a Resend invite is in-flight; null when idle.
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null)
+  const [reopeningId, setReopeningId] = useState<string | null>(null)
   // Filters for the interviews table — domain + status. "all" disables.
   const [interviewDomainFilter, setInterviewDomainFilter] = useState<string>('all')
   const [interviewStatusFilter, setInterviewStatusFilter] = useState<string>('all')
@@ -1606,7 +1612,7 @@ export default function HiringLeadCycleDetails() {
       const sp = new URLSearchParams(prev)
       sp.set('tab', next)
       return sp
-    }, { preventScrollReset: true })
+    }, { replace: true, preventScrollReset: true })
   }, [setSearchParams])
 
   // ── Decisions state ──
@@ -2342,17 +2348,15 @@ export default function HiringLeadCycleDetails() {
             </NavSection>
           )}
 
-          {loaderData?.applicationEventsEnabled && (
-            <NavSection id="events" title="Application events">
-            <ApplicationEventsCard
-              cycleId={cycle.id}
-              events={loaderData.hiringEvents ?? []}
-              announcementTemplateBound={!!loaderData?.hiringEmails?.["notification:ApplicationEventAnnouncement"]}
-              recipientCount={loaderData.announcementRecipientCount ?? 0}
-              checkIns={loaderData.hiringEventCheckIns ?? {}}
-            />
-            </NavSection>
-          )}
+          <NavSection id="events" title="Application events">
+          <ApplicationEventsCard
+            cycleId={cycle.id}
+            events={loaderData?.hiringEvents ?? []}
+            announcementTemplateBound={!!loaderData?.hiringEmails?.["notification:ApplicationEventAnnouncement"]}
+            recipientCount={loaderData?.announcementRecipientCount ?? 0}
+            checkIns={loaderData?.hiringEventCheckIns ?? {}}
+          />
+          </NavSection>
 
           <NavSection id="timeline" title="Timeline">
           <TimelineCard
@@ -2676,6 +2680,7 @@ export default function HiringLeadCycleDetails() {
       ) : (() => {
         // Filter inputs derived from current data so empty options never show.
         const domainFor = (p: PendingInviteRow) => p.domainApplication.domain.name
+        const pendingStatus = (p: PendingInviteRow) => (p.withdrawn ? 'Withdrawn' : 'Awaiting schedule')
         const isCancelled = (status: string) =>
           status === 'CancelledByApplicant' || status === 'CancelledByAdmin'
         // Hide cancelled interviews unless the user opted in. A cancelled-only
@@ -2690,7 +2695,7 @@ export default function HiringLeadCycleDetails() {
           ...pendingInvites.map(domainFor).filter(Boolean),
         ])).sort()
         const availableStatuses = Array.from(new Set<string>([
-          ...(pendingInvites.length > 0 ? ['Awaiting schedule'] : []),
+          ...new Set(pendingInvites.map(pendingStatus)),
           ...visibleInterviews.map(i => i.status),
         ]))
         const filtersActive = interviewDomainFilter !== 'all' || interviewStatusFilter !== 'all'
@@ -2701,7 +2706,7 @@ export default function HiringLeadCycleDetails() {
         })
         const filteredPending = pendingInvites.filter(p => {
           if (interviewDomainFilter !== 'all' && domainFor(p) !== interviewDomainFilter) return false
-          if (interviewStatusFilter !== 'all' && interviewStatusFilter !== 'Awaiting schedule') return false
+          if (interviewStatusFilter !== 'all' && interviewStatusFilter !== pendingStatus(p)) return false
           return true
         })
         const totalRows = filteredInterviews.length + filteredPending.length
@@ -2738,6 +2743,31 @@ export default function HiringLeadCycleDetails() {
             setResendingInviteId(null)
           }
         }
+        async function reopenScheduling(daId: string, firstName?: string) {
+          if (
+            !(await dialog.confirm({
+              title: `Let ${firstName ?? 'this applicant'} rebook?`,
+              description: 'Clears their cancellation so they can pick a new time. They are not emailed until you resend the invite.',
+              confirmLabel: 'Let them rebook',
+            }))
+          )
+            return
+          setReopeningId(daId)
+          try {
+            const res = await fetch(`/api/hiring/domain-applications/${daId}/reopen-scheduling`, {
+              method: 'POST',
+              credentials: 'include',
+            })
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}))
+              toast.error(body.error ?? 'Failed to reopen scheduling')
+              return
+            }
+            await loadInterviews()
+          } finally {
+            setReopeningId(null)
+          }
+        }
         const locationLabel = (room: { name: string } | null) => room?.name ?? 'Online'
         async function changeLocation(interview: any, newRoomId: string) {
           if (
@@ -2765,22 +2795,31 @@ export default function HiringLeadCycleDetails() {
             toast.error(body.error ?? 'Failed to update location')
           }
         }
-        async function reassign(interview: any, a: any, value: string) {
-          if (!value) return
+        async function reassign(interview: any, a: any, to: { id: string; name: string; availability: InterviewerAvailability }) {
+          const override = canOverrideAvailability(to.availability)
           if (
             !(await dialog.confirm({
-              title: 'Reassign interviewer?',
-              description: `Emails the removed interviewer and the replacement interviewer about the change.`,
-              confirmLabel: 'Reassign',
+              title: override ? `Assign ${to.name} anyway?` : 'Reassign interviewer?',
+              description: override
+                ? `${to.availability === 'busy'
+                    ? `${to.name}'s calendar shows a conflict at this time.`
+                    : `${to.name} has no calendar or working hours set up, so DALI OS can't tell if they're free.`} Check with them first. Emails the removed interviewer and ${to.name} about the change.`
+                : 'Emails the removed interviewer and the replacement interviewer about the change.',
+              confirmLabel: override ? 'Assign anyway' : 'Reassign',
               tone: 'destructive',
             }))
           )
             return
-          await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
+          const res = await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
             method: 'POST', credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: value }),
+            body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: to.id, ...(override && { override: true }) }),
           })
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}))
+            toast.error(body.error ?? 'Failed to reassign interviewer')
+            return
+          }
           window.location.reload()
         }
         async function cancelInterview(interview: any) {
@@ -2811,11 +2850,6 @@ export default function HiringLeadCycleDetails() {
         const applicantLink = (daId: string, u: { firstName?: string | null; lastName?: string | null }) => (
           <Link
             to={`/hiring/applications/${daId}`}
-            onClick={(e) => {
-              const url = `/hiring/applications/${daId}`
-              const label = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'Applicant'
-              if (requestOpenTabIfEmbedded(url, label)) e.preventDefault()
-            }}
             className="truncate text-sm font-semibold text-foreground hover:underline"
           >
             {u.firstName} {u.lastName}
@@ -2877,19 +2911,30 @@ export default function HiringLeadCycleDetails() {
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Pill dot="warning">Awaiting schedule</Pill>
-                        <Tooltip content={!reminderTemplateBound ? 'Write the invite reminder email on Setup to resend invites.' : null} variant="rich">
-                          <span>
-                            <button
-                              type="button"
-                              onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
-                              disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
-                              className={buttonClasses('secondary', 'sm')}
-                            >
-                              {resendingInviteId === p.domainApplication.id ? 'Sending…' : 'Resend invite'}
-                            </button>
-                          </span>
-                        </Tooltip>
+                        <Pill dot={p.withdrawn ? 'danger' : 'warning'}>{pendingStatus(p)}</Pill>
+                        {p.withdrawn ? (
+                          <button
+                            type="button"
+                            onClick={() => reopenScheduling(p.domainApplication.id, u.firstName ?? undefined)}
+                            disabled={reopeningId === p.domainApplication.id}
+                            className={buttonClasses('secondary', 'sm')}
+                          >
+                            {reopeningId === p.domainApplication.id ? 'Saving…' : 'Let them rebook'}
+                          </button>
+                        ) : (
+                          <Tooltip content={!reminderTemplateBound ? 'Write the invite reminder email on Setup to resend invites.' : null} variant="rich">
+                            <span>
+                              <button
+                                type="button"
+                                onClick={() => resendInvite(p.domainApplication.id, u.firstName ?? undefined)}
+                                disabled={!reminderTemplateBound || resendingInviteId === p.domainApplication.id}
+                                className={buttonClasses('secondary', 'sm')}
+                              >
+                                {resendingInviteId === p.domainApplication.id ? 'Sending…' : 'Resend invite'}
+                              </button>
+                            </span>
+                          </Tooltip>
+                        )}
                       </div>
                     </div>
                   )
@@ -2952,6 +2997,24 @@ export default function HiringLeadCycleDetails() {
                               ? `${m.firstName} ${m.lastName}`
                               : m.daliEmail ?? '?'
                             const roleLabel = a.role === 'InDomain' ? a.cycleInterviewer.domain.name : 'Cross'
+                            const candidates = seatEligible(interviewers as any[], {
+                              role: a.role,
+                              applicantDomainId: interview.domainApplication.domainId,
+                              seatedUserIds: interview.assignments
+                                .filter((s: any) => s.status === 'Active')
+                                .map((s: any) => s.cycleInterviewer.userId),
+                            })
+                              .map((i: any) => {
+                                const im = i.user
+                                return {
+                                  id: i.id as string,
+                                  name: im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id,
+                                  availability: (interview.availability[i.userId] ?? 'no-calendar') as InterviewerAvailability,
+                                }
+                              })
+                              .sort((x, y) => AVAILABILITY_ORDER.indexOf(x.availability) - AVAILABILITY_ORDER.indexOf(y.availability))
+                            const anyFree = candidates.some((c) => c.availability === 'free')
+                            const anyAssignable = candidates.some((c) => c.availability !== 'booked')
                             return (
                               <span key={a.id} className="inline-flex items-center gap-2">
                                 <span className="text-foreground">{name}</span>
@@ -2959,21 +3022,19 @@ export default function HiringLeadCycleDetails() {
                                 {editable && (
                                   <Select
                                     value=""
-                                    onChange={(value) => reassign(interview, a, value)}
-                                    placeholder="Reassign"
+                                    onChange={(value) => {
+                                      const to = candidates.find((c) => c.id === value)
+                                      if (to) reassign(interview, a, to)
+                                    }}
+                                    placeholder={anyFree ? 'Reassign' : anyAssignable ? 'No one free' : 'No one available'}
+                                    disabled={!anyAssignable}
                                     ariaLabel={`Reassign ${a.role === 'InDomain' ? 'in-domain' : 'cross-domain'} interviewer`}
-                                    options={reassignCandidates(interviewers as any[], {
-                                      role: a.role,
-                                      applicantDomainId: interview.domainApplication.domainId,
-                                      seatedUserIds: interview.assignments
-                                        .filter((s: any) => s.status === 'Active')
-                                        .map((s: any) => s.cycleInterviewer.userId),
-                                    })
-                                      .map((i: any): SelectOption => {
-                                        const im = i.user
-                                        const iName = im?.firstName && im?.lastName ? `${im.firstName} ${im.lastName}` : im?.daliEmail ?? i.id
-                                        return { value: i.id, label: iName }
-                                      })}
+                                    options={candidates.map((c): SelectOption => ({
+                                      value: c.id,
+                                      label: c.name,
+                                      description: AVAILABILITY_NOTE[c.availability],
+                                      disabled: c.availability === 'booked',
+                                    }))}
                                     buttonClassName={smallTrigger}
                                   />
                                 )}
@@ -3795,7 +3856,7 @@ function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
           onChange={(e) => e.currentTarget.form?.requestSubmit()}
           className="w-full rounded-os-item bg-os-well px-4 py-3"
           label={anonymizeReview ? "On" : "Off"}
-          description={anonymizeReview ? "Reviewers see “Applicant N”." : "Reviewers see real names."}
+          description={anonymizeReview ? "Everyone sees “Applicant N” until their domain releases interviews or closes its first delib." : "Everyone sees real names."}
         />
       </Form>
     </SetupCard>

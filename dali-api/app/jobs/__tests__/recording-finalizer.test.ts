@@ -117,7 +117,7 @@ describe("recording-finalizer", () => {
   });
 
   it("(c) deletes a Pending row never claimed", async () => {
-    const rec = { id: "r4", status: "Pending" };
+    const rec = { id: "r4", status: "Pending", channels: [] };
     mockPrisma.meetingRecording.findMany
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
@@ -127,7 +127,31 @@ describe("recording-finalizer", () => {
 
     expect(deletePrefix).toHaveBeenCalledWith("r4");
     expect(mockPrisma.meetingRecording.delete).toHaveBeenCalledWith({ where: { id: "r4" } });
+    expect(startProcessing).not.toHaveBeenCalled();
     expect(result.note).toContain("unclaimed=1");
+  });
+
+  it("(c) transcribes a Pending row that has audio instead of deleting it", async () => {
+    const rec = { id: "r4b", status: "Pending", channels: ["mic"] };
+    mockPrisma.meetingRecording.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([rec]);
+
+    await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(startProcessing).toHaveBeenCalledWith(rec);
+    expect(deletePrefix).not.toHaveBeenCalled();
+    expect(mockPrisma.meetingRecording.delete).not.toHaveBeenCalled();
+  });
+
+  it("(c) measures Pending from the last update, so a Continue on an old row isn't caught", async () => {
+    await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(mockPrisma.meetingRecording.findMany).toHaveBeenNthCalledWith(3, {
+      where: { status: "Pending", updatedAt: { lt: new Date(NOW.getTime() - 30 * 60_000) } },
+      take: 50,
+    });
   });
 
   it("(d) sends a Stopped row that's had channels sitting unfinished for 30+ min to processing", async () => {
@@ -159,13 +183,35 @@ describe("recording-finalizer", () => {
     expect(startProcessing).not.toHaveBeenCalled();
   });
 
-  it("(d) the stoppedUnfinished query would exclude a recently-Stopped row", async () => {
+  it("(d) the stoppedUnfinished query would exclude a recently-Stopped row and an already finalized one", async () => {
     await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
 
     expect(mockPrisma.meetingRecording.findMany).toHaveBeenNthCalledWith(4, {
-      where: { status: "Stopped", updatedAt: { lt: new Date(NOW.getTime() - 30 * 60_000) } },
+      where: { status: "Stopped", finalizedAt: null, updatedAt: { lt: new Date(NOW.getTime() - 30 * 60_000) } },
       take: 50,
     });
+  });
+
+  it("(e) deletes audio a day after a recording finalizes and records when", async () => {
+    mockPrisma.meetingRecording.findMany
+      .mockResolvedValueOnce([]) // abandoned
+      .mockResolvedValueOnce([]) // stuck
+      .mockResolvedValueOnce([]) // unclaimed
+      .mockResolvedValueOnce([]) // stoppedUnfinished
+      .mockResolvedValueOnce([{ id: "r9" }]); // expiredAudio
+
+    const result = await runRecordingFinalizer({ now: NOW, lastSuccessAt: null, settings: {} });
+
+    expect(mockPrisma.meetingRecording.findMany).toHaveBeenNthCalledWith(5, {
+      where: { finalizedAt: { lt: new Date("2026-10-08T12:00:00Z") }, audioDeletedAt: null },
+      take: 50,
+    });
+    expect(deletePrefix).toHaveBeenCalledWith("r9");
+    expect(mockPrisma.meetingRecording.update).toHaveBeenCalledWith({
+      where: { id: "r9" },
+      data: { audioDeletedAt: NOW },
+    });
+    expect(result.items).toBe(1);
   });
 
   it("is a no-op tick when nothing matches any branch", async () => {

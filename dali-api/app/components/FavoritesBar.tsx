@@ -23,7 +23,7 @@ import { saveFavoritesOrder, setFavoriteRequest } from '~/components/favorites-l
 import { moveById } from '~/lib/favorites-order'
 import { splitFavorites } from '~/components/shell/rail-model'
 import { cn } from '~/lib/cn'
-import type { OpenTabRequest } from '~/components/TabWorkspace'
+import type { OpenTabRequest } from '~/lib/desktop-tabs'
 import type { FavoritePage } from '~/lib/user-pages.server'
 
 type TabClickProps = (req: OpenTabRequest) => Record<string, unknown>

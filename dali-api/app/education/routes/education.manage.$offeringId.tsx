@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { approveAllConfirm } from "~/education/lib/approve-all-copy";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   redirect,
   useLoaderData,
@@ -139,6 +142,13 @@ export const handle = {
   breadcrumb: (data: { offering: { title: string } } | undefined) =>
     data?.offering.title ?? "Offering",
 };
+
+// Only ?session= (the roster session) reaches the loader; ?tab= is client-only.
+const LOADER_SEARCH_PARAMS = ["session"] as const;
+
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, LOADER_SEARCH_PARAMS);
+}
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const authOrRedirect = await requireAuth(request);
@@ -1090,7 +1100,7 @@ export default function ManageOffering() {
           <button
             key={t.key}
             type="button"
-            onClick={() => setSearchParams({ tab: t.key }, { preventScrollReset: true })}
+            onClick={() => setSearchParams({ tab: t.key }, { replace: true, preventScrollReset: true })}
             style={
               tab === t.key
                 ? { borderBottomColor: "var(--color-os-accent)" }
@@ -1754,12 +1764,7 @@ export default function ManageOffering() {
                   <Form
                     method="post"
                     className="ml-auto"
-                    onSubmit={confirmSubmit({
-                      title: `Approve all ${appCounts["Submitted"]} pending applicants?`,
-                      description:
-                        "Approves up to capacity and emails each approved applicant. Applicants beyond the seat limit are waitlisted instead.",
-                      confirmLabel: "Approve all",
-                    })}
+                    onSubmit={confirmSubmit(approveAllConfirm(appCounts["Submitted"] ?? 0))}
                   >
                     <input type="hidden" name="intent" value="approve-all-pending" />
                     <Button type="submit">

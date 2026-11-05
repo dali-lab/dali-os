@@ -77,6 +77,22 @@ async function forgetOrphanedInboxes(accountIds: string[]) {
   if (orphaned.length) await prisma.mailAccountConnection.deleteMany({ where: { accountId: { in: orphaned } } });
 }
 
+async function sharedInbox(address: string) {
+  const where = { scopeKey_address: { scopeKey: "shared", address } };
+  try {
+    return await prisma.mailAccount.upsert({
+      where,
+      create: { kind: "Shared", scopeKey: "shared", address },
+      update: {},
+      select: { id: true },
+    });
+  } catch (err) {
+    // A concurrent save created the same inbox first.
+    if ((err as { code?: string })?.code !== "P2002") throw err;
+    return prisma.mailAccount.findUniqueOrThrow({ where, select: { id: true } });
+  }
+}
+
 /** Handles CATEGORY_INTENTS. The caller has already checked the user is an admin. */
 export async function handleInboxCategoryAction(request: Request, form: FormData, userId: string) {
   const intent = String(form.get("intent") ?? "");
@@ -87,7 +103,7 @@ export async function handleInboxCategoryAction(request: Request, form: FormData
     const id = text("id");
     const name = text("name");
     const description = text("description");
-    const addresses = list("inbox").map((a) => a.toLowerCase());
+    const addresses = [...new Set(list("inbox").map((a) => a.trim().toLowerCase()))];
     if (!name) return fail("Give the category a name.");
     if (name.length > MAX_CATEGORY_NAME) return fail(`Keep the name under ${MAX_CATEGORY_NAME} characters.`);
     if (description.length > MAX_CATEGORY_DESCRIPTION) return fail(`Keep the description under ${MAX_CATEGORY_DESCRIPTION} characters.`);
@@ -106,17 +122,7 @@ export async function handleInboxCategoryAction(request: Request, form: FormData
       audienceGroupIds: groups.map((g) => g.id),
     };
 
-    // Each address is one Shared inbox, reused across categories.
-    const accounts = await Promise.all(
-      addresses.map((address) =>
-        prisma.mailAccount.upsert({
-          where: { scopeKey_address: { scopeKey: "shared", address } },
-          create: { kind: "Shared", scopeKey: "shared", address },
-          update: {},
-          select: { id: true },
-        }),
-      ),
-    );
+    const accounts = await Promise.all(addresses.map(sharedInbox));
     const accountIds = accounts.map((a) => a.id);
 
     let categoryId = id;

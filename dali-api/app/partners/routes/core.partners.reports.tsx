@@ -1,11 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react";
-import { Link, redirect, useLoaderData, useSearchParams, useSubmit } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/core.partners.reports";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isCore } from "~/lib/roles";
-import { Popover, Select } from "~/components/ui/floating";
-import { filterPillClass } from "~/components/ui/floating/styles";
+import { currentTerm, isCore } from "~/lib/roles";
+import { Popover } from "~/components/ui/floating";
+import { TermFilter } from "~/components/TermFilter";
+import { ALL_TERMS } from "~/lib/terms.shared";
 import { OS_PANEL_CLASS } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -53,7 +54,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!(await isCore(auth.user.sub))) return redirect("/");
 
   const url = new URL(request.url);
-  const termContext = await resolveReportsTerm(url.searchParams.get("term"));
+  const [termContext, current] = await Promise.all([
+    resolveReportsTerm(url.searchParams.get("term")),
+    currentTerm(request),
+  ]);
   const { selectedTermId } = termContext;
 
   const [funnelSection, cycleTime, rejectionReasons, partnerMix, revenue] = await Promise.all([
@@ -65,7 +69,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
 
   return {
-    terms: termContext.terms,
+    terms: termContext.terms.map((t) => ({ ...t, isCurrent: t.id === current?.id })),
     selectedTermId,
     funnel: funnelSection.funnel,
     reached: funnelSection.reached,
@@ -233,8 +237,6 @@ export default function PartnerReports() {
     partnerMix,
     revenue,
   } = useLoaderData<typeof loader>();
-  const [searchParams] = useSearchParams();
-  const submit = useSubmit();
   const [showAllFees, setShowAllFees] = useState(false);
 
   const appById = useMemo(() => new Map(applications.map((a) => [a.id, a])), [applications]);
@@ -254,20 +256,7 @@ export default function PartnerReports() {
       <div className="flex flex-wrap items-center gap-2">
         <PartnerCrmNav className="shrink-0" />
         <div className="flex-1" />
-        <Select
-          value={selectedTermId ?? "all"}
-          ariaLabel="Term"
-          buttonClassName={filterPillClass()}
-          options={[
-            { value: "all", label: "All time" },
-            ...terms.map((t) => ({ value: t.id, label: t.code })),
-          ]}
-          onChange={(value) => {
-            const params = new URLSearchParams(searchParams);
-            params.set("term", value);
-            submit(params, { method: "get" });
-          }}
-        />
+        <TermFilter terms={terms} selected={selectedTermId ?? ALL_TERMS} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -3,16 +3,14 @@
 
 import { useState } from "react";
 import { Link } from "react-router";
-import { Minus, Plus } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
+import { SpotsStepper } from "../SpotsStepper";
 import {
-  addDomainRole,
   centsToDollars,
   dollarsToCents,
   dueToInput,
-  stepSlots,
   type RenewalCardModel,
   type RenewalColumn,
   type RenewalRole,
@@ -91,7 +89,6 @@ export function RenewalEditorFields({
   const [reason, setReason] = useState(card.reason ?? "");
   const [nextStep, setNextStep] = useState(card.nextStep ?? "");
   const [due, setDue] = useState(dueToInput(card.nextStepDueAt));
-  const addable = domains.filter((d) => !roles.some((r) => r.domainId === d.id));
   const canSave = !busy && (decision !== "not_continuing" || reason.trim().length > 0);
 
   return (
@@ -114,42 +111,7 @@ export function RenewalEditorFields({
           </div>
           <div className="flex flex-col gap-1.5">
             <FieldLabel>Spots per domain</FieldLabel>
-            {roles.map((r) => (
-              <div key={r.domainId} className="flex items-center justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate">{r.name}</span>
-                <span className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-label={`Fewer ${r.name}`}
-                    className="os-icon-btn"
-                    onClick={() => setRoles((cur) => stepSlots(cur, r.domainId, -1))}
-                  >
-                    <Minus className="h-4 w-4" aria-hidden />
-                  </button>
-                  <span className="w-6 text-center tabular-nums">{r.slots}</span>
-                  <button
-                    type="button"
-                    aria-label={`More ${r.name}`}
-                    className="os-icon-btn"
-                    onClick={() => setRoles((cur) => stepSlots(cur, r.domainId, 1))}
-                  >
-                    <Plus className="h-4 w-4" aria-hidden />
-                  </button>
-                </span>
-              </div>
-            ))}
-            {addable.length > 0 && (
-              <Select
-                ariaLabel="Add domain"
-                placeholder="+ Domain"
-                value={undefined}
-                onChange={(id) => {
-                  const d = domains.find((x) => x.id === id);
-                  if (d) setRoles((cur) => addDomainRole(cur, d.id, d.name));
-                }}
-                options={addable.map((d) => ({ value: d.id, label: d.name }))}
-              />
-            )}
+            <SpotsStepper roles={roles} domains={domains} onChange={setRoles} />
           </div>
           <div className="flex flex-col gap-1.5">
             <FieldLabel>Fee</FieldLabel>

@@ -4,6 +4,8 @@ import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 
+const history = vi.hoisted(() => ({ undo: vi.fn(), redo: vi.fn() }));
+
 // The rich-text editor and the collab room need a real browser + server.
 vi.mock("~/components/doc", () => ({ DocEditor: () => null }));
 vi.mock("~/components/collab/useSharedCollection", async () => {
@@ -17,10 +19,10 @@ vi.mock("~/components/collab/useSharedCollection", async () => {
         push: (item: unknown) => setItems((p) => [...p, item]),
         remove: (i: number) => setItems((p) => p.filter((_, j) => j !== i)),
         move: () => {},
-        undo: () => {},
-        redo: () => {},
-        canUndo: false,
-        canRedo: false,
+        undo: history.undo,
+        redo: history.redo,
+        canUndo: true,
+        canRedo: true,
         synced: true,
       };
     },
@@ -87,7 +89,8 @@ async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1"
   const Stub = createRoutesStub([
     {
       path: "/forms/edit/:formId",
-      Component: () => createElement(DialogProvider, null, createElement(FormDetail)),
+      Component: () =>
+        createElement(DialogProvider, null, createElement(FormDetail)),
       loader: () => data,
     },
   ]);
@@ -113,6 +116,18 @@ describe("FormDetail", () => {
     await mount(loaderData());
     expect(container.textContent).toContain("Questions");
     expect(container.textContent).toContain("Name");
+  });
+
+  it("undoes and redoes the builder's edits from the keyboard", async () => {
+    const data = loaderData({ collabToken: "token" });
+    data.form.draft = { questions: [question], description: null } as never;
+    await mount(data);
+    history.undo.mockClear();
+    history.redo.mockClear();
+    act(() => void document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true })));
+    expect(history.undo).toHaveBeenCalledTimes(1);
+    act(() => void document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, shiftKey: true, bubbles: true })));
+    expect(history.redo).toHaveBeenCalledTimes(1);
   });
 
   it("renders the builder for a form with a draft", async () => {
@@ -161,5 +176,55 @@ describe("FormDetail", () => {
     data.form.versions = [];
     await mount(data);
     expect(container.textContent).toContain("Drag a component here");
+  });
+
+  describe("results view", () => {
+    const url = "/forms/edit/f1?view=results&version=1";
+    const table = {
+      versionId: "v1",
+      isPartnerApplicationForm: false,
+      totalCount: 1,
+      matchCount: 1,
+      page: 1,
+      hasNext: false,
+      columns: [{ key: "q1", label: "Name" }],
+      slotOptions: [],
+      responses: [
+        {
+          id: "s1",
+          createdAt: "2026-05-20T10:00:00.000Z",
+          edited: false,
+          lockReason: null,
+          name: "Ada",
+          email: null,
+          slot: null,
+          submitterIp: null,
+          partnerApplication: null,
+          rows: [{ key: "q1", label: "Name", value: "Ada" }],
+        },
+      ],
+    };
+    const summary = {
+      versionId: "v1",
+      slotOptions: [],
+      summary: {
+        total: 4,
+        questions: [{ kind: "text", key: "q1", number: 1, label: "Name", answered: 3, skipped: 1 }],
+      },
+    };
+    const buttons = () => [...container.querySelectorAll("button")].map((b) => b.textContent);
+
+    it("shows the summary with the Summary | Responses toggle", async () => {
+      await mount(loaderData({ results: null, summary } as never), url);
+      expect(container.querySelector("table")).toBeNull();
+      expect(buttons()).toEqual(expect.arrayContaining(["Summary", "Responses"]));
+      expect(container.textContent).toContain("3 answered, 1 skipped");
+    });
+
+    it("shows the table under the toggle on the Responses view", async () => {
+      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`);
+      expect(container.querySelector("table")).not.toBeNull();
+      expect(buttons()).toContain("Summary");
+    });
   });
 });

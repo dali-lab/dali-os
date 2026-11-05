@@ -24,8 +24,6 @@ export const osStatusAccent = (name: OsStatusToken): StatusAccent => ({
   dot: `var(--os-status-${name}-dot, var(--os-status-${name}-edge))`,
 });
 
-// A column title in the header's ink. Under v2 `.os-board-title` leads it with
-// the stage dot (app.css); elsewhere the class draws nothing.
 export const BOARD_TITLE_CLASS = "os-board-title";
 
 export const boardTitleStyle = (accent: StatusAccent): CSSProperties =>

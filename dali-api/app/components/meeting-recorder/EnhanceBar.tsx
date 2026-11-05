@@ -8,6 +8,7 @@ import { Menu, MenuItem } from "~/components/ui/floating";
 import { enhanceWasUndone, useActionItemDraft, type ActionItemDraft } from "./action-item-draft";
 import { BAR_ATTR } from "./block-dom";
 import { BarTransition, type BarContent } from "./BarTransition";
+import { CALL_AUDIO_OFF_DETAIL, micSilentDetail } from "./capture-warnings";
 import { DUR, enterRef } from "./motion";
 import { PopIn } from "./PopIn";
 import { deriveRailState, ENHANCE_AGAIN_TIP } from "./RecordingRail";
@@ -320,6 +321,21 @@ function barContent(
   const owner = rec.remote ? ` · ${rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}` : "";
 
   switch (state) {
+    case "recording":
+      if (rec.noSound) {
+        return {
+          key: "noSound",
+          node: rec.micDevice ? (
+            <BarShell title="Your mic isn't picking up sound" detail={micSilentDetail(rec.micDevice)} />
+          ) : (
+            <BarShell title="No sound detected" detail="Nothing has been picked up so far. Stop and record again." />
+          ),
+        };
+      }
+      return rec.callAudioOff
+        ? { key: "callAudioOff", node: <BarShell title="Call audio is off" detail={CALL_AUDIO_OFF_DETAIL} /> }
+        : null;
+
     case "processing": {
       const d = describeProcessing(rec.processingStage ?? "starting", rec.progress);
       return {
@@ -367,6 +383,12 @@ function barContent(
     case "enhanced":
       if (!enhanceWasUndone(rec)) return tasksBar(rec, draft);
       return readyBar(rec, "ready", celebrate, owner);
+
+    case "noSpeech":
+      return {
+        key: "noSpeech",
+        node: <BarShell title="No speech was captured" detail="Nothing was transcribed from this recording. Discard it and record again." />,
+      };
 
     case "ready":
     case "inserted":

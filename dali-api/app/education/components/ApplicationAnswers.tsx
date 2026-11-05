@@ -1,4 +1,5 @@
 import type { Question } from "~/types";
+import { visibleQuestions } from "~/lib/form-logic";
 
 // Read-only answer rendering for the manage review tab. Answers are shown
 // against the questions of the FormVersion the submission was made on, so a
@@ -11,7 +12,7 @@ export function ApplicationAnswers({
   questions: Question[];
   answers: Record<string, unknown>;
 }) {
-  const visible = questions.filter((q) => q.type !== "info");
+  const visible = visibleQuestions(questions, answers).filter((q) => q.type !== "info");
   if (visible.length === 0) {
     return (
       <p className="text-xs text-muted-foreground italic">No questions on this form.</p>

@@ -35,8 +35,10 @@ import {
   computeAvailableSlots,
   explainAvailableSlots,
   assignInterviewers,
+  availabilityByInterview,
   reassignInterviewer,
 } from "~/hiring/lib/scheduling";
+import { zonedDayStartUtc } from "~/lib/timezone";
 
 const mockPrisma = prisma as unknown as {
   interviewConfig: { findUnique: ReturnType<typeof vi.fn> };
@@ -207,6 +209,50 @@ describe("generateCandidateSlots", () => {
       expect(localDay).not.toBe(0); // not Sunday
       expect(localDay).not.toBe(6); // not Saturday
     }
+  });
+
+  const ET = "America/New_York";
+  const dates = (slots: Date[]) => [
+    ...new Set(slots.map((d) => d.toLocaleDateString("en-CA", { timeZone: ET }))),
+  ];
+
+  it("keeps the last day of a window that crosses the fall clock change", () => {
+    const start = zonedDayStartUtc(2030, 10, 31, ET); // Thu, still EDT
+    const end = zonedDayStartUtc(2030, 11, 8, ET); // Fri, now EST
+    const slots = generateCandidateSlots(start, end, 9, 10, 30, ET);
+    expect(dates(slots)).toEqual([
+      "2030-10-31",
+      "2030-11-01",
+      "2030-11-04",
+      "2030-11-05",
+      "2030-11-06",
+      "2030-11-07",
+      "2030-11-08",
+    ]);
+  });
+
+  it("keeps the last day of a window that crosses the spring clock change", () => {
+    const start = zonedDayStartUtc(2031, 3, 6, ET); // Thu, still EST
+    const end = zonedDayStartUtc(2031, 3, 14, ET); // Fri, now EDT
+    const slots = generateCandidateSlots(start, end, 9, 10, 30, ET);
+    expect(dates(slots)).toEqual([
+      "2031-03-06",
+      "2031-03-07",
+      "2031-03-10",
+      "2031-03-11",
+      "2031-03-12",
+      "2031-03-13",
+      "2031-03-14",
+    ]);
+  });
+
+  it("offers each slot once and on the wall clock across a clock change", () => {
+    const start = zonedDayStartUtc(2030, 11, 1, ET);
+    const end = zonedDayStartUtc(2030, 11, 4, ET);
+    const slots = generateCandidateSlots(start, end, 9, 10, 30, ET);
+    expect(new Set(slots.map((d) => d.getTime())).size).toBe(slots.length);
+    expect(slots[0].toISOString()).toBe("2030-11-01T13:00:00.000Z"); // Fri 9:00 EDT
+    expect(slots[slots.length - 3].toISOString()).toBe("2030-11-04T14:00:00.000Z"); // Mon 9:00 EST
   });
 
   it("skips weekends", () => {
@@ -601,6 +647,34 @@ describe("assignInterviewers", () => {
 
     expect(result.id).toBe("int1");
     expect(result.assignments).toHaveLength(2);
+  });
+
+  describe("serialization conflicts", () => {
+    const conflict = Object.assign(new Error("write conflict"), { code: "P2034" });
+    const book = () =>
+      assignInterviewers("cycle1", "interviews", "app1", ["domain1"], new Date("2026-04-13T14:00:00Z"), new Date("2026-04-13T14:30:00Z"));
+
+    it("reruns the booking on a fresh transaction after a serialization conflict", async () => {
+      mockPrisma.$transaction
+        .mockRejectedValueOnce(conflict)
+        .mockRejectedValueOnce(conflict)
+        .mockResolvedValueOnce({ id: "int1" });
+      await expect(book()).resolves.toEqual({ id: "int1" });
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(3);
+    });
+
+    it("gives up after four conflicting attempts", async () => {
+      mockPrisma.$transaction.mockRejectedValue(conflict);
+      await expect(book()).rejects.toBe(conflict);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(4);
+    });
+
+    it("does not retry other errors", async () => {
+      const unique = Object.assign(new Error("dup"), { code: "P2002" });
+      mockPrisma.$transaction.mockRejectedValue(unique);
+      await expect(book()).rejects.toBe(unique);
+      expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("throws when no interview config exists", async () => {
@@ -1249,6 +1323,112 @@ describe("reassignInterviewer", () => {
 });
 
 // ─── explainAvailableSlots ─────────────────────────────────────────────────────
+
+describe("availabilityByInterview", () => {
+  const interview = {
+    id: "int1",
+    startTime: new Date("2027-01-04T15:00:00Z"),
+    endTime: new Date("2027-01-04T15:30:00Z"),
+  };
+  const rosterRow = (id: string, userId: string, domainId: string, booked?: [string, string]) => ({
+    id,
+    userId,
+    domainId,
+    interviewAssignments: booked
+      ? [{ interview: { startTime: new Date(booked[0]), endTime: new Date(booked[1]) } }]
+      : [],
+  });
+
+  beforeEach(() => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue({ bufferMinutes: 15 });
+  });
+
+  it("marks someone busy when their calendar doesn't cover the slot", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([rosterRow("a", "u1", "pm"), rosterRow("b", "u2", "pm")]);
+    setCalendarFree("u2", []);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview]);
+
+    expect(availability.get("int1")).toEqual({ u1: "free", u2: "busy" });
+  });
+
+  it("marks someone busy when their free time covers only part of the slot", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([rosterRow("a", "u1", "pm")]);
+    setCalendarFree("u1", [{ startTime: new Date("2027-01-04T15:15:00Z"), endTime: new Date("2027-01-04T17:00:00Z") }]);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview]);
+
+    expect(availability.get("int1")).toEqual({ u1: "busy" });
+  });
+
+  it("marks someone booked when another interview falls inside the buffer", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      rosterRow("a", "u1", "pm", ["2027-01-04T15:35:00Z", "2027-01-04T16:05:00Z"]),
+      rosterRow("b", "u2", "pm", ["2027-01-04T15:45:00Z", "2027-01-04T16:15:00Z"]),
+    ]);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview]);
+
+    expect(availability.get("int1")).toEqual({ u1: "booked", u2: "free" });
+  });
+
+  it("reports booked over busy, so a double booking can't be overridden", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      rosterRow("a", "u1", "pm", ["2027-01-04T15:00:00Z", "2027-01-04T15:30:00Z"]),
+    ]);
+    setCalendarFree("u1", []);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview]);
+
+    expect(availability.get("int1")).toEqual({ u1: "booked" });
+  });
+
+  it("marks someone with neither a calendar nor working hours as no-calendar", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([rosterRow("a", "u1", "pm"), rosterRow("b", "u2", "pm")]);
+    vi.mocked(interviewerCalendars).mockImplementation(async () => ({
+      get: (userId: string) =>
+        userId === "u1"
+          ? { hasCalendar: false, hasWorkingHours: false, available: [] }
+          : { hasCalendar: false, hasWorkingHours: true, available: [] },
+    }) as any);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview]);
+
+    expect(availability.get("int1")).toEqual({ u1: "no-calendar", u2: "busy" });
+  });
+
+  it("counts a booking on a member's other domain row, and lists them once", async () => {
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([
+      rosterRow("a", "u1", "pm", ["2027-01-04T15:00:00Z", "2027-01-04T15:30:00Z"]),
+      rosterRow("b", "u1", "data"),
+      rosterRow("c", "u2", "pm"),
+      rosterRow("d", "u2", "data"),
+    ]);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview]);
+
+    expect(availability.get("int1")).toEqual({ u1: "booked", u2: "free" });
+  });
+
+  it("answers each interview at its own time", async () => {
+    const later = { id: "int2", startTime: new Date("2027-01-04T18:00:00Z"), endTime: new Date("2027-01-04T18:30:00Z") };
+    mockPrisma.cycleInterviewer.findMany.mockResolvedValue([rosterRow("a", "u1", "pm")]);
+    setCalendarFree("u1", [{ startTime: new Date("2027-01-04T17:00:00Z"), endTime: new Date("2027-01-04T19:00:00Z") }]);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview, later]);
+
+    expect(availability.get("int1")).toEqual({ u1: "busy" });
+    expect(availability.get("int2")).toEqual({ u1: "free" });
+  });
+
+  it("returns nothing when the round has no config", async () => {
+    mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
+
+    const availability = await availabilityByInterview("cycle1", "interviews", [interview]);
+
+    expect(availability.size).toBe(0);
+  });
+});
 
 describe("explainAvailableSlots", () => {
   const oneDayConfig = {

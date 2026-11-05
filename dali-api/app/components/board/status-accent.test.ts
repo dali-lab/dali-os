@@ -6,13 +6,13 @@ import { boardTitleStyle, osStatusAccent, type OsStatusToken } from "./status-ac
 const TOKENS: OsStatusToken[] = ["backlog", "todo", "progress", "review", "done", "cancelled"];
 
 describe("osStatusAccent", () => {
-  it("reads the v2 header tint first and falls back to the band fill", () => {
+  it("reads the header tint first and falls back to the band fill", () => {
     expect(osStatusAccent("todo").fill).toBe(
       "var(--os-status-todo-header, var(--os-status-todo-fill))",
     );
   });
 
-  it("reads the v2 header ink first and falls back to the band ink", () => {
+  it("reads the header ink first and falls back to the band ink", () => {
     expect(osStatusAccent("review").ink).toBe(
       "var(--os-status-review-header-ink, var(--os-status-review-ink))",
     );
@@ -44,11 +44,9 @@ describe("boardTitleStyle", () => {
   });
 });
 
-describe("app.css v2 header tokens", () => {
+describe("app.css kanban header tokens", () => {
   const css = readFileSync(join(import.meta.dirname, "..", "..", "app.css"), "utf8");
 
-  // The v2 section restates these selectors several times; the header tokens
-  // sit in the last of each.
   function block(selector: string): string {
     const start = css.lastIndexOf(selector);
     expect(start).toBeGreaterThan(-1);
@@ -56,8 +54,8 @@ describe("app.css v2 header tokens", () => {
   }
 
   it.each([
-    ["dark", "html[data-v2] .os-shell,\nhtml[data-v2].os-shell {"],
-    ["light", "html.light[data-v2] .os-shell,\nhtml.light[data-v2].os-shell {"],
+    ["dark", ".os-shell,\nhtml.os-shell {"],
+    ["light", "html.light .os-shell,\nhtml.light.os-shell {"],
   ])("defines a header tint for every status in %s", (_mode, selector) => {
     const body = block(selector);
     for (const token of TOKENS) {

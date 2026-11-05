@@ -27,7 +27,7 @@ import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isAiEnabled, resolveAiProvider } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
-import { AI_DAILY_MAX } from "~/routes/api.ai.meeting-notes";
+import { AI_DAILY_MAX } from "~/lib/ai-quota.server";
 import { action, loader } from "~/routes/api.members.$id.resume";
 
 const ME = "u-me";
@@ -84,8 +84,8 @@ beforeEach(() => {
   vi.mocked(prisma.user.update).mockResolvedValue({} as never);
   vi.mocked(isAiEnabled).mockReturnValue(true);
   vi.mocked(resolveAiProvider).mockReturnValue({
+    name: "anthropic",
     client: { messages: { create } },
-    sonnetModel: "sonnet-test",
   } as never);
   create.mockResolvedValue({
     content: [{ type: "text", text: MODEL_JSON }],

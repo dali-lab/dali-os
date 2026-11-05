@@ -4,7 +4,7 @@ import { buttonClasses } from "~/components/ui/Button";
 // Shown at the top of the shell while an admin is impersonating a member (a
 // BetterAuth admin-plugin session — see /admin/impersonate). A plain native
 // form so "Stop" does a full-document POST: ending impersonation swaps the
-// session cookie back, and the whole shell (including open workspace iframes)
+// session cookie back, and the whole shell
 // must reload as the real admin rather than revalidate in place.
 export function ImpersonationBanner({
   userName,

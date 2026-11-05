@@ -23,6 +23,7 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
+import { visibleHelpArticles } from "~/help/library.server";
 import { categorize } from "~/lib/file-type";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
@@ -48,7 +49,7 @@ type SearchSource = {
   run: (b: SearchBudget) => Promise<SearchResult[]>;
 };
 
-type SearchOpts = { userId: string; roles: UserRoles; q: string };
+type SearchOpts = { userId: string; roles: UserRoles; q: string; request?: Request };
 
 function searchSources(opts: SearchOpts, q: string): SearchSource[] {
   const roles = opts.roles;
@@ -58,15 +59,13 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "project", enabled: true, run: (b) => searchProjects(q, like, b) },
     { type: "task", enabled: true, run: (b) => searchTasks(q, like, b) },
     { type: "education", enabled: true, run: (b) => searchOfferings(q, like, b) },
-    { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b) },
-    // Page guides ("Docs") and /help articles — both readable by every lab
-    // member, so ungated like docs.
+    { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b, opts.request) },
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
-    { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(q, b) },
+    { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(opts, q, b) },
     { type: "document", enabled: true, run: (b) => searchProjectFiles(q, like, b) },
     { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
-    { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b) },
+    { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b, opts.request) },
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
     // library routes. Names aren't sensitive; the routes already gate.
     { type: "rubric", enabled: roles.isCore || roles.isDomainLead, run: (b) => searchRubrics(q, like, b) },
@@ -345,7 +344,13 @@ async function searchPartnerContacts(q: string, like: Like, b: SearchBudget): Pr
   );
 }
 
-async function searchDocuments(userId: string, q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchDocuments(
+  userId: string,
+  q: string,
+  like: Like,
+  b: SearchBudget,
+  request?: Request,
+): Promise<SearchResult[]> {
   // Titles and bodies are searched separately and merged rather than scored
   // together: a title match is what someone means the overwhelming majority of
   // the time, so it keeps its place at the top of the category and body
@@ -369,7 +374,7 @@ async function searchDocuments(userId: string, q: string, like: Like, b: SearchB
         select: PAGE_ACCESS_SELECT,
       })
     : [];
-  const access = await getPageAccessBulk(userId, [...titleRows, ...contentPages]);
+  const access = await getPageAccessBulk(userId, [...titleRows, ...contentPages], request);
   const canView = (id: string) => access.get(id)?.canView === true;
 
   const rows = titleRows.filter((r) => canView(r.id));
@@ -446,17 +451,18 @@ async function searchGuides(q: string, b: SearchBudget): Promise<SearchResult[]>
   );
 }
 
-// Help-center articles (/help/*). A fully static set (HELP_ARTICLES), so there's
-// no query — just rank its title/summary/keywords in memory.
-async function searchHelpArticles(q: string, b: SearchBudget): Promise<SearchResult[]> {
+async function searchHelpArticles(opts: SearchOpts, q: string, b: SearchBudget): Promise<SearchResult[]> {
+  const articles = await visibleHelpArticles({ userId: opts.userId, roles: opts.roles, request: opts.request });
+  const covered = new Set(articles.map((a) => a.slug));
+  const pages = HELP_ARTICLES.filter((c) => !covered.has(c.slug));
   return rankResults(
-    HELP_ARTICLES.map((a) => ({
+    [...articles, ...pages].map((a) => ({
       result: {
         type: "helpArticle" as const,
         id: a.slug,
         title: a.title,
         subtitle: "Help",
-        url: buildUrl.helpArticle(a.slug),
+        url: "url" in a ? a.url : a.href,
       },
       text: [a.title, a.summary, ...(a.keywords ?? [])],
     })),
@@ -477,14 +483,20 @@ async function searchGroups(q: string, like: Like, b: SearchBudget): Promise<Sea
   return simpleResults("group", "Group", rows.map((r) => ({ id: r.id, label: r.name })), q, b.cap);
 }
 
-async function searchFormPages(userId: string, q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchFormPages(
+  userId: string,
+  q: string,
+  like: Like,
+  b: SearchBudget,
+  request?: Request,
+): Promise<SearchResult[]> {
   const pages = await prisma.page.findMany({
     where: { kind: "Form", archivedAt: null, title: like },
     select: { ...PAGE_ACCESS_SELECT, title: true, iconEmoji: true },
     take: b.rawTake,
     orderBy: order(b),
   });
-  const access = await getPageAccessBulk(userId, pages);
+  const access = await getPageAccessBulk(userId, pages, request);
   return simpleResults(
     "form",
     "Form",

@@ -1,5 +1,8 @@
 import { useMemo, useState } from "react";
 import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/core.partners";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -11,9 +14,9 @@ import { PartnerApplicationModal } from "../components/PartnerApplicationModal";
 import {
   ACTIVITY_OPTIONS,
   columnFiltersFromParams,
-  DEFAULT_BOARD_PREFS,
   filterPartnerCards,
-  isBoardPrefs,
+  boardPrefsFromParams,
+  writeBoardPrefsParams,
   partnerCardCells,
   partnerFiltersFromColumns,
   SOURCE_OPTIONS,
@@ -21,7 +24,7 @@ import {
   type PartnerCardModel,
 } from "../lib/partner-board";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { usePersistedState } from "~/hooks/usePersistedState";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
 import {
   ColumnFilters,
   useColumnFilters,
@@ -39,6 +42,11 @@ export const handle = { hideBreadcrumbs: true, areaSubnav: true, fitViewport: tr
 export const meta: Route.MetaFunction = () => [
   { title: "Partners · DALI OS" },
 ];
+
+// Search, filters, the open card and settings are all client side.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, []);
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -64,6 +72,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         holdUntil: true,
         meetingRequestedAt: true,
         createdAt: true,
+        iconEmoji: true,
         partnerOrg: { select: { name: true } },
         applicantContact: { select: { name: true } },
         targetTerms: {
@@ -117,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     lastActivityAt: a.lastActivityAt.toISOString(),
     holdUntil: a.holdUntil?.toISOString() ?? null,
     resultingProjectId: a.resultingProjectId,
-    projectIconEmoji: a.resultingProjectId ? (projectIcons.get(a.resultingProjectId) ?? null) : null,
+    projectIconEmoji: a.resultingProjectId ? (projectIcons.get(a.resultingProjectId) ?? null) : a.iconEmoji,
     meetingRequestedAt: a.meetingRequestedAt?.toISOString() ?? null,
     pendingRequestCount: a.meetingRequests.length,
     meetingCount: a.meetings.length,
@@ -163,12 +172,15 @@ export default function PartnersApplications() {
   const openId = searchParams.get("application");
   const openCard = openId ? cards.find((c) => c.id === openId) ?? null : null;
 
-  const [query, setQuery] = useState("");
-  const [prefs, setPrefs] = usePersistedState<PartnerBoardPrefs>(
-    "dali:partnerboard:prefs",
-    DEFAULT_BOARD_PREFS,
-    isBoardPrefs,
-  );
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
+  // Opening the board bare reopens its last filters and display options.
+  useRememberedSearch("dali:partnerboard:view", { transient: ["application", "settings"] });
+  const prefs = boardPrefsFromParams(searchParams);
+  const setPrefs = (next: PartnerBoardPrefs) =>
+    setSearchParams((prev) => writeBoardPrefsParams(prev, next), {
+      replace: true,
+      preventScrollReset: true,
+    });
 
   const columns = useMemo<FilterColumn[]>(
     () => [
@@ -179,14 +191,14 @@ export default function PartnersApplications() {
     ],
     [termOptions],
   );
-  // Only the initial URL seeds the filters; later edits go through the builder.
+  // An old ?term= / ?source= link seeds the filters until the builder writes its own.
   const [initialFilters] = useState(() =>
     columnFiltersFromParams(searchParams, {
       sources: SOURCE_OPTIONS.map((s) => s.value),
       terms: termOptions,
     }),
   );
-  const columnFilters = useColumnFilters(columns, initialFilters);
+  const columnFilters = useColumnFilters(columns, initialFilters, { inUrl: true });
   const filterRows = useMemo(
     () => cards.map((c) => ({ cells: partnerCardCells(c, staleDays) })),
     [cards, staleDays],

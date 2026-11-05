@@ -24,12 +24,15 @@ import {
 } from '~/lib/desktop-tabs-store'
 import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
+import { modKey, tabCycleShortcut } from '~/lib/shortcuts'
 import { cn } from '~/lib/cn'
+import { scrollPageTo } from '~/lib/page-scroll'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
-import { sidePanelForUrl } from '~/lib/side-panel'
+import { useVisibleSidePanel } from '~/components/side-panel/use-side-panel'
+import { sidePanelForUrl, withSidePanel } from '~/lib/side-panel'
 import { useLiveSession } from '~/components/meeting-recorder/live-session'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
@@ -69,22 +72,26 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
   const navigate = useNavigate()
   const navigateRef = useRef(navigate)
   navigateRef.current = navigate
-  const url = location.pathname + location.search
+  const sidePanel = useVisibleSidePanel()
+  const url = withSidePanel(location.pathname + location.search, sidePanel)
+  const recordedKey = useRef(location.key)
   const arrivalRef = useRef(url)
   arrivalRef.current = url
 
   useEffect(() => {
     if (!show) return
     return startTabs({ url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' }, (to, opts) =>
-      navigateRef.current(to, { replace: true, state: opts?.tabSwitch ? { tabSwitch: true } : undefined }),
+      navigateRef.current(to, { replace: true, state: opts }),
     )
   }, [show])
 
   useEffect(() => {
     if (!show) return
-    const restoreY = tabActions.record(url, navigationType)
+    // Same router location means only the panel changed, which isn't a page visit.
+    const restoreY = tabActions.record(url, recordedKey.current === location.key ? 'REPLACE' : navigationType)
+    recordedKey.current = location.key
     let raf = 0
-    if (restoreY !== null) raf = window.requestAnimationFrame(() => window.scrollTo(0, restoreY))
+    if (restoreY !== null) raf = window.requestAnimationFrame(() => scrollPageTo(restoreY))
     const labelTimer = window.setTimeout(() => tabActions.label(url, pageTitle() || fallbackPageLabel(url)), 50)
     return () => {
       window.cancelAnimationFrame(raf)
@@ -109,15 +116,16 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
       e.preventDefault()
     }
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
+      const delta = tabCycleShortcut(e)
+      if (delta !== null) {
+        e.preventDefault()
+        tabActions.cycle(delta)
+        return
+      }
+      if (!modKey(e)) return
       if (e.shiftKey && !e.altKey && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault()
         tabActions.closeActive()
-        return
-      }
-      if (e.altKey && !e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
-        e.preventDefault()
-        tabActions.cycle(e.key === 'ArrowRight' ? 1 : -1)
         return
       }
       if (!e.altKey && !e.shiftKey && e.key >= '1' && e.key <= '9') {
@@ -245,16 +253,20 @@ function SortableTab({
 function useBackgroundTabEmoji(tabs: DesktopTab[], activeId: string | null) {
   const asked = useRef(new Set<string>())
   useEffect(() => {
-    for (const tab of tabs) {
-      if (tab.id === activeId || tab.emoji || asked.current.has(tab.url)) continue
+    const wanted = tabs.flatMap((tab) => {
+      if (tab.id === activeId || tab.emoji || asked.current.has(tab.url)) return []
       const docId = sidePanelForUrl(tab.url)?.id
-      if (!docId) continue
-      asked.current.add(tab.url)
-      fetch(`/api/documents/${docId}`)
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: { iconEmoji?: string | null } | null) => tabActions.fillEmoji(tab.id, tab.url, data?.iconEmoji ?? null))
-        .catch(() => {})
-    }
+      return docId ? [{ tab, docId }] : []
+    })
+    if (wanted.length === 0) return
+    for (const { tab } of wanted) asked.current.add(tab.url)
+    const ids = [...new Set(wanted.map((w) => w.docId))]
+    fetch(`/api/documents/emojis?ids=${ids.join(',')}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { emojis: Record<string, string | null> } | null) => {
+        for (const { tab, docId } of wanted) tabActions.fillEmoji(tab.id, tab.url, data?.emojis[docId] ?? null)
+      })
+      .catch(() => {})
   }, [tabs, activeId])
 }
 

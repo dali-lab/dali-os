@@ -1,30 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { TOGGLE_SIDEBAR_SHORTCUT } from '~/lib/shortcuts'
 import { useToggleSidebarShortcut } from '~/components/shell/useToggleSidebarShortcut'
-import { Link, useLocation, useMatches, useNavigation } from 'react-router'
+import { Link, useLocation, useNavigation } from 'react-router'
 import { Tooltip } from "~/components/ui/floating";
-import {
-  ArrowRight,
-  Bell,
-  Calendar,
-  Check,
-  ChevronsUpDown,
-  Link as LinkIcon,
-  LogOut,
-  Mail,
-  Menu,
-  PanelLeft,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Search,
-  Star,
-  X,
-} from 'lucide-react'
+import { ArrowRight, Bell, Menu, PanelLeft, Search, X } from 'lucide-react'
 import type { FavoritePage } from '~/lib/user-pages.server'
-import { FavoriteIcon } from '~/components/FavoriteIcon'
 import { userInitials } from '~/lib/display'
-import { TabWorkspace } from '~/components/TabWorkspace'
-import { deepLinkTabLabel } from '~/lib/deep-link-tab'
 import { useAttentionFeed } from '~/components/NotificationBell'
 import { TasksDrawer, attentionTotal } from '~/components/AttentionPanel'
 import { DesktopBanner } from '~/components/DesktopBanner'
@@ -36,33 +17,22 @@ import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { ActivityLauncher } from '~/components/activities/ActivityLauncher'
 import { CommandPalette } from '~/components/CommandPalette'
 import { FeedbackButton } from '~/components/feedback/FeedbackButton'
-import { PageDocButton, GuideTopbarButton, ShellGuideProvider } from '~/components/page-docs/PageDocButton'
-import type { GuideState } from '~/components/page-docs/guide-bridge'
 import {
-  TablessHistoryNav,
   useRecordTablessHistory,
   useShowTablessHistoryNav,
   useTablessHistoryShortcuts,
 } from '~/components/TablessHistoryNav'
 import { useShellNav } from '~/components/shell-nav'
 import { DesktopTabStrip, useDesktopTabs } from '~/components/DesktopTabs'
-import { RecordingPill } from '~/components/meeting-recorder/RecordingPill'
 import { TabsShowingProvider } from '~/components/shell/TabKeepAlive'
 import { tabActions } from '~/lib/desktop-tabs-store'
 import type { DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, cleanTabUrl, COPY_PAGE_LINK_EVENT, stripHash, writePageLink } from '~/lib/page-link'
 import { useToast } from '~/components/ui/toast'
-import { FavoritesBar } from '~/components/FavoritesBar'
 import { TOGGLE_FAVORITE_EVENT, useCurrentPageFavorite } from '~/components/favorites-live'
 import { setFocusPreference } from '~/lib/focus-mode'
 import { useOsShellRoot } from '~/lib/os-shell'
 import { cn } from '~/lib/cn'
-import {
-  osMenuClass,
-  osMenuItemClass,
-  railRowClass,
-  useAccountMenuStyle,
-} from '~/components/os-shell-chrome'
 import {
   areaForPath,
   areaInk,
@@ -70,16 +40,14 @@ import {
   pinnedNavItems,
   homeNavItem,
   shellPageIcon,
-  ROOM_BOOKING_NAV_ITEM,
   activeSubtabHref,
-  isPinnedActive,
   visibleAreas,
   visibleSubtabs,
   type NavArea,
   type RoleFlags,
 } from '~/lib/nav-areas'
+import { useOpenAsk } from '~/ask/components/use-ask'
 import { useFeatureFlag } from '~/components/FeatureFlags'
-import { UnreadBadge } from '~/email/components/UnreadBadge'
 import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
 import { Rail } from '~/components/shell/Rail'
@@ -125,21 +93,10 @@ interface LayoutOSProps {
   tabStripHint?: boolean
   /** The open tabs as the server last saw them, so the strip paints with them. */
   tabsSnapshot?: DesktopTabsState | null
-  children?: React.ReactNode
+  children: React.ReactNode
 }
 
-const SIDEBAR_COLLAPSED_KEY = 'dali:sidebar:collapsed'
 const LAST_AREA_KEY = 'dali:sidebar:area'
-
-/* ------------------------------------------------------------------ */
-/* The dali.os shell. Same navigation model as the default shell — one  */
-/* pinned group, one active-area switcher, its sub-tabs beneath — but   */
-/* two of the rail's jobs move out to a top bar so the rail is only     */
-/* ever navigation: favourites become a strip along the top, and open   */
-/* tasks become the bell beside them. Nothing is dropped; the rows the  */
-/* design has no place for (profile, settings, help, log out) hang off  */
-/* the user row at the foot of the rail as a menu.                      */
-/* ------------------------------------------------------------------ */
 
 export function LayoutOS({
   user,
@@ -169,52 +126,33 @@ export function LayoutOS({
   children,
 }: LayoutOSProps) {
   const location = useLocation()
-  const matches = useMatches()
-  const tabless = children !== undefined
-  const desktopTabsFlag = useFeatureFlag('desktop-tabs')
-  const showTabs = useDesktopTabs(desktopTabsFlag && tabless, tabStripHint)
-  const shellV2 = desktopTabsFlag && tabless
-  // Under the v2 shell the rail is full width or hidden, nothing in between;
-  // collapsing it (button, edge, ⌘\) hides it entirely, leaving only the
-  // expand button in the tab strip / page bar.
-  const [railHidden, setRailHidden] = useState(focusMode)
-  const hideRail = shellV2 ? railHidden : focusMode
+  const showTabs = useDesktopTabs(true, tabStripHint)
+  // The rail is full width or hidden, nothing in between; collapsing it
+  // (button, edge, ⌘\) hides it entirely, leaving only the expand button in
+  // the tab strip / page bar.
+  const [hideRail, setRailHidden] = useState(focusMode)
   const toggleRail = () => {
-    setFocusPreference(!railHidden)
-    setRailHidden(!railHidden)
+    setFocusPreference(!hideRail)
+    setRailHidden(!hideRail)
   }
-  useToggleSidebarShortcut(shellV2, toggleRail)
+  useToggleSidebarShortcut(true, toggleRail)
   useRecordTablessHistory()
-  useTablessHistoryShortcuts(useShowTablessHistoryNav(tabless), showTabs)
+  useTablessHistoryShortcuts(useShowTablessHistoryNav(), showTabs)
   useOsShellRoot(true)
   const shellHeaderRef = useShellHeaderHeight()
 
-  const {
-    workspaceRef,
-    paletteOpen,
-    setPaletteOpen,
-    togglePalette,
-    openInWorkspace,
-    openFromPalette,
-    tabClickProps,
-  } = useShellNav(tabless, { tabs: showTabs, sidePanel: desktopTabsFlag })
+  const { paletteOpen, setPaletteOpen, openInWorkspace, openFromPalette, tabClickProps } =
+    useShellNav({ tabs: showTabs, sidePanel: true })
 
-  const [focusedTabUrl, setFocusedTabUrl] = useState<string | null>(null)
-  const [focusedTabLabel, setFocusedTabLabel] = useState<string | null>(null)
-  const onActiveTabChange = useCallback((url: string | null, label: string | null) => {
-    setFocusedTabUrl(url)
-    setFocusedTabLabel(label)
-  }, [])
   const toast = useToast()
 
   const copyCurrentPageLink = useCallback(
     async (opts: { native?: boolean; url?: string } = {}) => {
-      const source = !tabless && focusedTabUrl !== null ? focusedTabUrl : window.location
-      const url = opts.url ?? buildPageLink(source, window.location.origin)
+      const url = opts.url ?? buildPageLink(window.location, window.location.origin)
       if (await writePageLink(url, opts)) toast.success('Link copied')
       else toast.error(<span>Couldn&apos;t copy. {url}</span>)
     },
-    [tabless, focusedTabUrl, toast],
+    [toast],
   )
 
   useEffect(() => {
@@ -225,38 +163,26 @@ export function LayoutOS({
     window.addEventListener(COPY_PAGE_LINK_EVENT, onCopy)
     return () => window.removeEventListener(COPY_PAGE_LINK_EVENT, onCopy)
   }, [copyCurrentPageLink])
-  const favoritesBar = useFeatureFlag('favorites-bar')
-  const starEnabled = favoritesBar || shellV2
-  const starUrl = starEnabled
-    ? stripHash(cleanTabUrl(!tabless && focusedTabUrl !== null ? focusedTabUrl : location.pathname + location.search))
-    : null
+  const starUrl = stripHash(cleanTabUrl(location.pathname + location.search))
   // Titles are "<page> · DALI OS"; keep the page part.
   const starLabel =
-    (!tabless && focusedTabLabel) ||
-    (typeof document !== 'undefined' ? document.title.split(' · ')[0] : '') ||
-    starUrl ||
-    ''
-  const pageStar = useCurrentPageFavorite(starUrl, starLabel, starEnabled)
+    (typeof document !== 'undefined' ? document.title.split(' · ')[0] : '') || starUrl || ''
+  const pageStar = useCurrentPageFavorite(starUrl, starLabel, true)
   const toggleStarRef = useRef(pageStar)
   toggleStarRef.current = pageStar
 
   useEffect(() => {
-    if (!starEnabled) return
     const onToggle = (e: Event) => {
       e.preventDefault()
       if (toggleStarRef.current.canToggle) void toggleStarRef.current.toggle()
     }
     window.addEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
     return () => window.removeEventListener(TOGGLE_FAVORITE_EVENT, onToggle)
-  }, [starEnabled])
+  }, [])
 
-  // Tab mode: the focused tab's frame reports its page guide over the guide
-  // bridge, since only that document knows the route's docKey.
-  const [workspaceGuide, setWorkspaceGuide] = useState<GuideState | null>(null)
   // The live url, query included — the nav matchers trim it themselves, but they
   // need the query to tell a Core deep-link into the Drive (/drive?type=agreement)
-  // from the plain Drive pin. In tab mode the focused-tab url already carries it;
-  // in tabless mode location.pathname would drop it, so append the search.
+  // from the plain Drive pin, and location.pathname alone would drop it.
   // While a navigation is loading, the destination wins: the sidebar highlights
   // where you're headed at click time, so its morph and slide animations run
   // during the fetch instead of competing with the new page's render.
@@ -265,97 +191,19 @@ export function LayoutOS({
     navigation.state === 'loading' && navigation.location
       ? navigation.location.pathname + navigation.location.search
       : null
-  const path = pendingPath ?? focusedTabUrl ?? location.pathname + location.search
-  const [collapsed, setCollapsed] = useState(false)
+  const path = pendingPath ?? location.pathname + location.search
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [lastAreaKey, setLastAreaKey] = useState('projects')
-  const [areaMenuOpen, setAreaMenuOpen] = useState(false)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const areaMenuRef = useRef<HTMLDivElement | null>(null)
-  const areaTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const userMenuRef = useRef<HTMLDivElement | null>(null)
-  const userMenuStyle = useAccountMenuStyle(userMenuRef, userMenuOpen)
 
   useEffect(() => {
     if (typeof window === 'undefined') return
-    setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
     const savedArea = window.localStorage.getItem(LAST_AREA_KEY)
     if (savedArea) setLastAreaKey(savedArea)
   }, [])
 
   useEffect(() => {
     setMobileNavOpen(false)
-    setAreaMenuOpen(false)
-    setUserMenuOpen(false)
   }, [path])
-
-  // Both rail menus sit inside a `fixed z-20` stacking context, so a plain
-  // overlay would cover them and swallow option clicks — hence document
-  // listeners, matching the default shell.
-  useEffect(() => {
-    if (!areaMenuOpen && !userMenuOpen) return
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (areaMenuRef.current && !areaMenuRef.current.contains(t)) setAreaMenuOpen(false)
-      if (userMenuRef.current && !userMenuRef.current.contains(t)) setUserMenuOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      setAreaMenuOpen(false)
-      setUserMenuOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDown)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [areaMenuOpen, userMenuOpen])
-
-  // The section menu is pinned to the trigger's box rather than laid out under
-  // it, so its position is measured — on open, and again on resize/scroll while
-  // it is open so it can't drift away from the button it belongs to.
-  const [areaMenuRect, setAreaMenuRect] = useState<{
-    top: number
-    left: number
-    width: number
-  } | null>(null)
-
-  const measureAreaMenu = useCallback(() => {
-    const rect = areaTriggerRef.current?.getBoundingClientRect()
-    if (!rect) return
-    setAreaMenuRect({ top: rect.bottom + 8, left: rect.left, width: rect.width })
-  }, [])
-
-  const toggleAreaMenu = useCallback(() => {
-    setAreaMenuOpen((v) => {
-      if (!v) measureAreaMenu()
-      return !v
-    })
-  }, [measureAreaMenu])
-
-  useEffect(() => {
-    if (!areaMenuOpen) return
-    window.addEventListener('resize', measureAreaMenu)
-    // Capture phase: the rail is its own scroller, and a scroll there doesn't
-    // bubble to window.
-    window.addEventListener('scroll', measureAreaMenu, true)
-    return () => {
-      window.removeEventListener('resize', measureAreaMenu)
-      window.removeEventListener('scroll', measureAreaMenu, true)
-    }
-  }, [areaMenuOpen, measureAreaMenu])
-
-  const toggleCollapsed = () => {
-    setCollapsed((prev) => {
-      const next = !prev
-      if (typeof window !== 'undefined') {
-        if (next) window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1')
-        else window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY)
-      }
-      return next
-    })
-  }
 
   const roleFlags: RoleFlags = {
     isCore,
@@ -376,9 +224,11 @@ export function LayoutOS({
   const navFlags = {
     community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
+    'refer-a-partner': useFeatureFlag('refer-a-partner'),
   }
-  const feedbackEnabled = useFeatureFlag('os-feedback')
   const releaseNotesEnabled = useFeatureFlag('release-notes')
+  const askEnabled = useFeatureFlag('ask-dali')
+  const { openAsk } = useOpenAsk()
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags, roleFlags)
@@ -404,42 +254,10 @@ export function LayoutOS({
   }, [routeAreaKey])
 
   const selectArea = (area: NavArea, e: React.MouseEvent) => {
-    setAreaMenuOpen(false)
     setLastAreaKey(area.key)
     if (typeof window !== 'undefined') window.localStorage.setItem(LAST_AREA_KEY, area.key)
     tabClickProps({ url: area.hubPath, label: area.label }).onClick(e)
   }
-
-  const pinnedLabel = [...pinned, ROOM_BOOKING_NAV_ITEM].find((i) => isPinnedActive(path, i.href, navFlags, roleFlags))?.label
-  const initialTabLabel = path.startsWith('/notifications')
-    ? 'My Tasks'
-    : path.startsWith('/calendar')
-      ? 'Calendar'
-      : path.startsWith('/email')
-        ? 'Email'
-        : path.startsWith('/settings')
-          ? 'Settings'
-          : path.startsWith('/help')
-            ? 'Help'
-            : (pinnedLabel ?? routeArea?.label)
-
-  // The tab the workspace opens for the url the app was entered on. Pinned to
-  // the first render: `path` above follows the focused tab once the workspace is
-  // live, and document.title belongs to the entry page only until then — while
-  // TabWorkspace reads initialTabs in its mount effect, so a later value would
-  // be silently dropped anyway.
-  const [deepLinkTab] = useState(() =>
-    location.pathname === home.href
-      ? null
-      : {
-          url: location.pathname + location.search,
-          label: deepLinkTabLabel(
-            initialTabLabel,
-            typeof document === 'undefined' ? undefined : document.title,
-            location.pathname,
-          ),
-        },
-  )
 
   const initials = userInitials(user)
   const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
@@ -450,7 +268,7 @@ export function LayoutOS({
     tasks: taskTotal,
     projectTasks: projectTaskTotal,
   })
-  const upcoming = useUpcomingMeetings(shellV2)
+  const upcoming = useUpcomingMeetings(true)
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
   // The bell owns the attention stack that used to be a banner on Home: open
@@ -475,10 +293,10 @@ export function LayoutOS({
 
   const browserDesktop = useIsBrowserDesktopCandidate()
   const openCurrentPageInDesktop = useOpenCurrentPageInDesktop()
-  useDesktopHint({ enabled: desktopTabsFlag && browserDesktop, dismissed: desktopHintDismissed })
+  useDesktopHint({ enabled: browserDesktop, dismissed: desktopHintDismissed })
   const userMenuItems = userMenuEntries({
     releaseNotes: releaseNotesEnabled,
-    desktopDownload: desktopTabsFlag && browserDesktop,
+    desktopDownload: browserDesktop,
   })
   const onReleaseNotes = path.startsWith('/release-notes')
   // The layout loader rarely revalidates, so its flag stays stale after a visit.
@@ -487,365 +305,6 @@ export function LayoutOS({
     if (onReleaseNotes) setVisitedReleaseNotes(true)
   }, [onReleaseNotes])
   const showWhatsNewDot = hasUnseenReleaseNotes && !onReleaseNotes && !visitedReleaseNotes
-
-  // `collapsed` is passed as a parameter so the mobile drawer can render
-  // full labels (force false) while the desktop sidebar keeps its own state.
-  const renderSidebar = (collapsed: boolean) => (
-    <div
-      data-sidebar-scroll
-      className="flex h-full flex-col justify-between overflow-y-auto px-5 py-6"
-    >
-      {/* Everything in the rail holds its height (`shrink-0`) except the
-          sub-tab list, which is the one part that grows without bound — a
-          10-sub-tab area is taller than a laptop window on its own. `min-h-0`
-          here and on the group below is what lets flexbox shrink past content,
-          so the squeeze lands on that list and it scrolls inside its own box
-          instead of scrolling the whole rail and carrying the wordmark, the
-          search box and the section switcher off the top of the screen. */}
-      <div className={cn('flex min-h-0 flex-col', collapsed ? 'gap-4' : 'gap-6')}>
-        {/* Brand + collapse */}
-        <div
-          className={cn(
-            'flex shrink-0 items-center',
-            collapsed ? 'flex-col gap-2' : 'justify-between',
-          )}
-        >
-          {/* The wordmark is the way home; the collapsed rail keeps a mark. */}
-          <Tooltip content={collapsed ? home.label : ''} placement="right">
-            <button
-              type="button"
-              {...tabClickProps({ url: home.href, label: home.label })}
-              aria-label={home.label}
-              className={cn(
-                'font-os-logo font-semibold text-os-accent focus:outline-none',
-                collapsed ? 'text-xl leading-none' : 'text-2xl',
-              )}
-            >
-              {collapsed ? 'd.' : 'dali.os'}
-            </button>
-          </Tooltip>
-          <Tooltip
-            content={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            placement="right"
-          >
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              {collapsed ? (
-                <PanelLeftOpen className="h-[18px] w-[18px]" />
-              ) : (
-                <PanelLeftClose className="h-[18px] w-[18px]" />
-              )}
-            </button>
-          </Tooltip>
-        </div>
-
-        {/* Search — the visible affordance for the ⌘K palette. */}
-        <Tooltip content={collapsed ? 'Search (⌘K)' : ''} placement="right">
-          <button
-            type="button"
-            onClick={() => setPaletteOpen(true)}
-            aria-label="Search"
-            className={cn(
-              'flex shrink-0 items-center rounded-os-item bg-os-card text-base text-os-grey transition-colors hover:text-foreground',
-              collapsed ? 'justify-center p-2.5' : 'gap-3 p-3',
-            )}
-          >
-            <Search className="h-[18px] w-[18px] flex-shrink-0 opacity-80" />
-            {!collapsed && (
-              <>
-                <span>Search</span>
-                <kbd className="ml-auto rounded bg-os-container px-1.5 py-0.5 font-mono text-[10px] text-os-muted">
-                  ⌘K
-                </kbd>
-              </>
-            )}
-          </button>
-        </Tooltip>
-
-        {/* Pinned surfaces */}
-        <div className="flex shrink-0 flex-col gap-3">
-          <Tooltip content={collapsed ? 'Calendar' : ''} placement="right">
-            <button
-              type="button"
-              {...tabClickProps({ url: '/calendar', label: 'Calendar' })}
-              className={railRowClass(path.startsWith('/calendar'), collapsed)}
-            >
-              <Calendar className="h-5 w-5 flex-shrink-0 opacity-85" />
-              {!collapsed && 'Calendar'}
-            </button>
-          </Tooltip>
-          {!isAlumni && (
-            <Tooltip
-              content={collapsed ? (emailUnread > 0 ? `Email · ${emailUnread} unread` : 'Email') : ''}
-              placement="right"
-            >
-              <button
-                type="button"
-                {...tabClickProps({ url: '/email', label: 'Email' })}
-                className={cn(railRowClass(path.startsWith('/email'), collapsed), 'relative')}
-              >
-                <Mail className="h-5 w-5 flex-shrink-0 opacity-85" />
-                {!collapsed && 'Email'}
-                {collapsed ? (
-                  emailUnread > 0 && (
-                    <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-os-accent" aria-hidden />
-                  )
-                ) : (
-                  <UnreadBadge count={emailUnread} className="ml-auto" />
-                )}
-              </button>
-            </Tooltip>
-          )}
-          {pinned.map((item) => {
-            const Icon = item.icon
-            const active = isPinnedActive(path, item.href, navFlags, roleFlags)
-            return (
-              <Tooltip key={item.href} content={collapsed ? item.label : ''} placement="right">
-                <button
-                  type="button"
-                  {...tabClickProps({ url: item.href, label: item.label })}
-                  className={railRowClass(active, collapsed)}
-                >
-                  <Icon className="h-5 w-5 flex-shrink-0 opacity-85" />
-                  {!collapsed && <span className="truncate">{item.label}</span>}
-                </button>
-              </Tooltip>
-            )
-          })}
-          {singleArea &&
-            activeSubtabs.map((t) => (
-              <Tooltip key={t.href} content={collapsed ? t.label : ''} placement="right">
-                <button
-                  type="button"
-                  {...tabClickProps({ url: t.href, label: t.label })}
-                  className={railRowClass(t.href === activeHref, collapsed)}
-                >
-                  <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
-                  {!collapsed && <span className="truncate">{t.label}</span>}
-                </button>
-              </Tooltip>
-            ))}
-        </div>
-
-        {activeArea && !singleArea && (
-          <>
-            <div className="h-px w-full shrink-0 bg-os-container" />
-
-            {/* Active-area switcher + its sub-tabs. */}
-            {collapsed ? (
-              <div className="flex min-h-0 flex-col gap-3">
-                <Tooltip content={activeArea.label} placement="right">
-                  <button
-                    type="button"
-                    {...tabClickProps({ url: activeArea.hubPath, label: activeArea.label })}
-                    className="flex shrink-0 items-center justify-center rounded-os-item bg-os-card px-3 py-2.5 text-foreground transition-colors hover:bg-os-card-hover"
-                  >
-                    <activeArea.icon className="h-5 w-5 flex-shrink-0" />
-                  </button>
-                </Tooltip>
-                <div className="flex min-h-[5rem] flex-col gap-3 overflow-y-auto">
-                  {activeSubtabs.map((t) => (
-                    <Tooltip key={t.href} content={t.label} placement="right">
-                      <button
-                        type="button"
-                        {...tabClickProps({ url: t.href, label: t.label })}
-                        className={railRowClass(t.href === activeHref, collapsed)}
-                      >
-                        <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
-                      </button>
-                    </Tooltip>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="flex min-h-0 flex-col gap-3">
-                <div ref={areaMenuRef} className="shrink-0">
-                  <button
-                    type="button"
-                    onClick={toggleAreaMenu}
-                    aria-haspopup="listbox"
-                    aria-expanded={areaMenuOpen}
-                    aria-label={`Section: ${activeArea.label}. Switch section`}
-                    ref={areaTriggerRef}
-                    className={cn(
-                      'flex w-full items-center justify-between rounded-os-item p-3 text-base transition-colors',
-                      areaMenuOpen
-                        ? 'bg-os-card-hover text-foreground'
-                        : 'bg-os-card text-os-grey hover:text-foreground',
-                    )}
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <activeArea.icon className="h-5 w-5 flex-shrink-0 text-os-accent" />
-                      <span className="truncate">{activeArea.label}</span>
-                    </span>
-                    <ChevronsUpDown className="h-5 w-5 flex-shrink-0" />
-                  </button>
-                  {areaMenuOpen && areaMenuRect && (
-                    // Fixed to the viewport, not in the rail's flow — the same
-                    // trick the task-bell flyout below uses, and for the same
-                    // reason. In flow, a list this long simply made the rail
-                    // taller than the window and the *rail* scrolled, carrying
-                    // the trigger and the account row out of view; absolute
-                    // wouldn't help either, since the rail is a scroll
-                    // container and would clip it. Out of flow it can't change
-                    // the rail's height at all, and the max-height below is
-                    // measured from the viewport, so a list too long to fit
-                    // always scrolls inside its own box.
-                    // Still a DOM child of areaMenuRef, so the outside-click
-                    // handler keeps working unchanged.
-                    <div
-                      role="listbox"
-                      style={{
-                        top: areaMenuRect.top,
-                        left: areaMenuRect.left,
-                        width: areaMenuRect.width,
-                        maxHeight: `calc(100vh - ${Math.round(areaMenuRect.top) + 16}px)`,
-                      }}
-                      className={cn(
-                        'fixed z-40 overflow-y-auto motion-safe:animate-area-menu',
-                        osMenuClass,
-                      )}
-                    >
-                      {areas.map((a) => {
-                        const selected = a.key === activeArea.key
-                        return (
-                          <button
-                            key={a.key}
-                            type="button"
-                            role="option"
-                            aria-selected={selected}
-                            onClick={(e) => selectArea(a, e)}
-                            className={cn(osMenuItemClass, selected && 'font-semibold')}
-                          >
-                            <a.icon
-                              className={cn(
-                                'h-4 w-4 flex-shrink-0',
-                                selected ? 'text-os-accent' : 'text-os-grey',
-                              )}
-                            />
-                            <span className="truncate">{a.label}</span>
-                            {selected && (
-                              <Check className="ml-auto h-3.5 w-3.5 flex-shrink-0 text-os-accent" />
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {!areaMenuOpen && activeSubtabs.length > 0 && (
-                  // min-h-[5rem]: on a window too short even for this, keep the
-                  // list a list and let the rail take the remainder, rather
-                  // than squeezing it to a sliver.
-                  <div className="flex min-h-[5rem] flex-col gap-3 overflow-y-auto pr-2">
-                    {activeSubtabs.map((t) => {
-                      const active = t.href === activeHref
-                      return (
-                        <button
-                          key={t.href}
-                          type="button"
-                          {...tabClickProps({ url: t.href, label: t.label })}
-                          className={cn(
-                            'flex items-center gap-3 py-2 text-base text-left transition-colors',
-                            active
-                              ? 'os-subtab-active pl-[22px] font-medium text-foreground'
-                              : 'rounded-r-os-item pl-6 font-normal text-os-grey hover:bg-os-hover hover:text-foreground',
-                          )}
-                        >
-                          <t.icon className="h-5 w-5 flex-shrink-0 opacity-85" />
-                          <span className="truncate">{t.label}</span>
-                          {t.alert && (adminAttention[t.alert] ?? 0) > 0 && (
-                            <span
-                              className="ml-auto mr-2 min-w-[20px] rounded-full bg-destructive/15 px-1.5 text-center text-xs font-semibold tabular-nums text-destructive"
-                              aria-label={`${adminAttention[t.alert]} need attention`}
-                            >
-                              {adminAttention[t.alert]}
-                            </span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-
-      {/* User row — the design's foot of the rail. It also carries the rows
-          the design has no other home for (profile, settings, help, log out)
-          rather than dropping them. */}
-      <div ref={userMenuRef} className="relative shrink-0 pt-6">
-        {userMenuStyle && (
-          <div
-            role="menu"
-            style={userMenuStyle}
-            className={cn('fixed z-40 motion-safe:animate-area-menu', osMenuClass)}
-          >
-            {userMenuItems.map((item) => (
-              <button
-                key={item.url}
-                type="button"
-                role="menuitem"
-                {...tabClickProps({ url: item.url, label: item.label })}
-                className={osMenuItemClass}
-              >
-                <item.icon className="h-4 w-4 flex-shrink-0 text-os-grey" />
-                {item.label}
-                {item.url === '/release-notes' && showWhatsNewDot && (
-                  <span className="h-2 w-2 rounded-full bg-os-accent" role="img" aria-label="New entries" />
-                )}
-              </button>
-            ))}
-            <a
-              href="/logout"
-              role="menuitem"
-              className={osMenuItemClass}
-            >
-              <LogOut className="h-4 w-4 flex-shrink-0 text-os-grey" />
-              Log out
-            </a>
-          </div>
-        )}
-        <Tooltip
-          content={collapsed ? `${user.firstName ?? user.email} — account menu` : ''}
-          placement="right"
-        >
-          <button
-            type="button"
-            onClick={() => setUserMenuOpen((v) => !v)}
-            aria-haspopup="menu"
-            aria-expanded={userMenuOpen}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-os-item py-2 transition-colors hover:bg-os-hover',
-              // cn() has no tailwind-merge, so px-3 and px-0 can't both be present.
-              collapsed ? 'justify-center px-0' : 'px-3',
-            )}
-          >
-            <span className="relative flex shrink-0">
-              {avatar('h-6 w-6')}
-              {showWhatsNewDot && (
-                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-os-accent" aria-hidden />
-              )}
-            </span>
-            {!collapsed && (
-              <span className="truncate text-base font-medium text-os-grey">
-                {[user.firstName, user.lastName].filter(Boolean).join(' ') || user.email}
-              </span>
-            )}
-          </button>
-        </Tooltip>
-      </div>
-    </div>
-  )
-
-  /* ---------------- Top bar ---------------- */
 
   const tasksDrawer = (
     <TasksDrawer
@@ -878,114 +337,6 @@ export function LayoutOS({
         </button>
       }
     />
-  )
-
-
-  const topBar = (
-    <div className="os-nav-edge-b flex items-center justify-between gap-4 border-l-2 border-os-bg bg-os-nav px-6 py-2.5">
-      <div className="flex min-w-0 items-center gap-3">
-        {/* Back/forward arrows — tabless desktop shell only; renders nothing elsewhere. */}
-        <TablessHistoryNav tabless={tabless} tabs={showTabs} />
-        {favorites.length === 0 ? (
-          <div className="flex items-center gap-3 text-sm text-os-muted">
-            <Star className="h-4 w-4 flex-shrink-0 opacity-70" />
-            Favorited pages will appear here.
-          </div>
-        ) : (
-          <div className="flex min-w-0 items-center gap-3 overflow-x-auto">
-            <Star className="h-4 w-4 flex-shrink-0 text-os-accent" aria-hidden />
-            {favoritesBar && onFavoritesChange ? (
-              <FavoritesBar
-                favorites={favorites}
-                onChange={onFavoritesChange}
-                tabClickProps={tabClickProps}
-              />
-            ) : (
-              <div className="flex items-center gap-2">
-                {favorites.map((p) => (
-                  <Tooltip key={p.id} content={p.title || 'Untitled'}>
-                    <button
-                      type="button"
-                      {...tabClickProps({ url: p.href, label: p.title || 'Untitled', emoji: p.iconEmoji })}
-                      className="flex max-w-[180px] flex-shrink-0 items-center gap-1.5 rounded-full bg-os-card px-2.5 py-1 text-xs text-os-grey transition-colors hover:bg-os-card-hover hover:text-foreground"
-                    >
-                      <FavoriteIcon page={p} glyphClassName="text-os-accent" />
-                      <span className="truncate">{p.title || 'Untitled'}</span>
-                    </button>
-                  </Tooltip>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-shrink-0 items-center gap-3">
-        <RecordingPill />
-        {favoritesBar && (
-          <Tooltip
-            content={
-              pageStar.inSidebar
-                ? 'Already in the sidebar'
-                : pageStar.favorited
-                  ? 'Remove this page from favorites'
-                  : 'Add this page to favorites'
-            }
-          >
-            <button
-              type="button"
-              disabled={!pageStar.canToggle}
-              onClick={() => void pageStar.toggle()}
-              aria-label={pageStar.favorited ? 'Remove this page from favorites' : 'Add this page to favorites'}
-              aria-pressed={pageStar.favorited}
-              className={cn('os-topbar-btn disabled:opacity-40', pageStar.favorited && 'text-os-accent')}
-            >
-              <Star className={cn('h-5 w-5', pageStar.favorited && 'fill-current')} />
-            </button>
-          </Tooltip>
-        )}
-        <Tooltip content="Copy link to this page">
-          <button
-            type="button"
-            onClick={() => void copyCurrentPageLink()}
-            aria-label="Copy link to this page"
-            className="os-topbar-btn"
-          >
-            <LinkIcon className="h-5 w-5" />
-          </button>
-        </Tooltip>
-        {/* The page's guide, on the same plate as the bell beside it, in both
-            shells. Tabless mode shares this document with the page and reads
-            the route itself; tab mode takes the focused frame's report and
-            posts the click back to it. The open guide draws its own Close. */}
-        {tabless ? (
-          <PageDocButton variant="topbar" />
-        ) : workspaceGuide?.hasGuide && !workspaceGuide.open ? (
-          <GuideTopbarButton onClick={() => workspaceRef.current?.openFocusedGuide()} />
-        ) : null}
-        <Tooltip content={`Notifications, ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}>
-          <button
-            type="button"
-            onClick={() => setBellOpen((o) => !o)}
-            aria-haspopup="dialog"
-            aria-expanded={bellOpen}
-            aria-label={`Notifications, ${taskCount} need${taskCount === 1 ? 's' : ''} your attention`}
-            className="os-topbar-btn pl-3"
-          >
-            <Bell className="h-5 w-5" />
-            <span
-              className={cn(
-                'flex h-6 w-6 items-center justify-center rounded-full text-sm font-black',
-                taskCount > 0 ? 'bg-os-accent text-os-bg' : 'bg-os-container text-os-grey',
-              )}
-            >
-              {taskCount > 99 ? '99+' : taskCount}
-            </span>
-          </button>
-        </Tooltip>
-        {tasksDrawer}
-      </div>
-    </div>
   )
 
   const railToggle = (
@@ -1032,14 +383,9 @@ export function LayoutOS({
       onSelectArea={selectArea}
       userMenuItems={userMenuItems}
       showWhatsNewDot={showWhatsNewDot}
-      topInset={shellV2 && !showTabs}
+      topInset={!showTabs}
     />
   )
-
-  const ShellSlots = shellV2 ? PageBarSlotProvider : React.Fragment
-
-  const sidebarWidth = collapsed ? 'w-[76px]' : 'w-[276px]'
-  const mainPad = collapsed ? 'md:pl-[76px]' : 'md:pl-[276px]'
 
   return (
     <div
@@ -1052,10 +398,10 @@ export function LayoutOS({
           '--area-tint': areaTint(activeArea?.key),
           '--area-ink': areaInk(activeArea?.key),
           // The page accent (--color-os-accent resolves from these) follows the
-          // page's own mode — v2 design only. Keyed on accentArea: the page's
+          // page's own mode. Keyed on accentArea: the page's
           // own area, or the rail's selected mode on the shared pages
           // (calendar, email, drive); home keeps the default accent.
-          ...(desktopTabsFlag && accentArea
+          ...(accentArea
             ? {
                 '--mode-accent': areaTint(accentArea.key),
                 '--mode-accent-hover': `color-mix(in srgb, ${areaTint(accentArea.key)} 78%, white)`,
@@ -1077,23 +423,12 @@ export function LayoutOS({
         fitViewport && 'md:h-dvh md:overflow-hidden',
       )}
     >
-      {shellV2
-        ? !hideRail && (
-            <aside className="fixed inset-y-0 left-0 z-20 hidden w-[264px] flex-col border-r border-os-container bg-os-nav md:flex">
-              <div className="os-rail-scale h-full">{renderRail(true)}</div>
-              <RailEdgeHandle onToggle={toggleRail} />
-            </aside>
-          )
-        : !focusMode && (
-            <aside
-              className={cn(
-                'os-nav-edge-r fixed inset-y-0 left-0 z-20 hidden flex-col bg-os-nav transition-[width] duration-200 md:flex',
-                sidebarWidth,
-              )}
-            >
-              {renderSidebar(collapsed)}
-            </aside>
-          )}
+      {!hideRail && (
+        <aside className="fixed inset-y-0 left-0 z-20 hidden w-[264px] flex-col border-r border-os-container bg-os-nav md:flex">
+          <div className="os-rail-scale h-full">{renderRail(true)}</div>
+          <RailEdgeHandle onToggle={toggleRail} />
+        </aside>
+      )}
 
       {/* Mobile top bar */}
       <div className="os-nav-edge-b fixed inset-x-0 top-0 z-20 flex h-14 items-center justify-between bg-os-nav px-4 md:hidden">
@@ -1145,8 +480,7 @@ export function LayoutOS({
         </div>
       </div>
 
-      {/* Mobile drawer — force collapsed=false so the drawer always shows full
-          labels even when the desktop sidebar is in its icon-only rail state. */}
+      {/* Mobile drawer */}
       {mobileNavOpen && (
         <>
           <div
@@ -1158,20 +492,18 @@ export function LayoutOS({
             id="os-mobile-nav"
             className="os-nav-edge-r fixed inset-y-0 left-0 z-40 flex w-[276px] flex-col bg-os-nav shadow-xl md:hidden"
           >
-            {shellV2 ? renderRail(false) : renderSidebar(false)}
+            {renderRail(false)}
           </aside>
         </>
       )}
 
-      <ShellSlots>
+      <PageBarSlotProvider>
       <main
         className={cn(
           'flex min-w-0 flex-1 flex-col',
-          shellV2
-            ? 'transition-[padding] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none'
-            : 'transition-[padding] duration-200',
+          'transition-[padding] duration-[220ms] ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none',
           fitViewport && 'min-h-0',
-          shellV2 ? !hideRail && 'md:pl-[264px]' : !focusMode && mainPad,
+          !hideRail && 'md:pl-[264px]',
         )}
       >
         {/* Impersonation is a session-mode indicator, so it sits above the top
@@ -1181,115 +513,55 @@ export function LayoutOS({
             userName={`${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email}
           />
         )}
-        {shellV2 ? (
-          // Sticky because the page bar now carries the document toolbar,
-          // which used to stick on its own (.doc-topbar).
-          <div ref={shellHeaderRef} className="relative sticky top-14 z-20 shrink-0 bg-os-bg md:top-0">
-            {showTabs && (
-              <div className="hidden md:block">
-                <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
-              </div>
-            )}
-            <PageBar
-              tabs={showTabs}
-              leading={
-                hideRail && !showTabs ? <div className="hidden md:block">{railToggle}</div> : undefined
-              }
-              areaKey={accentArea?.key}
-              icon={routeArea ? undefined : shellPageIcon(path, home.href)}
-              star={pageStar}
-              onCopyLink={() => void copyCurrentPageLink()}
-            />
-            {showTabs && <DockedNavigationProgress />}
-          </div>
-        ) : (
-          <>
-            {showTabs && (
-              <div className="hidden shrink-0 md:block">
-                <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
-              </div>
-            )}
-            {/* `shrink-0` so a bounded shell takes the height out of the page's
-                own scrollport rather than squashing the favourites bar. */}
-            {!focusMode && <div className="hidden shrink-0 md:block">{topBar}</div>}
-          </>
-        )}
-        {shellV2 && tasksDrawer}
+        {/* Sticky because the page bar carries the document toolbar, which used
+            to stick on its own (.doc-topbar). */}
+        <div ref={shellHeaderRef} className="relative sticky top-14 z-20 shrink-0 bg-os-bg md:top-0">
+          {showTabs && (
+            <div className="hidden md:block">
+              <DesktopTabStrip leading={hideRail ? railToggle : undefined} initial={tabsSnapshot} />
+            </div>
+          )}
+          <PageBar
+            tabs={showTabs}
+            leading={
+              hideRail && !showTabs ? <div className="hidden md:block">{railToggle}</div> : undefined
+            }
+            areaKey={accentArea?.key}
+            icon={routeArea ? undefined : shellPageIcon(path, home.href)}
+            star={pageStar}
+            onCopyLink={() => void copyCurrentPageLink()}
+          />
+          {showTabs && <DockedNavigationProgress />}
+        </div>
+        {tasksDrawer}
         <DesktopBanner />
         <ActivityLauncher />
-        {tabless ? (
-          <ShellGuideProvider>
-            <div
-              className="flex min-h-0 flex-1 flex-col"
-              // A press or keystroke in a preview tab's page is real engagement:
-              // keep the tab, so the next sidebar click can't replace it.
-              onPointerDownCapture={showTabs ? tabActions.promoteActive : undefined}
-              onKeyDownCapture={showTabs ? tabActions.promoteActive : undefined}
-            >
-              <TabsShowingProvider value={showTabs && shellV2}>{children}</TabsShowingProvider>
-            </div>
-          </ShellGuideProvider>
-        ) : (
-          <TabWorkspace
-            apiRef={workspaceRef}
-            onOpenPalette={togglePalette}
-            initialTabs={[
-              { url: home.href, label: home.label },
-              ...(deepLinkTab ? [deepLinkTab] : []),
-            ]}
-            onActiveUrlChange={onActiveTabChange}
-            onGuideChange={setWorkspaceGuide}
-          />
-        )}
-      </main>
-      </ShellSlots>
-
-      {/* Focus mode: with the rail hidden, keep search + a way back. */}
-      {!shellV2 && focusMode && (
-        <div className={cn('fixed bottom-4 left-4 z-30 hidden items-center gap-1 md:flex', osMenuClass)}>
-          <button
-            type="button"
-            onClick={() => setPaletteOpen(true)}
-            aria-label="Search"
-            className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-os-grey transition-colors hover:bg-os-hover-strong hover:text-foreground"
-          >
-            <Search className="h-4 w-4" />
-            <kbd className="rounded bg-os-container px-1 py-0.5 font-mono text-[10px] text-os-muted">
-              ⌘K
-            </kbd>
-          </button>
-          <Tooltip content="Show sidebar" placement="right">
-            <button
-              type="button"
-              onClick={() => {
-                setFocusPreference(false)
-                window.location.reload()
-              }}
-              aria-label="Show sidebar"
-              className="rounded-lg p-2 text-os-muted transition-colors hover:bg-os-hover-strong hover:text-foreground"
-            >
-              <PanelLeftOpen className="h-4 w-4" />
-            </button>
-          </Tooltip>
+        <div
+          className="flex min-h-0 flex-1 flex-col"
+          // A press or keystroke in a preview tab's page is real engagement:
+          // keep the tab, so the next sidebar click can't replace it.
+          onPointerDownCapture={showTabs ? tabActions.promoteActive : undefined}
+          onKeyDownCapture={showTabs ? tabActions.promoteActive : undefined}
+        >
+          <TabsShowingProvider value={showTabs}>{children}</TabsShowingProvider>
         </div>
-      )}
+      </main>
+      </PageBarSlotProvider>
 
-      {feedbackEnabled && (
-        <FeedbackButton
-          pagePath={path}
-          onOpenFeed={() => openInWorkspace({ url: '/feedback', label: 'Feedback' })}
-        />
-      )}
+      <FeedbackButton
+        pagePath={path}
+        onOpenFeed={() => openInWorkspace({ url: '/feedback', label: 'Feedback' })}
+      />
 
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
-        tabless={tabless}
         focusMode={hideRail}
         roles={roleFlags}
         flags={navFlags}
         onOpen={openFromPalette}
-        onOpenInDesktop={desktopTabsFlag && browserDesktop ? openCurrentPageInDesktop : undefined}
+        onOpenInDesktop={browserDesktop ? openCurrentPageInDesktop : undefined}
+        onAsk={askEnabled ? openAsk : undefined}
       />
       <OpenInDesktopRedirect />
     </div>

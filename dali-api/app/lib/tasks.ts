@@ -195,12 +195,9 @@ export async function getInternalCycleApplyTasks(userId: string, request?: Reque
   const groups: MemberApplicants[] = ["Interns", "LabMembers"];
   const perGroup = await Promise.all(
     groups.map(async (applicants) => {
-      // Eligible check and open-cycle fetch are independent — run them together.
-      const [eligible, cycles] = await Promise.all([
-        applicantGroup(applicants, "").eligible!(userId),
-        getOpenCycles({ applicants }),
-      ]);
-      if (!eligible) return [];
+      const cycles = await getOpenCycles({ applicants });
+      if (cycles.length === 0) return [];
+      if (!(await applicantGroup(applicants, "").eligible!(userId))) return [];
       return Promise.all(cycles.map((c) => getInternalCycleApplyTask(userId, applicants, c)));
     }),
   );

@@ -86,9 +86,10 @@ function dayKey(at: Date, timeZone: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
 }
 
-/** An upcoming meeting's trailing label: its time today, otherwise its weekday. */
-export function upcomingWhen(startsAt: string, now: Date, timeZone: string): string {
+/** An upcoming meeting's trailing label: Now while it runs, its time today, otherwise its weekday. */
+export function upcomingWhen(startsAt: string, endsAt: string, now: Date, timeZone: string): string {
   const at = new Date(startsAt)
+  if (at <= now && now < new Date(endsAt)) return 'Now'
   if (dayKey(at, timeZone) !== dayKey(now, timeZone)) {
     return new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(at)
   }

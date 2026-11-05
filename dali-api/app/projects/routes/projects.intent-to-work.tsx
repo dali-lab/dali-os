@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import type { Route } from "./+types/projects.intent-to-work";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { useFilteredList } from "~/hooks/useFilteredList";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { parseFormDataJson } from "~/lib/safe-json";
@@ -22,6 +25,8 @@ import { ColumnFilters, useColumnFilters } from "../components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "../components/SlotAdvancedSettingsModal";
 import { SubmissionDatabase } from "../components/SubmissionDatabase";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { TermFilter } from "~/components/TermFilter";
+import { DomainFilter } from "../components/DomainFilter";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { resolveTermFilter } from "~/lib/terms";
@@ -44,6 +49,12 @@ export const meta: Route.MetaFunction = () => [
 // Read-only database of received Intent-to-Work submissions for the current
 // cycle. Core/Admin only — members submit via the bound Intent to Work form
 // at /forms/fill/:token; there is no direct submit endpoint.
+// Search, domain and column filters live in the URL but filter client side;
+// only the term changes what the loader reads.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -143,7 +154,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { questions: true },
     });
     const qs = (latest?.questions as unknown as Question[]) ?? [];
-    formQuestions = qs.map((q) => ({
+    formQuestions = qs.filter((q) => !q.data.showIf).map((q) => ({
       key: q.key,
       label: q.data.label,
       type: q.type,
@@ -161,10 +172,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, code: true },
   });
 
+  const domainOptions = await prisma.domain.findMany({
+    orderBy: { displayName: "asc" },
+    select: { id: true, displayName: true },
+  });
+
   return {
     gate: "ok" as const,
     cycle: { name: cycleName },
+    termOptions,
     selectedTerm,
+    domainOptions,
     isAll,
     submissions,
     tableColumns,
@@ -304,13 +322,24 @@ function Loaded({
     () => searchParams.get("settings") === "1",
   );
 
-  const columnFilters = useColumnFilters(data.tableColumns);
+  const [domainId, setDomainId] = useSearchParamState("domain");
+  const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
+  const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
 
-  const { search, setSearch, filtered } = useFilteredList(data.submissions, {
+  const { filtered } = useFilteredList(data.submissions, {
+    search,
     searchFields: (s) => [s.name, s.email],
-    predicates: [columnFilters.predicate],
-    deps: [columnFilters.active],
+    predicates: [
+      (s) => !domainId || s.domainIds.includes(domainId),
+      columnFilters.predicate,
+    ],
+    deps: [domainId, columnFilters.active],
   });
+
+  const domains = useMemo(
+    () => data.domainOptions.map((d) => ({ id: d.id, name: d.displayName })),
+    [data.domainOptions],
+  );
 
   const canOpenSettings = !data.isAll;
 
@@ -354,6 +383,8 @@ function Loaded({
           aria-label="Search submissions"
           containerClassName="flex-1 min-w-[200px] max-w-[420px]"
         />
+        <TermFilter terms={data.termOptions} selected={data.selectedTerm} />
+        <DomainFilter domains={domains} value={domainId} onChange={setDomainId} />
         <div className="min-w-[220px] flex-1">
           <ColumnFilters
             columns={data.tableColumns}

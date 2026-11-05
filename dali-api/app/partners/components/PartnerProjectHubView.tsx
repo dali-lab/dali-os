@@ -499,6 +499,7 @@ function SharedFilePreviewModal({
   onClose: () => void;
 }) {
   const url = file.downloadUrl ?? undefined;
+  const saveUrl = file.saveUrl ?? undefined;
   const cat = categorize({
     fileName: file.fileName ?? file.title ?? "",
     contentType: file.contentType,
@@ -521,10 +522,9 @@ function SharedFilePreviewModal({
           {file.title}
         </h2>
         <div className="flex items-center gap-3 flex-shrink-0">
-          {url && (
+          {saveUrl && (
             <a
-              href={url}
-              download={file.fileName ?? undefined}
+              href={saveUrl}
               className="inline-flex items-center gap-1 text-sm font-medium text-os-accent hover:underline"
             >
               <Download className="w-4 h-4" />
@@ -561,10 +561,9 @@ function SharedFilePreviewModal({
               No inline preview for this file type
               {file.contentType ? ` (${file.contentType})` : ""}.
             </p>
-            {url && (
+            {saveUrl && (
               <a
-                href={url}
-                download={file.fileName ?? undefined}
+                href={saveUrl}
                 className="mt-3 inline-flex items-center gap-1 text-os-accent hover:underline"
               >
                 <Download className="w-3.5 h-3.5" />

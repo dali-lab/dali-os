@@ -114,7 +114,7 @@ describe("desktop tabs store", () => {
     store.startTabs({ url: "/a", label: "A" }, navigate);
     store.tabActions.record("/a/1", "PUSH");
     store.tabActions.step("back");
-    expect(navigate).toHaveBeenLastCalledWith("/a", { tabSwitch: true });
+    expect(navigate).toHaveBeenLastCalledWith("/a", { tabSwitch: true, keepPanel: true });
     store.tabActions.record("/a", "REPLACE");
     expect(store.getTabsSnapshot().tabs[0]).toMatchObject({ url: "/a", forwardStack: ["/a/1"] });
     store.tabActions.step("forward", 5);

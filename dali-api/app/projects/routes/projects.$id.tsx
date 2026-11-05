@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useOpenBeside } from "~/components/side-panel/use-side-panel";
-import { SIDE_PARAM } from "~/lib/side-panel";
 import {
   Form,
   Link,
@@ -53,6 +52,7 @@ import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db.server";
+import { activeDomainOptions } from "~/lib/reference-cache.server";
 import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
 import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
@@ -69,6 +69,7 @@ import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "../components/ProjectIconPicker";
+import { replaceProjectTerms } from "../lib/project-terms.server";
 import { Markdown } from "~/components/Markdown";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getUserRoles, isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
@@ -77,6 +78,8 @@ import {
   unlinkProjectPartner,
   updateProjectPartnerDates,
 } from "~/partners/lib/partner-access";
+import { listActiveCoreMembers, personName } from "~/partners/lib/core-members.server";
+import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard, type TaskCreateSeed } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
@@ -93,6 +96,7 @@ import {
   type EditableEpic,
 } from "../components/EpicSprintManager";
 import {
+  assignableAssignments,
   taskTermIds,
   termIdsInRange,
   isTaskFinished,
@@ -159,43 +163,6 @@ export const handle = {
   favoriteRoute: true,
 };
 
-// Open a project document as a split-screen tab. This page renders inside a
-// TabWorkspace iframe, so we ask the parent shell to open /documents/:id in a
-// second pane beside the project (dali:openTabToSide → Layout). When somehow
-// rendered standalone (no iframe), fall back to a normal same-tab navigation.
-// Document panes this page asked the shell to open, so switching subtabs can
-// retract them (see closeOpenedDocumentTabs). Module-scoped because the open
-// calls happen deep in the Overview tree, and the iframe reloads — dropping
-// this set — whenever the page itself goes away.
-const openedDocumentUrls = new Set<string>();
-
-function openDocumentTab(pageId: string, label: string) {
-  const url = `/documents/${pageId}`;
-  if (typeof window !== "undefined" && window.self !== window.top) {
-    openedDocumentUrls.add(url);
-    window.parent.postMessage(
-      { type: "dali:openTabToSide", url, label },
-      window.location.origin,
-    );
-  } else if (typeof window !== "undefined") {
-    window.location.assign(url);
-  }
-}
-
-// Documents are reachable only from Overview, so a doc pane left open while the
-// user reads Board or Planning is orphaned UI next to content it has nothing to
-// do with. Retract on subtab change; the shell no-ops for any the user already
-// closed, and keeps the rest reopenable via mod+shift+T.
-function closeOpenedDocumentTabs() {
-  if (typeof window === "undefined" || window.self === window.top) return;
-  for (const url of openedDocumentUrls) {
-    window.parent.postMessage(
-      { type: "dali:closeTab", url },
-      window.location.origin,
-    );
-  }
-  openedDocumentUrls.clear();
-}
 
 const STATUSES = ["Active", "Paused", "Archived"] as const;
 type ProjectStatus = (typeof STATUSES)[number];
@@ -346,6 +313,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       prdPageId: true,
       projectTerms: {
         select: {
+          piUserId: true,
+          pi: {
+            select: { id: true, firstName: true, lastName: true, daliEmail: true },
+          },
           term: {
             select: {
               id: true,
@@ -493,11 +464,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // in the action and downstream helpers don't re-query.
     getUserRoles(auth.user.sub, request),
     // Domain editor option list — project-independent.
-    prisma.domain.findMany({
-      where: { active: true },
-      orderBy: { displayName: "asc" },
-      select: { id: true, displayName: true },
-    }),
+    activeDomainOptions(),
     // All terms — ascending (chronological) for sprint→term resolvers;
     // display lists re-sort to newest-first where needed. Project-independent.
     prisma.term.findMany({
@@ -912,6 +879,22 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     .map((pt) => pt.term)
     .sort((a, b) => b.sortKey - a.sortKey);
 
+  // Per-term Principal Investigator (Core lead on this project for the term).
+  // Keyed by termId so the team section can label each term with its PI and
+  // (for Core viewers) swap it inline.
+  const pisByTerm: Record<string, { userId: string; name: string } | null> =
+    Object.fromEntries(
+      project.projectTerms.map((pt) => [
+        pt.term.id,
+        pt.pi
+          ? { userId: pt.pi.id, name: personName(pt.pi) }
+          : null,
+      ]),
+    );
+  // Core-only member list fuels the PI picker; everyone else sees a read-only
+  // label so we skip the query.
+  const coreMembers = core ? await listActiveCoreMembers(request) : [];
+
   // Start term is derived as the earliest term in the set (lowest sortKey),
   // not a stored field. Null when the project has no terms yet.
   const startTerm =
@@ -982,25 +965,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // since rolled off. TaskModal folds that task's own assignees into its picker
   // so they stay removable — which keeps the un-assign path working without
   // widening this project-wide list back out to every past member.
-  const currentTermAssignments = current
-    ? project.assignments.filter((a) => a.termId === current.id)
-    : [];
-  const latestStaffedSortKey = project.assignments.reduce<number | null>(
-    (max, a) => (max === null || a.term.sortKey > max ? a.term.sortKey : max),
-    null,
-  );
-  const assignableAssignments =
-    currentTermAssignments.length > 0
-      ? currentTermAssignments
-      : latestStaffedSortKey === null
-        ? []
-        : project.assignments.filter((a) => a.term.sortKey === latestStaffedSortKey);
-
   const memberMap = new Map<string, string>();
   // Each member's staffed domain on this project, for the modal's "assign →
   // autofill Domain" step. First staffing row wins if someone spans domains.
   const domainByUserId = new Map<string, string>();
-  for (const a of assignableAssignments) {
+  for (const a of assignableAssignments(project.assignments, current?.id ?? null)) {
     const id = a.user.id;
     if (!memberMap.has(id)) {
       memberMap.set(id, fullName(a.user));
@@ -1295,6 +1264,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       code: t.code,
       sortKey: t.sortKey,
     })),
+    pisByTerm,
+    coreMembers,
     allTermOptions: [...allTerms]
       .sort((a, b) => b.sortKey - a.sortKey)
       .map((t) => ({ id: t.id, code: t.code })),
@@ -1394,30 +1365,6 @@ async function replaceProjectDomains(projectId: string, incoming: string[]) {
   ]);
 }
 
-// Project term set. Full-replacement too, so the one helper covers both adding
-// and removing terms. The start term and active-this-term are derived from this
-// set, not stored.
-async function replaceProjectTerms(projectId: string, incoming: string[]) {
-  const valid = incoming.length
-    ? await prisma.term.findMany({
-        where: { id: { in: incoming } },
-        select: { id: true },
-      })
-    : [];
-  const ids = valid.map((t) => t.id);
-  await prisma.$transaction([
-    prisma.projectTerm.deleteMany({ where: { projectId } }),
-    ...(ids.length
-      ? [
-          prisma.projectTerm.createMany({
-            data: ids.map((termId) => ({ projectId, termId })),
-            skipDuplicates: true,
-          }),
-        ]
-      : []),
-  ]);
-}
-
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -1433,6 +1380,23 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = (form.get("intent") as string | null) ?? "details";
+
+  // Per-term Principal Investigator. Core-only on both sides: only Core can
+  // write it, and the PI themselves must be an active Core member — same gate
+  // the renewals board uses so the two surfaces can't drift.
+  if (intent === "pi") {
+    if (!core) return { error: "Only Core can set the project PI." };
+    const termId = String(form.get("termId") ?? "");
+    const piUserId = String(form.get("piUserId") ?? "") || null;
+    if (!termId) return { error: "Missing term." };
+    if (piUserId && !(await isCore(piUserId, request))) {
+      return { error: "A PI must be a Core member." };
+    }
+    if (!(await setTermPi(prisma, { projectId: params.id, termId, piUserId }))) {
+      return { error: "That project is not active in that term." };
+    }
+    return redirect(`/projects/${params.id}`);
+  }
 
   const SCOPE_INTENTS = [
     "scopesBulk",
@@ -1762,6 +1726,8 @@ export default function ProjectDetail() {
     boardOptions,
     allDomainOptions,
     plannedTerms,
+    pisByTerm,
+    coreMembers,
     allTermOptions,
     chartStrings,
     domainScopeGrid,
@@ -1849,12 +1815,10 @@ export default function ProjectDetail() {
   // the board — its own tab classically, folded into Progress under os. Either
   // way this hops to it and sets ?task= in one go.
   const openTaskFromTimeline = (taskId: string) => {
-    closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
         prev.set("tab", "progress");
         prev.set("task", taskId);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -1868,11 +1832,9 @@ export default function ProjectDetail() {
   // this for the same reason.
   const setTab = (next: Tab | OsTab) => {
     if (next === tab) return;
-    closeOpenedDocumentTabs();
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -2010,6 +1972,8 @@ export default function ProjectDetail() {
           linkablePartnerOrgs={linkablePartnerOrgs}
           domainScopeGrid={domainScopeGrid}
           plannedTerms={plannedTerms}
+          pisByTerm={pisByTerm}
+          coreMembers={coreMembers}
           currentTerm={currentTerm}
           chartStrings={chartStrings}
           allTermOptions={allTermOptions}
@@ -2562,7 +2526,7 @@ function RecordingPolicySegment({
     <EditableSection
       title="Meeting recording"
       canEdit={canEdit}
-      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted."
+      description="Lets anyone editing a meeting note on this project record it. Audio is transcribed, then deleted after."
       onSave={() => {
         if (formRef.current) submit(formRef.current);
       }}
@@ -3356,6 +3320,84 @@ function TeamTermGroup({
   );
 }
 
+function PrincipalInvestigatorsSection({
+  plannedTerms,
+  pisByTerm,
+  coreMembers,
+  canEdit,
+  currentTermId,
+}: {
+  plannedTerms: LoaderData["plannedTerms"];
+  pisByTerm: LoaderData["pisByTerm"];
+  coreMembers: LoaderData["coreMembers"];
+  canEdit: boolean;
+  currentTermId: string | null;
+}) {
+  const submit = useSubmit();
+  const { sectionTitle } = useOsChrome();
+  if (plannedTerms.length === 0) return null;
+  const upcoming = currentTermId
+    ? plannedTerms.filter((t) => {
+        const current = plannedTerms.find((p) => p.id === currentTermId);
+        return !current || t.sortKey >= current.sortKey;
+      })
+    : plannedTerms;
+  const rows = upcoming.length > 0 ? upcoming : plannedTerms.slice(0, 1);
+  return (
+    <div className="flex flex-col gap-2">
+      <h2 className={sectionTitle}>
+        Principal Investigators
+      </h2>
+      <div className="flex flex-col gap-2 rounded-os-card bg-os-container/40 p-3">
+        {rows.map((t) => {
+          const pi = pisByTerm[t.id] ?? null;
+          const isCurrent = currentTermId !== null && t.id === currentTermId;
+          const options = [
+            { value: "", label: "No PI" },
+            ...(pi && !coreMembers.some((m) => m.userId === pi.userId)
+              ? [{ value: pi.userId, label: pi.name }]
+              : []),
+            ...coreMembers.map((m) => ({ value: m.userId, label: m.name })),
+          ];
+          return (
+            <div
+              key={t.id}
+              className="grid grid-cols-[minmax(80px,120px)_minmax(0,1fr)] items-center gap-3"
+            >
+              <div className="text-xs font-medium text-muted-foreground">
+                {t.code}
+                {isCurrent && (
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded border border-accent-teal/40 bg-accent-teal/15 text-accent-teal">
+                    Current
+                  </span>
+                )}
+              </div>
+              {canEdit ? (
+                <Select
+                  ariaLabel={`PI for ${t.code}`}
+                  value={pi?.userId ?? ""}
+                  onChange={(v) => {
+                    const form = new FormData();
+                    form.set("intent", "pi");
+                    form.set("termId", t.id);
+                    form.set("piUserId", v);
+                    submit(form, { method: "post" });
+                  }}
+                  options={options}
+                />
+              ) : (
+                <div className="text-sm text-foreground">
+                  {pi?.name ?? <span className="italic text-muted-foreground">No PI</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TeamSection({
   teams,
   canEdit,
@@ -3558,6 +3600,8 @@ function OverviewTab({
   linkablePartnerOrgs,
   domainScopeGrid,
   plannedTerms,
+  pisByTerm,
+  coreMembers,
   currentTerm,
   chartStrings,
   allTermOptions,
@@ -3588,6 +3632,8 @@ function OverviewTab({
   linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
   domainScopeGrid: LoaderData["domainScopeGrid"];
   plannedTerms: LoaderData["plannedTerms"];
+  pisByTerm: LoaderData["pisByTerm"];
+  coreMembers: LoaderData["coreMembers"];
   currentTerm: LoaderData["currentTerm"];
   chartStrings: LoaderData["chartStrings"];
   allTermOptions: LoaderData["allTermOptions"];
@@ -3745,6 +3791,19 @@ function OverviewTab({
         knownOrgs={infra.knownOrgs}
         setupErrors={infra.setupErrors}
       />
+
+      {/* Principal Investigators — the Core member in charge of this project
+          per term. Core (canEditFinance, mirroring the renewals surface) can
+          reassign; everyone else sees a read-only roster. */}
+      <section className={sectionShell}>
+        <PrincipalInvestigatorsSection
+          plannedTerms={plannedTerms}
+          pisByTerm={pisByTerm}
+          coreMembers={coreMembers}
+          canEdit={canEditFinance}
+          currentTermId={currentTerm?.id ?? null}
+        />
+      </section>
 
       {/* Team — read-only summary, separate from the editable details. */}
       <section className={sectionShell}>
@@ -4600,13 +4659,15 @@ function ProjectDriveTab({
     [],
   );
 
+  const onOpenBeside = useOpenBeside();
   const onOpenItem = useCallback(
     (item: DriveItem) => {
-      if (item.href) navigate(item.href);
+      if (!item.href) return;
+      if (item.type === "doc") onOpenBeside({ href: item.href });
+      else navigate(item.href);
     },
-    [navigate],
+    [navigate, onOpenBeside],
   );
-  const onOpenBeside = useOpenBeside();
 
   // One item's move, with no reporting: the batch below speaks for the
   // selection. `onError` gets the reason a move was refused.
@@ -4978,6 +5039,10 @@ function DocumentsBlock({
   canEdit: boolean;
   hasActivePartner: boolean;
 }) {
+  const openBeside = useOpenBeside();
+  const openDocument = (id: string, title: string) => {
+    openBeside({ href: `/documents/${id}` });
+  };
   const dialog = useDialog();
   const toast = useToast();
   const revalidator = useRevalidator();
@@ -5021,11 +5086,10 @@ function DocumentsBlock({
     });
   }
 
-  // A document's title is edited in its own split-screen tab, which has its
-  // own loader — it can't touch this route's data directly. The shell relays
-  // a `dali:documentTitleChanged` postMessage to every open tab (see
-  // DocumentEditor's onTitleChange + Layout.tsx); revalidate here so the row
-  // label updates without waiting for the user to leave and reopen the doc.
+  // A document's title is edited in the side panel, which has its own loader —
+  // it can't touch this route's data directly. DocumentEditor posts a
+  // `dali:documentTitleChanged` message; revalidate here so the row label
+  // updates without waiting for the user to leave and reopen the doc.
   useEffect(() => {
     const knownIds = new Set(
       documents.flatMap((d) => [d.id, ...d.children.map((c) => c.id)]),
@@ -5131,7 +5195,7 @@ function DocumentsBlock({
       });
       const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
-      openDocumentTab(b.id, title);
+      openDocument(b.id, title);
       revalidator.revalidate();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
@@ -5456,7 +5520,7 @@ function DocumentsBlock({
     togglePin,
     setMoveDoc,
     deleteDocument,
-    openDocument: openDocumentTab,
+    openDocument,
   };
 
   const isEmpty = documents.length === 0 && files.length === 0;

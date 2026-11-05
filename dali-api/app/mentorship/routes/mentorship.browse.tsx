@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   redirect,
   useLoaderData,
-  useNavigate,
   useSearchParams,
 } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   Activity,
   FolderKanban,
@@ -26,16 +29,20 @@ import {
 import { isCore, currentTerm } from "~/lib/roles";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
-import { MentorGrid } from "../components/MentorGrid";
+import { MentorGridTable } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { BackLink } from "../components/BackLink";
+import { Tooltip } from "~/components/ui/floating";
+import { TermFilter } from "~/components/TermFilter";
+import { browseTermId } from "../lib/browse-term";
+import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 import { buildGrid, type MentorGridResult } from "../lib/mentor-grid.server";
 import { isUnfilled } from "../lib/grid-cell";
+import { buildMockMentorship } from "../lib/mock-grid";
 import {
   ColumnFilters,
   useColumnFilters,
@@ -78,7 +85,7 @@ type LoaderData = {
   initialFilters: ColumnFilter[];
   options: {
     domains: FilterOption[];
-    terms: FilterOption[];
+    terms: TermOption[];
   };
   grid: MentorGridResult;
   // Mentors with at least one unfilled note in the current term/project/domain
@@ -100,6 +107,20 @@ function pickFilter(value: string | null): string {
   return value ?? "";
 }
 
+// Search and the filter builder run in the browser; these params scope the
+// loader or seed it.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, [
+    "term",
+    "termId",
+    "menteeId",
+    "mentorId",
+    "projectId",
+    "domainId",
+    "status",
+  ]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -109,11 +130,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const url = new URL(request.url);
-  // Term defaults to the current term when the URL doesn't pin one (first load).
-  // An explicit `termId=` (the "Any" option) clears it back to unfiltered.
-  const termParam = url.searchParams.get("termId");
   const current = await currentTerm(request);
-  const defaultTerm = termParam === null ? current : null;
   // A person search used to be two id-valued pickers, and the Members profile
   // still links here with ?menteeId=<id>. Both id params are accepted as a
   // seed for the search box so those links keep landing on the right person.
@@ -130,7 +147,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     query:
       url.searchParams.get("q") ??
       (seeded ? `${seeded.firstName} ${seeded.lastName}`.trim() : ""),
-    termId: termParam !== null ? termParam : defaultTerm?.id ?? "",
+    termId: browseTermId(url.searchParams, current?.id ?? null),
   };
   const projectParam = pickFilter(url.searchParams.get("projectId"));
   const domainParam = pickFilter(url.searchParams.get("domainId"));
@@ -173,13 +190,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: d.id,
       label: `${d.displayName} (${d.code})`,
     })),
-    // Mentorship keeps its own single-term grid + "Any term" escape hatch (the
-    // grid's week axis needs exactly one term), so it isn't the shared
-    // TermFilter — but it labels the current term the same way for consistency.
-    terms: terms.map((t) => ({
-      id: t.id,
-      label: t.id === current?.id ? `${t.code} (current)` : t.code,
-    })),
+    terms: terms.map((t) => ({ id: t.id, code: t.code, isCurrent: t.id === current?.id })),
   };
 
   const linkedProject = projectsWithPairs.find((p) => p.id === projectParam);
@@ -200,7 +211,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // a selected term there's no week axis, so we render an empty-state prompt.
   // Project/domain/status narrowing happens in the browser (the filter bar),
   // so the grid loads the viewer's full term scope.
-  const grid: LoaderData["grid"] = selectedTerm
+  // Dev only: fake mentor/mentee pairs are appended after the real ones so the
+  // layout can be judged at scale (`?mock=0` turns it off). Nothing is read
+  // from or written to the database for them.
+  const mock =
+    process.env.NODE_ENV !== "production" && url.searchParams.get("mock") !== "0"
+      ? buildMockMentorship()
+      : null;
+  const realGrid: LoaderData["grid"] = selectedTerm
     ? await buildGrid({
         term: selectedTerm,
         viewerId: auth.user.sub,
@@ -208,6 +226,18 @@ export async function loader({ request }: Route.LoaderArgs) {
         noteScope,
       })
     : { weeks: [], currentWeek: null, mentors: [], termSelected: false };
+  const grid: LoaderData["grid"] = mock
+    ? {
+        weeks: realGrid.termSelected ? realGrid.weeks : mock.grid.weeks,
+        currentWeek: realGrid.termSelected ? realGrid.currentWeek : mock.grid.currentWeek,
+        termSelected: true,
+        mentors: [
+          ...realGrid.mentors,
+          // The real viewer's own pair already stands in for the mock admin.
+          ...mock.grid.mentors.filter((m) => m.mentor.id !== "mock-admin" || realGrid.mentors.length === 0),
+        ],
+      }
+    : realGrid;
 
   // Who's behind on notes, computed over the full term scope (before the
   // filter-bar/search view lenses) so it matches what the nudge action
@@ -230,12 +260,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const viewerIsCore = await isCore(auth.user.sub);
   const people = grid.mentors.flatMap((m) => [m.mentor.id, ...m.rows.map((r) => r.menteeId)]);
-  const [termForms, formOptions] = viewerIsCore
+  const [realTermForms, formOptions] = viewerIsCore
     ? await Promise.all([
-        selectedTerm ? loadTermForms(selectedTerm, [...new Set(people)]) : {},
+        selectedTerm
+          ? loadTermForms(selectedTerm, [...new Set(people.filter((id) => !id.startsWith("mock-")))])
+          : {},
         listSelectableForms(),
       ])
     : [null, []];
+  const termForms = mock ? { ...(realTermForms ?? {}), ...mock.termForms } : realTermForms;
 
   const data: LoaderData = {
     filters,
@@ -280,8 +313,6 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 
-const FILTERS_STORAGE_KEY = "mentorship.browse.filters";
-
 function nameOf(p: { firstName: string; lastName: string }) {
   return `${p.firstName} ${p.lastName}`.trim().toLowerCase();
 }
@@ -309,13 +340,11 @@ export default function MentorshipBrowse() {
   const data = useLoaderData() as LoaderData;
   const { pageTitle } = useOsChrome();
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [nudgeOpen, setNudgeOpen] = useState(false);
   const [nudgingId, setNudgingId] = useState<string | null>(null);
-  const [query, setQuery] = useState(data.filters.query);
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const [linkFormsOpen, setLinkFormsOpen] = useState(false);
-  const restored = useRef(false);
   const toast = useToast();
 
   const canNudge = data.isCore;
@@ -324,11 +353,16 @@ export default function MentorshipBrowse() {
     [data.nudgeRecipients],
   );
 
-  // `q` only enters the URL on a deep link, so re-syncing on its value can't
-  // fight the keystrokes it isn't recording.
-  useEffect(() => setQuery(data.filters.query), [data.filters.query]);
+  // A ?menteeId= / ?mentorId= link seeds the search box with that person's name.
+  useEffect(() => {
+    if (!params.has("q") && data.filters.query) setQuery(data.filters.query);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.filters.query]);
 
-  const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters);
+  // Opening the page bare (sidebar, breadcrumb) reopens the last view.
+  useRememberedSearch("mentorship.browse.filters");
+
+  const columnFilters = useColumnFilters(FILTER_COLUMNS, data.initialFilters, { inUrl: true });
 
   // What the filter bar matches per row, keyed by the row's grid key: the
   // project name, the domain label (as the pickers once showed it), and every
@@ -410,31 +444,10 @@ export default function MentorshipBrowse() {
     }
   }
 
-  // Remember the last-applied filter query and restore it on a fresh visit (no
-  // filter params). Running once guards against clobbering an explicit "Clear".
-  // `embed` is a dev-preview marker, not a filter — ignore it either way.
-  useEffect(() => {
-    if (restored.current) return;
-    restored.current = true;
-    if (typeof window === "undefined") return;
-    const current = new URLSearchParams(window.location.search);
-    current.delete("embed");
-    if ([...current].length === 0) {
-      const saved = window.localStorage.getItem(FILTERS_STORAGE_KEY);
-      if (saved) navigate(`/mentorship/browse?${saved}`, { replace: true });
-    }
-  }, [navigate]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const sp = new URLSearchParams(params);
-    sp.delete("embed");
-    const search = sp.toString();
-    if (search) window.localStorage.setItem(FILTERS_STORAGE_KEY, search);
-  }, [params]);
 
   return (
     <main className="flex flex-col gap-6">
+      <BackLink to="/mentorship">Back to Mentorship</BackLink>
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className={pageTitle}>Mentorship notes</h1>
         <div className="flex items-center gap-2 ml-auto">
@@ -476,19 +489,10 @@ export default function MentorshipBrowse() {
               Templates
             </button>
           )}
-          <Select
-            ariaLabel="Filter by term"
-            value={data.filters.termId}
-            onChange={(v) => {
-              const next = new URLSearchParams(params);
-              next.set("termId", v);
-              navigate(`/mentorship/browse?${next.toString()}`);
-            }}
-            options={[
-              { value: "", label: "Any term" },
-              ...data.options.terms.map((o) => ({ value: o.id, label: o.label })),
-            ]}
-            buttonClassName={cn(filterPillClass(), "sm:w-40")}
+          <TermFilter
+            terms={data.options.terms}
+            selected={data.filters.termId || ALL_TERMS}
+            clearOnChange={["termId"]}
           />
         </div>
       </header>
@@ -557,26 +561,23 @@ export default function MentorshipBrowse() {
             : "No mentorship pairs match these filters."}
         </EmptyState>
       ) : (
-        groups.map((group) => (
-          <MentorGrid
-            key={group.mentor.id}
-            group={group}
-            weeks={data.grid.weeks}
-            currentWeek={data.grid.currentWeek}
-            termId={data.filters.termId}
-            highlightMissing={data.isCore}
-            termForms={data.termForms ?? undefined}
-            nudge={
-              canNudge
-                ? {
-                    count: unfilledById.get(group.mentor.id) ?? 0,
-                    busy: nudgingId === group.mentor.id,
-                    onNudge: () => nudgeMentor(group.mentor.id),
-                  }
-                : undefined
-            }
-          />
-        ))
+        <MentorGridTable
+          groups={groups}
+          weeks={data.grid.weeks}
+          currentWeek={data.grid.currentWeek}
+          termId={data.filters.termId}
+          highlightMissing={data.isCore}
+          termForms={data.termForms ?? undefined}
+          nudgeFor={
+            canNudge
+              ? (group) => ({
+                  count: unfilledById.get(group.mentor.id) ?? 0,
+                  busy: nudgingId === group.mentor.id,
+                  onNudge: () => nudgeMentor(group.mentor.id),
+                })
+              : undefined
+          }
+        />
       )}
     </main>
   );

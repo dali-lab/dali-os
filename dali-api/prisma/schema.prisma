@@ -22,6 +22,10 @@ model User {
   // unique identifier
   id String @id @default(cuid())
 
+  // Term-by-term PI assignments, and applications this person is PI of.
+  piProjectTerms        ProjectTerm[]        @relation("ProjectTermPi")
+  piPartnerApplications PartnerApplication[] @relation("PartnerApplicationPi")
+
   // metadata
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -302,6 +306,11 @@ model User {
   // ─── Phase 1: partner back-relation (single per User) ─────────────────────
   partnerContact PartnerContact?
 
+  // ─── Partner referrals ────────────────────────────────────────────────────
+  partnerReferralsMade       PartnerReferral[]        @relation("PartnerReferralReferredBy")
+  partnerReferralsReachedOut PartnerReferral[]        @relation("PartnerReferralReachedOutBy")
+  partnerReferralQuizPass    PartnerReferralQuizPass?
+
   // ─── Phase 1: OAuth / magic-link back-relations ───────────────────────────
   oauthGrants           OAuthGrant[]
   oneTimeTokens         OneTimeToken[]
@@ -343,6 +352,7 @@ model User {
   galleryReactions GalleryReaction[]
   galleryComments  GalleryComment[]
   galleryReports   GalleryReport[]
+  customEmoji      CustomEmoji[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
@@ -527,9 +537,10 @@ model ApplicationCycle {
   generalRubricVersion   RubricVersion? @relation("CycleGeneralRubric", fields: [generalRubricVersionId], references: [id])
 
   // Blind review. When true, applicant identity (name, photo, email, class
-  // year, pronouns) is hidden from reviewers behind a stable pseudonym
-  // ("Applicant N") on the reviewer + Initial-delibs surfaces, until a decision
-  // is Released for them. Core/lead cycle-management views are never blinded.
+  // year, pronouns) is hidden from every viewer behind a stable pseudonym
+  // ("Applicant N") per domain, until it releases interviews or closes its
+  // first delib round, and always while its applications are open.
+  // Cycle-management views are never blinded.
   // See app/hiring/lib/anonymization.server.ts.
   anonymizeReview Boolean @default(true)
 
@@ -1698,6 +1709,19 @@ model GalleryComment {
   @@index([postId, createdAt])
 }
 
+// A lab-wide reaction image. Reactions store ":name:" in their emoji column, so a
+// deleted row stays to keep the name from being reused on old reactions.
+model CustomEmoji {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  imageKey  String
+  addedById String?
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  addedBy User? @relation(fields: [addedById], references: [id], onDelete: SetNull)
+}
+
 model GalleryReport {
   id         String   @id @default(cuid())
   postId     String
@@ -2130,6 +2154,7 @@ model AiUsage {
   userId       String
   day          String // UTC date "YYYY-MM-DD"
   count        Int    @default(0)
+  askCount     Int    @default(0)
   inputTokens  Int    @default(0)
   outputTokens Int    @default(0)
 
@@ -2209,6 +2234,19 @@ model MeetingRecording {
   // Highest seq stored per channel per segment, for the job description.
   chunkIndex     Json      @default("{}") // { mic: [41, 12], call: [41] }
   lastChunkAt    DateTime?
+  // Reported by the client at create. Null on rows from before these columns
+  // and on anything the client didn't send.
+  captureSource  String?   // "desktop" | "browser"
+  appVersion     String?   // the desktop shell's version, when there is one
+  clientPlatform String?
+  // Reported by the desktop recorder once capture starts, and micSilent again
+  // whenever the mic goes quiet or comes back. systemAudioAllowed is null
+  // when macOS hasn't asked yet or couldn't say.
+  micDevice          String?
+  systemAudioAllowed Boolean?
+  micSilent          Boolean  @default(false)
+  // When the chunks were removed, a day after finalizedAt.
+  audioDeletedAt DateTime?
 
   // Per-channel word arrays with absolute timestamps; lines derive from these.
   words    Json @default("{}") // { mic: [{ s, e, w, sp }], call: [...] }
@@ -4117,6 +4155,12 @@ model ProjectTerm {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   term    Term    @relation(fields: [termId], references: [id])
 
+  // The Core member in charge of this project for this term. Lives here, not on
+  // ProjectTermStatus, because a status row means a renewal decision exists: the
+  // sweep skips projects that have one and undoing a decision deletes it.
+  piUserId String?
+  pi       User?   @relation("ProjectTermPi", fields: [piUserId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now())
 
   @@id([projectId, termId])
@@ -5200,6 +5244,19 @@ model Form {
   // createdById (best-effort, after the submission transaction commits).
   oneResponsePerMember Boolean @default(false)
   notifyOnSubmission   Boolean @default(false)
+  // allowResponseEdit: the respondent may change their own answers while the
+  // form is open. Only meaningful with oneResponsePerMember.
+  allowResponseEdit    Boolean @default(false)
+  // remindBeforeClose: the form-reminders job nudges people who haven't
+  // responded a day before closesAt. lastRemindedAt is the last MANUAL
+  // reminder (the tracker modal), which limits those to one per 24 hours.
+  remindBeforeClose    Boolean   @default(false)
+  lastRemindedAt       DateTime?
+  // confirmationMessage: block-JSON string shown on the done screens in place
+  // of the default copy. On the form, not the version, so a typo fix needs no
+  // new version. sendReceipt: email the respondent a copy on submit.
+  confirmationMessage  String?
+  sendReceipt          Boolean   @default(false)
 
   // Who may fill the form via its public link. `audienceGroupIds` is only
   // meaningful when audience == Groups (GroupDefinition ids; array rather
@@ -6847,6 +6904,10 @@ model PartnerApplication {
   // Captured on the acceptance checklist, before promotion.
   ambiguityRating    Int?
   title              String
+  // Copied to Project.iconEmoji at promotion; the project's is the live one after.
+  iconEmoji          String?
+  // Core member in charge. Copied to the first ProjectTerm at promotion.
+  piUserId           String?
   // Short pitch summary. The long-form, versionable Statement of Work lives
   // in the collab doc named `partner-sow:{id}` (see sowDocId) — same Yjs +
   // CollabDocumentVersion machinery as project documents, so it gets
@@ -6893,6 +6954,7 @@ model PartnerApplication {
 
   applicantContact PartnerContact                 @relation(fields: [applicantContactId], references: [id])
   partnerOrg       PartnerOrg?                    @relation(fields: [partnerOrgId], references: [id])
+  pi               User?                          @relation("PartnerApplicationPi", fields: [piUserId], references: [id], onDelete: SetNull)
   formSubmission   FormSubmission?                @relation(fields: [formSubmissionId], references: [id], onDelete: SetNull)
   // The terms the partner wants the project to run / be staffed in. Drives
   // the "expected lab members per term" projection on the list page — an
@@ -7129,6 +7191,61 @@ enum PartnerApplicationSource {
   Referral // word-of-mouth / introduction
   Manual // Core created it directly (MCP / internal page)
   Renewal // auto-created by the renewal sweep when a partner's project ends
+}
+
+// ─── Partner referrals ───────────────────────────────────────────────────────
+// Member-submitted lead for a prospective partner. The three tiers describe
+// the referrer's level of involvement with the lead and carry different payout
+// amounts in the Partner Bounty program (see /refer). Cross-matching to an
+// eventual PartnerApplication is done manually by Partner Relations; this
+// pilot deliberately omits attribution tokens / auto-linking.
+model PartnerReferral {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  referredByUserId String
+  referredBy       User   @relation("PartnerReferralReferredBy", fields: [referredByUserId], references: [id], onDelete: Cascade)
+
+  tier PartnerReferralTier
+
+  // What the referrer knows about the lead. partnerEmail is the natural key
+  // Core uses to cross-match with any resulting PartnerApplication.
+  partnerName        String
+  partnerEmail       String?
+  partnerAffiliation String?
+  partnerOrgName     String?
+  // Why the referrer thinks this is a fit; what kind of project they imagine.
+  context            String
+  // Full Pitch only: the referrer's own pitch for the partner.
+  pitchBody          String?
+
+  // Partner Relations working notes + "we've reached out" marker.
+  coreNotes          String?
+  reachedOutAt       DateTime?
+  reachedOutByUserId String?
+  reachedOutBy       User?     @relation("PartnerReferralReachedOutBy", fields: [reachedOutByUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([referredByUserId])
+  @@index([tier])
+}
+
+enum PartnerReferralTier {
+  Cold
+  Warm
+  FullPitch
+}
+
+// One row per member who has completed the referral quiz. Presence lets them
+// skip straight to /refer/new; absence sends them to /refer/quiz. The quiz is
+// one-and-done — a member who's passed never retakes.
+model PartnerReferralQuizPass {
+  id       String   @id @default(cuid())
+  userId   String   @unique
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passedAt DateTime @default(now())
+  attempts Int      @default(1)
 }
 
 // Binds the generic Form whose questions partners answer when pitching a

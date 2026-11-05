@@ -1,7 +1,6 @@
 import { Eye, X } from "lucide-react";
 import type { Question } from "~/types";
 import { Modal } from "~/components/Modal";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { MemberFormCard, MemberFormFillView } from "~/forms/components/MemberFormFillView";
 import { modalCardClass } from "~/components/os-chrome";
 
@@ -10,6 +9,7 @@ export interface FormPreviewModalProps {
   formName: string;
   iconEmoji?: string | null;
   description?: unknown;
+  confirmationMessage?: unknown;
   questions: Question[];
   onClose: () => void;
 }
@@ -19,11 +19,11 @@ export function FormPreviewModal({
   formName,
   iconEmoji,
   description,
+  confirmationMessage,
   questions,
   onClose,
 }: FormPreviewModalProps) {
   const headingId = "form-preview-heading";
-  const tileSeed = useFeatureFlag("form-blocks") ? formId : null;
 
   return (
     <Modal
@@ -51,14 +51,15 @@ export function FormPreviewModal({
         {questions.length === 0 ? (
           <p className="text-sm text-muted-foreground/70 italic">No questions yet.</p>
         ) : (
-          <MemberFormCard flush={Boolean(tileSeed)}>
+          <MemberFormCard flush>
             <MemberFormFillView
               preview
-              tileSeed={tileSeed}
+              tileSeed={formId}
               data={{
                 name: formName,
                 iconEmoji,
                 description,
+                confirmationMessage,
                 questions,
                 versionId: "",
                 versionUpdatedAt: "",

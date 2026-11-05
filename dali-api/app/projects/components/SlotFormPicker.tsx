@@ -10,7 +10,6 @@ import { Select, Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 
 type SelectableForm = {
   id: string;
@@ -217,10 +216,6 @@ export function SlotFormPicker({
               to open into, so the click did nothing. */}
           <a
             href={fillUrl}
-            onClick={(e) => {
-              if (requestOpenTabIfEmbedded(fillUrl, binding.formName))
-                e.preventDefault();
-            }}
             className="text-os-accent hover:underline"
           >
             {fillUrl}

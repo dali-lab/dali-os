@@ -4,7 +4,6 @@ import { Avatar } from "~/components/ui/Avatar";
 import { IconButton } from "~/components/ui/IconButton";
 import { LoadMore } from "~/components/ui/Pager";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { cn } from "~/lib/cn";
 import type { ConnectAlum, ConnectPlace } from "~/members/lib/connect";
@@ -95,7 +94,7 @@ function AlumRow({ alum }: { alum: ConnectAlum }) {
     <button
       type="button"
       onClick={() => {
-        if (!requestOpenTabIfEmbedded(url, alum.name)) navigate(url);
+        navigate(url);
       }}
       className={cn(
         "flex w-full items-center gap-2.5 rounded-os-item px-2 py-2 text-left transition-colors hover:bg-os-container",

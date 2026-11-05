@@ -9,6 +9,7 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
 import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
@@ -19,7 +20,6 @@ import {
   captureProjectTemplate,
   instantiateProjectTemplate,
 } from "~/lib/project-templates.server";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { timed } from "~/lib/server-timing";
@@ -196,8 +196,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   );
 
-  // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
-  // round-trip — no second hit even though canViewStaffing delegates to isCore.
   const [roles, partnerOrgs] =
     await timed(request, 'hub.meta', () => Promise.all([
       getUserRoles(auth.user.sub, request),
@@ -378,7 +376,7 @@ export default function ProjectsListPage() {
     setNewIconEmoji(null);
     setCreating(true);
   };
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
   // An old ?public= link (from the Drive templates gallery era of this filter)
@@ -409,7 +407,7 @@ export default function ProjectsListPage() {
     [rows],
   );
 
-  const columnFilters = useColumnFilters(columns, initialFilters);
+  const columnFilters = useColumnFilters(columns, initialFilters, { inUrl: true });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -609,7 +607,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   const navigate = useNavigate();
   const open = (p: ProjectRow) => {
     const url = `/projects/${p.id}`;
-    if (!requestOpenTabIfEmbedded(url, p.name)) navigate(url);
+    navigate(url);
   };
   return (
     <div className="overflow-x-auto">
@@ -670,7 +668,7 @@ function ProjectsCards({ rows, onNew }: { rows: ProjectRow[]; onNew?: () => void
   return (
     // auto-fill rather than fixed columns: the design's cards hold their
     // 280px minimum and the row simply fits fewer of them as the pane
-    // narrows, which is what a split-screen workspace tab needs. No width
+    // narrows beside an open side panel. No width
     // cap on the grid — one left the cards short of the pane's right edge on
     // a wide window, with the filter row above still running full width.
     <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">

@@ -3,7 +3,10 @@
 
 import type { McpTool } from "../../registry";
 import { LIST_FORMS } from "./list-forms";
+import { GET_FORM } from "./get-form";
 import { GET_FORM_RESPONSES } from "./get-form-responses";
+import { GET_FORM_SUMMARY } from "./get-form-summary";
+import { GET_FORM_TRACKER } from "./get-form-tracker";
 import { SUBMIT_FORM } from "./submit-form";
 import { MANAGE_FORM } from "./manage-form";
 
@@ -11,7 +14,10 @@ import { MANAGE_FORM } from "./manage-form";
 // (create_page / manage_page). No dedicated forms-folder tools.
 export const FORMS_TOOLS: McpTool[] = [
   LIST_FORMS,
+  GET_FORM,
   GET_FORM_RESPONSES,
+  GET_FORM_SUMMARY,
+  GET_FORM_TRACKER,
   SUBMIT_FORM,
   MANAGE_FORM,
 ];

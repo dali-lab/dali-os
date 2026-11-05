@@ -24,6 +24,9 @@ export type LiveSession = {
   stalled: Record<Channel, boolean>;
   conflicted: boolean;
   stoppedSeconds: number | null;
+  noSound: boolean;
+  micDevice: string | null;
+  callAudioOff: boolean;
 };
 
 type ActiveRecordingResponse = {
@@ -34,6 +37,9 @@ type ActiveRecordingResponse = {
     title: string;
     href: string | null;
     sessionSeconds: number | null;
+    noSound: boolean;
+    micDevice?: string | null;
+    callAudioOff?: boolean;
   } | null;
 };
 
@@ -82,7 +88,7 @@ function patch(changes: Partial<LiveSession>) {
   if (session) set({ ...session, ...changes });
 }
 
-function subscribe(listener: () => void) {
+export function subscribeLiveSession(listener: () => void) {
   listeners.add(listener);
   return () => void listeners.delete(listener);
 }
@@ -92,16 +98,16 @@ export function getLiveSession(): LiveSession | null {
 }
 
 export function useLiveSession(): LiveSession | null {
-  return useSyncExternalStore(subscribe, getLiveSession, () => null);
+  return useSyncExternalStore(subscribeLiveSession, getLiveSession, () => null);
 }
 
 /** Refreshes once per page load, for whichever surface mounts first. */
-export function useLiveSessionBoot(enabled: boolean) {
+export function useLiveSessionBoot() {
   useEffect(() => {
-    if (!enabled || bootRefreshed) return;
+    if (bootRefreshed) return;
     bootRefreshed = true;
     void refreshLiveSession();
-  }, [enabled]);
+  }, []);
 }
 
 function currentPage() {
@@ -127,7 +133,7 @@ async function uploadChunk(
     headers: { "Content-Type": "audio/pcm;rate=16000;channels=1" },
     body: chunk.buffer,
   });
-  if (res.status === 409) throw new ChunkConflictError();
+  if (res.status === 409 || res.status === 404) throw new ChunkConflictError();
   if (!res.ok) throw new Error(`chunk upload failed: ${res.status}`);
   return (await res.json()) as ChunkResponse;
 }
@@ -221,6 +227,9 @@ export async function startBrowserSession(opts: {
     stalled: emptyStalled,
     conflicted: false,
     stoppedSeconds: null,
+    noSound: false,
+    micDevice: null,
+    callAudioOff: false,
   });
   const channels: Channel[] = ["mic"];
   try {
@@ -262,6 +271,9 @@ export function adoptDesktopSession(opts: {
     stalled: emptyStalled,
     conflicted: false,
     stoppedSeconds: null,
+    noSound: false,
+    micDevice: null,
+    callAudioOff: false,
   });
   void refreshLiveSession();
 }
@@ -328,7 +340,13 @@ function reconcile(recording: ActiveRecordingResponse["recording"]) {
   const serverStart = typeof recording.sessionSeconds === "number" ? Date.now() - recording.sessionSeconds * 1000 : null;
 
   if (s && s.recordingId === recording.id) {
-    const changes: Partial<LiveSession> = { title: recording.title, href: recording.href };
+    const changes: Partial<LiveSession> = {
+      title: recording.title,
+      href: recording.href,
+      noSound: recording.noSound,
+      micDevice: recording.micDevice ?? null,
+      callAudioOff: Boolean(recording.callAudioOff),
+    };
     if (!(s.captureMode === "browser" && isLive(s))) {
       if (!(s.status === "stopping" && serverStatus !== "stopped")) changes.status = serverStatus;
       if (serverStart !== null && Math.abs(s.startedAt - serverStart) > CLOCK_RESYNC_MS) changes.startedAt = serverStart;
@@ -350,6 +368,9 @@ function reconcile(recording: ActiveRecordingResponse["recording"]) {
     stalled: emptyStalled,
     conflicted: false,
     stoppedSeconds: null,
+    noSound: recording.noSound,
+    micDevice: recording.micDevice ?? null,
+    callAudioOff: Boolean(recording.callAudioOff),
   });
 }
 

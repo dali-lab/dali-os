@@ -1,26 +1,44 @@
 // General ▸ Rooms. Pick a day, see every DALI room's bookings and meetings side
-// by side on one day timeline, and book a free slot. The schedule is fetched client-side
-// for the browser's local day (the same /api/rooms/:id/schedule window the
-// iPad door display uses), so the server's timezone never matters.
+// by side on one day timeline, and book a free slot or open what's there. The
+// schedule is fetched client-side for the browser's local day (the same
+// /api/rooms/:id/schedule window the iPad door display uses), so the server's
+// timezone never matters.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
-import { ChevronLeft, ChevronRight, Repeat, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Repeat } from "lucide-react";
 import type { Route } from "./+types/rooms";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
+import { isCore } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
 import { useOsChrome } from "~/components/os-chrome";
-import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { DateField } from "~/components/ui/DateField";
-import { TimeField } from "~/components/ui/TimeField";
 import { IconButton } from "~/components/ui/IconButton";
-import { Select } from "~/components/ui/floating";
+import { Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
+import { BookingDetailPopover, bookingWhen } from "~/rooms/components/BookingDetailPopover";
+import { BookingModal, type BookingDraft } from "~/rooms/components/BookingModal";
 import { requestCancel, withoutCancelled, type CancelScope } from "~/rooms/lib/optimistic-cancel";
-import { NO_REPEAT, RepeatField, repeatSpecToRRule, type RepeatSpec } from "~/calendar/components/RepeatField";
+import {
+  atTime,
+  bookingAccess,
+  dayKey,
+  DAY_END_HOUR,
+  DAY_START_HOUR,
+  hhmm,
+  localDay,
+  nextBookableSlot,
+  notInPast,
+  overlapLanes,
+  shiftDay,
+  slotForClick,
+  SNAP_MIN,
+  timeLabel,
+  type ScheduleItem,
+} from "~/rooms/lib/timeline";
 
 export const meta: Route.MetaFunction = () => [{ title: "Rooms · DALI OS" }];
 
@@ -33,90 +51,48 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) throw redirectToLogin(request);
   if (await isNonMember(auth, request)) throw redirect("/portal");
 
-  const rooms = await prisma.room.findMany({
-    where: { archivedAt: null },
-    select: { id: true, name: true, description: true, capacity: true },
-    orderBy: { name: "asc" },
-  });
-  return { rooms, userId: auth.user.sub };
+  const [rooms, core] = await Promise.all([
+    prisma.room.findMany({
+      where: { archivedAt: null },
+      select: { id: true, name: true, description: true, capacity: true },
+      orderBy: { name: "asc" },
+    }),
+    isCore(auth.user.sub),
+  ]);
+  return { rooms, userId: auth.user.sub, core };
 }
 
-type ScheduleItem = {
-  kind: "booking" | "meeting";
-  id: string;
-  title: string;
-  start: string;
-  end: string;
-  occurrenceStart: string;
-  recurring: boolean;
-  organizer: { id: string; firstName: string; lastName: string };
-  isEvent: boolean;
-  source: "Web" | "Display" | "App" | "Interview" | "InterviewHold" | null;
-};
-
-// The visible day, in local hours. Items outside it are clipped to the edges.
-const DAY_START_HOUR = 7;
-const DAY_END_HOUR = 23;
 const HOUR_PX = 56;
-const SNAP_MIN = 30;
 // A drag snaps finer than a click, like the iPad timeline.
 const DRAG_SNAP_MIN = 15;
 // Less movement than this is a click, not a drag.
 const DRAG_THRESHOLD_MIN = 10;
+// A card this short has no room for its time and organizer.
+const SHORT_CARD_PX = 36;
 
 // A room's column and its header share this so they line up; the floor keeps a
 // booking's title readable when many rooms sit side by side.
 const ROOM_COLUMN = "min-w-[11rem] flex-1 basis-0";
 
 type RoomInfo = { id: string; name: string; description: string | null; capacity: number | null };
-type Draft = { roomId: string; start: string; end: string };
+type Detail = { item: ScheduleItem; roomId: string; anchor: DOMRect };
 
-const pad = (n: number) => String(n).padStart(2, "0");
-
-function todayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-}
-
-function localDay(dateKey: string) {
-  const [y, m, d] = dateKey.split("-").map(Number);
-  const start = new Date(y!, m! - 1, d!);
-  const end = new Date(y!, m! - 1, d! + 1);
-  return { start, end };
-}
-
-function shiftDay(dateKey: string, days: number) {
-  const { start } = localDay(dateKey);
-  start.setDate(start.getDate() + days);
-  return `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`;
-}
-
-function atTime(dateKey: string, hhmm: string) {
-  const [h, m] = hhmm.split(":").map(Number);
-  const { start } = localDay(dateKey);
-  start.setHours(h!, m!, 0, 0);
-  return start;
-}
-
-function hhmm(d: Date) {
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function timeLabel(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
+const itemKey = (item: ScheduleItem) => `${item.kind}-${item.id}-${item.start}`;
+const organizerName = (item: ScheduleItem) => `${item.organizer.firstName} ${item.organizer.lastName}`;
 
 export default function RoomsPage() {
-  const { rooms, userId } = useLoaderData<typeof loader>();
+  const { rooms, userId, core } = useLoaderData<typeof loader>();
   const chrome = useOsChrome();
   const toast = useToast();
   const dialog = useDialog();
   const [params, setParams] = useSearchParams();
 
-  const dateKey = params.get("date") ?? todayKey();
+  const todayKey = dayKey(new Date());
+  const dateKey = params.get("date") ?? todayKey;
 
   const [itemsByRoom, setItemsByRoom] = useState<Record<string, ScheduleItem[]> | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<BookingDraft | null>(null);
+  const [detail, setDetail] = useState<Detail | null>(null);
 
   const setDate = (value: string) => {
     const next = new URLSearchParams(params);
@@ -146,27 +122,46 @@ export default function RoomsPage() {
 
   useEffect(() => {
     setItemsByRoom(null);
+    setDetail(null);
     void load();
   }, [load]);
 
-  const openDraftAt = (
-    roomId: string,
-    start: Date,
-    end = new Date(start.getTime() + 60 * 60_000),
-  ) => {
-    setDraft({ roomId, start: hhmm(start), end: hhmm(end) });
+  const openDraftAt = (roomId: string, start: Date, end: Date) => {
+    setDraft({ date: dateKey, roomId, start: hhmm(start), end: hhmm(end) });
   };
 
   const openDraftNext = () => {
-    const now = new Date();
-    const base = dateKey === todayKey() ? now : atTime(dateKey, `${pad(9)}:00`);
-    const snapped = new Date(base);
-    snapped.setSeconds(0, 0);
-    snapped.setMinutes(Math.ceil(snapped.getMinutes() / SNAP_MIN) * SNAP_MIN);
-    openDraftAt(rooms[0]!.id, snapped);
+    const slot = nextBookableSlot(dateKey, new Date());
+    setDraft({ date: slot.date, roomId: rooms[0]!.id, start: hhmm(slot.start), end: hhmm(slot.end) });
+  };
+
+  const editBooking = async ({ item, roomId }: Detail) => {
+    setDetail(null);
+    let scope: "this" | "all" | null = null;
+    if (item.recurring) {
+      const picked = await dialog.choice({
+        title: "Edit repeating booking",
+        options: [
+          { value: "this", label: "This time only", description: "Change when this one happens." },
+          { value: "all", label: "Whole series", description: "Change the room, name or time of every date." },
+        ],
+        cancelLabel: "Keep it",
+      });
+      if (!picked) return;
+      scope = picked as "this" | "all";
+    }
+    const start = new Date(item.start);
+    setDraft({
+      date: dayKey(start),
+      roomId,
+      start: hhmm(start),
+      end: hhmm(new Date(item.end)),
+      edit: { item, scope },
+    });
   };
 
   const cancelBooking = async (item: ScheduleItem) => {
+    setDetail(null);
     const underway = new Date(item.start) <= new Date();
 
     const hide = (scope: CancelScope) => {
@@ -250,8 +245,8 @@ export default function RoomsPage() {
             />
             <IconButton label="Next day" icon={ChevronRight} onClick={() => setDate(shiftDay(dateKey, 1))} />
           </div>
-          {dateKey !== todayKey() && (
-            <button type="button" className="os-btn-ghost" onClick={() => setDate(todayKey())}>
+          {dateKey !== todayKey && (
+            <button type="button" className="os-btn-ghost" onClick={() => setDate(todayKey)}>
               Today
             </button>
           )}
@@ -265,21 +260,33 @@ export default function RoomsPage() {
             dateKey={dateKey}
             rooms={rooms}
             itemsByRoom={itemsByRoom}
-            userId={userId}
+            selectedKey={detail ? itemKey(detail.item) : null}
             onPickSlot={openDraftAt}
-            onCancel={cancelBooking}
+            onOpen={(item, roomId, anchor) => setDetail({ item, roomId, anchor })}
           />
         </section>
       </div>
 
+      {detail && (
+        <BookingDetailPopover
+          item={detail.item}
+          roomName={rooms.find((r) => r.id === detail.roomId)?.name ?? ""}
+          anchor={detail.anchor}
+          access={bookingAccess(detail.item, { userId, core }, new Date())}
+          onClose={() => setDetail(null)}
+          onEdit={() => void editBooking(detail)}
+          onCancel={() => void cancelBooking(detail.item)}
+        />
+      )}
+
       <BookingModal
         rooms={rooms}
-        dateKey={dateKey}
         initial={draft}
         onClose={() => setDraft(null)}
-        onBooked={() => {
+        onSaved={(date) => {
           setDraft(null);
-          void load();
+          if (date === dateKey) void load();
+          else setDate(date);
         }}
       />
     </div>
@@ -294,16 +301,16 @@ function DayTimeline({
   dateKey,
   rooms,
   itemsByRoom,
-  userId,
+  selectedKey,
   onPickSlot,
-  onCancel,
+  onOpen,
 }: {
   dateKey: string;
   rooms: RoomInfo[];
   itemsByRoom: Record<string, ScheduleItem[]> | null;
-  userId: string;
-  onPickSlot: (roomId: string, start: Date, end?: Date) => void;
-  onCancel: (item: ScheduleItem) => void;
+  selectedKey: string | null;
+  onPickSlot: (roomId: string, start: Date, end: Date) => void;
+  onOpen: (item: ScheduleItem, roomId: string, anchor: DOMRect) => void;
 }) {
   // Unset until mounted: the server renders in its own timezone, and React
   // keeps a server-rendered style through hydration, so a "now" line placed
@@ -353,10 +360,10 @@ function DayTimeline({
               dateKey={dateKey}
               hours={hours}
               items={itemsByRoom ? (itemsByRoom[r.id] ?? []) : null}
-              userId={userId}
+              selectedKey={selectedKey}
               mountedNow={mountedNow}
               onPickSlot={(start, end) => onPickSlot(r.id, start, end)}
-              onCancel={onCancel}
+              onOpen={(item, anchor) => onOpen(item, r.id, anchor)}
             />
           ))}
         </div>
@@ -369,24 +376,24 @@ function RoomColumn({
   dateKey,
   hours,
   items,
-  userId,
+  selectedKey,
   mountedNow,
   onPickSlot,
-  onCancel,
+  onOpen,
 }: {
   dateKey: string;
   hours: number[];
   items: ScheduleItem[] | null;
-  userId: string;
+  selectedKey: string | null;
   mountedNow: number | null;
-  onPickSlot: (start: Date, end?: Date) => void;
-  onCancel: (item: ScheduleItem) => void;
+  onPickSlot: (start: Date, end: Date) => void;
+  onOpen: (item: ScheduleItem, anchor: DOMRect) => void;
 }) {
   const chrome = useOsChrome();
   const now = mountedNow ?? Date.now();
 
-  const dayStart = atTime(dateKey, `${pad(DAY_START_HOUR)}:00`).getTime();
-  const dayEnd = atTime(dateKey, `${pad(DAY_END_HOUR)}:00`).getTime();
+  const dayStart = atTime(dateKey, `${DAY_START_HOUR}:00`).getTime();
+  const dayEnd = atTime(dateKey, `${DAY_END_HOUR}:00`).getTime();
   const yFor = (t: number) =>
     ((Math.min(Math.max(t, dayStart), dayEnd) - dayStart) / 3_600_000) * HOUR_PX;
 
@@ -414,15 +421,20 @@ function RoomColumn({
   const endDrag = () => {
     if (!drag || !dragRange) return;
     setDrag(null);
+    const clock = new Date();
     if (dragging) {
-      if (at(dragRange.to).getTime() <= now) return;
-      onPickSlot(at(dragRange.from), at(dragRange.to));
+      const start = notInPast(at(dragRange.from), clock);
+      if (start >= at(dragRange.to)) return;
+      onPickSlot(start, at(dragRange.to));
       return;
     }
-    const start = at(Math.floor(drag.from / SNAP_MIN) * SNAP_MIN);
-    if (start.getTime() + SNAP_MIN * 60_000 < now) return;
-    onPickSlot(start);
+    const slot = at(Math.floor(drag.from / SNAP_MIN) * SNAP_MIN);
+    if (slot.getTime() + SNAP_MIN * 60_000 < clock.getTime()) return;
+    const { start, end } = slotForClick(slot, items ?? [], clock);
+    onPickSlot(start, end);
   };
+
+  const lanes = overlapLanes(items ?? []);
 
   return (
     <div
@@ -443,54 +455,65 @@ function RoomColumn({
 
       {items === null && <p className={cn(chrome.bodyText, "p-3")}>Loading…</p>}
 
-      {items?.map((item) => {
+      {items?.map((item, index) => {
         const start = new Date(item.start).getTime();
         const end = new Date(item.end).getTime();
         if (end <= dayStart || start >= dayEnd) return null;
         const top = yFor(start);
         const height = Math.max(yFor(end) - top, 22);
-        const hiring = item.source === "Interview" || item.source === "InterviewHold";
-        const mine = item.kind === "booking" && !hiring && item.organizer.id === userId && end > now;
-        const short = height <= 36;
+        const short = height <= SHORT_CARD_PX;
+        const when = `${timeLabel(item.start)} to ${timeLabel(item.end)}`;
+        const { lane, lanes: laneCount } = lanes[index]!;
+        const selected = selectedKey === itemKey(item);
         return (
-          <div
-            key={`${item.kind}-${item.id}-${item.start}`}
-            className={cn(
-              "absolute inset-x-2 overflow-hidden rounded-[10px] border px-3 text-sm",
-              short ? "py-0.5" : "py-1.5",
-              item.kind === "meeting"
-                ? "border-os-accent/40 bg-os-accent/15 text-foreground"
-                : "border-os-container bg-os-well text-foreground",
-            )}
-            style={{ top, height }}
+          <Tooltip
+            key={itemKey(item)}
+            variant="rich"
+            placement="right"
+            content={
+              short && !selected ? (
+                <>
+                  <span className="block font-medium">{item.title}</span>
+                  {bookingWhen(item)}
+                  <span className="block text-os-grey">{organizerName(item)}</span>
+                </>
+              ) : null
+            }
           >
-            <div className={cn("flex justify-between gap-2", short ? "h-full items-center" : "items-start")}>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1">
-                  <p className="min-w-0 truncate font-medium">{item.title}</p>
-                  {item.recurring && (
-                    <Repeat className="h-3 w-3 shrink-0 text-os-grey" aria-label="Repeats" />
-                  )}
-                </div>
-                {height > 36 && (
-                  <p className="truncate text-xs text-os-grey">
-                    {timeLabel(item.start)} to {timeLabel(item.end)} · {item.organizer.firstName}{" "}
-                    {item.organizer.lastName}
-                  </p>
-                )}
-              </div>
-              {mine && (
-                <button
-                  type="button"
-                  onClick={() => onCancel(item)}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-full bg-os-card px-2.5 py-0.5 text-xs font-medium text-os-grey transition-colors hover:bg-os-container hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden />
-                  {start <= now ? "End" : "Cancel"}
-                </button>
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              aria-label={`${item.title}, ${when}, ${organizerName(item)}`}
+              onClick={(e) => onOpen(item, e.currentTarget.getBoundingClientRect())}
+              className={cn(
+                "absolute flex cursor-pointer flex-col overflow-hidden rounded-[10px] border px-3 text-left text-sm text-foreground transition-colors hover:z-[5] focus:outline-none focus-visible:z-[5] focus-visible:ring-2 focus-visible:ring-os-accent",
+                short ? "justify-center py-0.5" : "justify-start py-1.5",
+                item.kind === "meeting"
+                  ? "bg-os-accent/15 hover:bg-os-accent/25"
+                  : "bg-os-well hover:bg-os-container",
+                selected && "z-[5] ring-2 ring-os-accent",
+                item.kind === "meeting"
+                  ? "border-os-accent/40 hover:border-os-accent"
+                  : "border-os-container hover:border-os-container-hi",
               )}
-            </div>
-          </div>
+              style={{
+                top,
+                height,
+                left: `calc(0.5rem + ${lane} * (100% - 1rem) / ${laneCount})`,
+                width: `calc((100% - 1rem) / ${laneCount} - ${laneCount > 1 ? 2 : 0}px)`,
+              }}
+            >
+              <span className="flex min-w-0 items-center gap-1">
+                <span className="min-w-0 truncate font-medium">{item.title}</span>
+                {item.recurring && <Repeat className="h-3 w-3 shrink-0 text-os-grey" aria-label="Repeats" />}
+              </span>
+              {!short && (
+                <span className="block truncate text-xs text-os-grey">
+                  {when} · {organizerName(item)}
+                </span>
+              )}
+            </button>
+          </Tooltip>
         );
       })}
 
@@ -503,7 +526,7 @@ function RoomColumn({
         </div>
       )}
 
-      {mountedNow !== null && dateKey === todayKey() && now > dayStart && now < dayEnd && (
+      {mountedNow !== null && dateKey === dayKey(new Date()) && now > dayStart && now < dayEnd && (
         <div
           className="pointer-events-none absolute inset-x-0 h-0.5 bg-[var(--os-danger-ink)]"
           style={{ top: yFor(now) }}
@@ -512,135 +535,4 @@ function RoomColumn({
       )}
     </div>
 );
-}
-
-function BookingModal({
-  rooms,
-  dateKey,
-  initial,
-  onClose,
-  onBooked,
-}: {
-  rooms: RoomInfo[];
-  dateKey: string;
-  initial: Draft | null;
-  onClose: () => void;
-  onBooked: () => void;
-}) {
-  const chrome = useOsChrome();
-  const toast = useToast();
-  const [roomId, setRoomId] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [title, setTitle] = useState("");
-  const [repeat, setRepeat] = useState<RepeatSpec>(NO_REPEAT);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!initial) return;
-    setRoomId(initial.roomId);
-    setStart(initial.start);
-    setEnd(initial.end);
-    setTitle("");
-    setRepeat(NO_REPEAT);
-  }, [initial]);
-
-  const valid = start !== "" && end !== "" && start < end;
-  const rrule = start ? repeatSpecToRRule(repeat, `${dateKey}T${start}`) : null;
-  // The server also rejects a never-ending series; catching it here just
-  // saves the round trip.
-  const repeatNeedsEnd = rrule !== null && repeat.end.type === "never";
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!valid || repeatNeedsEnd) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/rooms/${roomId}/bookings`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          start: atTime(dateKey, start).toISOString(),
-          end: atTime(dateKey, end).toISOString(),
-          ...(title.trim() ? { title: title.trim() } : {}),
-          ...(rrule ? { recurrenceRule: rrule } : {}),
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(json.error ?? "Couldn't book the room.");
-        return;
-      }
-      const roomName = rooms.find((r) => r.id === roomId)?.name ?? "the room";
-      toast.success(rrule ? `Booked ${roomName} for the series.` : `Booked ${roomName}.`);
-      onBooked();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal open={initial !== null} onClose={onClose} labelledBy="book-room-title">
-      <ModalHeader
-        titleId="book-room-title"
-        title="Book a room"
-        subtitle={localDay(dateKey).start.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
-        onClose={onClose}
-      />
-      <form onSubmit={submit} className={cn(chrome.formClass, "flex flex-col gap-5")}>
-        <div className="os-field-group">
-          <span className="os-field-label">Room</span>
-          <Select
-            value={roomId}
-            options={rooms.map((r) => ({ value: r.id, label: r.name }))}
-            onChange={setRoomId}
-            ariaLabel="Room"
-            buttonClassName={chrome.formTrigger}
-          />
-        </div>
-        <div className="os-field-row">
-          <div className="os-field-group">
-            <span className="os-field-label">Starts</span>
-            <TimeField value={start} onChange={setStart} ariaLabel="Starts" className="w-full" />
-          </div>
-          <div className="os-field-group">
-            <span className="os-field-label">Ends</span>
-            <TimeField value={end} onChange={setEnd} ariaLabel="Ends" className="w-full" />
-          </div>
-        </div>
-        {start !== "" && (
-          <div className="os-field-group">
-            <RepeatField
-              value={repeat}
-              onChange={setRepeat}
-              anchorLocal={`${dateKey}T${start}`}
-              labelClassName="os-field-label"
-              fieldClassName={chrome.formTrigger}
-            />
-            {repeatNeedsEnd && (
-              <p className="text-xs text-destructive">
-                A repeating booking needs an end date or a number of times.
-              </p>
-            )}
-          </div>
-        )}
-        <label className="os-field-group">
-          <span>What for</span>
-          <input
-            type="text"
-            maxLength={200}
-            placeholder="Optional"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </label>
-        <ModalFooter onCancel={onClose}>
-          <button type="submit" className="os-btn-primary" disabled={!valid || repeatNeedsEnd || saving}>
-            Book
-          </button>
-        </ModalFooter>
-      </form>
-    </Modal>
-  );
 }

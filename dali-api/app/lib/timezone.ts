@@ -62,20 +62,34 @@ export function getZonedYMD(
   };
 }
 
+const wallFormatters = new Map<string, Intl.DateTimeFormat>();
+
+// Building a formatter costs ten times what using one does, and interview slot
+// and calendar loops convert thousands of times per request on a single thread.
+function wallFormatter(timezone: string): Intl.DateTimeFormat {
+  let formatter = wallFormatters.get(timezone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    wallFormatters.set(timezone, formatter);
+  }
+  return formatter;
+}
+
 /** Wall-clock parts of `date` interpreted in `timezone` (month 1-indexed). */
 export function getZonedParts(
   date: Date,
   timezone: string,
 ): { year: number; month: number; day: number; hour: number; minute: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
+  const parts = wallFormatter(timezone).formatToParts(date);
   const get = (t: string) =>
     Number(parts.find((p) => p.type === t)?.value ?? "0");
   return {
@@ -127,10 +141,9 @@ export function zonedDayEndUtc(
 /** UTC instant corresponding to local midnight on `year-month-day` in `timezone`. */
 /**
  * UTC instant corresponding to a wall-clock time `year-month-day hour:minute`
- * in `timezone`. DST-correct: probes the zone's offset at the guessed instant
- * and corrects, which resolves transition days the same way the rest of this
- * module does. The single source of truth for "this local time means this UTC
- * instant" — `zonedDayStartUtc` is the hour=0, minute=0 case.
+ * in `timezone`. The single source of truth for "this local time means this UTC
+ * instant" — `zonedDayStartUtc` is the hour=0, minute=0 case. Hour and minute
+ * may overflow (minute 540 is 9:00, hour 24 is the next midnight).
  */
 export function zonedWallTimeUtc(
   year: number,
@@ -140,30 +153,67 @@ export function zonedWallTimeUtc(
   minute: number,
   timezone: string,
 ): Date {
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute));
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(utcGuess);
-  const get = (type: string) =>
-    parseInt(parts.find((p) => p.type === type)?.value ?? "0");
-  const localAtUtcMs = Date.UTC(
-    get("year"),
-    get("month") - 1,
-    get("day"),
-    get("hour") % 24,
-    get("minute"),
-    get("second"),
+  const wallMs = Date.UTC(year, month - 1, day, hour, minute);
+  const formatter = wallFormatter(timezone);
+  const offsetAt = (ms: number) => {
+    const parts = formatter.formatToParts(new Date(ms));
+    const get = (type: string) =>
+      parseInt(parts.find((p) => p.type === type)?.value ?? "0");
+    return (
+      Date.UTC(
+        get("year"),
+        get("month") - 1,
+        get("day"),
+        get("hour") % 24,
+        get("minute"),
+        get("second"),
+      ) - ms
+    );
+  };
+
+  // The offset either side of the date covers any change on that day. A single
+  // probe at the wall time read as UTC lands on the wrong side of a change for
+  // the hours between the two.
+  const DAY_MS = 86_400_000;
+  const before = offsetAt(wallMs - DAY_MS);
+  const after = offsetAt(wallMs + DAY_MS);
+  if (before === after) return new Date(wallMs - before);
+
+  // The earlier instant wins in the repeated hour. In the skipped hour neither
+  // reads back, and the time moves forward past the gap.
+  const earlier = wallMs - Math.max(before, after);
+  const later = wallMs - Math.min(before, after);
+  if (earlier + offsetAt(earlier) === wallMs) return new Date(earlier);
+  if (later + offsetAt(later) === wallMs) return new Date(later);
+  return new Date(wallMs - before);
+}
+
+/** `date` as its wall clock in `timezone`, written into the UTC fields of a Date.
+ *  Arithmetic on the result keeps the time of day across a clock change, which
+ *  arithmetic on the real instant does not. */
+export function toWallClock(date: Date, timezone: string): Date {
+  const p = getZonedParts(date, timezone);
+  return new Date(
+    Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, date.getUTCSeconds()),
   );
-  const offsetMs = localAtUtcMs - utcGuess.getTime();
-  return new Date(utcGuess.getTime() - offsetMs);
+}
+
+/** The real instant for a `toWallClock` value. */
+export function fromWallClock(wall: Date, timezone: string): Date {
+  const instant = zonedWallTimeUtc(
+    wall.getUTCFullYear(),
+    wall.getUTCMonth() + 1,
+    wall.getUTCDate(),
+    wall.getUTCHours(),
+    wall.getUTCMinutes(),
+    timezone,
+  );
+  return new Date(instant.getTime() + wall.getUTCSeconds() * 1000);
+}
+
+/** `date` moved by `ms` of wall-clock time in `timezone`. */
+export function shiftWallClock(date: Date, ms: number, timezone: string): Date {
+  return fromWallClock(new Date(toWallClock(date, timezone).getTime() + ms), timezone);
 }
 
 export function zonedDayStartUtc(

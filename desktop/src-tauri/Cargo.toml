@@ -1,10 +1,10 @@
 [package]
 name = "dali-os-desktop"
-version = "0.1.21"
+version = "0.1.25"
 description = "DALI OS desktop shell"
 authors = ["DALI Lab"]
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.90"
 
 [lib]
 name = "dali_os_desktop_lib"

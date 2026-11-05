@@ -373,6 +373,14 @@ export const EVENT_TYPES = {
     coreOnly: true,
     defaults: { inApp: true, desktop: false, slackDm: false, email: "Daily" },
   },
+  "partner.referral_received": {
+    kind: "General",
+    area: "Partners",
+    label: "New partner referral",
+    description: "When a member refers a potential partner through the bounty program.",
+    coreOnly: true,
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Daily" },
+  },
   announcement: {
     kind: "SystemAnnouncement",
     area: "Announcements",
@@ -434,6 +442,13 @@ export const EVENT_TYPES = {
     coalesceWindowMs: 60 * 60_000, // one ping per form per hour
     coalesceNoun: "response",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "form.reminder": {
+    kind: "General",
+    area: "Forms",
+    label: "Form reminders",
+    description: "When a form you were asked to fill out is still waiting on you.",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
   },
   "education.announcement": {
     kind: "Education",

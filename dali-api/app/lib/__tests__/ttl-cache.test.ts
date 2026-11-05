@@ -1,7 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cachedForTtl, clearTtlCache, setTtlCacheEnabledForTests } from "~/lib/ttl-cache";
+import { reportPerfStats } from "~/lib/perf-stats";
 
 describe("cachedForTtl", () => {
+  it("counts an entry and an in-flight share as hits, and a compute as a miss", async () => {
+    setTtlCacheEnabledForTests(true);
+    clearTtlCache();
+    reportPerfStats(() => {});
+    const first = cachedForTtl("stats:key", 1000, async () => "v");
+    const shared = cachedForTtl("stats:key", 1000, async () => "v");
+    await Promise.all([first, shared]);
+    await cachedForTtl("stats:key", 1000, async () => "v");
+    const lines: string[] = [];
+    reportPerfStats((line) => lines.push(line));
+    expect(lines).toEqual(["[cache-stats] stats:key hit=2 miss=1 rate=67%"]);
+    setTtlCacheEnabledForTests(null);
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     setTtlCacheEnabledForTests(true);

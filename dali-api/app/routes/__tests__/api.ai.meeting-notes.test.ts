@@ -1,12 +1,10 @@
-// Gating for POST /api/ai/meeting-notes: flag, write access to the document's
+// Gating for POST /api/ai/meeting-notes: write access to the document's
 // collab room, and the transcript sent to the model.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   documentTitle: vi.fn(),
@@ -17,11 +15,10 @@ vi.mock("~/lib/ai.server", () => ({ generateShortText: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { generateShortText } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
-import { action } from "~/routes/api.ai.meeting-notes";
+import { action, TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
 
 const DOC = "doc:p1:body";
 
@@ -44,7 +41,6 @@ beforeEach(() => {
     user: { sub: "u1", email: "u@dali.edu", type: "member" },
     sessionId: "s1",
   } as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(canRecordInto).mockResolvedValue(true);
   vi.mocked(documentTitle).mockResolvedValue("Deserto sync");
   vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 1 } as never);
@@ -56,6 +52,22 @@ beforeEach(() => {
 });
 
 describe("POST /api/ai/meeting-notes", () => {
+  it("sends a five-hour transcript whole", async () => {
+    const transcript = "[00:00] You: start " + "x".repeat(250_000) + " end";
+    await run({ documentName: DOC, transcript });
+    const { prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(prompt).toContain("[00:00] You: start");
+    expect(prompt).toContain(" end");
+  });
+
+  it("keeps the most recent part of a transcript past the cap", async () => {
+    const transcript = "OPENING" + "x".repeat(TRANSCRIPT_MAX) + "CLOSING";
+    await run({ documentName: DOC, transcript });
+    const { prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(prompt).not.toContain("OPENING");
+    expect(prompt).toContain("CLOSING");
+  });
+
   it("returns the model's notes, titled after the document", async () => {
     const res = await run({ documentName: DOC, transcript: "[00:01] You: we shipped it" });
     expect(res.status).toBe(200);
@@ -69,17 +81,14 @@ describe("POST /api/ai/meeting-notes", () => {
     const res = await run({ documentName: "interview:i1:notes", transcript: "x" });
     expect(res.status).toBe(200);
     expect(vi.mocked(generateShortText).mock.calls[0]![0].prompt).toMatch(/^Transcript:/);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].task).toBe("meetingNotes");
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(4000);
   });
 
   it("rejects an empty transcript before calling the model", async () => {
     const res = await run({ documentName: DOC, transcript: "   " });
     expect(res.status).toBe(400);
     expect(generateShortText).not.toHaveBeenCalled();
-  });
-
-  it("is off without the flag", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect((await run({ documentName: DOC, transcript: "x" })).status).toBe(403);
   });
 
   it("needs write access to the document", async () => {

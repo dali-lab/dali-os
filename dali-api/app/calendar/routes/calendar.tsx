@@ -16,7 +16,6 @@ import {
   X,
 } from "lucide-react";
 import { fullName } from "~/lib/display";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
 import { getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
 import {
   EventComposer,
@@ -106,7 +105,6 @@ import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { fetchParticipantOptions, useParticipantOptions } from "~/calendar/lib/participant-options";
 import { useIsMobile } from "~/hooks/useIsMobile";
 
-// Underline subnav sits flush under the workspace tab bar (see layout embed padding).
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
 // UnderlineTabButtons row unconditionally — it isn't the flag-gated AreaPillNav,
 // so it reserves the flush top spacing regardless of the sidebar-redesign flag.
@@ -114,7 +112,7 @@ export const handle = {
   areaSubnav: true,
   docKey: "calendar",
   docTitle: "Calendar",
-  // Fill the shell pane (iframe or tabless column) so the grid stretches to
+  // Fill the shell pane so the grid stretches to
   // the edges and hours scroll inside it instead of the page.
   fitViewport: true,
   flushPane: true,

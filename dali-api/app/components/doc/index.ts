@@ -41,6 +41,7 @@ export {
   appendTaskMentionContent,
   transcriptToggleBlock,
   enhanceSnapshotBlocks,
+  noteBodyText,
   findTranscriptToggle,
   hasTranscriptToggle,
   findEnhanceMarks,
@@ -75,7 +76,7 @@ export {
 } from "./blocks-util";
 
 // Upload pipeline (client).
-export { uploadEditorImage, rawUploadUrl, IMAGE_UPLOAD_ACCEPT } from "./upload";
+export { uploadEditorImage, uploadErrorMessage, rawUploadUrl, IMAGE_UPLOAD_ACCEPT } from "./upload";
 
 // Shared schema configs contract (pure; also consumed by server codecs).
 export * from "./schema/configs";

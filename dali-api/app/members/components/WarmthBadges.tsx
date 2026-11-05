@@ -24,3 +24,16 @@ export function BirthdayBadge() {
     </Tooltip>
   );
 }
+
+/** A quiet accent dot for recently-joined members — a hint, not a badge. */
+export function NewDot() {
+  return (
+    <Tooltip content="New — joined the lab within the last 30 days." variant="rich">
+      <span
+        role="img"
+        aria-label="New member"
+        className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-os-accent"
+      />
+    </Tooltip>
+  );
+}

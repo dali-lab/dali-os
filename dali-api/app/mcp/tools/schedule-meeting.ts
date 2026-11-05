@@ -4,9 +4,10 @@
 // api.scheduled-meetings.ts POST. Requires the `mcp:write` scope.
 
 import { createScheduledMeeting, type ScheduledMeetingScope } from "~/lib/scheduled-meeting";
-import { isCore, canViewForms } from "~/lib/roles";
+import { isCore, canViewForms, isLabMember } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
 import { notebookChoiceSchema } from "~/lib/notebook-choice";
+import { assertMeetingRoomsFree } from "~/lib/rooms.server";
 
 export const SCHEDULE_MEETING_TOOL = {
   name: "schedule_meeting",
@@ -56,6 +57,13 @@ export const SCHEDULE_MEETING_TOOL = {
         type: "string",
         maxLength: 500,
         description: "Optional RFC 5545 RRULE for recurring meetings.",
+      },
+      roomIds: {
+        type: "array",
+        items: { type: "string", minLength: 1 },
+        maxItems: 10,
+        description:
+          "DALI rooms the meeting occupies, from `list_rooms`. Requires startTime. Every room must be free for every occurrence, or the meeting isn't created.",
       },
       organizerCalendarLinkId: {
         type: "string",
@@ -135,6 +143,7 @@ type Input = {
   groupId?: string;
   startTime?: string;
   recurrenceRule?: string;
+  roomIds?: string[];
   organizerCalendarLinkId?: string;
   organizerCalendarId?: string;
   meetingType?: "Team" | "Partner" | "Other";
@@ -148,6 +157,7 @@ type Input = {
 };
 
 export class ScheduleMeetingError extends Error {
+  status = 400;
   constructor(message: string) {
     super(message);
     this.name = "ScheduleMeetingError";
@@ -200,6 +210,21 @@ export async function runScheduleMeeting(
     resolvedIsCore = callerIsCore || groupIsCore;
   }
 
+  const roomIds = [...new Set(input.roomIds ?? [])];
+  if (roomIds.length) {
+    if (!input.startTime) throw new ScheduleMeetingError("roomIds requires startTime");
+    const selectedAt = new Date(input.startTime);
+    if (Number.isNaN(selectedAt.getTime())) throw new ScheduleMeetingError("startTime is not a valid time");
+    if (!(await isLabMember(user.id))) throw new ScheduleMeetingError("Booking a room requires lab membership");
+    const free = await assertMeetingRoomsFree({
+      roomIds,
+      selectedAt,
+      durationMinutes: input.durationMinutes,
+      recurrenceRule: input.recurrenceRule ?? null,
+    });
+    if (!free.ok) throw new ScheduleMeetingError(free.error);
+  }
+
   let scope: ScheduledMeetingScope;
   if (scopeType === "Group" && input.groupId) {
     scope = { type: "Group", groupId: input.groupId };
@@ -217,6 +242,7 @@ export async function runScheduleMeeting(
     scope,
     startTime: input.startTime,
     recurrenceRule: input.recurrenceRule,
+    roomIds,
     organizerCalendarLinkId: input.organizerCalendarLinkId,
     organizerCalendarId: input.organizerCalendarId,
     meetingType: input.meetingType,

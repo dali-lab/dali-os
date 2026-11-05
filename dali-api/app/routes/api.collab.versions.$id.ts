@@ -87,8 +87,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (!version) return Response.json({ error: "Not found" }, { status: 404 });
 
-  const { allowed } = await authorizeCollabDoc(auth.user.sub, version.name);
-  if (!allowed) return forbidden(request);
+  const { allowed, readOnly } = await authorizeCollabDoc(auth.user.sub, version.name);
+  if (!allowed || readOnly) return forbidden(request);
 
   if (body.intent === "name") {
     // Empty string clears the label (unpin); non-empty string sets it.

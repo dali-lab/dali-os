@@ -1,6 +1,6 @@
 # DALI OS Mobile
 
-Expo (React Native) member app for iOS and Android: Time, Project, Calendar, Notes, and Pass tabs. It talks to `dali-api` through `/api/mobile/*` and records meeting notes through `/api/meeting-recordings/*` (contract: `src/api/contract.ts`). Everything is gated by the `mobile-app` feature flag; recording also needs the `ai-meeting-notes` flag and transcription configured on the server.
+Expo (React Native) member app for iOS and Android: Time, Project, Calendar, Notes, and Pass tabs. It talks to `dali-api` through `/api/mobile/*` and records meeting notes through `/api/meeting-recordings/*` (contract: `src/api/contract.ts`). Recording needs transcription configured on the server.
 
 ## Develop
 
@@ -19,7 +19,7 @@ Typecheck: `npx tsc --noEmit`.
 
 Debug builds default to Staging; release builds always use Production. In debug builds the profile sheet has a Server switch (Production, Staging, Local).
 
-Local points at `http://<metro host>:3001`, or at `EXPO_PUBLIC_LOCAL_API_URL` when set (it then becomes the default). To use a local `dali-api` from a phone on another network, tunnel port 3001 (e.g. `cloudflared tunnel --url http://localhost:3001`), set `API_BASE_URL` and `FRONTEND_URL` in `dali-api/.env` to the tunnel URL, start `dali-api` with `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=<tunnel host>`, and start Metro with `EXPO_PUBLIC_LOCAL_API_URL=<tunnel URL>`. Turn on the `mobile-app` flag for your user in Admin → Feature Flags.
+Local points at `http://<metro host>:3001`, or at `EXPO_PUBLIC_LOCAL_API_URL` when set (it then becomes the default). To use a local `dali-api` from a phone on another network, tunnel port 3001 (e.g. `cloudflared tunnel --url http://localhost:3001`), set `API_BASE_URL` and `FRONTEND_URL` in `dali-api/.env` to the tunnel URL, start `dali-api` with `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=<tunnel host>`, and start Metro with `EXPO_PUBLIC_LOCAL_API_URL=<tunnel URL>`.
 
 ## Sign-in
 
@@ -45,7 +45,7 @@ Releases ship from `prod` through `.github/workflows/mobile-release.yml` (EAS Bu
 - **Anything else in `mobile/`** that reaches `prod` goes out as an over-the-air EAS Update on the `production` channel. `runtimeVersion` follows the app version, so an update only reaches builds it's compatible with.
 - Run the workflow by hand (Actions → Mobile Release → Run workflow) to force a build or an update. iOS and Android are built and submitted independently: if one platform fails, the other still ships and the release is still tagged, and the failed platform can be retried alone (kind `build`, platform `ios` or `android`).
 
-Release builds always use the Production server, so the matching `dali-api` changes must be on prod first, with the `mobile-app` flag on for testers.
+Release builds always use the Production server, so the matching `dali-api` changes must be on prod first.
 
 ### One-time setup
 

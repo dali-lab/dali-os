@@ -13,7 +13,7 @@ import { GripVertical } from "lucide-react";
 import { useEventStream } from "~/hooks/useEventStream";
 import { KanbanBoard, type KanbanColumn } from "~/components/board/KanbanBoard";
 import { buildColumnOrder, dropCard, missingReviewsLabel } from "~/hiring/lib/delibs";
-import { findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { closeSummary, findRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
@@ -22,7 +22,7 @@ import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { useOsChrome } from "~/components/os-chrome";
 import { useDialog } from "~/components/ui/dialog";
-import { anonLabelMapForCycle, releasedDaIds, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels, blindUser } from "~/hiring/lib/anonymization.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 
@@ -86,7 +86,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const cycle = await prisma.applicationCycle.findUniqueOrThrow({
     where: { id: session.applicationCycleId },
-    select: { id: true, timeline: true, anonymizeReview: true },
+    select: { id: true, timeline: true },
   });
   // The board's round sets its columns and who qualifies. A round removed from
   // the timeline leaves its board behind with nothing to show.
@@ -144,16 +144,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       })
     : [];
 
-  // Blind review: with anonymizeReview on, cards read "Applicant N" until that
-  // applicant's decision is released.
-  if (cycle.anonymizeReview) {
-    const released = await releasedDaIds(domainApplications.map((d) => d.id));
-    const labelMap = await anonLabelMapForCycle(session.applicationCycleId);
-    for (const da of domainApplications) {
-      if (released.has(da.id)) continue;
-      const label = labelMap.get(da.application.id);
-      if (label) da.application.user = blindUser(da.application.user, label);
-    }
+  const blindLabels = await domainApplicationBlindLabels({
+    cycleId: session.applicationCycleId,
+    domainApplicationIds: domainApplications.map((da) => da.id),
+  });
+  for (const da of domainApplications) {
+    const label = blindLabels.get(da.id);
+    if (label) da.application.user = blindUser(da.application.user, label);
   }
 
   const [collabToken, engagement] = await Promise.all([
@@ -346,14 +343,10 @@ export default function DelibsKanban() {
   }
 
   async function confirmClose() {
-    const counts = (columns as string[])
-      .filter((c) => c !== defaultColumn)
-      .map((c) => `${(columnOrder[c] ?? []).length} ${c.toLowerCase()}`)
-      .join(", ");
     if (
       await dialog.confirm({
         title: "Close delibs and create draft decisions?",
-        description: `${counts}. Anyone left in "${defaultColumn}" gets no decision.`,
+        description: closeSummary(round, columnOrder),
         confirmLabel: "Close delibs",
         tone: "destructive",
       })

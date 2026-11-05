@@ -10,7 +10,7 @@ test.describe('partner CRM board (Core)', () => {
   });
 
   test('renders six columns with the seeded cards', async ({ page }) => {
-    await page.goto('/core/partners?embed=1');
+    await page.goto('/core/partners');
     await expect(page.getByText('New', { exact: true })).toBeVisible();
     await expect(page.getByText('Interview', { exact: true })).toBeVisible();
     await expect(page.getByText('Deciding', { exact: true })).toBeVisible();
@@ -23,7 +23,7 @@ test.describe('partner CRM board (Core)', () => {
   });
 
   test('clicking a card opens the modal with the title', async ({ page }) => {
-    await page.goto('/core/partners?embed=1');
+    await page.goto('/core/partners');
     await page.getByText('Interactive gallery kiosk', { exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Interactive gallery kiosk' }),
@@ -37,10 +37,10 @@ test.describe('partner directory (Core)', () => {
   });
 
   test('lists organizations and people in one directory', async ({ page }) => {
-    await page.goto('/core/partners/directory?embed=1');
+    await page.goto('/core/partners/directory');
     await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
-    await expect(page.getByText('Tuck School of Business')).toBeVisible();
-    await expect(page.getByText('Hood Museum of Art')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Tuck School of Business' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Hood Museum of Art' })).toBeVisible();
     // People are rows in the same list, not a separate view.
     await expect(page.getByText('Pat Tuck').first()).toBeVisible();
     await expect(page.getByText('Harper Hood').first()).toBeVisible();
@@ -53,13 +53,13 @@ test.describe('partner org page tabs (Core)', () => {
   });
 
   test('navigating tab URLs shows the matching section', async ({ page }) => {
-    await page.goto('/core/partners/orgs/partner-tuck-school?tab=applications&embed=1');
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=applications');
     await expect(page.getByText('Alumni mentorship matching')).toBeVisible();
 
-    await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts&embed=1');
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts');
     await expect(page.getByText('Pat Tuck').first()).toBeVisible();
 
-    await page.goto('/core/partners/orgs/partner-tuck-school?tab=projects&embed=1');
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=projects');
     await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
   });
 });
@@ -70,7 +70,7 @@ test.describe('partner CRM settings (Core)', () => {
   });
 
   test('saves the stale threshold from the settings modal', async ({ page }) => {
-    await page.goto('/core/partners?embed=1&settings=1');
+    await page.goto('/core/partners?settings=1');
     const staleInput = page.locator('input[name="staleDays"]');
     await staleInput.fill('21');
     await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -80,12 +80,12 @@ test.describe('partner CRM settings (Core)', () => {
   });
 
   test('opens settings from the gear on the board, and the old URL lands there', async ({ page }) => {
-    await page.goto('/core/partners?embed=1');
+    await page.goto('/core/partners');
     await page.getByRole('button', { name: 'Partner settings' }).click();
     await expect(page.getByRole('heading', { name: 'Partner settings' })).toBeVisible();
 
-    await page.goto('/core/partners/settings?embed=1');
-    await expect(page).toHaveURL(/\/core\/partners\?embed=1&settings=1/);
+    await page.goto('/core/partners/settings');
+    await expect(page).toHaveURL(/\/core\/partners\?settings=1/);
     await expect(page.getByRole('heading', { name: 'Partner settings' })).toBeVisible();
   });
 });
@@ -96,7 +96,7 @@ test.describe('partner CRM reports (Core)', () => {
   });
 
   test('renders every report panel', async ({ page }) => {
-    await page.goto('/core/partners/reports?embed=1');
+    await page.goto('/core/partners/reports');
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
     for (const name of [
       'Funnel',
@@ -111,8 +111,8 @@ test.describe('partner CRM reports (Core)', () => {
   });
 
   test('switching the term re-renders without an error', async ({ page }) => {
-    await page.goto('/core/partners/reports?embed=1');
-    await page.goto('/core/partners/reports?term=all&embed=1');
+    await page.goto('/core/partners/reports');
+    await page.goto('/core/partners/reports?term=all');
     await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
   });
 });

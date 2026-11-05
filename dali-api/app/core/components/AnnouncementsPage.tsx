@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useFetcher, useRevalidator, useSearchParams } from "react-router";
 import { Plus, X } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
@@ -42,7 +43,8 @@ export type AnnouncementsData = {
 
 export type SentItem = Base & { completed: number };
 
-type View = "scheduled" | "sent";
+const VIEWS = ["scheduled", "sent"] as const;
+type View = (typeof VIEWS)[number];
 
 const WHEN: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" };
 const DAY: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
@@ -59,7 +61,7 @@ export function AnnouncementsPage({ data }: { data: AnnouncementsData }) {
   const seedFormId = data.publishedForms.some((f) => f.id === searchParams.get("formId"))
     ? searchParams.get("formId")!
     : "";
-  const [view, setView] = useState<View>("scheduled");
+  const [view, setView] = useSearchParamChoice<View>("view", VIEWS, "scheduled");
   const [composing, setComposing] = useState(Boolean(seedFormId));
   const { items: sent, pager: sentPager } = useLoadMore<SentItem>({
     items: data.sent,

@@ -30,7 +30,7 @@ describe("areaForPath", () => {
   });
 
   it("still resolves an area hub that carries a query string", () => {
-    // A favorited hub is stored as `pathname + search` (FavoriteRouteButton),
+    // A favorited hub is stored as `pathname + search` (the topbar star),
     // and in tab mode the sidebar matches the focused tab's url — which keeps
     // its query. Without trimming it, the hub matched no area and the sidebar
     // fell back to the last-visited area (Projects by default).
@@ -82,7 +82,7 @@ describe("isAreaSubtabPath", () => {
   });
 });
 
-// Regression: the tabless history arrows and the layout's flush top padding
+// Regression: the history arrows and the layout's flush top padding
 // both stand down when a page renders its own nav row. Layout used to decide
 // that from `handle.areaPills` alone, which broke both ways — calendar
 // (areaSubnav) got a standalone arrow bar stacked on top of its own subnav
@@ -129,6 +129,7 @@ const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewSt
 const REGROUP = {};
 // The `community` flag: the Community area appears and Connect moves into it.
 const COMMUNITY = { community: true };
+const REFER = { "refer-a-partner": true };
 
 describe("area sets", () => {
   it("collapses to five areas", () => {
@@ -229,6 +230,7 @@ describe("Admin area", () => {
       "Messaging",
       "Insights",
       "Platform",
+      "Rooms",
       "Onboarding",
     ]);
   });
@@ -276,6 +278,7 @@ describe("areaForPath", () => {
     expect(areaForPath("/core/agreements", REGROUP)?.key).toBe("core");
     expect(areaForPath("/core/agreements/abc123", REGROUP)?.key).toBe("core");
     expect(areaForPath("/admin/messaging/senders", REGROUP)?.key).toBe("admin");
+    expect(areaForPath("/admin/rooms", REGROUP)?.key).toBe("admin");
     expect(areaForPath("/projects/42", REGROUP)?.key).toBe("projects");
   });
 
@@ -453,6 +456,42 @@ describe("Community area", () => {
   });
 });
 
+describe("refer-a-partner flag", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+  const labHrefs = (r: RoleFlags, flags: object) =>
+    visibleSubtabs(visibleAreas(r, flags).find((a) => a.key === "projects")!, r).map((t) => t.href);
+
+  it("shows Refer a partner under Lab for members and alumni while the flag is on", () => {
+    for (const flags of [REFER, { ...COMMUNITY, ...REFER }]) {
+      expect(labHrefs(NOBODY, flags)).toContain("/refer");
+      expect(labHrefs(ALUM, flags)).toContain("/refer");
+    }
+  });
+
+  it("hides Refer a partner from members and alumni while the flag is off", () => {
+    for (const flags of [REGROUP, COMMUNITY]) {
+      expect(labHrefs(NOBODY, flags)).not.toContain("/refer");
+      expect(labHrefs(ALUM, flags)).not.toContain("/refer");
+      expect(areaForPath("/refer", flags, NOBODY)).toBeUndefined();
+      expect(areaForPath("/refer", flags, ALUM)).toBeUndefined();
+    }
+  });
+
+  it("keeps the alumni community pages filtered independently of the refer flag", () => {
+    expect(labHrefs(ALUM, COMMUNITY)).toEqual([
+      "/projects",
+      "/members",
+      "/community/opportunities",
+      "/community/gallery",
+      "/resources",
+    ]);
+  });
+
+  it("still resolves the Refer a partner icon for favorites with no flag context", () => {
+    expect(isAreaSubtabPath("/refer")).toBe(true);
+  });
+});
+
 describe("alumni nav", () => {
   const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
 
@@ -463,19 +502,24 @@ describe("alumni nav", () => {
   });
 
   it("gives alumni Projects, People and the community pages, but not Connect", () => {
-    const lab = visibleAreas(ALUM, COMMUNITY)[0];
+    const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
       "/members",
       "/community/opportunities",
       "/community/gallery",
       "/resources",
+      "/refer",
     ]);
   });
 
   it("drops the community pages from the alumni Lab while the community flag is off", () => {
-    const lab = visibleAreas(ALUM, REGROUP)[0];
-    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual(["/projects", "/members"]);
+    const lab = visibleAreas(ALUM, REFER)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
+      "/projects",
+      "/members",
+      "/refer",
+    ]);
     expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();
   });
 
@@ -516,10 +560,10 @@ describe("pinnedNavItems", () => {
   it("puts Room booking in the calendar header, not the pinned rail", () => {
     expect(pinnedNavItems().map((i) => i.href)).not.toContain("/rooms");
     expect(ROOM_BOOKING_NAV_ITEM.href).toBe("/rooms");
-    // Booking is not a General sub-tab; Core keeps room management.
     const areas = areasFor();
     expect(areas.find((a) => a.key === "projects")!.subtabs.map((t) => t.href)).not.toContain("/rooms");
-    expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).toContain("/core/rooms");
+    expect(areas.find((a) => a.key === "core")!.subtabs.map((t) => t.href)).not.toContain("/core/rooms");
+    expect(areas.find((a) => a.key === "admin")!.subtabs.map((t) => t.href)).toContain("/admin/rooms");
   });
 });
 

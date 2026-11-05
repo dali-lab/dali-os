@@ -32,6 +32,7 @@ export const GET_PROJECT_OVERVIEW_TOOL = {
 type Input = { projectId: string };
 
 export class ProjectNotFoundError extends Error {
+  status = 404;
   constructor(id: string) {
     super(`Project ${id} not found`);
     this.name = "ProjectNotFoundError";

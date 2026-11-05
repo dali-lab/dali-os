@@ -15,7 +15,6 @@ vi.mock("~/lib/github", () => ({ githubAppClient: vi.fn(), parseRepo: (v: string
 } }));
 vi.mock("~/lib/ai.server", () => ({
   generateShortText: vi.fn(),
-  resolveAiProvider: vi.fn(() => ({ sonnetModel: "sonnet-x" })),
 }));
 vi.mock("~/lib/ai-usage.server", () => ({ recordTokenUsage: vi.fn() }));
 vi.mock("~/lib/s3", () => ({ listObjectKeys: vi.fn(async () => []) }));
@@ -144,7 +143,10 @@ describe("runReleaseNotesDraft", () => {
     expect(gh.rest.repos.compareCommitsWithBasehead.mock.calls[0][0].basehead).toBe("old...head1");
     expect(vi.mocked(generateShortText).mock.calls[0][0].prompt).toContain('number="10"');
     expect(vi.mocked(generateShortText).mock.calls[0][0].prompt).not.toContain('number="11"');
-    expect(vi.mocked(generateShortText).mock.calls[0][0].model).toBe("sonnet-x");
+    expect(vi.mocked(generateShortText).mock.calls[0][0].task).toBe("releaseNotes");
+    const { accept } = vi.mocked(generateShortText).mock.calls[0][0];
+    expect(accept?.({ text: JSON.stringify([entry([10])]), inputTokens: 0, outputTokens: 0 })).toBe(true);
+    expect(accept?.({ text: "Sorry, here are the notes:", inputTokens: 0, outputTokens: 0 })).toBe(false);
     expect(recordTokenUsage).toHaveBeenCalledWith("system:release-notes-draft", expect.any(String), 10, 5);
 
     const data = p.releaseNote.create.mock.calls[0][0].data;

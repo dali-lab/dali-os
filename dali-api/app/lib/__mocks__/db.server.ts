@@ -45,6 +45,7 @@ export const prisma = {
     findUnique: vi.fn(),
   },
   applicationCycle: {
+    findUniqueOrThrow: vi.fn(),
     findUnique: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
@@ -116,6 +117,7 @@ export const prisma = {
     update: vi.fn(),
   },
   interview: {
+    findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
@@ -788,6 +790,7 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     create: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
   },
   emailTemplate: {
@@ -859,6 +862,7 @@ export const prisma = {
   aiUsage: {
     upsert: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
   },
   workExperience: {
     createMany: vi.fn(),

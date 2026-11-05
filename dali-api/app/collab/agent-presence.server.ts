@@ -7,8 +7,6 @@ import {
 } from "y-protocols/awareness";
 import type { Hocuspocus } from "@hocuspocus/server";
 import { publish, subscribe } from "~/lib/realtime-bus.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 import { BLOCKNOTE_FRAGMENT } from "~/components/doc/schema/configs";
 import { presenceRoomName } from "./roomName";
 import {
@@ -59,8 +57,7 @@ export function pagePresenceRoom(pageId: string): string {
 
 /**
  * Show the calling agent on a doc (cursor) and/or a page's presence bar.
- * No-op outside an MCP request or when the caller's agent-presence flag is
- * off. Never throws: presence is decoration on top of the real operation.
+ * No-op outside an MCP request. Never throws: presence is decoration on top of the real operation.
  */
 export async function announceAgent(target: AnnounceTarget): Promise<void> {
   (await agentAnnouncer())(target);
@@ -69,21 +66,14 @@ export async function announceAgent(target: AnnounceTarget): Promise<void> {
 type AnnounceTarget = Pick<AgentAnnouncement, "action" | "presenceRoom" | "docRoom" | "range">;
 
 /**
- * Resolves the caller's flag up front so the announcement itself is
- * synchronous: a writer starts this before its write and announces the moment
- * the body changes, not after the document finishes saving.
+ * Returns a synchronous announcer: a writer starts this before its write and
+ * announces the moment the body changes, not after the document finishes
+ * saving.
  */
 export async function agentAnnouncer(): Promise<(target: AnnounceTarget) => void> {
   const noop = () => {};
   const agent = currentAgent();
   if (!agent) return noop;
-  try {
-    const roles = await getUserRoles(agent.userId);
-    if (!(await isFeatureEnabled("agent-presence", agent.userId, roles))) return noop;
-  } catch (err) {
-    console.error("[agent-presence] announce failed", err);
-    return noop;
-  }
   const kind = agentKindFromClientName(agent.clientName);
   return (target) => {
     const msg: AgentAnnouncement = {

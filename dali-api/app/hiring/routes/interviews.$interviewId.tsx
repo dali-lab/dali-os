@@ -15,7 +15,6 @@ import { safeParseJsonString } from '~/forms/lib/forms-data'
 import { DocEditor, EnhanceReviewContext } from '~/components/doc'
 import { interviewNotesRoomName } from '~/collab/roomName'
 import { latestRecordingFor } from '~/lib/meeting-recording.server'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { MeetingRecorder } from '~/components/MeetingRecorder'
 import { RecordingPresencePill } from '~/components/RecordingPresencePill'
 import { RecordingMount } from '~/components/meeting-recorder/RecordingMount'
@@ -38,10 +37,10 @@ import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
 import { Select, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from '~/components/os-chrome'
 import { buttonClasses } from '~/components/ui/Button'
+import { ReopenButton } from '~/hiring/components/ReopenButton'
 import { cn } from '~/lib/cn'
 import { getUserRoles } from '~/lib/roles'
-import { isFeatureEnabled } from '~/lib/feature-flags.server'
-import { applicationBlindLabel } from '~/hiring/lib/anonymization.server'
+import { domainApplicationBlindLabel } from '~/hiring/lib/anonymization.server'
 import { listPriorApplications } from '~/hiring/lib/prior-applications.server'
 import { getApplicantEmailEngagement } from '~/hiring/lib/email-engagement.server'
 import { getHiringEventEngagement } from '~/hiring/lib/hiring-events.server'
@@ -100,7 +99,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             include: {
               user: true,
               applicationFormVersion: { select: { questions: true, intro: true } },
-              applicationCycle: { select: { anonymizeReview: true, name: true } },
+              applicationCycle: { select: { name: true } },
             },
           },
           challengeFormVersion: { select: { questions: true, intro: true } },
@@ -216,22 +215,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const presenceUser = await getPresenceUser(auth.user.sub, fallbackName)
   const userName = presenceUser?.name ?? fallbackName
 
-  // Same applicant context the review page shows. Blinding follows the
-  // applicant-wide release, which is also what gates the email thread modal.
+  // Same applicant context the review page shows.
   const application = interview.domainApplication.application
   const blinded =
-    (await applicationBlindLabel({
+    (await domainApplicationBlindLabel({
       cycleId: interview.applicationCycleId,
-      applicationId: application.id,
-      anonymizeReview: application.applicationCycle.anonymizeReview,
+      domainApplicationId: interview.domainApplication.id,
     })) != null
   const roles = await getUserRoles(auth.user.sub, request)
   const [educationEngagement, hiringEventEngagement, priorApplications, emailEngagement, latestRecordingRow] =
     await Promise.all([
       getEducationEngagement(application.userId),
-      isFeatureEnabled('application-events', auth.user.sub, roles, request).then((on) =>
-        on ? getHiringEventEngagement(application.userId) : [],
-      ),
+      getHiringEventEngagement(application.userId),
       listPriorApplications({
         userId: application.userId,
         currentApplicationId: application.id,
@@ -379,7 +374,6 @@ export default function InterviewDetailPage() {
   const isCompleted = completedFlag === 'completed'
   const notesRoom = interviewNotesRoomName(interview.id)
   const [searchParams] = useSearchParams()
-  const recordingEnabled = useFeatureFlag('ai-meeting-notes')
   const hasTranscriptParam = Boolean(searchParams.get('transcript'))
   const { editorRef, onEditorReady, hookProps: recordingEditorProps } = useRecordingEditor({
     notePath: `/hiring/interviews/${interview.id}`,
@@ -554,7 +548,7 @@ export default function InterviewDetailPage() {
           )}
 
           <RecordingMount
-            enabled={recordingEnabled && !!collabToken && (!isCompleted || hasTranscriptParam)}
+            enabled={!!collabToken && (!isCompleted || hasTranscriptParam)}
             documentName={notesRoom}
             canEdit={!isCompleted}
             isCore={isCore}
@@ -627,9 +621,7 @@ export default function InterviewDetailPage() {
                     {interview.recommendation ?? recommendation}
                   </span>
                 </span>
-                <button onClick={handleReopen} disabled={completing} className={buttonClasses('secondary', 'md')}>
-                  {completing ? 'Reopening…' : 'Reopen'}
-                </button>
+                <ReopenButton canReopen={!!isCore} reopening={completing} onReopen={handleReopen} />
                 {interview.recommendationNotes && (
                   <p className="w-full text-sm text-os-grey">{interview.recommendationNotes}</p>
                 )}

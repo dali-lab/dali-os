@@ -19,7 +19,7 @@ export function SlideFields({ slide, onChange }: { slide: Slide; onChange: (slid
   const upload = async (file: File) => {
     setUploading(true);
     try {
-      const src = await uploadEditorImage(file);
+      const src = await uploadEditorImage(file, toast.info);
       onChange({ ...slide, image: { ...image, src } });
     } catch {
       toast.error("The image couldn't be uploaded.");

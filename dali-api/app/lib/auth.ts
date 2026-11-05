@@ -12,6 +12,7 @@ import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
 import { getAppEnv } from "~/lib/app-env";
+import { sampleDuration } from "~/lib/perf-stats";
 
 // Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
@@ -141,7 +142,9 @@ export async function requireAuth(
   // Resolve (and cache) identity first, independent of the write gate, so a
   // caller passing allowImpersonatedWrite can't poison the memoized result for
   // another caller on the same request.
-  const result = await cachedForRequest(request, "requireAuth", () => computeAuth(request));
+  const result = await cachedForRequest(request, "requireAuth", () =>
+    sampleDuration("requireAuth", () => computeAuth(request)),
+  );
   if (!result.ok || isReadOnlyMethod(request.method)) return result;
   if (opts?.allowImpersonatedWrite || !isImpersonating(result)) return result;
   if (impersonationAllowsWrites()) return result;
@@ -164,11 +167,11 @@ export async function requireAuth(
 // that only exercise the legacy leg, and wrapped so a fault there can't turn a
 // clean legacy failure into a 500.
 async function computeAuth(request: Request): Promise<AuthResult> {
-  const legacy = await computeLegacyAuth(request);
+  const legacy = await sampleDuration("requireAuth.legacy", () => computeLegacyAuth(request));
   if (legacy.ok) return legacy;
   try {
     const { resolveBetterAuthAuth } = await import("~/lib/betterauth-compat.server");
-    const ba = await resolveBetterAuthAuth(request);
+    const ba = await sampleDuration("requireAuth.betterauth", () => resolveBetterAuthAuth(request));
     if (ba) {
       // Presence heartbeat, same as the legacy leg. Without it the whole
       // feature goes dark at cutover: a BetterAuth session never touched
@@ -405,15 +408,38 @@ export async function redirectPartnerToPortal(
   return (await isPartnerAccount(auth)) ? redirect("/partner") : null;
 }
 
-// Throttled presence heartbeat. Mirrors rollSession's throttle pattern:
-// a conditional UPDATE so the write is a no-op when the row is already fresh.
-// The 60s guard keeps concurrent Neon connections from hammering the same row
-// on every loader call while the user navigates quickly between pages.
+// Throttled presence heartbeat. The SQL guard keeps concurrent machines from
+// hammering one row; the process-local map skips the round trip entirely when
+// this process already bumped the user inside the window.
+const BUMP_WINDOW_MS = 60_000;
+const BUMP_SWEEP_AT = 1_000;
+const lastBumpAt = new Map<string, number>();
+
+export function resetLastActiveThrottle(): void {
+  lastBumpAt.clear();
+}
+
+export function lastActiveThrottleSize(): number {
+  return lastBumpAt.size;
+}
+
 export async function bumpLastActive(userId: string): Promise<void> {
-  await prisma.$executeRaw`
-    UPDATE "User"
-    SET "lastActiveAt" = now()
-    WHERE id = ${userId}
-      AND ("lastActiveAt" IS NULL OR "lastActiveAt" < now() - interval '60 seconds')
-  `;
+  const now = Date.now();
+  const last = lastBumpAt.get(userId);
+  if (last !== undefined && now - last < BUMP_WINDOW_MS) return;
+  if (lastBumpAt.size >= BUMP_SWEEP_AT) {
+    for (const [id, at] of lastBumpAt) if (now - at >= BUMP_WINDOW_MS) lastBumpAt.delete(id);
+  }
+  lastBumpAt.set(userId, now);
+  try {
+    await prisma.$executeRaw`
+      UPDATE "User"
+      SET "lastActiveAt" = now()
+      WHERE id = ${userId}
+        AND ("lastActiveAt" IS NULL OR "lastActiveAt" < now() - interval '60 seconds')
+    `;
+  } catch (err) {
+    lastBumpAt.delete(userId);
+    throw err;
+  }
 }

@@ -1,17 +1,17 @@
-import { useEffect, useRef } from "react";
 import { data, useFetcher, useLoaderData } from "react-router";
-import { MessageCircle, Trash2 } from "lucide-react";
+import { MessageCircle, Plus, Trash2 } from "lucide-react";
 import type { Route } from "./+types/feedback";
 import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
 import { relativeTime } from "~/lib/relative-time";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { requireFeedbackViewer } from "~/lib/feedback.server";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
+import { reactionRefusal } from "~/lib/reactions.server";
 import {
   FEEDBACK_BODY_MAX,
   FEEDBACK_COMMENT_MAX,
   FEEDBACK_EMOJI,
-  isFeedbackEmoji,
   isFeedbackScreenshotKey,
   FEED_IDS_MAX,
 } from "~/lib/feedback";
@@ -23,7 +23,9 @@ import { useOsChrome } from "~/components/os-chrome";
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
-import { ReactionBar } from "~/components/ReactionBar";
+import { PostComments } from "~/components/PostComments";
+import { ReactionBar, useReactionToggle } from "~/components/ReactionBar";
+import { useFeedbackComposer } from "~/components/feedback/FeedbackComposer";
 import { useDialog } from "~/components/ui/dialog";
 
 export const meta: Route.MetaFunction = () => [{ title: "Feedback · DALI OS" }];
@@ -69,12 +71,20 @@ export async function action({ request }: Route.ActionArgs) {
       break;
     }
     case "react": {
+      const limited = checkRateLimit(request, { max: 60, windowMs: 60_000 }, `feedback-react:${user.sub}`);
+      if (limited) return fail(429);
       const emoji = text("emoji");
-      if (!isFeedbackEmoji(emoji)) return fail(400);
       if (!(await postExists(postId))) return fail(404);
       const mine = { postId, userId: user.sub, emoji };
       const { count } = await prisma.feedbackReaction.deleteMany({ where: mine });
       if (count === 0) {
+        const used = await prisma.feedbackReaction.findMany({
+          where: { postId },
+          select: { emoji: true },
+          distinct: ["emoji"],
+        });
+        const refused = await reactionRefusal(emoji, used.map((r) => r.emoji));
+        if (refused) return fail(refused);
         await prisma.feedbackReaction.upsert({
           where: { postId_userId_emoji: mine },
           create: mine,
@@ -90,6 +100,13 @@ export async function action({ request }: Route.ActionArgs) {
       if (!body || body.length > FEEDBACK_COMMENT_MAX) return fail(400);
       if (!(await postExists(postId))) return fail(404);
       await prisma.feedbackComment.create({ data: { postId, authorId: user.sub, body } });
+      await notifyMentions({
+        recipientUserIds: await resolveHandles(extractHandlesFromText(body)),
+        actorId: user.sub,
+        link: "/feedback",
+        copyKey: "mention.comment",
+        preview: body,
+      });
       break;
     }
     case "delete":
@@ -134,69 +151,8 @@ function Byline({ name, at, pagePath }: { name: string; at: string; pagePath?: s
 }
 
 function Reactions({ post }: { post: Post }) {
-  const fetcher = useFetcher();
-  return (
-    <ReactionBar
-      reactions={post.reactions}
-      palette={FEEDBACK_EMOJI}
-      onReact={(emoji) =>
-        fetcher.submit({ intent: "react", postId: post.id, emoji }, { method: "post" })
-      }
-    />
-  );
-}
-
-function Comments({ post }: { post: Post }) {
-  const fetcher = useFetcher();
-  const remove = useFetcher();
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const { formClass } = useOsChrome();
-  const sent = fetcher.state === "idle" && fetcher.data != null;
-  useEffect(() => {
-    if (sent) formRef.current?.reset();
-  }, [sent, fetcher.data]);
-
-  return (
-    <div className="flex flex-col gap-3 border-t border-os-container pt-4">
-      {post.comments.map((c) => (
-        <div key={c.id} className="group flex items-start gap-2.5">
-          <Avatar size="sm" name={c.author.name} photoUrl={c.author.photoUrl} />
-          <div className="min-w-0 flex-1">
-            <Byline name={c.author.name} at={c.createdAt} />
-            <p className="whitespace-pre-wrap break-words text-sm text-foreground">{c.body}</p>
-          </div>
-          {c.canDelete && (
-            <IconButton
-              label="Delete comment"
-              icon={Trash2}
-              tone="destructive"
-              className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100 touch:opacity-100"
-              onClick={() =>
-                remove.submit({ intent: "delete-comment", commentId: c.id }, { method: "post" })
-              }
-            />
-          )}
-        </div>
-      ))}
-      <fetcher.Form ref={formRef} method="post" className={cn(formClass, "flex items-center gap-2")}>
-        <input type="hidden" name="intent" value="comment" />
-        <input type="hidden" name="postId" value={post.id} />
-        <input
-          type="text"
-          name="body"
-          required
-          maxLength={FEEDBACK_COMMENT_MAX}
-          placeholder="Add a comment"
-          aria-label="Add a comment"
-          autoComplete="off"
-          className="min-w-0 flex-1"
-        />
-        <Button type="submit" variant="secondary" disabled={fetcher.state !== "idle"}>
-          Send
-        </Button>
-      </fetcher.Form>
-    </div>
-  );
+  const { reactions, react } = useReactionToggle(post.id, post.reactions);
+  return <ReactionBar reactions={reactions} palette={FEEDBACK_EMOJI} onReact={react} />;
 }
 
 function PostCard({ post }: { post: Post }) {
@@ -243,7 +199,7 @@ function PostCard({ post }: { post: Post }) {
         </a>
       )}
       <Reactions post={post} />
-      <Comments post={post} />
+      <PostComments postId={post.id} comments={post.comments} maxLength={FEEDBACK_COMMENT_MAX} />
     </article>
   );
 }
@@ -257,13 +213,21 @@ export default function FeedbackFeed() {
     fetchByIds: fetchPostsByIds,
   });
   const { pageTitle, bodyText } = useOsChrome();
+  // No page path: "on /feedback" says nothing about what the request is for.
+  const composer = useFeedbackComposer({ pagePath: "", fetcherKey: "os-feedback-create-page" });
   return (
     <div className="flex flex-col gap-6">
-      <h1 className={pageTitle}>Feature requests</h1>
+      <div className="flex max-w-3xl items-center justify-between gap-4">
+        <h1 className={pageTitle}>Feature requests</h1>
+        <Button onClick={composer.compose} className="shrink-0">
+          <Plus className="h-4 w-4" aria-hidden />
+          New request
+        </Button>
+      </div>
       {posts.length === 0 ? (
         <p className={cn(bodyText, "flex items-center gap-2")}>
           <MessageCircle className="h-4 w-4" aria-hidden />
-          No requests yet. Use the feedback button in the corner to add one.
+          No requests yet.
         </p>
       ) : (
         <div className="flex max-w-3xl flex-col gap-4">
@@ -273,6 +237,7 @@ export default function FeedbackFeed() {
           <LoadMore {...pager} />
         </div>
       )}
+      {composer.ui}
     </div>
   );
 }

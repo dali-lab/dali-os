@@ -1,7 +1,7 @@
 // Backstop for recordings whose client never confirmed Stop cleanly, or
 // whose transcription job never called back. See specs/meeting-transcription
-// .md "Jobs" (a)(b)(c)(d). Idempotent: a row only matches one of the four
-// queries at a time, and each branch's own update moves it out of that
+// .md "Jobs" (a)(b)(c)(d), plus (e) deleting audio past its retention. Idempotent:
+// a row only matches one of the five queries at a time, and each branch's own update moves it out of that
 // query for the next tick.
 
 import { prisma } from "~/lib/db.server";
@@ -19,6 +19,7 @@ const LAST_CHUNK_STALE_MS = 10 * 60_000;
 const PROCESSING_TIMEOUT_MS = 30 * 60_000;
 const PENDING_UNCLAIMED_MS = 30 * 60_000;
 const STOPPED_UNFINISHED_MS = 30 * 60_000;
+const AUDIO_RETENTION_MS = 24 * 60 * 60_000;
 
 export async function runRecordingFinalizer({ now }: JobContext): Promise<JobResult> {
   // (a) A client that stopped uploading without confirming Stop (closed tab,
@@ -61,21 +62,27 @@ export async function runRecordingFinalizer({ now }: JobContext): Promise<JobRes
     }
   }
 
-  // (c) Created but never claimed by a browser tab or the desktop app.
+  // (c) Pending too long. With no audio, nothing ever claimed it. With audio,
+  // a Continue never got going, so keep what was recorded. updatedAt, because
+  // Continue puts an old row back in Pending.
   const unclaimed = await prisma.meetingRecording.findMany({
-    where: { status: "Pending", createdAt: { lt: new Date(now.getTime() - PENDING_UNCLAIMED_MS) } },
+    where: { status: "Pending", updatedAt: { lt: new Date(now.getTime() - PENDING_UNCLAIMED_MS) } },
     take: TAKE,
   });
   for (const rec of unclaimed) {
-    await deletePrefix(rec.id);
-    await prisma.meetingRecording.delete({ where: { id: rec.id } });
+    if (rec.channels.length > 0) {
+      await startProcessing(rec);
+    } else {
+      await deletePrefix(rec.id);
+      await prisma.meetingRecording.delete({ where: { id: rec.id } });
+    }
   }
 
   // (d) The owner pressed Stop but never came back to press Transcribe or
   // Discard. Same disposition as (a): transcribe what's there, or finalize
   // empty.
   const stoppedUnfinished = await prisma.meetingRecording.findMany({
-    where: { status: "Stopped", updatedAt: { lt: new Date(now.getTime() - STOPPED_UNFINISHED_MS) } },
+    where: { status: "Stopped", finalizedAt: null, updatedAt: { lt: new Date(now.getTime() - STOPPED_UNFINISHED_MS) } },
     take: TAKE,
   });
   for (const rec of stoppedUnfinished) {
@@ -86,8 +93,18 @@ export async function runRecordingFinalizer({ now }: JobContext): Promise<JobRes
     }
   }
 
+  // (e) Finished recordings keep their audio for a day, then lose it.
+  const expiredAudio = await prisma.meetingRecording.findMany({
+    where: { finalizedAt: { lt: new Date(now.getTime() - AUDIO_RETENTION_MS) }, audioDeletedAt: null },
+    take: TAKE,
+  });
+  for (const rec of expiredAudio) {
+    await deletePrefix(rec.id);
+    await prisma.meetingRecording.update({ where: { id: rec.id }, data: { audioDeletedAt: now } });
+  }
+
   return {
-    items: abandoned.length + stuck.length + unclaimed.length + stoppedUnfinished.length,
-    note: `abandoned=${abandoned.length} stuck=${stuck.length} unclaimed=${unclaimed.length} stoppedUnfinished=${stoppedUnfinished.length}`,
+    items: abandoned.length + stuck.length + unclaimed.length + stoppedUnfinished.length + expiredAudio.length,
+    note: `abandoned=${abandoned.length} stuck=${stuck.length} unclaimed=${unclaimed.length} stoppedUnfinished=${stoppedUnfinished.length} expiredAudio=${expiredAudio.length}`,
   };
 }

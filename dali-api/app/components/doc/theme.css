@@ -82,6 +82,15 @@
   }
 }
 
+/* Side panel: the column is narrow, and the panel's own padding gives the side
+ * menu room beyond the gutter. Keep in step with the title's padding in
+ * DocumentEditor.tsx. */
+@media (min-width: 640px) {
+  .doc-canvas--panel .dali-doc:not(.dali-doc--compact) .bn-editor {
+    padding-inline: 28px;
+  }
+}
+
 /* Inline links. With no rule of our own they fell to the browser's default link
  * colour, and the shell declares `color-scheme: dark`, so that default is the
  * dark-mode pale blue-violet — on the light paper it is the one colour on the
@@ -158,6 +167,10 @@
 
 /* Bookmark/embed link card (schema/embed.tsx). Neutral card that reads in both
  * light and dark via BlockNote's border/background CSS vars (with fallbacks). */
+.bn-editor .node-task {
+  width: 100%;
+}
+
 .dali-embed {
   display: flex;
   align-items: center;
@@ -218,6 +231,11 @@
   border-radius: 6px;
   border: 1px solid var(--bn-colors-border, rgba(120, 120, 120, 0.25));
   cursor: pointer;
+}
+.dali-video-embed {
+  aspect-ratio: 16 / 9;
+  border: 0;
+  display: block;
 }
 .dali-embed--empty {
   opacity: 0.6;
@@ -441,16 +459,16 @@ html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
   font-size: 30px;
 }
 
-/* v2 design (html[data-v2], the desktop-tabs flag): the doc body states the
- * app's 15px scale itself — the library default is a px value the root rem
- * change can't reach — and small text drops a step from there. */
-html[data-v2] .dali-doc .bn-editor {
+/* The doc body states the app's 15px scale itself — the library default is a
+ * px value the root rem change can't reach — and small text drops a step from
+ * there. `html:root` keeps the (0,1,1) specificity these rules need. */
+html:root .dali-doc .bn-editor {
   font-size: 15px;
 }
-html[data-v2] .doc-canvas--small .dali-doc .bn-editor {
+html:root .doc-canvas--small .dali-doc .bn-editor {
   font-size: 13px;
 }
-html[data-v2] .doc-canvas--small .doc-title {
+html:root .doc-canvas--small .doc-title {
   font-size: 20px;
 }
 

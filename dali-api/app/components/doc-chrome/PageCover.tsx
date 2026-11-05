@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Trash2 } from "lucide-react";
 import { uploadEditorImage, IMAGE_UPLOAD_ACCEPT } from "~/components/doc";
+import { useToast } from "~/components/ui/toast";
 
 // Notion-style page cover banner. Surfaces Page.coverImageUrl; uploads reuse
 // the editor's S3 image pipeline (stable /api/upload/raw src). Persistence is
@@ -21,13 +22,14 @@ export function PageCover({
   const editable = canEdit ?? editing ?? false;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  const toast = useToast();
 
   async function onPicked(files: FileList | null) {
     const file = files?.[0];
     if (!file) return;
     setUploading(true);
     try {
-      const src = await uploadEditorImage(file);
+      const src = await uploadEditorImage(file, toast.info);
       onChange(src);
     } catch (err) {
       console.error("[cover] upload failed", err);

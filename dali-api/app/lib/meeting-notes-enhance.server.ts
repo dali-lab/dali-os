@@ -16,6 +16,7 @@ import { verifyEnhancePlan, type VerifyRosterUser } from "~/lib/meeting-notes-ve
 import { fullName } from "~/lib/display";
 import { currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
+import { claimAiQuota } from "~/lib/ai-quota.server";
 import type { MeetingRecording, Prisma } from "~/generated/prisma/client";
 import {
   actionItemMatchesBlock,
@@ -24,10 +25,12 @@ import {
   type SnapshotBlock,
   type StoredEnhanceNotes,
 } from "~/components/meeting-recorder/enhance-plan";
-import { AI_DAILY_MAX, secondsToUtcMidnight, TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
+import { TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
 import { z } from "zod";
 
 const MAX_BLOCKS = 500;
+// The SDK refuses non-streaming requests above ~21k max tokens.
+export const ENHANCE_MAX_TOKENS = 16_000;
 
 export const EnhanceBlocksSchema = z
   .array(z.object({ id: z.string().min(1), type: z.string().min(1), text: z.string(), parentId: z.string().min(1).optional() }))
@@ -99,6 +102,110 @@ Rules, all mandatory:
 - Every "expand" or "insert" must cite the transcript second(s) (the line's leading [mm:ss], converted to seconds) it drew from in "cites".
 - List action items separately in "actionItems": [{"text","ownerName": the name as spoken in the transcript — a first name alone is fine, and when "You"/the Recorder says "I'll ..." or similar use the Recorder's own name — NEVER substitute a different roster member's name and never invent one (omit ownerName if no owner is stated), "due": an ISO date resolved against the given occurrence date (omit if none), "dueSource": the phrase it came from, e.g. "by Friday" (omit if no due), "cites":[seconds,...]}].
 - Respond with ONLY a single JSON object shaped exactly like: {"blocks":[...],"actionItems":[...]}. No markdown code fences, no commentary, no preamble.`;
+
+const INTERVIEW_SYSTEM_PROMPT = `You enhance a hiring interview's notes for a university software lab. You are given the note's current blocks (each with an id), a raw speech-to-text transcript with timestamps, the interviewers' names, and the interview date.
+The interview usually happens around one laptop, so speakers are labelled "Speaker 1", "Speaker 2", and so on, or by name where someone renamed them. One speaker is the candidate; the rest are interviewers. Tell them apart from context: interviewers ask the questions and the candidate answers them. Speaker labels from speech-to-text can drift, so judge each line by what is said, not only by its label. Write about the candidate as "the candidate" if you need to, never by speaker number.
+
+How to enhance:
+The interviewers' notes are the skeleton. Each line they typed is usually a question they asked or a topic they wanted covered, in shorthand. Your job is to turn each line into a complete record of what the candidate said about it, using the transcript. Treat every line as a question: "what did the candidate say about this?" Then answer it in the note.
+
+Nested blocks are listed indented under their parent with "under <parent id>"; they are author lines too, and get the same treatment.
+
+For each existing block, in order, emit exactly one op:
+- {"id","op":"expand","text","cites":[seconds,...]} is the default whenever the transcript covered the line's topic. "text" starts with the interviewer's own words, unchanged, then continues with the candidate's answer: what they built or did, their specific role, the tools and approaches they named, numbers and outcomes, and how they reasoned about tradeoffs. Fix only obvious typos in the interviewer's words; never reword or drop them.
+- {"id","op":"keep"} only when the transcript never touches the line, or the line already says everything the transcript does. Never emit an expand that repeats the interviewer's text, rewords it without new facts, or only attaches cites; that is a keep.
+
+Examples of expanding an interviewer line (transcript facts in brackets):
+- "proj w/ team" [I led the backend for a four-person class project, a Flask API for a campus food app, and we split work by feature] becomes "proj w/ team: led the backend of a four-person class project, a Flask API for a campus food app; the team split work by feature."
+- "why DALI" [I want to build for real clients, and a friend in the lab told me about the design process] becomes "why DALI: wants to build for real clients; heard about the design process from a friend in the lab."
+Bad expand (do not do this): "why DALI" becomes "why DALI: candidate explained their motivation." or "why DALI: gave a strong answer."
+
+When an answer has more detail than fits in one sentence, keep the expand to one sentence and add the rest as {"op":"insert","under":"<that block's id>","type":"bulletListItem",...} bullets nested under it, one fact per bullet, at most four. Read the line's existing nested blocks first and never repeat what they already say.
+An interviewer heading is a section cue: under it, insert bulletListItem bullets for what the candidate said on that topic, after the last block in that section.
+If the interview spent real time on a question the interviewers didn't note, add it after their notes: one "heading" insert naming the question or topic plus a few bullets of the candidate's answer.
+If the candidate asked questions of their own, add a "Candidate's questions" heading with a bullet per question and the short answer given, unless the notes already have such a section.
+Skip small talk, logistics, and the interviewers' explanations of DALI unless the candidate responded to them.
+If there are no note blocks at all: write them from the transcript, one heading per question or topic in the order discussed, each with a few bullets, starting with "after": null.
+
+Writing style: short, concrete, scannable. Lead with the fact, not "The candidate said" or "They mentioned". Use the candidate's own words for names, technologies, and numbers. No filler, no hedging, no em dashes.
+
+Record, never judge. These notes feed a hiring decision that the interviewers make on a rubric, so:
+- Never rate, score, or rank the candidate, and never write conclusions like "strong answer", "good fit", "impressive", "weak", or "lacked depth".
+- Never describe tone, confidence, nervousness, enthusiasm, accent, appearance, or personality.
+- Never mention age, gender, race, ethnicity, nationality, religion, disability, family, health, or anything else about who the candidate is rather than what they said about their work and experience.
+- If the candidate didn't answer something or said they didn't know, state that plainly as a fact, without commentary.
+
+Rules, all mandatory:
+- Every existing block appears exactly once, in order, as a keep or expand.
+- Inserts are {"op":"insert","after":"<id or null>" or "under":"<id>","type":"heading"|"paragraph"|"bulletListItem","text","cites":[seconds,...],"added":true}. "after" names the existing block id it follows; "under" nests it as the last child of that block.
+- Never insert "Action items", "Decisions", "Next steps", or "Recommendation" headings, or checklist items.
+- A heading the transcript doesn't support gets no inserts under it and stays "keep". Never invent content to fill it.
+- Never invent names, dates, numbers, or facts the transcript doesn't support. Every word you add must come from the transcript.
+- Every "expand" or "insert" must cite the transcript second(s) (the line's leading [mm:ss], converted to seconds) it drew from in "cites".
+- "actionItems" is always an empty array.
+- Respond with ONLY a single JSON object shaped exactly like: {"blocks":[...],"actionItems":[]}. No markdown code fences, no commentary, no preamble.`;
+
+const INTERVIEW_NOTES_ROOM = /^interview:([^:]+):notes$/;
+
+export function interviewIdFromDocumentName(documentName: string): string | null {
+  return INTERVIEW_NOTES_ROOM.exec(documentName)?.[1] ?? null;
+}
+
+type PromptSetup = { system: string; prompt: string; roster: VerifyRosterUser[] };
+
+async function meetingPromptSetup(
+  rec: Pick<MeetingRecording, "scheduledMeetingId" | "occurrenceStart" | "createdAt" | "userId">,
+  blocks: SnapshotBlock[],
+  untouchedTemplate: boolean,
+  transcript: string,
+): Promise<PromptSetup> {
+  const { roster, meetingTypeLabel, occurrenceDate, recorderName } = await resolveMeetingEnhanceContext(rec);
+  const prompt = [
+    `Meeting type: ${meetingTypeLabel}`,
+    `Occurrence date: ${occurrenceDate}`,
+    `Recorder (speaks as "You"): ${recorderName}`,
+    `Note was an untouched template: ${untouchedTemplate ? "yes" : "no"}`,
+    roster.length ? `Roster:\n${roster.map((r) => r.name).join("\n")}` : "Roster: (none on record)",
+    blocks.length ? `Current note blocks:\n${blocksForPrompt(blocks)}` : "Current note blocks: (none, the author took no notes)",
+    `Transcript:\n${transcript}`,
+  ].join("\n\n");
+  return { system: SYSTEM_PROMPT, prompt, roster };
+}
+
+async function interviewPromptSetup(
+  interviewId: string,
+  rec: Pick<MeetingRecording, "createdAt">,
+  blocks: SnapshotBlock[],
+  transcript: string,
+): Promise<PromptSetup> {
+  const interview = await prisma.interview.findUnique({
+    where: { id: interviewId },
+    select: {
+      startTime: true,
+      assignments: {
+        where: { status: "Active" },
+        select: {
+          cycleInterviewer: {
+            select: { user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } } },
+          },
+        },
+      },
+    },
+  });
+  const roster = (interview?.assignments ?? []).map(({ cycleInterviewer: { user } }) => ({
+    userId: user.id,
+    name: fullName(user) || user.daliEmail || user.id,
+  }));
+  const prompt = [
+    `Interview date: ${(interview?.startTime ?? rec.createdAt).toISOString().slice(0, 10)}`,
+    roster.length ? `Interviewers:\n${roster.map((r) => r.name).join("\n")}` : "Interviewers: (none on record)",
+    blocks.length
+      ? `Current note blocks:\n${blocksForPrompt(blocks)}`
+      : "Current note blocks: (none, the interviewers took no notes)",
+    `Transcript:\n${transcript}`,
+  ].join("\n\n");
+  return { system: INTERVIEW_SYSTEM_PROMPT, prompt, roster };
+}
 
 export function blocksForPrompt(blocks: readonly SnapshotBlock[]): string {
   const depth = new Map<string, number>();
@@ -209,7 +316,15 @@ export async function resolveMeetingEnhanceContext(
 export async function generateAndVerifyEnhancePlan(params: {
   rec: Pick<
     MeetingRecording,
-    "id" | "userId" | "scheduledMeetingId" | "occurrenceStart" | "createdAt" | "lines" | "speakers" | "notes"
+    | "id"
+    | "userId"
+    | "documentName"
+    | "scheduledMeetingId"
+    | "occurrenceStart"
+    | "createdAt"
+    | "lines"
+    | "speakers"
+    | "notes"
   >;
   blocks: SnapshotBlock[];
   untouchedTemplate: boolean;
@@ -221,43 +336,25 @@ export async function generateAndVerifyEnhancePlan(params: {
   if (!lines.length) return { ok: false, status: 400, error: "Nothing was transcribed." };
   const transcript = (await formatRecordingTranscript(rec)).slice(-TRANSCRIPT_MAX);
 
-  const { roster, meetingTypeLabel, occurrenceDate, recorderName } = await resolveMeetingEnhanceContext(rec);
+  const interviewId = interviewIdFromDocumentName(rec.documentName);
+  const { system, prompt, roster } = interviewId
+    ? await interviewPromptSetup(interviewId, rec, blocks, transcript)
+    : await meetingPromptSetup(rec, blocks, untouchedTemplate, transcript);
 
-  const day = new Date().toISOString().slice(0, 10);
-  const usage = await prisma.aiUsage.upsert({
-    where: { userId_day: { userId, day } },
-    create: { userId, day, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-  if (usage.count > AI_DAILY_MAX) {
-    return {
-      ok: false,
-      status: 429,
-      error: `You've reached today's AI limit (${AI_DAILY_MAX} requests). It resets at midnight UTC.`,
-      retryAfterSeconds: secondsToUtcMidnight(),
-    };
-  }
+  const quota = await claimAiQuota(userId);
+  if (!quota.ok) return { status: 429, ...quota };
+  const { day } = quota;
 
-  const prompt = [
-    `Meeting type: ${meetingTypeLabel}`,
-    `Occurrence date: ${occurrenceDate}`,
-    `Recorder (speaks as "You"): ${recorderName}`,
-    `Note was an untouched template: ${untouchedTemplate ? "yes" : "no"}`,
-    roster.length ? `Roster:\n${roster.map((r) => r.name).join("\n")}` : "Roster: (none on record)",
-    blocks.length ? `Current note blocks:\n${blocksForPrompt(blocks)}` : "Current note blocks: (none, the author took no notes)",
-    `Transcript:\n${transcript}`,
-  ].join("\n\n");
+  if (!resolveAiProvider()) return { ok: false, aiEnabled: false };
 
-  const provider = resolveAiProvider();
-  if (!provider) return { ok: false, aiEnabled: false };
-
-  let raw: { text: string; inputTokens: number; outputTokens: number } | null;
+  let raw: Awaited<ReturnType<typeof generateShortText>>;
   try {
     raw = await generateShortText({
-      system: SYSTEM_PROMPT,
+      task: "enhance",
+      system,
       prompt,
-      maxTokens: 8000,
-      model: provider.sonnetModel,
+      maxTokens: ENHANCE_MAX_TOKENS,
+      accept: (r) => parseEnhancePlan(r.text) !== null,
     });
   } catch (err) {
     if (err instanceof Anthropic.APIError) {
@@ -267,18 +364,13 @@ export async function generateAndVerifyEnhancePlan(params: {
   }
   if (!raw) return { ok: false, aiEnabled: false };
   await recordTokenUsage(userId, day, raw.inputTokens, raw.outputTokens);
+  if (raw.stopReason === "max_tokens") {
+    return { ok: false, status: 422, error: "This meeting is too long to enhance in one pass." };
+  }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripJsonFences(raw.text));
-  } catch {
-    return { ok: false, status: 502, error: "AI response could not be parsed" };
-  }
-  const result = EnhancePlanSchema.safeParse(parsed);
-  if (!result.success) {
-    return { ok: false, status: 502, error: "AI response could not be parsed" };
-  }
-  const modelPlan: EnhancePlan = result.data;
+  const parsedPlan = parseEnhancePlan(raw.text);
+  if (!parsedPlan) return { ok: false, status: 502, error: "AI response could not be parsed" };
+  const modelPlan: EnhancePlan = interviewId ? { ...parsedPlan, actionItems: [] } : parsedPlan;
 
   const { plan, verified } = verifyEnhancePlan(modelPlan, lines, roster, rec.userId, blocks);
   const actionItems = await carryOverTaskIds(plan.actionItems, rec);
@@ -294,6 +386,15 @@ export async function generateAndVerifyEnhancePlan(params: {
   await prisma.meetingRecording.update({ where: { id: rec.id }, data: { notes: notes as Prisma.InputJsonValue } });
 
   return { ok: true, notes };
+}
+
+function parseEnhancePlan(text: string): EnhancePlan | null {
+  try {
+    const result = EnhancePlanSchema.safeParse(JSON.parse(stripJsonFences(text)));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

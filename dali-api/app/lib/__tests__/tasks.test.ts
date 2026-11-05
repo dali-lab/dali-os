@@ -13,6 +13,7 @@ import {
   parseOffsetCursor,
   countOpenTasks,
   resolveNotificationState,
+  isSelfClearingFormTodo,
   listNotificationHistory,
   type NotifLiveness,
 } from "~/lib/tasks";
@@ -520,5 +521,17 @@ describe("project tasks", () => {
     expect(await projectTasksTotal("user-1", { items: [{ id: "a" }], nextCursor: null } as any)).toBe(1);
     expect(mockPrisma.task.count).not.toHaveBeenCalled();
     expect(await projectTasksTotal("user-1", { items: [{ id: "a" }], nextCursor: "50" } as any)).toBe(75);
+  });
+});
+
+describe("isSelfClearingFormTodo", () => {
+  const form = { published: true, publicToken: "tok" };
+
+  it("is true for a form to-do announcement", () => {
+    expect(isSelfClearingFormTodo({ kind: "SystemAnnouncement", isTodo: true, form })).toBe(true);
+  });
+
+  it("ignores a form reminder, which is a plain dismissible notification", () => {
+    expect(isSelfClearingFormTodo({ kind: "General", isTodo: false, form })).toBe(false);
   });
 });

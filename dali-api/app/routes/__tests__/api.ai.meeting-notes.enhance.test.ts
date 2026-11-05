@@ -4,8 +4,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   formatRecordingTranscript: vi.fn().mockResolvedValue("[00:01] You: we shipped it"),
@@ -20,7 +18,6 @@ vi.mock("~/lib/ai.server", async (importOriginal) => ({
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canRecordInto, storedLines } from "~/lib/meeting-recording.server";
 import { generateShortText, resolveAiProvider } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
@@ -54,7 +51,6 @@ beforeEach(() => {
     user: { sub: "u1", email: "u@dali.edu", type: "member" },
     sessionId: "s1",
   } as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(canRecordInto).mockResolvedValue(true);
   vi.mocked(storedLines).mockReturnValue(LINES as never);
   vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
@@ -66,7 +62,7 @@ beforeEach(() => {
   } as never);
   vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.meetingRecording.update).mockResolvedValue({} as never);
-  vi.mocked(resolveAiProvider).mockReturnValue({ sonnetModel: "claude-sonnet-5" } as never);
+  vi.mocked(resolveAiProvider).mockReturnValue({ name: "anthropic" } as never);
   vi.mocked(generateShortText).mockResolvedValue({ text: VALID_MODEL_JSON, inputTokens: 10, outputTokens: 5 });
 });
 
@@ -91,11 +87,6 @@ describe("POST /api/ai/meeting-notes/enhance", () => {
     vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue(null);
     expect((await run(BODY)).status).toBe(404);
     expect(generateShortText).not.toHaveBeenCalled();
-  });
-
-  it("is off without the flag", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    expect((await run(BODY)).status).toBe(403);
   });
 
   it("needs write access to the document", async () => {
@@ -130,6 +121,45 @@ describe("POST /api/ai/meeting-notes/enhance", () => {
       outputTokens: 1,
     });
     expect((await run(BODY)).status).toBe(502);
+  });
+
+  it("asks the model for up to 16k output tokens", async () => {
+    await run(BODY);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(16_000);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].task).toBe("enhance");
+  });
+
+  it("lets a provider fall back unless its reply parses as a plan", async () => {
+    await run(BODY);
+    const { accept } = vi.mocked(generateShortText).mock.calls[0]![0];
+    const r = (text: string) => ({ text, inputTokens: 1, outputTokens: 1 });
+    expect(accept?.(r(VALID_MODEL_JSON))).toBe(true);
+    expect(accept?.(r("```json\n" + VALID_MODEL_JSON + "\n```"))).toBe(true);
+    expect(accept?.(r(VALID_MODEL_JSON.slice(0, 20)))).toBe(false);
+    expect(accept?.(r(JSON.stringify({ blocks: "nope" })))).toBe(false);
+  });
+
+  it("422s with a clear error when the model hits the output cap, and stores nothing", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({
+      text: VALID_MODEL_JSON.slice(0, 20),
+      inputTokens: 1,
+      outputTokens: 16_000,
+      stopReason: "max_tokens",
+    });
+    const res = await run(BODY);
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe("This meeting is too long to enhance in one pass.");
+    expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
+  });
+
+  it("parses normally when the model stops on its own", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({
+      text: VALID_MODEL_JSON,
+      inputTokens: 1,
+      outputTokens: 1,
+      stopReason: "end_turn",
+    });
+    expect((await run(BODY)).status).toBe(200);
   });
 
   it("strips markdown code fences before parsing", async () => {
@@ -225,5 +255,96 @@ describe("carrying a taskId forward across a re-run", () => {
     const res = await run(BODY);
     const json = await res.json();
     expect(json.plan.actionItems[0].taskId).toBeUndefined();
+  });
+});
+
+describe("interview notes", () => {
+  const INTERVIEW_DOC = "interview:iv1:notes";
+  const WITH_ACTION_ITEM = JSON.stringify({
+    blocks: [{ id: "b1", op: "keep" }],
+    actionItems: [{ text: "Send the take-home", cites: [1] }],
+  });
+
+  beforeEach(() => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: INTERVIEW_DOC,
+      scheduledMeetingId: null,
+      occurrenceStart: null,
+      createdAt: new Date("2026-10-10T00:00:00Z"),
+    } as never);
+    vi.mocked(prisma.interview.findUnique).mockResolvedValue({
+      startTime: new Date("2026-11-03T15:00:00Z"),
+      assignments: [
+        { cycleInterviewer: { user: { id: "u1", firstName: "Ada", lastName: "Lovelace", daliEmail: "ada@example.edu" } } },
+        { cycleInterviewer: { user: { id: "u2", firstName: "Alan", lastName: "Turing", daliEmail: "alan@example.edu" } } },
+      ],
+    } as never);
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+  });
+
+  it("uses the interview prompt with the active interviewers and interview date", async () => {
+    expect((await run(BODY)).status).toBe(200);
+    const { system, prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(system).toMatch(/^You enhance a hiring interview's notes/);
+    expect(system).toContain("Record, never judge.");
+    expect(prompt).toContain("Interview date: 2026-11-03");
+    expect(prompt).toContain("Interviewers:\nAda Lovelace\nAlan Turing");
+    expect(prompt).not.toContain("Recorder");
+    expect(prompt).not.toContain("Meeting type");
+    expect(vi.mocked(prisma.interview.findUnique).mock.calls[0]![0]).toMatchObject({
+      where: { id: "iv1" },
+      select: { assignments: { where: { status: "Active" } } },
+    });
+  });
+
+  it("drops action items the model returns anyway", async () => {
+    vi.mocked(generateShortText).mockResolvedValue({ text: WITH_ACTION_ITEM, inputTokens: 1, outputTokens: 1 });
+    const res = await run(BODY);
+    expect(res.status).toBe(200);
+    expect((await res.json()).plan.actionItems).toEqual([]);
+    const stored = vi.mocked(prisma.meetingRecording.update).mock.calls[0]![0].data.notes as {
+      plan: { actionItems: unknown[] };
+    };
+    expect(stored.plan.actionItems).toEqual([]);
+  });
+
+  it("falls back to the recording date and no interviewers when the interview is gone", async () => {
+    vi.mocked(prisma.interview.findUnique).mockResolvedValue(null);
+    expect((await run(BODY)).status).toBe(200);
+    const { prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(prompt).toContain("Interview date: 2026-10-10");
+    expect(prompt).toContain("Interviewers: (none on record)");
+  });
+
+  it("treats the interview's recommendation room as a regular note", async () => {
+    vi.mocked(prisma.meetingRecording.findUnique).mockResolvedValue({
+      id: "rec1",
+      userId: "u1",
+      documentName: "interview:iv1:recommendation",
+      scheduledMeetingId: null,
+      occurrenceStart: null,
+      createdAt: new Date("2026-10-10T00:00:00Z"),
+    } as never);
+    await run(BODY);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].system).toMatch(/^You enhance meeting notes/);
+  });
+});
+
+describe("regular meeting notes", () => {
+  it("keep the meeting prompt and action items", async () => {
+    vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
+    vi.mocked(generateShortText).mockResolvedValue({
+      text: JSON.stringify({ blocks: [{ id: "b1", op: "keep" }], actionItems: [{ text: "Ship it", cites: [1] }] }),
+      inputTokens: 1,
+      outputTokens: 1,
+    });
+    const res = await run(BODY);
+    const { system, prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(system).toMatch(/^You enhance meeting notes/);
+    expect(prompt).toContain('Recorder (speaks as "You")');
+    expect((await res.json()).plan.actionItems).toHaveLength(1);
+    expect(prisma.interview.findUnique).not.toHaveBeenCalled();
   });
 });

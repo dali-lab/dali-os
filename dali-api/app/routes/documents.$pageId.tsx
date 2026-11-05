@@ -3,7 +3,6 @@ import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "
 import QRCode from "qrcode";
 import { pageOpenHref } from "~/lib/page-href";
 import { Shapes, Trash2, UserCheck } from "lucide-react";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { Modal, ModalHeader } from "~/components/Modal";
@@ -20,8 +19,8 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
-import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { isProjectMember } from "~/lib/roles";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
@@ -52,7 +51,7 @@ import { nextNoteTargets } from "~/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
 import { itemTrail, noteTabLabel, noteTrail, tabWeekLabels, withLeafEmoji } from "~/components/notebooks/note-trail";
 import { termWindows } from "~/lib/terms";
-import { APPLICATION_TZ } from "~/lib/timezone";
+import { APPLICATION_TZ, getZonedYMD } from "~/lib/timezone";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
 import { walletTokensConfigured } from "~/lib/wallet-token";
@@ -274,13 +273,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     );
     notebook = {
       ...notebookShell(page.parent, { canEdit: canEditNotebook, manager: notebookManager && !trashed, nextNotes }),
-      tabs: visible.map((t, i) => ({
-        id: t.id,
-        label: noteTabLabel(t),
-        meeting: mixed ? (t.meetingNote?.title ?? null) : null,
-        isNote: t.meetingNoteId !== null,
-        week: weeks[i] ?? null,
-      })),
+      tabs: visible.map((t, i) => {
+        let date: string | null = null;
+        if (t.meetingOccurrenceStart) {
+          const ymd = getZonedYMD(t.meetingOccurrenceStart, APPLICATION_TZ);
+          date = `${ymd.year}-${String(ymd.month).padStart(2, "0")}-${String(ymd.day).padStart(2, "0")}`;
+        }
+        return {
+          id: t.id,
+          label: noteTabLabel(t),
+          meeting: mixed ? (t.meetingNote?.title ?? null) : null,
+          isNote: t.meetingNoteId !== null,
+          week: weeks[i] ?? null,
+          date,
+        };
+      }),
     };
   }
 
@@ -348,15 +355,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       // watched it live (specs/meeting-transcription.md; fix for a finished
       // recording being invisible to anyone without the local backup).
       latestRecordingFor(pageDocName(page.id)),
-      getUserRoles(auth.user.sub, request),
+      readOnlyRoles(auth.user.sub, request),
     ]);
 
   // The Direction I shell's page bar shows a plain document's place in the
   // Drive; notes already carry theirs in noteLocation.
-  const docLocation =
-    !noteLocation && (await isFeatureEnabled("desktop-tabs", auth.user.sub, roles, request))
-      ? await pageItemLocation(page, auth.user.sub, request)
-      : null;
+  const docLocation = !noteLocation ? await pageItemLocation(page, auth.user.sub, request) : null;
 
   let attendance:
     | {
@@ -719,11 +723,10 @@ function DocumentPage() {
   const [searchParams] = useSearchParams();
   const focusCommentId = searchParams.get("comment") ?? undefined;
   const focusMentionUserId = searchParams.get("mention") ?? undefined;
-  const recordingEnabled = useFeatureFlag("ai-meeting-notes");
   const recordingAllowed = attendance?.recordingPolicy !== "Disabled";
   const hasTranscriptParam = Boolean(searchParams.get("transcript"));
   const [recordAutoOpen, setRecordAutoOpen] = useState(searchParams.get("record") === "1");
-  const recordingMountEnabled = recordingEnabled && recordingAllowed && (canEdit || hasTranscriptParam);
+  const recordingMountEnabled = recordingAllowed && (canEdit || hasTranscriptParam);
   // DocumentEditor is the only component that measures the ≥ 1150px check;
   // the top-bar Record button needs it too, to answer a live recording with
   // a Popover instead of toggling the rail on a narrow canvas
@@ -787,8 +790,8 @@ function DocumentPage() {
             subtitle={subtitle}
             canEdit={canEdit}
             canComment={canComment}
+            isCore={isCore}
             canManageAccess={canManageAccess}
-            favorited={favorited}
             workspaceType={workspaceType}
             workspaceId={workspaceId}
             tags={tags}
@@ -848,13 +851,12 @@ function DocumentPage() {
               {rec && <EnhanceBlockActions rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
               {rec && <ActionItemChips rec={rec} getRoot={() => editorRef.current?.domElement ?? null} />}
               {trashed && <TrashedNoteBanner pageId={pageId} canRestore={canRestore} />}
-              {attendance && recordingEnabled && recordingAllowed && (
+              {attendance && recordingAllowed && (
                 <RecordPromptBanner
                   meetingId={attendance.meetingId}
                   occurrenceStart={attendance.occurrenceStart}
                   windowEndIso={attendance.windowEndIso}
                   canEdit={canEdit}
-                  recordingEnabled={recordingEnabled}
                   recordPromptEnabled={attendance.recordPromptEnabled}
                   hasActiveRecording={hasActiveRecording}
                   canDontSuggest={attendance.canDontSuggestRecording}

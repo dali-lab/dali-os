@@ -12,13 +12,10 @@ export function CodeInput({
   name,
   invalid,
   disabled,
-  v2 = false,
 }: {
   name: string;
   invalid: boolean;
   disabled: boolean;
-  /** The dali.os auth dress (desktop-tabs flag). */
-  v2?: boolean;
 }) {
   const [value, setValue] = useState("");
   const refs = useRef<Array<HTMLInputElement | null>>([]);
@@ -89,19 +86,12 @@ export function CodeInput({
           style={{ animationDelay: `${80 + i * 35}ms` }}
           className={cn(
             "w-full min-w-0 text-center outline-none transition-[border-color,box-shadow,background-color] duration-150 motion-safe:animate-auth-digit",
-            v2
-              ? cn(
-                  "h-12 rounded-lg border bg-os-well font-os text-lg font-bold tabular-nums text-foreground focus:border-os-accent focus:ring-2 focus:ring-os-accent/25 disabled:opacity-60",
-                  invalid
-                    ? "border-[color-mix(in_srgb,var(--os-danger-ink)_60%,transparent)]"
-                    : value[i]
-                      ? "border-os-container-hi"
-                      : "border-os-container hover:border-os-container-hi",
-                )
-              : cn(
-                  "h-14 rounded-xl border-2 bg-card font-heading text-2xl font-bold text-dark-blue focus:ring-2 focus:ring-accent-coral disabled:bg-brand-tint",
-                  invalid ? "border-red-400" : value[i] ? "border-dark-blue" : "border-border hover:border-dark-blue/40",
-                ),
+            "h-12 rounded-lg border bg-os-well font-os text-lg font-bold tabular-nums text-foreground focus:border-os-accent focus:ring-2 focus:ring-os-accent/25 disabled:opacity-60",
+            invalid
+              ? "border-[color-mix(in_srgb,var(--os-danger-ink)_60%,transparent)]"
+              : value[i]
+                ? "border-os-container-hi"
+                : "border-os-container hover:border-os-container-hi",
           )}
         />
       ))}

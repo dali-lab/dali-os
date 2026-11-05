@@ -28,7 +28,7 @@ export interface DomainAppData {
   /** Effective close (own override or the cycle's), ISO. */
   closeDate?: string | null;
   submittedAt?: string | null;
-  interview: { id: string; startTime: string; endTime: string; status: string; room?: { name: string } | null; zoomJoinUrl?: string | null; videoUrl?: string | null } | null;
+  interview: { id: string; startTime: string; endTime: string; status: string; rescheduleBy: string; cancelBy: string; room?: { name: string } | null; zoomJoinUrl?: string | null; videoUrl?: string | null } | null;
 }
 
 interface TimeSlot {
@@ -539,6 +539,10 @@ export function InterviewScheduledView({
   const [rescheduleError, setRescheduleError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const dialog = useDialog();
+  const now = new Date();
+  const started = new Date(interview.startTime) <= now;
+  const canReschedule = new Date(interview.rescheduleBy) > now;
+  const canCancel = new Date(interview.cancelBy) > now;
 
   useEffect(() => {
     if (!rescheduling) return;
@@ -720,19 +724,35 @@ export function InterviewScheduledView({
 
       <p className="text-sm text-muted-foreground mb-4">A calendar invite has been sent to your Dartmouth email.</p>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition">
-          Reschedule
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleCancel()}
-          disabled={cancelling}
-          className="text-sm font-semibold text-muted-foreground hover:text-destructive transition disabled:opacity-50"
-        >
-          {cancelling ? "Cancelling…" : "Cancel Interview"}
-        </button>
-      </div>
+      {!canReschedule && (
+        <p className="text-sm text-muted-foreground mb-4">
+          {started ? "Your interview time has passed. If you missed it, " : "It's too close to your interview to change the time here. If you need a new time, "}
+          <a href={`mailto:${APPLICATIONS_FROM_EMAIL}`} className="underline text-foreground hover:text-os-accent">
+            email {APPLICATIONS_FROM_EMAIL}
+          </a>
+          .
+        </p>
+      )}
+
+      {(canReschedule || canCancel) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {canReschedule && (
+            <button onClick={() => setRescheduling(true)} className="px-5 py-2.5 rounded-full border-2 border-border text-sm font-semibold text-muted-foreground hover:border-os-accent hover:text-os-accent transition">
+              Reschedule
+            </button>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => void handleCancel()}
+              disabled={cancelling}
+              className="text-sm font-semibold text-muted-foreground hover:text-destructive transition disabled:opacity-50"
+            >
+              {cancelling ? "Cancelling…" : "Cancel Interview"}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -3,11 +3,11 @@ import { prisma } from "~/lib/db.server";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { syncInterviewMeetAttendees } from "~/hiring/lib/interview-meet";
-import { zonedWallTimeUtc } from "~/lib/timezone";
+import { getZonedParts, getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
 import { interviewerCalendars, type InterviewerCalendar } from "~/hiring/lib/interview-availability.server";
 import { createRoomBooking, cancelRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
 import type { SlotBlocker } from "~/hiring/lib/slot-blockers";
-import { isSingleDomainPool } from "~/hiring/lib/interviewer-pool";
+import { isSingleDomainPool, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
 
 // New-assignee notifications fire outside transactions (best-effort), so
 // scheduling.ts hands callers the cycleInterviewerIds that need notifying
@@ -93,16 +93,23 @@ export async function explainAvailableSlots(
   applicantDomainIds: string[],
   mode: "in-person" | "online" = "online",
 ): Promise<SlotAvailability> {
+  return availabilityFor(await loadSlotContext(cycleId, roundId, mode), applicantDomainIds);
+}
+
+/** Everything about a round that doesn't depend on the applicant's domains. A caller checking several domains loads this once. */
+export async function loadSlotContext(
+  cycleId: string,
+  roundId: string,
+  mode: "in-person" | "online",
+) {
   const config = await prisma.interviewConfig.findUnique({
     where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId: roundId } },
     include: { rooms: { where: { archivedAt: null }, select: { id: true, name: true } } },
   });
-  if (!config) return { slots: [], blocker: "no-config", bookingNoticeHours: 0 };
+  if (!config) return { blocked: { slots: [], blocker: "no-config", bookingNoticeHours: 0 } as SlotAvailability };
   const { slotDurationMinutes, bufferMinutes, dayStartHour, dayEndHour, interviewStartDate, interviewEndDate, timezone, bookingNoticeHours } = config;
-  const blocked = (blocker: SlotBlocker): SlotAvailability => ({ slots: [], blocker, bookingNoticeHours });
+  const blocked = (blocker: SlotBlocker) => ({ blocked: { slots: [], blocker, bookingNoticeHours } as SlotAvailability });
   if (mode === "in-person" && config.rooms.length === 0) return blocked("no-rooms");
-
-  const earliestBookable = new Date(Date.now() + bookingNoticeHours * 60 * 60_000);
 
   const candidates = generateCandidateSlots(
     interviewStartDate,
@@ -127,9 +134,6 @@ export async function explainAvailableSlots(
   });
   if (interviewers.length === 0) return blocked("no-interviewers");
   if (new Set(interviewers.map((r) => r.userId)).size < 2) return blocked("one-interviewer");
-  const isInDomain = (r: { domainId: string }) => applicantDomainIds.includes(r.domainId);
-  if (!interviewers.some(isInDomain)) return blocked("no-in-domain-interviewer");
-  const singleDomainPool = isSingleDomainPool(interviewers, applicantDomainIds);
 
   // Booked intervals are aggregated per member, not per row, so a conflict on
   // one of a cross-listed member's rows blocks the other row too.
@@ -157,6 +161,24 @@ export async function explainAvailableSlots(
       roomSchedules.set(room.id, items.filter((item) => blockedBy(item, writer)));
     }
   }
+
+  return { mode, rooms: config.rooms, bookingNoticeHours, slotDurationMinutes, candidates, interviewers, interviewerChecks, roomSchedules };
+}
+
+/** What applicants in these domains are offered, from `loadSlotContext`'s result. */
+export function availabilityFor(
+  context: Awaited<ReturnType<typeof loadSlotContext>>,
+  applicantDomainIds: string[],
+): SlotAvailability {
+  if (context.blocked) return context.blocked;
+  const { mode, rooms, bookingNoticeHours, slotDurationMinutes, candidates, interviewers, interviewerChecks, roomSchedules } = context;
+  const blocked = (blocker: SlotBlocker): SlotAvailability => ({ slots: [], blocker, bookingNoticeHours });
+
+  const isInDomain = (r: { domainId: string }) => applicantDomainIds.includes(r.domainId);
+  if (!interviewers.some(isInDomain)) return blocked("no-in-domain-interviewer");
+  const singleDomainPool = isSingleDomainPool(interviewers, applicantDomainIds);
+
+  const earliestBookable = new Date(Date.now() + bookingNoticeHours * 60 * 60_000);
 
   const results: AvailableSlot[] = [];
   let inDomainEverFree = false;
@@ -194,7 +216,7 @@ export async function explainAvailableSlots(
     pairEverFree = true;
 
     if (mode === "in-person") {
-      const anyRoomFree = config.rooms.some((room) => {
+      const anyRoomFree = rooms.some((room) => {
         const items = roomSchedules.get(room.id) ?? [];
         return !items.some((item) => item.start < slotEnd && item.end > slotStart);
       });
@@ -245,12 +267,21 @@ export async function assignInterviewers(
   if (tx) {
     return assignInterviewersWithTx(tx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars);
   }
-  return prisma.$transaction(
-    (innerTx) =>
-      assignInterviewersWithTx(innerTx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars),
-    { isolationLevel: "Serializable" },
-  );
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await prisma.$transaction(
+        (innerTx) =>
+          assignInterviewersWithTx(innerTx, cycleId, roundId, domainApplicationId, applicantDomainIds, slotStart, slotEnd, mode, calendars),
+        { isolationLevel: "Serializable" },
+      );
+    } catch (err) {
+      // A serializable snapshot taken before the FOR UPDATE wait can abort; rerun it fresh.
+      if ((err as { code?: string })?.code !== "P2034" || attempt >= SERIALIZABLE_ATTEMPTS) throw err;
+    }
+  }
 }
+
+const SERIALIZABLE_ATTEMPTS = 4;
 
 /** Every interviewer on a round's roster, read from their DALI OS calendars. */
 async function cycleInterviewerCalendars(cycleId: string, roundId: string): Promise<Map<string, InterviewerCalendar>> {
@@ -424,6 +455,59 @@ async function assignInterviewersWithTx(
   }
 
   return interview;
+}
+
+// ─── availabilityByInterview ─────────────────────────────────────────────────
+//
+// For each interview, where each member of its round's roster stands at that
+// time, by userId. Backs the leads' Reassign list.
+
+export async function availabilityByInterview(
+  cycleId: string,
+  roundId: string,
+  interviews: { id: string; startTime: Date; endTime: Date }[],
+): Promise<Map<string, Record<string, InterviewerAvailability>>> {
+  const [config, roster] = await Promise.all([
+    prisma.interviewConfig.findUnique({
+      where: { applicationCycleId_interviewRoundId: { applicationCycleId: cycleId, interviewRoundId: roundId } },
+    }),
+    prisma.cycleInterviewer.findMany({
+      where: { applicationCycleId: cycleId, interviewRoundId: roundId },
+      include: {
+        interviewAssignments: {
+          where: ACTIVE_ASSIGNMENT_WITH_ACTIVE_INTERVIEW,
+          include: { interview: true },
+        },
+      },
+    }),
+  ]);
+  if (!config) return new Map();
+
+  const { memberIntervals } = buildMemberAggregations(roster, config.bufferMinutes);
+  const calendars = await interviewerCalendars(roster.map((r) => r.userId), config);
+  const checks: InterviewerFreeCheck[] = roster.map((r) => ({
+    cycleInterviewerId: r.id,
+    userId: r.userId,
+    domainId: r.domainId,
+    availability: calendars.get(r.userId)?.available ?? [],
+    bookedIntervals: memberIntervals.get(r.userId) ?? [],
+  }));
+
+  const availabilityAt = (check: InterviewerFreeCheck, start: Date, end: Date): InterviewerAvailability => {
+    if (check.bookedIntervals.some((b) => b.start < end && b.end > start)) return "booked";
+    if (isInterviewerFree(check, start, end)) return "free";
+    const calendar = calendars.get(check.userId);
+    return calendar?.hasCalendar || calendar?.hasWorkingHours ? "busy" : "no-calendar";
+  };
+
+  return new Map(
+    interviews.map((interview) => [
+      interview.id,
+      Object.fromEntries(
+        checks.map((c) => [c.userId, availabilityAt(c, interview.startTime, interview.endTime)]),
+      ),
+    ]),
+  );
 }
 
 // ─── reassignInterviewer ─────────────────────────────────────────────────────
@@ -638,32 +722,40 @@ export function generateCandidateSlots(
   timezone: string,
 ): Date[] {
   const slots: Date[] = [];
-  const current = new Date(startDate);
+  const first = getZonedYMD(startDate, timezone);
+  const last = getZonedYMD(endDate, timezone);
+  const lastDay = Date.UTC(last.year, last.month - 1, last.day);
+  const now = new Date();
 
-  while (current <= endDate) {
-    const dayStr = current.toLocaleDateString("en-CA", { timeZone: timezone }); // YYYY-MM-DD
+  // Walks calendar dates, not instants: a local midnight stepped by whole UTC
+  // days drifts onto the previous date after a clock change.
+  for (
+    let date = new Date(Date.UTC(first.year, first.month - 1, first.day));
+    date.getTime() <= lastDay;
+    date = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1))
+  ) {
+    const dayOfWeek = date.getUTCDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+    const y = date.getUTCFullYear();
+    const mo = date.getUTCMonth() + 1;
+    const d = date.getUTCDate();
 
     for (let hour = dayStartHour; hour < dayEndHour; hour++) {
       for (let minute = 0; minute < 60; minute += 15) {
-        const [y, mo, d] = dayStr.split("-").map(Number);
         const slotStart = zonedWallTimeUtc(y, mo, d, hour, minute, timezone);
         const slotEnd = new Date(slotStart.getTime() + slotDurationMinutes * 60_000);
 
-        const slotEndLocal = new Date(slotEnd.toLocaleString("en-US", { timeZone: timezone }));
-        if (slotEndLocal.getHours() > dayEndHour || (slotEndLocal.getHours() === dayEndHour && slotEndLocal.getMinutes() > 0)) {
+        const slotEndLocal = getZonedParts(slotEnd, timezone);
+        if (slotEndLocal.hour > dayEndHour || (slotEndLocal.hour === dayEndHour && slotEndLocal.minute > 0)) {
           continue;
         }
 
-        const dayOfWeek = new Date(slotStart.toLocaleString("en-US", { timeZone: timezone })).getDay();
-        if (dayOfWeek === 0 || dayOfWeek === 6) continue;
-
-        if (slotStart > new Date()) {
+        if (slotStart > now) {
           slots.push(slotStart);
         }
       }
     }
-
-    current.setDate(current.getDate() + 1);
   }
 
   return slots;

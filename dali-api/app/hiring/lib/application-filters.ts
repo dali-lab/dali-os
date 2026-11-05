@@ -1,6 +1,7 @@
-// Client-side filter state for the Applications list. Lives apart from the
-// route module so it can be validated in tests without loading the loader's
-// Prisma client.
+import { readSortParams, writeSortParams } from "~/lib/sort-params";
+
+// Client-side view state for the Applications list. Lives apart from the
+// route module so it can be tested without loading the loader's Prisma client.
 
 export const ENGAGEMENT_FILTERS = [
   { key: "returning", label: "Returning applicant" },
@@ -20,42 +21,7 @@ export type ApplicationFilters = {
   // selected event matches (OR): "came to either help hour" is the question.
   eventIds: string[];
   pieIncludesInProgress: boolean;
-  query: string;
 };
-
-export const EMPTY_FILTERS: ApplicationFilters = {
-  domainIds: [],
-  statuses: [],
-  stage: null,
-  engagement: [],
-  eventIds: [],
-  pieIncludesInProgress: false,
-  query: "",
-};
-
-const isStringList = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.every((x) => typeof x === "string");
-
-export function isApplicationFilters(v: unknown): v is ApplicationFilters {
-  if (!v || typeof v !== "object") return false;
-  const f = v as Record<string, unknown>;
-  return (
-    isStringList(f.domainIds) &&
-    isStringList(f.statuses) &&
-    (f.stage === null || typeof f.stage === "string") &&
-    isStringList(f.engagement) &&
-    f.engagement.every((k) => ENGAGEMENT_FILTERS.some((e) => e.key === k)) &&
-    // Missing on filters persisted before events existed; normalised to [] by
-    // withFilterDefaults rather than throwing the whole stored state away.
-    (f.eventIds === undefined || isStringList(f.eventIds)) &&
-    typeof f.pieIncludesInProgress === "boolean" &&
-    typeof f.query === "string"
-  );
-}
-
-export function withFilterDefaults(f: ApplicationFilters): ApplicationFilters {
-  return { ...f, eventIds: f.eventIds ?? [] };
-}
 
 export const APPLICATION_SORT_COLUMNS = [
   { key: "name", label: "Applicant" },
@@ -89,13 +55,58 @@ export function visibleSort(
   return columns.some((c) => c.key === sort.key) ? sort : DEFAULT_SORT;
 }
 
-export function isApplicationSort(v: unknown): v is ApplicationSort {
-  if (!v || typeof v !== "object") return false;
-  const s = v as Record<string, unknown>;
-  return (
-    APPLICATION_SORT_COLUMNS.some((c) => c.key === s.key) &&
-    (s.dir === "asc" || s.dir === "desc")
-  );
+// The list view lives in the URL: repeated params for multi-picks, `pie=all`
+// for the in-progress toggle, and the sort via sort-params.
+const LIST_PARAMS = {
+  domainIds: "domain",
+  statuses: "status",
+  engagement: "engagement",
+  eventIds: "event",
+} as const;
+
+// Ids and stages picked from one cycle's data; they mean nothing in another.
+export const CYCLE_SCOPED_PARAMS = ["domain", "status", "stage", "engagement", "event"];
+
+const isEngagement = (v: string): v is EngagementFilter =>
+  ENGAGEMENT_FILTERS.some((e) => e.key === v);
+const SORT_KEYS = APPLICATION_SORT_COLUMNS.map((c) => c.key);
+
+export function filtersFromParams(params: URLSearchParams): ApplicationFilters {
+  return {
+    domainIds: params.getAll(LIST_PARAMS.domainIds),
+    statuses: params.getAll(LIST_PARAMS.statuses),
+    stage: params.get("stage") || null,
+    engagement: params.getAll(LIST_PARAMS.engagement).filter(isEngagement),
+    eventIds: params.getAll(LIST_PARAMS.eventIds),
+    pieIncludesInProgress: params.get("pie") === "all",
+  };
+}
+
+export function sortFromParams(params: URLSearchParams): ApplicationSort {
+  return readSortParams(params, SORT_KEYS, DEFAULT_SORT);
+}
+
+export function writeViewParams(
+  prev: URLSearchParams,
+  next: Partial<ApplicationFilters> & { sort?: ApplicationSort },
+): URLSearchParams {
+  let params = new URLSearchParams(prev);
+  for (const field of Object.keys(LIST_PARAMS) as (keyof typeof LIST_PARAMS)[]) {
+    const values = next[field];
+    if (values === undefined) continue;
+    params.delete(LIST_PARAMS[field]);
+    for (const v of values) params.append(LIST_PARAMS[field], v);
+  }
+  if (next.stage !== undefined) {
+    if (next.stage) params.set("stage", next.stage);
+    else params.delete("stage");
+  }
+  if (next.pieIncludesInProgress !== undefined) {
+    if (next.pieIncludesInProgress) params.set("pie", "all");
+    else params.delete("pie");
+  }
+  if (next.sort) params = writeSortParams(params, next.sort, DEFAULT_SORT);
+  return params;
 }
 
 type SortableApplication = {

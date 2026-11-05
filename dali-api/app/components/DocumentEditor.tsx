@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -16,12 +17,12 @@ import { DocCommentsPanel, useDocThreadCount } from "~/components/doc/comments";
 import { pageDocName } from "~/collab/roomName";
 import { PresenceProvider } from "./collab/PresenceProvider";
 import { PresenceBar } from "./collab/PresenceBar";
-import { isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
+import { FIND_SHORTCUT, isFindShortcut, isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
-import { TagPicker, type DocTag } from "./TagPicker";
-import { FavoriteStar } from "./FavoriteStar";
+import { TagPicker, canManageDocTags, type DocTag } from "./TagPicker";
 import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
-import { useFeatureFlag } from "~/components/FeatureFlags";
+import { useTaskProjects } from "~/components/doc/task/task-api";
+import { taskBlockConfig } from "~/components/doc/task/task-composer-state";
 import { PageIconPicker } from "./doc-chrome/PageIconPicker";
 import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
@@ -73,8 +74,6 @@ const DOWNLOAD_FORMATS = [
   { format: "md", label: "Markdown" },
 ] as const;
 
-export const FIND_SHORTCUT = "⌘F";
-
 type HistoryEditor = { surface: { current: HTMLElement | null }; panel: boolean };
 const historyEditors = new Set<HistoryEditor>();
 
@@ -99,6 +98,7 @@ export function DocumentEditor({
   subtitle,
   canEdit,
   canComment,
+  isCore = false,
   tags,
   allTags,
   iconEmoji: initialIcon = null,
@@ -111,7 +111,6 @@ export function DocumentEditor({
   focusMentionUserId,
   aiEnabled = false,
   canManageAccess = false,
-  favorited: initialFavorited = false,
   workspaceType,
   workspaceId = null,
   onEditorReady,
@@ -132,6 +131,7 @@ export function DocumentEditor({
   subtitle?: string | null;
   canEdit: boolean;
   canComment: boolean;
+  isCore?: boolean;
   tags: DocTag[];
   allTags: DocTag[];
   iconEmoji?: string | null;
@@ -153,8 +153,6 @@ export function DocumentEditor({
   // the doc's manager on any workspace type — creator/Core on a lab doc, project
   // staff, the note owner, an instructor, or a Full-access grantee.
   canManageAccess?: boolean;
-  // Whether the viewer has this page in their own Favorites (home panel).
-  favorited?: boolean;
   // Workspace the page lives in — drives the Share dialog's per-workspace copy
   // (lab-access toggle, base-access line) and the "Move to…" picker's current
   // location.
@@ -195,7 +193,6 @@ export function DocumentEditor({
   // entries go to the surrounding header instead (page-bar-slot).
   chrome?: "inline" | "pageBar" | "panel";
 }) {
-  const favoritesBar = useFeatureFlag("favorites-bar");
   const pageBarSlot = usePageBarSlot();
   const inPageBar = chrome === "pageBar" && pageBarSlot;
   const inPanel = chrome === "panel" && pageBarSlot;
@@ -221,6 +218,9 @@ export function DocumentEditor({
   const [tocOpen, setTocOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const toast = useToast();
+  const docProjectId = workspaceType === "Project" ? workspaceId : null;
+  const taskProjects = useTaskProjects(canEdit);
+  const taskBlock = useMemo(() => taskBlockConfig(taskProjects, docProjectId), [taskProjects, docProjectId]);
   const moveDestinations = useDriveDestinations({
     enabled: moveOpen,
     movingIds: [pageId],
@@ -294,8 +294,7 @@ export function DocumentEditor({
   const docSurfaceRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const onKeyDown = (e: globalThis.KeyboardEvent) => {
-      const isMod = e.metaKey || e.ctrlKey;
-      if (!isMod || e.key !== "f") return;
+      if (!isFindShortcut(e)) return;
       // Only intercept when the focused element is inside the doc surface.
       const surface = docSurfaceRef.current;
       if (!surface) return;
@@ -566,8 +565,7 @@ export function DocumentEditor({
         // Refresh the tab title elsewhere on the page.
         revalidator.revalidate();
         // Tell the page around this editor (a project hub with the doc in its
-        // side panel, or in a sibling iframe tab via the shell's relay). At
-        // the top level window.parent is this window.
+        // side panel). At the top level window.parent is this window.
         if (typeof window !== "undefined") {
           window.parent.postMessage(
             { type: "dali:documentTitleChanged", pageId, title: trimmed },
@@ -582,7 +580,7 @@ export function DocumentEditor({
 
   // FIX 5: Set the h1 DOM text once on mount and when pageId changes (cross-tab
   // navigation). When NOT focused, also accept external title updates (e.g. from
-  // postMessage relay). Never write to the DOM while the user is typing — doing
+  // message). Never write to the DOM while the user is typing — doing
   // so resets the caret to offset 0.
   useLayoutEffect(() => {
     if (titleRef.current) {
@@ -878,8 +876,8 @@ export function DocumentEditor({
     <div
       ref={topBarRef}
       className={cn(
-        "flex items-center gap-1 text-[13px] text-os-muted",
-        inPanel && "justify-end",
+        "flex items-center gap-1 text-[13px]",
+        inPanel ? "justify-end text-os-grey" : "text-os-muted",
       )}
     >
       {statusNodes}
@@ -993,7 +991,7 @@ export function DocumentEditor({
               : "w-full max-w-[1400px]"
         }${typo.font !== "default" ? ` doc-canvas--${typo.font}` : ""}${
           typo.smallText ? " doc-canvas--small" : ""
-        }${typo.nestingGuides ? " doc-canvas--guides" : ""}`}
+        }${typo.nestingGuides ? " doc-canvas--guides" : ""}${inPanel ? " doc-canvas--panel" : ""}`}
       >
         {belowTabs && (
           <div className="sticky z-10 overflow-hidden rounded-t-xl bg-card" style={{ top: stickyTop }}>
@@ -1016,11 +1014,10 @@ export function DocumentEditor({
 
         <div className={inPanel ? "px-1 pt-6 pb-6" : "px-4 sm:px-7 pt-12 pb-6"}>
           {/* Hover-reveal row: icon · Add icon · Add cover · Add tag
-              The header/title block adds an extra pl-[54px] to match the body
-              text, which sits at the 54px outer padding PLUS BlockNote's own
-              54px .bn-editor drag-handle gutter (padding-inline:54px in core
-              CSS). Together that puts both at 108px from the card edge (±0). */}
-          <div className="group/header relative mb-1 pl-3 sm:pl-[54px]">
+              The header/title block's left padding matches the .bn-editor
+              drag-handle gutter (54px in BlockNote's core CSS, 28px in the
+              side panel) so title and body text share a left edge. */}
+          <div className={cn("group/header relative mb-1 pl-3", inPanel ? "sm:pl-[28px]" : "sm:pl-[54px]")}>
             {/* FIX 6: One source of truth for the icon + cover affordances.
                 - When icon IS set: show it always (not in the hover row).
                 - When icon is NOT set: show "Add icon" only in the hover row.
@@ -1090,14 +1087,6 @@ export function DocumentEditor({
                   {initialTitle}
                 </h1>
               )}
-              {/* Favorite: personal, unlike the ⋯ "Pin" which moves the
-                  document for everyone. Anyone who can read the page can
-                  bookmark it. Same first-line box as the icon. */}
-              {!favoritesBar && !pageBarSlot && (
-                <div className="flex h-[50px] shrink-0 items-center print:hidden">
-                  <FavoriteStar pageId={pageId} favorited={initialFavorited} iconClassName="h-5 w-5" />
-                </div>
-              )}
             </div>
 
             {/* Tags row — just below the title */}
@@ -1107,8 +1096,8 @@ export function DocumentEditor({
                 targetId={pageId}
                 applied={tags}
                 allTags={allTags}
-                canEdit={canEdit}
-                canCreate={canEdit}
+                canEdit={canManageDocTags(isCore, workspaceType)}
+                canCreate={canManageDocTags(isCore, workspaceType)}
                 onChange={() => revalidator.revalidate()}
               />
             </div>
@@ -1179,6 +1168,8 @@ export function DocumentEditor({
                 features="document"
                 editable={canEdit}
                 onEditorReady={(ed) => { editorRef.current = ed; liveEditorRef.current = ed; onEditorReady?.(ed); }}
+                taskBlock={taskBlock}
+                docProjectId={docProjectId}
                 collab={{
                   documentName,
                   token: collabToken,
@@ -1264,6 +1255,7 @@ export function DocumentEditor({
   const versionHistory = historyOpen && (
     <VersionHistoryPanel
       documentName={documentName}
+      canEdit={canEdit}
       onClose={() => setHistoryOpen(false)}
     />
   );

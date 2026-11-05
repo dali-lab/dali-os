@@ -8,6 +8,8 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit } from "~/components/ui/dialog";
+import { DocEditor } from "~/components/doc";
+import { isEmptyBlocks } from "~/lib/blocks";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 
 type Usage = { kind: string; label: string; href?: string | null };
@@ -129,6 +131,12 @@ function toLocalInputValue(iso: string | null): string {
 function FormSettingsFields({
   formId,
   oneResponsePerMember,
+  allowResponseEdit,
+  remindBeforeClose,
+  confirmationMessage,
+  sendReceipt,
+  audience,
+  hasEmailQuestion,
   notifyOnSubmission,
   listed,
   opensAt,
@@ -136,6 +144,12 @@ function FormSettingsFields({
 }: {
   formId: string;
   oneResponsePerMember: boolean;
+  allowResponseEdit: boolean;
+  remindBeforeClose: boolean;
+  confirmationMessage: unknown;
+  sendReceipt: boolean;
+  audience: string;
+  hasEmailQuestion: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   opensAt: string | null;
@@ -153,6 +167,17 @@ function FormSettingsFields({
   const oneResponse = pendingSettings
     ? pending!.get("oneResponsePerMember") === "true"
     : oneResponsePerMember;
+  const canEdit = pendingSettings
+    ? pending!.get("allowResponseEdit") === "true"
+    : allowResponseEdit;
+  const receipt = pendingSettings
+    ? pending!.get("sendReceipt") === "true"
+    : sendReceipt;
+  const isPublic = audience === "Public";
+  const hasCloseTime = closesAt !== null;
+  const remind = pendingSettings
+    ? pending!.get("remindBeforeClose") === "true"
+    : remindBeforeClose;
   const notify = pendingSettings
     ? pending!.get("notifyOnSubmission") === "true"
     : notifyOnSubmission;
@@ -184,17 +209,36 @@ function FormSettingsFields({
     nextOneResponse: boolean,
     nextNotify: boolean,
     nextListed: boolean,
+    nextCanEdit: boolean = canEdit,
+    nextRemind: boolean = remind,
+    extra: Record<string, string> = {},
   ) {
     fetcher.submit(
       {
         intent: "update-form-settings",
         id: formId,
         oneResponsePerMember: String(nextOneResponse),
+        allowResponseEdit: String(nextOneResponse && nextCanEdit),
+        remindBeforeClose: String(nextRemind),
         notifyOnSubmission: String(nextNotify),
         listed: String(nextListed),
+        sendReceipt: String(receipt),
+        ...extra,
       },
       { method: "post" },
     );
+  }
+
+  // Saved on the button, not per keystroke. Cleared content sends "" to clear.
+  const [draftMessage, setDraftMessage] = useState<unknown>(confirmationMessage);
+  const [messageDirty, setMessageDirty] = useState(false);
+
+  function saveMessage() {
+    const cleared = isEmptyBlocks(draftMessage);
+    saveSettings(oneResponse, notify, isListed, canEdit, remind, {
+      confirmationMessage: cleared ? "" : JSON.stringify(draftMessage),
+    });
+    setMessageDirty(false);
   }
 
   return (
@@ -206,6 +250,15 @@ function FormSettingsFields({
           onChange={(e) => saveSettings(e.target.checked, notify, isListed)}
           label="One response per member"
         />
+        {oneResponse && (
+          <div className="pl-[26px]">
+            <Checkbox
+              checked={canEdit}
+              onChange={(e) => saveSettings(oneResponse, notify, isListed, e.target.checked)}
+              label="Let people edit their response"
+            />
+          </div>
+        )}
         <Checkbox
           checked={notify}
           onChange={(e) => saveSettings(oneResponse, e.target.checked, isListed)}
@@ -238,6 +291,19 @@ function FormSettingsFields({
             ariaLabel="Closes at"
           />
         </label>
+        <div className="flex flex-col gap-1">
+          <Checkbox
+            checked={remind && hasCloseTime}
+            disabled={!hasCloseTime}
+            onChange={(e) =>
+              saveSettings(oneResponse, notify, isListed, canEdit, e.target.checked)
+            }
+            label="Remind people 1 day before closing"
+          />
+          {!hasCloseTime && (
+            <p className="pl-[26px] text-xs text-os-grey">Set a close time to use this.</p>
+          )}
+        </div>
         {windowDirty && (
           <Button
             variant="secondary"
@@ -247,6 +313,56 @@ function FormSettingsFields({
           >
             Save schedule
           </Button>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <span className={heading}>After submitting</span>
+        <div className="flex flex-col gap-1">
+          <span id="confirmation-message-label" className="text-xs text-muted-foreground">
+            Confirmation message
+          </span>
+          <DocEditor
+            features="notes"
+            density="compact"
+            initialContent={Array.isArray(confirmationMessage) ? confirmationMessage : undefined}
+            onChange={(blocks) => {
+              setDraftMessage(blocks);
+              setMessageDirty(true);
+            }}
+            placeholder="Shown after someone submits. Add links or next steps."
+            className="rounded-os-item bg-os-well py-2"
+          />
+          {messageDirty && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={saveMessage}
+              className="self-start mt-1"
+            >
+              Save message
+            </Button>
+          )}
+        </div>
+        <Checkbox
+          checked={receipt}
+          onChange={(e) =>
+            saveSettings(oneResponse, notify, isListed, canEdit, remind, {
+              sendReceipt: String(e.target.checked),
+            })
+          }
+          label="Email people a copy of their response"
+        />
+        {isPublic && (
+          <p
+            className={`pl-[26px] text-xs ${
+              hasEmailQuestion ? "text-os-grey" : "text-amber-700"
+            }`}
+          >
+            {hasEmailQuestion
+              ? "People who aren't signed in get a short note at the first Email question, without their answers."
+              : "Add an Email question so people who aren't signed in get a copy too."}
+          </p>
         )}
       </div>
 

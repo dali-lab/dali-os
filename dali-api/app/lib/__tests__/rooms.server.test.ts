@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => {
   const prisma = {
     room: { findUnique: vi.fn(), findMany: vi.fn() },
     roomBooking: { findMany: vi.fn(), create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), deleteMany: vi.fn(), updateMany: vi.fn() },
-    roomBookingException: { upsert: vi.fn(), deleteMany: vi.fn() },
+    roomBookingException: { upsert: vi.fn(), deleteMany: vi.fn(), createMany: vi.fn() },
     scheduledMeeting: { findMany: vi.fn() },
     $executeRaw: vi.fn(),
     $transaction: vi.fn(),
@@ -13,15 +13,16 @@ vi.mock("~/lib/db.server", () => {
   return { prisma };
 });
 vi.mock("~/lib/scheduled-meeting", () => ({ CHECK_IN_GRACE_MIN: 15 }));
-vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { currentTerm } from "~/lib/roles";
+import { currentTerm, isCore } from "~/lib/roles";
 import { APPLICATION_TZ, getZonedParts, zonedWallTimeUtc } from "~/lib/timezone";
 import {
   assertMeetingRoomsFree,
   bookRoomsForEvent,
   cancelRoomBooking,
+  cancelRoomBookingAsMember,
   claimEventRoomBookings,
   createRoomBooking,
   currentEvent,
@@ -30,7 +31,11 @@ import {
   releaseEventRoomBookings,
   retimeEventRoomBookings,
   truncateEventRoomBookings,
+  listBookableRooms,
+  listRoomAvailability,
   listRoomConflicts,
+  parseWindow,
+  parseWindowParams,
   serializeScheduleItem,
   blockedBy,
   withoutCoveredHolds,
@@ -47,7 +52,11 @@ const m = prisma as unknown as {
     deleteMany: ReturnType<typeof vi.fn>;
     updateMany: ReturnType<typeof vi.fn>;
   };
-  roomBookingException: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
+  roomBookingException: {
+    upsert: ReturnType<typeof vi.fn>;
+    deleteMany: ReturnType<typeof vi.fn>;
+    createMany: ReturnType<typeof vi.fn>;
+  };
   $transaction: ReturnType<typeof vi.fn>;
   scheduledMeeting: { findMany: ReturnType<typeof vi.fn> };
 };
@@ -209,6 +218,8 @@ describe("currentEvent", () => {
     isEvent: true,
     source: null,
     cycleId: null,
+    bookedTitle: null,
+    fromCalendarEvent: false,
   };
   it("opens 15 minutes early and closes 15 minutes late", () => {
     expect(currentEvent([event], at("2026-09-24T17:46:00Z").getTime())).toBe(event);
@@ -308,6 +319,14 @@ describe("createRoomBooking", () => {
 });
 
 describe("hiring bookings (Interview / InterviewHold)", () => {
+  // Bookings can't start in the past, and these use fixed dates.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-01T12:00:00Z") });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const cycle = "cyc1";
   const hold = () =>
     booking({
@@ -456,6 +475,18 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
     expect(items.map((i) => i.id)).toEqual(["b1"]);
   });
 
+  it("hands clients the title as typed, without the fallback, and whether an event holds it", async () => {
+    m.roomBooking.findMany.mockResolvedValue([
+      booking({ id: "untitled", sourceEventId: "evt1" }),
+      booking({ id: "named", title: "  Design crit " }),
+    ]);
+    const items = await getRoomSchedule("r1", at("2026-09-21T00:00:00Z"), at("2026-09-22T00:00:00Z"));
+    expect(items.map(serializeScheduleItem)).toMatchObject([
+      { id: "untitled", title: "Ada's booking", bookedTitle: null, fromCalendarEvent: true },
+      { id: "named", title: "Design crit", bookedTitle: "Design crit", fromCalendarEvent: false },
+    ]);
+  });
+
   it("serializes the source so clients can tell hiring bookings apart", () => {
     const [item] = [hold()].map((b) => ({
       kind: "booking" as const,
@@ -469,6 +500,8 @@ describe("hiring bookings (Interview / InterviewHold)", () => {
       isEvent: false,
       source: "InterviewHold" as const,
       cycleId: cycle,
+      bookedTitle: null,
+      fromCalendarEvent: false,
     }));
     expect(serializeScheduleItem(item)).toMatchObject({ source: "InterviewHold" });
   });
@@ -487,6 +520,8 @@ describe("blockedBy", () => {
     isEvent: false,
     source,
     cycleId,
+    bookedTitle: null,
+    fromCalendarEvent: false,
   });
 
   it.each([
@@ -519,6 +554,8 @@ describe("withoutCoveredHolds", () => {
     isEvent: false,
     source,
     cycleId: id,
+    bookedTitle: null,
+    fromCalendarEvent: false,
   });
 
   it("shows two cycles' identical holds once", () => {
@@ -902,18 +939,71 @@ describe("event room holds", () => {
   it("scope all re-anchors a series hold and re-checks every occurrence", async () => {
     const newStart = new Date(Date.now() + H);
     const newEnd = new Date(newStart.getTime() + H);
-    const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
+    const seriesHold = { id: "b1", roomId: "r1", start: newStart, recurrenceRule: "FREQ=WEEKLY;COUNT=3", exceptions: [], room: { name: "Studio" } };
     m.roomBooking.findMany.mockResolvedValueOnce([seriesHold]).mockResolvedValue([]);
     const res = await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start: newStart, end: newEnd });
     expect(res).toEqual({ ok: true, value: 1 });
     expect(m.roomBooking.update).toHaveBeenCalledWith({ where: { id: "b1" }, data: { start: newStart, end: newEnd, seriesEnd: expect.any(Date) } });
   });
 
+  it("scope all carries a series' cancelled dates along with the move", async () => {
+    const oldStart = new Date(Date.now() + H);
+    const newStart = new Date(oldStart.getTime() + H);
+    const newEnd = new Date(newStart.getTime() + H);
+    const cancelled = weeksLater(oldStart, 1);
+    const seriesHold = {
+      id: "b1",
+      roomId: "r1",
+      start: oldStart,
+      recurrenceRule: "FREQ=WEEKLY;COUNT=3",
+      exceptions: [{ originalStart: cancelled, overrideStart: null, overrideDurationMin: null, cancelled: true }],
+      room: { name: "Studio" },
+    };
+    m.roomBooking.findMany.mockResolvedValueOnce([seriesHold]).mockResolvedValue([]);
+    await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start: newStart, end: newEnd });
+    expect(m.roomBookingException.deleteMany).toHaveBeenCalledWith({ where: { roomBookingId: "b1" } });
+    expect(m.roomBookingException.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          roomBookingId: "b1",
+          originalStart: new Date(cancelled.getTime() + H),
+          overrideStart: null,
+          overrideDurationMin: null,
+          cancelled: true,
+        },
+      ],
+    });
+  });
+
+  it("scope all doesn't let a cancelled date block the move", async () => {
+    const oldStart = new Date(Date.now() + H);
+    const newStart = new Date(oldStart.getTime() + H);
+    const newEnd = new Date(newStart.getTime() + H);
+    const cancelled = weeksLater(oldStart, 1);
+    const week2 = weeksLater(newStart, 1);
+    m.roomBooking.findMany
+      .mockResolvedValueOnce([
+        {
+          id: "b1",
+          roomId: "r1",
+          start: oldStart,
+          recurrenceRule: "FREQ=WEEKLY;COUNT=3",
+          exceptions: [{ originalStart: cancelled, overrideStart: null, overrideDurationMin: null, cancelled: true }],
+          room: { name: "Studio" },
+        },
+      ])
+      .mockResolvedValueOnce([
+        { id: "other", title: "Design crit", start: week2, end: new Date(week2.getTime() + H), user: ada },
+      ]);
+    const res = await retimeEventRoomBookings({ userId: "u1", sourceEventId: "evt1", start: newStart, end: newEnd });
+    expect(res).toEqual({ ok: true, value: 1 });
+  });
+
   it("scope all 409s naming the room when a later occurrence of the retimed series collides", async () => {
     const newStart = new Date(Date.now() + H);
     const newEnd = new Date(newStart.getTime() + H);
     const week2Start = weeksLater(newStart, 1);
-    const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
+    const seriesHold = { id: "b1", roomId: "r1", start: newStart, recurrenceRule: "FREQ=WEEKLY;COUNT=3", exceptions: [], room: { name: "Studio" } };
     m.roomBooking.findMany
       .mockResolvedValueOnce([seriesHold])
       .mockResolvedValueOnce([
@@ -928,7 +1018,7 @@ describe("event room holds", () => {
     const occurrenceStart = new Date(Date.now() + 7 * DAY);
     const newStart = new Date(Date.now() + 2 * H);
     const newEnd = new Date(newStart.getTime() + H);
-    const seriesHold = { id: "b1", roomId: "r1", recurrenceRule: "FREQ=WEEKLY;COUNT=3", room: { name: "Studio" } };
+    const seriesHold = { id: "b1", roomId: "r1", start: newStart, recurrenceRule: "FREQ=WEEKLY;COUNT=3", exceptions: [], room: { name: "Studio" } };
     m.roomBooking.findMany.mockResolvedValueOnce([seriesHold]).mockResolvedValue([]);
     const res = await retimeEventRoomBookings({
       userId: "u1",
@@ -990,5 +1080,150 @@ describe("truncateEventRoomBookings", () => {
       where: { id: "b1" },
       data: { cancelledByUserId: "u1", cancelledAt: expect.any(Date) },
     });
+  });
+});
+
+describe("listBookableRooms", () => {
+  it("leaves out archived rooms and sorts by name", async () => {
+    m.room.findMany.mockResolvedValue([{ id: "r1" }]);
+    await expect(listBookableRooms()).resolves.toEqual([{ id: "r1" }]);
+    expect(m.room.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { archivedAt: null }, orderBy: { name: "asc" } }),
+    );
+  });
+});
+
+describe("listRoomAvailability", () => {
+  const window = { start: new Date("2030-01-07T15:00:00Z"), end: new Date("2030-01-07T16:00:00Z") };
+  const room = { id: "r1", name: "Pod", description: null, capacity: 4 };
+  const booking = (start: string, end: string) => ({
+    id: "b1",
+    title: "Standup",
+    start: new Date(start),
+    end: new Date(end),
+    recurrenceRule: null,
+    exceptions: [],
+    source: "Web",
+    applicationCycleId: null,
+    user: { id: "u2", firstName: "Ada", lastName: "Lovelace", photoUrl: null },
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    m.room.findMany.mockResolvedValue([room]);
+    m.scheduledMeeting.findMany.mockResolvedValue([]);
+    m.roomBooking.findMany.mockResolvedValue([]);
+  });
+
+  it("reports a free room as having no conflict", async () => {
+    await expect(listRoomAvailability(window)).resolves.toEqual([{ ...room, conflict: null, conflictOn: null }]);
+  });
+
+  it("names what holds the room in the window", async () => {
+    m.roomBooking.findMany.mockResolvedValue([booking("2030-01-07T15:30:00Z", "2030-01-07T16:30:00Z")]);
+    await expect(listRoomAvailability(window)).resolves.toEqual([{ ...room, conflict: "Standup", conflictOn: null }]);
+  });
+
+  it("names the date of a collision on a later occurrence", async () => {
+    m.roomBooking.findMany.mockResolvedValue([booking("2030-01-14T15:30:00Z", "2030-01-14T16:30:00Z")]);
+    const [result] = await listRoomAvailability(window, { recurrenceRule: "FREQ=WEEKLY;COUNT=3" });
+    expect(result).toMatchObject({ conflict: "Standup", conflictOn: "Jan 14" });
+  });
+
+  it("leaves conflictOn empty when the first occurrence collides", async () => {
+    m.roomBooking.findMany.mockResolvedValue([booking("2030-01-07T15:30:00Z", "2030-01-07T16:30:00Z")]);
+    const [result] = await listRoomAvailability(window, { recurrenceRule: "FREQ=WEEKLY;COUNT=3" });
+    expect(result).toMatchObject({ conflict: "Standup", conflictOn: null });
+  });
+
+  it("ignores a booking between occurrences of a series", async () => {
+    m.roomBooking.findMany.mockResolvedValue([booking("2030-01-09T15:00:00Z", "2030-01-09T16:00:00Z")]);
+    const [result] = await listRoomAvailability(window, { recurrenceRule: "FREQ=WEEKLY;COUNT=3" });
+    expect(result).toMatchObject({ conflict: null, conflictOn: null });
+  });
+
+  it("falls back to the one slot when the rule doesn't parse", async () => {
+    m.roomBooking.findMany.mockResolvedValue([booking("2030-01-07T15:30:00Z", "2030-01-07T16:30:00Z")]);
+    const [result] = await listRoomAvailability(window, { recurrenceRule: "not a rule" });
+    expect(result).toMatchObject({ conflict: "Standup", conflictOn: null });
+  });
+
+  it("leaves out the meeting being edited", async () => {
+    await listRoomAvailability(window, { excludeMeetingId: "m1" });
+    expect(m.scheduledMeeting.findMany.mock.calls[0]![0].where.id).toEqual({ not: "m1" });
+  });
+});
+
+describe("cancelRoomBookingAsMember", () => {
+  const future = {
+    id: "b1",
+    userId: "u1",
+    source: "Web",
+    start: new Date("2030-01-07T15:00:00Z"),
+    end: new Date("2030-01-07T16:00:00Z"),
+    recurrenceRule: null,
+    cancelledAt: null,
+    exceptions: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(isCore).mockResolvedValue(false);
+    m.roomBooking.update.mockResolvedValue({});
+  });
+
+  it("404s a booking that doesn't exist", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(null);
+    await expect(cancelRoomBookingAsMember("b1", "u1")).resolves.toEqual({ ok: false, error: "Not found", status: 404 });
+  });
+
+  it("lets the booker cancel", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(future);
+    await expect(cancelRoomBookingAsMember("b1", "u1")).resolves.toEqual({ ok: true, value: null });
+    expect(m.roomBooking.update.mock.calls[0]![0].data).toMatchObject({ cancelledByUserId: "u1" });
+    expect(isCore).not.toHaveBeenCalled();
+  });
+
+  it("lets Core cancel someone else's booking", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(future);
+    vi.mocked(isCore).mockResolvedValue(true);
+    await expect(cancelRoomBookingAsMember("b1", "u2")).resolves.toEqual({ ok: true, value: null });
+    expect(m.roomBooking.update.mock.calls[0]![0].data).toMatchObject({ cancelledByUserId: "u2" });
+  });
+
+  it("refuses another member", async () => {
+    m.roomBooking.findUnique.mockResolvedValue(future);
+    await expect(cancelRoomBookingAsMember("b1", "u2")).resolves.toEqual({ ok: false, error: "Forbidden", status: 403 });
+    expect(m.roomBooking.update).not.toHaveBeenCalled();
+  });
+
+  it.each(["Interview", "InterviewHold"])("refuses a %s booking even for its booker", async (source) => {
+    m.roomBooking.findUnique.mockResolvedValue({ ...future, source });
+    await expect(cancelRoomBookingAsMember("b1", "u1")).resolves.toMatchObject({ ok: false, status: 409 });
+    expect(m.roomBooking.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("parseWindow", () => {
+  const start = "2030-01-07T15:00:00Z";
+
+  it("reads the window from the query", () => {
+    const url = new URL(`https://x.test/?start=${start}&end=2030-01-07T16:00:00Z`);
+    expect(parseWindow(url)).toEqual({ start: new Date(start), end: new Date("2030-01-07T16:00:00Z") });
+  });
+
+  it("allows exactly 8 days", () => {
+    expect(parseWindowParams(start, "2030-01-15T15:00:00Z")).not.toBeNull();
+  });
+
+  it.each([
+    ["a missing start", null, "2030-01-07T16:00:00Z"],
+    ["a missing end", start, null],
+    ["an unparseable time", "soon", "2030-01-07T16:00:00Z"],
+    ["an end before the start", start, "2030-01-07T14:00:00Z"],
+    ["an empty window", start, start],
+    ["more than 8 days", start, "2030-01-15T15:00:01Z"],
+  ])("rejects %s", (_name, a, b) => {
+    expect(parseWindowParams(a, b)).toBeNull();
   });
 });

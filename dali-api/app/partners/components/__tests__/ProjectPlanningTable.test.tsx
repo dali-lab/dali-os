@@ -32,12 +32,18 @@ function render(model: Partial<PlanningProjectModel>) {
       createElement(ProjectPlanningTable, {
         termCode: "27W",
         model: { renewing: [], fresh: [], totals: { renewing: 0, fresh: 0, spots: 0 }, ...model },
+        onProjectClick: () => {},
       }),
     ),
   );
 }
 
 describe("ProjectPlanningTable", () => {
+  it("shows the PI, or says there is none", () => {
+    expect(render({ renewing: [row({ piName: "Ada Lovelace" })] })).toContain("Ada Lovelace");
+    expect(render({ renewing: [row()] })).toContain("No PI");
+  });
+
   it("shows a row's state, spots and domains", () => {
     const html = render({ renewing: [row()], totals: { renewing: 4, fresh: 0, spots: 4 } });
     expect(html).toContain("Gallery kiosk");
@@ -57,13 +63,14 @@ describe("ProjectPlanningTable", () => {
     expect(html).not.toContain("Renewing");
   });
 
-  it("links applications to the board and projects to renewals", () => {
+  it("links applications to the board, but renders projects as buttons for the info popup", () => {
     const html = render({
       renewing: [row()],
       fresh: [row({ key: "application:a", kind: "application", refId: "a", source: "new", state: "Deciding" })],
     });
-    expect(html).toContain('href="/core/partners/renewals"');
+    expect(html).not.toContain('href="/projects/p1"');
     expect(html).toContain('href="/core/partners?application=a"');
+    expect(html).toContain('type="button"');
   });
 
   it("dims rows left out of the totals", () => {

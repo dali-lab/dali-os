@@ -35,11 +35,11 @@ type Payload<Extra> = {
   personalBest?: boolean
 }
 
-export function useLeaderboard<Extra = object>(endpoint: string, enabled: boolean) {
+export function useLeaderboard<Extra = object>(endpoint: string) {
   const [state, setState] = useState<LeaderboardState<Extra>>({
     entries: [],
     you: null,
-    loading: enabled,
+    loading: true,
     available: false,
     personalBest: false,
   })
@@ -83,8 +83,8 @@ export function useLeaderboard<Extra = object>(endpoint: string, enabled: boolea
   }, [apply, endpoint])
 
   useEffect(() => {
-    if (enabled) void load()
-  }, [enabled, load])
+    void load()
+  }, [load])
 
   /** Report a finished game. The server keeps it only if it beats the player's best. */
   const submit = useCallback(

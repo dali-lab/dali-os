@@ -7,7 +7,7 @@ import {
   FormPagerNav,
   FormPageHeading,
 } from "~/forms/components/FormPager";
-import { paginateQuestions } from "~/lib/form-pages";
+import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/lib/form-logic";
 import { DocEditor, countWords } from "~/components/doc";
 import { Button } from "~/components/ui/Button";
 import { findMissingRequired } from "~/lib/form-answers";
@@ -40,7 +40,7 @@ export function OfferingApplyForm({
   const actionData = useActionData<{ error?: string }>();
   const navigation = useNavigation();
   const submit = useSubmit();
-  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const pages = useMemo(() => visiblePages(questions, answers), [questions, answers]);
   const pager = useFormPager(pages, { excludeFileType: true });
 
   function set(key: string, v: string) {
@@ -50,7 +50,7 @@ export function OfferingApplyForm({
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setClientError(null);
-    const missing = findMissingRequired(questions, (q) => answers[q.key], {
+    const missing = findMissingRequired(visibleQuestions(questions, answers), (q) => answers[q.key], {
       excludeFileType: true,
     });
     if (missing.length > 0) {
@@ -58,7 +58,7 @@ export function OfferingApplyForm({
       return;
     }
     const fd = new FormData();
-    fd.set("answers", JSON.stringify(answers));
+    fd.set("answers", JSON.stringify(pruneHiddenAnswers(questions, answers)));
     if (versionUpdatedAt) fd.set("versionUpdatedAt", versionUpdatedAt);
     submit(fd, { method: "post" });
   }

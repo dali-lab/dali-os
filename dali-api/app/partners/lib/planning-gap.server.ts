@@ -2,7 +2,9 @@ import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { parseColumnMapping } from "~/projects/lib/slot-roles";
+import { listActiveCoreMembers, personName, type CoreMemberOption } from "./core-members.server";
 import {
+  effectivePi,
   hasSpots,
   intentSetupState,
   projectToPlanningItem,
@@ -14,17 +16,32 @@ import {
 
 export type PlanningTermOption = { id: string; code: string; isCurrent: boolean };
 
+// Per-project payload for the planning tab's project info popup. The modal
+// only shows this term + later ones (the PI picker drives staffing for the
+// upcoming cycle), so `plannedTerms` is pre-filtered to termSortKey ≥ picked.
+export type PlanningProjectInfo = {
+  description: string | null;
+  status: string;
+  partnerNames: string[];
+  plannedTerms: { id: string; code: string; sortKey: number }[];
+  pisByTerm: Record<string, { userId: string; name: string } | null>;
+  spotsByTerm: Record<string, { domainId: string; name: string; slots: number }[]>;
+};
+
 export type PlanningData = {
   terms: PlanningTermOption[];
   termId: string | null;
   items: PlanningItem[];
   listOnlyItems: PlanningItem[];
   domains: { id: string; name: string }[];
+  spotDomains: { id: string; name: string }[];
   returning: ReturningPerson[];
   replied: number;
   roster: number;
   hasIntentData: boolean;
   intentSetup: IntentSetup;
+  projectInfo: Record<string, PlanningProjectInfo>;
+  coreMembers: CoreMemberOption[];
 };
 
 const APPLICATION_STAGES = ["Backlog", "New", "Interview", "Deciding", "Accepted"] as const;
@@ -33,7 +50,22 @@ function addSpots(into: Record<string, number>, domainId: string, n: number) {
   into[domainId] = (into[domainId] ?? 0) + n;
 }
 
-export async function loadPlanningData(requestedTermId: string | null): Promise<PlanningData> {
+function piNameFor(
+  projectTerms: { termId: string; pi: Parameters<typeof personName>[0] | null }[],
+  sortKeyById: Map<string, number>,
+  termSortKey: number,
+): string | null {
+  const pi = effectivePi(
+    projectTerms.map((pt) => ({ sortKey: sortKeyById.get(pt.termId) ?? Infinity, pi: pt.pi })),
+    termSortKey,
+  );
+  return pi ? personName(pi) : null;
+}
+
+export async function loadPlanningData(
+  requestedTermId: string | null,
+  request?: Request,
+): Promise<PlanningData> {
   const [allTerms, current] = await Promise.all([
     prisma.term.findMany({
       orderBy: { sortKey: "asc" },
@@ -55,18 +87,24 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       items: [],
       listOnlyItems: [],
       domains: [],
+      spotDomains: [],
       returning: [],
       replied: 0,
       roster: 0,
       hasIntentData: false,
       intentSetup: { kind: "no-form" },
+      projectInfo: {},
+      coreMembers: [],
     };
   }
   const prevTerm = [...allTerms].reverse().find((t) => t.sortKey < term.sortKey) ?? null;
   const sortKeyById = new Map(allTerms.map((t) => [t.id, t.sortKey]));
 
   const [domains, projects, applications, cycle, roster] = await Promise.all([
-    prisma.domain.findMany({ select: { id: true, displayName: true }, orderBy: { displayName: "asc" } }),
+    prisma.domain.findMany({
+      select: { id: true, displayName: true, active: true, isSystem: true },
+      orderBy: { displayName: "asc" },
+    }),
     prisma.project.findMany({
       where: { projectTerms: { some: { term: { sortKey: { lte: term.sortKey } } } } },
       select: {
@@ -74,10 +112,20 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
         name: true,
         iconEmoji: true,
         status: true,
-        projectTerms: { select: { termId: true } },
+        description: true,
+        projectTerms: {
+          select: {
+            termId: true,
+            pi: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
+          },
+        },
+        partners: {
+          where: { endedAt: null },
+          select: { partnerOrg: { select: { name: true } } },
+        },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
         roleRequests: {
-          where: { termId: { in: [term.id, ...(prevTerm ? [prevTerm.id] : [])] } },
+          where: { term: { sortKey: { gte: (prevTerm ?? term).sortKey } } },
           select: { termId: true, domainId: true, slots: true },
         },
       },
@@ -91,7 +139,9 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       select: {
         id: true,
         title: true,
+        iconEmoji: true,
         stage: true,
+        pi: { select: { firstName: true, lastName: true, daliEmail: true } },
         domains: { select: { domainId: true, expectedMembers: true } },
       },
     }),
@@ -106,13 +156,57 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
     prisma.user.count({ where: ACTIVE_LAB_MEMBER_WHERE }),
   ]);
 
+  // Per-project payload for the planning tab's info popup. Scoped to the
+  // picked term and later so the PI picker drives the staffing cycle the
+  // planner is actually looking at; past-term PI stays visible on the project
+  // page itself, not in this planning flow.
+  const termById = new Map(allTerms.map((t) => [t.id, t]));
+  const projectInfo: Record<string, PlanningProjectInfo> = {};
+  const domainName = new Map(domains.map((d) => [d.id, d.displayName]));
+  for (const p of projects) {
+    const upcomingTerms = p.projectTerms
+      .map((pt) => termById.get(pt.termId))
+      .filter((t): t is (typeof allTerms)[number] => !!t && t.sortKey >= term.sortKey)
+      .sort((a, b) => a.sortKey - b.sortKey);
+    const pisByTerm: Record<string, { userId: string; name: string } | null> = {};
+    for (const ut of upcomingTerms) {
+      const pi = effectivePi(
+        p.projectTerms.map((pt) => ({
+          sortKey: sortKeyById.get(pt.termId) ?? Infinity,
+          pi: pt.pi,
+        })),
+        ut.sortKey,
+      );
+      pisByTerm[ut.id] = pi ? { userId: pi.id, name: personName(pi) } : null;
+    }
+    const spotsByTerm: PlanningProjectInfo["spotsByTerm"] = {};
+    for (const ut of upcomingTerms) {
+      const totals: Record<string, number> = {};
+      for (const r of p.roleRequests) if (r.termId === ut.id) addSpots(totals, r.domainId, r.slots);
+      spotsByTerm[ut.id] = Object.entries(totals)
+        .filter(([, slots]) => slots > 0)
+        .map(([domainId, slots]) => ({ domainId, name: domainName.get(domainId) ?? "Unknown domain", slots }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    }
+    projectInfo[p.id] = {
+      description: p.description,
+      status: p.status,
+      partnerNames: p.partners.map((l) => l.partnerOrg.name),
+      plannedTerms: upcomingTerms.map((t) => ({ id: t.id, code: t.code, sortKey: t.sortKey })),
+      pisByTerm,
+      spotsByTerm,
+    };
+  }
+  const coreMembers = request ? await listActiveCoreMembers(request) : [];
+
   const items: PlanningItem[] = [];
   const listOnlyItems: PlanningItem[] = [];
   for (const p of projects) {
     const thisTermSpots: Record<string, number> = {};
     const previousTermSpots: Record<string, number> = {};
     for (const r of p.roleRequests) {
-      addSpots(r.termId === term.id ? thisTermSpots : previousTermSpots, r.domainId, r.slots);
+      if (r.termId === term.id) addSpots(thisTermSpots, r.domainId, r.slots);
+      else if (r.termId === prevTerm?.id) addSpots(previousTermSpots, r.domainId, r.slots);
     }
     const sortKeys = p.projectTerms
       .map((pt) => sortKeyById.get(pt.termId))
@@ -121,6 +215,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       id: p.id,
       name: p.name,
       iconEmoji: p.iconEmoji,
+      piName: piNameFor(p.projectTerms, sortKeyById, term.sortKey),
       termSortKey: term.sortKey,
       earliestSortKey: sortKeys.length ? Math.min(...sortKeys) : null,
       inPreviousTerm: !!prevTerm && p.projectTerms.some((pt) => pt.termId === prevTerm.id),
@@ -139,11 +234,13 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       kind: "application",
       refId: a.id,
       name: a.title,
+      iconEmoji: a.iconEmoji,
+      piName: a.pi ? personName(a.pi) : null,
       source: "new",
       state: a.stage as PlanningState,
       spotsByDomain,
     };
-    (a.stage !== "Backlog" && hasSpots(item) ? items : listOnlyItems).push(item);
+    (hasSpots(item) ? items : listOnlyItems).push(item);
   }
 
   let returning: ReturningPerson[] = [];
@@ -172,6 +269,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
     items,
     listOnlyItems,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    spotDomains: domains.filter((d) => d.active && !d.isSystem).map((d) => ({ id: d.id, name: d.displayName })),
     returning,
     replied,
     roster,
@@ -182,5 +280,7 @@ export async function loadPlanningData(requestedTermId: string | null): Promise<
       submissions: cycle?._count.formSubmissions ?? 0,
       replied,
     }),
+    projectInfo,
+    coreMembers,
   };
 }

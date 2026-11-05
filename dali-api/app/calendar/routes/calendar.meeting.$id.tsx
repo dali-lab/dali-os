@@ -27,7 +27,6 @@ import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth"
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { useDialog } from "~/components/ui/dialog";
@@ -86,8 +85,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
-  const roles = await getUserRoles(auth.user.sub);
-  const meeting = await prisma.scheduledMeeting.findUnique({
+  const [roles, meeting] = await Promise.all([
+    getUserRoles(auth.user.sub, request),
+    prisma.scheduledMeeting.findUnique({
     where: { id: params.id },
     select: {
       id: true,
@@ -120,7 +120,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       notePages: { where: { archivedAt: null }, select: { id: true, meetingOccurrenceStart: true } },
       whiteboardPage: { select: { id: true } },
     },
-  });
+    }),
+  ]);
   if (!meeting || meeting.status === "Cancelled") {
     throw new Response("Not found", { status: 404 });
   }
@@ -145,21 +146,51 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const prevOccurrence = at > 0 ? around[at - 1]! : null;
   const nextOccurrence = at >= 0 && at < around.length - 1 ? around[at + 1]! : null;
 
-  await ensureOccurrenceRoster(meeting, occurrence.originalStart);
-  const attendance = await prisma.meetingAttendance.findMany({
-    where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart },
-    select: {
-      userId: true,
-      present: true,
-      absenceNote: true,
-      user: { select: { firstName: true, lastName: true, daliEmail: true } },
-    },
-  });
+  const isOrganizerOrCore = auth.user.sub === meeting.organizerId || roles.isCore;
+  // Switching every door display to this event is the organizer's or Core's
+  // call.
+  const [attendance, projectMember, activeScan, recording] = await Promise.all([
+    ensureOccurrenceRoster(meeting, occurrence.originalStart).then(() =>
+      prisma.meetingAttendance.findMany({
+        where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart },
+        select: {
+          userId: true,
+          present: true,
+          absenceNote: true,
+          user: { select: { firstName: true, lastName: true, daliEmail: true } },
+        },
+      }),
+    ),
+    meeting.projectId ? isProjectMember(auth.user.sub, meeting.projectId, request) : false,
+    isOrganizerOrCore ? getActiveDisplayScan() : null,
+    // Meeting recording (specs/meeting-transcription.md): the occurrence's
+    // most recent non-Failed row drives both the live "Recording · <name>"
+    // pill and the Transcript link, and suppresses the record-prompt banner.
+    // MeetingRecording.userId has no `user` relation, so the name (only
+    // needed while it's actively Recording) is a separate lookup.
+    prisma.meetingRecording
+      .findMany({
+        where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart, status: { notIn: ["Failed"] } },
+        select: { id: true, userId: true, status: true },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      })
+      .then(async ([row]) => ({
+        row,
+        liveUser:
+          row?.status === "Recording"
+            ? await prisma.user.findUnique({
+                where: { id: row.userId },
+                select: { firstName: true, lastName: true, daliEmail: true },
+              })
+            : null,
+      })),
+  ]);
+  const { row: activeRecordingRow, liveUser: liveRecordingUser } = recording;
 
   // Managing (marking others, sharing the QR, scanning) is the organizer, Core,
   // or a project member — the same authority as the attendance-toggle route. An
   // invited attendee can still open the page to self check-in.
-  const projectMember = meeting.projectId ? await isProjectMember(auth.user.sub, meeting.projectId) : false;
   const canManage = auth.user.sub === meeting.organizerId || roles.isCore || projectMember;
   const viewerRow = attendance.find((a) => a.userId === auth.user.sub);
   // A "None"-scoped meeting isn't addressed to a group or a hand-picked list —
@@ -176,16 +207,13 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Adding a note after the fact is the organizer's or Core's call — narrower
   // than canManage (a project member marks attendance but doesn't file the
   // meeting's doc), and the same authority attachMeetingNote re-checks.
-  const canAddNote = auth.user.sub === meeting.organizerId || roles.isCore;
+  const canAddNote = isOrganizerOrCore;
   const canEdit = canAddNote;
   const canStartNote =
     canAddNote ||
     ((meeting.notePages.length > 0 || !!meeting.notebookId) &&
       (canManage || meeting.participantUserIds.includes(auth.user.sub)));
 
-  // Switching every door display to this event is the organizer's or Core's
-  // call.
-  const activeScan = canEdit ? await getActiveDisplayScan() : null;
   const ipadScanOn =
     activeScan?.meetingId === meeting.id &&
     activeScan.occurrenceStart.getTime() === occurrence.originalStart.getTime();
@@ -204,51 +232,29 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       }
     : null;
 
-  const proposalRows = canManage
-    ? await prisma.meetingTimeProposal.findMany({
-        where: { scheduledMeetingId: meeting.id, status: "Pending" },
-        select: {
-          id: true,
-          proposedStart: true,
-          proposedBy: { select: { firstName: true, lastName: true } },
-        },
-        orderBy: { createdAt: "asc" },
-      })
-    : [];
-
   // The QR/link is a sharing affordance, so it's only generated for a manager.
-  let checkInUrl: string | null = null;
-  let checkInQrSvg: string | null = null;
-  if (selfCheckIn && canManage) {
-    const origin = new URL(request.url).origin;
-    checkInUrl = `${origin}/calendar/check-in/${meeting.id}`;
-    checkInQrSvg = await QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 });
-  }
+  const checkInUrl =
+    selfCheckIn && canManage ? `${new URL(request.url).origin}/calendar/check-in/${meeting.id}` : null;
+  const [proposalRows, checkInQrSvg] = await Promise.all([
+    canManage
+      ? prisma.meetingTimeProposal.findMany({
+          where: { scheduledMeetingId: meeting.id, status: "Pending" },
+          select: {
+            id: true,
+            proposedStart: true,
+            proposedBy: { select: { firstName: true, lastName: true } },
+          },
+          orderBy: { createdAt: "asc" },
+        })
+      : [],
+    checkInUrl ? QRCode.toString(checkInUrl, { type: "svg", margin: 1, width: 180 }) : null,
+  ]);
 
   const typeLabel =
     meeting.meetingType === "Other"
       ? meeting.meetingTypeLabel || "Meeting"
       : (meeting.meetingType ?? "Meeting");
 
-  // Meeting recording (specs/meeting-transcription.md): the occurrence's
-  // most recent non-Failed row drives both the live "Recording · <name>"
-  // pill and the Transcript link, and suppresses the record-prompt banner.
-  // MeetingRecording.userId has no `user` relation, so the name (only
-  // needed while it's actively Recording) is a separate lookup.
-  const [activeRecordingRow] = await prisma.meetingRecording.findMany({
-    where: { scheduledMeetingId: meeting.id, occurrenceStart: occurrence.originalStart, status: { notIn: ["Failed"] } },
-    select: { id: true, userId: true, status: true },
-    orderBy: { createdAt: "desc" },
-    take: 1,
-  });
-  const liveRecordingUser =
-    activeRecordingRow?.status === "Recording"
-      ? await prisma.user.findUnique({
-          where: { id: activeRecordingRow.userId },
-          select: { firstName: true, lastName: true, daliEmail: true },
-        })
-      : null;
-  const recordingEnabled = await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request);
   // A trashed notebook stays the series default so a restore re-attaches,
   // but the page treats it as none until then.
   const liveNotebook =
@@ -321,7 +327,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       proposedStartIso: p.proposedStart.toISOString(),
       proposerName: fullName(p.proposedBy),
     })),
-    recordingEnabled,
     recordingPolicy: meeting.project?.recordingPolicy ?? "Allowed",
     recordPromptEnabled: meeting.recordPrompt,
     canDontSuggestRecording: auth.user.sub === meeting.organizerId || roles.isCore,
@@ -737,13 +742,12 @@ export default function CalendarMeetingPage() {
     // Full-bleed and left-aligned: the app shell already supplies the page
     // gutters, so this surface only owns its vertical rhythm.
     <div className="flex w-full flex-col items-stretch gap-10 pb-10 text-left">
-      {d.notePageId && d.recordingEnabled && d.recordingPolicy !== "Disabled" && (
+      {d.notePageId && d.recordingPolicy !== "Disabled" && (
         <RecordPromptBanner
           meetingId={d.meetingId}
           occurrenceStart={d.occurrenceStart}
           windowEndIso={d.windowEndIso}
           canEdit={d.canAddNote}
-          recordingEnabled={d.recordingEnabled}
           recordPromptEnabled={d.recordPromptEnabled}
           hasActiveRecording={d.activeRecording !== null}
           canDontSuggest={d.canDontSuggestRecording}

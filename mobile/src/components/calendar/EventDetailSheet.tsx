@@ -21,7 +21,7 @@ import { Text } from '../ui/Text';
 const RSVP_OPTIONS: { value: Rsvp; label: string }[] = [
   { value: 'accepted', label: 'Going' },
   { value: 'tentative', label: 'Maybe' },
-  { value: 'declined', label: 'No' },
+  { value: 'declined', label: "Can't make it" },
 ];
 
 interface EventDetailSheetProps {

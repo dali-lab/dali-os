@@ -2,6 +2,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow } from "~/lib/pagination";
 import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
+import { RESPONSE_LOCK_SELECT, responseLockReason } from "~/forms/lib/response-lock";
 import type { Question } from "~/types";
 
 export const RESPONSES_PAGE_SIZE = 50;
@@ -42,6 +43,9 @@ export function responsesWhere(
 export type ResponseRow = {
   id: string;
   createdAt: string;
+  edited: boolean;
+  // Why this response can't be deleted (it feeds another feature); null when it can.
+  lockReason: string | null;
   name: string;
   email: string | null;
   slot: string | null;
@@ -86,6 +90,7 @@ export async function loadVersionResponses(
       select: {
         id: true,
         createdAt: true,
+        updatedAt: true,
         answers: true,
         submitterName: true,
         submitterEmail: true,
@@ -101,6 +106,8 @@ export async function loadVersionResponses(
         },
         formVersion: { select: { versionNumber: true, questions: true } },
         partnerApplication: { select: { id: true, title: true } },
+        form: { select: { name: true } },
+        ...RESPONSE_LOCK_SELECT,
       },
     }),
   ]);
@@ -119,6 +126,8 @@ export async function loadVersionResponses(
   const responses: ResponseRow[] = submissions.map((s, i) => ({
     id: s.id,
     createdAt: s.createdAt.toISOString(),
+    edited: s.updatedAt > s.createdAt,
+    lockReason: responseLockReason(s, s.form.name),
     name:
       [s.user?.firstName, s.user?.lastName].filter(Boolean).join(" ") ||
       s.submitterName ||

@@ -17,6 +17,7 @@ import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db.server";
+import { aiQuotaResponse, claimAiQuota } from "~/lib/ai-quota.server";
 import {
   computeProjectStatus,
   factsFingerprint,
@@ -43,7 +44,6 @@ export interface ProjectTldrDisabledResponse {
 
 const AI_BURST_MAX = 10;
 const AI_BURST_WINDOW_MS = 60_000;
-const AI_DAILY_MAX = 200;
 
 // A cached summary older than this is regenerated on next view even when the
 // work hasn't changed — keeps relative phrasing ("ends in 5 days") from drifting.
@@ -64,12 +64,6 @@ Instead, in ONE or TWO sentences, give a judgment the counts don't: name the sin
 Weigh it like a lead would: overdue high-priority work and running with no sprint plan matter more than a large-but-moving backlog; a few stalled tasks can be the real story. \
 If the project is genuinely healthy, say so in one short sentence instead of inventing problems. \
 Plain text only: no preamble, no markdown, no bullet points, no headings.`;
-
-function secondsToUtcMidnight(): number {
-  const now = new Date();
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
-  return Math.max(1, Math.ceil((next - now.getTime()) / 1000));
-}
 
 // Feeds the model specifics (named tasks, priority mix, team size, whether a
 // sprint is running) so it has real material to interpret — the counts alone
@@ -232,26 +226,17 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   // ── Daily quota — last gate before the model call ─────────────────────────
-  const day = new Date().toISOString().slice(0, 10);
-  const usage = await prisma.aiUsage.upsert({
-    where: { userId_day: { userId: auth.user.sub, day } },
-    create: { userId: auth.user.sub, day, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-  if (usage.count > AI_DAILY_MAX) {
-    const retryAfter = secondsToUtcMidnight();
-    return Response.json(
-      { error: `You've reached today's AI limit (${AI_DAILY_MAX} requests). It resets at midnight UTC.` },
-      { status: 429, headers: { "Retry-After": String(retryAfter) } },
-    );
-  }
+  const quota = await claimAiQuota(auth.user.sub);
+  if (!quota.ok) return aiQuotaResponse(quota);
+  const { day } = quota;
 
   // ── Generate + cache ──────────────────────────────────────────────────────
   try {
     const result = await generateShortText({
+      task: "projectTldr",
       system: SYSTEM_PROMPT,
       prompt: factsToPrompt(project.name, facts, detail),
-      maxTokens: 400,
+      maxTokens: 1000,
     });
     if (!result) {
       return Response.json({ aiEnabled: false } satisfies ProjectTldrDisabledResponse, {

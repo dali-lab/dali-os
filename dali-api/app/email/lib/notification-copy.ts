@@ -106,7 +106,7 @@ export const NOTIFICATION_COPY = {
     description: "Sent to the organizer shortly before a meeting they organize starts.",
     variables: ["itemTitle"],
     subject: "{{itemTitle}} is starting. Record it?",
-    body: "DALI can transcribe it and delete the audio once it's done.",
+    body: "DALI can transcribe it and delete the audio after.",
   },
   "meeting.transcript_ready": {
     eventType: "meeting.transcript_ready",
@@ -618,6 +618,14 @@ export const NOTIFICATION_COPY = {
     subject: "Feedback received: {{itemTitle}}",
     body: "",
   },
+  "partner.referral_received": {
+    eventType: "partner.referral_received",
+    label: "New partner referral",
+    description: "Sent to Core when a member refers a potential partner through the bounty program.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "New partner referral: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
 
   // ── Announcements ────────────────────────────────────────────────────────
   // No `body`: Core and instructors author these per send, so only the framing
@@ -629,6 +637,15 @@ export const NOTIFICATION_COPY = {
       "Sent by Core to a chosen audience. The subject and body are written per announcement; only the frame around them comes from here.",
     variables: ["itemTitle"],
     subject: "{{itemTitle}}",
+  },
+  "form.reminder": {
+    eventType: "form.reminder",
+    label: "Form reminder",
+    description:
+      "Sent to people who haven't filled out a form, by the form's owner or a day before it closes. The message is written per send; only the frame around it comes from here.",
+    variables: ["itemTitle"],
+    subject: "Reminder: {{itemTitle}}",
+    linkLabel: "Open form",
   },
   "education.announcement": {
     eventType: "education.announcement",

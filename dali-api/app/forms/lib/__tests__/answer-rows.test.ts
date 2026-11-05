@@ -247,3 +247,53 @@ describe("responsesCsvRows", () => {
     expect(csv).toContain('"He said ""hi""\nthen left"');
   });
 });
+
+
+describe("answer rows with rules", () => {
+  const asked = (key: string, label: string): Question =>
+    q({ key, type: "select", data: { label, options: ["Yes", "No"] } });
+  const questions = [
+    asked("returning", "Returning?"),
+    q({
+      key: "why",
+      data: { label: "Why?", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    }),
+  ];
+
+  it("leaves out a question that wasn't asked, while a blank answer to a shown one keeps its row", async () => {
+    expect(await formAnswerRows(questions, { returning: "Yes" })).toEqual([
+      { key: "returning", label: "Returning?", value: "Yes" },
+    ]);
+    expect(await formAnswerRows(questions, { returning: "No" })).toEqual([
+      { key: "returning", label: "Returning?", value: "No" },
+      { key: "why", label: "Why?", value: "" },
+    ]);
+  });
+
+  it("ignores a stored answer to a hidden question", async () => {
+    const rows = await formAnswerRows(questions, { returning: "Yes", why: "old draft" });
+    expect(rows.map((r) => r.key)).toEqual(["returning"]);
+  });
+
+  it("keeps every column in the CSV and leaves the unasked cell blank", async () => {
+    const grid = await buildResponseGrid([
+      { formVersion: { versionNumber: 1, questions }, answers: { returning: "Yes" } },
+      { formVersion: { versionNumber: 1, questions }, answers: { returning: "No", why: "moving" } },
+    ]);
+    expect(grid.columns.map((c) => c.key)).toEqual(["returning", "why"]);
+    const [, first, second] = responsesCsvRows(
+      grid.columns,
+      grid.rowsBySubmission.map((rows) => ({
+        name: "Ada",
+        email: null,
+        createdAt: "2026-07-14T12:00:00.000Z",
+        versionNumber: 1,
+        slot: null,
+        rows,
+      })),
+      { includeSlot: false },
+    );
+    expect(first.slice(4)).toEqual(["Yes", ""]);
+    expect(second.slice(4)).toEqual(["No", "moving"]);
+  });
+});

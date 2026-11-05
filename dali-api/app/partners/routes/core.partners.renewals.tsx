@@ -1,17 +1,18 @@
-import { redirect, useLoaderData, useSearchParams } from "react-router";
+import { redirect, useLoaderData, type ShouldRevalidateFunctionArgs } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import type { Route } from "./+types/core.partners.renewals";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { Select } from "~/components/ui/floating";
-import { filterPillClass } from "~/components/ui/floating/styles";
+import { TermFilter } from "~/components/TermFilter";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { RenewalsBoard } from "../components/RenewalsBoard";
-import { useState } from "react";
 import { normalizeNextStep, type RenewalCardModel } from "../lib/partner-renewals";
+import { listActiveCoreMembers } from "../lib/core-members.server";
 
 type TermRef = { id: string; code: string; sortKey: number };
 import {
@@ -19,6 +20,7 @@ import {
   applyNotContinuing,
   applyUndecided,
   loadRenewalCards,
+  setTermPi,
 } from "../lib/partner-renewals.server";
 
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
@@ -33,6 +35,11 @@ async function gate(request: Request) {
   return { userId: auth.user.sub } as const;
 }
 
+// Search runs in the browser; only the term scopes the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const g = await gate(request);
   if ("redirect" in g) throw g.redirect;
@@ -42,25 +49,40 @@ export async function loader({ request }: Route.LoaderArgs) {
     currentTerm(request),
     prisma.domain.findMany({ where: { active: true }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true } }),
   ]);
+  // Older links carry the term code rather than its id.
   const wanted = new URL(request.url).searchParams.get("term");
   const picked =
-    terms.find((t) => t.code === wanted) ?? terms.find((t) => t.id === current?.id) ?? terms.at(-1) ?? null;
+    terms.find((t) => t.id === wanted) ??
+    terms.find((t) => t.code === wanted) ??
+    terms.find((t) => t.id === current?.id) ??
+    terms.at(-1) ??
+    null;
+  const termOptions = [...terms]
+    .reverse()
+    .map((t) => ({ id: t.id, code: t.code, isCurrent: t.id === current?.id }));
   if (!picked) {
     return {
       terms,
+      termOptions,
       picked: null as TermRef | null,
       decisionTerm: null as TermRef | null,
       cards: [] as RenewalCardModel[],
       domains: [] as { id: string; name: string }[],
+      coreMembers: [] as { userId: string; name: string }[],
     };
   }
-  const { decisionTerm, cards } = await loadRenewalCards(picked, terms);
+  const [{ decisionTerm, cards }, coreMembers] = await Promise.all([
+    loadRenewalCards(picked, terms),
+    listActiveCoreMembers(request),
+  ]);
   return {
     terms,
+    termOptions,
     picked,
     decisionTerm,
     cards,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    coreMembers,
   };
 }
 
@@ -71,6 +93,24 @@ export async function action({ request }: Route.ActionArgs) {
   const intent = String(form.get("intent") ?? "");
   const projectId = String(form.get("projectId") ?? "");
   const decisionTermId = String(form.get("decisionTermId") ?? "");
+
+  if (intent === "pi") {
+    const termId = String(form.get("termId") ?? "");
+    const piUserId = String(form.get("piUserId") ?? "") || null;
+    if (piUserId && !(await isCore(piUserId))) return { error: "A PI must be a Core member." };
+    if (!(await setTermPi(prisma, { projectId, termId, piUserId }))) {
+      return { error: "That project is not active in that term." };
+    }
+    await logAuditEvent({
+      action: "partner.project.update",
+      userId: g.userId,
+      targetId: projectId,
+      metadata: { renewalIntent: intent, termId, piUserId },
+      request,
+    });
+    return { ok: true };
+  }
+
   if (!projectId || !decisionTermId) return { error: "Missing project or term." };
 
   const next = normalizeNextStep(String(form.get("nextStep") ?? ""), String(form.get("nextStepDue") ?? ""));
@@ -115,9 +155,8 @@ export async function action({ request }: Route.ActionArgs) {
 
 export default function PartnersRenewals() {
   const data = useLoaderData<typeof loader>();
-  const [, setSearchParams] = useSearchParams();
-  const [query, setQuery] = useState("");
-  const { terms, picked, decisionTerm, cards, domains } = data;
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
+  const { terms, termOptions, picked, decisionTerm, cards, domains, coreMembers } = data;
 
   return (
     <div className="flex flex-col gap-4">
@@ -132,14 +171,12 @@ export default function PartnersRenewals() {
         />
         <div className="flex-1" />
         {picked && (
-          <Select
-            ariaLabel="Active in term"
-            value={picked.code}
-            onChange={(code) =>
-              setSearchParams({ term: code }, { replace: true, preventScrollReset: true })
-            }
-            options={[...terms].reverse().map((t) => ({ value: t.code, label: `Active in ${t.code}` }))}
-            buttonClassName={filterPillClass()}
+          <TermFilter
+            terms={termOptions}
+            selected={picked.id}
+            includeAll={false}
+            replace
+            formatLabel={(label) => `Active in ${label}`}
           />
         )}
       </div>
@@ -158,6 +195,8 @@ export default function PartnersRenewals() {
           decisionTerm={decisionTerm}
           termOptions={terms.filter((t) => t.sortKey >= decisionTerm.sortKey).map((t) => ({ id: t.id, code: t.code }))}
           domains={domains}
+          coreMembers={coreMembers}
+          pickedTermId={picked.id}
         />
       )}
     </div>

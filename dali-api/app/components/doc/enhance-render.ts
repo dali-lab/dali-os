@@ -18,7 +18,7 @@ import {
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
 import { appendBlocks } from "./insert";
-import { blockOwnText } from "./schema/configs";
+import { blockOwnText, blocksToPlainText } from "./schema/configs";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 
 /** Citation chip href: an ordinary link, not a new inline node (spec §3) —
@@ -60,8 +60,17 @@ export function findTranscriptToggle(blocks: readonly DocBlock[]): DocBlock | nu
  *  wrote, so Enhance would otherwise anchor new notes below it or try to
  *  rewrite its heading. */
 export function enhanceSnapshotBlocks(blocks: readonly DocBlock[]): SnapshotBlock[] {
+  return snapshotTree(withoutTranscriptToggle(blocks));
+}
+
+/** The note's text minus its Transcript toggle, for the untouched-template check. */
+export function noteBodyText(blocks: readonly DocBlock[]): string {
+  return blocksToPlainText(withoutTranscriptToggle(blocks));
+}
+
+function withoutTranscriptToggle(blocks: readonly DocBlock[]): DocBlock[] {
   const toggle = findTranscriptToggle(blocks);
-  return snapshotTree(blocks.filter((b) => b !== toggle));
+  return blocks.filter((b) => b !== toggle);
 }
 
 export function hasTranscriptToggle(editor: DocEditorInstance): boolean {

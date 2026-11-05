@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   expandOccurrences,
+  followingRule,
   googleInstanceOriginalStart,
   googleSeriesBase,
   googleSeriesBaseUID,
@@ -410,5 +411,32 @@ describe("matchMeetingForEvent base fallback", () => {
 
   it("returns null when neither exact nor base matches", () => {
     expect(matchMeetingForEvent({ eventId: split, iCalUID: `${split}@google.com` }, new Map(), new Map())).toBeNull();
+  });
+});
+
+describe("followingRule", () => {
+  const seriesStart = new Date("2026-11-02T14:00:00Z");
+  const splitAt = new Date("2026-11-16T14:00:00Z");
+
+  it("leaves an open-ended rule open-ended", () => {
+    expect(followingRule("RRULE:FREQ=WEEKLY;BYDAY=MO", seriesStart, splitAt)).toBe("FREQ=WEEKLY;BYDAY=MO");
+  });
+
+  it("keeps the old series' UNTIL so the new series ends where the old one did", () => {
+    expect(followingRule(["RRULE:FREQ=WEEKLY;UNTIL=20261214T140000Z"], seriesStart, splitAt)).toBe(
+      "FREQ=WEEKLY;UNTIL=20261214T140000Z",
+    );
+  });
+
+  it("gives the new series only the occurrences the old COUNT had left", () => {
+    expect(followingRule("FREQ=WEEKLY;COUNT=10", seriesStart, splitAt)).toBe("FREQ=WEEKLY;COUNT=8");
+  });
+
+  it("keeps the full COUNT when splitting at the first occurrence", () => {
+    expect(followingRule("FREQ=WEEKLY;COUNT=10", seriesStart, seriesStart)).toBe("FREQ=WEEKLY;COUNT=10");
+  });
+
+  it("returns null when there is no FREQ rule", () => {
+    expect(followingRule(["EXDATE:20261109T140000Z"], seriesStart, splitAt)).toBeNull();
   });
 });

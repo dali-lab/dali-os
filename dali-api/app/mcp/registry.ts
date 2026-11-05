@@ -1,7 +1,4 @@
-// MCP tool registry — the additive successor to the giant switch in
-// app/routes/mcp.ts. New tools register here as self-describing entries; the
-// route dispatches registry tools first and only falls through to the legacy
-// switch for tools not yet migrated.
+// MCP tool registry — every tool app/routes/mcp.ts serves.
 //
 // A registry entry is fully self-contained: a tool def (name/description/schema/
 // scope) plus a `run(ctx, args)` handler. Errors are mapped to JSON-RPC codes
@@ -53,27 +50,14 @@ export {
   McpForbiddenError,
   McpInvalidError,
   requireForAction,
+  mapToolError,
 } from "./errors";
-
-/** Map a thrown error to a JSON-RPC {code,message}. Reads a numeric `.status`
- *  (403→forbidden, 404→not found, else invalid-params); returns null when the
- *  error carries no status so the caller falls back to a generic -32000. */
-export function mapToolError(err: unknown): { code: number; message: string } | null {
-  if (err && typeof err === "object" && "status" in err) {
-    const status = (err as { status: unknown }).status;
-    if (typeof status === "number") {
-      const message = err instanceof Error ? err.message : String(err);
-      const code = status === 403 ? -32003 : status === 404 ? -32004 : -32602;
-      return { code, message };
-    }
-  }
-  return null;
-}
 
 // ─── Registry ────────────────────────────────────────────────────────────────
 // Area modules each export an McpTool[]; they're spread in here. The route reads
 // REGISTRY_TOOLS for both tools/list and tools/call. Keep imports alphabetical.
 
+import { BASE_TOOLS } from "./tools/base";
 import { HIRING_TOOLS } from "./tools/hiring";
 import { EDUCATION_TOOLS } from "./tools/education";
 import { PARTNERS_TOOLS } from "./tools/partners";
@@ -88,8 +72,10 @@ import { FACETED_TOOLS } from "./tools/faceted";
 import { PERSONAL_TOOLS } from "./tools/personal";
 import { JOURNEYS_TOOLS } from "./tools/journeys";
 import { COMMUNITY_TOOLS } from "./tools/community";
+import { HELP_TOOLS } from "./tools/help";
 
 export const REGISTRY_TOOLS: McpTool[] = [
+  ...BASE_TOOLS,
   ...HIRING_TOOLS,
   ...EDUCATION_TOOLS,
   ...PARTNERS_TOOLS,
@@ -104,6 +90,7 @@ export const REGISTRY_TOOLS: McpTool[] = [
   ...PERSONAL_TOOLS,
   ...JOURNEYS_TOOLS,
   ...COMMUNITY_TOOLS,
+  ...HELP_TOOLS,
 ];
 
 const BY_NAME = new Map<string, McpTool>(REGISTRY_TOOLS.map((t) => [t.def.name, t]));

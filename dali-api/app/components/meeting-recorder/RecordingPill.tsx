@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router";
 import { ArrowRight, Loader2, Mic } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { stopLiveSession, useLiveSession, useLiveSessionBoot, type LiveSession } from "./live-session";
 import { formatClock } from "./transcript";
@@ -63,14 +62,13 @@ function StopButton() {
 
 export function RecordingPill() {
   const session = useLiveSession();
-  const enabled = useFeatureFlag("ai-meeting-notes");
   const { pathname } = useLocation();
   const now = useNow(session?.status === "recording");
-  useLiveSessionBoot(enabled);
+  useLiveSessionBoot();
   const capturing = session?.status === "starting" || session?.status === "recording" || session?.status === "stopping";
-  useRecordingFavicon(enabled && capturing);
+  useRecordingFavicon(capturing);
 
-  if (!enabled || !session) return null;
+  if (!session) return null;
   if (session.href && pathname === session.href) return null;
 
   if (session.status === "stopping") {
@@ -109,6 +107,7 @@ export function RecordingPill() {
       <span className="font-bold tabular-nums text-os-red">
         {session.status === "starting" ? "Starting" : formatClock((now - session.startedAt) / 1000)}
       </span>
+      {session.noSound && <span className="shrink-0 font-semibold text-destructive">No sound</span>}
       <Title session={session} />
       <StopButton />
     </div>
