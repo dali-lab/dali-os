@@ -30,7 +30,7 @@ vi.mock("~/components/doc", () => ({
   },
 }));
 
-import { FormSettingsButton } from "~/forms/components/FormSettings";
+import { FormSettingsDialog } from "~/forms/components/FormSettings";
 
 let root: Root;
 let container: HTMLDivElement;
@@ -43,7 +43,9 @@ function mount(over: Record<string, unknown> = {}) {
   root = createRoot(container);
   act(() => {
     root.render(
-      createElement(FormSettingsButton, {
+      createElement(FormSettingsDialog, {
+        open: true,
+        onClose: () => {},
         managing: null,
         usages: [],
         hiringLinks: [],
@@ -62,9 +64,6 @@ function mount(over: Record<string, unknown> = {}) {
         ...over,
       } as never),
     );
-  });
-  act(() => {
-    container.querySelector<HTMLButtonElement>("button[aria-label='Settings']")!.click();
   });
   return container;
 }

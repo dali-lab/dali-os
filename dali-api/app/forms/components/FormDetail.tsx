@@ -8,18 +8,22 @@ import {
   UserIcon,
   Lock,
   Copy,
-  Check,
   Eye,
   Loader2,
   Trash2,
-  History,
   ChevronDown,
-  Share2,
-  Download,
   CornerDownRight,
+  QrCode,
+  Settings,
+  Unlink,
+  Undo2,
 } from "lucide-react";
-import QRCode from "qrcode";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
+import { Segmented } from "~/components/ui/Segmented";
+import { PageBarHideCopyLink, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
+import { FormQrDialog } from "~/forms/components/FormQrDialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { InfoBody } from "~/components/form-builder/info-body";
@@ -27,15 +31,14 @@ import { isLayoutOnly } from "~/lib/form-answers";
 import { questionNumbers, ruleDepths, showIfSentence } from "~/lib/form-logic";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
-import { FormSettingsButton } from "~/forms/components/FormSettings";
+import { FormSettingsDialog } from "~/forms/components/FormSettings";
 import { VersionResults } from "~/forms/components/VersionResults";
 import { VersionSummary } from "~/forms/components/VersionSummary";
 import { DocEditor } from "~/components/doc";
-import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { useDraftAutosave, type AutosaveStatus } from "~/forms/lib/use-draft-autosave";
-import { Button, buttonClasses } from "~/components/ui/Button";
-import { Popover, Tooltip } from "~/components/ui/floating";
+import { Button } from "~/components/ui/Button";
+import { Menu, Popover, Tooltip } from "~/components/ui/floating";
 import type { Question } from "~/types";
 import type { loader } from "~/forms/routes/forms.edit.$formId";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
@@ -97,6 +100,11 @@ export function FormDetail() {
   const draftFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const discardFetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const dialog = useDialog();
+  const toast = useToast();
+  const renameFetcher = useFetcher();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   // Deleting a not-yet-used version (accidental-versioning cleanup). Guarded by
   // a confirm dialog; the server re-checks the lock before deleting.
@@ -325,124 +333,197 @@ export function FormDetail() {
     }
   }
 
+  const nextVersionNumber = (latestVersion?.versionNumber ?? 0) + 1;
+  const autosaveSuffix =
+    autosave.status === "saving" ? " · Saving…" : autosave.status === "saved" ? " · Saved" : "";
+  const statusLabel = isEditing
+    ? `Editing v${nextVersionNumber} draft${autosaveSuffix}`
+    : selectedVersion
+      ? `v${selectedVersion.versionNumber}${
+          selectedVersion.id === latestVersion?.id && !managing
+            ? ` · ${form.published ? "Published" : "Not published"}`
+            : ""
+        }`
+      : "Versions";
+
+  const fillUrl =
+    form.published && form.publicToken
+      ? `${typeof window !== "undefined" ? window.location.origin : ""}/forms/fill/${form.publicToken}`
+      : null;
+  const publishToggle = usePublishToggle({ formId: form.id, published: form.published, inUse: usages.length > 0 });
+
+  async function copyFillLink() {
+    if (!fillUrl) return;
+    try {
+      await navigator.clipboard.writeText(fillUrl);
+      toast.success("Link copied.");
+    } catch {
+      toast.error("Couldn't copy the link.");
+    }
+  }
+
+  async function renameForm() {
+    const next = await dialog.prompt({
+      title: "Rename form",
+      label: "Form name",
+      defaultValue: form.name,
+      confirmLabel: "Rename",
+      validate: (v) => (v.trim() ? null : "Enter a name."),
+    });
+    const name = next?.trim();
+    if (!name || name === form.name) return;
+    renameFetcher.submit({ intent: "rename-form", id: form.id, name }, { method: "post" });
+  }
+
+  const primary = isEditing ? (
+    <Tooltip
+      content={
+        managing
+          ? "Save your changes as a new version. The managing feature uses the latest one."
+          : "Save your changes as a new version and make it live at the share link."
+      }
+    >
+      <Button variant="primary" size="sm" disabled={busySaving} onClick={() => void publishEdits()}>
+        {publishingEdits ? "Publishing…" : "Publish"}
+      </Button>
+    </Tooltip>
+  ) : managing ? null : !form.published && form.versions.length > 0 ? (
+    <Tooltip content={publishToggle.error ?? "Make the latest version live at the share link."} placement="bottom">
+      <Button variant="primary" size="sm" disabled={publishToggle.busy} onClick={() => void publishToggle.toggle()}>
+        {publishToggle.busy ? "Saving…" : "Publish"}
+      </Button>
+    </Tooltip>
+  ) : form.published && selectedVersion ? (
+    <Button variant="primary" size="sm" onClick={() => startEditing()}>
+      {hasDraft ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+      {hasDraft ? "Continue editing draft" : "New version"}
+    </Button>
+  ) : null;
+
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <FormTitle formId={form.id} name={form.name} iconEmoji={form.iconEmoji} />
-        <FormVersionMenu
-          formId={form.id}
-          versions={form.versions}
-          draftQuestionCount={hasDraft ? (form.draft?.questions.length ?? 0) : null}
-          currentLabel={
-            isEditing
-              ? "Draft"
-              : selectedVersion
-                ? `v${selectedVersion.versionNumber}`
-                : "Versions"
-          }
-          selectedVersionId={isEditing ? null : (selectedVersionId ?? null)}
-          editingDraft={isEditing}
-          tz={tz}
-          onOpenDraft={() => startEditing()}
-          onNewVersion={() => startEditing()}
-          onSelect={(v) => showVersion(v.id, "questions")}
-          onResults={(v) => showVersion(v.id, "results")}
-          onEdit={(v) => editVersion(v)}
-          deleteFetcher={deleteFetcher}
-          confirmSubmit={confirmSubmit}
-        />
-        {isEditing && <DraftStatus status={autosave.status} onRetry={autosave.retry} />}
-        <FormSettingsButton
-          managing={managing}
-          usages={usages}
-          hiringLinks={hiringLinks}
-          formId={form.id}
-          oneResponsePerMember={form.oneResponsePerMember}
-          allowResponseEdit={form.allowResponseEdit}
-          remindBeforeClose={form.remindBeforeClose}
-          confirmationMessage={form.confirmationMessage}
-          sendReceipt={form.sendReceipt}
-          audience={form.audience}
-          hasEmailQuestion={hasEmailQuestion}
-          notifyOnSubmission={form.notifyOnSubmission}
-          listed={form.listed}
-          opensAt={form.opensAt}
-          closesAt={form.closesAt}
-        />
-        <Button
-          variant="secondary"
+    <div className="space-y-6">
+      <PageBarHideCopyLink />
+      <PageBarPortal slot="status">
+        <div className="flex items-center gap-2">
+          <FormVersionMenu
+            formId={form.id}
+            versions={form.versions}
+            draftQuestionCount={hasDraft ? (form.draft?.questions.length ?? 0) : null}
+            currentLabel={statusLabel}
+            selectedVersionId={isEditing ? null : (selectedVersionId ?? null)}
+            editingDraft={isEditing}
+            tz={tz}
+            onOpenDraft={() => startEditing()}
+            onNewVersion={() => startEditing()}
+            onSelect={(v) => showVersion(v.id, "questions")}
+            onResults={(v) => showVersion(v.id, "results")}
+            onEdit={(v) => editVersion(v)}
+            deleteFetcher={deleteFetcher}
+            confirmSubmit={confirmSubmit}
+          />
+          {isEditing && autosave.status === "error" && <DraftStatus status={autosave.status} onRetry={autosave.retry} />}
+        </div>
+      </PageBarPortal>
+      <PageBarPortal slot="actions">
+        <button
+          type="button"
           onClick={preview}
           disabled={previewResolving || (!isEditing && !selectedVersion)}
+          className={cn(pageBarTextButton(), "disabled:opacity-40")}
         >
-          {previewResolving ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Eye className="w-4 h-4" />
-          )}
+          {previewResolving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
           Preview
-        </Button>
-        {managing ? (
+        </button>
+        {!managing && (
           <>
-            <Tooltip content="This feature decides who can fill the form and when, so publishing and sharing happen there.">
-              {managing.href ? (
-                <Link
-                  to={managing.href}
-                  className="inline-flex items-center gap-1.5 px-3 text-sm text-os-grey hover:text-foreground"
-                >
-                  <Lock className="w-4 h-4" />
-                  Managed by {managing.label}
-                </Link>
-              ) : (
-                <span className="inline-flex items-center gap-1.5 px-3 text-sm text-os-grey">
-                  <Lock className="w-4 h-4" />
-                  Managed by {managing.label}
+            {fillUrl ? (
+              <button type="button" onClick={() => void copyFillLink()} className={pageBarTextButton()}>
+                <Copy className="h-4 w-4" />
+                Copy link
+              </button>
+            ) : (
+              <Tooltip content="Publish to get a link">
+                <span>
+                  <button type="button" disabled className={cn(pageBarTextButton(), "opacity-40")}>
+                    <Copy className="h-4 w-4" />
+                    Copy link
+                  </button>
                 </span>
-              )}
-            </Tooltip>
-            {/* The managing feature serves the latest version, so Publish
-                here only freezes the edits into one. */}
-            {isEditing && (
-              <Tooltip content="Save your changes as a new version. The managing feature uses the latest one.">
-                <Button
-                  variant="primary"
-                  disabled={busySaving}
-                  onClick={() => void publishEdits()}
-                >
-                  {publishingEdits ? "Publishing…" : "Publish"}
-                </Button>
               </Tooltip>
             )}
-          </>
-        ) : (
-          <>
-            <FormPageShare
-              formId={form.id}
-              formName={form.name}
-              workspaceType={page.workspaceType ?? "Lab"}
-              fillUrl={form.published && form.publicToken ? `/forms/fill/${form.publicToken}` : null}
-            />
-            <FormShareButton
-              published={form.published}
-              publicToken={form.publicToken}
-              formName={form.name}
-              label="Link"
-            />
-            <PublishButton
-              formId={form.id}
-              published={form.published}
-              hasVersions={form.versions.length > 0}
-              inUse={usages.length > 0}
-              onPublishEdits={
-                isEditing
-                  ? () => void publishEdits()
-                  : undefined
-              }
-              publishingEdits={publishingEdits}
-              editsBusy={busySaving}
-            />
+            <PageBarShareButton onClick={() => setShareOpen(true)} />
           </>
         )}
-      </div>
+        {managing && (
+          <Tooltip content="This feature decides who can fill the form and when, so publishing and sharing happen there.">
+            {managing.href ? (
+              <Link to={managing.href} className={pageBarTextButton()}>
+                <Lock className="h-4 w-4" />
+                Managed by {managing.label}
+              </Link>
+            ) : (
+              <span className={pageBarTextButton()}>
+                <Lock className="h-4 w-4" />
+                Managed by {managing.label}
+              </span>
+            )}
+          </Tooltip>
+        )}
+        {primary}
+      </PageBarPortal>
+      <PageBarMenuItems>
+        <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => void renameForm()}>
+          Rename
+        </Menu.Item>
+        <Menu.Item icon={<Settings className="h-3.5 w-3.5" />} onSelect={() => setSettingsOpen(true)}>
+          Form settings
+        </Menu.Item>
+        {fillUrl && !managing && (
+          <Menu.Item icon={<QrCode className="h-3.5 w-3.5" />} onSelect={() => setQrOpen(true)}>
+            QR code
+          </Menu.Item>
+        )}
+        {form.published && !managing && (
+          <Menu.Item icon={<Unlink className="h-3.5 w-3.5" />} onSelect={() => void publishToggle.toggle()}>
+            Unpublish
+          </Menu.Item>
+        )}
+        {hasDraft && (
+          <Menu.Item icon={<Undo2 className="h-3.5 w-3.5" />} onSelect={() => void discardDraft()}>
+            Discard draft
+          </Menu.Item>
+        )}
+      </PageBarMenuItems>
+      <FormSettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        managing={managing}
+        usages={usages}
+        hiringLinks={hiringLinks}
+        formId={form.id}
+        oneResponsePerMember={form.oneResponsePerMember}
+        allowResponseEdit={form.allowResponseEdit}
+        remindBeforeClose={form.remindBeforeClose}
+        confirmationMessage={form.confirmationMessage}
+        sendReceipt={form.sendReceipt}
+        audience={form.audience}
+        hasEmailQuestion={hasEmailQuestion}
+        notifyOnSubmission={form.notifyOnSubmission}
+        listed={form.listed}
+        opensAt={form.opensAt}
+        closesAt={form.closesAt}
+      />
+      {!managing && (
+        <ShareDialog
+          page={{ id: form.id, title: form.name, workspaceType: page.workspaceType ?? "Lab" }}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          fillUrl={fillUrl}
+        />
+      )}
+      {fillUrl && (
+        <FormQrDialog open={qrOpen} onClose={() => setQrOpen(false)} fillUrl={fillUrl} formName={form.name} />
+      )}
 
       {(deleteError || saveError) && (
         <p className="text-sm text-destructive">{deleteError ?? saveError}</p>
@@ -467,42 +548,22 @@ export function FormDetail() {
           allowCheckbox
           onChange={autosave.schedule}
           snapshotRef={builderSnapshot}
-          onDiscard={hasDraft ? () => void discardDraft() : undefined}
         />
       ) : selectedVersion ? (
         <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="inline-flex p-1 rounded-full bg-os-container">
-              {(["questions", "results"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => showVersion(selectedVersion.id, v)}
-                  aria-pressed={view === v}
-                  className={cn(
-                    "px-4 py-1.5 rounded-full text-sm font-semibold transition-colors",
-                    view === v
-                      ? "bg-os-card text-foreground shadow-sm"
-                      : "text-os-grey hover:text-foreground",
-                  )}
-                >
-                  {v === "questions" ? "Questions" : "Results"}
-                  {v === "results" && (
-                    <span className="ml-1.5 tabular-nums opacity-70">
-                      {selectedVersion.submissionCount}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
+            <Segmented
+              ariaLabel="Form view"
+              value={view}
+              onChange={(v) => showVersion(selectedVersion.id, v)}
+              options={[
+                { value: "questions", label: "Questions" },
+                { value: "results", label: "Results", count: selectedVersion.submissionCount },
+              ]}
+            />
             <span className="text-sm text-os-grey">
-              v{selectedVersion.versionNumber} · {selectedVersion.createdByName} ·{" "}
-              {formatDateTime(selectedVersion.createdAt, tz)}
+              {selectedVersion.createdByName} · {formatDateTime(selectedVersion.createdAt, tz)}
             </span>
-            <Button variant="secondary" className="ml-auto" onClick={() => startEditing()}>
-              {hasDraft ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-              {hasDraft ? "Continue editing draft" : "New version"}
-            </Button>
           </div>
 
           {view === "results" && showSummary ? (
@@ -735,13 +796,9 @@ function FormVersionMenu({
         popover,
       )}
       trigger={
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 h-10 px-3.5 rounded-full text-sm font-semibold text-os-grey hover:bg-os-container hover:text-foreground transition-colors"
-        >
-          <History className="w-5 h-5" />
+        <button type="button" className={pageBarTextButton()}>
           {currentLabel}
-          <ChevronDown className="w-4 h-4" />
+          <ChevronDown className="h-3.5 w-3.5" />
         </button>
       }
     >
@@ -878,202 +935,9 @@ function FormVersionMenu({
   );
 }
 
-// Page-access Share: the same dialog every Drive page uses, with the form's
-// fill link as its Copy link target.
-function FormPageShare({
-  formId,
-  formName,
-  workspaceType,
-  fillUrl,
-}: {
-  formId: string;
-  formName: string;
-  workspaceType: string;
-  fillUrl: string | null;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button variant="secondary" onClick={() => setOpen(true)}>
-        <Share2 className="w-4 h-4" />
-        Share
-      </Button>
-      <ShareDialog
-        page={{ id: formId, title: formName, workspaceType }}
-        open={open}
-        onClose={() => setOpen(false)}
-        fillUrl={fillUrl}
-      />
-    </>
-  );
-}
-
-// The fill link, next to Publish. A published form is fillable at
-// /forms/fill/:publicToken; unpublishing 404s that route but keeps the token
-// so re-publishing restores the same link.
-function FormShareButton({
-  published,
-  publicToken,
-  formName,
-  label,
-}: {
-  published: boolean;
-  publicToken: string | null;
-  formName: string;
-  label: "Share" | "Link";
-}) {
-  const { popover } = useOsChrome();
-  const [copied, setCopied] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const publicUrl =
-    published && publicToken
-      ? `${typeof window !== "undefined" ? window.location.origin : ""}/forms/fill/${publicToken}`
-      : null;
-
-  // Rendered large so the download prints cleanly; the preview scales it down.
-  useEffect(() => {
-    if (!publicUrl) return;
-    let cancelled = false;
-    QRCode.toDataURL(publicUrl, { margin: 2, width: 1024 })
-      .then((url) => {
-        if (!cancelled) setQrDataUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setQrDataUrl(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [publicUrl]);
-
-  const qrFileName = `${formName.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "form"}-qr.png`;
-
-  async function copy() {
-    if (!publicUrl) return;
-    try {
-      await navigator.clipboard.writeText(publicUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard blocked — user can select the text manually */
-    }
-  }
-
-  if (!publicUrl) {
-    return (
-      <Tooltip content="Publish to get a link">
-        <span>
-          <Button variant="secondary" disabled>
-            <Share2 className="w-4 h-4" />
-            {label}
-          </Button>
-        </span>
-      </Tooltip>
-    );
-  }
-
-  return (
-    <Popover
-      align="right"
-      ariaLabel="Share"
-      panelClassName={cn(
-        "z-[60] w-80 max-w-[calc(100vw-2rem)] p-4 os-form focus:outline-none flex flex-col gap-4",
-        popover,
-      )}
-      trigger={
-        <Button variant="secondary">
-          <Share2 className="w-4 h-4" />
-          {label}
-        </Button>
-      }
-    >
-      <div className="flex flex-col gap-2">
-        <span className="os-field-label">Link</span>
-        <div className="relative">
-          <input
-            type="text"
-            readOnly
-            value={publicUrl}
-            onFocus={(e) => e.currentTarget.select()}
-            className="w-full pr-11 text-sm truncate"
-            aria-label="Form link"
-          />
-          <Tooltip content={copied ? "Copied" : "Copy link"}>
-            <button
-              type="button"
-              onClick={copy}
-              aria-label="Copy link"
-              className={cn(
-                "os-icon-btn absolute right-1.5 top-1/2 -translate-y-1/2",
-                copied && "text-os-accent hover:text-os-accent",
-              )}
-            >
-              {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-            </button>
-          </Tooltip>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2">
-        <span className="os-field-label">QR code</span>
-        <div className="flex justify-center rounded-os-item bg-os-well p-5">
-          <div className="rounded-xl bg-white p-2 shadow-sm">
-            {qrDataUrl ? (
-              <img src={qrDataUrl} alt="QR code for the form link" className="block w-40 h-40" />
-            ) : (
-              <div className="w-40 h-40" />
-            )}
-          </div>
-        </div>
-      </div>
-
-      <a
-        href={qrDataUrl ?? undefined}
-        download={qrFileName}
-        aria-disabled={!qrDataUrl}
-        className={buttonClasses("secondary", "md", "w-full")}
-      >
-        <Download className="w-4 h-4" />
-        Download QR code
-      </a>
-    </Popover>
-  );
-}
-
-// Publish. While editing it freezes the builder's edits into a version and
-// publishes them (onPublishEdits); otherwise it publishes the latest version,
-// or unpublishes a published form.
-function PublishButton({
-  formId,
-  published,
-  hasVersions,
-  inUse,
-  onPublishEdits,
-  publishingEdits,
-  editsBusy,
-}: {
-  formId: string;
-  published: boolean;
-  hasVersions: boolean;
-  inUse: boolean;
-  onPublishEdits?: () => void;
-  publishingEdits: boolean;
-  editsBusy: boolean;
-}) {
+function usePublishToggle({ formId, published, inUse }: { formId: string; published: boolean; inUse: boolean }) {
   const fetcher = useFetcher<{ error?: string }>();
   const dialog = useDialog();
-  const busy = fetcher.state !== "idle";
-  const err = fetcher.data?.error ?? null;
-
-  if (onPublishEdits) {
-    return (
-      <Tooltip content="Save your changes as a new version and make it live at the share link.">
-        <Button variant="primary" onClick={onPublishEdits} disabled={editsBusy}>
-          {publishingEdits ? "Publishing…" : "Publish"}
-        </Button>
-      </Tooltip>
-    );
-  }
 
   async function toggle() {
     if (
@@ -1082,109 +946,14 @@ function PublishButton({
       !(await dialog.confirm({
         title: "Unpublish this form?",
         tone: "destructive",
-        description:
-          "It's in use elsewhere. Unpublishing hides it there until you publish again.",
+        description: "It's in use elsewhere. Unpublishing hides it there until you publish again.",
         confirmLabel: "Unpublish",
       }))
     ) {
       return;
     }
-    fetcher.submit(
-      { intent: published ? "unpublish-form" : "publish-form", id: formId },
-      { method: "post" },
-    );
+    fetcher.submit({ intent: published ? "unpublish-form" : "publish-form", id: formId }, { method: "post" });
   }
 
-  return (
-    <Tooltip
-      content={
-        err ??
-        (published
-          ? "Take the form offline. The link stops working until you publish again."
-          : hasVersions
-            ? "Make the latest version live at the share link."
-            : "Add questions first.")
-      }
-      variant="rich"
-      placement="bottom"
-    >
-      <span>
-        <Button
-          variant={published ? "secondary" : "primary"}
-          onClick={toggle}
-          disabled={busy || (!published && !hasVersions)}
-        >
-          {busy ? "Saving…" : published ? "Unpublish" : "Publish"}
-        </Button>
-      </span>
-    </Tooltip>
-  );
-}
-
-// Same affordance as a document's header: "Add icon" shows on hover until an
-// icon is set, then the icon sits before the title.
-function FormTitle({ formId, name, iconEmoji }: { formId: string; name: string; iconEmoji: string | null }) {
-  const fetcher = useFetcher();
-  const [icon, setIcon] = useState(iconEmoji);
-  useEffect(() => setIcon(iconEmoji), [iconEmoji]);
-
-  function save(next: string | null) {
-    setIcon(next);
-    fetcher.submit({ intent: "set-form-icon", id: formId, iconEmoji: next ?? "" }, { method: "post" });
-  }
-
-  return (
-    <div className="group/header flex-1 min-w-[12rem]">
-      {!icon && (
-        <div className="flex items-center h-6 mb-1 opacity-0 transition-opacity duration-150 group-hover/header:opacity-100 group-focus-within/header:opacity-100 touch:opacity-100">
-          <PageIconPicker iconEmoji={null} canEdit onChange={save} />
-        </div>
-      )}
-      <div className="flex items-center gap-2">
-        {icon && <PageIconPicker iconEmoji={icon} canEdit onChange={save} />}
-        <div className="min-w-0 flex-1">
-          <FormNameInput formId={formId} name={name} />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Inline-editable form title. Saves on blur/Enter; Escape or an empty value
-// reverts to the saved name.
-function FormNameInput({ formId, name }: { formId: string; name: string }) {
-  const fetcher = useFetcher();
-  const [value, setValue] = useState(name);
-  useEffect(() => setValue(name), [name]);
-
-  function commit() {
-    const next = value.trim();
-    if (!next || next === name) {
-      setValue(name);
-      return;
-    }
-    fetcher.submit(
-      { intent: "rename-form", id: formId, name: next },
-      { method: "post" },
-    );
-  }
-
-  return (
-    <input
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        if (e.key === "Escape") {
-          const el = e.currentTarget;
-          setValue(name);
-          requestAnimationFrame(() => el.blur());
-        }
-      }}
-      maxLength={120}
-      aria-label="Form name"
-      className="w-full px-3 py-1.5 rounded-os-item bg-transparent font-heading text-2xl font-semibold text-foreground outline-none hover:bg-os-container focus:bg-os-container"
-    />
-  );
+  return { toggle, busy: fetcher.state !== "idle", error: fetcher.data?.error ?? null };
 }
