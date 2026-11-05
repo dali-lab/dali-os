@@ -634,6 +634,8 @@ export async function runFormsAction(
         where: { id: input.id },
         data: { draftQuestions: Prisma.DbNull, draftIntro: null },
       });
+      const { clearFormDraftRoom } = await import("~/collab/write");
+      await clearFormDraftRoom(input.id);
       return { ok: true };
     }
     case "save-version": {

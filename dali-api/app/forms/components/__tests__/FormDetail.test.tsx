@@ -317,6 +317,9 @@ describe("FormDetail", () => {
       await click(confirm);
       await wait(50);
       expect(submitted).toEqual([{ intent: "discard-draft", id: "f1" }]);
+      await until(() => button("Discard draft") === undefined);
+      expect(button("Discard draft")).toBeUndefined();
+      expect(text()).toContain("Results");
     });
 
     it("does not discard when the confirm is cancelled", async () => {

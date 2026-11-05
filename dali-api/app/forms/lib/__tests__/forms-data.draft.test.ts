@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+const clearFormDraftRoom = vi.hoisted(() => vi.fn());
+vi.mock("~/collab/write", () => ({ clearFormDraftRoom }));
 
 // `Prisma` comes from the mocked ~/lib/db.server (which re-exports the namespace), so
 // the test and forms-data.ts share the same DbNull sentinel — and neither
@@ -95,12 +97,14 @@ describe("runFormsAction discard-draft", () => {
       data: { draftQuestions: Prisma.DbNull, draftIntro: null },
     });
     expect(mockPrisma.formVersion.create).not.toHaveBeenCalled();
+    expect(clearFormDraftRoom).toHaveBeenCalledWith("form-1");
   });
 
   it("404s when the form is missing", async () => {
     mockPrisma.form.findUnique.mockResolvedValue(null);
 
     const res = await runFormsAction(fd({ intent: "discard-draft", id: "nope" }), "user-1");
+    expect(clearFormDraftRoom).not.toHaveBeenCalled();
 
     expect(res).toEqual({ error: "Not found", status: 404 });
     expect(mockPrisma.form.update).not.toHaveBeenCalled();
