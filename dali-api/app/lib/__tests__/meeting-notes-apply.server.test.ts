@@ -80,32 +80,14 @@ describe("applyEnhanceOpsToDocBlocks", () => {
     expect(result[2]!.type).toBe("bulletListItem");
   });
 
-  it("renders a checkListItem insert as an unchecked checklist block (action items, §4)", () => {
+  it("renders a suggestion line as a plain paragraph, not a checklist item", () => {
     const blocks = [paragraph("b1", "a")];
     const ops: EditorOp[] = [
-      { kind: "insertAfter", afterId: "b1", blocks: [{ type: "checkListItem", text: "Send the scope", cites: [1], added: true }] },
+      { kind: "insertAfter", afterId: "b1", blocks: [{ type: "paragraph", text: "Send the scope", cites: [1], added: true }] },
     ];
     const result = applyEnhanceOpsToDocBlocks(ops, blocks, CTX);
-    expect(result[1]!.type).toBe("checkListItem");
-    expect(result[1]!.props).toEqual({ checked: false });
-  });
-
-  it("links a checkListItem insert to an already-created task (Create tasks ran before Apply, §4)", () => {
-    const blocks = [paragraph("b1", "a")];
-    const ops: EditorOp[] = [
-      {
-        kind: "insertAfter",
-        afterId: "b1",
-        blocks: [{ type: "checkListItem", text: "Send the revised scope", cites: [], added: true }],
-      },
-    ];
-    const result = applyEnhanceOpsToDocBlocks(ops, blocks, {
-      ...CTX,
-      actionItems: [{ text: "Send the revised scope", taskId: "task1" }],
-      projectId: "proj1",
-    });
-    expect(JSON.stringify(result[1]!.content)).toContain("taskMention");
-    expect(JSON.stringify(result[1]!.content)).toContain("task1");
+    expect(result[1]!.type).toBe("paragraph");
+    expect(JSON.stringify(result[1]!.content)).not.toContain("taskMention");
   });
 
   it("inserts at the start when afterId is null", () => {
@@ -218,7 +200,7 @@ describe("enhanceSnapshotDocBlocks / hasEnhanceMarkInTree", () => {
 });
 
 describe("applyEnhanceOpsToDocBlocks appendAtEnd", () => {
-  const op: EditorOp = { kind: "appendAtEnd", blocks: [{ type: "heading", text: "Action items", cites: [], added: true }] };
+  const op: EditorOp = { kind: "appendAtEnd", blocks: [{ type: "heading", text: "Tasks", cites: [], added: true }] };
 
   it("goes directly above an existing Transcript toggle", () => {
     const doc = ensureTranscriptToggle([paragraph("a", "Notes")], ["Ada: hi"]);
@@ -229,7 +211,7 @@ describe("applyEnhanceOpsToDocBlocks appendAtEnd", () => {
 
   it("goes at the end when there is no toggle, so ensureTranscriptToggle lands below it", () => {
     const result = ensureTranscriptToggle(applyEnhanceOpsToDocBlocks([op], [paragraph("a", "Notes")], CTX), ["Ada: hi"]);
-    expect(JSON.stringify(result[1]!.content)).toContain("Action items");
+    expect(JSON.stringify(result[1]!.content)).toContain("Tasks");
     expect(hasTranscriptToggle([result[2]!])).toBe(true);
   });
 });

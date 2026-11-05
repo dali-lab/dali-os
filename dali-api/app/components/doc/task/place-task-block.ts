@@ -23,3 +23,12 @@ export function placeTaskBlock(editor: DocEditorInstance, anchorId: string, task
   editor.setTextCursorPosition(next, "start");
   editor.focus();
 }
+
+/** Swaps an existing line for a task block, leaving the caret alone. False
+ *  when the line is gone. */
+export function replaceWithTaskBlock(editor: DocEditorInstance, blockId: string, task: TaskProps): boolean {
+  const block = editor.getBlock(blockId);
+  if (!block) return false;
+  editor.replaceBlocks([block], [{ type: "task", props: task } as DocPartialBlock]);
+  return true;
+}
