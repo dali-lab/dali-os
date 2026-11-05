@@ -19,7 +19,7 @@ If you have the page or story open, you see the assistant arrive like any other 
 - It can point at text without changing anything, to show you what it is looking at.
 - On a page, it also appears in the bar of people viewing the page. The card says whose assistant it is and whether it is reading, editing or pointing.
 
-If you run two assistant sessions on the same page, they show as **Claude** and **Claude 2**, each in its own colour. An assistant drops out of view about a minute after it last did something.
+If two of your connected apps work on the same page at once, for example Claude Code and Claude Desktop, they show as **Claude** and **Claude 2**, each in its own colour. An assistant drops out of view about a minute after it last did something.
 
 ## Undo an assistant's change
 
