@@ -122,7 +122,7 @@ function renderTable(block: Block, key: string, look: Look): ReactNode {
   if (rows.length === 0) return null;
   const headerRows = data.headerRows ?? 0;
   return (
-    <table key={key} data-slide-table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: "0.8em" }}>
+    <table key={key} data-slide-table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
       <tbody>
         {rows.map((row, r) => (
           <tr key={r}>

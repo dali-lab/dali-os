@@ -238,7 +238,7 @@ function addTables(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: Layout
   const top = hasText ? rect.h * 0.3 : 0;
   const per = (rect.h - top) / Math.max(1, tables.length);
   const border = { type: "solid" as const, pt: 1, color: resolveThemeColor(theme.colors.rule) ?? "888888" };
-  const size = Math.round(unitsToPoints(theme.textStyles.body.size * 0.8) * 10) / 10;
+  const size = Math.round(unitsToPoints(theme.textStyles.body.size) * 10) / 10;
   tables.forEach((table, t) => {
     const cols = Math.max(...table.rows.map((r) => r.length));
     const rows = table.rows.map((cells, r) =>
@@ -274,7 +274,7 @@ function addChartElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckRe
   const pie = chart.type === "pie";
   const data = (pie ? series.slice(0, 1) : series).map((s) => ({ name: s.name, labels, values: s.values }));
   const colors = pie ? labels.map((_, i) => palette[i % palette.length]) : data.map((_, i) => palette[i % palette.length]);
-  const type = { bar: pptx.ChartType.bar, line: pptx.ChartType.line, pie: pptx.ChartType.pie }[chart.type];
+  const type = chart.type;
   const muted = colorOf(theme, "muted");
   pptxSlide.addChart(type, data, {
     x: unitsToInches(rect.x),

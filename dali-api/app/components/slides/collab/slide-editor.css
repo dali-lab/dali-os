@@ -32,3 +32,30 @@ html:root .dali-slide-slot .bn-block-group {
 html:root .dali-slide-slot .bn-block-outer {
   line-height: inherit;
 }
+
+html:root .dali-slide-slot [data-content-type="table"] table {
+  border-collapse: collapse;
+  width: 100%;
+}
+html:root .dali-slide-slot [data-content-type="table"] :is(td, th) {
+  border: calc(3 * var(--slide-u)) solid var(--slide-rule);
+  padding: 0.35em 0.6em;
+  text-align: left;
+  vertical-align: top;
+  font-weight: inherit;
+}
+html:root .dali-slide-slot [data-content-type="table"] th {
+  background: var(--slide-surface);
+  font-weight: 700;
+}
+html:root .dali-slide-slot [data-content-type="codeBlock"] {
+  background: var(--slide-surface);
+  color: inherit;
+  border-radius: calc(12 * var(--slide-u));
+  padding: 0.6em 0.8em;
+  font-size: 0.8em;
+}
+html:root .dali-slide-slot [data-content-type="codeBlock"] :is(pre, code, span) {
+  color: inherit !important;
+  background: transparent;
+}
