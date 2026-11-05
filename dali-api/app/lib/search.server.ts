@@ -25,6 +25,7 @@ import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
 import { visibleHelpArticles } from "~/help/library.server";
 import { categorize } from "~/lib/file-type";
+import { filterViewableFiles } from "~/lib/fileAccess.server";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
 // that feed the pure ranking in lib/search.ts. Each category is a small helper
@@ -62,7 +63,7 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b, opts.request) },
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
     { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(opts, q, b) },
-    { type: "document", enabled: true, run: (b) => searchProjectFiles(q, like, b) },
+    { type: "document", enabled: true, run: (b) => searchProjectFiles(opts.userId, q, like, b, opts.request) },
     { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
     { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b, opts.request) },
@@ -264,7 +265,13 @@ async function searchTasks(q: string, like: Like, b: SearchBudget): Promise<Sear
   );
 }
 
-async function searchProjectFiles(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchProjectFiles(
+  userId: string,
+  q: string,
+  like: Like,
+  b: SearchBudget,
+  request?: Request,
+): Promise<SearchResult[]> {
   // Uploaded project files; archived ones are out, mirroring pages. Matches
   // the display title or the current version's original filename (a file is
   // often remembered by what it was uploaded as). Reuses the "document" result
@@ -277,14 +284,21 @@ async function searchProjectFiles(q: string, like: Like, b: SearchBudget): Promi
     select: {
       id: true,
       title: true,
+      projectId: true,
+      workspaceType: true,
+      workspaceId: true,
+      folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       currentVersion: { select: { fileName: true } },
       project: { select: { name: true } },
     },
     take: b.rawTake,
     orderBy: order(b),
   });
+  const viewable = await filterViewableFiles(userId, rows, request);
   return rankResults(
-    rows.map((f) => ({
+    viewable.map((f) => ({
       result: {
         type: "document" as const,
         id: f.id,

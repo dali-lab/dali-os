@@ -44,6 +44,20 @@ Click **Copy link** to copy the document's address.
 
 For a folder, **Folder access** sets who can open it and everything inside. Choose **Only people you add**, **Everyone in the lab** or **A group…** and pick the group, such as Core. Everything inside inherits this, though you can still share an item individually.
 
+## Share an uploaded file
+
+An uploaded file, such as a PDF or spreadsheet, can be shared by name like a document. In [Drive](/drive), right-click the file or open its menu and choose **Share…**. If you don't see it, or the dialog says you can't manage it, you don't manage that file's sharing.
+
+The dialog works like the one for documents, with a few differences:
+
+- A row at the top reads **People with access to** the folder, project or the Lab the file lives in. Those people can already open the file, and you can't change that here. Files in My Drive don't have this row.
+- Roles are **Can view** (open and download), **Can comment**, **Can edit** (upload new versions, rename and delete) and **Full access** (edit and manage sharing).
+- **General access** is **Only people you add** or **Everyone in the lab**. Files can't be made public.
+
+Sharing a file only adds access. A person who already has more access through the folder keeps it, and removing a share never takes away access they get from where the file lives. Because a share applies to the file itself, someone can open a shared file even when they can't open the folder it's in.
+
+The people who manage a file's sharing are the owner (for My Drive), anyone who can edit it through its folder, project or the Lab, and anyone with Full access. People you share with get a notification, and the file shows under **Shared with me** in Drive.
+
 ## Partners
 
 On a project document, if the project has an active partner, a **Partners** section appears with **Visible to partners on this project**. Turn it on to let partner accounts open and comment on it in the partner portal.

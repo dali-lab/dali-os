@@ -13,7 +13,7 @@ Drive opens on a list of drives. Which ones you see depends on your role.
 
 - **My Drive**: your private space. Only you can open what is in it.
 - **Favorites**: items you starred, from every drive.
-- **Shared with me**: documents someone shared with you by name.
+- **Shared with me**: documents and files someone shared with you by name.
 - **General**: lab-wide documents and files.
 - **Projects** and **Education**: one space per project or offering you can access.
 - **Core**, **Hiring** and **Mentorship**: shown when you have access to them.
@@ -45,7 +45,7 @@ Open a drive or folder, then click **New**.
 
 ## Move and rename
 
-Right-click an item, or use its menu, for **Open**, **Download** (files only), **Rename**, **Move to…** and **Delete**. Documents, folders and forms also offer **Share…**. You can drag an item onto a folder to move it, and select several items to move or delete them together.
+Right-click an item, or use its menu, for **Open**, **Download** (files only), **Rename**, **Move to…** and **Delete**. Documents, folders, forms and files also offer **Share…**. To share a file, see [Sharing and visibility](/help/articles/sharing). You can drag an item onto a folder to move it, and select several items to move or delete them together.
 
 Moving an item into another drive changes who can see it, because it takes on that drive's audience. The move dialog tells you who that will be.
 

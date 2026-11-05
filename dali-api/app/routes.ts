@@ -755,6 +755,7 @@ export default [
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
   route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
+  route("api/files/:id/share", "routes/api.files.$id.share.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),

@@ -98,6 +98,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       workspaceType: true,
       workspaceId: true,
       folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       currentVersionId: true,
       archivedAt: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },

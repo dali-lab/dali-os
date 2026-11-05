@@ -25,12 +25,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const file = await prisma.projectFile.findUnique({
     where: { id: params.id },
     select: {
+      id: true,
       title: true,
       archivedAt: true,
       projectId: true,
       workspaceType: true,
       workspaceId: true,
       folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       currentVersion: { select: VERSION_SELECT },
     },
   });
