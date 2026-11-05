@@ -235,7 +235,11 @@ describe("loadPlanningData popup spots", () => {
   it("offers only active, non-system domains for new spots", async () => {
     const data = await loadPlanningData("t26s");
     expect(data.spotDomains.map((d) => d.id)).toEqual(["eng", "des"]);
-    expect(data.domains.map((d) => d.id)).toEqual(["eng", "des", "old", "sys"]);
+  });
+
+  it("keeps retired domains but leaves system domains like Core out of the domain view", async () => {
+    const data = await loadPlanningData("t26s");
+    expect(data.domains.map((d) => d.id)).toEqual(["eng", "des", "old"]);
   });
 });
 
