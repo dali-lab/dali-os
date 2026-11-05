@@ -241,6 +241,8 @@ export default [
     ),
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("slides/:pageId", "routes/slides.$pageId.tsx"),
+    route("slides/:pageId/present", "routes/slides.$pageId.present.tsx"),
+    route("slides/:pageId/presenter", "routes/slides.$pageId.presenter.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)

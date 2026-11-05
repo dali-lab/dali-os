@@ -15,7 +15,7 @@ vi.mock("~/collab/blocknote-server", async (importOriginal) => importOriginal())
 import { runManageSlideDeck } from "../manage-slide-deck";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
-import { isDeleted, slidesMap } from "~/components/slides/deck/model";
+import { elementsOf, isDeleted, slidesMap } from "~/components/slides/deck/model";
 
 const LEGACY: Slide[] = [
   { id: "a", layout: "title", title: "Alpha", subtitle: "Sub" },
@@ -51,6 +51,17 @@ describe("manage_slide_deck on a live deck", () => {
     expect(out.slides[0]).toMatchObject({ subtitle: "Sub" });
     expect(out.slides[2]).toMatchObject({ notes: "n" });
     expect(decks.editDeck).not.toHaveBeenCalled();
+  });
+
+  it("get ignores builds, so a deck with them reads exactly as one without", async () => {
+    const before = await runManageSlideDeck("u1", { action: "get", pageId: "p1" });
+    const title = elementsOf(slidesMap(env.doc).get("b")!).get("title")!;
+    title.set("build", 2);
+    title.set("buildBullets", true);
+    elementsOf(slidesMap(env.doc).get("a")!).get("title")!.set("build", 1);
+    const after = await runManageSlideDeck("u1", { action: "get", pageId: "p1" });
+    expect(after).toEqual(before);
+    expect(JSON.stringify(after)).not.toContain("build");
   });
 
   it("get keeps the same output shape for decks edited with the new section and big number layouts", async () => {

@@ -3,9 +3,9 @@ import { RotateCcw } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { slideFragment } from "~/components/slides/deck/deck-ops";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
-import { rectStyle } from "~/components/slides/deck/units";
-import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
-import type { RenderSlide } from "~/components/slides/deck/snapshot";
+import { rectStyle, u } from "~/components/slides/deck/units";
+import { STAGE_H, STAGE_W, type LayoutSlot } from "~/components/slides/deck/layouts";
+import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
 import { SlotEditor, type SlotCollab } from "./SlotEditor";
 import type * as Y from "yjs";
 
@@ -29,6 +29,24 @@ export function FitBox({ children }: { children: (width: number) => React.ReactN
     <div ref={ref} className="flex min-h-0 flex-1 items-center justify-center">
       {width > 0 && <div style={{ width }}>{children(width)}</div>}
     </div>
+  );
+}
+
+export const buildBadgeLabel = (element: RenderElement | undefined): string | null => {
+  if (!element) return null;
+  const parts = [element.build ? `Step ${element.build}` : null, element.buildBullets ? "bullets" : null].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
+};
+
+function BuildBadge({ rect, label }: { rect: LayoutSlot["rect"]; label: string }) {
+  return (
+    <span
+      data-build-badge
+      className="pointer-events-none absolute rounded-full bg-os-accent font-semibold text-os-bg"
+      style={{ left: u(rect.x + 8), top: u(rect.y + 8), fontSize: u(26), padding: `${u(4)} ${u(16)}`, zIndex: 5 }}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -60,11 +78,14 @@ export function SlideStage({
             theme={themeId}
             placeholders={editable}
             renderSlot={({ slot, element, fallback }) => {
-              if (!editable || !collab) return fallback;
+              const label = buildBadgeLabel(element);
+              const badge = label ? <BuildBadge rect={slot.rect} label={label} /> : null;
+              if (!editable || !collab) return <>{fallback}{badge}</>;
               if (slot.kind === "image") {
                 return (
                   <>
                     {fallback}
+                    {badge}
                     <button
                       type="button"
                       aria-label={element?.src ? "Replace image" : "Add image"}
@@ -76,16 +97,19 @@ export function SlideStage({
                 );
               }
               const fragment = slideFragment(doc, slide.id, slot.slot);
-              if (!fragment) return fallback;
+              if (!fragment) return <>{fallback}{badge}</>;
               return (
-                <SlotEditor
-                  slot={slot}
-                  style={element?.textStyle ?? slot.style}
-                  fragment={fragment}
-                  collab={collab}
-                  selected={selectedSlot === slot.slot}
-                  onFocus={() => onSelectSlot(slot.slot)}
-                />
+                <>
+                  <SlotEditor
+                    slot={slot}
+                    style={element?.textStyle ?? slot.style}
+                    fragment={fragment}
+                    collab={collab}
+                    selected={selectedSlot === slot.slot}
+                    onFocus={() => onSelectSlot(slot.slot)}
+                  />
+                  {badge}
+                </>
               );
             }}
           />

@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 import { applySlides, restoreDeck, seedDeckDoc } from "../deck-write.server";
 import { deckSlideCount, loadOrConvertDeck, type ConversionStore } from "../deck-convert.server";
-import { projectLegacySlides, readDeck } from "../read-deck.server";
+import { notesBySlide, projectLegacySlides, readDeck, toRenderDeck } from "../read-deck.server";
 import {
   deckMap,
   elementsOf,
@@ -284,5 +284,38 @@ describe("loadOrConvertDeck with a fake lock", () => {
     };
     await expect(loadOrConvertDeck(failing, "slides:p:deck")).rejects.toThrow("boom");
     expect(rows.size).toBe(0);
+  });
+});
+
+describe("builds on a deck", () => {
+  const withBuilds = () => {
+    const doc = seeded();
+    const body = elementsOf(slidesMap(doc).get("b")!).get("body")!;
+    body.set("build", 2);
+    body.set("buildBullets", true);
+    return doc;
+  };
+
+  it("reads builds into the render deck, and leaves the keys off elements without them", () => {
+    const read = readDeck(withBuilds());
+    const elements = read.slides[1].elements;
+    expect(elements.find((e) => e.slot === "body")).toMatchObject({ build: 2, buildBullets: true });
+    expect("build" in elements.find((e) => e.slot === "title")!).toBe(false);
+    const render = toRenderDeck(read);
+    expect(render.slides[1].elements.find((e) => e.slot === "body")).toMatchObject({ build: 2, buildBullets: true });
+    expect("build" in render.slides[0].elements[0]).toBe(false);
+  });
+
+  it("projects the same legacy slides with or without builds", () => {
+    const doc = seeded();
+    const before = projectLegacySlides(readDeck(doc));
+    const body = elementsOf(slidesMap(doc).get("b")!).get("body")!;
+    body.set("build", 2);
+    body.set("buildBullets", true);
+    expect(projectLegacySlides(readDeck(doc))).toEqual(before);
+  });
+
+  it("returns each slide's notes text for the presenter view", () => {
+    expect(notesBySlide(readDeck(seeded()))).toEqual({ a: "say hi", b: "", c: "" });
   });
 });

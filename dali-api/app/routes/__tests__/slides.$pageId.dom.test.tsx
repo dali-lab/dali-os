@@ -16,6 +16,7 @@ const m = vi.hoisted(() => ({
   token: vi.fn(),
   canManage: vi.fn(),
   transact: vi.fn(),
+  slidesLive: vi.fn(),
 }));
 
 vi.mock("~/lib/auth", () => ({ requireAuth: m.requireAuth, isNonMember: m.isNonMember, redirectPartnerToPortal: m.redirectPartnerToPortal }));
@@ -29,11 +30,20 @@ vi.mock("~/lib/slide-decks.server", () => ({
   migrateDeckOnOpen: m.migrate,
 }));
 vi.mock("~/lib/drive-page-trail.server", () => ({ loadDrivePageAncestry: vi.fn(async () => ({ title: "Deck", iconEmoji: null, workspaceType: "Lab" })) }));
+vi.mock("~/lib/slide-live.server", () => ({ slidesLiveEnabled: m.slidesLive }));
 vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck, transactDeck: m.transact }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: m.token }));
 vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => ({ name: "Ada Lovelace", photoUrl: null })) }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: m.canManage }));
-vi.mock("~/components/slides/collab/SlidesEditor", () => ({ SlidesEditor: (p: { canEdit: boolean }) => createElement("div", { "data-testid": "live-editor", "data-can-edit": String(p.canEdit) }) }));
+vi.mock("~/components/slides/collab/SlidesEditor", () => ({
+  SlidesEditor: (p: { canEdit: boolean; actionsSlot?: unknown }) =>
+    createElement("div", { "data-testid": "live-editor", "data-can-edit": String(p.canEdit), "data-actions": p.actionsSlot ? "yes" : "no" }),
+}));
+vi.mock("~/components/slides/live/DeckFollowLayer", () => ({
+  DeckFollowLayer: (p: { viewerId: string; canEdit: boolean; token: string | null; children: unknown }) =>
+    createElement("div", { "data-testid": "follow-layer", "data-viewer": p.viewerId, "data-can-edit": String(p.canEdit), "data-token": p.token ?? "" }, p.children as never),
+}));
+vi.mock("~/components/slides/live/PresentMenu", () => ({ PresentMenu: () => null }));
 vi.mock("~/components/slides/collab/ReadOnlyDeck", () => ({
   ReadOnlyDeck: (p: { slides: unknown[]; notice?: string }) =>
     createElement("div", { "data-testid": "read-only" }, `${p.slides.length} slides${p.notice ? ` | ${p.notice}` : ""}`),
@@ -83,6 +93,7 @@ beforeEach(() => {
   m.readLiveDeck.mockResolvedValue(live());
   m.token.mockResolvedValue("tok");
   m.canManage.mockResolvedValue(true);
+  m.slidesLive.mockResolvedValue(false);
 });
 
 describe("loader", () => {
@@ -148,6 +159,19 @@ describe("loader", () => {
     expect(out.deck.slides).toHaveLength(1);
   });
 
+  it("with slides-live off, nothing about presenting reaches the page", async () => {
+    const out = await run();
+    expect(out.slidesLive).toBe(false);
+    expect(out.deck).toBeNull();
+  });
+
+  it("with slides-live on, an editor also gets the deck copy followers fall back to", async () => {
+    m.slidesLive.mockResolvedValue(true);
+    const out = await run();
+    expect(out).toMatchObject({ slidesLive: true, viewerId: "u1" });
+    expect(out.deck.slides[0].id).toBe("a");
+  });
+
   it("hides a deck the user can't see", async () => {
     m.deckAccess.mockResolvedValue({ ok: false, status: 404, error: "no" });
     await expect(run()).rejects.toMatchObject({ status: 404 });
@@ -186,6 +210,31 @@ describe("page", () => {
     const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, collab: null, deck: { themeId: "dali-dark", slides: [{}, {}] } });
     expect(el.querySelector("[data-testid=live-editor]")).toBeNull();
     expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("2 slides");
+  });
+
+  it("adds the Present button and the follow layer only when slides-live is on", () => {
+    const editor = { ...base, mode: "live", canManageAccess: true, workspaceType: "Lab", unknownVersion: false, viewerId: "u", deck: { themeId: "dali-dark", slides: [] }, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } };
+    const off = render({ ...editor, slidesLive: false });
+    expect(off.querySelector("[data-testid=follow-layer]")).toBeNull();
+    expect(off.querySelector("[data-testid=live-editor]")!.getAttribute("data-actions")).toBe("no");
+    const on = render({ ...editor, slidesLive: true });
+    const layer = on.querySelector("[data-testid=follow-layer]")!;
+    expect(layer.getAttribute("data-can-edit")).toBe("true");
+    expect(layer.getAttribute("data-token")).toBe("t");
+    expect(on.querySelector("[data-testid=live-editor]")!.getAttribute("data-actions")).toBe("yes");
+  });
+
+  it("gives a viewer the follow layer but no Present button", () => {
+    const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, slidesLive: true, viewerId: "v", deck: { themeId: "dali-dark", slides: [] }, collab: { token: "t", userId: "v", userName: "V", photoUrl: null } });
+    expect(el.querySelector("[data-testid=follow-layer]")!.getAttribute("data-can-edit")).toBe("false");
+    expect(el.querySelector("[data-testid=live-editor]")!.getAttribute("data-actions")).toBe("no");
+  });
+
+  it("wraps a read-only deck without a token in the follow layer", () => {
+    const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, slidesLive: true, viewerId: "v", collab: null, deck: { themeId: "dali-dark", slides: [] } });
+    const layer = el.querySelector("[data-testid=follow-layer]")!;
+    expect(layer.getAttribute("data-token")).toBe("");
+    expect(layer.querySelector("[data-testid=read-only]")).not.toBeNull();
   });
 
   it("says why an unknown version is read-only", () => {

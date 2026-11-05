@@ -9,6 +9,7 @@ import { parseJson } from "~/lib/validate";
 import { cn } from "~/lib/cn";
 import { recordPageVisit } from "~/lib/user-pages.server";
 import { deckAccess, loadDeck, migrateDeckOnOpen, saveDeck } from "~/lib/slide-decks.server";
+import { slidesLiveEnabled } from "~/lib/slide-live.server";
 import { readLiveDeck, transactDeck } from "~/collab/deck-live.server";
 import { deckMissingSlots, toRenderDeck } from "~/collab/read-deck.server";
 import { repairDeckSlots } from "~/components/slides/deck/deck-ops";
@@ -17,6 +18,8 @@ import { getPresenceUser } from "~/lib/presence-user";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { deckAccessMode } from "~/components/slides/deck/model";
 import { SlidesEditor } from "~/components/slides/collab/SlidesEditor";
+import { DeckFollowLayer } from "~/components/slides/live/DeckFollowLayer";
+import { PresentMenu } from "~/components/slides/live/PresentMenu";
 import { ReadOnlyDeck } from "~/components/slides/collab/ReadOnlyDeck";
 import { PageBarTitle } from "~/components/shell/page-bar-slot";
 import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
@@ -98,16 +101,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       collab = { token, userId, userName: presence?.name ?? fallback, photoUrl: presence?.photoUrl ?? null };
     }
   }
+  const slidesLive = await slidesLiveEnabled(userId, request);
   return {
     ...ancestry,
     mode: "live" as const,
+    slidesLive,
+    viewerId: userId,
     pageId: params.pageId,
     canEdit: access.canEdit,
     canManageAccess,
     workspaceType: full.workspaceType,
     unknownVersion: !known,
     collab,
-    deck: collab ? null : toRenderDeck(live.read),
+    deck: collab && !slidesLive ? null : toRenderDeck(live.read),
   };
 }
 
@@ -132,21 +138,21 @@ export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: { form
 
 export default function SlideDeckPage({ loaderData }: Route.ComponentProps) {
   if (loaderData.mode === "live") {
-    const { collab, deck, title, iconEmoji, pageId, canManageAccess, workspaceType, unknownVersion } = loaderData;
-    if (collab) {
-      return (
-        <SlidesEditor
-          pageId={pageId}
-          title={title}
-          iconEmoji={iconEmoji ?? null}
-          canEdit={loaderData.canEdit}
-          canManageAccess={canManageAccess}
-          workspaceType={workspaceType}
-          collab={collab}
-        />
-      );
-    }
-    return (
+    const { collab, deck, title, iconEmoji, pageId, canManageAccess, workspaceType, unknownVersion, slidesLive, viewerId, canEdit } = loaderData;
+    const page = collab ? (
+      <SlidesEditor
+        pageId={pageId}
+        title={title}
+        iconEmoji={iconEmoji ?? null}
+        canEdit={canEdit}
+        canManageAccess={canManageAccess}
+        workspaceType={workspaceType}
+        collab={collab}
+        actionsSlot={
+          slidesLive && canEdit ? ({ currentSlideId }) => <PresentMenu pageId={pageId} currentSlideId={currentSlideId} /> : undefined
+        }
+      />
+    ) : (
       <>
         <PageBarTitle title={title} emoji={iconEmoji ?? null} />
         <ReadOnlyDeck
@@ -155,6 +161,12 @@ export default function SlideDeckPage({ loaderData }: Route.ComponentProps) {
           notice={unknownVersion ? "This deck was made with a newer version of Slides, so you can view it but not edit it." : undefined}
         />
       </>
+    );
+    if (!slidesLive || !deck) return page;
+    return (
+      <DeckFollowLayer pageId={pageId} viewerId={viewerId} canEdit={canEdit} token={collab?.token ?? null} deck={{ ...deck, notes: {} }}>
+        {page}
+      </DeckFollowLayer>
     );
   }
   const { title, canEdit, slides, version } = loaderData;

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
+import { movePosition, samePosition, type DeckPosition, type NavMove } from "~/components/slides/deck/builds";
 import { navActionFor, nextIndex } from "./keys";
 import type { RenderSlide } from "./types";
 
@@ -11,6 +12,11 @@ export interface PresenterViewProps {
   notes: Record<string, string>;
   index: number;
   onIndexChange: (index: number) => void;
+  /** With `onPositionChange`, Back and Next move through build steps as well as slides. */
+  step?: number;
+  stepsOf?: (index: number) => number;
+  onPositionChange?: (pos: DeckPosition) => void;
+  actions?: ReactNode;
   renderSlide: RenderSlide;
   onEnd: () => void;
   shareUrl?: string;
@@ -36,6 +42,10 @@ export function PresenterView({
   notes,
   index,
   onIndexChange,
+  step,
+  stepsOf,
+  onPositionChange,
+  actions,
   renderSlide,
   onEnd,
   shareUrl,
@@ -53,18 +63,31 @@ export function PresenterView({
     return () => clearInterval(id);
   }, []);
 
+  const here: DeckPosition = { index, step: step ?? 0 };
+  const steps = stepsOf ?? (() => 0);
+  const move = (action: NavMove) => {
+    if (onPositionChange) {
+      const to = movePosition(action, here, total, steps);
+      if (!samePosition(here, to)) onPositionChange(to);
+      return;
+    }
+    const next = nextIndex(action, index, total);
+    if (next !== index) onIndexChange(next);
+  };
+  const moveRef = useRef(move);
+  moveRef.current = move;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const action = navActionFor(e.key);
       if (!action || action === "exit") return;
       e.preventDefault();
-      const next = nextIndex(action, index, total);
-      if (next !== index) onIndexChange(next);
+      moveRef.current(action);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [index, total, onIndexChange]);
+  }, []);
 
   const copy = async () => {
     if (!shareUrl) return;
@@ -78,7 +101,10 @@ export function PresenterView({
   };
 
   const slideId = slideIds[index];
-  const nextId = slideIds[index + 1];
+  const nextPos = onPositionChange ? movePosition("next", here, total, steps) : { index: Math.min(index + 1, total), step: 0 };
+  const nextId = nextPos.index !== index || nextPos.step !== here.step ? slideIds[nextPos.index] : undefined;
+  const slideSteps = onPositionChange ? steps(index) : 0;
+  const stepNext = nextId !== undefined && nextPos.index === index;
   const clock = new Date(now).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 
   return (
@@ -88,6 +114,11 @@ export function PresenterView({
         <span className="text-os-grey">
           Slide {index + 1} of {total}
         </span>
+        {slideSteps > 0 && (
+          <span className="text-os-grey">
+            Step {here.step} of {slideSteps}
+          </span>
+        )}
         <span className="flex items-center gap-1 text-os-grey">
           Elapsed <span className="tabular-nums text-os-fg">{formatElapsed(now - base)}</span>
           <Button variant="ghost" size="xs" onClick={() => setBase(Date.now())}>
@@ -101,6 +132,7 @@ export function PresenterView({
             {copied ? "Copied" : "Copy link"}
           </Button>
         )}
+        {actions}
         <Button variant="destructive" size="xs" onClick={onEnd}>
           End
         </Button>
@@ -110,15 +142,15 @@ export function PresenterView({
         <section className="flex min-w-0 flex-1 flex-col gap-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-os-grey">Now</div>
           <div className="overflow-hidden rounded-os-item border border-os-container" style={{ width: NOW_WIDTH, aspectRatio: "16 / 9" }}>
-            {slideId ? renderSlide(slideId, { width: NOW_WIDTH }) : null}
+            {slideId ? renderSlide(slideId, { width: NOW_WIDTH, step: onPositionChange ? here.step : undefined }) : null}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" disabled={index <= 0} onClick={() => onIndexChange(index - 1)}>
+            <Button variant="secondary" size="sm" disabled={index <= 0 && here.step <= 0} onClick={() => move("prev")}>
               <ChevronLeft className="h-4 w-4" aria-hidden />
               Back
             </Button>
-            <Button variant="primary" size="sm" disabled={index >= total - 1} onClick={() => onIndexChange(index + 1)}>
-              Next slide
+            <Button variant="primary" size="sm" disabled={!nextId} onClick={() => move("next")}>
+              {stepNext ? "Next step" : "Next slide"}
               <ChevronRight className="h-4 w-4" aria-hidden />
             </Button>
           </div>
@@ -129,7 +161,7 @@ export function PresenterView({
                 type="button"
                 aria-label={`Go to slide ${i + 1}`}
                 aria-current={i === index ? "true" : undefined}
-                onClick={() => onIndexChange(i)}
+                onClick={() => (onPositionChange ? onPositionChange({ index: i, step: 0 }) : onIndexChange(i))}
                 className={cn(
                   "shrink-0 overflow-hidden rounded-os-item border-2",
                   i === index ? "border-os-accent" : "border-os-container hover:border-os-container-hi",
@@ -143,12 +175,12 @@ export function PresenterView({
         </section>
 
         <aside className="flex w-80 shrink-0 flex-col gap-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-os-grey">Next slide</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-os-grey">{stepNext ? "Next step" : "Next slide"}</div>
           <div
             className="flex items-center justify-center overflow-hidden rounded-os-item border border-os-container bg-os-card text-xs text-os-grey"
             style={{ width: NEXT_WIDTH, aspectRatio: "16 / 9" }}
           >
-            {nextId ? renderSlide(nextId, { width: NEXT_WIDTH }) : "End of deck"}
+            {nextId ? renderSlide(nextId, { width: NEXT_WIDTH, step: onPositionChange ? nextPos.step : undefined }) : "End of deck"}
           </div>
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-os-grey">Notes</span>

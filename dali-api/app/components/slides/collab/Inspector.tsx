@@ -1,8 +1,10 @@
 import { useState } from "react";
 import { Segmented } from "~/components/ui/Segmented";
 import { Button } from "~/components/ui/Button";
+import { Select } from "~/components/ui/floating";
+import { Toggle } from "~/components/ui/Toggle";
 import { layoutById } from "~/components/slides/deck/layouts";
-import type { RenderSlide } from "~/components/slides/deck/snapshot";
+import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
 import { TEXT_STYLE_IDS, TEXT_STYLE_LABELS, THEMES, type TextStyleId } from "~/components/slides/deck/themes";
 import { cn } from "~/lib/cn";
 import { LayoutGrid } from "./LayoutPicker";
@@ -44,6 +46,52 @@ function ThemeCards({ value, onPick }: { value: string; onPick: (id: string) => 
   );
 }
 
+const WITH_SLIDE = "0";
+const MIN_STEP_OPTIONS = 3;
+
+function Appears({
+  slide,
+  element,
+  bullets,
+  editable,
+  onBuild,
+  onBuildBullets,
+}: {
+  slide: RenderSlide;
+  element: RenderElement | undefined;
+  bullets: boolean;
+  editable: boolean;
+  onBuild: (build: number | null) => void;
+  onBuildBullets: (on: boolean) => void;
+}) {
+  const highest = Math.max(0, ...slide.elements.map((e) => e.build ?? 0));
+  const count = Math.max(MIN_STEP_OPTIONS, highest + 1);
+  const options = [
+    { value: WITH_SLIDE, label: "With slide" },
+    ...Array.from({ length: count }, (_, i) => ({ value: String(i + 1), label: `Step ${i + 1}` })),
+  ];
+  return (
+    <Section title="Appears">
+      <Select
+        ariaLabel="Appears"
+        value={String(element?.build ?? 0)}
+        options={options}
+        disabled={!editable}
+        onChange={(v) => onBuild(v === WITH_SLIDE ? null : Number(v))}
+      />
+      {bullets && (
+        <Toggle
+          tone="os"
+          label="Bullets one at a time"
+          checked={element?.buildBullets === true}
+          disabled={!editable}
+          onChange={(e) => onBuildBullets(e.target.checked)}
+        />
+      )}
+    </Section>
+  );
+}
+
 export function Inspector({
   slide,
   themeId,
@@ -55,6 +103,8 @@ export function Inspector({
   onTextStyle,
   onPickImage,
   onClearImage,
+  onBuild,
+  onBuildBullets,
 }: {
   slide: RenderSlide | null;
   themeId: string;
@@ -66,6 +116,8 @@ export function Inspector({
   onTextStyle: (slot: string, style: TextStyleId | null) => void;
   onPickImage: () => void;
   onClearImage: () => void;
+  onBuild?: (slot: string, build: number | null) => void;
+  onBuildBullets?: (slot: string, on: boolean) => void;
 }) {
   const [tab, setTab] = useState<Tab>("slide");
   const layout = slide ? layoutById(slide.layoutId) : null;
@@ -107,12 +159,23 @@ export function Inspector({
               </div>
             </Section>
           )}
+          {imageSlot && slide && onBuild && (
+            <Appears
+              slide={slide}
+              element={image}
+              bullets={false}
+              editable={editable}
+              onBuild={(b) => onBuild(imageSlot.slot, b)}
+              onBuildBullets={() => {}}
+            />
+          )}
           <Section title="Theme">
             <ThemeCards value={themeId} onPick={editable ? onTheme : () => {}} />
           </Section>
         </>
       )}
       {tab === "text" && (
+        <>
         <Section title="Text style">
           {textSlot ? (
             <div className="flex flex-col gap-1.5" role="group" aria-label="Text style">
@@ -136,6 +199,17 @@ export function Inspector({
             <p className="text-sm text-os-grey">Click a text box on the slide to change its style.</p>
           )}
         </Section>
+        {textSlot && slide && onBuild && (
+          <Appears
+            slide={slide}
+            element={element}
+            bullets
+            editable={editable}
+            onBuild={(b) => onBuild(textSlot.slot, b)}
+            onBuildBullets={(on) => onBuildBullets?.(textSlot.slot, on)}
+          />
+        )}
+        </>
       )}
       {tab === "deck" && (
         <>

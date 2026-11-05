@@ -2,6 +2,7 @@ import { Fragment, type CSSProperties, type ReactNode } from "react";
 import { ImageIcon } from "lucide-react";
 import { SlideBody } from "~/components/slides/SlideBody";
 import { cn } from "~/lib/cn";
+import { isVisibleAt, visibleBlocks } from "./builds";
 import { layoutById, STAGE_H, STAGE_W, type LayoutSlot } from "./layouts";
 import { rectStyle, u } from "./units";
 import type { RenderElement, RenderSlide } from "./snapshot";
@@ -21,6 +22,8 @@ export interface SlideRenderProps {
   placeholders?: boolean;
   /** Replaces what a slot draws, for example with a live editor on the current slide. */
   renderSlot?: (ctx: SlotContext) => ReactNode;
+  /** The build step to show while presenting. Leave it out to show everything, as the editor and thumbnails do. */
+  step?: number;
 }
 
 const FLEX_ALIGN = { top: "flex-start", center: "center", bottom: "flex-end" } as const;
@@ -89,7 +92,7 @@ function ImageSlot({ slot, element, placeholders }: { slot: LayoutSlot; element:
  * A slide drawn from data and the theme alone. It fills the width of its parent at 16:9 and sizes everything
  * from `--slide-u`, one stage unit of the 1920 by 1080 design, so text and popups inside it keep their real size.
  */
-export function SlideRender({ slide, theme, placeholders = false, renderSlot, className }: SlideRenderProps & { className?: string }) {
+export function SlideRender({ slide, theme, placeholders = false, renderSlot, step, className }: SlideRenderProps & { className?: string }) {
   const def = typeof theme === "string" ? themeById(theme) : theme;
   const layout = layoutById(slide.layoutId);
   return (
@@ -111,7 +114,9 @@ export function SlideRender({ slide, theme, placeholders = false, renderSlot, cl
         }}
       >
         {layout.slots.map((slot) => {
-          const element = slide.elements.find((e) => e.slot === slot.slot);
+          const found = slide.elements.find((e) => e.slot === slot.slot);
+          if (step !== undefined && found && !isVisibleAt(found, step)) return null;
+          const element = step !== undefined && found?.buildBullets ? { ...found, blocks: visibleBlocks(found, found.blocks, step) } : found;
           const fallback =
             slot.kind === "image" ? (
               <ImageSlot slot={slot} element={element} placeholders={placeholders} />

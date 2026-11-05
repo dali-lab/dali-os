@@ -10,7 +10,7 @@ export interface SlidesEditorProps {
   workspaceType: string;
   collab: { token: string; userId: string; userName: string; photoUrl: string | null };
   /** Buttons that sit after Share in the page bar, such as Present. */
-  actionsSlot?: ReactNode;
+  actionsSlot?: ReactNode | ((ctx: { currentSlideId: string | null }) => ReactNode);
 }
 
 const SlidesEditorImpl = lazy(() => import("./SlidesEditorImpl"));
