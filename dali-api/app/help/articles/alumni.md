@@ -39,7 +39,7 @@ Alumni don't see Mentorship, Attendance, Education or Drive in the sidebar.
 - Read the directory and any member's or alum's profile, and edit their own.
 - Invite someone to a coffee chat or request a resume review when they have it turned on, and answer requests sent to them.
 - Refer a partner to Core.
-- With Community on: post and browse gallery photos, read blogs, and write a blog post for an Admin to approve.
+- With Community on: post and browse gallery photos, read stories, and write a story for an Admin to approve.
 
 ## Who counts as an alum
 

@@ -420,7 +420,7 @@ describe("Community area", () => {
     ]);
   });
 
-  it("owns its four pages, with Connect as its hub and Blogs opening Resources", () => {
+  it("owns its four pages, with Connect as its hub and Stories opening Resources", () => {
     expect(community().hubPath).toBe("/connect");
     expect(visibleSubtabs(community(), NOBODY).map((t) => t.href)).toEqual([
       "/connect",
@@ -428,7 +428,7 @@ describe("Community area", () => {
       "/community/gallery",
       "/resources",
     ]);
-    expect(community().subtabs.find((t) => t.href === "/resources")?.label).toBe("Blogs");
+    expect(community().subtabs.find((t) => t.href === "/resources")?.label).toBe("Stories");
   });
 
   it("moves Connect out of Lab", () => {
@@ -436,7 +436,7 @@ describe("Community area", () => {
     expect(areaForPath("/connect", COMMUNITY)?.key).toBe("community");
   });
 
-  it("owns and highlights its pages, including the blog post pages under Blogs", () => {
+  it("owns and highlights its pages, including the story pages under Stories", () => {
     expect(areaForPath("/community/gallery", COMMUNITY)?.key).toBe("community");
     expect(areaForPath("/resources", COMMUNITY)?.key).toBe("community");
     expect(areaForPath("/resources/blog/abc", COMMUNITY)?.key).toBe("community");

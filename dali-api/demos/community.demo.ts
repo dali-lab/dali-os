@@ -22,7 +22,7 @@ test('community: switch to the Community section and browse its pages', async ({
     await stage.pause(1000);
   }
 
-  await stage.click(page.getByRole('button', { name: 'Blogs', exact: true }));
+  await stage.click(page.getByRole('button', { name: 'Stories', exact: true }));
   await expect(page.getByRole('heading', { name: 'Everything DALI' })).toBeVisible();
   await stage.pause(1800);
 });

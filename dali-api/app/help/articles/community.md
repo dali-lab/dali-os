@@ -1,12 +1,12 @@
 ---
-title: Gallery and blogs
-summary: Share photos in the gallery and read or write member blog posts in Everything DALI.
+title: Gallery and stories
+summary: Share photos in the gallery and read or write member stories in Everything DALI.
 flag: community
 paths: [/community/gallery, /community/gallery/:postId, /community/opportunities, /resources, /resources/blog/:postId, /resources/write/:postId]
-keywords: [community, gallery, photos, post, blog, resources, scoop, write, publish, opportunities, report]
+keywords: [community, gallery, photos, post, story, stories, blog, resources, scoop, write, publish, opportunities, report]
 ---
 
-The Community area groups the places where members and alumni share things: Connect, Opportunities, Gallery and Blogs. It is available when the Community feature is turned on for you.
+The Community area groups the places where members and alumni share things: Connect, Opportunities, Gallery and Stories. It is available when the Community feature is turned on for you.
 
 ## Gallery
 
@@ -35,9 +35,9 @@ Click a photo to open it with its caption, author, reactions and comments. The *
 - **Delete** (on your own posts). The photo, its reactions and its comments are removed for good.
 - **Hide post** and **Restore post**, for Core only.
 
-## Blogs
+## Stories
 
-[Blogs](/resources) is the lab's front page for member blog posts. Its masthead reads **Everything DALI** and the back link on a post says **The Scoop**. Lab members and Core can read and write. Alumni see the Blogs link too.
+[Stories](/resources) is the lab's front page for member stories. Its masthead reads **Everything DALI** and the back link on a post says **The Scoop**. Lab members and Core can read and write. Alumni see the Stories link too.
 
 ### Read
 
