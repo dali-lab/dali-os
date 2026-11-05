@@ -187,6 +187,10 @@
   --color-os-green:        #9fe0a8;  /* "Active" status */
   --color-os-amber:        #f2b84b;
   --color-os-red:          #ff6b6b;  /* status red — same read as --os-danger-ink */
+  --color-os-accent-tint:  color-mix(in srgb, var(--color-os-accent) 16%, transparent);
+  --color-os-amber-tint:   rgba(242, 184, 75, 0.16);
+  --color-os-milestone:    #c9b2f5;
+  --color-os-milestone-tint: rgba(201, 178, 245, 0.16);
 
   /* Inks & shadow that flip in light mode — see the `.light .os-shell` block.
      Defaults are the design's dark values, so dark mode is unchanged. */
@@ -1384,6 +1388,10 @@ html.light .os-shell,
   --color-os-green:        #0f7a4d;  /* "Active" status */
   --color-os-amber:        #8f5400;
   --color-os-red:          #c0362f;  /* status red — same read as --os-danger-ink */
+  --color-os-accent-tint:  color-mix(in srgb, var(--color-os-accent) 14%, transparent);
+  --color-os-amber-tint:   #fbefdc;
+  --color-os-milestone:    #6b4ac2;
+  --color-os-milestone-tint: #ece6f8;
   --color-os-fg:           #13293a;  /* primary ink = the brand's deep navy */
   --color-os-shadow:       rgba(19, 41, 58, 0.16);
   --color-os-add-bg:       #d9e2ec;  /* the add-pill fill — a step under the page */
@@ -2487,4 +2495,21 @@ html:root .font-heading.text-\[32px\] {
   font-size: var(--text-2xl);
   line-height: var(--tw-leading, var(--text-2xl--line-height));
   font-weight: 700;
+}
+
+@keyframes taskboard-panel-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.taskboard-panel-content {
+  animation: taskboard-panel-fade 220ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskboard-panel-content {
+    animation: none;
+  }
 }

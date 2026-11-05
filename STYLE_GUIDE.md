@@ -77,6 +77,10 @@ and a card is a quiet cool step **darker** than it.
 | `os-green` | `#0f7a4d` | `#9fe0a8` | Success, active |
 | `os-amber` | `#8f5400` | `#f2b84b` | Warning, in progress |
 | `--os-danger-ink` | `#c0362f` | `#ff6b6b` | Errors, required marks, destructive |
+| `os-accent-tint` | accent at 14% | accent at 16% | Selected rows, drop targets, quiet accent buttons |
+| `os-amber-tint` | `#fbefdc` | `rgba(242,184,75,.16)` | Rollover banner and badge fill |
+| `os-milestone` | `#6b4ac2` | `#c9b2f5` | Milestone marks and progress |
+| `os-milestone-tint` | `#ece6f8` | `rgba(201,178,245,.16)` | Milestone bars and chips |
 
 **The accent has two halves**, both keyed on the page's section. `LayoutOS`
 sets `--mode-accent` (the area's tint) and `--mode-accent-ink` (its ink) from

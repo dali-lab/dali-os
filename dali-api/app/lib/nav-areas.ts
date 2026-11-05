@@ -219,6 +219,8 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 // they'll see it every day; everyone else finds it in the Lab area.
 const ONBOARDING_NAV_ITEM: SubTab = { label: "Journeys", href: "/journeys", icon: MapIcon };
 
+const EDUCATION_TASKBOARD_HREF = "/education/taskboard";
+
 const REGROUPED_AREAS: NavArea[] = [
   {
     key: "projects",
@@ -263,6 +265,7 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Hub", href: "/education", icon: LayoutGrid },
       { label: "Offerings", href: "/education/offerings", icon: BookOpen },
       { label: "CE Compliance", href: "/education/compliance", icon: Award, gate: (r) => r.isCore },
+      { label: "Taskboard", href: EDUCATION_TASKBOARD_HREF, icon: Kanban, gate: (r) => r.isCore },
     ],
   },
   {
@@ -367,8 +370,11 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   const hidden = new Set<string>();
   if (flags.community) hidden.add("/connect");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
+  if (!flags["education-taskboard"]) hidden.add(EDUCATION_TASKBOARD_HREF);
   return REGROUPED_AREAS.filter((a) => flags.community || a.key !== "community").map((a) =>
-    a.key === "projects" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
+    a.key === "projects" || a.key === "education"
+      ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) }
+      : a,
   );
 }
 

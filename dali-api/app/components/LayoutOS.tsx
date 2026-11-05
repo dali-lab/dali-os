@@ -223,6 +223,7 @@ export function LayoutOS({
   const navFlags = {
     community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
+    'education-taskboard': useFeatureFlag('education-taskboard'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const emailUnread = useEmailUnread(path)
