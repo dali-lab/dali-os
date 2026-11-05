@@ -66,6 +66,7 @@
     "ioredis": "^5.10.1",
     "isbot": "^5.1.36",
     "isomorphic-dompurify": "^3.10.0",
+    "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.544.0",
     "papaparse": "^5.5.4",
