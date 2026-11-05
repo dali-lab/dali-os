@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { DocEditorInstance } from "../schema/build";
-import { placeTaskBlock } from "./place-task-block";
+import { placeTaskBlock, replaceWithTaskBlock } from "./place-task-block";
 
 type FakeBlock = { id: string; type: string; content?: unknown };
 
@@ -63,5 +63,24 @@ describe("placeTaskBlock", () => {
     const editor = fakeEditor([{ id: "z", type: "paragraph", content: [{ text: "other" }] }]);
     placeTaskBlock(editor, "gone", task);
     expect(types(editor)).toEqual(["paragraph", "task", "paragraph"]);
+  });
+});
+
+describe("replaceWithTaskBlock", () => {
+  it("swaps a text line for a task block without moving the caret", () => {
+    const editor = fakeEditor([
+      { id: "a", type: "paragraph", content: [{ text: "Send the SOW" }] },
+      { id: "b", type: "paragraph", content: [{ text: "next" }] },
+    ]);
+    expect(replaceWithTaskBlock(editor, "a", task)).toBe(true);
+    expect(types(editor)).toEqual(["task", "paragraph"]);
+    expect(editor.setTextCursorPosition).not.toHaveBeenCalled();
+    expect(editor.focus).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the line is gone", () => {
+    const editor = fakeEditor([{ id: "a", type: "paragraph", content: [] }]);
+    expect(replaceWithTaskBlock(editor, "gone", task)).toBe(false);
+    expect(editor.replaceBlocks).not.toHaveBeenCalled();
   });
 });

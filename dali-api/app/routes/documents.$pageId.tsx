@@ -485,12 +485,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     meetingNoteTemplateAction = { scope: "lab", current: page.defaultMeetingNoteFor };
   }
 
-  // Action items into Tasks (specs/meeting-notes-model.md §4): tasks need a
-  // project, and the caller needs task-create rights on it — the same gate
-  // requireProjectEditAccess applies to POST /api/projects/:id/tasks.
   const projectId = page.workspaceType === "Project" ? page.workspaceId : null;
-  const canCreateTasks =
-    projectId !== null && (roles.isCore || (await isProjectMember(auth.user.sub, projectId, request)));
 
   return {
     pageId: page.id,
@@ -534,7 +529,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     seededFromPageId: page.seededFromPageId,
     seededTemplateHash: page.seededTemplateHash,
     projectId,
-    canCreateTasks,
     latestRecording: latestRecordingRow
       ? {
           id: latestRecordingRow.id,
@@ -663,7 +657,6 @@ function DocumentPage() {
     latestRecording,
     hasActiveRecording,
     projectId: meetingProjectId,
-    canCreateTasks,
   } = useLoaderData() as Extract<Awaited<ReturnType<typeof loader>>, { pageId: string }>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -698,7 +691,6 @@ function DocumentPage() {
 
   const { editorRef, onEditorReady, hookProps: recordingEditorProps } = useRecordingEditor({
     notePath: `/documents/${pageId}`,
-    projectId: meetingProjectId,
   });
 
   return (
@@ -716,7 +708,6 @@ function DocumentPage() {
       seededFromPageId={seededFromPageId}
       seededTemplateHash={seededTemplateHash}
       projectId={meetingProjectId}
-      canCreateTasks={canCreateTasks}
       {...recordingEditorProps}
     >
       {(rec) => {
