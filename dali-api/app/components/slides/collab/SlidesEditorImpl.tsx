@@ -34,7 +34,7 @@ import { Filmstrip } from "./Filmstrip";
 import { Inspector } from "./Inspector";
 import { NotesPane } from "./NotesPane";
 import { ReadOnlyDeck } from "./ReadOnlyDeck";
-import { DeletedSlideNotice, SlideStage } from "./SlideStage";
+import { DeletedSlideNotice, SlideStage, stageKey } from "./SlideStage";
 import type { SlotCollab } from "./SlotEditor";
 import type { SlidesEditorProps } from "./SlidesEditor";
 import { useDeckDoc, useDeckSnapshot, useDeckSync, useSlidePresence, useUndoState } from "./useDeckDoc";
@@ -213,7 +213,6 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
   }
 
   const notes = current ? notesFragment(deck.doc, current.id) : null;
-  const epochKey = `${snap.epoch}`;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-os-card bg-os-card">
@@ -236,7 +235,7 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
           <div className="flex min-h-0 flex-1 flex-col p-4">
             {current && slotCollab ? (
               <SlideStage
-                key={`${epochKey}:${current.id}`}
+                key={stageKey(snap.epoch, current.id)}
                 slide={current}
                 themeId={snap.themeId}
                 doc={deck.doc}
@@ -252,7 +251,7 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
               <EmptyState actions={<Button size="sm" onClick={() => add("title")}>New slide</Button>}>This deck doesn't have any slides yet.</EmptyState>
             )}
           </div>
-          {current && notes && slotCollab && <NotesPane key={`${epochKey}:${current.id}`} fragment={notes} collab={slotCollab} />}
+          {current && notes && slotCollab && <NotesPane key={stageKey(snap.epoch, current.id)} fragment={notes} collab={slotCollab} />}
         </div>
         <Inspector
           slide={current}

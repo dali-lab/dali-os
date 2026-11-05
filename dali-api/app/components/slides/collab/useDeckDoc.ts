@@ -63,7 +63,9 @@ export function useDeckSync(deck: DeckDoc | null): { state: DocSyncState; synced
     setSynced(provider.synced);
     const on = () => setSynced(true);
     provider.on("synced", on);
-    return () => provider.off("synced", on);
+    return () => {
+      provider.off("synced", on);
+    };
   }, [provider]);
   useReportSyncState((provider ?? NO_PROVIDER) as never, setState);
   return { state, synced };
@@ -130,7 +132,9 @@ export function useSlidePresence(deck: DeckDoc | null, me: DeckUser, slideId: st
     };
     awareness.on("change", update);
     update();
-    return () => awareness.off("change", update);
+    return () => {
+      awareness.off("change", update);
+    };
   }, [awareness, me.userId]);
   return peers;
 }

@@ -6,7 +6,7 @@ import { DECK_LOCAL } from "./deck-ops";
 type SyncState = { binding?: unknown } | undefined;
 
 function findSyncPlugin(state: EditorState): Plugin | undefined {
-  return state.plugins.find((p) => p.key.startsWith("y-sync"));
+  return state.plugins.find((p) => (p as unknown as { key: string }).key.startsWith("y-sync"));
 }
 
 function syncState(state: EditorState): SyncState {
@@ -31,7 +31,8 @@ export interface DeckUndo {
  * One manager for the whole deck, over the slides map and the deck map. Local origins are the deck's own
  * transactions; each text editor's sync plugin adds its own origin when it mounts.
  */
-export function createDeckUndo(scope: Y.AbstractType<unknown>[], localOrigins: unknown[] = [DECK_LOCAL]): DeckUndo {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createDeckUndo(scope: Array<Y.AbstractType<any>>, localOrigins: unknown[] = [DECK_LOCAL]): DeckUndo {
   const manager = new Y.UndoManager(scope, {
     trackedOrigins: new Set(localOrigins),
     captureTimeout: 500,
@@ -70,7 +71,8 @@ export function listenerCount(um: Y.UndoManager): number {
   return n;
 }
 
-const deckUndoKey = new PluginKey<{ prevSel: unknown }>("deckUndo");
+type UndoPluginState = { prevSel: unknown };
+const deckUndoKey = new PluginKey<UndoPluginState>("deckUndo");
 
 /**
  * Shared-manager replacement for y-prosemirror's yUndoPlugin. The stock plugin destroys its manager when one
@@ -79,10 +81,10 @@ const deckUndoKey = new PluginKey<{ prevSel: unknown }>("deckUndo");
  */
 export function deckUndoPlugin(manager: Y.UndoManager): Plugin {
   const run = (fn: () => unknown) => fn() != null;
-  return new Plugin({
+  return new Plugin<UndoPluginState>({
     key: deckUndoKey,
     state: {
-      init: () => ({ prevSel: null }),
+      init: (): UndoPluginState => ({ prevSel: null }),
       apply: (_tr, val, oldState, state) => {
         const binding = syncState(state)?.binding;
         if (!binding) return val;

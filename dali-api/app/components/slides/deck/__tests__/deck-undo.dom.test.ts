@@ -15,7 +15,7 @@ function mountEditor(ydoc: Y.Doc, slideId: string, extension: unknown) {
       extensions: [extension],
       disableExtensions: ["yUndo"],
     } as never) as never,
-  );
+  ) as unknown as BlockNoteEditor;
   const el = document.createElement("div");
   document.body.appendChild(el);
   editor.mount(el);
@@ -72,7 +72,7 @@ describe("deck-level undo over many BlockNote editors", () => {
     manager.stopCapturing();
     type(b.editor, "beta");
     const view = b.editor.prosemirrorView!;
-    const press = (init: KeyboardEventInit) => view.someProp("handleKeyDown", (f) => f(view, new KeyboardEvent("keydown", init)));
+    const press = (init: KeyboardEventInit) => view.someProp("handleKeyDown", (f: (v: typeof view, e: KeyboardEvent) => boolean | void) => f(view, new KeyboardEvent("keydown", init)));
     expect(press({ key: "z", ctrlKey: true })).toBe(true);
     expect(text(b.editor)).toBe("");
     expect(text(a.editor)).toBe("alpha");

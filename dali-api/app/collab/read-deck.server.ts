@@ -2,8 +2,10 @@ import * as Y from "yjs";
 import { fragmentToBlocks, type DocBlock } from "./blocknote-server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import {
+  DEFAULT_THEME_ID,
   compareZ,
   comparePos,
+  deckMap,
   deckVersionOf,
   elementsOf,
   isDeleted,
@@ -12,6 +14,8 @@ import {
   textOf,
 } from "~/components/slides/deck/model";
 import type { Slide, SlideLayout } from "~/components/slides/types";
+import type { RenderSlide } from "~/components/slides/deck/snapshot";
+import { TEXT_STYLE_IDS, type TextStyleId } from "~/components/slides/deck/themes";
 
 export interface DeckReadElement {
   id: string;
@@ -20,6 +24,7 @@ export interface DeckReadElement {
   z: number;
   src: string | null;
   alt: string | null;
+  textStyle: string | null;
   blocks: DocBlock[];
   text: string;
 }
@@ -34,6 +39,7 @@ export interface DeckReadSlide {
 
 export interface DeckRead {
   v: unknown;
+  themeId: string;
   slides: DeckReadSlide[];
   plainText: string;
 }
@@ -61,6 +67,7 @@ export function readDeck(live: Y.Doc): DeckRead {
           z: Number(el.get("z") ?? 0),
           src: str(el.get("src")),
           alt: str(el.get("alt")),
+          textStyle: str(el.get("textStyle")),
           blocks,
           text: blocksToPlainText(blocks as never),
         });
@@ -80,7 +87,7 @@ export function readDeck(live: Y.Doc): DeckRead {
       .flatMap((s) => [...s.elements.map((e) => e.text), s.notes.text])
       .filter(Boolean)
       .join("\n");
-    return { v: deckVersionOf(clone), slides, plainText };
+    return { v: deckVersionOf(clone), themeId: str(deckMap(clone).get("themeId")) ?? DEFAULT_THEME_ID, slides, plainText };
   } finally {
     clone.destroy();
   }
@@ -112,4 +119,26 @@ export function projectLegacySlides(read: DeckRead): Slide[] {
     if (s.notes.text) slide.notes = s.notes.text;
     return slide;
   });
+}
+
+/** A deck read as the plain data SlideRender draws, for people who view without connecting to the room. */
+export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderSlide[] } {
+  return {
+    themeId: read.themeId,
+    slides: read.slides.map((s) => ({
+      id: s.id,
+      pos: s.pos,
+      layoutId: s.layoutId,
+      elements: s.elements.map((e) => ({
+        id: e.id,
+        kind: e.kind,
+        slot: e.slot,
+        z: e.z,
+        blocks: e.blocks as never,
+        src: e.src,
+        alt: e.alt,
+        textStyle: TEXT_STYLE_IDS.includes(e.textStyle as TextStyleId) ? (e.textStyle as TextStyleId) : null,
+      })),
+    })),
+  };
 }

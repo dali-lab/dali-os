@@ -8,6 +8,9 @@ import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { SlotEditor, type SlotCollab } from "./SlotEditor";
 import type * as Y from "yjs";
 
+/** Editors remount when the slide changes or a restore replaces the deck's fragments. */
+export const stageKey = (epoch: number, slideId: string) => `${epoch}:${slideId}`;
+
 /** The biggest 16:9 box that fits its parent. */
 export function FitBox({ children }: { children: (width: number) => React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);

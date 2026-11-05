@@ -53,6 +53,14 @@ describe("manage_slide_deck on a live deck", () => {
     expect(decks.editDeck).not.toHaveBeenCalled();
   });
 
+  it("get keeps the same output shape for decks edited with the new section and big number layouts", async () => {
+    slidesMap(env.doc).get("a")!.set("layoutId", "section");
+    slidesMap(env.doc).get("b")!.set("layoutId", "bignumber");
+    const out = await runManageSlideDeck("u1", { action: "get", pageId: "p1" });
+    expect(out.slides.map((s) => [s.id, s.layout])).toEqual([["a", "title"], ["b", "title"], ["c", "split"]]);
+    expect(Object.keys(out.slides[0]).sort()).toEqual(["id", "layout", "subtitle", "title"]);
+  });
+
   it("never goes through the JSON compare-and-set", async () => {
     await runManageSlideDeck("u1", { action: "delete_slide", pageId: "p1", slideId: "a" });
     expect(decks.editDeck).not.toHaveBeenCalled();
