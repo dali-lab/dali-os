@@ -11,6 +11,9 @@ vi.mock("~/components/doc/theme.css", () => ({}));
 vi.mock("../slide-editor.css", () => ({}));
 vi.mock("react-router", () => ({ useRevalidator: () => ({ revalidate: vi.fn() }) }));
 vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ info: vi.fn(), error: vi.fn() }) }));
+vi.mock("../PdfMenuItems", () => ({
+  DeckPdfMenuItems: (p: { pageId: string; canExportNotes: boolean }) => createElement("i", { "data-pdf-menu": `${p.pageId}|${p.canExportNotes}` }),
+}));
 vi.mock("~/components/shell/page-bar-slot", () => ({
   PageBarTitle: () => null,
   PageBarPortal: ({ slot, children }: { slot: string; children: React.ReactNode }) => createElement("div", { "data-slot-name": slot }, children),
@@ -91,6 +94,12 @@ describe("SlidesEditorImpl", () => {
     const el = render(false);
     expect(el.querySelector("[data-testid=toolbar]")).toBeNull();
     expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("1|");
+  });
+
+  it("adds the PDF download to the page bar menu, with notes only for editors", () => {
+    h.snap = snap(1);
+    expect(render(true).querySelector("[data-pdf-menu]")!.getAttribute("data-pdf-menu")).toBe("p1|true");
+    expect(render(false).querySelector("[data-pdf-menu]")!.getAttribute("data-pdf-menu")).toBe("p1|false");
   });
 
   it("explains an unknown version to everyone", () => {

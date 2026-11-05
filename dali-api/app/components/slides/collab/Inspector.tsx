@@ -56,6 +56,7 @@ function Appears({
   editable,
   onBuild,
   onBuildBullets,
+  onDownloadPdf,
 }: {
   slide: RenderSlide;
   element: RenderElement | undefined;
@@ -105,6 +106,7 @@ export function Inspector({
   onClearImage,
   onBuild,
   onBuildBullets,
+  onDownloadPdf,
 }: {
   slide: RenderSlide | null;
   themeId: string;
@@ -118,6 +120,7 @@ export function Inspector({
   onClearImage: () => void;
   onBuild?: (slot: string, build: number | null) => void;
   onBuildBullets?: (slot: string, on: boolean) => void;
+  onDownloadPdf?: (withNotes: boolean) => void;
 }) {
   const [tab, setTab] = useState<Tab>("slide");
   const layout = slide ? layoutById(slide.layoutId) : null;
@@ -219,6 +222,20 @@ export function Inspector({
           <p className="text-sm text-os-grey">
             {slideCount} {slideCount === 1 ? "slide" : "slides"}
           </p>
+          {onDownloadPdf && (
+            <Section title="Export">
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={() => onDownloadPdf(false)}>
+                  Download PDF
+                </Button>
+                {editable && (
+                  <Button variant="secondary" size="sm" onClick={() => onDownloadPdf(true)}>
+                    Download PDF with notes
+                  </Button>
+                )}
+              </div>
+            </Section>
+          )}
         </>
       )}
     </aside>
