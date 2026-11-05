@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterCoreTasks, parseAssigneeParam } from "~/core/lib/taskboard";
+import { coreBoardPathFor, filterCoreTasks, parseAssigneeParam } from "~/core/lib/taskboard";
 import type { TaskCardModel } from "~/projects/lib/task-board";
 
 const task = (id: string, title: string, assigneeIds: string[]) =>
@@ -39,5 +39,15 @@ describe("filterCoreTasks", () => {
   it("combines mine, assignee and search", () => {
     expect(filterCoreTasks(tasks, { ...base, mine: true, assigneeIds: ["b"] })).toEqual([]);
     expect(filterCoreTasks(tasks, { ...base, query: "agenda" }).map((t) => t.id)).toEqual(["2"]);
+  });
+});
+
+describe("coreBoardPathFor", () => {
+  it("carries the open task over to the Core board", () => {
+    expect(coreBoardPathFor("https://os.test/projects/core1?tab=board&task=t1")).toBe("/core?task=t1");
+  });
+
+  it("lands on the board when no task is open", () => {
+    expect(coreBoardPathFor("https://os.test/projects/core1?tab=drive")).toBe("/core");
   });
 });
