@@ -33,12 +33,13 @@ beforeEach(() => {
 });
 
 describe("deckAccess", () => {
-  it("returns the page and whether the user can edit", async () => {
+  it("returns the page and whether the user can edit and comment", async () => {
     access.getPageAccess.mockResolvedValue({ canView: true, canEdit: false, canComment: true });
     expect(await deckAccess("u1", "p1")).toEqual({
       ok: true,
       page: { id: "p1", title: "Deck", iconEmoji: null },
       canEdit: false,
+      canComment: true,
     });
   });
 

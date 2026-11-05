@@ -83,7 +83,7 @@ describe("POST /api/slides/:pageId/live", () => {
 
 describe("GET /api/slides/:pageId/live/stream", () => {
   it("opens a busEventStream on the deck topic", async () => {
-    vi.mocked(deckAccess).mockResolvedValue({ ok: true, page: { id: "p1", title: "T", iconEmoji: null }, canEdit: false });
+    vi.mocked(deckAccess).mockResolvedValue({ ok: true, page: { id: "p1", title: "T", iconEmoji: null }, canEdit: false, canComment: true });
     await streamLoader(args());
     expect(busEventStream).toHaveBeenCalledWith(expect.any(Request), ["slide-live:p1"], expect.any(Object));
   });

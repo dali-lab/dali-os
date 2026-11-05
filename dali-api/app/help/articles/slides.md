@@ -28,3 +28,13 @@ If you only have view access, the deck opens straight into the viewer.
 ## Download as PDF
 
 Open the **⋯** menu and choose **Download PDF** to get every slide as a page, with all builds showing. The **Deck** tab in the inspector has the same button. People who can edit a deck also get **Download PDF with notes**, which adds a page of speaker notes after each slide. Decks over 200 slides can't be exported.
+
+## Comment on a deck
+
+When the live deck editor is on for you, **Comments** in the top bar opens a panel with every comment on the deck, grouped by slide.
+
+- **Comment on a slide**: right-click a slide in the list and choose **Comment on this slide**, or type in the panel.
+- **Comment on a spot or a text box**: right-click the slide where you want it and choose **Comment here**, or select a text box and click the comment button at its corner. A dot with your picture marks the spot.
+- **Comment on words**: select text in a text box and choose **Add comment**.
+
+Click a comment in the panel to jump to its slide. Replies and @mentions notify people, and the link in the notification opens the slide and the comment. A slide with comments shows a count on its thumbnail. If a slide is deleted, its comments stay under **Deleted slide** until you restore it. You can delete your own comments.

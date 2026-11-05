@@ -1,5 +1,6 @@
 import type * as Y from "yjs";
 import { DocEditor } from "~/components/doc/DocEditor";
+import type { DocCommentsConfig } from "~/components/doc/types";
 import type { LayoutSlot } from "~/components/slides/deck/layouts";
 import { rectStyle, u } from "~/components/slides/deck/units";
 import { textStyleCss, type TextStyleId } from "~/components/slides/deck/themes";
@@ -22,6 +23,7 @@ export function SlotEditor({
   collab,
   selected,
   onFocus,
+  comments,
 }: {
   slot: LayoutSlot;
   style: TextStyleId;
@@ -29,6 +31,7 @@ export function SlotEditor({
   collab: SlotCollab;
   selected: boolean;
   onFocus: () => void;
+  comments?: DocCommentsConfig;
 }) {
   return (
     <div
@@ -36,6 +39,7 @@ export function SlotEditor({
       data-valign={slot.valign}
       className="dali-slide-slot"
       onFocusCapture={onFocus}
+      onContextMenu={(e) => e.stopPropagation()}
       style={{
         ...rectStyle(slot.rect),
         display: "flex",
@@ -55,6 +59,7 @@ export function SlotEditor({
         collab={{ documentName: collab.room, token: collab.token, userName: collab.user.name, userId: collab.user.userId }}
         fragment={fragment}
         undoExtension={collab.undoExtension}
+        comments={comments}
       />
     </div>
   );

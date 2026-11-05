@@ -6,9 +6,15 @@ export interface SlidesEditorProps {
   iconEmoji: string | null;
   /** False for viewers: they connect read-only and watch edits arrive. */
   canEdit: boolean;
+  /** Whether the viewer may read and write comments on the deck. */
+  canComment: boolean;
+  /** Whether the viewer may delete other people's comments. */
+  canModerateComments: boolean;
   canManageAccess: boolean;
   workspaceType: string;
   collab: { token: string; userId: string; userName: string; photoUrl: string | null };
+  /** The slide and thread a comment link names, to open on arrival. */
+  link?: { slideId: string | null; threadId: string | null };
   /** Buttons that sit after Share in the page bar, such as Present. */
   actionsSlot?: ReactNode | ((ctx: { currentSlideId: string | null }) => ReactNode);
 }

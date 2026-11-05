@@ -58,6 +58,8 @@ export interface DocCommentsConfig {
   editorContentRef?: React.RefObject<HTMLElement | null>;
   /** Deep-linked comment id (?comment=) for the rail to select once loaded. */
   focusCommentId?: string;
+  /** A slide text box: threads made here belong to this slide and element, and only those show. */
+  scope?: { slideId: string; elementId: string };
 }
 
 export interface DocEditorProps {

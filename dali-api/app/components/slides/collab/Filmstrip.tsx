@@ -9,11 +9,11 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { Copy, Plus, Trash2 } from "lucide-react";
+import { Copy, MessageSquare, MessageSquarePlus, Plus, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
-import { Popover } from "~/components/ui/floating";
+import { ContextMenu, MenuItem, Popover } from "~/components/ui/floating";
 import { ScaledSlide } from "~/components/slides/deck/SlideRender";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { cn } from "~/lib/cn";
@@ -35,6 +35,20 @@ function PresenceDots({ peers }: { peers: SlidePeer[] }) {
   );
 }
 
+function CommentCount({ count }: { count: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      data-testid="slide-comment-count"
+      className="absolute left-1 top-1 flex items-center gap-0.5 rounded-full bg-os-accent px-1.5 text-[10px] font-semibold text-os-bg"
+      aria-label={`${count} ${count === 1 ? "comment" : "comments"}`}
+    >
+      <MessageSquare className="h-2.5 w-2.5" aria-hidden />
+      {count}
+    </span>
+  );
+}
+
 function Item({
   slide,
   index,
@@ -42,9 +56,11 @@ function Item({
   active,
   peers,
   editable,
+  commentCount,
   onSelect,
   onDuplicate,
   onDelete,
+  onComment,
 }: {
   slide: RenderSlide;
   index: number;
@@ -52,11 +68,42 @@ function Item({
   active: boolean;
   peers: SlidePeer[];
   editable: boolean;
+  commentCount: number;
   onSelect: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  onComment?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slide.id, disabled: !editable });
+  const thumbButton = (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? "true" : undefined}
+      aria-label={`Slide ${index + 1}`}
+      className={cn(
+        "block w-full overflow-hidden rounded-lg ring-2 transition-shadow",
+        active ? "ring-os-accent" : "ring-transparent hover:ring-os-container",
+      )}
+      {...(editable ? { ...attributes, ...listeners } : {})}
+    >
+      <Thumb slide={slide} themeId={themeId} />
+    </button>
+  );
+  const thumb = onComment ? (
+    <ContextMenu
+      ariaLabel={`Slide ${index + 1}`}
+      items={
+        <MenuItem icon={<MessageSquarePlus className="h-4 w-4" aria-hidden />} onSelect={onComment}>
+          Comment on this slide
+        </MenuItem>
+      }
+    >
+      {thumbButton}
+    </ContextMenu>
+  ) : (
+    thumbButton
+  );
   return (
     <li
       ref={setNodeRef}
@@ -66,19 +113,8 @@ function Item({
       <div className="flex items-start gap-1.5">
         <span className="w-4 pt-1 text-right text-xs tabular-nums text-os-muted">{index + 1}</span>
         <div className="relative min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={onSelect}
-            aria-current={active ? "true" : undefined}
-            aria-label={`Slide ${index + 1}`}
-            className={cn(
-              "block w-full overflow-hidden rounded-lg ring-2 transition-shadow",
-              active ? "ring-os-accent" : "ring-transparent hover:ring-os-container",
-            )}
-            {...(editable ? { ...attributes, ...listeners } : {})}
-          >
-            <Thumb slide={slide} themeId={themeId} />
-          </button>
+          {thumb}
+          <CommentCount count={commentCount} />
           <PresenceDots peers={peers} />
           {editable && (
             <span
@@ -103,11 +139,13 @@ export function Filmstrip({
   currentId,
   peers,
   editable,
+  commentCounts,
   onSelect,
   onAdd,
   onDuplicate,
   onDelete,
   onMove,
+  onComment,
 }: {
   slides: RenderSlide[];
   themeId: string;
@@ -119,6 +157,8 @@ export function Filmstrip({
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onMove: (id: string, index: number) => void;
+  commentCounts?: Map<string, number>;
+  onComment?: (id: string) => void;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -144,9 +184,11 @@ export function Filmstrip({
                   active={slide.id === currentId}
                   peers={peers.get(slide.id) ?? []}
                   editable={editable}
+                  commentCount={commentCounts?.get(slide.id) ?? 0}
                   onSelect={() => onSelect(slide.id)}
                   onDuplicate={() => onDuplicate(slide.id)}
                   onDelete={() => onDelete(slide.id)}
+                  onComment={onComment ? () => onComment(slide.id) : undefined}
                 />
               ))}
             </ol>

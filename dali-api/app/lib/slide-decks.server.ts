@@ -26,6 +26,7 @@ const asJson = (slides: Slide[]) => JSON.parse(JSON.stringify(slides)) as Prisma
 export interface DeckAccess {
   page: { id: string; title: string; iconEmoji: string | null };
   canEdit: boolean;
+  canComment: boolean;
 }
 
 /** The deck page if the user may see it, or a failure for missing/non-deck/forbidden pages. */
@@ -37,7 +38,7 @@ export async function deckAccess(userId: string, pageId: string, request?: Reque
   if (!page || page.archivedAt !== null || page.kind !== "Slides") return fail(404, "Slide deck not found.");
   const access = await getPageAccess(userId, page, request);
   if (!access.canView) return fail(404, "Slide deck not found.");
-  return { ok: true, page: { id: page.id, title: page.title, iconEmoji: page.iconEmoji }, canEdit: access.canEdit };
+  return { ok: true, page: { id: page.id, title: page.title, iconEmoji: page.iconEmoji }, canEdit: access.canEdit, canComment: access.canComment };
 }
 
 /** The deck's slides and save version. The row is created on first read, so a page made by any path opens. */
