@@ -1,11 +1,6 @@
-// MCP tool: manage_slide_deck — read and edit a Drive slide deck (a Page of
-// kind Slides). Every write goes through editDeck, the same compare-and-set
-// save the /slides/:pageId editor uses. Create a deck with create_lab_document
-// (kind "Slides"). Access: page view for get, page edit for the rest.
-
 import { McpError, requireForAction } from "../../errors";
 import { prisma } from "~/lib/db.server";
-import { deckAccess, deckStorage, editDeck, loadDeck, type DeckResult } from "~/lib/slide-decks.server";
+import { deckAccess, deckStorage, editDeck, loadDeck, migrateDeckOnOpen, type DeckResult } from "~/lib/slide-decks.server";
 import { parseSlides } from "~/components/slides/slide-schema";
 import { applySlides } from "~/collab/deck-write.server";
 import { transactDeck } from "~/collab/deck-live.server";
@@ -14,20 +9,33 @@ import {
   applySlideInput,
   slideToOutput,
   type SlideInput,
+  type SlideOutput,
 } from "~/components/slides/slide-markdown.server";
 import { moveItem } from "~/components/slides/slide-edit";
+import { setLayout } from "~/components/slides/deck/deck-ops";
+import {
+  DECK_ACTIONS,
+  ELEMENT_INPUT_SCHEMA,
+  LAYOUT_IDS,
+  THEME_IDS,
+  deckModelView,
+  exportLinks,
+  runDeckAction,
+  type DeckAction,
+  type DeckArgs,
+} from "./slide-deck-elements";
 import type { Slide } from "~/components/slides/types";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
-const ACTIONS = ["get", "set_slides", "add_slide", "update_slide", "delete_slide", "move_slide"] as const;
+const ACTIONS = ["get", "set_slides", "add_slide", "update_slide", "delete_slide", "move_slide", "export", ...DECK_ACTIONS] as const;
 type Action = (typeof ACTIONS)[number];
 
 export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   name: "manage_slide_deck",
   description:
-    "Read or edit a Drive slide deck. Actions: get · set_slides (replace every slide) · add_slide (optional index, else at the end) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex). Slide bodies are Markdown. Create a deck with create_lab_document kind 'Slides'. get returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count). The edit actions return the whole deck.",
+    "Read or edit a Drive slide deck. Slide actions: get · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout. Deck: set_theme · export (PDF and PowerPoint download links). Elements, the text boxes, images, shapes and layout boxes on a slide: add_element · update_element (text, style, image, fill, place on the 1920 by 1080 stage, build step; fields left out are kept) · delete_elements · duplicate_elements · reorder_elements · group_elements · ungroup_elements · align_elements · distribute_elements · snap_back (return layout boxes to their layout). Layout boxes have their slot name as id (title, subtitle, body, image). Bodies and text are Markdown. Create a deck with create_lab_document kind 'Slides'. get returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count); pass elements: true to also get the theme, each slide's layoutId and its elements. The slide actions return the whole deck; the element, layout and theme actions return the slide they changed. Version history is list_collab_versions with docName 'slides:{pageId}:deck'.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -38,6 +46,16 @@ export const MANAGE_SLIDE_DECK_TOOL_DEF = {
       slideId: { type: "string", description: "update_slide, delete_slide and move_slide." },
       index: { type: "number", minimum: 0, description: "add_slide: where to insert, 0-based." },
       toIndex: { type: "number", minimum: 0, description: "move_slide: the new 0-based position." },
+      elements: { type: "boolean", description: "get: also return the theme, each slide's layoutId and its elements." },
+      themeId: { type: "string", enum: THEME_IDS, description: "set_theme." },
+      layoutId: { type: "string", enum: LAYOUT_IDS, description: "set_layout, and add_slide for layouts beyond the four in slide.layout." },
+      element: { ...ELEMENT_INPUT_SCHEMA, description: "add_element and update_element: the element's fields." },
+      elementId: { type: "string", description: "update_element." },
+      elementIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 200, description: "The elements the other element actions act on. A group id stands for its items." },
+      direction: { type: "string", enum: ["forward", "backward", "front", "back"], description: "reorder_elements." },
+      align: { type: "string", enum: ["left", "center", "right", "top", "middle", "bottom"], description: "align_elements." },
+      relativeTo: { type: "string", enum: ["slide", "selection"], description: "align_elements: defaults to the selection for several elements, the slide for one." },
+      axis: { type: "string", enum: ["x", "y"], description: "distribute_elements: x spaces them across, y down. Needs three or more." },
       ...pageProps(PAGE_LIMITS),
     },
     required: ["action", "pageId"],
@@ -46,7 +64,7 @@ export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   requiredScope: "mcp:write" as const,
 };
 
-type Args = PageArgs & {
+type Args = PageArgs & Omit<DeckArgs, "pageId"> & {
   action: Action;
   pageId: string;
   slides?: SlideInput[];
@@ -54,6 +72,7 @@ type Args = PageArgs & {
   slideId?: string;
   index?: number;
   toIndex?: number;
+  elements?: boolean;
 };
 
 function unwrap<T extends object>(result: DeckResult<T>): T {
@@ -71,6 +90,11 @@ async function deckOutput(title: string, slides: Slide[], version: string) {
   return { title, version, slides: await Promise.all(slides.map(slideToOutput)) };
 }
 
+type SlideAction = "get" | "set_slides" | "add_slide" | "update_slide" | "delete_slide" | "move_slide";
+type SlideOutputDeck = { title: string; version: string; slides: SlideOutput[]; page?: ReturnType<typeof pageArray>["page"] };
+
+export function runManageSlideDeck(userId: string, args: Args & { action: SlideAction }): Promise<SlideOutputDeck>;
+export function runManageSlideDeck(userId: string, args: Args): Promise<object>;
 export async function runManageSlideDeck(userId: string, args: Args) {
   requireForAction(args.action, args as unknown as Record<string, unknown>, {
     get: [],
@@ -79,14 +103,52 @@ export async function runManageSlideDeck(userId: string, args: Args) {
     update_slide: ["slideId", "slide"],
     delete_slide: ["slideId"],
     move_slide: ["slideId", "toIndex"],
+    export: [],
+    set_theme: ["themeId"],
+    set_layout: ["slideId", "layoutId"],
+    duplicate_slide: ["slideId"],
+    add_element: ["slideId", "element"],
+    update_element: ["slideId", "elementId", "element"],
+    delete_elements: ["slideId", "elementIds"],
+    duplicate_elements: ["slideId", "elementIds"],
+    reorder_elements: ["slideId", "elementIds", "direction"],
+    group_elements: ["slideId", "elementIds"],
+    ungroup_elements: ["slideId", "elementIds"],
+    align_elements: ["slideId", "elementIds", "align"],
+    distribute_elements: ["slideId", "elementIds", "axis"],
+    snap_back: ["slideId", "elementIds"],
   });
   const { page, canEdit } = unwrap(await deckAccess(userId, args.pageId));
 
   if (args.action === "get") {
     const deck = await loadDeck(args.pageId);
     const { rows, page: pageInfo } = pageArray(deck.slides, args, PAGE_LIMITS);
-    return { ...(await deckOutput(page.title, rows, deck.version)), page: pageInfo };
+    const out = { ...(await deckOutput(page.title, rows, deck.version)), page: pageInfo };
+    if (!args.elements) return out;
+    const model = await deckModelView(args.pageId, rows.map((s) => s.id));
+    return {
+      ...out,
+      themeId: model.themeId,
+      docName: model.docName,
+      slides: out.slides.map((s, i) => ({ ...s, ...(model.slides[i] ?? {}) })),
+    };
   }
+
+  if (args.action === "export") return { title: page.title, ...exportLinks(args.pageId, canEdit) };
+
+  if ((DECK_ACTIONS as readonly string[]).includes(args.action)) {
+    if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
+    return { title: page.title, ...(await runDeckAction(userId, args.action as DeckAction, args)) };
+  }
+
+  if (args.action === "add_slide" && args.layoutId !== undefined) {
+    if (!LAYOUT_IDS.includes(args.layoutId)) throw new McpError(`layoutId must be one of: ${LAYOUT_IDS.join(", ")}.`, 400);
+    if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
+    if ((await migrateDeckOnOpen(userId, args.pageId)) !== "yjs") {
+      throw new McpError("This deck still uses the older slides editor, which only has the four layouts in slide.layout.", 400);
+    }
+  }
+  let addedId: string | null = null;
 
   const edit = async (slides: Slide[]): Promise<Slide[]> => {
     switch (args.action) {
@@ -94,6 +156,7 @@ export async function runManageSlideDeck(userId: string, args: Args) {
         return Promise.all(args.slides!.map((s) => applySlideInput(s)));
       case "add_slide": {
         const added = await applySlideInput(args.slide!);
+        addedId = added.id;
         const at = Math.min(args.index ?? slides.length, slides.length);
         return [...slides.slice(0, at), added, ...slides.slice(at)];
       }
@@ -121,7 +184,10 @@ export async function runManageSlideDeck(userId: string, args: Args) {
     const next = await edit((await loadDeck(args.pageId)).slides);
     const valid = parseSlides(JSON.parse(JSON.stringify(next)));
     if (!valid) throw new McpError("That isn't a valid deck.", 400);
-    await transactDeck(args.pageId, userId, (doc) => applySlides(doc, valid));
+    await transactDeck(args.pageId, userId, (doc) => {
+      applySlides(doc, valid);
+      if (addedId && args.layoutId) setLayout(doc, addedId, args.layoutId);
+    });
     await prisma.page.update({ where: { id: args.pageId }, data: { lastEditedById: userId } });
     const saved = await loadDeck(args.pageId);
     return deckOutput(page.title, saved.slides, saved.version);
