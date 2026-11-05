@@ -17,8 +17,9 @@ import { buildOf } from "~/components/slides/deck/builds";
 import { contentFields, type ChartSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
-import { geometryFields, linkGroups, shapeFields, type RenderSlide } from "~/components/slides/deck/snapshot";
+import { extraFields, geometryFields, linkGroups, shapeFields, type RenderSlide } from "~/components/slides/deck/snapshot";
 import type { FillId, ShapeKind } from "~/components/slides/deck/model";
+import type { Crop } from "~/components/slides/deck/crop";
 import { TEXT_STYLE_IDS, type TextStyleId } from "~/components/slides/deck/themes";
 
 export interface DeckReadElement {
@@ -44,12 +45,16 @@ export interface DeckReadElement {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  crop?: Crop;
+  locked?: boolean;
+  hFixed?: boolean;
 }
 
 export interface DeckReadSlide {
   id: string;
   pos: number;
   layoutId: string;
+  skipped?: boolean;
   elements: DeckReadElement[];
   notes: { blocks: DocBlock[]; text: string };
 }
@@ -92,6 +97,7 @@ export function readDeck(live: Y.Doc): DeckRead {
           ...geometryFields((k) => el.get(k)),
           ...shapeFields((k) => el.get(k)),
           ...contentFields((k) => el.get(k)),
+          ...extraFields((k) => el.get(k)),
         });
       });
       elements.sort(compareZ);
@@ -100,6 +106,7 @@ export function readDeck(live: Y.Doc): DeckRead {
         id,
         pos: Number(slide.get("pos")),
         layoutId: String(slide.get("layoutId")),
+        ...(slide.get("skipped") === true ? { skipped: true } : {}),
         elements,
         notes: { blocks: notesBlocks, text: blocksToPlainText(notesBlocks as never) },
       });
@@ -156,6 +163,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
       id: s.id,
       pos: s.pos,
       layoutId: s.layoutId,
+      ...(s.skipped ? { skipped: true } : {}),
       elements: withParents(s.elements.map((e) => ({
         id: e.id,
         kind: e.kind,
@@ -170,6 +178,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
         ...geometryFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...shapeFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...contentFields((k) => (e as unknown as Record<string, unknown>)[k]),
+        ...extraFields((k) => (e as unknown as Record<string, unknown>)[k]),
       }))),
     })),
   };

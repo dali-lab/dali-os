@@ -4,10 +4,10 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import * as Y from "yjs";
 import { addSlide } from "~/components/slides/deck/deck-ops";
-import { addShape, addTextBox, groupElements } from "~/components/slides/deck/freeform-ops";
+import { addFreeImage, addShape, addTextBox, groupElements, setLocked } from "~/components/slides/deck/freeform-ops";
 import { initDeck, slidesMap } from "~/components/slides/deck/model";
 import { snapshotDeck } from "~/components/slides/deck/snapshot";
-import { FreeformLayer, type FreeformLayerProps } from "../FreeformLayer";
+import { barSpot, FreeformLayer, type FreeformLayerProps } from "../FreeformLayer";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -87,13 +87,99 @@ describe("FreeformLayer gestures", () => {
     expect(props.onCommit).not.toHaveBeenCalled();
   });
 
-  it("enters text editing on a click on the selected text box", () => {
+  it("does not enter text editing on a click on the selected text box, only on a double click", () => {
     const { doc, slideId, slide } = setup();
     const id = addTextBox(doc, slideId)!;
     const props = mount({ slide: slide(), selection: [id] });
     fire(hit(id), "pointerdown", { clientX: 480, clientY: 270 });
     fire(window, "pointerup", { clientX: 480, clientY: 270 });
-    expect(props.onEdit).toHaveBeenLastCalledWith(id);
+    expect(props.onEdit).toHaveBeenLastCalledWith(null);
+    fire(hit(id), "dblclick", { clientX: 480, clientY: 270 });
+    expect(props.onActivate).toHaveBeenCalledWith(id, { x: 480, y: 270 });
+  });
+
+  it("draws an outline around the element under the pointer and none once it is selected", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+    const props = mount({ slide: slide() });
+    fire(hit(id), "pointerover");
+    fire(hit(id), "pointerover");
+    expect(container.querySelector("[data-hover-outline]")).not.toBeNull();
+    mount({ ...props, slide: slide(), selection: [id] });
+    expect(container.querySelector("[data-hover-outline]")).toBeNull();
+  });
+
+  it("drags with Option held as a duplicate: originals stay and the commit asks for a copy", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+    const props = mount({ slide: slide(), selection: [id] });
+    fire(hit(id), "pointerdown", { clientX: 240, clientY: 135, altKey: true });
+    fire(window, "pointermove", { clientX: 300, clientY: 135, altKey: true });
+    expect(props.onLive).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-duplicate-ghost]")).not.toBeNull();
+    fire(window, "pointerup", { clientX: 300, clientY: 135 });
+    expect(props.onCommit).toHaveBeenCalledWith(expect.objectContaining({ [id]: expect.any(Object) }), { duplicate: true });
+  });
+
+  it("locks the axis of a drag with Shift", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+    const props = mount({ slide: slide(), selection: [id], prefs: { items: false, margins: false, grid: false } });
+    const start = snapshotDeck(doc).slides[0].elements.find((e) => e.id === id)!;
+    fire(hit(id), "pointerdown", { clientX: 240, clientY: 135 });
+    fire(window, "pointermove", { clientX: 340, clientY: 160, shiftKey: true });
+    const live = (props.onLive as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as Map<string, { x: number; y: number }>;
+    expect(live.get(id)!.y).toBe(start.y);
+    expect(live.get(id)!.x).not.toBe(start.x);
+  });
+
+  it("selects a locked element but never starts a drag, resize or rotate on it", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+    setLocked(doc, slideId, [id], true);
+    const props = mount({ slide: slide(), selection: [id] });
+    fire(hit(id), "pointerdown", { clientX: 240, clientY: 135 });
+    fire(window, "pointermove", { clientX: 300, clientY: 135 });
+    fire(window, "pointerup", { clientX: 300, clientY: 135 });
+    expect(props.onLive).not.toHaveBeenCalled();
+    expect(props.onCommit).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-handle]")).toBeNull();
+  });
+
+  it("shows a lock badge on a hovered locked element", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+    setLocked(doc, slideId, [id], true);
+    mount({ slide: slide() });
+    expect(container.querySelector("[data-lock-badge]")).toBeNull();
+    fire(hit(id), "pointerover");
+    expect(container.querySelector("[data-lock-badge]")).not.toBeNull();
+  });
+
+  it("shows distances to another element while Option is held over it", () => {
+    const { doc, slideId, slide } = setup();
+    const a = addShape(doc, slideId, "rect", { x: 300, y: 300 })!;
+    const b = addShape(doc, slideId, "rect", { x: 1300, y: 300 })!;
+    mount({ slide: slide(), selection: [a] });
+    fire(hit(b), "pointerover");
+    expect(container.querySelector("[data-gap]")).toBeNull();
+    act(() => void window.dispatchEvent(new KeyboardEvent("keydown", { key: "Alt", altKey: true })));
+    expect(container.querySelector("[data-gap]")).not.toBeNull();
+  });
+
+  it("adjusts the crop from a handle while cropping and commits geometry with the crop", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addFreeImage(doc, slideId, "https://x/y.png", "y")!;
+    const props = mount({ slide: slide(), selection: [id], cropId: id });
+    expect(container.querySelector("[data-crop-ghost]")).not.toBeNull();
+    expect(container.querySelector("[data-handle=rotate]")).toBeNull();
+    const handle = container.querySelector("[data-handle=e]")!;
+    fire(handle, "pointerdown", { clientX: 700, clientY: 270 });
+    fire(window, "pointermove", { clientX: 600, clientY: 270 });
+    fire(window, "pointerup", { clientX: 600, clientY: 270 });
+    const committed = (props.onCommit as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as Record<string, { crop: { r: number } | null; w: number }>;
+    expect(committed[id].crop!.r).toBeGreaterThan(0);
+    expect(committed[id].w).toBeLessThan(720);
   });
 
   it("lets pointer events through to the editor of the text box being edited", () => {
@@ -217,5 +303,42 @@ describe("FreeformLayer gestures", () => {
     mount({ slide: withGeo, selection: ["body"] });
     expect(container.querySelector("[data-freeform-badge]")!.textContent).toBe("Freeform −3°");
     expect(slidesMap(doc).get(slideId)).toBeDefined();
+  });
+});
+
+
+describe("zoomed stage", () => {
+  it("maps pointer travel to slide units by the size the layer is drawn at", () => {
+    vi.restoreAllMocks();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 3840, height: 2160, right: 3840, bottom: 2160, x: 0, y: 0, toJSON: () => ({}) });
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+    const props = mount({ slide: slide(), selection: [id], prefs: { items: false, margins: false, grid: false } });
+    const start = snapshotDeck(doc).slides[0].elements.find((e) => e.id === id)!;
+    fire(hit(id), "pointerdown", { clientX: 1000, clientY: 1000 });
+    fire(window, "pointermove", { clientX: 1200, clientY: 1000 });
+    const live = (props.onLive as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0] as Map<string, { x: number }>;
+    expect(live.get(id)!.x).toBeCloseTo(start.x! + 100);
+  });
+
+  it("starts a marquee at the unit under the pointer at any zoom", () => {
+    vi.restoreAllMocks();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: -500, top: 0, width: 3840, height: 2160, right: 3340, bottom: 2160, x: -500, y: 0, toJSON: () => ({}) });
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 100, y: 100 })!;
+    const props = mount({ slide: slide() });
+    const layer = container.querySelector("[data-freeform-layer]")!;
+    fire(layer, "pointerdown", { clientX: -500, clientY: 0 });
+    fire(window, "pointermove", { clientX: 500, clientY: 500 });
+    expect(props.onSelect).toHaveBeenLastCalledWith([id]);
+  });
+});
+
+describe("format bar position", () => {
+  it("sits above a frame and below one near the top, kept off the slide's sides", () => {
+    expect(barSpot({ x: 800, y: 500, w: 320, h: 100 })).toMatchObject({ left: "50%", transform: "translate(-50%, calc(-100% - 44px))" });
+    expect(barSpot({ x: 800, y: 40, w: 320, h: 100 }).transform).toBe("translate(-50%, 14px)");
+    expect(barSpot({ x: 1800, y: 500, w: 100, h: 100 }).left).toBe("80%");
+    expect(barSpot({ x: 0, y: 500, w: 100, h: 100 }).left).toBe("20%");
   });
 });

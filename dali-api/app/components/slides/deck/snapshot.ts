@@ -18,6 +18,7 @@ import {
 } from "./model";
 import { buildOf } from "./builds";
 import { contentFields, type ChartSpec } from "./content";
+import { cleanCrop, type Crop } from "./crop";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
 
 export interface RenderElement {
@@ -45,12 +46,16 @@ export interface RenderElement {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  crop?: Crop;
+  locked?: boolean;
+  hFixed?: boolean;
 }
 
 export interface RenderSlide {
   id: string;
   pos: number;
   layoutId: string;
+  skipped?: boolean;
   elements: RenderElement[];
 }
 
@@ -88,6 +93,15 @@ export function shapeFields(read: (key: string) => unknown) {
   };
 }
 
+export function extraFields(read: (key: string) => unknown) {
+  const crop = cleanCrop(read("crop"));
+  return {
+    ...(crop ? { crop } : {}),
+    ...(read("locked") === true ? { locked: true as const } : {}),
+    ...(read("hFixed") === true ? { hFixed: true as const } : {}),
+  };
+}
+
 export function snapshotSlide(id: string, slide: SlideMap, withText = true): RenderSlide {
   const fragments = textOf(slide);
   const elements: RenderElement[] = [];
@@ -109,11 +123,18 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
       ...geometryFields((k) => el.get(k)),
       ...shapeFields((k) => el.get(k)),
       ...contentFields((k) => el.get(k)),
+      ...extraFields((k) => el.get(k)),
     });
   });
   elements.sort(compareZ);
   linkGroups(elements);
-  return { id, pos: Number(slide.get("pos") ?? 0), layoutId: String(slide.get("layoutId") ?? "content"), elements };
+  return {
+    id,
+    pos: Number(slide.get("pos") ?? 0),
+    layoutId: String(slide.get("layoutId") ?? "content"),
+    ...(slide.get("skipped") === true ? { skipped: true as const } : {}),
+    elements,
+  };
 }
 
 export function linkGroups(elements: RenderElement[]): void {

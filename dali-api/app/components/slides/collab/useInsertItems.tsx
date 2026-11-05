@@ -13,18 +13,18 @@ export function useInsertItems({
 }: {
   insert: ContentInsert;
   arm: (tool: { type: "text" } | { type: "shape"; shape: "rect" | "rounded" | "ellipse" | "line" | "arrow" } | null) => void;
-  pickImage: () => void;
+  pickImage: (at?: { x: number; y: number }) => void;
 }): { insertItem: (item: InsertItem, at?: { x: number; y: number }) => void; pickers: ReactNode } {
   const [pending, setPending] = useState<Pending>(null);
   const close = () => setPending(null);
   const insertItem = (item: InsertItem, at?: { x: number; y: number }) => {
     switch (item.type) {
       case "text":
-        return arm({ type: "text" });
+        return at ? insert.text(at) : arm({ type: "text" });
       case "shape":
-        return arm({ type: "shape", shape: item.shape });
+        return at ? insert.shape(item.shape, at) : arm({ type: "shape", shape: item.shape });
       case "image":
-        return pickImage();
+        return at ? pickImage(at) : pickImage();
       case "table":
         return void insert.table(at);
       case "code":

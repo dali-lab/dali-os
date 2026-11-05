@@ -3,7 +3,7 @@ import { parse } from "pptxtojson/dist/index.js";
 import { describe, expect, it, vi } from "vitest";
 import type { DeckRead, DeckReadElement, DeckReadSlide } from "~/collab/read-deck.server";
 import type { DocBlock } from "~/collab/blocknote-server";
-import { buildDeckPptx, blocksToRuns, type ExportImage } from "../export.server";
+import { buildDeckPptx, blocksToRuns, placeImage, type ExportImage } from "../export.server";
 import { resolveThemeColor } from "../theme-colors";
 import { EMU_PER_UNIT, unitsToEmu, unitsToInches, unitsToPoints } from "../units";
 
@@ -272,5 +272,47 @@ describe("free elements", () => {
     ];
     const { parsed } = await build(deck([slide("a", "blank", els)]));
     expect(parsed.slides[0].elements).toHaveLength(0);
+  });
+});
+
+
+type Sized = { w: number; sizing: { type: string; x: number; w: number } };
+
+describe("skipped slides and cropped images", () => {
+  const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+  const img = (extra: Partial<DeckReadElement> = {}): DeckReadElement => ({
+    id: "i", kind: "image", slot: null, z: 5, src: "https://x/a.png", alt: "", textStyle: null, blocks: [], text: "", x: 200, y: 200, w: 400, h: 300, ...extra,
+  });
+
+  it("writes a skipped slide as hidden and keeps it in the file", async () => {
+    const skipped = { ...slide("b", "blank", []), skipped: true };
+    const { built } = await build(deck([slide("a", "blank", []), skipped]));
+    expect(built.slideCount).toBe(2);
+    const zip = await JSZip.loadAsync(built.buffer);
+    expect(await zip.file("ppt/slides/slide2.xml")!.async("string")).toContain('show="0"');
+    expect(await zip.file("ppt/slides/slide1.xml")!.async("string")).not.toContain('show="0"');
+  });
+
+  it("crops the picture to the window: srcRect in the file matches the crop fractions", async () => {
+    const el = img({ crop: { l: 0.25, t: 0, r: 0.25, b: 0.5 } });
+    const { built } = await build(deck([slide("a", "blank", [el])]), async () => ({ data: png, size: { width: 400, height: 300 } }));
+    const zip = await JSZip.loadAsync(built.buffer);
+    const xml = await zip.file("ppt/slides/slide1.xml")!.async("string");
+    const rect = /<a:srcRect([^>]*)\/>/.exec(xml)?.[1] ?? "";
+    expect(rect).toMatch(/l="25000"/);
+    expect(rect).toMatch(/r="25000"/);
+    expect(rect).toMatch(/b="50000"/);
+  });
+
+  it("sizes the whole picture so the window lands on the box", () => {
+    const placed = placeImage({ x: 100, y: 100, w: 400, h: 200 }, { width: 800, height: 400 }, { l: 0.25, t: 0, r: 0.25, b: 0 }) as unknown as Sized;
+    expect(placed.sizing).toMatchObject({ type: "crop" });
+    expect(placed.w).toBeCloseTo(unitsToInches(800));
+    expect(placed.sizing.x).toBeCloseTo(unitsToInches(200));
+    expect(placed.sizing.w).toBeCloseTo(unitsToInches(400));
+  });
+
+  it("leaves an uncropped image on the cover path", () => {
+    expect((placeImage({ x: 0, y: 0, w: 400, h: 200 }, { width: 800, height: 800 }) as unknown as Sized).sizing).toMatchObject({ type: "cover" });
   });
 });

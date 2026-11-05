@@ -45,6 +45,7 @@ export interface InspectorFreeform {
   onChart?: (id: string, chart: ChartSpec) => void;
   onIcon?: (id: string, name: string) => void;
   onVideo?: (id: string, url: string) => boolean;
+  onLock: (locked: boolean) => void;
   onDeselect: () => void;
   prefs: SnapPrefs;
   onPrefs: (patch: Partial<SnapPrefs>) => void;
@@ -253,13 +254,14 @@ export function ElementView({ slide, themeId, selection, editable, freeform }: {
           </Button>
         </div>
       )}
-      {placed && <PositionFields placed={placed} disabled={!editable} onPlace={(p) => freeform.onPlace(el.id, p)} />}
+      {placed && <PositionFields placed={placed} disabled={!editable || Boolean(el.locked)} onPlace={(p) => freeform.onPlace(el.id, p)} />}
       <Section title="Align to slide">
         <AlignRow disabled={!editable} onAlign={(mode) => freeform.onAlign(mode, "slide")} />
       </Section>
       <OrderButtons freeform={freeform} />
       <ContentSection element={el} editable={editable} freeform={freeform} />
       {(el.kind === "shape" || el.kind === "icon") && <FillSwatches value={el.fill ?? "accent"} themeId={themeId} onPick={freeform.onFill} />}
+      {editable && <Toggle tone="os" label="Lock position" checked={Boolean(el.locked)} onChange={(e) => freeform.onLock(e.target.checked)} />}
       <SnapToggles prefs={freeform.prefs} onPrefs={freeform.onPrefs} />
       {editable && (
         <div className="flex flex-wrap gap-2">

@@ -2,6 +2,7 @@ import { Fragment, type CSSProperties, type ReactNode } from "react";
 import { ImageIcon } from "lucide-react";
 import { SlideBody } from "~/components/slides/SlideBody";
 import { cn } from "~/lib/cn";
+import { cropFrame } from "./crop";
 import { isVisibleAt, visibleBlocks } from "./builds";
 import { explicitPlacement, isFreeRendered, type Placed } from "./freeform";
 import { layoutById, SLOT_Z, STAGE_H, STAGE_W, type LayoutSlot } from "./layouts";
@@ -79,6 +80,18 @@ function TextBox({ placed, style, align, valign, placeholder, element, placehold
 
 function ImageBox({ placed, element, placeholders, label, dataKey }: { placed: Placed; element: RenderElement | undefined; placeholders: boolean; label: string; dataKey: Record<string, string> }) {
   const full = placed.w === STAGE_W && placed.h === STAGE_H;
+  if (element?.src && element.crop) {
+    const f = cropFrame(placed, element.crop);
+    return (
+      <div {...dataKey} data-cropped style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: full ? 0 : u(24) }}>
+        <img
+          src={element.src}
+          alt={element.alt ?? ""}
+          style={{ position: "absolute", left: u(f.left), top: u(f.top), width: u(f.w), height: u(f.h), maxWidth: "none", objectFit: "cover" }}
+        />
+      </div>
+    );
+  }
   if (element?.src) {
     return (
       <img

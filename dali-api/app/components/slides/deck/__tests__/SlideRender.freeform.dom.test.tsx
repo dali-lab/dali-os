@@ -7,7 +7,7 @@ import { blocksToFragment } from "~/collab/blocknote-server";
 import { renderToStaticMarkup } from "react-dom/server";
 import { toRenderDeck, readDeck } from "~/collab/read-deck.server";
 import { addSlide, slideFragment } from "../deck-ops";
-import { addFreeImage, addShape, addTextBox, groupElements, moveElements, reorderElements, setPlacements } from "../freeform-ops";
+import { addFreeImage, setCrop, addShape, addTextBox, groupElements, moveElements, reorderElements, setPlacements } from "../freeform-ops";
 import { SlideRender, type SlideRenderProps } from "../SlideRender";
 import { initDeck, elementsOf, slidesMap } from "../model";
 import { snapshotDeck } from "../snapshot";
@@ -146,3 +146,41 @@ describe("SlideRender detached slots", () => {
     expect(fromRead.replace(/data-element-id="[^"]*"/g, "")).toBe(fromDoc.replace(/data-element-id="[^"]*"/g, ""));
   });
 });
+
+
+describe("cropped images", () => {
+  it("draws the whole picture scaled and offset inside a clipping box", () => {
+    const d = deck();
+    const id = addFreeImage(d.doc, d.slideId, "https://x/y.png", "y", null, { x: 960, y: 540 })!;
+    setPlacementsW(d.doc, d.slideId, id);
+    setCrop(d.doc, d.slideId, id, { l: 0.25, t: 0.5, r: 0.25, b: 0 });
+    const stage = render({ slide: d.slide(), theme: "dali-dark" });
+    const box = stage.querySelector("[data-cropped]") as HTMLElement;
+    expect(box.style.overflow).toBe("hidden");
+    const img = box.querySelector("img") as HTMLElement;
+    expect(img.style.width).toBe("calc(800 * var(--slide-u))");
+    expect(img.style.height).toBe("calc(400 * var(--slide-u))");
+    expect(img.style.left).toBe("calc(-200 * var(--slide-u))");
+    expect(img.style.top).toBe("calc(-200 * var(--slide-u))");
+  });
+
+  it("draws an uncropped image as a plain image", () => {
+    const d = deck();
+    addFreeImage(d.doc, d.slideId, "https://x/y.png", "y");
+    const stage = render({ slide: d.slide(), theme: "dali-dark" });
+    expect(stage.querySelector("[data-cropped]")).toBeNull();
+    expect(stage.querySelector("img")).not.toBeNull();
+  });
+
+  it("shows the crop to viewers who read the deck without connecting", () => {
+    const d = deck();
+    const id = addFreeImage(d.doc, d.slideId, "https://x/y.png", "y")!;
+    setCrop(d.doc, d.slideId, id, { l: 0.2, t: 0, r: 0, b: 0 });
+    const read = toRenderDeck(readDeck(d.doc)).slides[0];
+    expect(renderToStaticMarkup(createElement(SlideRender, { slide: read, theme: "dali-dark" }))).toContain("data-cropped");
+  });
+});
+
+function setPlacementsW(doc: Y.Doc, slideId: string, id: string) {
+  setPlacements(doc, slideId, { [id]: { x: 100, y: 100, w: 400, h: 200, rot: 0 } });
+}

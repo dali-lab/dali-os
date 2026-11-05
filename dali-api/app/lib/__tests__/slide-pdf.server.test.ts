@@ -20,8 +20,8 @@ import { exportDeckPdf, pdfFilename } from "~/lib/slide-pdf.server";
 import { MAX_PDF_SLIDES } from "~/lib/pdf/slides-print-html.server";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { readDeck } from "~/collab/read-deck.server";
-import { deleteSlide, moveSlide, setLayout, setThemeId } from "~/components/slides/deck/deck-ops";
-import { addShape, addTextBox, moveElements, setPlacements } from "~/components/slides/deck/freeform-ops";
+import { deleteSlide, moveSlide, setLayout, setSlideSkipped, setThemeId } from "~/components/slides/deck/deck-ops";
+import { addFreeImage, addShape, addTextBox, moveElements, setCrop, setPlacements } from "~/components/slides/deck/freeform-ops";
 import { slideFragment } from "~/components/slides/deck/deck-ops";
 import { blocksToFragment } from "~/collab/blocknote-server";
 import type { Slide } from "~/components/slides/types";
@@ -72,6 +72,31 @@ describe("exportDeckPdf", () => {
     await exportDeckPdf("u1", "p1", { notes: false });
     expect(pages(html())).toEqual(["b"]);
     expect(html()).not.toContain("Alpha");
+  });
+
+  it("leaves out skipped slides and their notes pages, unless every slide is skipped", async () => {
+    mocks.getPageAccess.mockResolvedValue({ canView: true, canEdit: true, canComment: true });
+    mocks.readLiveDeck.mockResolvedValue(liveDeck([slide("a", "Alpha", "n1"), slide("b", "Beta", "n2"), slide("c", "Gamma")], (d) => setSlideSkipped(d, ["b"], true)));
+    await exportDeckPdf("u1", "p1", { notes: true });
+    expect(pages(html())).toEqual(["a", "c"]);
+    expect(html()).not.toContain("Beta");
+    expect(html()).not.toContain('data-notes-for="b"');
+    mocks.render.mockClear();
+    mocks.readLiveDeck.mockResolvedValue(liveDeck([slide("a", "Alpha")], (d) => setSlideSkipped(d, ["a"], true)));
+    await exportDeckPdf("u1", "p1", { notes: false });
+    expect(pages(html())).toEqual(["a"]);
+  });
+
+  it("prints a cropped image inside a clipping box", async () => {
+    mocks.readLiveDeck.mockResolvedValue(
+      liveDeck([slide("a", "Alpha")], (d) => {
+        const id = addFreeImage(d, "a", "https://x/y.png", "y")!;
+        setCrop(d, "a", id, { l: 0.25, t: 0, r: 0, b: 0 });
+      }),
+    );
+    await exportDeckPdf("u1", "p1", { notes: false });
+    expect(html()).toContain("data-cropped");
+    expect(html()).toContain("overflow:hidden");
   });
 
   it("carries the deck's theme variables on every slide", async () => {
