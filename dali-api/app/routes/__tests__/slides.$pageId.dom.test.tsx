@@ -51,6 +51,9 @@ vi.mock("~/components/slides/collab/ReadOnlyDeck", () => ({
     createElement("div", { "data-testid": "read-only" }, `${p.slides.length} slides${p.notice ? ` | ${p.notice}` : ""}`),
 }));
 vi.mock("~/components/shell/page-bar-slot", () => ({ PageBarTitle: () => null }));
+vi.mock("~/components/slides/pptx/DeckDownloadItems", () => ({
+  DeckDownloadItems: (p: { pageId: string }) => createElement("a", { "data-testid": "download-pptx", href: `/slides/${p.pageId}/export.pptx` }),
+}));
 vi.mock("~/components/slides/SlideViewer", () => ({ SlideViewer: () => createElement("div", { "data-testid": "legacy-viewer" }) }));
 vi.mock("~/components/slides/editor/SlideEditorWorkspace", () => ({ SlideEditorWorkspace: () => createElement("div", { "data-testid": "legacy-editor" }) }));
 vi.mock("~/components/slides/useDeckAutosave", () => ({
@@ -226,6 +229,7 @@ describe("page", () => {
     const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, collab: null, deck: { themeId: "dali-dark", slides: [{}, {}] } });
     expect(el.querySelector("[data-testid=live-editor]")).toBeNull();
     expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("2 slides");
+    expect(el.querySelector("[data-testid=download-pptx]")!.getAttribute("href")).toBe("/slides/p1/export.pptx");
   });
 
   it("adds the Present button and the follow layer only when slides-live is on", () => {

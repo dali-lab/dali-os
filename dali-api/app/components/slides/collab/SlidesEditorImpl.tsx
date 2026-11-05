@@ -6,9 +6,11 @@ import { useRevalidator } from "react-router";
 import { MessageSquare } from "lucide-react";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
-import { PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { DeckPdfMenuItems } from "./PdfMenuItems";
 import { deckPdfUrl } from "~/components/slides/live/urls";
+import { Upload } from "lucide-react";
+import { Menu } from "~/components/ui/floating";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { Button } from "~/components/ui/Button";
@@ -35,6 +37,10 @@ import {
 import { deckUndoExtension } from "~/components/slides/deck/deck-undo";
 import { layoutById } from "~/components/slides/deck/layouts";
 import { DECK_VERSION } from "~/components/slides/deck/model";
+import { appendSlides } from "~/components/slides/pptx/import-apply";
+import { DeckDownloadItems, pptxDownloadHref } from "~/components/slides/pptx/DeckDownloadItems";
+import { takeImport } from "~/components/slides/pptx/pending-import";
+import { usePptxImport } from "~/components/slides/pptx/usePptxImport";
 import { EditorToolbar } from "./EditorToolbar";
 import { Filmstrip } from "./Filmstrip";
 import { Inspector } from "./Inspector";
@@ -75,7 +81,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   const [shareOpen, setShareOpen] = useState(false);
   const deck = useDeckDoc(pageId, collab.token);
   const snap = useDeckSnapshot(deck);
-  const { state: syncState } = useDeckSync(deck);
+  const { state: syncState, synced } = useDeckSync(deck);
   const { canUndo, canRedo } = useUndoState(deck?.undo ?? null);
   const me = useMemo(
     () => ({ userId: collab.userId, name: collab.userName, color: nameToHexColor(collab.userName), photoUrl: collab.photoUrl }),
@@ -233,6 +239,15 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     }
   };
 
+  const appendImported = useCallback((slides: Parameters<typeof appendSlides>[1]) => (deck ? appendSlides(deck.doc, slides) : []), [deck]);
+  const pptx = usePptxImport(appendImported, ({ firstId }) => firstId && select(firstId));
+  const { importPrepared } = pptx;
+  useEffect(() => {
+    if (!deck || !synced || !editable) return;
+    const pending = takeImport(pageId);
+    if (pending) void importPrepared(pending.slides, pending.skipped);
+  }, [deck, synced, editable, pageId, importPrepared]);
+
   const pageBar = (
     <>
       <PageBarTitle
@@ -242,6 +257,14 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
         onEmojiChange={editable ? (next) => (setEmoji(next), savePage({ iconEmoji: next })) : undefined}
       />
       <DeckPdfMenuItems pageId={pageId} canExportNotes={canEdit} />
+      <DeckDownloadItems pageId={pageId} />
+      {editable && (
+        <PageBarMenuItems>
+          <Menu.Item icon={<Upload className="h-3.5 w-3.5" />} disabled={pptx.busy} onSelect={pptx.pick}>
+            Import slides
+          </Menu.Item>
+        </PageBarMenuItems>
+      )}
       <PageBarPortal slot="status">
         <div className="flex items-center gap-1 text-[13px] text-os-muted" aria-live="polite">
           {SYNC_LABEL[syncState]}
@@ -358,9 +381,13 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           onBuild={(slot, build) => current && setBuild(deck.doc, current.id, slot, build)}
           onBuildBullets={(slot, on) => current && setBuildBullets(deck.doc, current.id, slot, on)}
           onDownloadPdf={(withNotes) => window.location.assign(deckPdfUrl(pageId, withNotes))}
+          onImport={pptx.pick}
+          importing={pptx.busy}
+          downloadHref={pptxDownloadHref(pageId)}
         />
         {commentsPanel}
       </div>
+      <input {...pptx.inputProps} />
       <input ref={fileRef} type="file" accept={IMAGE_UPLOAD_ACCEPT} hidden onChange={(e) => (onFile(e.target.files?.[0]), (e.target.value = ""))} />
     </div>
   );

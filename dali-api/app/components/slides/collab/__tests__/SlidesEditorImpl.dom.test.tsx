@@ -17,7 +17,14 @@ vi.mock("../PdfMenuItems", () => ({
 vi.mock("~/components/shell/page-bar-slot", () => ({
   pageBarTextButton: () => "",
   PageBarTitle: () => null,
+  PageBarMenuItems: ({ children }: { children: React.ReactNode }) => createElement("div", { "data-menu-items": "" }, children),
   PageBarPortal: ({ slot, children }: { slot: string; children: React.ReactNode }) => createElement("div", { "data-slot-name": slot }, children),
+}));
+vi.mock("~/components/ui/floating", () => ({
+  Menu: {
+    Item: (p: { children: React.ReactNode; onSelect: () => void; disabled?: boolean }) =>
+      createElement("button", { type: "button", disabled: p.disabled, onClick: p.onSelect }, p.children),
+  },
 }));
 vi.mock("~/components/shell/PageBarShareButton", () => ({ PageBarShareButton: () => null }));
 vi.mock("~/components/sharing/ShareDialog", () => ({ ShareDialog: () => null }));
@@ -25,7 +32,7 @@ vi.mock("~/components/collab/PresenceProvider", () => ({
   PresenceProvider: (p: { pageId: string; children: React.ReactNode }) => ((h.presenceProps = p), createElement("div", null, p.children)),
 }));
 vi.mock("~/components/collab/PresenceBar", () => ({ PresenceBar: () => createElement("span", { "data-testid": "presence-bar" }) }));
-vi.mock("~/components/doc/upload", () => ({ uploadEditorImage: vi.fn(), withUploadErrorToast: (f: unknown) => f, IMAGE_UPLOAD_ACCEPT: "image/*" }));
+vi.mock("~/components/doc/upload", () => ({ uploadEditorImage: vi.fn(), uploadErrorMessage: () => "Upload failed", withUploadErrorToast: (f: unknown) => f, IMAGE_UPLOAD_ACCEPT: "image/*" }));
 vi.mock("../Filmstrip", () => ({ Filmstrip: () => createElement("div", { "data-testid": "filmstrip" }) }));
 vi.mock("../SlideStage", () => ({ SlideStage: () => createElement("div", { "data-testid": "stage" }), DeletedSlideNotice: () => null, stageKey: (e: number, s: string) => `${e}:${s}` }));
 vi.mock("../NotesPane", () => ({ NotesPane: () => null }));
@@ -99,6 +106,15 @@ describe("SlidesEditorImpl", () => {
     const el = render(true);
     expect(el.querySelector("[data-testid=toolbar]")).not.toBeNull();
     expect(el.querySelector("[data-testid=read-only]")).toBeNull();
+  });
+
+  it("offers PowerPoint download to everyone and import only to editors", () => {
+    h.snap = snap(1);
+    const menu = (el: HTMLElement) => [...el.querySelectorAll("[data-menu-items] button")].map((b) => b.textContent);
+    expect(menu(render(true))).toEqual(["Download PowerPoint", "Import slides"]);
+    act(() => root.unmount());
+    root = createRoot(container);
+    expect(menu(render(false))).toEqual(["Download PowerPoint"]);
   });
 
   it("gives a viewer the live deck read-only, without an unknown-version notice", () => {
