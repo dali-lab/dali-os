@@ -38,9 +38,10 @@ let container: HTMLDivElement;
 let root: Root;
 
 function Header() {
-  const { actionsRef } = usePageBarTargetSetters();
+  const { statusRef, actionsRef } = usePageBarTargetSetters();
   return (
     <header>
+      <div data-testid="status" ref={statusRef} />
       <div data-testid="actions" ref={actionsRef} />
       <OverflowMenu />
     </header>
@@ -103,12 +104,8 @@ describe.each(["pageBar", "panel"] as const)("DocumentEditor in the %s", (chrome
   it("keeps Share as a button and has no Download or own more button", async () => {
     await mount(chrome);
     if (chrome === "pageBar") {
-      // The breadcrumb row carries only status; Share lives in the document's
-      // own action row above the paper.
-      expect(actions()).toEqual([]);
-      const row = container.querySelector("[data-testid=doc-action-row]");
-      expect(row).not.toBeNull();
-      expect(row!.querySelector("[aria-label='Share']")).not.toBeNull();
+      expect(actions()).toEqual(["Share"]);
+      expect(container.querySelector("[data-testid=doc-action-row]")).toBeNull();
     } else {
       expect(actions()).toEqual(["Share"]);
     }
@@ -123,6 +120,20 @@ describe.each(["pageBar", "panel"] as const)("DocumentEditor in the %s", (chrome
     const labels = items();
     expect(labels).toEqual(expect.arrayContaining(["Download PDF", "Download Word", "Download Markdown", "Duplicate"]));
     expect(labels.find((l) => l?.startsWith("Find"))).toContain(FIND_SHORTCUT);
+  });
+});
+
+describe("DocumentEditor page bar slots", () => {
+  it("puts the meeting strip first in the body and renders the status in the status slot", async () => {
+    await mount("pageBar", { meetingStrip: createElement("div", { "data-testid": "meeting-strip" }), updatedAt: new Date(Date.now() - 3600_000).toISOString() });
+    expect(container.querySelector("[data-testid=meeting-strip]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=status]")!.textContent).not.toBe("");
+    expect(container.querySelector("[data-testid=actions]")!.textContent).not.toContain("Edited");
+  });
+
+  it("does not render a meeting strip outside the page bar", async () => {
+    await mount("inline", { meetingStrip: createElement("div", { "data-testid": "meeting-strip" }) });
+    expect(container.querySelector("[data-testid=meeting-strip]")).toBeNull();
   });
 });
 
