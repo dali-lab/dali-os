@@ -2,13 +2,15 @@ import { useRef, useState } from "react";
 import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Download, Upload } from "lucide-react";
 import { Menu, Tooltip } from "~/components/ui/floating";
+import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
+import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
-import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
+import { canViewFile, canEditFile, canManageFileSharing } from "~/lib/fileAccess.server";
 import { getDownloadUrl } from "~/lib/s3";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
@@ -98,6 +100,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       workspaceType: true,
       workspaceId: true,
       folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       currentVersionId: true,
       archivedAt: true,
       tags: { select: { tag: { select: { id: true, label: true, slug: true, color: true } } } },
@@ -131,6 +135,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // lab member. The curated tag list stays Core-managed, matching /api/doctags.
   const canEdit = await canEditFile(auth.user.sub, file, request);
   const canManageTags = await isCore(auth.user.sub);
+  const canShare = await canManageFileSharing(auth.user.sub, file, request);
 
   const uploaderNames = await hydrateAuthors(file.versions.map((v) => v.uploadedById));
   const nameById = new Map(uploaderNames.map((u) => [u.id, u.name]));
@@ -179,6 +184,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     allTags,
     versions,
     canEdit,
+    canShare,
     canManageTags,
     currentUserId: auth.user.sub,
   };
@@ -193,6 +199,7 @@ export default function FilePage() {
     allTags,
     versions,
     canEdit,
+    canShare,
     canManageTags,
     currentUserId,
   } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
@@ -203,6 +210,7 @@ export default function FilePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // Which version the preview panel shows. Defaults to the current version
   // (versions are newest-first, and the current one is usually newest).
@@ -259,13 +267,23 @@ export default function FilePage() {
           </span>
         </PageBarPortal>
       )}
-      {selected && (
+      {(selected || canShare) && (
         <PageBarPortal slot="actions">
-          <a href={selected.downloadUrl} className={pageBarTextButton()}>
-            <Download className="h-4 w-4" />
-            Download
-          </a>
+          {canShare && <PageBarShareButton onClick={() => setShareOpen(true)} />}
+          {selected && (
+            <a href={selected.downloadUrl} className={pageBarTextButton()}>
+              <Download className="h-4 w-4" />
+              Download
+            </a>
+          )}
         </PageBarPortal>
+      )}
+      {canShare && (
+        <ShareDialog
+          target={{ kind: "file", id: fileId, title }}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+        />
       )}
       {canEdit && (
         <>

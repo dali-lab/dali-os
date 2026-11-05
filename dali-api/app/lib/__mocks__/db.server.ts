@@ -598,6 +598,13 @@ export const prisma = {
     findMany: vi.fn().mockResolvedValue([]),
     count: vi.fn().mockResolvedValue(0),
   },
+  fileShare: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findUnique: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+  },
   pageShare: {
     findFirst: vi.fn(),
     findUnique: vi.fn(),

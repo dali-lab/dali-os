@@ -35,6 +35,12 @@ export const PERMISSION_RANK: Record<SharePermission, number> = {
   FullAccess: 3,
 };
 
+/** The highest of the given permissions, or null for none. */
+export function highestPermission(perms: SharePermission[]): SharePermission | null {
+  if (perms.length === 0) return null;
+  return perms.reduce((best, p) => (PERMISSION_RANK[p] > PERMISSION_RANK[best] ? p : best));
+}
+
 /** True when `a` grants at least as much as `b`. */
 export function permissionAtLeast(a: SharePermission, b: SharePermission): boolean {
   return PERMISSION_RANK[a] >= PERMISSION_RANK[b];
@@ -129,6 +135,13 @@ export async function listPageShares(pageId: string): Promise<ShareRow[]> {
     orderBy: { createdAt: "asc" },
     select: { id: true, principalType: true, principalId: true, permission: true },
   });
+  return labelShares(shares);
+}
+
+/** Resolve share rows (page or file) to display names; groups also get their reach. */
+export async function labelShares(
+  shares: Array<{ id: string; principalType: string; principalId: string; permission: SharePermission }>,
+): Promise<ShareRow[]> {
   if (shares.length === 0) return [];
 
   const userIds = shares.filter((s) => s.principalType === "User").map((s) => s.principalId);
@@ -150,10 +163,7 @@ export async function listPageShares(pageId: string): Promise<ShareRow[]> {
   const userName = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`.trim()]));
   const groupName = new Map(groups.map((g) => [g.id, g.name]));
 
-  // A group row hides how far the grant reaches — "Studio 26S" reads the same
-  // whether it's four people or four hundred. Resolve the size so the dialog
-  // can say. Dynamic groups have to be resolved to be counted, so this is one
-  // query per group; share lists hold a handful, not hundreds.
+  // A group row hides how far the grant reaches, so resolve the size for the dialog.
   const memberCounts = new Map(
     await Promise.all(
       groups.map(async (g): Promise<[string, number]> => [
@@ -175,6 +185,27 @@ export async function listPageShares(pageId: string): Promise<ShareRow[]> {
 
 export class SharePrincipalError extends Error {}
 
+/** Throws SharePrincipalError unless the member or (non-archived) group exists. */
+export async function assertSharePrincipal(
+  principalType: SharePrincipalType,
+  principalId: string,
+): Promise<void> {
+  if (principalType === "User") {
+    const user = await prisma.user.findUnique({
+      where: { id: principalId },
+      select: { id: true },
+    });
+    if (!user) throw new SharePrincipalError("That member no longer exists");
+  } else {
+    const group = await prisma.groupDefinition.findUnique({
+      where: { id: principalId },
+      select: { id: true, archivedAt: true },
+    });
+    if (!group) throw new SharePrincipalError("That group no longer exists");
+    if (group.archivedAt) throw new SharePrincipalError("That group is archived");
+  }
+}
+
 /**
  * Add (or re-level) a principal on a page's share list. Idempotent and an
  * upsert: re-adding someone at the same level reports `alreadyShared` without
@@ -190,20 +221,7 @@ export async function addPageShare(
   principalId: string,
   permission: SharePermission = "View",
 ): Promise<{ ok: true; alreadyShared: boolean; changed: boolean }> {
-  if (principalType === "User") {
-    const user = await prisma.user.findUnique({
-      where: { id: principalId },
-      select: { id: true },
-    });
-    if (!user) throw new SharePrincipalError("That member no longer exists");
-  } else {
-    const group = await prisma.groupDefinition.findUnique({
-      where: { id: principalId },
-      select: { id: true, archivedAt: true },
-    });
-    if (!group) throw new SharePrincipalError("That group no longer exists");
-    if (group.archivedAt) throw new SharePrincipalError("That group is archived");
-  }
+  await assertSharePrincipal(principalType, principalId);
 
   const existing = await prisma.pageShare.findUnique({
     where: {

@@ -73,7 +73,7 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip, isInFloatingLayer } from "~/components/ui/floating";
 import { useSidePanel } from "~/components/side-panel/use-side-panel";
 import { sidePanelForUrl } from "~/lib/side-panel";
-import { ShareDialog } from "~/components/sharing/ShareDialog";
+import { ShareDialog, type ShareTarget } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
@@ -773,7 +773,7 @@ export function DriveBrowser({
   );
 
   // Share dialog state — the item currently targeted for in-place sharing.
-  const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
   const sharingChangedRef = useRef(false);
   const revalidator = useRevalidator();
   const toast = useToast();
@@ -837,6 +837,11 @@ export function DriveBrowser({
           }
         : {}),
       onShare: (item: DriveItem) => {
+        if (item.type === "file") {
+          setShareTarget({ kind: "file", id: item.id, title: item.title || "Untitled" });
+          onShareItem?.(item);
+          return;
+        }
         if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
         // workspaceType is not on DriveItem directly; infer from the scope id
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
@@ -852,7 +857,7 @@ export function DriveBrowser({
               : scope.id === "education"
                 ? "EducationOffering"
                 : "Project";
-        setShareTarget({ id: item.id, title: item.title || "Untitled", workspaceType: wt });
+        setShareTarget({ kind: "page", id: item.id, title: item.title || "Untitled", workspaceType: wt });
         onShareItem?.(item);
       },
     };
@@ -2065,7 +2070,7 @@ export function DriveBrowser({
     {shareTarget && (
       <ShareDialog
         key={shareTarget.id}
-        page={shareTarget}
+        target={shareTarget}
         open={true}
         onChanged={() => {
           sharingChangedRef.current = true;
@@ -3022,7 +3027,7 @@ function ListRow({
       </span>
       {scopeId === SHARED_SPACE_KEY && (
         <span className={`${t.meta} text-muted-foreground truncate`}>
-          {item.type === "doc" ? (item.sharedBy?.name ?? "Unknown") : ""}
+          {item.type === "doc" || item.type === "file" ? (item.sharedBy?.name ?? "Unknown") : ""}
         </span>
       )}
       <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>{relativeTime(item.updatedAt as unknown as string)}</span>

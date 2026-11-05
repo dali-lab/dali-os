@@ -1487,6 +1487,14 @@ model ProjectFile {
   comments  DocComment[]
   taskLinks TaskFileLink[]
 
+  // Per-file sharing, mirroring Page: named grants plus a General access row.
+  // Both are additive on top of the access the file inherits from its folder,
+  // project or Lab, never a downgrade. Link access never grants FullAccess and
+  // is never Public (files have no signed-out download path).
+  linkAccess     LinkAccess      @default(Restricted)
+  linkPermission SharePermission @default(View)
+  shares         FileShare[]
+
   @@index([projectId, archivedAt])
   @@index([folderPageId])
   @@index([workspaceType, workspaceId, archivedAt])
@@ -5843,6 +5851,23 @@ model PageShare {
   meetingGrants MeetingShareGrant[]
 
   @@unique([pageId, principalType, principalId])
+  @@index([principalType, principalId])
+}
+
+// A named grant on one uploaded file: the file counterpart of PageShare.
+model FileShare {
+  id            String             @id @default(cuid())
+  fileId        String
+  principalType SharePrincipalType
+  // User.id or GroupDefinition.id, dispatched by principalType.
+  principalId   String
+  permission    SharePermission    @default(View)
+  createdById   String
+  createdAt     DateTime           @default(now())
+
+  file ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, principalType, principalId])
   @@index([principalType, principalId])
 }
 

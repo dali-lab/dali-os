@@ -14,6 +14,7 @@ import {
   runSetFileSharing,
   runDeleteProjectFile,
 } from "../document-curation";
+import { FILE_SHARING_PROPERTIES, FILE_SHARING_REQUIRED, runFileSharingAction } from "../file-sharing";
 
 const MANAGE_DOCUMENT_SHARING_DEF = {
   name: "manage_document_sharing",
@@ -27,7 +28,16 @@ const MANAGE_DOCUMENT_SHARING_DEF = {
     properties: {
       action: {
         type: "string",
-        enum: ["set_document_sharing", "delete_document", "set_file_sharing", "delete_file"],
+        enum: [
+          "set_document_sharing",
+          "delete_document",
+          "set_file_sharing",
+          "delete_file",
+          "list_file_shares",
+          "share_file",
+          "unshare_file",
+          "set_file_link_access",
+        ],
         description: "Operation to perform.",
       },
       // set_document_sharing fields
@@ -38,6 +48,8 @@ const MANAGE_DOCUMENT_SHARING_DEF = {
       ...SET_FILE_SHARING_TOOL.inputSchema.properties,
       // delete_file fields
       ...DELETE_PROJECT_FILE_TOOL.inputSchema.properties,
+      // file sharing fields
+      ...FILE_SHARING_PROPERTIES,
     },
     required: ["action"],
     additionalProperties: false,
@@ -50,6 +62,7 @@ const ACTION_REQUIRED: Record<string, string[]> = {
   delete_document: DELETE_PROJECT_DOCUMENT_TOOL.inputSchema.required,
   set_file_sharing: SET_FILE_SHARING_TOOL.inputSchema.required,
   delete_file: DELETE_PROJECT_FILE_TOOL.inputSchema.required,
+  ...FILE_SHARING_REQUIRED,
 };
 
 async function run(ctx: McpCtx, args: Record<string, unknown>) {
@@ -67,6 +80,11 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
       return runSetFileSharing(ctx.user.id, rest as any);
     case "delete_file":
       return runDeleteProjectFile(ctx.user.id, rest as any);
+    case "list_file_shares":
+    case "share_file":
+    case "unshare_file":
+    case "set_file_link_access":
+      return runFileSharingAction(ctx.user.id, action, rest);
     default:
       throw new McpInvalidError(`Unknown action '${action}'`);
   }
