@@ -31,6 +31,8 @@ A principal investigator (PI) is the Core member responsible for a partner proje
 
 Click a project to open it without leaving the page. You can edit its description, and for each upcoming term set the PI and the spots it needs in each domain. Add a domain with **+ Domain**, use the minus and plus buttons to change how many spots, then click **Save** for that term. Mentor and other higher-level spots a project already has stay as they are; new spots are added as learner spots, and spots you remove come off the learner spots first.
 
+The popup also has **Planning notes**: a short status for what's going on with the project right now. Notes show only on the planning page, not on the project page, and the popup says who last edited them. Click an application to open the same kind of popup with its own planning notes and a link to its card on the Partners board. Clear the text and save to remove a note.
+
 ## Reports
 
 [Reports](/core/partners/reports) answers questions about the pipeline for a term, or all terms, that you pick at the top:

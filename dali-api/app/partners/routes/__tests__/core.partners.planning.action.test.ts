@@ -6,6 +6,7 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/partners/lib/partner-renewals.server", () => ({ setTermPi: vi.fn() }));
 vi.mock("~/partners/lib/planning-spots.server", () => ({ setTermSpots: vi.fn() }));
+vi.mock("~/partners/lib/planning-notes.server", () => ({ PLANNING_NOTE_MAX: 5000, setPlanningNote: vi.fn() }));
 vi.mock("~/partners/lib/planning-gap.server", () => ({ loadPlanningData: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
@@ -13,6 +14,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { setTermSpots } from "~/partners/lib/planning-spots.server";
+import { setPlanningNote } from "~/partners/lib/planning-notes.server";
 import { action } from "~/partners/routes/core.partners.planning";
 
 async function post(body: Record<string, string>) {
@@ -31,19 +33,30 @@ beforeEach(() => {
   vi.mocked(isCore).mockResolvedValue(true);
   vi.mocked(setTermPi).mockResolvedValue(true);
   vi.mocked(setTermSpots).mockResolvedValue("ok");
+  vi.mocked(setPlanningNote).mockResolvedValue("ok");
   updateMany.mockResolvedValue({ count: 1 } as never);
 });
 
 describe("planning action access", () => {
   it("rejects non-Core members for every intent without writing", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
-    for (const intent of ["pi", "spots", "description"]) {
-      const res = await post({ intent, projectId: "p1", termId: "t1", roles: "[]", description: "x" });
+    for (const intent of ["pi", "spots", "description", "note"]) {
+      const res = await post({
+        intent,
+        projectId: "p1",
+        termId: "t1",
+        roles: "[]",
+        description: "x",
+        ownerKind: "project",
+        ownerId: "p1",
+        body: "x",
+      });
       expect(res.status).toBe(403);
     }
     expect(setTermPi).not.toHaveBeenCalled();
     expect(setTermSpots).not.toHaveBeenCalled();
     expect(updateMany).not.toHaveBeenCalled();
+    expect(setPlanningNote).not.toHaveBeenCalled();
   });
 
   it("requires a project", async () => {
@@ -140,5 +153,42 @@ describe("pi intent", () => {
     vi.mocked(isCore).mockImplementation(async (id: string) => id === "core-1");
     expect((await post({ intent: "pi", projectId: "p1", termId: "t1", piUserId: "member" })).status).toBe(400);
     expect(setTermPi).not.toHaveBeenCalled();
+  });
+});
+
+describe("note intent", () => {
+  it("saves a project note as the signed-in Core member", async () => {
+    const res = await post({ intent: "note", ownerKind: "project", ownerId: "p1", body: "Waiting on budget" });
+    expect(res).toEqual({ status: 200, body: { ok: true } });
+    expect(setPlanningNote).toHaveBeenCalledWith(prisma, {
+      owner: { projectId: "p1" },
+      body: "Waiting on budget",
+      userId: "core-1",
+    });
+  });
+
+  it("saves an application note", async () => {
+    await post({ intent: "note", ownerKind: "application", ownerId: "a1", body: "Call Tuesday" });
+    expect(vi.mocked(setPlanningNote).mock.calls[0][1].owner).toEqual({ applicationId: "a1" });
+  });
+
+  it.each([
+    ["no owner id", { ownerKind: "project", body: "x" }],
+    ["an unknown owner kind", { ownerKind: "user", ownerId: "u1", body: "x" }],
+  ])("rejects %s", async (_label, fields) => {
+    expect((await post({ intent: "note", ...fields })).status).toBe(400);
+    expect(setPlanningNote).not.toHaveBeenCalled();
+  });
+
+  it("rejects a note over 5000 characters", async () => {
+    const res = await post({ intent: "note", ownerKind: "project", ownerId: "p1", body: "x".repeat(5001) });
+    expect(res.status).toBe(400);
+    expect(setPlanningNote).not.toHaveBeenCalled();
+  });
+
+  it("404s when the application is gone", async () => {
+    vi.mocked(setPlanningNote).mockResolvedValue("not-found");
+    const res = await post({ intent: "note", ownerKind: "application", ownerId: "gone", body: "x" });
+    expect(res).toMatchObject({ status: 404, body: { error: expect.stringContaining("application") } });
   });
 });

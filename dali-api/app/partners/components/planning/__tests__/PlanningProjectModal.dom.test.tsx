@@ -15,6 +15,7 @@ const info: PlanningProjectInfo = {
   plannedTerms: [{ id: "t26s", code: "26S", sortKey: 3 }],
   pisByTerm: { t26s: null },
   spotsByTerm: { t26s: [{ domainId: "eng", name: "Engineering", slots: 2 }] },
+  note: { body: "Waiting on budget", updatedAt: "2026-11-05T15:00:00.000Z", updatedByName: "Ada Lovelace" },
 };
 
 const domains = [
@@ -105,12 +106,44 @@ describe("PlanningProjectModal description", () => {
   });
 });
 
+async function typeInto(label: string, text: string) {
+  const textarea = document.body.querySelector<HTMLTextAreaElement>(`textarea[aria-label='${label}']`)!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, text);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  return textarea;
+}
+
+describe("PlanningProjectModal planning notes", () => {
+  it("shows the note with who last edited it", async () => {
+    await mount();
+    const textarea = document.body.querySelector<HTMLTextAreaElement>("textarea[aria-label='Planning notes']")!;
+    expect(textarea.value).toBe("Waiting on budget");
+    expect(document.body.textContent).toContain("Last edited by Ada Lovelace on Nov 5, 2026");
+    expect(document.body.textContent).toContain("Only shown here on Planning, not on the project page.");
+  });
+
+  it("posts the edited note for the project", async () => {
+    await mount();
+    await typeInto("Planning notes", "Budget approved");
+    await click("Save notes");
+    expect(Object.fromEntries(posted[0])).toEqual({
+      intent: "note",
+      ownerKind: "project",
+      ownerId: "p1",
+      body: "Budget approved",
+    });
+  });
+});
+
 describe("PlanningProjectModal read-only", () => {
   it("shows spots and the description without any editing controls", async () => {
     await mount(false);
     expect(document.body.textContent).toContain("Old blurb");
     expect(document.body.textContent).toContain("Engineering");
     expect(document.body.querySelector("textarea")).toBeNull();
+    expect(document.body.textContent).toContain("Waiting on budget");
     expect(button("26S: More Engineering")).toBeUndefined();
   });
 });
