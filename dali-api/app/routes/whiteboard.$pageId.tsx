@@ -7,6 +7,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { recordPageVisit } from "~/lib/user-pages.server";
+import { canManageSharing } from "~/lib/page-share-access.server";
 import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
 import { loadDrivePageAncestry } from "~/lib/drive-page-trail.server";
 import { Shapes } from "lucide-react";
@@ -65,7 +66,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         select: {
           id: true,
           title: true,
-          notePages: { select: { id: true }, orderBy: { meetingOccurrenceStart: "desc" }, take: 1 },
+          location: true,
+          selectedAt: true,
+          createdAt: true,
+          rooms: { select: { name: true }, orderBy: { name: "asc" } },
+          notePages: {
+            select: { id: true, meetingOccurrenceStart: true },
+            orderBy: { meetingOccurrenceStart: "desc" },
+            take: 1,
+          },
         },
       },
     },
@@ -86,6 +95,21 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   recordPageVisit(auth.user.sub, page.id, request);
 
+  const wb = page.meetingWhiteboard;
+  const note = wb?.notePages[0] ?? null;
+  const occurrenceStart = note?.meetingOccurrenceStart ?? wb?.selectedAt ?? wb?.createdAt ?? null;
+  const attendanceRows =
+    wb && note?.meetingOccurrenceStart
+      ? await prisma.meetingAttendance.findMany({
+          where: { scheduledMeetingId: wb.id, occurrenceStart: note.meetingOccurrenceStart },
+          select: { present: true },
+        })
+      : null;
+  const canManageAccess = await canManageSharing(
+    { id: page.id, workspaceType: page.workspaceType, workspaceId: page.workspaceId, createdById: page.createdById },
+    auth.user.sub,
+  );
+
   const collabToken = await getCollabToken(request);
   const fallbackName =
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email;
@@ -99,11 +123,19 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     userName: presenceUser?.name ?? fallbackName,
     currentUserId: auth.user.sub,
     photoUrl: presenceUser?.photoUrl ?? null,
-    meeting: page.meetingWhiteboard
+    canManageAccess,
+    workspaceType: page.workspaceType,
+    meeting: wb
       ? {
-          id: page.meetingWhiteboard.id,
-          title: page.meetingWhiteboard.title,
-          notePageId: page.meetingWhiteboard.notePages[0]?.id ?? null,
+          id: wb.id,
+          title: wb.title,
+          notePageId: note?.id ?? null,
+          startIso: occurrenceStart ? occurrenceStart.toISOString() : null,
+          location: wb.location,
+          roomNames: wb.rooms.map((r) => r.name),
+          attendance: attendanceRows
+            ? { attended: attendanceRows.filter((r) => r.present).length, expected: attendanceRows.length }
+            : null,
         }
       : null,
   };
@@ -121,6 +153,8 @@ export default function WhiteboardPage() {
       userName={data.userName}
       currentUserId={data.currentUserId}
       photoUrl={data.photoUrl}
+      canManageAccess={data.canManageAccess}
+      workspaceType={data.workspaceType}
       meeting={data.meeting}
     />
   );

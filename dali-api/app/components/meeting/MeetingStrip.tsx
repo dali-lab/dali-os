@@ -38,7 +38,7 @@ export function MeetingStrip({
     <>
       <UserCheck className={actionIcon} />
       <span>Attendance</span>
-      {attendance && <span className="tabular-nums text-os-grey">{attendance.label}</span>}
+      {attendance?.label && <span className="tabular-nums text-os-grey">{attendance.label}</span>}
     </>
   );
 
