@@ -28,15 +28,15 @@ To find a note, open the meeting from [Calendar](/calendar) and click **Open mee
 You can record from any document you can edit, usually the meeting's note.
 
 1. Open the note. While a meeting is on, the organizer and Core may also see a banner on the meeting page that says **This meeting is starting. Record it?** in the browser. Click **Record** to jump to the note, or **Not now**.
-2. Click **Record** in the top bar of the note.
+2. Click **Record** in the meeting strip under the top bar of the note. The strip also shows the meeting's time and room and an **Attendance** button with how many people came out of how many were expected. On a meeting's whiteboard the same strip has **Record**, which opens the note and starts there.
 3. In **Record this meeting**, choose your **Microphone**. In a browser you can switch on **Include call audio from a browser tab** and share the tab with the call, so everyone on the call is captured. In the DALI OS desktop app the recording includes system audio and your microphone, so there is nothing to share.
 4. Click **Start recording**.
 
 Tell everyone in the meeting you are recording. A **Recording** badge with your name shows on the meeting page while it runs. Do not record meetings where protected information, such as patient or student records, will be discussed.
 
-Click **Stop** when you finish. The person who started the recording, or Core, can use the bin button (**Discard recording**) to throw it away. If your microphone is silent or no call audio is coming through, a notice appears while you record so you can fix it.
+The timer sits inside the red **Stop recording** button. Click it when you finish. On other pages, a small recording badge in the top bar shows the timer and links back to the note. The person who started the recording, or Core, can use the bin button (**Discard recording**) to throw it away. If your microphone is silent or no call audio is coming through, a notice appears while you record so you can fix it.
 
-Core or Admin can turn recording off for a project: open the project, click **Project settings** (the gear), and switch off **Allow recording this project's meetings** under **Meeting recording**. In that project's meetings there is no **Record** button, and the **This meeting is starting** banner does not appear. Once a recording has a transcript, anyone who can open the note can open it, from **Transcript** on the meeting page or the note's top bar.
+Core or Admin can turn recording off for a project: open the project, click **Project settings** (the gear), and switch off **Allow recording this project's meetings** under **Meeting recording**. In that project's meetings there is no **Record** button, and the **This meeting is starting** banner does not appear. Once a recording has a transcript, anyone who can open the note can open it, from **Transcript** in the note's meeting strip.
 
 ## Turn the recording into notes
 
