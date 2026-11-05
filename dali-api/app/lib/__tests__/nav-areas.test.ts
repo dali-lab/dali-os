@@ -6,6 +6,7 @@ import {
   areasFor,
   activeSubtabHref,
   hasSubnavRow,
+  iconForHref,
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
@@ -669,5 +670,25 @@ describe("core-taskboard flag", () => {
     expect(coreHrefs({})).not.toContain("/core/milestones");
     expect(coreHrefs({})).not.toContain("/core");
     expect(coreHrefs({})[0]).toBe("/core/staffing");
+  });
+
+  it("resolves the Milestones path and icon without flag context, for favorites", () => {
+    expect(isAreaSubtabPath("/core/milestones")).toBe(true);
+    expect(iconForHref("/core/milestones")).not.toBeNull();
+  });
+});
+
+describe("LayoutOS nav flags", () => {
+  it("passes every flag the nav reads to the sidebar", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+    const navSource = read("../nav-areas.ts");
+    const layoutSource = read("../../components/LayoutOS.tsx");
+    const navFlags = layoutSource.slice(layoutSource.indexOf("const navFlags = {"));
+    const navFlagBlock = navFlags.slice(0, navFlags.indexOf("}"));
+    const readByNav = new Set([...navSource.matchAll(/flags(?:\.([a-z]+)|\["([a-z-]+)"\])/g)].map((m) => m[1] ?? m[2]));
+    expect(readByNav.size).toBeGreaterThan(0);
+    for (const key of readByNav) expect(navFlagBlock, key).toContain(`useFeatureFlag('${key}')`);
   });
 });
