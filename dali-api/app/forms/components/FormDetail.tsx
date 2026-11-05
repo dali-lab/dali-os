@@ -21,8 +21,9 @@ import {
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Segmented } from "~/components/ui/Segmented";
-import { PageBarHideCopyLink, PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
+import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
 import { FormQrDialog } from "~/forms/components/FormQrDialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
@@ -363,6 +364,7 @@ export function FormDetail() {
   }
 
   const [icon, setIcon] = useState(form.iconEmoji ?? null);
+  const rename = (name: string) => renameFetcher.submit({ intent: "rename-form", id: form.id, name }, { method: "post" });
   useEffect(() => setIcon(form.iconEmoji ?? null), [form.iconEmoji]);
   const iconFetcher = useFetcher();
 
@@ -393,12 +395,13 @@ export function FormDetail() {
 
   return (
     <div className="space-y-6">
-      <PageBarHideCopyLink />
-      <PageBarTitle
+      <PageBarTitle title={form.name} onRename={rename} emoji={icon} />
+      <PageTitleHeader
         title={form.name}
-        onRename={(name) => renameFetcher.submit({ intent: "rename-form", id: form.id, name }, { method: "post" })}
-        emoji={icon}
-        onEmojiChange={(next) => {
+        iconEmoji={icon}
+        canEdit
+        onRename={rename}
+        onIconChange={(next) => {
           setIcon(next);
           iconFetcher.submit({ intent: "set-form-icon", id: form.id, iconEmoji: next ?? "" }, { method: "post" });
         }}
@@ -439,14 +442,14 @@ export function FormDetail() {
             {fillUrl ? (
               <button type="button" onClick={() => void copyFillLink()} className={pageBarTextButton()}>
                 <Copy className="h-4 w-4" />
-                Copy link
+                Copy form link
               </button>
             ) : (
               <Tooltip content="Publish to get a link">
                 <span>
                   <button type="button" disabled className={cn(pageBarTextButton(), "opacity-40")}>
                     <Copy className="h-4 w-4" />
-                    Copy link
+                    Copy form link
                   </button>
                 </span>
               </Tooltip>

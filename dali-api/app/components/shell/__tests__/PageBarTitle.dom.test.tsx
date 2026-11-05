@@ -119,34 +119,16 @@ describe("page bar title crumb", () => {
 });
 
 describe("page bar icon", () => {
-  it("opens the shared picker from the glyph and reports the chosen emoji", async () => {
-    const onEmojiChange = vi.fn();
-    await mount(createElement(PageBarTitle, { title: "My form", onRename: () => {}, emoji: null, onEmojiChange }));
-    const trigger = container.querySelector<HTMLElement>("[data-testid=glyph]")!.closest("button")!;
-    await act(async () => trigger.click());
-    const pick = [...document.body.querySelectorAll("button")].find((b) => b.textContent === "🚀")!;
-    await act(async () => pick.click());
-    expect(onEmojiChange).toHaveBeenCalledWith("🚀");
-  });
-
-  it("replaces the glyph with the emoji and offers Remove", async () => {
-    const onEmojiChange = vi.fn();
-    await mount(createElement(PageBarTitle, { title: "My form", emoji: "📋", onEmojiChange }));
-    expect(container.querySelector("[data-testid=glyph]")).toBeNull();
-    await act(async () => [...container.querySelectorAll("button")].find((b) => b.textContent === "📋")!.click());
-    await act(async () => [...document.body.querySelectorAll("button")].find((b) => b.textContent === "Remove")!.click());
-    expect(onEmojiChange).toHaveBeenCalledWith(null);
-  });
-
-  it("shows the emoji statically for a read-only viewer", async () => {
-    await mount(createElement(PageBarTitle, { title: "My form", emoji: "📋" }));
+  it("shows the emoji as plain text even when the page can be renamed", async () => {
+    await mount(createElement(PageBarTitle, { title: "My form", onRename: () => {}, emoji: "📋" }));
     expect(container.textContent).toContain("📋");
-    expect(container.querySelector("button[aria-label='Rename']")).toBeNull();
+    expect(container.querySelector("[data-testid=glyph]")).toBeNull();
     expect([...container.querySelectorAll("button")].some((b) => b.textContent === "📋")).toBe(false);
   });
 
-  it("keeps the type glyph when no emoji is set and the viewer cannot edit", async () => {
-    await mount(createElement(PageBarTitle, { title: "My form" }));
-    expect(container.querySelector("[data-testid=glyph]")).not.toBeNull();
+  it("keeps the type glyph as plain text when no emoji is set", async () => {
+    await mount(createElement(PageBarTitle, { title: "My form", onRename: () => {}, emoji: null }));
+    const glyph = container.querySelector("[data-testid=glyph]")!;
+    expect(glyph.closest("button")).toBeNull();
   });
 });

@@ -1312,7 +1312,6 @@ export function DocumentEditor({
           title={initialTitle}
           onRename={canEdit ? renameFromCrumb : undefined}
           emoji={iconEmoji}
-          onEmojiChange={canEdit ? (e) => void savePageMeta({ iconEmoji: e }) : undefined}
         />
       )}
       {inPageBar && meetingStrip}

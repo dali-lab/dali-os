@@ -160,17 +160,9 @@ describe("DocumentEditor title crumb", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("saves the icon from the crumb glyph through the document save path", async () => {
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
-      url === "/api/documents/p1" ? new Response("{}") : originalFetch(url, init),
-    );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  it("keeps the crumb glyph static for an editor", async () => {
     await mount("pageBar");
-    await act(async () => container.querySelector("[data-testid=glyph]")!.closest("button")!.click());
-    await act(async () => [...document.body.querySelectorAll("button")].find((b) => b.textContent === "🚀")!.click());
-    const call = (fetchMock.mock.calls as unknown as [string, RequestInit][]).find(([url]) => url === "/api/documents/p1");
-    expect(JSON.parse(call![1].body as string)).toEqual({ iconEmoji: "🚀" });
-    globalThis.fetch = originalFetch;
+    expect(container.querySelector("[data-testid=glyph]")!.closest("button")).toBeNull();
   });
 
   it("is a static crumb for a viewer who cannot edit", async () => {
