@@ -81,14 +81,7 @@ export function MilestonesPage({ page }: { page: MilestonesPageData }) {
         <TermBody key={page.term.id} page={page} />
       ) : (
         <div className={cn(os && "rounded-os-card bg-os-card", "p-8 text-center text-sm text-os-grey")}>
-          <p>{page.missingLabel} isn't set up yet.</p>
-          {page.isAdmin && (
-            <p className="mt-2">
-              <Link to="/admin/terms" className="text-os-accent underline">
-                Set up terms
-              </Link>
-            </p>
-          )}
+          <p>{page.missingLabel} isn't set up yet. An admin needs to add the term first.</p>
         </div>
       )}
     </div>
