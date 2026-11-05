@@ -8,7 +8,7 @@ import {
 
 const decoder = new TextDecoder();
 
-function open(headers: Record<string, string> = {}, topics = ["t:1"], opts?: { syncMs?: number }) {
+function open(headers: Record<string, string> = {}, topics = ["t:1"], opts?: { syncMs?: number; carryData?: boolean }) {
   const controller = new AbortController();
   const request = new Request("http://test/stream", { headers, signal: controller.signal });
   const res = busEventStream(request, topics, opts);
@@ -179,5 +179,26 @@ describe("busEventStream", () => {
     await s.reader.cancel();
     expect(() => publish("t:1")).not.toThrow();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("busEventStream carryData", () => {
+  it("sends the publisher's payload when asked, on one line", async () => {
+    const stream = open({}, ["t:1"], { carryData: true });
+    await stream.read();
+    publish("t:1", '{"emoji":"x"}\nsecond');
+    const out = await stream.read();
+    expect(out).toContain('event: change\ndata: {"emoji":"x"} second\n\n');
+    stream.abort();
+  });
+
+  it("stays payload-less by default", async () => {
+    const stream = open();
+    await stream.read();
+    publish("t:1", "secret");
+    const out = await stream.read();
+    expect(out).toContain("event: change\ndata: 1\n\n");
+    expect(out).not.toContain("secret");
+    stream.abort();
   });
 });

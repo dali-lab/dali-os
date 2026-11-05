@@ -70,6 +70,8 @@ import { Menu, Select } from "~/components/ui/floating";
 import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { Modal } from "~/components/Modal";
+import { NewDeckFromTemplate } from "~/components/slides/templates/NewDeckFromTemplate";
+import { applyTemplateToDeck, type TemplateRow as SlideTemplateRow } from "~/components/slides/templates/templates-client";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { cn } from "~/lib/cn";
@@ -946,6 +948,17 @@ export function NewMenu({
   const slidesEnabled = useFeatureFlag("drive-slides");
   const slidesCollabEnabled = useFeatureFlag("slides-collab");
   const pptxInput = useRef<HTMLInputElement>(null);
+  const [deckTemplatesOpen, setDeckTemplatesOpen] = useState(false);
+  const templateProjectId = notebook.kind === "ready" && notebook.workspaceType === "Project" ? notebook.workspaceId : null;
+
+  async function createSlidesFromTemplate(row: SlideTemplateRow) {
+    setDeckTemplatesOpen(false);
+    const id = await actions.createSlides(row.title);
+    if (!id) return;
+    const applied = await applyTemplateToDeck(id, row.id);
+    if (!applied.ok) toast.error(applied.error);
+    onCreated(id);
+  }
 
   async function createSlidesFromPowerPoint(file: File) {
     const invalid = validatePptxFile(file);
@@ -1062,6 +1075,7 @@ export function NewMenu({
         if (file) void createSlidesFromPowerPoint(file);
       }}
     />
+    <NewDeckFromTemplate open={deckTemplatesOpen} projectId={templateProjectId} onPick={(row) => void createSlidesFromTemplate(row)} onClose={() => setDeckTemplatesOpen(false)} />
     <Menu
       align="right"
       ariaLabel={`New in ${label}`}
@@ -1122,6 +1136,17 @@ export function NewMenu({
         >
           <CreateLabel testId={`drive-new-slides-pptx-${scope.id}`} blockedReason={docBlock}>
             New deck from PowerPoint
+          </CreateLabel>
+        </Menu.Item>
+      )}
+      {slidesEnabled && slidesCollabEnabled && (
+        <Menu.Item
+          icon={<Presentation className="w-3.5 h-3.5" />}
+          disabled={docBlock !== null}
+          onSelect={() => setDeckTemplatesOpen(true)}
+        >
+          <CreateLabel testId={`drive-new-slides-template-${scope.id}`} blockedReason={docBlock}>
+            New deck from template
           </CreateLabel>
         </Menu.Item>
       )}

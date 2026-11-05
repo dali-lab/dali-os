@@ -18,7 +18,7 @@ import {
 } from "./model";
 import { buildOf } from "./builds";
 import { slideMetaFields, type SlideBackground, type SlideTransition } from "./slide-meta";
-import { contentFields, type ChartSpec } from "./content";
+import { contentFields, type ChartSpec, type PollSpec } from "./content";
 import { cleanCrop, type Crop } from "./crop";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
 
@@ -47,6 +47,7 @@ export interface RenderElement {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  poll?: PollSpec;
   crop?: Crop;
   locked?: boolean;
   hFixed?: boolean;

@@ -30,6 +30,7 @@ type Row = {
   build: number;
   startedAt: Date;
   endedAt: Date | null;
+  reactionsOff: boolean;
   presenter: { firstName: string; lastName: string };
 };
 
@@ -39,6 +40,7 @@ const ROW_SELECT = {
   build: true,
   startedAt: true,
   endedAt: true,
+  reactionsOff: true,
   presenter: { select: { firstName: true, lastName: true } },
 } as const;
 
@@ -50,6 +52,7 @@ function toLive(row: Row | null): LiveState {
     build: row.build,
     presenter: { id: row.presenterId, name: displayName(row.presenter.firstName, row.presenter.lastName) },
     startedAt: row.startedAt.toISOString(),
+    reactionsOff: row.reactionsOff,
   };
 }
 
@@ -100,8 +103,15 @@ export async function applyLive(userId: string, pageId: string, input: LiveInten
   await prisma.slidePresentation.upsert({
     where: { pageId },
     create: { pageId, presenterId: userId, slideId: input.slideId, build, startedAt },
-    update: { presenterId: userId, slideId: input.slideId, build, endedAt: null, ...(startedAt ? { startedAt } : {}) },
+    update: {
+      presenterId: userId,
+      slideId: input.slideId,
+      build,
+      endedAt: null,
+      ...(startedAt ? { startedAt, closedPolls: [], reactionsOff: false } : {}),
+    },
   });
+  if (startedAt) await prisma.slidePollVote.deleteMany({ where: { presentation: { pageId } } });
   publish(slideLiveTopic(pageId));
   return { ok: true, live: toLive(await readRow(pageId)) };
 }

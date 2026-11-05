@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({
   navigate: vi.fn(),
   session: { live: null as unknown, ready: true, start: vi.fn(), go: vi.fn(), end: vi.fn() },
   follow: null as unknown as Record<string, unknown>,
+  polls: null as unknown as Record<string, unknown>,
 }));
 
 vi.mock("react-router", () => ({
@@ -17,6 +18,8 @@ vi.mock("react-router", () => ({
 }));
 vi.mock("../usePresenterSession", () => ({ usePresenterSession: () => m.session }));
 vi.mock("../useFollowDeck", () => ({ useFollowDeck: () => m.follow }));
+vi.mock("../usePolls", () => ({ usePolls: () => m.polls }));
+vi.mock("../useReactions", () => ({ useReactions: () => [], useSendReaction: () => vi.fn() }));
 
 import { ToastProvider } from "~/components/ui/toast";
 import { PresentStage } from "../PresentStage";
@@ -46,8 +49,9 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   vi.clearAllMocks();
+  m.polls = { state: { active: true, polls: {} }, vote: vi.fn(), close: vi.fn(), open: vi.fn(), reset: vi.fn(), setReactionsOff: vi.fn() };
   m.session = { live: INACTIVE, ready: true, start: vi.fn(), go: vi.fn(), end: vi.fn() };
-  m.follow = { ready: true, active: false, slideId: null, build: 0, presenter: null, startedAt: null, following: false, browseOnMyOwn: vi.fn(), follow: vi.fn() };
+  m.follow = { ready: true, active: false, slideId: null, build: 0, presenter: null, startedAt: null, reactionsOff: false, following: false, browseOnMyOwn: vi.fn(), follow: vi.fn() };
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -56,13 +60,14 @@ afterEach(() => {
   delete (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP;
 });
 
-const INACTIVE: LiveState = { active: false, slideId: null, build: 0, presenter: null, startedAt: null };
+const INACTIVE: LiveState = { active: false, slideId: null, build: 0, presenter: null, startedAt: null, reactionsOff: false };
 const live = (slideId: string, build = 0, presenterId = "me"): LiveState => ({
   active: true,
   slideId,
   build,
   presenter: { id: presenterId, name: "Ada" },
   startedAt: "2026-11-05T10:00:00.000Z",
+  reactionsOff: false,
 });
 
 const para = (text: string) => ({ id: text, type: "paragraph", props: {}, content: [{ type: "text", text, styles: {} }], children: [] });
@@ -270,6 +275,20 @@ describe("PresentDriver", () => {
     expect(m.session.end).toHaveBeenCalled();
   });
 
+  it("lists the polls on the current slide in presenter view with live counts and controls", () => {
+    const poll = { id: "poll1", kind: "poll", slot: null, z: 5, blocks: [], src: null, alt: null, textStyle: null, x: 0, y: 0, w: 900, h: 500, poll: { question: "Ship it?", options: ["Yes", "No"] } };
+    const withPoll = { ...deck, slides: [slide("a", [element("title", { blocks: [para("Alpha")] }), poll]), ...deck.slides.slice(1)] };
+    (m.polls as { state: unknown }).state = { active: true, polls: { poll1: { counts: [2, 5, 0, 0, 0, 0], total: 7, mine: [], closed: false } } };
+    m.session.live = live("a", 0);
+    mount(driver({ view: "presenter", deck: withPoll }));
+    expect(container.querySelector("[data-testid=presenter-polls] [data-poll-count='1']")!.textContent).toBe("5");
+    act(() => button("Close voting").click());
+    expect((m.polls as { close: ReturnType<typeof vi.fn> }).close).toHaveBeenCalledWith("poll1");
+    m.session.live = live("b", 0);
+    mount(driver({ view: "presenter", deck: withPoll }));
+    expect(container.querySelector("[data-testid=presenter-polls] [data-poll]")).toBeNull();
+  });
+
   it("offers the slide show from the presenter view only in the desktop app", () => {
     m.session.live = live("b");
     mount(driver({ view: "presenter" }));
@@ -290,6 +309,16 @@ describe("PresentFollower", () => {
     key("ArrowRight");
     expect(text("[data-slot=body]")).toBe("onetwo");
     expect(container.textContent).toContain("Following Ada · Slide 2 of 3");
+  });
+
+  it("offers reactions to a follower, and hides them when the presenter turns them off", () => {
+    m.follow = { ...(m.follow as object), active: true, slideId: "a", build: 0, presenter: { id: "other", name: "Ada" }, following: true, reactionsOff: false };
+    mount(createElement(PresentFollower, { pageId: "p1", deck, onLeave: vi.fn() }));
+    expect(container.querySelector("[aria-label=React]")).not.toBeNull();
+    m.follow = { ...(m.follow as object), reactionsOff: true };
+    mount(createElement(PresentFollower, { pageId: "p1", deck, onLeave: vi.fn() }));
+    expect(container.querySelector("[aria-label=React]")).toBeNull();
+    expect(container.querySelector("[data-testid=reaction-overlay]")).not.toBeNull();
   });
 
   it("leaves from Browse on my own, and says so when nobody is presenting", () => {

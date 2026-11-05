@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({
-  prisma: { slidePresentation: { findUnique: vi.fn(), update: vi.fn(), upsert: vi.fn() } },
+  prisma: { slidePresentation: { findUnique: vi.fn(), update: vi.fn(), upsert: vi.fn() }, slidePollVote: { deleteMany: vi.fn() } },
 }));
 vi.mock("~/lib/realtime-bus.server", () => ({ publish: vi.fn() }));
 vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: vi.fn() }));
@@ -23,6 +23,7 @@ const row = (over: Record<string, unknown> = {}) => ({
   build: 0,
   startedAt: new Date("2026-11-05T12:00:00Z"),
   endedAt: null,
+  reactionsOff: false,
   presenter: { firstName: "Ada", lastName: "Lovelace" },
   ...over,
 });
@@ -41,7 +42,7 @@ describe("readLive", () => {
   it("returns inactive when nobody is presenting", async () => {
     expect(await readLive("u2", "p1")).toEqual({
       ok: true,
-      live: { active: false, slideId: null, build: 0, presenter: null, startedAt: null },
+      live: { active: false, slideId: null, build: 0, presenter: null, startedAt: null, reactionsOff: false },
     });
   });
 
@@ -50,7 +51,7 @@ describe("readLive", () => {
     db.findUnique.mockResolvedValue(row({ slideId: "s3", build: 2 }));
     expect(await readLive("u2", "p1")).toEqual({
       ok: true,
-      live: { active: true, slideId: "s3", build: 2, presenter: { id: "u1", name: "Ada Lovelace" }, startedAt: "2026-11-05T12:00:00.000Z" },
+      live: { active: true, slideId: "s3", build: 2, presenter: { id: "u1", name: "Ada Lovelace" }, startedAt: "2026-11-05T12:00:00.000Z", reactionsOff: false },
     });
   });
 
@@ -87,6 +88,22 @@ describe("applyLive", () => {
     );
     expect(publish).toHaveBeenCalledTimes(1);
     expect(publish).toHaveBeenCalledWith(slideLiveTopic("p1"));
+  });
+
+  it("clears votes, closed polls and the reactions switch when a new presentation starts, and keeps them when the presenter resumes", async () => {
+    const votes = prisma.slidePollVote as unknown as { deleteMany: ReturnType<typeof vi.fn> };
+    db.upsert.mockResolvedValue({});
+    db.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(row());
+    await applyLive("u1", "p1", { intent: "start", slideId: "s1" });
+    expect(db.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ update: expect.objectContaining({ closedPolls: [], reactionsOff: false, startedAt: expect.any(Date) }) }),
+    );
+    expect(votes.deleteMany).toHaveBeenCalledWith({ where: { presentation: { pageId: "p1" } } });
+
+    votes.deleteMany.mockClear();
+    db.findUnique.mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ slideId: "s2" }));
+    await applyLive("u1", "p1", { intent: "start", slideId: "s2" });
+    expect(votes.deleteMany).not.toHaveBeenCalled();
   });
 
   it("lets another editor take over by starting", async () => {

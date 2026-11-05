@@ -3,7 +3,7 @@ import "~/components/doc/theme.css";
 import "./slide-editor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
-import { Keyboard, MessageSquare, Search } from "lucide-react";
+import { BookmarkPlus, Keyboard, MessageSquare, Search } from "lucide-react";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
@@ -17,11 +17,14 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { Button } from "~/components/ui/Button";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { useToast } from "~/components/ui/toast";
+import { SaveTemplateModal } from "~/components/slides/templates/SaveTemplateModal";
+import { fetchTemplate, removeTemplate, saveTemplate, type TemplateRow } from "~/components/slides/templates/templates-client";
+import { useTemplates } from "~/components/slides/templates/useTemplates";
 import { nameToHexColor } from "~/components/doc/collab-doc";
 import { uploadEditorImage, withUploadErrorToast, IMAGE_UPLOAD_ACCEPT } from "~/components/doc/upload";
 import { slidesRoomName } from "~/collab/roomName";
 import { addFreeImage, setImageSource } from "~/components/slides/deck/freeform-ops";
-import { pasteSlides, parseSlideClipboard, serializeSlides } from "~/components/slides/deck/slide-clipboard";
+import { pasteSlides, parseSlideClipboard, sanitizeClips, serializeSlides, slidesToClips } from "~/components/slides/deck/slide-clipboard";
 import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
 import {
   addSlide,
@@ -40,6 +43,7 @@ import {
   undeleteSlide,
 } from "~/components/slides/deck/deck-ops";
 import { deckUndoExtension } from "~/components/slides/deck/deck-undo";
+import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { layoutById } from "~/components/slides/deck/layouts";
 import { DECK_VERSION } from "~/components/slides/deck/model";
 import { appendSlides } from "~/components/slides/pptx/import-apply";
@@ -277,6 +281,30 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     if (id === selectedId) select(next?.id ?? "");
   };
 
+  const library = useTemplates(pageId, canEdit);
+  const [saving, setSaving] = useState<{ kind: "Deck" | "Slide"; slides: RenderSlide[] } | null>(null);
+  const saveToLibrary = async (title: string, scope: "lab" | "project") => {
+    if (!saving) return null;
+    const result = await saveTemplate({ kind: saving.kind, title, pageId, scope, themeId: snap.themeId, slides: slidesToClips(saving.slides) });
+    if (!result.ok) return result.error;
+    toast.success(saving.kind === "Deck" ? "Saved as a template" : "Saved to the library");
+    setSaving(null);
+    void library.refresh();
+    return null;
+  };
+  const insertFromLibrary = async (row: TemplateRow) => {
+    const template = await fetchTemplate(row.id);
+    const clips = template && sanitizeClips(template.slides);
+    if (!deck || !clips) return void toast.error("Couldn't open that template.");
+    const created = deck.undo.step(() => pasteSlides(deck.doc, clips, selectedId));
+    if (created[0]) select(created[0]);
+  };
+  const deleteFromLibrary = async (row: TemplateRow) => {
+    if (await removeTemplate(row.id)) void library.refresh();
+    else toast.error("Couldn't delete that template.");
+  };
+  const slideLibrary = canEdit ? { templates: library.templates, loaded: library.loaded, onPick: insertFromLibrary, onDelete: deleteFromLibrary } : undefined;
+
   const order = useMemo(() => snap.slides.map((s) => s.id), [snap.slides]);
   const onThumbSelect = (id: string, mods: { shift: boolean; meta: boolean }) => {
     setThumbSel((prev) => nextThumbSelection(order, prev, id, mods));
@@ -329,6 +357,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
         },
         moveTo: (where) => step(() => moveSlides(deck.doc, ids, where === "top" ? 0 : order.length)),
         comment: () => startComment({ slideId: id }),
+        saveToLibrary: () => setSaving({ kind: "Slide", slides: targets }),
       },
     });
   };
@@ -470,6 +499,9 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           <Menu.Item icon={<Upload className="h-3.5 w-3.5" />} disabled={pptx.busy} onSelect={pptx.pick}>
             Import slides
           </Menu.Item>
+          <Menu.Item icon={<BookmarkPlus className="h-3.5 w-3.5" />} disabled={snap.slides.length === 0} onSelect={() => setSaving({ kind: "Deck", slides: snap.slides })}>
+            Save as template
+          </Menu.Item>
           <Menu.Item icon={<Search className="h-3.5 w-3.5" />} onSelect={() => find.show()}>
             Find and replace
           </Menu.Item>
@@ -541,7 +573,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-os-card bg-os-card">
       {pageBar}
-      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onInsert={insertItem} armed={freeform.armed} themeId={snap.themeId} currentLayoutId={current?.layoutId ?? null} grid={gridOpen} onGrid={() => setGridOpen((g) => !g)} />
+      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onInsert={insertItem} library={slideLibrary} armed={freeform.armed} themeId={snap.themeId} currentLayoutId={current?.layoutId ?? null} grid={gridOpen} onGrid={() => setGridOpen((g) => !g)} />
       <div className="flex min-h-0 flex-1">
         <Filmstrip
           slides={snap.slides}
@@ -556,6 +588,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           currentLayoutId={current?.layoutId ?? null}
           onSelect={onThumbSelect}
           onAdd={add}
+          library={slideLibrary}
           onDuplicate={duplicate}
           onDelete={remove}
           onMove={onMoveSlides}
@@ -653,6 +686,17 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
       )}
       {previewOpen && current && (
         <TransitionPreview previous={snap.slides[snap.slides.findIndex((x) => x.id === current.id) - 1] ?? null} slide={current} themeId={snap.themeId} onClose={() => setPreviewOpen(false)} />
+      )}
+      {saving && (
+        <SaveTemplateModal
+          open
+          kind={saving.kind}
+          slideCount={saving.slides.length}
+          defaultTitle={saving.kind === "Deck" ? title : saving.slides.length === 1 ? "Untitled slide" : "Saved slides"}
+          canSaveToProject={library.canSaveToProject}
+          onSave={saveToLibrary}
+          onClose={() => setSaving(null)}
+        />
       )}
       <ShortcutsSheet open={helpOpen} onClose={() => setHelpOpen(false)} />
       <input {...pptx.inputProps} />

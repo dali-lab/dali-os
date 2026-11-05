@@ -21,6 +21,7 @@ export function useFollowDeck(pageId: string) {
     build: live.build,
     presenter: live.presenter,
     startedAt: live.startedAt,
+    reactionsOff: live.reactionsOff,
     following: live.active && !optedOut,
     browseOnMyOwn,
     follow,

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { readDeck } from "~/collab/read-deck.server";
 import { addSlide, slideFragment } from "~/components/slides/deck/deck-ops";
-import { addChart, addIcon, addTable, addVideo, setChart } from "~/components/slides/deck/freeform-ops";
+import { addChart, addIcon, addPoll, addTable, addVideo, setChart } from "~/components/slides/deck/freeform-ops";
 import { initDeck } from "~/components/slides/deck/model";
 import { buildDeckPptx } from "../export.server";
 import { writeBlocks } from "../fragment-write";
@@ -88,5 +88,11 @@ describe("PowerPoint export of new elements", () => {
     const rels = await zip.file("ppt/slides/_rels/slide1.xml.rels")!.async("string");
     expect(rels).toContain("https://youtu.be/dQw4w9WgXcQ");
     expect(await slideXml(zip)).toContain("YouTube video");
+  });
+
+  it("writes a poll as a card with its question and options", async () => {
+    const { zip } = await zipOf(deck((doc, id) => void addPoll(doc, id, { question: "Ship it?", options: ["Yes", "Not yet"] })));
+    const xml = await slideXml(zip);
+    for (const word of ["Ship it?", "Yes", "Not yet"]) expect(xml).toContain(word);
   });
 });

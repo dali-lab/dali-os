@@ -11,6 +11,7 @@ import {
   addEmoji,
   addFreeImage,
   addIcon,
+  addPoll,
   addShape,
   addTable,
   addTextBox,
@@ -42,6 +43,7 @@ const KINDS: Array<[string, Insert]> = [
   ["chart", (d, s) => addChart(d, s, "pie")],
   ["icon", (d, s) => addIcon(d, s, "star")],
   ["video", (d, s) => addVideo(d, s, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")],
+  ["poll", (d, s) => addPoll(d, s)],
   ["shape", (d, s) => addShape(d, s, "ellipse")],
   ["image", (d, s) => addFreeImage(d, s, "https://x/y.png", "y")],
 ];

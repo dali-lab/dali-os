@@ -23,13 +23,14 @@ class FakeEventSource {
   }
 }
 
-const inactive: LiveState = { active: false, slideId: null, build: 0, presenter: null, startedAt: null };
+const inactive: LiveState = { active: false, slideId: null, build: 0, presenter: null, startedAt: null, reactionsOff: false };
 const active = (slideId: string): LiveState => ({
   active: true,
   slideId,
   build: 0,
   presenter: { id: "u1", name: "Ada" },
   startedAt: "2026-11-05T12:00:00.000Z",
+  reactionsOff: false,
 });
 
 let server: LiveState;

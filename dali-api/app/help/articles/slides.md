@@ -96,6 +96,18 @@ Everything here is a free item. You can move, resize, rotate, group, copy, comme
 - **Grid**: click **Grid** in the toolbar, or press **G**, to see every slide at once. Drag to reorder (the slides you selected move together), double-click a slide to open it, and right-click for the same menu as in the filmstrip.
 - **Transitions**: in the **Slide** tab, choose **Dissolve**, **Push** or **Magic Move** for how a slide appears, and click **Preview**. Magic Move glides items that match the slide before it (the same item after **Duplicate slide**, or the same text or picture) and fades the rest. Transitions play when presenting and when following a presenter. They are skipped if your device is set to reduce motion, and builds still run after the transition.
 
+## Save and reuse slides
+
+When the live deck editor is on for you, you can keep decks and single slides for the lab to start from.
+
+- **Save a whole deck**: open the **⋯** menu and choose **Save as template**. Name it and choose who can use it: the whole lab, or, for a deck in a project, that project. The template keeps the deck's theme and every slide, without speaker notes or comments.
+- **Save slides to the library**: right-click a slide in the list (or several selected slides) and choose **Save slide to library**.
+- **Start a deck from a template**: in [Drive](/drive), click **New** and choose **New deck from template**, then pick a deck.
+- **Add saved slides to a deck**: click the arrow beside **New slide** and open the **Library** tab. Click a saved slide or deck to add its slides after the slide you are on. Adding them is one step for **Undo**.
+- **Delete a template**: open the **Library** tab and click the bin beside it. Only the person who saved it, or Core, can delete it.
+
+Everyone who can use a scope can use its templates, and anyone who can edit a deck can save it.
+
 ## Find and replace
 
 Press **⌘F**, or choose **Find and replace** in the **⋯** menu. It searches the text on every slide and the speaker notes. The arrows step through matches and show each one's slide. **Replace** changes the current match, and **Replace all** changes every match, and one **Undo** puts them all back. Turn on **Match case** to match capital letters exactly.
@@ -120,4 +132,4 @@ Click a comment in the panel to jump to its slide. Replies and @mentions notify 
 
 ## Work on a deck with an AI assistant
 
-A connected AI assistant, such as Claude, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text. It can also place text boxes, pictures and shapes, then align, group, layer and set build steps for them the way you can in the editor. Its changes show up live for everyone who has the deck open. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.
+A connected AI assistant outside DALI OS, such as Claude Desktop or Claude Code, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. Ask it to draft a deck from an outline, or to add slides from a document, and it makes the slides with their layouts, text, speaker notes and theme. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text, including tables and code. It can also place text boxes, pictures, shapes, charts with their data, icons, videos and polls, then align, group, layer and set build steps for them the way you can in the editor. Ask DALI inside DALI OS can read a deck and answer questions about it, but it does not change decks. Its changes show up live for everyone who has the deck open. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.

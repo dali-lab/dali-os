@@ -31,6 +31,8 @@ export function useInsertItems({
         return void insert.code(at);
       case "chart":
         return void insert.chart(item.chart, at);
+      case "poll":
+        return void insert.poll(at);
       case "icon":
       case "emoji":
       case "video":

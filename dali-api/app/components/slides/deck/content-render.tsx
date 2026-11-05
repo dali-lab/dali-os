@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type CSSProperties, type ReactNode } from "react";
 import { BarChart3, Play } from "lucide-react";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { ChartSvg } from "./ChartSvg";
@@ -124,5 +124,114 @@ export function PlayableVideo({ element, placed }: { element: RenderElement; pla
     >
       <VideoBox placed={placed} element={element} bare />
     </button>
+  );
+}
+
+export interface PollResult {
+  counts: number[];
+  total: number;
+  mine: number[];
+  closed: boolean;
+}
+
+export interface PollContextValue {
+  results: Record<string, PollResult>;
+  onVote?: (pollId: string, choices: number[]) => void;
+}
+
+const EMPTY_POLL_RESULT: PollResult = { counts: [], total: 0, mine: [], closed: false };
+
+export const PollContext = createContext<PollContextValue | null>(null);
+
+export function toggleChoice(current: number[], index: number, multi: boolean): number[] {
+  if (!multi) return current.length === 1 && current[0] === index ? [] : [index];
+  return current.includes(index) ? current.filter((c) => c !== index) : [...current, index].sort((a, b) => a - b);
+}
+
+export function PollBox({ placed, element }: { placed: Placed; element: RenderElement }) {
+  const ctx = useContext(PollContext);
+  const poll = element.poll;
+  const dataKey = { "data-element": element.id, "data-kind": "poll" };
+  if (!poll) return <Placeholder placed={placed} dataKey={dataKey} label="Poll is missing" icon={<BarChart3 style={{ width: u(72), height: u(72) }} aria-hidden />} />;
+  const result = ctx ? (ctx.results[element.id] ?? EMPTY_POLL_RESULT) : undefined;
+  const total = result?.total ?? 0;
+  const canVote = Boolean(ctx?.onVote && result && !result.closed);
+  return (
+    <div
+      {...dataKey}
+      data-poll-closed={result?.closed ? "" : undefined}
+      style={{
+        ...placedStyle(placed),
+        background: "var(--slide-surface)",
+        color: "var(--slide-fg)",
+        borderRadius: u(24),
+        padding: u(48),
+        display: "flex",
+        flexDirection: "column",
+        gap: u(28),
+        fontFamily: "var(--slide-font-body)",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ fontSize: u(56), fontWeight: 600, lineHeight: 1.15 }}>{poll.question}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: u(16), flex: 1, justifyContent: "center" }}>
+        {poll.options.map((option, i) => {
+          const count = result?.counts[i] ?? 0;
+          const share = total > 0 ? count / total : 0;
+          const picked = result?.mine.includes(i) ?? false;
+          const row = (
+            <>
+              <span
+                aria-hidden
+                style={{ position: "absolute", inset: 0, width: `${Math.round(share * 100)}%`, background: "var(--slide-accent)", opacity: picked ? 0.55 : 0.3 }}
+              />
+              <span style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: u(24), width: "100%" }}>
+                <span>{option}</span>
+                {result && <span data-poll-count>{count}</span>}
+              </span>
+            </>
+          );
+          const style: CSSProperties = {
+            position: "relative",
+            display: "flex",
+            alignItems: "center",
+            overflow: "hidden",
+            padding: `${u(16)} ${u(28)}`,
+            fontSize: u(40),
+            borderRadius: u(16),
+            border: `${u(3)} solid ${picked ? "var(--slide-accent)" : "var(--slide-rule)"}`,
+            background: "transparent",
+            color: "inherit",
+            textAlign: "left",
+            width: "100%",
+          };
+          return canVote ? (
+            <button
+              key={i}
+              type="button"
+              data-poll-option={i}
+              aria-pressed={picked}
+              onClick={(e) => {
+                e.stopPropagation();
+                ctx!.onVote!(element.id, toggleChoice(result!.mine, i, poll.multi === true));
+              }}
+              style={{ ...style, cursor: "pointer" }}
+            >
+              {row}
+            </button>
+          ) : (
+            <div key={i} data-poll-option={i} style={style}>
+              {row}
+            </div>
+          );
+        })}
+      </div>
+      {result && (
+        <div style={{ fontSize: u(28), color: "var(--slide-muted)" }}>
+          {total} {total === 1 ? "vote" : "votes"}
+          {result.closed ? " · Voting closed" : ""}
+        </div>
+      )}
+    </div>
   );
 }

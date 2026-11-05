@@ -24,6 +24,8 @@ import {
   reorderElements,
   setAutoHeight,
   setChart,
+  setPoll,
+  addPoll,
   setCrop,
   setFill,
   setFreeTextStyle,
@@ -37,7 +39,7 @@ import {
 } from "~/components/slides/deck/freeform-ops";
 import { selectionTarget, type PlacedLive } from "~/components/slides/deck/freeform";
 import { nudgeDelta } from "~/components/slides/deck/geometry";
-import type { ChartSpec, ChartType } from "~/components/slides/deck/content";
+import type { ChartSpec, ChartType, PollSpec } from "~/components/slides/deck/content";
 import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import type { SlideBackground } from "~/components/slides/deck/slide-meta";
@@ -104,6 +106,7 @@ export interface ContentInsert {
   icon: (name: string, at?: At) => string | null;
   emoji: (emoji: string, at?: At) => string | null;
   video: (url: string, at?: At) => string | null;
+  poll: (at?: At) => string | null;
 }
 
 export interface FreeformExternal {
@@ -359,6 +362,7 @@ export function useFreeformEditor({
       icon: (name, at) => place((d, sid) => addIcon(d.doc, sid, name, at)),
       emoji: (emoji, at) => place((d, sid) => addEmoji(d.doc, sid, emoji, at)),
       video: (url, at) => place((d, sid) => addVideo(d.doc, sid, url, at)),
+      poll: (at) => place((d, sid) => addPoll(d.doc, sid, undefined, at)),
     };
   }, [onPlace]);
 
@@ -375,6 +379,11 @@ export function useFreeformEditor({
       onSnapBack: handlers.snapBack,
       onFill: (fill) => run((d, s, ids) => setFill(d.doc, s.id, ids, fill)),
       onChart: (id: string, chart: ChartSpec) => run((d, s) => setChart(d.doc, s.id, id, chart)),
+      onPoll: (id: string, poll: PollSpec) => {
+        let ok = false;
+        run((d, s) => void (ok = setPoll(d.doc, s.id, id, poll)));
+        return ok;
+      },
       onIcon: (id: string, name: string) => run((d, s) => setIconName(d.doc, s.id, id, name)),
       onVideo: (id: string, url: string) => {
         let ok = false;

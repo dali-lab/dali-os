@@ -22,6 +22,8 @@ export interface PresenterViewProps {
   shareUrl?: string;
   followerCount?: number;
   startedAt?: string | null;
+  overlay?: ReactNode;
+  extras?: ReactNode;
 }
 
 const NOW_WIDTH = 560;
@@ -51,6 +53,8 @@ export function PresenterView({
   shareUrl,
   followerCount,
   startedAt,
+  overlay,
+  extras,
 }: PresenterViewProps) {
   const total = slideIds.length;
   const [now, setNow] = useState(() => Date.now());
@@ -141,8 +145,9 @@ export function PresenterView({
       <div className="flex min-h-0 flex-1 gap-4 p-4">
         <section className="flex min-w-0 flex-1 flex-col gap-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-os-grey">Now</div>
-          <div className="overflow-hidden rounded-os-item border border-os-container" style={{ width: NOW_WIDTH, aspectRatio: "16 / 9" }}>
+          <div className="relative overflow-hidden rounded-os-item border border-os-container" style={{ width: NOW_WIDTH, aspectRatio: "16 / 9" }}>
             {slideId ? renderSlide(slideId, { width: NOW_WIDTH, step: onPositionChange ? here.step : undefined }) : null}
+            {overlay}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" disabled={index <= 0 && here.step <= 0} onClick={() => move("prev")}>
@@ -182,6 +187,7 @@ export function PresenterView({
           >
             {nextId ? renderSlide(nextId, { width: NEXT_WIDTH, step: onPositionChange ? nextPos.step : undefined }) : "End of deck"}
           </div>
+          {extras}
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-os-grey">Notes</span>
             <span className="flex items-center gap-1">

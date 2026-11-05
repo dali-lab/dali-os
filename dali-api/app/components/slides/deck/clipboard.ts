@@ -1,5 +1,5 @@
 import type { ImportBlock, ImportInline, ImportTable } from "~/components/slides/pptx/import-types";
-import { cleanChart, cleanIcon, cleanVideoUrl, type ChartSpec } from "./content";
+import { cleanChart, cleanIcon, cleanPoll, cleanVideoUrl, type ChartSpec, type PollSpec } from "./content";
 import { placementOf, expandToLeaves, type Placed } from "./freeform";
 import { cleanCrop, type Crop } from "./crop";
 import { boundsOf, rotatedBounds } from "./geometry";
@@ -16,7 +16,7 @@ const MAX_DEPTH = 4;
 const MAX_TEXT = 20_000;
 const MAX_ALT = 500;
 
-export type ClipKind = "text" | "image" | "shape" | "group" | "chart" | "icon" | "video";
+export type ClipKind = "text" | "image" | "shape" | "group" | "chart" | "icon" | "video" | "poll";
 
 export interface ClipItem {
   key: string;
@@ -33,6 +33,7 @@ export interface ClipItem {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  poll?: PollSpec;
 }
 
 const MARKS = ["bold", "italic", "underline", "strike"] as const;
@@ -122,6 +123,7 @@ function itemOf(slide: RenderSlide, el: RenderElement): ClipItem | null {
   if (el.kind === "chart" && el.chart) return { ...base, kind: "chart", chart: el.chart };
   if (el.kind === "icon" && el.icon) return { ...base, kind: "icon", icon: el.icon, ...(el.fill ? { fill: el.fill } : {}) };
   if (el.kind === "video" && el.videoUrl) return { ...base, kind: "video", videoUrl: el.videoUrl };
+  if (el.kind === "poll" && el.poll) return { ...base, kind: "poll", poll: el.poll };
   return null;
 }
 
@@ -262,6 +264,10 @@ export function cleanItems(rawItems: unknown[]): ClipItem[] | null {
       const videoUrl = cleanVideoUrl(raw.videoUrl);
       if (!videoUrl) continue;
       out.push({ ...base, kind: "video", videoUrl });
+    } else if (raw.kind === "poll") {
+      const poll = cleanPoll(raw.poll);
+      if (!poll) continue;
+      out.push({ ...base, kind: "poll", poll });
     } else if (raw.kind === "group") {
       out.push({ ...base, kind: "group", children: Array.isArray(raw.children) ? raw.children.filter((c): c is string => typeof c === "string") : [] });
     } else continue;
