@@ -16,7 +16,8 @@ import {
 import { buildOf } from "~/components/slides/deck/builds";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
-import type { RenderSlide } from "~/components/slides/deck/snapshot";
+import { geometryFields, linkGroups, shapeFields, type RenderSlide } from "~/components/slides/deck/snapshot";
+import type { FillId, ShapeKind } from "~/components/slides/deck/model";
 import { TEXT_STYLE_IDS, type TextStyleId } from "~/components/slides/deck/themes";
 
 export interface DeckReadElement {
@@ -31,6 +32,14 @@ export interface DeckReadElement {
   text: string;
   build?: number;
   buildBullets?: boolean;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  rot?: number;
+  shape?: ShapeKind;
+  fill?: FillId;
+  children?: string[];
 }
 
 export interface DeckReadSlide {
@@ -76,6 +85,8 @@ export function readDeck(live: Y.Doc): DeckRead {
           text: blocksToPlainText(blocks as never),
           ...(buildOf(el.get("build")) ? { build: buildOf(el.get("build")) } : {}),
           ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
+          ...geometryFields((k) => el.get(k)),
+          ...shapeFields((k) => el.get(k)),
         });
       });
       elements.sort(compareZ);
@@ -127,6 +138,11 @@ export function projectLegacySlides(read: DeckRead): Slide[] {
   });
 }
 
+function withParents(elements: RenderSlide["elements"]): RenderSlide["elements"] {
+  linkGroups(elements);
+  return elements;
+}
+
 /** A deck read as the plain data SlideRender draws, for people who view without connecting to the room. */
 export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderSlide[] } {
   return {
@@ -135,7 +151,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
       id: s.id,
       pos: s.pos,
       layoutId: s.layoutId,
-      elements: s.elements.map((e) => ({
+      elements: withParents(s.elements.map((e) => ({
         id: e.id,
         kind: e.kind,
         slot: e.slot,
@@ -146,7 +162,9 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
         textStyle: TEXT_STYLE_IDS.includes(e.textStyle as TextStyleId) ? (e.textStyle as TextStyleId) : null,
         ...(e.build ? { build: e.build } : {}),
         ...(e.buildBullets ? { buildBullets: true } : {}),
-      })),
+        ...geometryFields((k) => (e as unknown as Record<string, unknown>)[k]),
+        ...shapeFields((k) => (e as unknown as Record<string, unknown>)[k]),
+      }))),
     })),
   };
 }

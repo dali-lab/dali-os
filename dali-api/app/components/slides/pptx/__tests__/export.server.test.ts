@@ -201,3 +201,76 @@ describe("buildDeckPptx", () => {
     expect(xml).not.toContain("Orphan");
   });
 });
+
+describe("free elements", () => {
+  const free = (id: string, kind: string, geo: Partial<DeckReadElement>): DeckReadElement => ({
+    id,
+    kind,
+    slot: null,
+    z: 5,
+    src: null,
+    alt: null,
+    textStyle: null,
+    blocks: [],
+    text: "",
+    ...geo,
+  });
+
+  it("writes a free text box at its geometry with its rotation, in the first position of the z order", async () => {
+    const el = free("t", "text", { x: 160, y: 320, w: 640, h: 160, rot: 10, blocks: [para("Floating")], textStyle: "heading" });
+    const { parsed } = await build(deck([slide("a", "blank", [el])]));
+    const [shape] = parsed.slides[0].elements as unknown as Array<{ left: number; top: number; width: number; height: number; rotate: number; content: string }>;
+    expect(plain(shape.content)).toBe("Floating");
+    expect(shape.left).toBeCloseTo(unitsToPoints(160), 0);
+    expect(shape.top).toBeCloseTo(unitsToPoints(320), 0);
+    expect(shape.width).toBeCloseTo(unitsToPoints(640), 0);
+    expect(shape.rotate).toBeCloseTo(10, 0);
+  });
+
+  it("writes shapes with theme colors and lines with an arrow head", async () => {
+    const els = [
+      free("r", "shape", { shape: "rounded", fill: "accent", x: 100, y: 100, w: 400, h: 200, z: 1 }),
+      free("e", "shape", { shape: "ellipse", fill: "fg", x: 600, y: 100, w: 300, h: 300, z: 2 }),
+      free("a", "shape", { shape: "arrow", fill: "muted", x: 100, y: 600, w: 500, h: 56, z: 3 }),
+    ];
+    const { parsed } = await build(deck([slide("a", "blank", els)]));
+    const out = parsed.slides[0].elements as unknown as Array<{ type: string; shapType: string; fill: { value?: string }; tailEnd?: { type: string } }>;
+    expect(out.map((e) => e.type)).toEqual(["shape", "shape", "shape"]);
+    expect(out[0].shapType).toBe("roundRect");
+    expect(out[1].shapType).toBe("ellipse");
+    expect(out[0].fill.value?.toLowerCase()).toContain((resolveThemeColor("var(--color-accent-coral)") ?? "").toLowerCase());
+    expect(out[2].shapType).toBe("line");
+  });
+
+  it("places a free image at its geometry and counts one that failed to load", async () => {
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+    const el = free("i", "image", { src: "https://x/a.png", x: 200, y: 200, w: 400, h: 300 });
+    const loaded = await build(deck([slide("a", "blank", [el])]), async () => ({ data: png, size: { width: 1, height: 1 } }));
+    const [img] = loaded.parsed.slides[0].elements as unknown as Array<{ type: string; left: number; width: number }>;
+    expect(img.type).toBe("image");
+    expect(img.left).toBeCloseTo(unitsToPoints(200), 0);
+    const missed = await build(deck([slide("a", "blank", [el])]));
+    expect(missed.built.skippedImages).toBe(1);
+  });
+
+  it("moves a detached slot element and draws one whose slot the layout lacks", async () => {
+    const title = textEl("title", [para("Moved title")], { x: 300, y: 500, w: 900, h: 120 });
+    const orphan = textEl("body", [para("Orphan body")], { x: 100, y: 700, w: 800, h: 100 });
+    const { parsed } = await build(deck([slide("a", "section", [title, orphan])]));
+    const found = parsed.slides[0].elements as unknown as Array<{ left: number; top: number; content: string }>;
+    const moved = found.find((e) => plain(e.content) === "Moved title")!;
+    expect(moved.left).toBeCloseTo(unitsToPoints(300), 0);
+    expect(moved.top).toBeCloseTo(unitsToPoints(500), 0);
+    expect(found.some((e) => plain(e.content) === "Orphan body")).toBe(true);
+  });
+
+  it("skips groups, unplaced elements and unknown kinds", async () => {
+    const els = [
+      free("g", "group", { children: ["x"] }),
+      free("n", "text", { blocks: [para("nowhere")] }),
+      free("h", "hologram", { x: 0, y: 0, w: 10, h: 10 }),
+    ];
+    const { parsed } = await build(deck([slide("a", "blank", els)]));
+    expect(parsed.slides[0].elements).toHaveLength(0);
+  });
+});

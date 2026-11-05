@@ -20,7 +20,10 @@ import { exportDeckPdf, pdfFilename } from "~/lib/slide-pdf.server";
 import { MAX_PDF_SLIDES } from "~/lib/pdf/slides-print-html.server";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { readDeck } from "~/collab/read-deck.server";
-import { deleteSlide, moveSlide, setThemeId } from "~/components/slides/deck/deck-ops";
+import { deleteSlide, moveSlide, setLayout, setThemeId } from "~/components/slides/deck/deck-ops";
+import { addShape, addTextBox, moveElements, setPlacements } from "~/components/slides/deck/freeform-ops";
+import { slideFragment } from "~/components/slides/deck/deck-ops";
+import { blocksToFragment } from "~/collab/blocknote-server";
 import type { Slide } from "~/components/slides/types";
 
 const slide = (id: string, title: string, notes?: string): Slide => ({ id, layout: "title", title, ...(notes ? { notes } : {}) });
@@ -77,6 +80,27 @@ describe("exportDeckPdf", () => {
     expect(html().match(/data-theme="dali-light"/g)).toHaveLength(2);
     expect(html()).toContain("--slide-ground");
     expect(html()).toContain("--font-os-logo");
+  });
+
+  it("prints free elements and detached slots at their geometry, rotation and order", async () => {
+    mocks.readLiveDeck.mockResolvedValue(
+      liveDeck([slide("a", "Alpha")], (d) => {
+        setLayout(d, "a", "title");
+        const shape = addShape(d, "a", "ellipse", { x: 500, y: 400 })!;
+        setPlacements(d, "a", { [shape]: { x: 100, y: 200, w: 300, h: 150, rot: 12 } });
+        const box = addTextBox(d, "a", { x: 960, y: 800 })!;
+        blocksToFragment([{ type: "paragraph", content: "Floating words" }] as never, slideFragment(d, "a", box)!);
+        moveElements(d, "a", ["subtitle"], 0, 40);
+      }),
+    );
+    await exportDeckPdf("u1", "p1", { notes: false });
+    const out = html();
+    expect(out).toContain("data-shape=\"ellipse\"");
+    expect(out).toContain("rotate(12deg)");
+    expect(out).toContain("left:calc(100 * var(--slide-u))");
+    expect(out).toContain("Floating words");
+    expect(out).toContain("Alpha");
+    expect(out.indexOf("data-shape")).toBeLessThan(out.indexOf("Floating words"));
   });
 
   it("adds no notes pages unless asked", async () => {

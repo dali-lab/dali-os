@@ -20,6 +20,7 @@ import { useToast } from "~/components/ui/toast";
 import { nameToHexColor } from "~/components/doc/collab-doc";
 import { uploadEditorImage, withUploadErrorToast, IMAGE_UPLOAD_ACCEPT } from "~/components/doc/upload";
 import { slidesRoomName } from "~/collab/roomName";
+import { addFreeImage, setImageSource } from "~/components/slides/deck/freeform-ops";
 import {
   addSlide,
   clearSlotImage,
@@ -54,7 +55,17 @@ import { useSlideComments } from "./useSlideComments";
 import { anchorElementId, anchorSlideId, threadCountsBySlide, type SlideThread } from "~/lib/slide-comments";
 import type { SlotCollab } from "./SlotEditor";
 import type { SlidesEditorProps } from "./SlidesEditor";
+import { useFreeformEditor } from "./useFreeformEditor";
 import { useDeckDoc, useDeckSnapshot, useDeckSync, useSlidePresence, useUndoState } from "./useDeckDoc";
+
+function naturalSize(src: string): Promise<{ width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
 
 const SYNC_LABEL = { saved: "Saved", saving: "Saving", offline: "Offline, changes will sync" } as const;
 
@@ -90,11 +101,12 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   );
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const current = snap.slides.find((s) => s.id === selectedId) ?? null;
   const deletedHere = selectedId !== null && !current && snap.deletedIds.includes(selectedId);
   const known = snap.v === undefined ? null : snap.v === DECK_VERSION;
   const editable = canEdit && known === true;
+
+  const freeform = useFreeformEditor({ deck, slide: current, editable });
 
   useEffect(() => {
     if (deletedHere || current || snap.slides.length === 0) return;
@@ -112,7 +124,6 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     const exists = snap.slides.some((s) => s.id === link.slideId) || snap.deletedIds.includes(link.slideId);
     if (!exists) return;
     setSelectedId(link.slideId);
-    setSelectedSlot(null);
   }, [known, link?.slideId, snap.slides, snap.deletedIds]);
 
   const startComment = (target: CommentTarget) => {
@@ -123,7 +134,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   const openThread = (thread: SlideThread) => {
     const slideId = anchorSlideId(thread.root.anchor);
     if (slideId) setSelectedId(slideId);
-    setSelectedSlot(thread.kind === "text" ? anchorElementId(thread.root.anchor) : null);
+    const elementId = thread.kind === "text" ? anchorElementId(thread.root.anchor) : null;
+    freeform.setSelection(elementId ? [elementId] : []);
     setFocusThreadId(thread.root.id);
   };
   const stageComments: StageComments | undefined =
@@ -133,7 +145,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           viewerId: collab.userId,
           canComment,
           canModerate: canModerateComments,
-          pins: pinsForSlide(slideComments.comments, current.id, current.layoutId),
+          pins: pinsForSlide(slideComments.comments, current.id, current.layoutId, current),
           focusedPinId: focusThreadId,
           onOpenPin: (id) => (setFocusThreadId(id), setCommentsOpen(true)),
           onStart: startComment,
@@ -166,10 +178,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   }, [deck, selectedId]);
   useEffect(() => {
     if (!deck) return;
-    deck.undo.setNavigator((id) => {
-      setSelectedId(id);
-      setSelectedSlot(null);
-    });
+    deck.undo.setNavigator((id) => setSelectedId(id));
     return () => deck.undo.setNavigator(null);
   }, [deck]);
 
@@ -183,10 +192,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     [deck, pageId, collab.token, me],
   );
 
-  const select = (id: string) => {
-    setSelectedId(id);
-    setSelectedSlot(null);
-  };
+  const select = (id: string) => setSelectedId(id);
   const undo = () => deck?.undo.manager.undo();
   const redo = () => deck?.undo.manager.redo();
 
@@ -220,21 +226,37 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   };
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const pickTarget = useRef<{ type: "slot" } | { type: "free" } | { type: "replace"; id: string }>({ type: "slot" });
   const hasImageSlot = current ? layoutById(current.layoutId).slots.some((s) => s.kind === "image") : false;
-  const pickImage = () => {
+  const openPicker = (target: typeof pickTarget.current) => {
+    pickTarget.current = target;
+    fileRef.current?.click();
+  };
+  const pickImage = (elementId?: string) => {
     if (!current) return;
+    const free = elementId ? current.elements.find((e) => e.id === elementId && e.slot === null) : undefined;
+    if (free) return openPicker({ type: "replace", id: free.id });
     if (!hasImageSlot) {
       toast.info("This layout has no image. Choose Text and image or Image in the Slide tab.");
       return;
     }
-    fileRef.current?.click();
+    openPicker({ type: "slot" });
   };
   const upload = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   const onFile = async (file: File | undefined) => {
     if (!file || !deck || !current) return;
+    const target = pickTarget.current;
+    const slideId = current.id;
     try {
       const url = await upload(file);
-      setSlotImage(deck.doc, current.id, url, file.name.replace(/\.[^.]*$/, ""));
+      const alt = file.name.replace(/\.[^.]*$/, "");
+      if (target.type === "slot") setSlotImage(deck.doc, slideId, url, alt);
+      else if (target.type === "replace") deck.undo.step(() => setImageSource(deck.doc, slideId, target.id, url, alt));
+      else {
+        const natural = await naturalSize(url);
+        const id = deck.undo.step(() => addFreeImage(deck.doc, slideId, url, alt, natural));
+        if (id) freeform.setSelection([id]);
+      }
     } catch {
       return;
     }
@@ -336,7 +358,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-os-card bg-os-card">
       {pageBar}
-      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onImage={pickImage} />
+      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onImage={() => openPicker({ type: "free" })} armed={freeform.armed} onArm={freeform.arm} />
       <div className="flex min-h-0 flex-1">
         <Filmstrip
           slides={snap.slides}
@@ -362,8 +384,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
                 doc={deck.doc}
                 collab={slotCollab}
                 editable
-                selectedSlot={selectedSlot}
-                onSelectSlot={setSelectedSlot}
+                freeform={freeform.stage}
                 onPickImage={pickImage}
                 comments={stageComments}
               />
@@ -379,12 +400,13 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           slide={current}
           themeId={snap.themeId}
           slideCount={snap.slides.length}
-          selectedSlot={selectedSlot}
+          selection={freeform.selection}
+          freeform={freeform.inspector}
           editable
           onLayout={(id) => current && setLayout(deck.doc, current.id, id)}
           onTheme={(id) => setThemeId(deck.doc, id)}
           onTextStyle={(slot, style) => current && setTextStyle(deck.doc, current.id, slot, style)}
-          onPickImage={pickImage}
+          onPickImage={() => pickImage()}
           onClearImage={() => current && clearSlotImage(deck.doc, current.id)}
           onBuild={(slot, build) => current && setBuild(deck.doc, current.id, slot, build)}
           onBuildBullets={(slot, on) => current && setBuildBullets(deck.doc, current.id, slot, on)}

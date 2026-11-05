@@ -3,15 +3,25 @@ import { ImageIcon } from "lucide-react";
 import { SlideBody } from "~/components/slides/SlideBody";
 import { cn } from "~/lib/cn";
 import { isVisibleAt, visibleBlocks } from "./builds";
-import { layoutById, STAGE_H, STAGE_W, type LayoutSlot } from "./layouts";
-import { rectStyle, u } from "./units";
+import { explicitPlacement, isFreeRendered, type Placed } from "./freeform";
+import { layoutById, SLOT_Z, STAGE_H, STAGE_W, type LayoutSlot } from "./layouts";
+import type { FillId } from "./model";
+import { placedStyle, rectStyle, u } from "./units";
 import type { RenderElement, RenderSlide } from "./snapshot";
-import { textStyleCss, themeById, themeVars, type ThemeDef } from "./themes";
+import { textStyleCss, themeById, themeVars, type TextStyleId, type ThemeDef } from "./themes";
 
 export interface SlotContext {
   slot: LayoutSlot;
   element: RenderElement | undefined;
+  /** Where the slot is drawn: its layout rect, or the element's own geometry once it has been moved. */
+  placed: Placed;
   /** What SlideRender draws for this slot when nothing replaces it. */
+  fallback: ReactNode;
+}
+
+export interface FreeContext {
+  element: RenderElement;
+  placed: Placed;
   fallback: ReactNode;
 }
 
@@ -22,30 +32,42 @@ export interface SlideRenderProps {
   placeholders?: boolean;
   /** Replaces what a slot draws, for example with a live editor on the current slide. */
   renderSlot?: (ctx: SlotContext) => ReactNode;
+  /** Replaces what a free element draws. */
+  renderFree?: (ctx: FreeContext) => ReactNode;
   /** The build step to show while presenting. Leave it out to show everything, as the editor and thumbnails do. */
   step?: number;
 }
 
 const FLEX_ALIGN = { top: "flex-start", center: "center", bottom: "flex-end" } as const;
 
-function TextSlot({ slot, element, placeholders }: { slot: LayoutSlot; element: RenderElement | undefined; placeholders: boolean }) {
-  const style = element?.textStyle ?? slot.style;
+interface BoxText {
+  placed: Placed;
+  style: TextStyleId;
+  align: "left" | "center";
+  valign: "top" | "center" | "bottom";
+  placeholder: string;
+  element: RenderElement | undefined;
+  placeholders: boolean;
+  dataKey: Record<string, string>;
+}
+
+function TextBox({ placed, style, align, valign, placeholder, element, placeholders, dataKey }: BoxText) {
   const empty = !element || element.blocks.length === 0;
   return (
     <div
-      data-slot={slot.slot}
+      {...dataKey}
       style={{
-        ...rectStyle(slot.rect),
+        ...placedStyle(placed),
         ...textStyleCss(style),
         display: "flex",
         flexDirection: "column",
-        justifyContent: FLEX_ALIGN[slot.valign],
-        textAlign: slot.align,
+        justifyContent: FLEX_ALIGN[valign],
+        textAlign: align,
         overflow: "hidden",
       }}
     >
       {empty ? (
-        placeholders ? <span style={{ opacity: 0.35 }}>{slot.placeholder}</span> : null
+        placeholders ? <span style={{ opacity: 0.35 }}>{placeholder}</span> : null
       ) : (
         <SlideBody themed doc={element.blocks} />
       )}
@@ -53,24 +75,24 @@ function TextSlot({ slot, element, placeholders }: { slot: LayoutSlot; element: 
   );
 }
 
-function ImageSlot({ slot, element, placeholders }: { slot: LayoutSlot; element: RenderElement | undefined; placeholders: boolean }) {
-  const full = slot.rect.w === STAGE_W && slot.rect.h === STAGE_H;
+function ImageBox({ placed, element, placeholders, label, dataKey }: { placed: Placed; element: RenderElement | undefined; placeholders: boolean; label: string; dataKey: Record<string, string> }) {
+  const full = placed.w === STAGE_W && placed.h === STAGE_H;
   if (element?.src) {
     return (
       <img
-        data-slot="image"
+        {...dataKey}
         src={element.src}
         alt={element.alt ?? ""}
-        style={{ ...rectStyle(slot.rect), objectFit: "cover", borderRadius: full ? 0 : u(24) }}
+        style={{ ...placedStyle(placed), objectFit: "cover", borderRadius: full ? 0 : u(24) }}
       />
     );
   }
   if (!placeholders) return null;
   return (
     <div
-      data-slot="image"
+      {...dataKey}
       style={{
-        ...rectStyle(slot.rect),
+        ...placedStyle(placed),
         background: "var(--slide-surface)",
         color: "var(--slide-muted)",
         borderRadius: full ? 0 : u(24),
@@ -82,19 +104,113 @@ function ImageSlot({ slot, element, placeholders }: { slot: LayoutSlot; element:
     >
       <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: u(16) }}>
         <ImageIcon style={{ width: u(72), height: u(72) }} aria-hidden />
-        {slot.placeholder}
+        {label}
       </span>
     </div>
   );
 }
 
+const FILL_VAR: Record<FillId, string> = {
+  accent: "var(--slide-accent)",
+  fg: "var(--slide-fg)",
+  muted: "var(--slide-muted)",
+  surface: "var(--slide-surface)",
+  rule: "var(--slide-rule)",
+};
+
+export const fillVar = (fill: FillId | undefined): string => FILL_VAR[fill ?? "accent"];
+
+function ShapeBox({ placed, element }: { placed: Placed; element: RenderElement }) {
+  const shape = element.shape ?? "rect";
+  const color = fillVar(element.fill);
+  const dataKey = { "data-element": element.id, "data-shape": shape };
+  if (shape === "line" || shape === "arrow") {
+    const { w, h } = placed;
+    return (
+      <svg {...dataKey} viewBox={`0 0 ${w} ${h}`} style={{ ...placedStyle(placed), overflow: "visible", fill: color }} aria-hidden>
+        {shape === "line" ? (
+          <rect x={0} y={0} width={w} height={h} />
+        ) : (
+          <>
+            <rect x={0} y={h * 0.375} width={Math.max(0, w - h)} height={h * 0.25} />
+            <polygon points={`${Math.max(0, w - h)},0 ${w},${h / 2} ${Math.max(0, w - h)},${h}`} />
+          </>
+        )}
+      </svg>
+    );
+  }
+  const radius = shape === "ellipse" ? "50%" : shape === "rounded" ? u(Math.min(48, placed.w / 4, placed.h / 4)) : 0;
+  return <div {...dataKey} style={{ ...placedStyle(placed), background: color, borderRadius: radius }} />;
+}
+
+function FreeBox({ element, placed, placeholders }: { element: RenderElement; placed: Placed; placeholders: boolean }) {
+  const dataKey = { "data-element": element.id };
+  if (element.kind === "text") {
+    return (
+      <TextBox
+        placed={placed}
+        style={element.textStyle ?? "body"}
+        align="left"
+        valign="top"
+        placeholder="Text"
+        element={element}
+        placeholders={placeholders}
+        dataKey={dataKey}
+      />
+    );
+  }
+  if (element.kind === "image") return <ImageBox placed={placed} element={element} placeholders={placeholders} label="Add an image" dataKey={dataKey} />;
+  if (element.kind === "shape") return <ShapeBox placed={placed} element={element} />;
+  return null;
+}
+
+const slotName = (slot: string) => slot.charAt(0).toUpperCase() + slot.slice(1);
+
+function SlotGhost({ slot }: { slot: LayoutSlot }) {
+  return (
+    <div
+      data-slot-ghost={slot.slot}
+      aria-hidden
+      style={{
+        ...rectStyle(slot.rect),
+        border: `${u(3)} dashed var(--slide-rule)`,
+        borderRadius: u(12),
+        color: "var(--slide-muted)",
+        display: "grid",
+        placeItems: "center",
+        fontSize: u(28),
+        fontFamily: "var(--slide-font-body)",
+        pointerEvents: "none",
+      }}
+    >
+      {slotName(slot.slot)} slot · empty
+    </div>
+  );
+}
+
+type Item =
+  | { z: number; kind: "slot"; slot: LayoutSlot; element: RenderElement | undefined }
+  | { z: number; kind: "free"; element: RenderElement; placed: Placed };
+
 /**
  * A slide drawn from data and the theme alone. It fills the width of its parent at 16:9 and sizes everything
  * from `--slide-u`, one stage unit of the 1920 by 1080 design, so text and popups inside it keep their real size.
  */
-export function SlideRender({ slide, theme, placeholders = false, renderSlot, step, className }: SlideRenderProps & { className?: string }) {
+export function SlideRender({ slide, theme, placeholders = false, renderSlot, renderFree, step, className }: SlideRenderProps & { className?: string }) {
   const def = typeof theme === "string" ? themeById(theme) : theme;
   const layout = layoutById(slide.layoutId);
+  const visible = (el: RenderElement | undefined) => !(step !== undefined && el && !isVisibleAt(el, step));
+  const items: Item[] = [
+    ...layout.slots.map((slot): Item => {
+      const found = slide.elements.find((e) => e.slot === slot.slot);
+      return { z: found?.z ?? SLOT_Z[slot.slot], kind: "slot", slot, element: found };
+    }),
+    ...slide.elements.flatMap((element): Item[] => {
+      if (!isFreeRendered(slide.layoutId, element) || !visible(element)) return [];
+      const shown = step !== undefined && element.buildBullets ? { ...element, blocks: visibleBlocks(element, element.blocks, step) } : element;
+      return [{ z: element.z, kind: "free", element: shown, placed: explicitPlacement(element)! }];
+    }),
+  ].sort((a, b) => a.z - b.z);
   return (
     <div className={cn("relative w-full overflow-hidden", className)} style={{ containerType: "inline-size", aspectRatio: `${STAGE_W} / ${STAGE_H}` }}>
       <div
@@ -113,17 +229,39 @@ export function SlideRender({ slide, theme, placeholders = false, renderSlot, st
           fontSize: u(40),
         }}
       >
-        {layout.slots.map((slot) => {
-          const found = slide.elements.find((e) => e.slot === slot.slot);
-          if (step !== undefined && found && !isVisibleAt(found, step)) return null;
+        {items.map((item) => {
+          if (item.kind === "free") {
+            const fallback = <FreeBox element={item.element} placed={item.placed} placeholders={placeholders} />;
+            return <Fragment key={item.element.id}>{renderFree ? renderFree({ element: item.element, placed: item.placed, fallback }) : fallback}</Fragment>;
+          }
+          const { slot, element: found } = item;
+          if (!visible(found)) return null;
           const element = step !== undefined && found?.buildBullets ? { ...found, blocks: visibleBlocks(found, found.blocks, step) } : found;
+          const placed = (element && explicitPlacement(element)) || { ...slot.rect, rot: 0 };
+          const detached = Boolean(element && explicitPlacement(element));
+          const dataKey = { "data-slot": slot.slot };
           const fallback =
             slot.kind === "image" ? (
-              <ImageSlot slot={slot} element={element} placeholders={placeholders} />
+              <ImageBox placed={placed} element={element} placeholders={placeholders} label={slot.placeholder} dataKey={dataKey} />
             ) : (
-              <TextSlot slot={slot} element={element} placeholders={placeholders} />
+              <TextBox
+                placed={placed}
+                style={element?.textStyle ?? slot.style}
+                align={slot.align}
+                valign={slot.valign}
+                placeholder={slot.placeholder}
+                element={element}
+                placeholders={placeholders}
+                dataKey={dataKey}
+              />
             );
-          return <Fragment key={slot.slot}>{renderSlot ? renderSlot({ slot, element, fallback }) : fallback}</Fragment>;
+          const ghost = placeholders && detached ? <SlotGhost slot={slot} /> : null;
+          return (
+            <Fragment key={slot.slot}>
+              {ghost}
+              {renderSlot ? renderSlot({ slot, element, placed, fallback }) : fallback}
+            </Fragment>
+          );
         })}
       </div>
     </div>

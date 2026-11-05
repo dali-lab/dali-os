@@ -1,9 +1,9 @@
-import type * as Y from "yjs";
+import * as Y from "yjs";
 import { DECK_CREATE, ensureLayoutSlots, newId, visibleSlideIds } from "~/components/slides/deck/deck-ops";
-import { elementsOf, newSlideMap, notesOf, slidesMap, textOf } from "~/components/slides/deck/model";
+import { elementsOf, newElementMap, newSlideMap, notesOf, slidesMap, textOf, type ElementMap } from "~/components/slides/deck/model";
 import { layoutById } from "~/components/slides/deck/layouts";
 import { paragraphsOf, writeBlocks } from "./fragment-write";
-import type { ReadySlide } from "./import-types";
+import type { ImportPlacement, ReadyFree, ReadySlide } from "./import-types";
 
 export const CHUNK_BYTES = 500_000;
 
@@ -26,6 +26,30 @@ export function chunkSlides(slides: ReadySlide[], maxBytes = CHUNK_BYTES): Ready
   }
   if (current.length > 0) chunks.push(current);
   return chunks;
+}
+
+function writePlacement(el: ElementMap, p: ImportPlacement): void {
+  el.set("x", p.x);
+  el.set("y", p.y);
+  el.set("w", p.w);
+  el.set("h", p.h);
+  el.set("rot", p.rot);
+  el.set("z", p.z);
+}
+
+function addFree(slide: ReturnType<typeof newSlideMap>, item: ReadyFree): void {
+  const id = newId();
+  const z = item.placed.z;
+  let el: ElementMap;
+  if (item.kind === "text") {
+    el = newElementMap(id, "text", z, { textStyle: item.textStyle });
+    const fragment = new Y.XmlFragment();
+    textOf(slide).set(id, fragment);
+    writeBlocks(fragment, item.blocks);
+  } else if (item.kind === "image") el = newElementMap(id, "image", z, { src: item.src, alt: item.alt });
+  else el = newElementMap(id, "shape", z, { shape: item.shape, fill: item.fill });
+  writePlacement(el, item.placed);
+  elementsOf(slide).set(id, el);
 }
 
 /** Adds slides after the last visible one in a single transaction that undo does not track, and returns their ids. */
@@ -52,6 +76,11 @@ export function appendSlides(doc: Y.Doc, slides: ReadySlide[]): string[] {
         image.set("src", plan.image.src);
         image.set("alt", plan.image.alt);
       }
+      for (const [slot, placed] of Object.entries(plan.placements ?? {})) {
+        const el = elementsOf(slide).get(slot);
+        if (el && placed) writePlacement(el, placed);
+      }
+      for (const item of plan.free ?? []) addFree(slide, item);
       writeBlocks(notesOf(slide), paragraphsOf(plan.notes));
       ids.push(id);
     });

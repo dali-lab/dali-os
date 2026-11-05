@@ -1,13 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageSquarePlus, RotateCcw } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { slideFragment } from "~/components/slides/deck/deck-ops";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
-import { rectStyle, u } from "~/components/slides/deck/units";
+import { placedStyle, u } from "~/components/slides/deck/units";
+import { withPlacements, type Placed } from "~/components/slides/deck/freeform";
 import { STAGE_H, STAGE_W, type LayoutSlot } from "~/components/slides/deck/layouts";
 import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
 import { ContextMenu, MenuItem } from "~/components/ui/floating";
 import { CommentPins } from "./CommentPins";
+import { FreeformLayer, type ArmedTool } from "./FreeformLayer";
+import type { SnapPrefs } from "./snap-prefs";
 import { elementAtPoint, type CommentPin } from "./comment-pins";
 import type { CommentTarget } from "./SlideCommentsPanel";
 import { SlotEditor, type SlotCollab } from "./SlotEditor";
@@ -98,7 +101,7 @@ export function CommentableStage({
           icon={<MessageSquarePlus className="h-4 w-4" aria-hidden />}
           onSelect={() => {
             const { x, y } = point.current;
-            const elementId = elementAtPoint(slide.layoutId, x, y);
+            const elementId = elementAtPoint(slide.layoutId, x, y, slide);
             comments.onStart({ slideId: slide.id, x, y, ...(elementId ? { elementId } : {}) });
           }}
         >
@@ -111,14 +114,26 @@ export function CommentableStage({
   );
 }
 
+export interface StageFreeform {
+  selection: string[];
+  onSelect: (ids: string[]) => void;
+  editingId: string | null;
+  onEdit: (id: string | null) => void;
+  prefs: SnapPrefs;
+  armed: ArmedTool | null;
+  onPlace: (tool: ArmedTool, at: { x: number; y: number }) => void;
+  onCommit: (updates: Record<string, Placed>) => void;
+  peerDrags: ReadonlyMap<string, Placed>;
+  onPublishDrag: (rects: Map<string, Placed> | null) => void;
+}
+
 export function SlideStage({
-  slide,
+  slide: base,
   themeId,
   doc,
   collab,
   editable,
-  selectedSlot,
-  onSelectSlot,
+  freeform,
   onPickImage,
   comments,
 }: {
@@ -127,79 +142,152 @@ export function SlideStage({
   doc: Y.Doc;
   collab: SlotCollab | null;
   editable: boolean;
-  selectedSlot: string | null;
-  onSelectSlot: (slot: string) => void;
-  onPickImage: () => void;
+  freeform?: StageFreeform;
+  onPickImage: (elementId?: string) => void;
   comments?: StageComments;
 }) {
+  const [local, setLocal] = useState<Map<string, Placed> | null>(null);
+  const slide = useMemo(() => withPlacements(base, [freeform?.peerDrags, local]), [base, freeform?.peerDrags, local]);
+  const selection = freeform?.selection ?? [];
+  const onLive = (live: Map<string, Placed> | null) => {
+    setLocal(live);
+    freeform?.onPublishDrag(live);
+  };
+  const stageRef = useRef<HTMLDivElement>(null);
+  const editingId = freeform?.editingId ?? null;
+  useEffect(() => {
+    if (!editingId) return;
+    let tries = 0;
+    let frame = 0;
+    const focus = () => {
+      const el = stageRef.current?.querySelector<HTMLElement>(`[data-element-id="${CSS.escape(editingId)}"] [contenteditable="true"]`);
+      if (el) {
+        if (document.activeElement !== el) el.focus();
+      } else if (tries++ < 30) frame = requestAnimationFrame(focus);
+    };
+    focus();
+    return () => cancelAnimationFrame(frame);
+  }, [editingId]);
+
+  const commentButton = (elementId: string, placed: Placed) =>
+    comments?.canComment && selection.length === 1 && selection[0] === elementId ? (
+      <button
+        type="button"
+        aria-label={`Comment on ${elementId}`}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => comments.onStart({ slideId: slide.id, elementId })}
+        className="absolute flex items-center justify-center rounded-full bg-os-accent text-os-bg"
+        style={{ left: u(placed.x + placed.w - 28), top: u(placed.y - 28), width: u(56), height: u(56), zIndex: 6 }}
+      >
+        <MessageSquarePlus style={{ width: u(32), height: u(32) }} aria-hidden />
+      </button>
+    ) : null;
+
+  const commentScope = (elementId: string) =>
+    comments
+      ? {
+          pageId: comments.pageId,
+          currentUserId: comments.viewerId,
+          canComment: comments.canComment,
+          canModerate: comments.canModerate,
+          scope: { slideId: slide.id, elementId },
+        }
+      : undefined;
+
   return (
     <FitBox>
       {() => (
         <CommentableStage slide={slide} comments={comments}>
-        <SlideRender
-          className="rounded-os-card shadow-sm"
-            slide={slide}
-            theme={themeId}
-            placeholders={editable}
-            renderSlot={({ slot, element, fallback }) => {
-              const label = buildBadgeLabel(element);
-              const badge = label ? <BuildBadge rect={slot.rect} label={label} /> : null;
-              if (!editable || !collab) return <>{fallback}{badge}</>;
-              if (slot.kind === "image") {
+          <div ref={stageRef}>
+            <SlideRender
+              className="rounded-os-card shadow-sm"
+              slide={slide}
+              theme={themeId}
+              placeholders={editable}
+              renderFree={({ element, placed, fallback }) => {
+                const label = buildBadgeLabel(element);
+                const badge = label ? <BuildBadge rect={placed} label={label} /> : null;
+                if (!editable || !collab || element.kind !== "text") return <>{fallback}{badge}</>;
+                const fragment = slideFragment(doc, slide.id, element.id);
+                if (!fragment) return <>{fallback}{badge}</>;
                 return (
                   <>
-                    {fallback}
-                    {badge}
-                    <button
-                      type="button"
-                      aria-label={element?.src ? "Replace image" : "Add image"}
-                      onClick={onPickImage}
-                      className="absolute opacity-0"
-                      style={rectStyle(slot.rect)}
+                    <SlotEditor
+                      slot={{ slot: element.id as LayoutSlot["slot"], kind: "text", rect: placed, style: element.textStyle ?? "body", align: "left", valign: "top", placeholder: "Text" }}
+                      style={element.textStyle ?? "body"}
+                      fragment={fragment}
+                      collab={collab}
+                      selected={selection.includes(element.id)}
+                      onFocus={() => (freeform?.onSelect([element.id]), freeform?.onEdit(element.id))}
+                      onBlur={() => freeform?.onEdit(null)}
+                      elementId={element.id}
+                      rot={placed.rot}
+                      comments={commentScope(element.id)}
                     />
+                    {badge}
+                    {commentButton(element.id, placed)}
                   </>
                 );
-              }
-              const fragment = slideFragment(doc, slide.id, slot.slot);
-              if (!fragment) return <>{fallback}{badge}</>;
-              return (
-                <>
-                  <SlotEditor
-                    slot={slot}
-                    style={element?.textStyle ?? slot.style}
-                    fragment={fragment}
-                    collab={collab}
-                    selected={selectedSlot === slot.slot}
-                    onFocus={() => onSelectSlot(slot.slot)}
-                    comments={
-                      comments
-                        ? {
-                            pageId: comments.pageId,
-                            currentUserId: comments.viewerId,
-                            canComment: comments.canComment,
-                            canModerate: comments.canModerate,
-                            scope: { slideId: slide.id, elementId: element?.id ?? slot.slot },
-                          }
-                        : undefined
-                    }
-                  />
-                  {badge}
-                  {comments?.canComment && selectedSlot === slot.slot && (
-                    <button
-                      type="button"
-                      aria-label={`Comment on ${slot.slot}`}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => comments.onStart({ slideId: slide.id, elementId: element?.id ?? slot.slot })}
-                      className="absolute flex items-center justify-center rounded-full bg-os-accent text-os-bg"
-                      style={{ left: u(slot.rect.x + slot.rect.w - 28), top: u(slot.rect.y - 28), width: u(56), height: u(56), zIndex: 6 }}
-                    >
-                      <MessageSquarePlus style={{ width: u(32), height: u(32) }} aria-hidden />
-                    </button>
-                  )}
-                </>
-              );
-            }}
-          />
+              }}
+              renderSlot={({ slot, element, placed, fallback }) => {
+                const label = buildBadgeLabel(element);
+                const badge = label ? <BuildBadge rect={placed} label={label} /> : null;
+                if (!editable || !collab) return <>{fallback}{badge}</>;
+                if (slot.kind === "image") {
+                  return (
+                    <>
+                      {fallback}
+                      {badge}
+                      <button
+                        type="button"
+                        aria-label={element?.src ? "Replace image" : "Add image"}
+                        onClick={() => onPickImage()}
+                        className="absolute opacity-0"
+                        style={placedStyle(placed)}
+                      />
+                    </>
+                  );
+                }
+                const fragment = slideFragment(doc, slide.id, slot.slot);
+                if (!fragment) return <>{fallback}{badge}</>;
+                return (
+                  <>
+                    <SlotEditor
+                      slot={{ ...slot, rect: placed }}
+                      style={element?.textStyle ?? slot.style}
+                      fragment={fragment}
+                      collab={collab}
+                      selected={selection.includes(slot.slot)}
+                      onFocus={() => (freeform?.onSelect([slot.slot]), freeform?.onEdit(slot.slot))}
+                      onBlur={() => freeform?.onEdit(null)}
+                      rot={placed.rot}
+                      comments={commentScope(element?.id ?? slot.slot)}
+                    />
+                    {badge}
+                    {commentButton(element?.id ?? slot.slot, placed)}
+                  </>
+                );
+              }}
+            />
+          </div>
+          {editable && collab && freeform && (
+            <FreeformLayer
+              slide={slide}
+              selection={freeform.selection}
+              onSelect={freeform.onSelect}
+              editingId={freeform.editingId}
+              onEdit={freeform.onEdit}
+              prefs={freeform.prefs}
+              armed={freeform.armed}
+              onPlace={freeform.onPlace}
+              onLive={onLive}
+              onCommit={freeform.onCommit}
+              onActivate={(id) => {
+                const el = slide.elements.find((e) => e.id === id);
+                if (el?.kind === "image") onPickImage(id);
+              }}
+            />
+          )}
         </CommentableStage>
       )}
     </FitBox>

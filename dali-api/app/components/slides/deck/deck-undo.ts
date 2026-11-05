@@ -24,6 +24,8 @@ export interface DeckUndo {
   setNavigator(fn: ((slideId: string) => void) | null): void;
   /** Reports which slide the user is on, so new history entries remember it. */
   setCurrentSlide(id: string | null): void;
+  /** Runs `fn` as its own history entry: edits made just before or after it never merge into it. */
+  step<T>(fn: () => T): T;
   destroy(): void;
 }
 
@@ -56,6 +58,14 @@ export function createDeckUndo(scope: Array<Y.AbstractType<any>>, localOrigins: 
     manager,
     setNavigator: (fn) => (navigate = fn),
     setCurrentSlide: (id) => (current = id),
+    step(fn) {
+      manager.stopCapturing();
+      try {
+        return fn();
+      } finally {
+        manager.stopCapturing();
+      }
+    },
     destroy() {
       manager.off("stack-item-added", onAdded as never);
       manager.off("stack-item-popped", onPopped as never);

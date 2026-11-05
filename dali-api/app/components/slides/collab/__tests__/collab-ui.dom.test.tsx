@@ -57,6 +57,18 @@ function deck(n: number) {
   return { doc, ids, snap: snapshotDeck(doc) };
 }
 const click = (el: Element | null) => act(() => void (el as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true })));
+const freeformFor = (selection: string[]) => ({
+  selection,
+  onSelect: () => {},
+  editingId: null,
+  onEdit: () => {},
+  prefs: { items: true, margins: true, grid: false },
+  armed: null,
+  onPlace: () => {},
+  onCommit: () => {},
+  peerDrags: new Map(),
+  onPublishDrag: () => {},
+});
 const noop = () => {};
 const collab: SlotCollab = { room: "slides:p:deck", token: "t", user: { userId: "u", name: "Ada", color: "#336699", photoUrl: null }, undoExtension: {} };
 
@@ -118,7 +130,7 @@ describe("SlideStage", () => {
     const { doc, snap } = deck(1);
     const el = render(
       createElement(SlideStage, {
-        slide: snap.slides[0], themeId: "dali-dark", doc, collab, editable: true, selectedSlot: null, onSelectSlot: noop, onPickImage: noop,
+        slide: snap.slides[0], themeId: "dali-dark", doc, collab, editable: true, onPickImage: noop,
       }),
     );
     expect(el.querySelectorAll("[data-testid=doc-editor]")).toHaveLength(2);
@@ -129,7 +141,7 @@ describe("SlideStage", () => {
     const { doc, snap } = deck(1);
     const el = render(
       createElement(SlideStage, {
-        slide: snap.slides[0], themeId: "dali-dark", doc, collab: null, editable: false, selectedSlot: null, onSelectSlot: noop, onPickImage: noop,
+        slide: snap.slides[0], themeId: "dali-dark", doc, collab: null, editable: false, onPickImage: noop,
       }),
     );
     expect(el.querySelectorAll("[data-testid=doc-editor]")).toHaveLength(0);
@@ -141,7 +153,7 @@ describe("SlideStage", () => {
     expect(slideFragment(doc, ids[0], "title")).not.toBeNull();
     const el = render(
       createElement(SlideStage, {
-        slide: { ...snap.slides[0], layoutId: "section" }, themeId: "dali-dark", doc, collab, editable: true, selectedSlot: null, onSelectSlot: noop, onPickImage: noop,
+        slide: { ...snap.slides[0], layoutId: "section" }, themeId: "dali-dark", doc, collab, editable: true, onPickImage: noop,
       }),
     );
     expect(el.querySelectorAll("[data-testid=doc-editor]")).toHaveLength(1);
@@ -192,7 +204,7 @@ describe("slide comments on the stage", () => {
   });
   const stage = (snapSlide: RenderSlide, doc: Y.Doc, comments: unknown, selectedSlot: string | null = null) =>
     createElement(SlideStage, {
-      slide: snapSlide, themeId: "dali-dark", doc, collab, editable: true, selectedSlot, onSelectSlot: noop, onPickImage: noop, comments,
+      slide: snapSlide, themeId: "dali-dark", doc, collab, editable: true, freeform: freeformFor(selectedSlot ? [selectedSlot] : []), onPickImage: noop, comments,
     } as never);
 
   it("scopes each text box's comment threads to its slide and element", () => {
@@ -287,7 +299,7 @@ describe("ReadOnlyDeck", () => {
 });
 
 describe("Inspector", () => {
-  const base = { themeId: "dali-dark", slideCount: 2, selectedSlot: null, editable: true, onLayout: noop, onTheme: noop, onTextStyle: noop, onPickImage: noop, onClearImage: noop };
+  const base = { themeId: "dali-dark", slideCount: 2, selection: [], editable: true, onLayout: noop, onTheme: noop, onTextStyle: noop, onPickImage: noop, onClearImage: noop };
 
   it("picks a layout and a theme", () => {
     const { snap } = deck(1);
@@ -322,7 +334,7 @@ describe("Inspector", () => {
     const withBuilds = (over: Record<string, unknown> = {}) => {
       const { snap } = deck(1);
       const slide = { ...snap.slides[0], layoutId: "content" };
-      return { ...base, slide, selectedSlot: "body", ...over };
+      return { ...base, slide, selection: ["body"], ...over };
     };
     const openText = (el: HTMLElement) => click([...el.querySelectorAll("[role=radio]")].find((b) => b.textContent === "Text") ?? null);
 
@@ -342,7 +354,7 @@ describe("Inspector", () => {
       const onBuild = vi.fn();
       const { snap } = deck(1);
       const slide = { ...snap.slides[0], layoutId: "content", elements: snap.slides[0].elements.map((e) => (e.slot === "body" ? { ...e, build: 2 } : e)) };
-      const el = render(createElement(Inspector, { ...base, slide, selectedSlot: "body", onBuild }));
+      const el = render(createElement(Inspector, { ...base, slide, selection: ["body"], onBuild }));
       openText(el);
       expect(el.querySelector("button[aria-label='Appears']")!.textContent).toContain("Step 2");
       click(el.querySelector("button[aria-label='Appears']"));
@@ -353,7 +365,7 @@ describe("Inspector", () => {
     it("offers a step past the highest one in use", () => {
       const { snap } = deck(1);
       const slide = { ...snap.slides[0], layoutId: "content", elements: snap.slides[0].elements.map((e) => (e.slot === "body" ? { ...e, build: 3 } : e)) };
-      const el = render(createElement(Inspector, { ...base, slide, selectedSlot: "body", onBuild: vi.fn() }));
+      const el = render(createElement(Inspector, { ...base, slide, selection: ["body"], onBuild: vi.fn() }));
       openText(el);
       click(el.querySelector("button[aria-label='Appears']"));
       expect([...document.body.querySelectorAll("[role=option]")].map((o) => o.textContent)).toContain("Step 4");
@@ -394,7 +406,7 @@ describe("Inspector", () => {
   it("changes the text style of the selected slot", () => {
     const { snap } = deck(1);
     const onTextStyle = vi.fn();
-    const el = render(createElement(Inspector, { ...base, slide: snap.slides[0], selectedSlot: "body", onTextStyle }));
+    const el = render(createElement(Inspector, { ...base, slide: snap.slides[0], selection: ["body"], onTextStyle }));
     click([...el.querySelectorAll("[role=radio]")].find((b) => b.textContent === "Text") ?? null);
     click([...el.querySelectorAll("[aria-label='Text style'] button")].find((b) => b.textContent === "Kicker") ?? null);
     expect(onTextStyle).toHaveBeenCalledWith("body", "kicker");

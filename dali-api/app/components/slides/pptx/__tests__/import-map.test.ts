@@ -143,10 +143,17 @@ describe("mapPresentation unsupported elements", () => {
     expect(plan.skipped).toEqual({ table: 1, chart: 2, diagram: 1, video: 1, audio: 1, math: 1 });
   });
 
-  it("keeps the biggest picture and counts the rest", () => {
+  it("keeps the biggest picture in its slot and places the rest freely", () => {
     const plan = map([slide([image({ width: 100, height: 100 }), image({ width: 300, height: 300, id: "big" }), image({ width: 50, height: 50, id: "tiny" })])]);
     expect(plan.slides[0].image).not.toBeNull();
-    expect(plan.skipped).toEqual({ image: 2 });
+    expect(plan.slides[0].free?.filter((f) => f.kind === "image")).toHaveLength(2);
+    expect(plan.skipped).toEqual({});
+  });
+
+  it("counts shapes it has no equivalent for", () => {
+    const plan = map([slide([shape("Star 1", "", { shapType: "star5" } as Partial<Shape>)])]);
+    expect(plan.skipped).toEqual({ shape: 1 });
+    expect(plan.slides[0].free).toBeUndefined();
   });
 
   it("counts a picture whose bytes were not read", () => {
@@ -155,3 +162,79 @@ describe("mapPresentation unsupported elements", () => {
     expect(plan.skipped).toEqual({ image: 1 });
   });
 });
+
+describe("mapPresentation free items", () => {
+  const SCALE = 1920 / 960;
+  const geom = (shapType: string, box: Partial<Shape> = {}) => shape("Shape", "", { shapType, ...box } as Partial<Shape>);
+
+  it("places a filled rectangle, ellipse and line where the file had them", () => {
+    const [s] = map([
+      slide([
+        geom("rect", { left: 10, top: 20, width: 100, height: 50, fill: { type: "color", value: "#ff6600" } } as Partial<Shape>),
+        geom("ellipse", { left: 200, top: 100, width: 80, height: 80, rotate: 15, fill: { type: "color", value: "#888888" } } as Partial<Shape>),
+        geom("line", { left: 50, top: 400, width: 300, height: 0, borderColor: "#336699", borderWidth: 3 } as Partial<Shape>),
+      ]),
+    ]).slides;
+    const shapes = s.free!.filter((f) => f.kind === "shape");
+    expect(s.layoutId).toBe("blank");
+    expect(shapes).toHaveLength(3);
+    expect(shapes[0]).toMatchObject({ shape: "rect", fill: "accent", placed: { x: 10 * SCALE, y: 20 * SCALE, w: 100 * SCALE, h: 50 * SCALE, rot: 0 } });
+    expect(shapes[1]).toMatchObject({ shape: "ellipse", fill: "muted", placed: { rot: 15 } });
+    expect(shapes[2]).toMatchObject({ shape: "line", fill: "accent" });
+    expect(shapes[2].placed.w).toBe(300 * SCALE);
+  });
+
+  it("turns a line with an arrow end into an arrow, and a vertical line into a rotated one", () => {
+    const [s] = map([
+      slide([
+        geom("straightConnector1", { left: 0, top: 100, width: 200, height: 0, tailEnd: { type: "triangle" } } as Partial<Shape>),
+        geom("line", { left: 400, top: 100, width: 0, height: 200 } as Partial<Shape>),
+      ]),
+    ]).slides;
+    const [arrow, vertical] = s.free!;
+    expect(arrow).toMatchObject({ kind: "shape", shape: "arrow" });
+    expect(vertical).toMatchObject({ shape: "line", placed: { rot: 90, w: 200 * SCALE } });
+  });
+
+  it("makes a text box that no placeholder claims a free text box at its position, sized by its font", () => {
+    const [s] = map([
+      slide([
+        text("Title 1", p(span("Headline", "font-size: 40pt;")), { top: 20 }, 1),
+        text("Content Placeholder 2", p(span("Placeholder body")), { top: 200 }, 2),
+        text("TextBox 9", p(span("Callout", "font-size: 20pt;")), { left: 600, top: 300, width: 200, height: 60 }, 3),
+      ]),
+    ]).slides;
+    expect(blocksText(s.title)).toBe("Headline");
+    expect(blocksText(s.body)).toBe("Placeholder body");
+    const [callout] = s.free!;
+    expect(callout).toMatchObject({ kind: "text", textStyle: "body", placed: { x: 600 * SCALE, y: 300 * SCALE, w: 200 * SCALE, h: 60 * SCALE } });
+    expect(blocksText((callout as { blocks: ImportBlockLike[] }).blocks)).toBe("Callout");
+  });
+
+  it("gives slot elements their original place when the slide has free items, and z follows the file's order", () => {
+    const [s] = map([
+      slide([
+        geom("rect", { left: 0, top: 0, width: 960, height: 540, fill: { type: "color", value: "#222222" } } as Partial<Shape>) as Element,
+        text("Title 1", p(span("Over the box")), { left: 80, top: 100, width: 700, height: 90 }, 3),
+      ]),
+    ]).slides;
+    expect(s.placements!.title).toMatchObject({ x: 80 * SCALE, y: 100 * SCALE, w: 700 * SCALE, h: 90 * SCALE });
+    const box = s.free!.find((f) => f.kind === "shape")!;
+    expect(box.placed.z).toBeLessThan(s.placements!.title!.z);
+  });
+
+  it("leaves a slide with only placeholders slot-based, with no placements", () => {
+    const [s] = map([slide([text("Title 1", p(span("Plain"))), shape("Content Placeholder 2", p(span("Body")))])]).slides;
+    expect(s.free).toBeUndefined();
+    expect(s.placements).toBeUndefined();
+  });
+
+  it("puts a decorative shape on a slide with a hero image next to it", () => {
+    const [s] = map([slide([image(), geom("rect", { left: 5, top: 5, width: 50, height: 50 })])]).slides;
+    expect(s.image).not.toBeNull();
+    expect(s.free).toHaveLength(1);
+    expect(s.placements!.image).toBeDefined();
+  });
+});
+
+type ImportBlockLike = Parameters<typeof blocksText>[0][number];
