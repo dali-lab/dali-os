@@ -83,6 +83,30 @@ describe("runFormsAction save-draft", () => {
   });
 });
 
+describe("runFormsAction discard-draft", () => {
+  it("clears the draft and leaves versions alone", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+
+    const res = await runFormsAction(fd({ intent: "discard-draft", id: "form-1" }), "user-1");
+
+    expect(res).toEqual({ ok: true });
+    expect(mockPrisma.form.update).toHaveBeenCalledWith({
+      where: { id: "form-1" },
+      data: { draftQuestions: Prisma.DbNull, draftIntro: null },
+    });
+    expect(mockPrisma.formVersion.create).not.toHaveBeenCalled();
+  });
+
+  it("404s when the form is missing", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(null);
+
+    const res = await runFormsAction(fd({ intent: "discard-draft", id: "nope" }), "user-1");
+
+    expect(res).toEqual({ error: "Not found", status: 404 });
+    expect(mockPrisma.form.update).not.toHaveBeenCalled();
+  });
+});
+
 describe("runFormsAction save-version", () => {
   it("freezes a version and clears the draft in one transaction", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });

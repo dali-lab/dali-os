@@ -85,6 +85,9 @@ function loaderData(overrides: Record<string, unknown> = {}) {
 let container: HTMLDivElement;
 let root: Root;
 
+const submitted: Array<Record<string, string>> = [];
+let actionResult: Record<string, unknown> = { ok: true };
+
 async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1") {
   const Stub = createRoutesStub([
     {
@@ -92,6 +95,10 @@ async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1"
       Component: () =>
         createElement(DialogProvider, null, createElement(FormDetail)),
       loader: () => data,
+      action: async ({ request }) => {
+        submitted.push(Object.fromEntries(await request.formData()) as Record<string, string>);
+        return { ...actionResult };
+      },
     },
   ]);
   container = document.createElement("div");
@@ -107,6 +114,8 @@ async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1"
 }
 
 afterEach(() => {
+  submitted.length = 0;
+  actionResult = { ok: true };
   act(() => root.unmount());
   container.remove();
 });
@@ -225,6 +234,120 @@ describe("FormDetail", () => {
       await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`);
       expect(container.querySelector("table")).not.toBeNull();
       expect(buttons()).toContain("Summary");
+    });
+  });
+
+  describe("draft autosave", () => {
+    const text = () => container.textContent ?? "";
+    const button = (label: string) =>
+      [...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === label || b.getAttribute("aria-label") === label);
+    const click = async (el: Element | undefined) => {
+      expect(el).toBeTruthy();
+      await act(async () => {
+        el!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+    };
+    const wait = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))));
+    const until = async (check: () => boolean) => {
+      for (let i = 0; i < 40 && !check(); i++) await wait(50);
+    };
+    const addQuestion = async () => {
+      await click(button("Add a question"));
+      const item = [...document.body.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent?.includes("Short answer"));
+      await click(item);
+    };
+    const withDraft = () => {
+      const data = loaderData();
+      data.form.draft = { questions: [question], description: null } as never;
+      return data;
+    };
+
+    it("has no Save button in draft mode and offers Discard draft", async () => {
+      await mount(withDraft());
+      expect(button("Save")).toBeUndefined();
+      expect(button("Cancel")).toBeUndefined();
+      expect(button("Discard draft")).toBeTruthy();
+    });
+
+    it("hides Discard draft when no draft exists yet", async () => {
+      const data = loaderData();
+      data.form.versions = [];
+      await mount(data);
+      expect(button("Discard draft")).toBeUndefined();
+    });
+
+    it("saves the draft once after edits stop and shows Saved", async () => {
+      await mount(withDraft());
+      await addQuestion();
+      expect(submitted).toHaveLength(0);
+      await wait(1200);
+      expect(submitted.filter((s) => s.intent === "save-draft")).toHaveLength(1);
+      expect(JSON.parse(submitted[0].questions)).toHaveLength(2);
+      await until(() => text().includes("Saved"));
+      expect(text()).toContain("Saved");
+    });
+
+    it("does not save when nothing changed", async () => {
+      await mount(withDraft());
+      await wait(1200);
+      expect(submitted).toHaveLength(0);
+    });
+
+    it("shows Couldn't save with Retry on failure and resends on Retry", async () => {
+      actionResult = { error: "Nope" };
+      await mount(withDraft());
+      await addQuestion();
+      await wait(1200);
+      await until(() => text().includes("Couldn't save"));
+      expect(text()).toContain("Couldn't save · Retry");
+      actionResult = { ok: true };
+      await click(button("Couldn't save · Retry"));
+      await until(() => text().includes("Saved"));
+      expect(submitted.filter((s) => s.intent === "save-draft")).toHaveLength(2);
+      expect(text()).toContain("Saved");
+    });
+
+    it("confirms before discarding a draft, then submits discard-draft", async () => {
+      await mount(withDraft());
+      await click(button("Discard draft"));
+      expect(submitted).toHaveLength(0);
+      const confirm = [...document.body.querySelectorAll('[role="dialog"] button, [role="alertdialog"] button')].find(
+        (b) => b.textContent?.trim() === "Discard draft",
+      );
+      await click(confirm);
+      await wait(50);
+      expect(submitted).toEqual([{ intent: "discard-draft", id: "f1" }]);
+    });
+
+    it("does not discard when the confirm is cancelled", async () => {
+      await mount(withDraft());
+      await click(button("Discard draft"));
+      const cancel = [...document.body.querySelectorAll('[role="dialog"] button, [role="alertdialog"] button')].find(
+        (b) => b.textContent?.trim() === "Cancel",
+      );
+      await click(cancel);
+      await wait(50);
+      expect(submitted).toHaveLength(0);
+    });
+
+    it("routes an edit of a published version into the draft", async () => {
+      await mount(loaderData());
+      await click(button("Versions") ?? [...document.body.querySelectorAll("button")].find((b) => b.textContent?.includes("v1")));
+      await click(button("Edit v1"));
+      expect(button("Discard draft")).toBeUndefined();
+      expect(text()).toContain("Draft");
+      await addQuestion();
+      await wait(1200);
+      expect(submitted.map((s) => s.intent)).toEqual(["save-draft"]);
+    });
+
+    it("flushes a pending autosave before publishing", async () => {
+      await mount(withDraft());
+      await addQuestion();
+      await click(button("Publish"));
+      await wait(100);
+      expect(submitted.map((s) => s.intent)).toEqual(["save-draft", "save-version"]);
+      expect(submitted[1].publish).toBe("true");
     });
   });
 });

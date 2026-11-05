@@ -33,6 +33,7 @@ import { VersionSummary } from "~/forms/components/VersionSummary";
 import { DocEditor } from "~/components/doc";
 import { PageIconPicker } from "~/components/doc-chrome/PageIconPicker";
 import { isEmptyBlocks } from "~/lib/blocks";
+import { useDraftAutosave, type AutosaveStatus } from "~/forms/lib/use-draft-autosave";
 import { Button, buttonClasses } from "~/components/ui/Button";
 import { Popover, Tooltip } from "~/components/ui/floating";
 import type { Question } from "~/types";
@@ -59,6 +60,12 @@ function formatDateShort(iso: string, tz: string) {
   );
 }
 
+type DraftPayload = { questions: Question[]; description: unknown };
+
+function serializeDraft({ questions, description }: DraftPayload) {
+  return JSON.stringify([questions, isEmptyBlocks(description) ? "" : description]);
+}
+
 type FormVersion = ReturnType<
   typeof useLoaderData<typeof loader>
 >["form"]["versions"][number];
@@ -73,13 +80,9 @@ function nestingStyle(questions: Question[], q: Question) {
 // canvas on the right — or a selected version, shown as its questions or its
 // results. Results belong to the version they were collected on.
 //
-// Two save actions (see FormBuilderTab):
-//   - "Save"            → persists the editable draft (save-draft). The draft
-//                         is NOT usable: published fills always serve the
-//                         latest frozen version, never the draft.
-//   - "Save as version" → freezes the draft into an immutable version
-//                         (save-version) and clears the draft. Frozen versions
-//                         are read-only and are what publishing serves.
+// The draft autosaves as the builder changes (save-draft). It is NOT usable:
+// published fills always serve the latest frozen version, never the draft.
+// Publish freezes the draft into an immutable version (save-version).
 export function FormDetail() {
   const { form, terms, mappedQuestions, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, summary, tracker, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
@@ -87,16 +90,13 @@ export function FormDetail() {
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
   const hiringLinks: HiringFormLink[] = rawHiringLinks ?? [];
   const tz = useUserTimeZone();
-  // A dedicated fetcher for Save and Publish-from-the-builder, so both
-  // buttons can reflect request state. A submission carrying `publish` is the
-  // Publish button's; anything else is Save's.
   const saveFetcher = useFetcher<{ ok?: boolean; error?: string }>();
-  const inFlight = saveFetcher.formData;
-  const publishingEdits = inFlight?.get("publish") === "true";
-  const savingEdits = inFlight != null && !publishingEdits;
-  const [justSaved, setJustSaved] = useState(false);
+  const publishingEdits = saveFetcher.state !== "idle";
   const saveError =
     saveFetcher.data && "error" in saveFetcher.data ? saveFetcher.data.error : null;
+  const draftFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const discardFetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const dialog = useDialog();
 
   // Deleting a not-yet-used version (accidental-versioning cleanup). Guarded by
   // a confirm dialog; the server re-checks the lock before deleting.
@@ -106,11 +106,6 @@ export function FormDetail() {
     deleteFetcher.data && "error" in deleteFetcher.data
       ? deleteFetcher.data.error
       : null;
-
-  // Set while editing an existing (unused) version in place, rather than the
-  // draft. Save writes back to this version id (update-version) instead of
-  // appending a new one.
-  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
 
   const latestVersion = form.versions.length
     ? form.versions[form.versions.length - 1]
@@ -143,7 +138,6 @@ export function FormDetail() {
   function showVersion(id: string, nextView: "questions" | "results") {
     setSelectedVersionId(id);
     setIsEditing(false);
-    setEditingVersionId(null);
     const version = form.versions.find((v) => v.id === id);
     if (nextView === "results" && version) {
       setSearchParams(
@@ -158,8 +152,6 @@ export function FormDetail() {
   const selectedVersion = form.versions.find(
     (v) => v.id === selectedVersionId,
   );
-  const editingVersion =
-    form.versions.find((v) => v.id === editingVersionId) ?? null;
 
   // Seed the builder: resume the draft if present, else duplicate the version
   // the user chose to branch from, else start blank.
@@ -234,101 +226,90 @@ export function FormDetail() {
   }, [previewFetcher.data]);
   const previewResolving = previewFetcher.state !== "idle";
 
+  function blankSeed() {
+    return latestVersion
+      ? { questions: latestVersion.questions, description: latestVersion.description }
+      : { questions: [], description: null };
+  }
+
+  const autosave = useDraftAutosave<DraftPayload>({
+    send: (payload) => {
+      const fd = new FormData();
+      fd.set("intent", "save-draft");
+      fd.set("id", form.id);
+      fd.set("questions", JSON.stringify(payload.questions));
+      fd.set("description", isEmptyBlocks(payload.description) ? "" : JSON.stringify(payload.description));
+      draftFetcher.submit(fd, { method: "post" });
+    },
+    busy: draftFetcher.state !== "idle",
+    result: draftFetcher.data,
+    serialize: serializeDraft,
+    baseline: seed,
+  });
+
+  useEffect(() => {
+    if (!isEditing) return;
+    return () => void autosave.flush();
+  }, [isEditing, editKey]);
+
   // Open the builder and switch to it, seeded from (in order): an explicit
   // source version, the resumable draft, the latest frozen version (so "New
   // version" carries the current questions forward to add to), else blank.
-  function startEditing(from?: { questions: Question[]; description: unknown }) {
+  function startEditing(from?: DraftPayload) {
     if (searchParams.has("view")) {
       setSearchParams({}, { replace: true, preventScrollReset: true });
     }
-    setEditingVersionId(null);
-    setSeed(
-      from ??
-        form.draft ??
-        (latestVersion
-          ? { questions: latestVersion.questions, description: latestVersion.description }
-          : { questions: [], description: null }),
+    const next = from ?? form.draft ?? blankSeed();
+    setSeed(next);
+    autosave.reset(next);
+    setEditKey((k) => k + 1);
+    setIsEditing(true);
+  }
+
+  function editVersion(version: (typeof form.versions)[number]) {
+    startEditing(
+      hasDraft ? undefined : { questions: version.questions, description: version.description },
     );
-    setEditKey((k) => k + 1);
-    setIsEditing(true);
   }
 
-  // Edit an existing, not-yet-used version in place. Seeds the builder from
-  // that version and routes Save to update-version (see handleUpdateVersion).
-  function startEditingVersion(version: (typeof form.versions)[number]) {
-    if (searchParams.has("view")) {
-      setSearchParams({}, { replace: true, preventScrollReset: true });
-    }
-    setSelectedVersionId(version.id);
-    setEditingVersionId(version.id);
-    setSeed({ questions: version.questions, description: version.description });
-    setEditKey((k) => k + 1);
-    setIsEditing(true);
-  }
-
-  // Save and Publish share one submission: Save persists the draft (or, when
-  // fixing an unused version in place, that version); Publish freezes the
-  // edits into a version — a new one, or the one being fixed — and publishes.
-  function submitEdits(
-    { questions, description }: { questions: Question[]; description: unknown },
-    publish: boolean,
-  ) {
+  async function publishEdits() {
+    await autosave.flush();
+    const snapshot = builderSnapshot.current?.();
+    if (!snapshot) return;
     const fd = new FormData();
     fd.set("id", form.id);
-    if (editingVersionId) {
-      fd.set("intent", "update-version");
-      fd.set("versionId", editingVersionId);
-    } else {
-      fd.set("intent", publish ? "save-version" : "save-draft");
-    }
-    if (publish) fd.set("publish", "true");
-    fd.set("questions", JSON.stringify(questions));
-    fd.set("description", isEmptyBlocks(description) ? "" : JSON.stringify(description));
+    fd.set("intent", "save-version");
+    fd.set("publish", "true");
+    fd.set("questions", JSON.stringify(snapshot.questions));
+    fd.set("description", isEmptyBlocks(snapshot.description) ? "" : JSON.stringify(snapshot.description));
     saveFetcher.submit(fd, { method: "post" });
   }
 
-  // Remember what the in-flight submission was (fetcher.formData is gone by
-  // the time it's idle) so its success can be handled.
-  const lastSubmitRef = useRef<{ intent: string; publish: boolean } | null>(null);
-  if (inFlight) {
-    lastSubmitRef.current = {
-      intent: String(inFlight.get("intent")),
-      publish: publishingEdits,
-    };
+  async function discardDraft() {
+    const confirmed = await dialog.confirm({
+      title: "Discard this draft?",
+      description: "Your unpublished changes are deleted. The live version stays as it is.",
+      confirmLabel: "Discard draft",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
+    await autosave.flush();
+    autosave.reset(blankSeed());
+    discardFetcher.submit({ intent: "discard-draft", id: form.id }, { method: "post" });
   }
 
-  // When a submission lands: a draft Save flashes "Saved" for ~2s (it stays in
-  // the editor, so the checkmark is the "it worked" signal). A new version
-  // leaves edit mode via the version-count effect above; an in-place version
-  // edit doesn't grow the count, so it leaves edit mode here.
-  const wasSubmitting = useRef(false);
   useEffect(() => {
-    const submitting = saveFetcher.state === "submitting";
-    if (wasSubmitting.current && !submitting) {
-      const data = saveFetcher.data;
-      const last = lastSubmitRef.current;
-      if (data && data.ok && last) {
-        if (last.intent === "update-version") {
-          setIsEditing(false);
-          setEditingVersionId(null);
-        }
-        if (last.intent === "save-draft") {
-          setJustSaved(true);
-          const t = setTimeout(() => setJustSaved(false), 2000);
-          wasSubmitting.current = submitting;
-          return () => clearTimeout(t);
-        }
-      }
+    if (discardFetcher.state !== "idle" || !discardFetcher.data?.ok) return;
+    if (form.versions.length > 0) {
+      setIsEditing(false);
+    } else {
+      const next = blankSeed();
+      setSeed(next);
+      setEditKey((k) => k + 1);
     }
-    wasSubmitting.current = submitting;
-  }, [saveFetcher.state, saveFetcher.data]);
+  }, [discardFetcher.state, discardFetcher.data]);
 
-  const saveStatus = savingEdits
-    ? ("saving" as const)
-    : justSaved
-      ? ("saved" as const)
-      : ("idle" as const);
-  const busySaving = inFlight != null;
+  const busySaving = publishingEdits;
   const builderSnapshot = useRef<
     (() => { questions: Question[]; description: unknown }) | null
   >(null);
@@ -354,24 +335,23 @@ export function FormDetail() {
           draftQuestionCount={hasDraft ? (form.draft?.questions.length ?? 0) : null}
           currentLabel={
             isEditing
-              ? editingVersion
-                ? `Editing v${editingVersion.versionNumber}`
-                : "Draft"
+              ? "Draft"
               : selectedVersion
                 ? `v${selectedVersion.versionNumber}`
                 : "Versions"
           }
           selectedVersionId={isEditing ? null : (selectedVersionId ?? null)}
-          editingDraft={isEditing && !editingVersion}
+          editingDraft={isEditing}
           tz={tz}
           onOpenDraft={() => startEditing()}
           onNewVersion={() => startEditing()}
           onSelect={(v) => showVersion(v.id, "questions")}
           onResults={(v) => showVersion(v.id, "results")}
-          onEdit={(v) => startEditingVersion(v)}
+          onEdit={(v) => editVersion(v)}
           deleteFetcher={deleteFetcher}
           confirmSubmit={confirmSubmit}
         />
+        {isEditing && <DraftStatus status={autosave.status} onRetry={autosave.retry} />}
         <FormSettingsButton
           managing={managing}
           usages={usages}
@@ -426,7 +406,7 @@ export function FormDetail() {
                 <Button
                   variant="primary"
                   disabled={busySaving}
-                  onClick={() => builderSnapshot.current && submitEdits(builderSnapshot.current(), true)}
+                  onClick={() => void publishEdits()}
                 >
                   {publishingEdits ? "Publishing…" : "Publish"}
                 </Button>
@@ -454,12 +434,11 @@ export function FormDetail() {
               inUse={usages.length > 0}
               onPublishEdits={
                 isEditing
-                  ? () => builderSnapshot.current && submitEdits(builderSnapshot.current(), true)
+                  ? () => void publishEdits()
                   : undefined
               }
               publishingEdits={publishingEdits}
               editsBusy={busySaving}
-              editingVersion={editingVersion != null}
             />
           </>
         )}
@@ -479,30 +458,16 @@ export function FormDetail() {
           // in-progress edits. FormBuilderTab reads its initial* props
           // only on mount.
           key={editKey}
-          // Version-edit mode (editingVersion) works against the version's
-          // frozen snapshot, not the shared draft room — skip collab so the
-          // room's draft content can't overwrite the chosen version's questions.
-          formId={editingVersion ? undefined : form.id}
-          collabToken={editingVersion ? null : (collabToken ?? null)}
+          formId={form.id}
+          collabToken={collabToken ?? null}
           initialQuestions={seed.questions}
           initialDescription={seed.description}
           terms={terms}
           mappedQuestions={mappedQuestions}
           allowCheckbox
-          // Version-edit mode has one primary save (update in place) and
-          // no draft — a draft would re-introduce the two-copy state we're
-          // avoiding. Draft editing keeps both buttons.
-          onSave={(payload) => submitEdits(payload, false)}
-          saveStatus={saveStatus}
+          onChange={autosave.schedule}
           snapshotRef={builderSnapshot}
-          onCancel={
-            (!editingVersion && form.versions.length === 0 && !hasDraft) || busySaving
-              ? undefined
-              : () => {
-                  setIsEditing(false);
-                  setEditingVersionId(null);
-                }
-          }
+          onDiscard={hasDraft ? () => void discardDraft() : undefined}
         />
       ) : selectedVersion ? (
         <div className="space-y-4">
@@ -704,6 +669,23 @@ export function FormDetail() {
   );
 }
 
+function DraftStatus({ status, onRetry }: { status: AutosaveStatus; onRetry: () => void }) {
+  if (status === "error") {
+    return (
+      <button
+        type="button"
+        onClick={onRetry}
+        className="text-sm text-os-amber hover:underline"
+      >
+        Couldn't save · Retry
+      </button>
+    );
+  }
+  if (status === "saving") return <span className="text-sm text-os-grey">Saving…</span>;
+  if (status === "saved") return <span className="text-sm text-os-grey">Saved</span>;
+  return null;
+}
+
 // The clock button: the draft, every saved version (newest first) with its
 // response count, and in-place edit/delete for versions nobody has used yet.
 function FormVersionMenu({
@@ -779,7 +761,7 @@ function FormVersionMenu({
                 Draft
               </div>
               <div className="text-xs text-os-grey mt-0.5">
-                {draftQuestionCount} {draftQuestionCount === 1 ? "question" : "questions"} · unsaved
+                {draftQuestionCount} {draftQuestionCount === 1 ? "question" : "questions"} · saved automatically
               </div>
             </button>
           ) : (
@@ -847,25 +829,21 @@ function FormVersionMenu({
                   Results
                   <span className="tabular-nums opacity-70">{v.submissionCount}</span>
                 </button>
-                {/* An unused version (no responses, no hiring pin) can be
-                    fixed in place or removed — this is how an accidental
-                    "Save as version" gets corrected without accreting dead
-                    versions. Once used, the version freezes. */}
+                <Tooltip content="Edit in a draft">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onEdit(v);
+                      close();
+                    }}
+                    aria-label={`Edit v${v.versionNumber}`}
+                    className="ml-auto p-1.5 rounded-full text-os-grey hover:bg-os-container-hi hover:text-foreground"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
                 {!v.locked && (
                   <>
-                    <Tooltip content="Edit in place">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onEdit(v);
-                          close();
-                        }}
-                        aria-label={`Edit v${v.versionNumber}`}
-                        className="ml-auto p-1.5 rounded-full text-os-grey hover:bg-os-container-hi hover:text-foreground"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
                     <deleteFetcher.Form
                       method="post"
                       onSubmit={confirmSubmit({
@@ -1073,7 +1051,6 @@ function PublishButton({
   onPublishEdits,
   publishingEdits,
   editsBusy,
-  editingVersion,
 }: {
   formId: string;
   published: boolean;
@@ -1082,7 +1059,6 @@ function PublishButton({
   onPublishEdits?: () => void;
   publishingEdits: boolean;
   editsBusy: boolean;
-  editingVersion: boolean;
 }) {
   const fetcher = useFetcher<{ error?: string }>();
   const dialog = useDialog();
@@ -1091,13 +1067,7 @@ function PublishButton({
 
   if (onPublishEdits) {
     return (
-      <Tooltip
-        content={
-          editingVersion
-            ? "Save this version and make it live at the share link."
-            : "Save your changes as a new version and make it live at the share link."
-        }
-      >
+      <Tooltip content="Save your changes as a new version and make it live at the share link.">
         <Button variant="primary" onClick={onPublishEdits} disabled={editsBusy}>
           {publishingEdits ? "Publishing…" : "Publish"}
         </Button>

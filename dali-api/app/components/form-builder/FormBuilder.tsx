@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useRef, type CSSProperties, type MutableRefObject, type ReactNode } from 'react'
 import { Menu, MenuItem, MenuSeparator, Select, Tooltip, InfoTip } from "~/components/ui/floating";
 import { extractPlaceholders, placeholder } from "~/lib/template-variables";
 import { lintFormText } from "~/forms/lib/form-variables";
@@ -6,9 +6,6 @@ import {
   GripVertical,
   Pencil,
   Trash2,
-  Save,
-  Check,
-  Loader2,
   Undo2,
   Redo2,
   Type,
@@ -271,12 +268,11 @@ function infoBodyToBlocks(body: unknown): unknown {
 interface FormBuilderTabProps {
   initialQuestions?: Question[]
   initialDescription?: unknown
-  // "Save" — persists the in-progress questions. Publishing (freezing them
-  // into a version) is the host's own control, read via snapshotRef.
-  onSave?: (payload: { questions: Question[]; description: unknown }) => void
-  // Live feedback for Save, driven by the host's request state.
-  saveStatus?: 'idle' | 'saving' | 'saved'
-  onCancel?: () => void
+  // Called with the current questions and description whenever they change.
+  // Publishing (freezing them into a version) is the host's own control, read
+  // via snapshotRef.
+  onChange?: (payload: { questions: Question[]; description: unknown }) => void
+  onDiscard?: () => void
   isGeneralForm?: boolean
   // Offer the checkbox (multi-select) question type. Only the Forms feature
   // passes true — the hiring application pipeline isn't array-answer-aware,
@@ -323,9 +319,8 @@ export function repairQuestions(questions: Question[]): Question[] {
 export function FormBuilderTab({
   initialQuestions: rawInitialQuestions = [],
   initialDescription,
-  onSave,
-  saveStatus = 'idle',
-  onCancel,
+  onChange,
+  onDiscard,
   isGeneralForm = false,
   allowCheckbox = false,
   terms = [],
@@ -406,6 +401,11 @@ export function FormBuilderTab({
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const { formTrigger } = useOsChrome()
   if (snapshotRef) snapshotRef.current = () => ({ questions, description })
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+  useEffect(() => {
+    onChangeRef.current?.({ questions, description })
+  }, [questions, description])
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editForm, setEditForm] = useState<Partial<Question>>({})
   const [optionsText, setOptionsText] = useState('')
@@ -1081,7 +1081,6 @@ export function FormBuilderTab({
       </div>
     )
   }
-  const busy = saveStatus === 'saving'
   const insertionLine = <div className="h-0.5 rounded-full bg-os-accent" />
   return (
     <DndContext
@@ -1359,24 +1358,9 @@ export function FormBuilderTab({
                 </Tooltip>
               </div>
             )}
-            {onCancel && (
-              <button onClick={onCancel} disabled={busy} className="os-btn-ghost disabled:opacity-50">
-                Cancel
-              </button>
-            )}
-            {onSave && (
-              <button
-                onClick={() => onSave({ questions, description })}
-                disabled={busy}
-                className="os-btn-primary disabled:opacity-60"
-              >
-                {saveStatus === 'saving' ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
-                ) : saveStatus === 'saved' ? (
-                  <><Check className="w-4 h-4" /> Saved</>
-                ) : (
-                  <><Save className="w-4 h-4" /> Save</>
-                )}
+            {onDiscard && (
+              <button type="button" onClick={onDiscard} className="os-btn-ghost">
+                Discard draft
               </button>
             )}
           </div>
