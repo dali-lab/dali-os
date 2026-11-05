@@ -106,3 +106,12 @@ describe("slides-collab", () => {
     expect(flag!.defaultEveryone).toBeUndefined();
   });
 });
+
+describe("slides-live", () => {
+  it("is registered and ships off", () => {
+    const flag = FEATURE_FLAGS.find((f) => f.key === "slides-live") as FeatureFlagDef | undefined;
+    expect(flag).toBeDefined();
+    expect(flag!.defaultEnabled).toBeUndefined();
+    expect(flag!.defaultEveryone).toBeUndefined();
+  });
+});

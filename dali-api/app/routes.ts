@@ -715,6 +715,8 @@ export default [
   route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
+  route("api/slides/:pageId/live", "routes/api.slides.$pageId.live.ts"),
+  route("api/slides/:pageId/live/stream", "routes/api.slides.$pageId.live.stream.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
@@ -755,6 +757,7 @@ export default [
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
   route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
+  route("api/files/:id/share", "routes/api.files.$id.share.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),

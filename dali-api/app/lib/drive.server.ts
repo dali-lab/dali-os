@@ -141,6 +141,14 @@ export type DriveItem =
       iconEmoji: null; // files have no emoji; callers use a fixed icon
       updatedAt: Date;
       href: string;
+      /** "Shared with me" space only: who granted the viewer access. */
+      sharedBy?: { name: string } | null;
+      /** "Shared with me" space only: when the share was made. */
+      sharedAt?: Date;
+      /** "Shared with me" space only: the viewer reaches this file by a named share. */
+      sharedWithMe?: boolean;
+      /** "Shared with me" space only: the viewer granted a named share on this file. */
+      sharedByMe?: boolean;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */

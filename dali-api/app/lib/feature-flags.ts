@@ -135,6 +135,12 @@ export const FEATURE_FLAGS = [
     description:
       "Slide decks open as live shared documents. Turning this on moves a deck to live editing the first time someone opens it, and new decks start live. A deck that has moved stays live if this is turned off. Ships off.",
   },
+  {
+    key: "slides-live",
+    label: "Slides: live presenting",
+    description:
+      "Present a deck with a presenter view, and let anyone with the deck open follow along on their own screen, with a way to browse on their own. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

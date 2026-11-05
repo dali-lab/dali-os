@@ -292,7 +292,7 @@ export async function loadPlanningData(
     termId: term.id,
     items,
     listOnlyItems,
-    domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    domains: domains.filter((d) => !d.isSystem).map((d) => ({ id: d.id, name: d.displayName })),
     spotDomains: domains.filter((d) => d.active && !d.isSystem).map((d) => ({ id: d.id, name: d.displayName })),
     returning,
     replied,

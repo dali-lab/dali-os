@@ -3,7 +3,7 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isLabMember } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { loadShareOptions, parsePermission, parseLinkAccess } from "~/lib/share-params.server";
 import {
   addPageShare,
   listPageShares,
@@ -20,7 +20,7 @@ import {
   PageShareNotFoundError,
   GeneralAccessError,
 } from "~/lib/page-share-access.server";
-import type { SharePermission, LinkAccess, ScopeKind } from "~/generated/prisma/client";
+import type { ScopeKind } from "~/generated/prisma/client";
 
 // POST /api/pages/:id/share — the one sharing endpoint for every document
 // (Project, Lab, EducationOffering, Member). Dispatched on `intent`, mirroring
@@ -29,14 +29,6 @@ import type { SharePermission, LinkAccess, ScopeKind } from "~/generated/prisma/
 // `share-options` is a directory lookup gated on lab membership, capped and
 // name-scoped so it can't dump the member table.
 
-const PERMISSIONS: readonly string[] = ["View", "Comment", "Edit", "FullAccess"];
-function parsePermission(v: string | undefined, fallback: SharePermission = "View"): SharePermission {
-  return v && PERMISSIONS.includes(v) ? (v as SharePermission) : fallback;
-}
-const LINK_ACCESSES: readonly string[] = ["Restricted", "LabMembers", "SignedIn", "Public"];
-function parseLinkAccess(v: string | undefined): LinkAccess {
-  return v && LINK_ACCESSES.includes(v) ? (v as LinkAccess) : "Restricted";
-}
 const SCOPE_KINDS: readonly string[] = ["Private", "Lab", "Group"];
 // "" / anything else → null, meaning "inherit" (clear the folder scope).
 function parseScopeKind(v: string | undefined): ScopeKind | null {
@@ -98,35 +90,7 @@ export async function action({ request, params }: Route.ActionArgs) {
           return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
         }
         const q = (str("q") ?? "").trim();
-        const [members, groups] = await Promise.all([
-          q.length < 2
-            ? Promise.resolve([])
-            : prisma.user.findMany({
-                where: {
-                  id: { not: me },
-                  daliMember: { isNot: null },
-                  OR: [
-                    { firstName: { contains: q, mode: "insensitive" } },
-                    { lastName: { contains: q, mode: "insensitive" } },
-                  ],
-                },
-                orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
-                take: 8,
-                select: { id: true, firstName: true, lastName: true },
-              }),
-          listVisibleGroupsForUser(me),
-        ]);
-        return withCors(
-          request,
-          Response.json({
-            ok: true,
-            members: members.map((m) => ({
-              id: m.id,
-              label: `${m.firstName} ${m.lastName}`.trim(),
-            })),
-            groups: groups.map((g) => ({ id: g.id, label: g.name })),
-          }),
-        );
+        return withCors(request, Response.json({ ok: true, ...(await loadShareOptions(me, q)) }));
       }
       case "share-add":
       case "share-change": {
