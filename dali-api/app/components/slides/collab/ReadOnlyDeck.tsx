@@ -3,7 +3,7 @@ import { ScaledSlide } from "~/components/slides/deck/SlideRender";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { cn } from "~/lib/cn";
 import { FitBox } from "./SlideStage";
-import { ScaledStage, SlideRender } from "~/components/slides/deck/SlideRender";
+import { SlideRender } from "~/components/slides/deck/SlideRender";
 
 /** A deck drawn from loader data: the view for people who can't edit, and for decks this build doesn't know how to edit. */
 export function ReadOnlyDeck({ slides, themeId, notice }: { slides: RenderSlide[]; themeId: string; notice?: string }) {
@@ -44,9 +44,7 @@ export function ReadOnlyDeck({ slides, themeId, notice }: { slides: RenderSlide[
           <div className="flex min-w-0 flex-1 flex-col p-4">
             <FitBox>
               {() => (
-                <ScaledStage className="rounded-os-card shadow-sm">
-                  <SlideRender slide={current} theme={themeId} />
-                </ScaledStage>
+                <SlideRender className="rounded-os-card shadow-sm" slide={current} theme={themeId} />
               )}
             </FitBox>
           </div>

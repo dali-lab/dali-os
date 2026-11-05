@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { RotateCcw } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { slideFragment } from "~/components/slides/deck/deck-ops";
-import { SlideRender, ScaledStage } from "~/components/slides/deck/SlideRender";
+import { SlideRender } from "~/components/slides/deck/SlideRender";
+import { rectStyle } from "~/components/slides/deck/units";
 import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { SlotEditor, type SlotCollab } from "./SlotEditor";
@@ -53,8 +54,8 @@ export function SlideStage({
   return (
     <FitBox>
       {() => (
-        <ScaledStage className="rounded-os-card shadow-sm">
-          <SlideRender
+        <SlideRender
+          className="rounded-os-card shadow-sm"
             slide={slide}
             theme={themeId}
             placeholders={editable}
@@ -69,7 +70,7 @@ export function SlideStage({
                       aria-label={element?.src ? "Replace image" : "Add image"}
                       onClick={onPickImage}
                       className="absolute opacity-0"
-                      style={{ left: slot.rect.x, top: slot.rect.y, width: slot.rect.w, height: slot.rect.h }}
+                      style={rectStyle(slot.rect)}
                     />
                   </>
                 );
@@ -88,7 +89,6 @@ export function SlideStage({
               );
             }}
           />
-        </ScaledStage>
       )}
     </FitBox>
   );

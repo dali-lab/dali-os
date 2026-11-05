@@ -101,7 +101,7 @@ export function themeVars(theme: ThemeDef): Record<string, string> {
   };
   for (const id of TEXT_STYLE_IDS) {
     const s = theme.textStyles[id];
-    vars[`--slide-${id}-size`] = `${s.size}px`;
+    vars[`--slide-${id}-size`] = `calc(${s.size} * var(--slide-u))`;
     vars[`--slide-${id}-weight`] = String(s.weight);
     vars[`--slide-${id}-leading`] = String(s.leading);
     vars[`--slide-${id}-tracking`] = s.tracking;

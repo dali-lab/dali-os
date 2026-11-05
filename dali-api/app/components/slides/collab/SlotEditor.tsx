@@ -1,6 +1,7 @@
 import type * as Y from "yjs";
 import { DocEditor } from "~/components/doc/DocEditor";
 import type { LayoutSlot } from "~/components/slides/deck/layouts";
+import { rectStyle, u } from "~/components/slides/deck/units";
 import { textStyleCss, type TextStyleId } from "~/components/slides/deck/themes";
 import type { DeckUser } from "./useDeckDoc";
 
@@ -29,7 +30,6 @@ export function SlotEditor({
   selected: boolean;
   onFocus: () => void;
 }) {
-  const { x, y, w, h } = slot.rect;
   return (
     <div
       data-slot={slot.slot}
@@ -37,18 +37,14 @@ export function SlotEditor({
       className="dali-slide-slot"
       onFocusCapture={onFocus}
       style={{
-        position: "absolute",
-        left: x,
-        top: y,
-        width: w,
-        height: h,
+        ...rectStyle(slot.rect),
         display: "flex",
         flexDirection: "column",
         justifyContent: FLEX_ALIGN[slot.valign],
         textAlign: slot.align,
         overflow: "hidden",
-        outline: selected ? "4px solid var(--slide-accent)" : "none",
-        outlineOffset: 8,
+        outline: selected ? `${u(4)} solid var(--slide-accent)` : "none",
+        outlineOffset: u(8),
         ...textStyleCss(style),
       }}
     >

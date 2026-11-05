@@ -18,7 +18,7 @@ describe("themes", () => {
       for (const key of ["ground", "surface", "fg", "muted", "accent", "rule", "font-display", "font-body"]) {
         expect(vars[`--slide-${key}`]).toBeTruthy();
       }
-      for (const id of TEXT_STYLE_IDS) expect(vars[`--slide-${id}-size`]).toMatch(/px$/);
+      for (const id of TEXT_STYLE_IDS) expect(vars[`--slide-${id}-size`]).toMatch(/^calc\(\d+ \* var\(--slide-u\)\)$/);
     }
   });
 

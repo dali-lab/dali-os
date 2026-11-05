@@ -49,6 +49,7 @@ describe("SlideRender", () => {
     expect(stage.style.getPropertyValue("--slide-ground")).toContain("navy-deep");
     expect(stage.style.getPropertyValue("--slide-accent")).toContain("accent-coral");
     expect(stage.dataset.theme).toBe("dali-dark");
+    expect(stage.style.getPropertyValue("--slide-u")).toBe("calc(100cqw / 1920)");
     expect(render({ slide: slide("content", []), theme: "dali-light" }).dataset.theme).toBe("dali-light");
   });
 
@@ -81,9 +82,9 @@ describe("SlideRender", () => {
       });
       for (const slot of layout.slots) {
         const node = stage.querySelector<HTMLElement>(`[data-slot="${slot.slot}"]`)!;
-        expect(node.style.left).toBe(`${slot.rect.x}px`);
-        expect(node.style.top).toBe(`${slot.rect.y}px`);
-        expect(node.style.width).toBe(`${slot.rect.w}px`);
+        expect(node.style.left).toBe(`calc(${slot.rect.x} * var(--slide-u))`);
+        expect(node.style.top).toBe(`calc(${slot.rect.y} * var(--slide-u))`);
+        expect(node.style.width).toBe(`calc(${slot.rect.w} * var(--slide-u))`);
       }
     }
   });

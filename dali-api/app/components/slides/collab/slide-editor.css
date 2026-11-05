@@ -29,3 +29,6 @@ html:root .dali-slide-slot[data-valign="bottom"] .bn-editor {
 html:root .dali-slide-slot .bn-block-group {
   width: 100%;
 }
+html:root .dali-slide-slot .bn-block-outer {
+  line-height: inherit;
+}
