@@ -14,6 +14,9 @@ import { positionFor, useDeckRender } from "./useDeckRender";
 import { PollLayer } from "./PollLayer";
 import { PresenterPolls, pollsOnSlide } from "./PresenterPolls";
 import { ReactionOverlay } from "./ReactionOverlay";
+import { JoinCard } from "./JoinCard";
+import { useAutoBuilds } from "./useBuildMotion";
+import { useJoinHidden } from "./useJoinHidden";
 import { usePolls } from "./usePolls";
 import { useReactions } from "./useReactions";
 
@@ -32,7 +35,8 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const { live, ready, start, go, end } = usePresenterSession(pageId);
   const polls = usePolls(pageId);
   const reactions = useReactions(pageId, !live.reactionsOff);
-  const { slideIds, stepsOf, renderSlide } = useDeckRender(deck);
+  const { slideIds, stepsOf, autoDelayOf, isAuto, renderSlide } = useDeckRender(deck);
+  const [joinHidden, setJoinHidden] = useJoinHidden(pageId);
   const desktop = useDesktopVersion() != null;
   const started = useRef(false);
   const wasActive = useRef(false);
@@ -62,8 +66,12 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const finish = useCallback(() => void end(), [end]);
   const ignore = useCallback(() => {}, []);
 
+  useAutoBuilds({ index: pos.index, step: pos.step, enabled: mineLive, autoDelayOf, advance: move });
+
   const currentId = slideIds[pos.index];
   const slidePolls = pollsOnSlide(deck.slides.find((x) => x.id === currentId)?.elements);
+  const shareUrl = typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`;
+  const joinCard = shareUrl && slidePolls.length > 0 && !joinHidden ? <JoinCard url={shareUrl} onHide={() => setJoinHidden(true)} /> : null;
 
   if (view === "presenter") {
     return (
@@ -75,18 +83,26 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
           index={pos.index}
           step={pos.step}
           stepsOf={stepsOf}
+          isAuto={isAuto}
           onIndexChange={ignore}
           onPositionChange={move}
           renderSlide={renderSlide}
           onEnd={finish}
-          shareUrl={typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`}
+          shareUrl={shareUrl}
           startedAt={live.startedAt}
-          overlay={<ReactionOverlay items={reactions} />}
+          overlay={
+            <>
+              <ReactionOverlay items={reactions} />
+              {joinCard}
+            </>
+          }
           extras={
             <PresenterPolls
               polls={slidePolls}
               state={polls.state}
               reactionsOff={live.reactionsOff}
+              joinHidden={joinHidden}
+              onJoinHidden={setJoinHidden}
               onClose={polls.close}
               onOpen={polls.open}
               onReset={polls.reset}
@@ -111,6 +127,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
         index={pos.index}
         step={pos.step}
         stepsOf={stepsOf}
+        isAuto={isAuto}
         onIndexChange={ignore}
         onPositionChange={move}
         renderSlide={renderSlide}
@@ -118,6 +135,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
         onExit={finish}
       >
         <ReactionOverlay items={reactions} />
+        {joinCard}
       </PresentStage>
     </PollLayer>
   );

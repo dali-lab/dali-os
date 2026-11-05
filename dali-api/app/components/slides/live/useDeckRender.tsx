@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { buildSteps } from "~/components/slides/deck/builds";
+import { autoDelayAt, buildSteps } from "~/components/slides/deck/builds";
 import { PlayableVideo } from "~/components/slides/deck/content-render";
 import { presentable } from "~/components/slides/deck/skip";
 import { SlideRender, type FreeContext } from "~/components/slides/deck/SlideRender";
@@ -13,14 +13,16 @@ export function useDeckRender(deck: PresentDeck) {
   const slides = useMemo(() => presentable(deck.slides), [deck.slides]);
   const slideIds = useMemo(() => slides.map((s) => s.id), [slides]);
   const stepsOf = useCallback((index: number) => (slides[index] ? buildSteps(slides[index]) : 0), [slides]);
+  const autoDelayOf = useCallback((index: number, step: number) => (slides[index] ? autoDelayAt(slides[index], step) : null), [slides]);
+  const isAuto = useCallback((index: number, step: number) => autoDelayOf(index, step) !== null, [autoDelayOf]);
   const renderSlide = useCallback<RenderSlide>(
-    (id, { step }) => {
+    (id, { step, enterStep }) => {
       const slide = deck.slides.find((s) => s.id === id);
-      return slide ? <SlideRender slide={slide} theme={deck.themeId} step={step} renderFree={playVideo} /> : null;
+      return slide ? <SlideRender slide={slide} theme={deck.themeId} step={step} enterStep={enterStep} renderFree={playVideo} /> : null;
     },
     [deck.slides, deck.themeId],
   );
-  return { slideIds, stepsOf, renderSlide };
+  return { slideIds, stepsOf, autoDelayOf, isAuto, renderSlide };
 }
 
 export function positionFor(slideIds: string[], stepsOf: (i: number) => number, slideId: string | null, step: number) {

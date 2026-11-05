@@ -190,17 +190,50 @@ describe("SlideRender build steps", () => {
     expect(v.image).toBeNull();
   });
 
-  it("shows the slot at its step with no bullets, then one more bullet per step", () => {
-    expect(view(1).shown).toBe("");
-    expect(view(2).shown).toBe("one");
-    expect(view(3).shown).toBe("onetwo");
+  it("shows the slot with its first bullet, then one more bullet per step", () => {
+    expect(view(1).shown).toBe("one");
+    expect(view(2).shown).toBe("onetwo");
+    expect(view(2).image).toBeNull();
+    expect(view(3).shown).toBe("onetwothree");
     expect(view(3).image).not.toBeNull();
-    expect(view(4).shown).toBe("onetwothree");
   });
 
   it("does not split a slot's blocks when it isn't set to build bullets", () => {
     const plain = slide("content", [el("body", [...para("one"), ...para("two")], { build: 1 })]);
     const stage = render({ slide: plain, theme: "dali-dark", step: 1 });
     expect(stage.querySelector("[data-slot=body]")!.textContent).toBe("onetwo");
+  });
+});
+
+describe("SlideRender entrance effects", () => {
+  const s = slide("split", [
+    el("title", para("Plan")),
+    el("body", [...para("one"), ...para("two")], { build: 1, buildBullets: true, buildEffect: "rise" }),
+    el("image", [], { build: 2, src: "https://example.test/a.png", buildEffect: "appear" }),
+  ]);
+  const css = (step: number, enterStep?: number) => render({ slide: s, theme: "dali-dark", step, enterStep }).querySelector("[data-build-enter]")?.textContent ?? "";
+
+  it("animates what the step just revealed, scoped to reduced-motion-safe users", () => {
+    const out = css(1, 1);
+    expect(out).toContain("prefers-reduced-motion:no-preference");
+    expect(out).toContain('[data-slot="body"]{animation:slide-build-rise 300ms');
+  });
+
+  it("animates only the newest bullet on later steps", () => {
+    const out = css(2, 2);
+    expect(out).toContain("li:last-child");
+    expect(out).not.toContain('[data-slot="image"]');
+  });
+
+  it("draws nothing animated when stepping back, jumping, or showing everything", () => {
+    expect(css(1)).toBe("");
+    expect(css(2, 1)).toBe("");
+    expect(render({ slide: s, theme: "dali-dark" }).querySelector("[data-build-enter]")).toBeNull();
+  });
+
+  it("uses fade when an element has no effect", () => {
+    const plain = slide("content", [el("body", para("x"), { build: 1 })]);
+    const out = render({ slide: plain, theme: "dali-dark", step: 1, enterStep: 1 }).querySelector("[data-build-enter]")!.textContent!;
+    expect(out).toContain("slide-build-fade 300ms");
   });
 });

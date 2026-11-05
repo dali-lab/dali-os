@@ -5,6 +5,7 @@ import { cn } from "~/lib/cn";
 import { movePosition, samePosition, type DeckPosition, type NavMove } from "~/components/slides/deck/builds";
 import { navActionFor, nextIndex } from "./keys";
 import type { RenderSlide } from "./types";
+import { useEnterStep } from "./useBuildMotion";
 
 export interface PresenterViewProps {
   title: string;
@@ -15,6 +16,7 @@ export interface PresenterViewProps {
   /** With `onPositionChange`, Back and Next move through build steps as well as slides. */
   step?: number;
   stepsOf?: (index: number) => number;
+  isAuto?: (index: number, step: number) => boolean;
   onPositionChange?: (pos: DeckPosition) => void;
   actions?: ReactNode;
   renderSlide: RenderSlide;
@@ -46,6 +48,7 @@ export function PresenterView({
   onIndexChange,
   step,
   stepsOf,
+  isAuto,
   onPositionChange,
   actions,
   renderSlide,
@@ -68,10 +71,11 @@ export function PresenterView({
   }, []);
 
   const here: DeckPosition = { index, step: step ?? 0 };
+  const enterStep = useEnterStep(index, here.step);
   const steps = stepsOf ?? (() => 0);
   const move = (action: NavMove) => {
     if (onPositionChange) {
-      const to = movePosition(action, here, total, steps);
+      const to = movePosition(action, here, total, steps, isAuto);
       if (!samePosition(here, to)) onPositionChange(to);
       return;
     }
@@ -146,7 +150,7 @@ export function PresenterView({
         <section className="flex min-w-0 flex-1 flex-col gap-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-os-grey">Now</div>
           <div className="relative overflow-hidden rounded-os-item border border-os-container" style={{ width: NOW_WIDTH, aspectRatio: "16 / 9" }}>
-            {slideId ? renderSlide(slideId, { width: NOW_WIDTH, step: onPositionChange ? here.step : undefined }) : null}
+            {slideId ? renderSlide(slideId, { width: NOW_WIDTH, step: onPositionChange ? here.step : undefined, enterStep }) : null}
             {overlay}
           </div>
           <div className="flex items-center gap-2">

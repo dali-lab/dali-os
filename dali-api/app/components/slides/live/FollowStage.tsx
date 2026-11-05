@@ -6,6 +6,8 @@ import { positionFor, useDeckRender } from "./useDeckRender";
 import { PollLayer } from "./PollLayer";
 import { ReactionBar } from "./ReactionBar";
 import { ReactionOverlay } from "./ReactionOverlay";
+import { VotePanel } from "./VotePanel";
+import { pollsOnSlide } from "./PresenterPolls";
 import { usePolls } from "./usePolls";
 import { useReactions, useSendReaction } from "./useReactions";
 
@@ -46,7 +48,8 @@ export function FollowStage({
         onExit={onBrowse}
       >
         <ReactionOverlay items={reactions} />
-        <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 flex-col items-center gap-2">
+        <VotePanel polls={pollsOnSlide(deck.slides.find((x) => x.id === slideIds[pos.index])?.elements)} />
+        <div className="absolute inset-x-2 bottom-4 flex flex-col items-center gap-2">
           {!reactionsOff && <ReactionBar onReact={react} />}
           <FollowChip presenterName={presenterName} index={pos.index} total={slideIds.length} onBrowse={onBrowse} />
         </div>

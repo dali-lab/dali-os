@@ -11,7 +11,7 @@ export function FollowChip({ presenterName, index, total, onBrowse }: FollowChip
   return (
     <div
       role="status"
-      className="inline-flex items-center gap-2 rounded-full border border-os-container bg-os-card px-3 py-1.5 text-xs text-os-fg shadow-lg"
+      className="inline-flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1 rounded-full border border-os-container bg-os-card px-3 py-1.5 text-xs text-os-fg shadow-lg"
     >
       <span className="h-2 w-2 rounded-full bg-os-green" aria-hidden />
       <span>

@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import { writeBlocks } from "~/components/slides/pptx/fragment-write";
 import type { ImportBlock } from "~/components/slides/pptx/import-types";
+import { cleanBuildFields, type BuildFields } from "./builds";
 import { cleanBlocksFor, cleanItems, importBlocksOf, safeImageUrl, serializeSelection, type ClipItem } from "./clipboard";
 import { ensureLayoutSlots, insertTracked, posAfter, newId } from "./deck-ops";
 import { explicitPlacement } from "./freeform";
@@ -15,7 +16,7 @@ export const SLIDE_CLIP_MARK = "dali-slides-slides";
 export const SLIDE_CLIP_VERSION = 1;
 const MAX_SLIDES = 50;
 
-export interface SlotClip {
+export interface SlotClip extends BuildFields {
   slot: string;
   blocks?: ImportBlock[];
   textStyle?: TextStyleId;
@@ -44,6 +45,7 @@ function slotClip(slide: RenderSlide, id: string): SlotClip | null {
     ...(el.kind === "text" ? { blocks: importBlocksOf(el.blocks) } : { src: el.src ?? "", alt: el.alt ?? "" }),
     ...(el.textStyle ? { textStyle: el.textStyle } : {}),
     ...(placed ? { placed } : {}),
+    ...cleanBuildFields((k) => (el as unknown as Record<string, unknown>)[k]),
   };
 }
 
@@ -80,6 +82,8 @@ function cleanSlot(raw: unknown, layoutId: string): SlotClip | null {
     out.alt = typeof raw.alt === "string" ? raw.alt.slice(0, 500) : "";
   }
   if (TEXT_STYLE_IDS.includes(raw.textStyle as TextStyleId)) out.textStyle = raw.textStyle as TextStyleId;
+  Object.assign(out, cleanBuildFields((k) => raw[k]));
+  if (def.kind !== "text") delete out.buildBullets;
   const p = raw.placed;
   if (isObj(p) && [p.x, p.y, p.w, p.h].every(finite) && (p.w as number) > 0 && (p.h as number) > 0) {
     const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -147,6 +151,7 @@ export function pasteSlides(doc: Y.Doc, clips: SlideClip[], afterId: string | nu
           el.set("alt", s.alt ?? "");
         }
         if (s.textStyle) el.set("textStyle", s.textStyle);
+        for (const key of ["build", "buildBullets", "buildEffect", "buildAfter", "buildDelay"] as const) if (s[key]) el.set(key, s[key]);
         if (s.placed) for (const [k, v] of Object.entries(s.placed)) el.set(k, v);
       }
       writeClipItems(slide, clip.items, { dx: 0, dy: 0 });

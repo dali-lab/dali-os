@@ -13,7 +13,7 @@ import {
   slidesMap,
   textOf,
 } from "~/components/slides/deck/model";
-import { buildOf } from "~/components/slides/deck/builds";
+import { cleanBuildFields, type BuildEffect } from "~/components/slides/deck/builds";
 import { slideMetaFields } from "~/components/slides/deck/slide-meta";
 import { contentFields, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
@@ -35,6 +35,9 @@ export interface DeckReadElement {
   text: string;
   build?: number;
   buildBullets?: boolean;
+  buildEffect?: BuildEffect;
+  buildAfter?: boolean;
+  buildDelay?: number;
   x?: number;
   y?: number;
   w?: number;
@@ -97,8 +100,7 @@ export function readDeck(live: Y.Doc): DeckRead {
           textStyle: str(el.get("textStyle")),
           blocks,
           text: blocksToPlainText(blocks as never),
-          ...(buildOf(el.get("build")) ? { build: buildOf(el.get("build")) } : {}),
-          ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
+          ...cleanBuildFields((k) => el.get(k)),
           ...geometryFields((k) => el.get(k)),
           ...shapeFields((k) => el.get(k)),
           ...contentFields((k) => el.get(k)),
@@ -180,8 +182,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
         src: e.src,
         alt: e.alt,
         textStyle: TEXT_STYLE_IDS.includes(e.textStyle as TextStyleId) ? (e.textStyle as TextStyleId) : null,
-        ...(e.build ? { build: e.build } : {}),
-        ...(e.buildBullets ? { buildBullets: true } : {}),
+        ...cleanBuildFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...geometryFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...shapeFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...contentFields((k) => (e as unknown as Record<string, unknown>)[k]),

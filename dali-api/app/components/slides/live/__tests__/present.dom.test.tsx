@@ -21,6 +21,8 @@ vi.mock("../useFollowDeck", () => ({ useFollowDeck: () => m.follow }));
 vi.mock("../usePolls", () => ({ usePolls: () => m.polls }));
 vi.mock("../useReactions", () => ({ useReactions: () => [], useSendReaction: () => vi.fn() }));
 
+vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn().mockResolvedValue("data:image/png;base64,AA") } }));
+
 import { ToastProvider } from "~/components/ui/toast";
 import { PresentStage } from "../PresentStage";
 import { PresenterView } from "../PresenterView";
@@ -28,6 +30,7 @@ import { PresentDriver, PresentFollower } from "../PresentRun";
 import { PresentMenu } from "../PresentMenu";
 import { DeckFollowLayer } from "../DeckFollowLayer";
 import { presenterUrl, presentUrl } from "../urls";
+import { useAutoBuilds, useEnterStep } from "../useBuildMotion";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -43,6 +46,7 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+  localStorage.clear();
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, value: 1600 });
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, value: 900 });
   container = document.createElement("div");
@@ -236,14 +240,14 @@ describe("PresentDriver", () => {
     mount(driver());
     key("ArrowRight");
     expect(m.session.go).toHaveBeenLastCalledWith("b", 1);
-    m.session.live = live("b", 3);
+    m.session.live = live("b", 2);
     mount(driver());
     key("ArrowRight");
     expect(m.session.go).toHaveBeenLastCalledWith("c", 0);
     m.session.live = live("c", 0);
     mount(driver());
     key("ArrowLeft");
-    expect(m.session.go).toHaveBeenLastCalledWith("b", 3);
+    expect(m.session.go).toHaveBeenLastCalledWith("b", 2);
   });
 
   it("ends on Escape and leaves once the presentation is over", () => {
@@ -268,7 +272,7 @@ describe("PresentDriver", () => {
     m.session.live = live("b", 0);
     mount(driver({ view: "presenter" }));
     expect(text("[data-testid=notes]")).toBe("notes for b");
-    expect(container.textContent).toContain("Step 0 of 3");
+    expect(container.textContent).toContain("Step 0 of 2");
     act(() => button("Next").click());
     expect(m.session.go).toHaveBeenLastCalledWith("b", 1);
     act(() => button("End").click());
@@ -353,7 +357,7 @@ describe("DeckFollowLayer", () => {
     mount(layer(false));
     expect(container.querySelector("[data-testid=present-stage]")).not.toBeNull();
     expect(text("[data-slot=title]")).toBe("Beta");
-    expect(text("[data-slot=body]")).toBe("");
+    expect(text("[data-slot=body]")).toBe("one");
     expect(container.textContent).toContain("Following Ada");
   });
 
@@ -449,5 +453,156 @@ describe("PresentMenu", () => {
     openMenu();
     await act(async () => item("Copy follow link").click());
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/slides/p1`);
+  });
+});
+
+const pollEl = { id: "poll1", kind: "poll", slot: null, z: 2, blocks: [], src: null, alt: null, textStyle: null, x: 100, y: 100, w: 900, h: 500, poll: { question: "Ship it?", options: ["Yes", "No"] } };
+const pollDeck = {
+  themeId: "dali-dark",
+  slides: [
+    slide("a", [element("title", { blocks: [para("Alpha")] })]),
+    slide("q", [element("title", { blocks: [para("Vote")] }), pollEl]),
+  ],
+  notes: { a: "", q: "" },
+};
+
+describe("join to vote card", () => {
+  const driver = (view: "present" | "presenter", startSlideId: string) =>
+    createElement(PresentDriver, { pageId: "p1", title: "Demo", viewerId: "me", deck: pollDeck, startSlideId, view, onLeave: vi.fn() } as never);
+  const settle = async () => {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  };
+
+  it.each(["present", "presenter"] as const)("shows on a poll slide in the %s view with the deck link", async (view) => {
+    m.session.live = live("q", 0);
+    mount(driver(view, "q"));
+    await settle();
+    const card = container.querySelector("[data-testid=join-card]")!;
+    expect(card.textContent).toContain("Scan to vote");
+    expect(text("[data-testid=join-url]")).toContain("/slides/p1");
+    expect(card.querySelector("img")!.getAttribute("src")).toContain("data:image/png");
+  });
+
+  it("is absent on a slide without a poll", () => {
+    m.session.live = live("a", 0);
+    mount(driver("present", "a"));
+    expect(container.querySelector("[data-testid=join-card]")).toBeNull();
+  });
+
+  it("hides from its own button and stays hidden", () => {
+    m.session.live = live("q", 0);
+    mount(driver("present", "q"));
+    act(() => (container.querySelector("[aria-label='Hide join code']") as HTMLElement).click());
+    expect(container.querySelector("[data-testid=join-card]")).toBeNull();
+  });
+
+  it("is switched off and on from the presenter view", () => {
+    m.session.live = live("q", 0);
+    mount(driver("presenter", "q"));
+    const toggle = () => container.querySelector("[data-testid=presenter-polls] input[type=checkbox]:not(:checked)") ?? container.querySelectorAll("[data-testid=presenter-polls] input[type=checkbox]")[1];
+    expect(container.querySelector("[data-testid=join-card]")).not.toBeNull();
+    act(() => (toggle() as HTMLElement).click());
+    expect(container.querySelector("[data-testid=join-card]")).toBeNull();
+    act(() => (toggle() as HTMLElement).click());
+    expect(container.querySelector("[data-testid=join-card]")).not.toBeNull();
+  });
+
+  it("is not drawn for followers, who get phone-sized vote buttons instead", () => {
+    m.follow = { ...(m.follow as object), active: true, slideId: "q", build: 0, presenter: { id: "other", name: "Ada" }, following: true };
+    mount(createElement(PresentFollower, { pageId: "p1", deck: pollDeck, onLeave: vi.fn() } as never));
+    expect(container.querySelector("[data-testid=join-card]")).toBeNull();
+    expect(container.querySelector("[data-testid=vote-panel]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=vote-panel]")!.className).toContain("sm:hidden");
+  });
+
+  it("lets a follower vote from the panel", () => {
+    m.follow = { ...(m.follow as object), active: true, slideId: "q", build: 0, presenter: { id: "other", name: "Ada" }, following: true };
+    m.polls = { ...(m.polls as object), state: { active: true, polls: { poll1: { counts: [0, 0], total: 0, mine: [], closed: false } } } };
+    mount(createElement(PresentFollower, { pageId: "p1", deck: pollDeck, onLeave: vi.fn() } as never));
+    act(() => (container.querySelector("[data-vote-option='1']") as HTMLElement).click());
+    expect((m.polls as { vote: ReturnType<typeof vi.fn> }).vote).toHaveBeenCalledWith("poll1", [1]);
+  });
+
+  it("keeps the follow view inside a phone width: bottom controls wrap and nothing is wider than the screen", () => {
+    m.follow = { ...(m.follow as object), active: true, slideId: "q", build: 0, presenter: { id: "other", name: "Ada" }, following: true };
+    mount(createElement(PresentFollower, { pageId: "p1", deck: pollDeck, onLeave: vi.fn() } as never));
+    const chip = container.querySelector("[role=status]")!;
+    expect(chip.className).toContain("max-w-full");
+    expect(chip.className).toContain("flex-wrap");
+    expect(chip.parentElement!.className).toContain("inset-x-2");
+    expect(container.querySelector("[data-testid=present-stage]")!.className).not.toContain("overflow-x");
+  });
+});
+
+describe("build motion hooks", () => {
+  const Probe = ({ index, step, advance, enabled = true }: { index: number; step: number; advance: (p: { index: number; step: number }) => void; enabled?: boolean }) => {
+    useAutoBuilds({ index, step, enabled, advance, autoDelayOf: (_i, st) => (st === 1 ? 1000 : null) });
+    return createElement("output", null, String(useEnterStep(index, step)));
+  };
+  const out = () => container.querySelector("output")!.textContent;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("moves on by itself after the animation and the delay", () => {
+    const advance = vi.fn();
+    mount(createElement(Probe, { index: 0, step: 0, advance }));
+    act(() => void vi.advanceTimersByTime(1299));
+    expect(advance).not.toHaveBeenCalled();
+    act(() => void vi.advanceTimersByTime(1));
+    expect(advance).toHaveBeenCalledWith({ index: 0, step: 1 });
+  });
+
+  it("starts the wait for a viewer who joins or reconnects mid-way, and cancels it when the step changes", () => {
+    const advance = vi.fn();
+    mount(createElement(Probe, { index: 0, step: 0, advance }));
+    act(() => void vi.advanceTimersByTime(500));
+    mount(createElement(Probe, { index: 0, step: 1, advance }));
+    act(() => void vi.advanceTimersByTime(5000));
+    expect(advance).not.toHaveBeenCalled();
+  });
+
+  it("does not replay an automatic step after going back", () => {
+    const advance = vi.fn();
+    mount(createElement(Probe, { index: 0, step: 2, advance }));
+    mount(createElement(Probe, { index: 0, step: 0, advance }));
+    act(() => void vi.advanceTimersByTime(5000));
+    expect(advance).not.toHaveBeenCalled();
+    mount(createElement(Probe, { index: 1, step: 0, advance }));
+    mount(createElement(Probe, { index: 0, step: 0, advance }));
+    act(() => void vi.advanceTimersByTime(5000));
+    expect(advance).not.toHaveBeenCalled();
+  });
+
+  it("plays again once the presenter moves forward again", () => {
+    const advance = vi.fn();
+    mount(createElement(Probe, { index: 0, step: 2, advance }));
+    mount(createElement(Probe, { index: 0, step: 0, advance }));
+    mount(createElement(Probe, { index: 1, step: 0, advance }));
+    act(() => void vi.advanceTimersByTime(1300));
+    expect(advance).toHaveBeenCalledWith({ index: 1, step: 1 });
+  });
+
+  it("does nothing for someone who is not presenting", () => {
+    const advance = vi.fn();
+    mount(createElement(Probe, { index: 0, step: 0, advance, enabled: false }));
+    act(() => void vi.advanceTimersByTime(5000));
+    expect(advance).not.toHaveBeenCalled();
+  });
+
+  it("animates only a forward move of one step within a slide", () => {
+    const advance = vi.fn();
+    mount(createElement(Probe, { index: 0, step: 0, advance, enabled: false }));
+    expect(out()).toBe("undefined");
+    mount(createElement(Probe, { index: 0, step: 1, advance, enabled: false }));
+    expect(out()).toBe("1");
+    mount(createElement(Probe, { index: 0, step: 0, advance, enabled: false }));
+    expect(out()).toBe("undefined");
+    mount(createElement(Probe, { index: 0, step: 2, advance, enabled: false }));
+    expect(out()).toBe("undefined");
+    mount(createElement(Probe, { index: 1, step: 3, advance, enabled: false }));
+    expect(out()).toBe("undefined");
   });
 });

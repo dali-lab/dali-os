@@ -7,7 +7,7 @@ import { addSlide } from "~/components/slides/deck/deck-ops";
 import { addFreeImage, addShape, addTextBox, groupElements, setLocked } from "~/components/slides/deck/freeform-ops";
 import { initDeck, slidesMap } from "~/components/slides/deck/model";
 import { snapshotDeck } from "~/components/slides/deck/snapshot";
-import { barSpot, FreeformLayer, type FreeformLayerProps } from "../FreeformLayer";
+import { barSpot, FRAME_OUTSET, FreeformLayer, outsetStyle, type FreeformLayerProps } from "../FreeformLayer";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -340,5 +340,71 @@ describe("format bar position", () => {
     expect(barSpot({ x: 800, y: 40, w: 320, h: 100 }).transform).toBe("translate(-50%, 14px)");
     expect(barSpot({ x: 1800, y: 500, w: 100, h: 100 }).left).toBe("80%");
     expect(barSpot({ x: 0, y: 500, w: 100, h: 100 }).left).toBe("20%");
+  });
+});
+
+describe("selection chrome sits outside the box", () => {
+  const rect = { x: 480, y: 270, w: 960, h: 540 };
+
+  it("draws the frame with its inner edge FRAME_OUTSET screen pixels beyond the box on every side", () => {
+    const style = outsetStyle(rect, 1.5);
+    expect(FRAME_OUTSET).toBe(4);
+    expect(style.left).toBe("calc(25% - 5.5px)");
+    expect(style.top).toBe("calc(25% - 5.5px)");
+    expect(style.width).toBe("calc(50% + 8px)");
+    expect(style.height).toBe("calc(50% + 8px)");
+    expect(style.boxSizing).toBe("content-box");
+  });
+
+  it("keeps the same pixel gap at any stage size, since only the percentages follow the zoom", () => {
+    const at = (w: number) => {
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: w, height: (w * 9) / 16, right: w, bottom: 0, x: 0, y: 0, toJSON: () => ({}) });
+      const { doc, slideId, slide } = setup();
+      const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+      mount({ slide: slide(), selection: [id] });
+      const frame = container.querySelector<HTMLElement>("[data-selection-frame]")!;
+      return [frame.style.left.replace(/^calc\(.*% - /, ""), frame.style.width.replace(/^calc\(.*% \+ /, "")];
+    };
+    expect(at(960)).toEqual(at(1920));
+    expect(at(960)).toEqual(["5.5px)", "8px)"]);
+  });
+
+  it("outsets the hover outline and a multi-select frame, and rotates with the element", () => {
+    const { doc, slideId, slide } = setup();
+    const a = addShape(doc, slideId, "rect", { x: 300, y: 300 })!;
+    const b = addShape(doc, slideId, "rect", { x: 1000, y: 330 })!;
+    mount({ slide: slide(), selection: [a, b] });
+    expect(container.querySelector<HTMLElement>("[data-selection-frame]")!.style.width).toMatch(/\+ 8px\)$/);
+    mount({ slide: slide(), selection: [a] });
+    fire(hit(b), "pointerover");
+    const hover = container.querySelector<HTMLElement>("[data-hover-outline]")!;
+    expect(hover.style.left).toMatch(/- 5px\)$/);
+    expect(hover.style.width).toMatch(/\+ 8px\)$/);
+    expect(outsetStyle({ ...rect, rot: 30 }, 1).transform).toBe("rotate(30deg)");
+  });
+
+  it("leaves resize geometry exactly as the pointer moved: no offset from the outset", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addShape(doc, slideId, "rect", { x: 480, y: 270 })!;
+    const before = slide().elements.find((e) => e.id === id)!;
+    const props = mount({ slide: slide(), selection: [id] });
+    const se = container.querySelector("[data-handle='se']")!;
+    fire(se, "pointerdown", { clientX: 360, clientY: 210 });
+    fire(window, "pointermove", { clientX: 400, clientY: 230 });
+    fire(window, "pointerup", { clientX: 400, clientY: 230 });
+    const resized = (props.onCommit as ReturnType<typeof vi.fn>).mock.calls[0][0][id];
+    expect(resized.x).toBe(before.x);
+    expect(resized.y).toBe(before.y);
+    expect(resized.w).toBe(before.w! + 80);
+    expect(resized.h).toBe(before.h! + 40);
+  });
+
+  it("puts handles at the outset frame's edges, including the crop frame", () => {
+    const { doc, slideId, slide } = setup();
+    const id = addFreeImage(doc, slideId, "https://x/y.png", "y")!;
+    mount({ slide: slide(), selection: [id], cropId: id });
+    const frame = container.querySelector<HTMLElement>("[data-selection-frame]")!;
+    expect(frame.style.width).toMatch(/\+ 8px\)$/);
+    expect(frame.querySelector<HTMLElement>("[data-handle='se']")!.style.left).toBe("100%");
   });
 });

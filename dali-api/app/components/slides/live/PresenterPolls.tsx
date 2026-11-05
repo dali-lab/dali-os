@@ -12,6 +12,8 @@ export interface PresenterPollsProps {
   polls: SlidePoll[];
   state: PollsState;
   reactionsOff: boolean;
+  joinHidden?: boolean;
+  onJoinHidden?: (hidden: boolean) => void;
   onClose: (id: string) => void;
   onOpen: (id: string) => void;
   onReset: (id: string) => void;
@@ -19,10 +21,11 @@ export interface PresenterPollsProps {
 }
 
 /** Live vote counts for the polls on this slide, with the presenter's controls over voting and reactions. */
-export function PresenterPolls({ polls, state, reactionsOff, onClose, onOpen, onReset, onReactionsOff }: PresenterPollsProps) {
+export function PresenterPolls({ polls, state, reactionsOff, joinHidden = false, onJoinHidden, onClose, onOpen, onReset, onReactionsOff }: PresenterPollsProps) {
   return (
     <div className="flex flex-col gap-3" data-testid="presenter-polls">
       <Toggle tone="os" label="Allow reactions" checked={!reactionsOff} onChange={(e) => onReactionsOff(!e.target.checked)} />
+      {polls.length > 0 && onJoinHidden && <Toggle tone="os" label="Show join code" checked={!joinHidden} onChange={(e) => onJoinHidden(!e.target.checked)} />}
       {polls.map(({ id, poll }) => {
         const result = state.polls[id];
         const closed = result?.closed ?? false;

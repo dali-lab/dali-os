@@ -21,6 +21,7 @@ export interface SlideTransitionStageProps {
   themeId: string;
   slideId: string;
   step?: number;
+  enterStep?: number;
   width: number;
   renderSlide: RenderSlideFn;
 }
@@ -28,7 +29,7 @@ export interface SlideTransitionStageProps {
 const layer = (extra: CSSProperties): CSSProperties => ({ position: "absolute", inset: 0, ...extra });
 
 /** Draws one slide, and plays the arriving slide's transition when the slide changes. Builds run after it, since only the slide change starts one. */
-export function SlideTransitionStage({ slides, themeId, slideId, step, width, renderSlide }: SlideTransitionStageProps) {
+export function SlideTransitionStage({ slides, themeId, slideId, step, enterStep, width, renderSlide }: SlideTransitionStageProps) {
   const last = useRef<string | null>(null);
   const [anim, setAnim] = useState<Anim | null>(null);
 
@@ -68,7 +69,7 @@ export function SlideTransitionStage({ slides, themeId, slideId, step, width, re
   }, [anim]);
 
   const live = anim && anim.to.id === slideId ? anim : null;
-  if (!live) return <>{renderSlide(slideId, { width, step })}</>;
+  if (!live) return <>{renderSlide(slideId, { width, step, enterStep })}</>;
   const { from, to, kind, duration, go, forward, plan } = live;
   const ease = `${duration}ms ease`;
   const dir = forward ? 1 : -1;

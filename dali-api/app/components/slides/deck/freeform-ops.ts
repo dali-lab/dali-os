@@ -527,6 +527,8 @@ export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: 
     if (item.kind === "group") continue;
     const id = idMap.get(item.key)!;
     const fields: Record<string, unknown> = {};
+    const { build, buildBullets, buildEffect, buildAfter, buildDelay } = item;
+    Object.assign(fields, { ...(build ? { build } : {}), ...(buildBullets ? { buildBullets } : {}), ...(buildEffect ? { buildEffect } : {}), ...(buildAfter ? { buildAfter } : {}), ...(buildDelay ? { buildDelay } : {}) });
     if (item.kind === "image") Object.assign(fields, { src: item.src ?? "", alt: item.alt ?? "", ...(item.crop ? { crop: item.crop } : {}) });
     if (item.kind === "shape") Object.assign(fields, { shape: item.shape ?? "rect", fill: item.fill ?? "accent" });
     if (item.kind === "text" && item.textStyle) fields.textStyle = item.textStyle;
