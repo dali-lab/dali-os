@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 
-import { setPlanningNote, toPlanningNoteView } from "../planning-notes.server";
+import { movePlanningNoteToProject, setPlanningNote, toPlanningNoteView } from "../planning-notes.server";
 
 function fakeDb() {
   const db = {
@@ -71,5 +71,16 @@ describe("toPlanningNoteView", () => {
 
   it("leaves the editor empty when that user is gone", () => {
     expect(toPlanningNoteView({ body: "Hi", updatedAt: new Date(0), updatedBy: null })?.updatedByName).toBeNull();
+  });
+});
+
+describe("movePlanningNoteToProject", () => {
+  it("re-owns the application's note to the new project", async () => {
+    const updateMany = vi.fn();
+    await movePlanningNoteToProject({ planningNote: { updateMany } } as never, { applicationId: "a1", projectId: "p9" });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { applicationId: "a1" },
+      data: { applicationId: null, projectId: "p9" },
+    });
   });
 });

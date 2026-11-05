@@ -53,3 +53,13 @@ export async function setPlanningNote(
   });
   return "ok";
 }
+
+export async function movePlanningNoteToProject(
+  db: Pick<Db, "planningNote">,
+  input: { applicationId: string; projectId: string },
+): Promise<void> {
+  await db.planningNote.updateMany({
+    where: { applicationId: input.applicationId },
+    data: { applicationId: null, projectId: input.projectId },
+  });
+}
