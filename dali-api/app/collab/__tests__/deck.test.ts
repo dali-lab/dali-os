@@ -155,7 +155,8 @@ describe("applySlides", () => {
     const current = projectLegacySlides(readDeck(doc));
     applySlides(doc, current.map((s) => (s.id === "c" ? { ...s, image: undefined } : s)));
     const el = elementsOf(slidesMap(doc).get("c")!).get("image")!;
-    expect(isDeleted(el)).toBe(true);
+    expect(isDeleted(el)).toBe(false);
+    expect(el.get("src")).toBe("");
     expect(projectLegacySlides(readDeck(doc))[2].image).toBeUndefined();
   });
 

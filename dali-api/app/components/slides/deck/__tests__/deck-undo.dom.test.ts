@@ -4,7 +4,9 @@ import { BlockNoteEditor } from "@blocknote/core";
 import { withCollaboration } from "@blocknote/core/yjs";
 import { ySyncPluginKey, yUndoPlugin } from "y-prosemirror";
 import * as Y from "yjs";
-import { DECK_LOCAL, addSlide, deleteSlide, moveSlide, setLayout, slideFragment, undeleteSlide, visibleSlideIds } from "../deck-ops";
+import { readDeck } from "~/collab/read-deck.server";
+import { blocksToFragment } from "~/collab/blocknote-server";
+import { DECK_LOCAL, addSlide, duplicateSlide, deleteSlide, moveSlide, setLayout, slideFragment, undeleteSlide, visibleSlideIds } from "../deck-ops";
 import { createDeckUndo, deckUndoExtension, listenerCount } from "../deck-undo";
 import { deckMap, initDeck, slidesMap } from "../model";
 
@@ -196,5 +198,34 @@ describe("deleting a slide is a tombstone that undo reverses", () => {
     undeleteSlide(ydoc, ids[1]);
     moveSlide(ydoc, ids[2], 0);
     expect(visibleSlideIds(ydoc)).toEqual([ids[2], ids[0], ids[1]]);
+  });
+});
+
+describe("creating a slide is not undoable", () => {
+  it("undo after adding or duplicating leaves the slide, and a peer's typing in it survives", () => {
+    const { ydoc, manager, ids } = setup();
+    manager.clear();
+    const added = addSlide(ydoc, "content", ids[2]);
+    const copy = duplicateSlide(ydoc, ids[0])!;
+    expect(manager.canUndo()).toBe(false);
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(ydoc));
+    blocksToFragment([{ type: "paragraph", content: "peer text" }] as never, slideFragment(peer, added, "title")!);
+    Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(peer), "remote");
+    manager.undo();
+    expect(visibleSlideIds(ydoc)).toContain(added);
+    expect(visibleSlideIds(ydoc)).toContain(copy);
+    expect(readDeck(ydoc).slides.find((x) => x.id === added)!.elements.find((e) => e.slot === "title")!.text).toBe("peer text");
+    expect(slidesMap(ydoc).has(added)).toBe(true);
+  });
+
+  it("later edits to the new slide can still be undone", () => {
+    const { ydoc, manager, ids } = setup();
+    manager.clear();
+    const added = addSlide(ydoc, "content", ids[2]);
+    setLayout(ydoc, added, "split");
+    manager.undo();
+    expect(slidesMap(ydoc).get(added)!.get("layoutId")).toBe("content");
+    expect(slidesMap(ydoc).has(added)).toBe(true);
   });
 });

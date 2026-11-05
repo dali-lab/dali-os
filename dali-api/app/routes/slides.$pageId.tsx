@@ -9,8 +9,9 @@ import { parseJson } from "~/lib/validate";
 import { cn } from "~/lib/cn";
 import { recordPageVisit } from "~/lib/user-pages.server";
 import { deckAccess, loadDeck, migrateDeckOnOpen, saveDeck } from "~/lib/slide-decks.server";
-import { readLiveDeck } from "~/collab/deck-live.server";
-import { toRenderDeck } from "~/collab/read-deck.server";
+import { readLiveDeck, transactDeck } from "~/collab/deck-live.server";
+import { deckMissingSlots, toRenderDeck } from "~/collab/read-deck.server";
+import { repairDeckSlots } from "~/components/slides/deck/deck-ops";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { canManageSharing } from "~/lib/page-share-access.server";
@@ -82,13 +83,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const live = await readLiveDeck(params.pageId);
-  const editable = access.canEdit && deckAccessMode(live.read.v) === "edit";
+  const known = deckAccessMode(live.read.v) === "edit";
+  if (access.canEdit && known && deckMissingSlots(live.read)) await transactDeck(params.pageId, userId, repairDeckSlots);
   const canManageAccess = await canManageSharing(
     { id: params.pageId, workspaceType: full.workspaceType, workspaceId: full.workspaceId, createdById: full.createdById },
     userId,
   );
   let collab: { token: string; userId: string; userName: string; photoUrl: string | null } | null = null;
-  if (editable) {
+  if (known) {
     const token = await getCollabToken(request);
     if (token) {
       const fallback = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
@@ -103,7 +105,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     canEdit: access.canEdit,
     canManageAccess,
     workspaceType: full.workspaceType,
-    unknownVersion: deckAccessMode(live.read.v) !== "edit",
+    unknownVersion: !known,
     collab,
     deck: collab ? null : toRenderDeck(live.read),
   };
@@ -137,6 +139,7 @@ export default function SlideDeckPage({ loaderData }: Route.ComponentProps) {
           pageId={pageId}
           title={title}
           iconEmoji={iconEmoji ?? null}
+          canEdit={loaderData.canEdit}
           canManageAccess={canManageAccess}
           workspaceType={workspaceType}
           collab={collab}

@@ -15,6 +15,7 @@ const m = vi.hoisted(() => ({
   readLiveDeck: vi.fn(),
   token: vi.fn(),
   canManage: vi.fn(),
+  transact: vi.fn(),
 }));
 
 vi.mock("~/lib/auth", () => ({ requireAuth: m.requireAuth, isNonMember: m.isNonMember, redirectPartnerToPortal: m.redirectPartnerToPortal }));
@@ -28,11 +29,11 @@ vi.mock("~/lib/slide-decks.server", () => ({
   migrateDeckOnOpen: m.migrate,
 }));
 vi.mock("~/lib/drive-page-trail.server", () => ({ loadDrivePageAncestry: vi.fn(async () => ({ title: "Deck", iconEmoji: null, workspaceType: "Lab" })) }));
-vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck }));
+vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck, transactDeck: m.transact }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: m.token }));
 vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => ({ name: "Ada Lovelace", photoUrl: null })) }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: m.canManage }));
-vi.mock("~/components/slides/collab/SlidesEditor", () => ({ SlidesEditor: () => createElement("div", { "data-testid": "live-editor" }) }));
+vi.mock("~/components/slides/collab/SlidesEditor", () => ({ SlidesEditor: (p: { canEdit: boolean }) => createElement("div", { "data-testid": "live-editor", "data-can-edit": String(p.canEdit) }) }));
 vi.mock("~/components/slides/collab/ReadOnlyDeck", () => ({
   ReadOnlyDeck: (p: { slides: unknown[]; notice?: string }) =>
     createElement("div", { "data-testid": "read-only" }, `${p.slides.length} slides${p.notice ? ` | ${p.notice}` : ""}`),
@@ -105,15 +106,39 @@ describe("loader", () => {
     expect(m.readLiveDeck).not.toHaveBeenCalled();
   });
 
-  it("someone who can only view gets a read-only render and no collab credentials", async () => {
+  it("someone who can only view gets the live read-only connection", async () => {
     m.deckAccess.mockResolvedValue({ ok: true, canEdit: false, page: {} });
     const out = await run();
-    expect(out.mode).toBe("live");
+    expect(out).toMatchObject({ mode: "live", canEdit: false, deck: null });
+    expect(out.collab).toMatchObject({ token: "tok", userId: "u1" });
+  });
+
+  it("falls back to the loader snapshot for a viewer without a collab token", async () => {
+    m.deckAccess.mockResolvedValue({ ok: true, canEdit: false, page: {} });
+    m.token.mockResolvedValue(null);
+    const out = await run();
     expect(out.collab).toBeNull();
-    expect(m.token).not.toHaveBeenCalled();
     expect(out.deck.themeId).toBe("dali-dark");
     expect(out.deck.slides[0]).toMatchObject({ id: "a", layoutId: "section" });
     expect(out.deck.slides[0].elements[0].textStyle).toBe("kicker");
+  });
+
+  it("repairs a deck with missing slots on the server, only for an editor", async () => {
+    await run();
+    expect(m.transact).toHaveBeenCalledWith("p1", "u1", expect.any(Function));
+    m.transact.mockClear();
+    m.deckAccess.mockResolvedValue({ ok: true, canEdit: false, page: {} });
+    await run();
+    expect(m.transact).not.toHaveBeenCalled();
+  });
+
+  it("does not touch a deck whose slots are all there", async () => {
+    const d = live();
+    d.read.slides[0].layoutId = "content";
+    d.read.slides[0].elements = ["title", "body"].map((slot) => ({ id: slot, kind: "text", slot, z: 1, src: null, alt: null, textStyle: null, blocks: [], text: "" })) as never;
+    m.readLiveDeck.mockResolvedValue(d);
+    await run();
+    expect(m.transact).not.toHaveBeenCalled();
   });
 
   it("a deck version this build does not know is read-only even for an editor", async () => {
@@ -150,6 +175,11 @@ describe("page", () => {
   it("mounts the collaborative editor for a live deck with credentials", () => {
     const el = render({ ...base, mode: "live", canManageAccess: true, workspaceType: "Lab", unknownVersion: false, deck: null, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } });
     expect(el.querySelector("[data-testid=live-editor]")).not.toBeNull();
+  });
+
+  it("mounts the live editor for a viewer too, told they can't edit", () => {
+    const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, deck: null, collab: { token: "t", userId: "u", userName: "A", photoUrl: null } });
+    expect(el.querySelector("[data-testid=live-editor]")!.getAttribute("data-can-edit")).toBe("false");
   });
 
   it("draws a viewer's deck read-only without the editor", () => {
