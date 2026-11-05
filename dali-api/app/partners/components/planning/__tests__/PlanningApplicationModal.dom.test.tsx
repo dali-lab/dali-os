@@ -38,6 +38,7 @@ const info: PlanningApplicationInfo = {
   stage: "Interview",
   partnerName: "Acme",
   note: null,
+  continues: null,
 };
 
 afterEach(() => {
@@ -81,5 +82,19 @@ describe("PlanningApplicationModal", () => {
     expect(document.body.querySelector("textarea")).toBeNull();
     expect(document.body.textContent).toContain("Call Tuesday");
     expect(document.body.textContent).toContain("Last edited on Nov 5, 2026");
+  });
+
+  it("names the past project a return continues, with a link", async () => {
+    await mount({ ...info, continues: { projectId: "old", name: "Research Computing Dashboard", lastTermCode: "26S" } });
+    expect(document.body.textContent).toContain("Returning project");
+    expect(document.body.textContent).toContain("Return of Research Computing Dashboard (last ran 26S)");
+    const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent === "Research Computing Dashboard");
+    expect(link?.getAttribute("href")).toBe("/projects/old");
+  });
+
+  it("says nothing about a return for a fresh application", async () => {
+    await mount(info);
+    expect(document.body.textContent).toContain("Application");
+    expect(document.body.textContent).not.toContain("Return of");
   });
 });

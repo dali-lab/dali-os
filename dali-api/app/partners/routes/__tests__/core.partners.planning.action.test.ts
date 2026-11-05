@@ -7,6 +7,7 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/partners/lib/partner-renewals.server", () => ({ setTermPi: vi.fn() }));
 vi.mock("~/partners/lib/planning-spots.server", () => ({ setTermSpots: vi.fn() }));
 vi.mock("~/partners/lib/planning-notes.server", () => ({ PLANNING_NOTE_MAX: 5000, setPlanningNote: vi.fn() }));
+vi.mock("~/partners/lib/partner-returns.server", () => ({ startProjectReturn: vi.fn() }));
 vi.mock("~/partners/lib/planning-gap.server", () => ({ loadPlanningData: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
@@ -15,6 +16,7 @@ import { isCore } from "~/lib/roles";
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { setTermSpots } from "~/partners/lib/planning-spots.server";
 import { setPlanningNote } from "~/partners/lib/planning-notes.server";
+import { startProjectReturn } from "~/partners/lib/partner-returns.server";
 import { action } from "~/partners/routes/core.partners.planning";
 
 async function post(body: Record<string, string>) {
@@ -190,5 +192,45 @@ describe("note intent", () => {
     vi.mocked(setPlanningNote).mockResolvedValue("not-found");
     const res = await post({ intent: "note", ownerKind: "application", ownerId: "gone", body: "x" });
     expect(res).toMatchObject({ status: 404, body: { error: expect.stringContaining("application") } });
+  });
+});
+
+describe("start-return intent", () => {
+  async function postReturn(termIds: string[]) {
+    const form = new FormData();
+    form.set("intent", "start-return");
+    form.set("projectId", "proj-old");
+    for (const id of termIds) form.append("targetTermId", id);
+    const request = new Request("http://localhost/core/partners/planning", { method: "POST", body: form });
+    const res = (await action({ request, params: {}, context: {} } as never)) as Response;
+    return { status: res.status, body: await res.json() };
+  }
+
+  it("starts a return for every picked term and returns the new application", async () => {
+    vi.mocked(startProjectReturn).mockResolvedValue({ ok: true, applicationId: "app-9" });
+    expect(await postReturn(["t27w", "t27s"])).toEqual({ status: 200, body: { ok: true, applicationId: "app-9" } });
+    expect(startProjectReturn).toHaveBeenCalledWith({
+      projectId: "proj-old",
+      targetTermIds: ["t27w", "t27s"],
+      actorUserId: "core-1",
+    });
+  });
+
+  it.each([
+    ["not-found", 404, "no longer exists"],
+    ["no-terms", 400, "Pick at least one term"],
+    ["no-contact", 400, "no partner contact"],
+    ["already-open", 400, "already has an open return"],
+  ] as const)("explains %s", async (error, status, text) => {
+    vi.mocked(startProjectReturn).mockResolvedValue({ ok: false, error });
+    const res = await postReturn(["t27w"]);
+    expect(res.status).toBe(status);
+    expect(res.body.error).toContain(text);
+  });
+
+  it("is Core-only", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    expect((await postReturn(["t27w"])).status).toBe(403);
+    expect(startProjectReturn).not.toHaveBeenCalled();
   });
 });

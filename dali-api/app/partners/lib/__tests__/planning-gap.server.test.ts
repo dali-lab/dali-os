@@ -12,10 +12,12 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
+vi.mock("../partner-returns.server", () => ({ listReturnableProjects: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { loadPlanningData } from "../planning-gap.server";
+import { listReturnableProjects } from "../partner-returns.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 
@@ -54,6 +56,7 @@ beforeEach(() => {
   db.staffingCycle.findUnique.mockResolvedValue(null);
   db.user.count.mockResolvedValue(40);
   db.intentToWork.findMany.mockResolvedValue([]);
+  vi.mocked(listReturnableProjects).mockResolvedValue([]);
 });
 
 describe("loadPlanningData term selection", () => {
@@ -284,6 +287,7 @@ describe("loadPlanningData planning notes", () => {
       stage: "Interview",
       partnerName: "Acme",
       note: { body: "Waiting on budget", updatedAt: "2026-11-05T15:00:00.000Z", updatedByName: "Ada Lovelace" },
+      continues: null,
     });
   });
 });
@@ -357,5 +361,44 @@ describe("loadPlanningData intent to work", () => {
     });
     const data = await loadPlanningData("t26s");
     expect(data.intentSetup).toEqual({ kind: "unmapped", submissions: 5 });
+  });
+});
+
+describe("loadPlanningData returns", () => {
+  it("offers past projects that can come back for the planned term", async () => {
+    vi.mocked(listReturnableProjects).mockResolvedValue([{ id: "old", name: "Research Computing", lastTermCode: "25F" }]);
+    const data = await loadPlanningData("t26s");
+    expect(listReturnableProjects).toHaveBeenCalledWith(3);
+    expect(data.returnableProjects).toEqual([{ id: "old", name: "Research Computing", lastTermCode: "25F" }]);
+  });
+
+  it("tags a returning application and names the project it continues", async () => {
+    db.partnerApplication.findMany.mockResolvedValue([
+      {
+        id: "a1",
+        title: "Research Computing",
+        iconEmoji: null,
+        stage: "New",
+        pi: null,
+        domains: [{ domainId: "eng", expectedMembers: 2 }],
+        partnerOrg: { name: "ITC" },
+        planningNote: null,
+        continuesProject: {
+          id: "old",
+          name: "Research Computing Dashboard",
+          projectTerms: [{ term: { code: "25W", sortKey: 1 } }, { term: { code: "25F", sortKey: 2 } }],
+        },
+      },
+      { id: "a2", title: "Fresh", iconEmoji: null, stage: "New", pi: null, domains: [], continuesProject: null },
+    ]);
+    const data = await loadPlanningData("t26s");
+    expect(data.applicationInfo.a1.continues).toEqual({
+      projectId: "old",
+      name: "Research Computing Dashboard",
+      lastTermCode: "25F",
+    });
+    expect(data.applicationInfo.a2.continues).toBeNull();
+    expect(data.items.find((i) => i.refId === "a1")?.returning).toBe(true);
+    expect(data.listOnlyItems.find((i) => i.refId === "a2")?.returning).toBeUndefined();
   });
 });

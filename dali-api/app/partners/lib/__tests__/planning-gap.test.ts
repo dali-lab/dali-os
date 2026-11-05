@@ -409,3 +409,11 @@ describe("effectivePi", () => {
     expect(effectivePi(rows, 0)).toBeNull();
   });
 });
+
+describe("planningStateLabel for returns", () => {
+  it("marks a returning application", async () => {
+    const { planningStateLabel } = await import("../planning-gap");
+    expect(planningStateLabel({ state: "Interview", returning: true })).toBe("Interview (return)");
+    expect(planningStateLabel({ state: "Interview" })).toBe("Interview");
+  });
+});

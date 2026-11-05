@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
@@ -11,10 +11,13 @@ import { prisma } from "~/lib/db.server";
 import { setTermPi } from "../lib/partner-renewals.server";
 import { setTermSpots } from "../lib/planning-spots.server";
 import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server";
+import { startProjectReturn } from "../lib/partner-returns.server";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PlanningTable } from "../components/PlanningTable";
 import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
 import { PlanningApplicationModal } from "../components/planning/PlanningApplicationModal";
+import { StartReturnModal } from "../components/planning/StartReturnModal";
+import { Button } from "~/components/ui/Button";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
 import { buildPlanningGap, buildPlanningProjects, type IntentSetup } from "../lib/planning-gap";
@@ -45,6 +48,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 const DESCRIPTION_MAX = 5000;
 
+const START_RETURN_ERRORS = {
+  "not-found": "That project no longer exists.",
+  "no-terms": "Pick at least one term for the return.",
+  "no-contact": "This project has no partner contact to carry over. Add one in the Directory first.",
+  "already-open": "This project already has an open return on the partner board.",
+} as const;
+
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -53,6 +63,16 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
+
+  if (intent === "start-return") {
+    const result = await startProjectReturn({
+      projectId: String(form.get("projectId") ?? ""),
+      targetTermIds: form.getAll("targetTermId").map(String),
+      actorUserId: auth.user.sub,
+    });
+    if (result.ok) return Response.json({ ok: true, applicationId: result.applicationId });
+    return Response.json({ error: START_RETURN_ERRORS[result.error] }, { status: result.error === "not-found" ? 404 : 400 });
+  }
 
   if (intent === "note") {
     const ownerKind = String(form.get("ownerKind") ?? "");
@@ -149,6 +169,13 @@ export default function PartnersPlanning() {
   const openProjectId = openRow?.kind === "project" ? openRow.id : null;
   const openApplicationId = openRow?.kind === "application" ? openRow.id : null;
   const openApplication = openApplicationId ? data.applicationInfo[openApplicationId] ?? null : null;
+  const [startingReturn, setStartingReturn] = useState(false);
+  const pickedTermIndex = data.terms.findIndex((t) => t.id === data.termId);
+  const returnTerms = pickedTermIndex < 0 ? [] : data.terms.slice(0, pickedTermIndex + 1).reverse();
+  const onReturnCreated = useCallback((applicationId: string) => {
+    setStartingReturn(false);
+    setOpenRow({ kind: "application", id: applicationId });
+  }, []);
   const openProject = useMemo(() => {
     if (!openProjectId) return null;
     const match = [...data.items, ...data.listOnlyItems].find(
@@ -229,6 +256,11 @@ export default function PartnersPlanning() {
             </span>
           </Tooltip>
           {data.termId && (
+            <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setStartingReturn(true)}>
+              Start a return
+            </Button>
+          )}
+          {data.termId && (
             <TermFilter
               terms={data.terms}
               selected={data.termId}
@@ -267,6 +299,15 @@ export default function PartnersPlanning() {
           currentTermId={data.termId}
           canEdit
           onClose={() => setOpenRow(null)}
+        />
+      )}
+      {startingReturn && data.termId && (
+        <StartReturnModal
+          projects={data.returnableProjects}
+          terms={returnTerms}
+          defaultTermId={data.termId}
+          onCreated={onReturnCreated}
+          onClose={() => setStartingReturn(false)}
         />
       )}
       {openApplicationId && openApplication && (

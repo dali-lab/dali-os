@@ -3,7 +3,7 @@ title: Partner renewals, planning and reports
 summary: Decide which partner projects continue next term, see how many team spots partners are asking for, and read pipeline reports.
 audience: [core, admin]
 paths: [/core/partners/renewals, /core/partners/planning, /core/partners/reports, /core/partners/referrals, /core/partners/referrals/:id]
-keywords: [renewal, continue, not continuing, planning, capacity, headcount, spots, reports, funnel, fees, referral, bounty, PI, principal investigator]
+keywords: [renewal, return, returning project, reopen, continue, not continuing, planning, capacity, headcount, spots, reports, funnel, fees, referral, bounty, PI, principal investigator]
 ---
 
 These pages sit next to the partner board in Core. Open [Partners](/core/partners) and use the tabs across the top: **Applications**, **Renewals**, **Planning**, **Directory**, **Referrals** and **Reports**. Only Core can see them.
@@ -32,6 +32,14 @@ A principal investigator (PI) is the Core member responsible for a partner proje
 Click a project to open it without leaving the page. You can edit its description, and for each upcoming term set the PI and the spots it needs in each domain. Add a domain with **+ Domain**, use the minus and plus buttons to change how many spots, then click **Save** for that term. Mentor and other higher-level spots a project already has stay as they are; new spots are added as learner spots, and spots you remove come off the learner spots first.
 
 The popup also has **Planning notes**: a short status for what's going on with the project right now. Notes show only on the planning page, not on the project page, and the popup says who last edited them. Click an application to open the same kind of popup with its own planning notes and a link to its card on the Partners board. Clear the text and save to remove a note. When an application is turned into a project, its planning notes move to the new project.
+
+## Returning projects
+
+Renewals covers projects running now. For a past project that may come back, because it got funding or something got unblocked, click **Start a return** on the planning page. Pick the project and the terms it would run. This adds an application to the partner board in **New**, with the same partner organization and contact, and last term's spots as its expected members. It shows on Planning with "(return)" after its stage, and its popup links to the past project.
+
+The return moves through the board like any application. When you accept it, the button says **Reopen project**: instead of creating a new project, it adds the target terms back to the same project, so its history, files and planning notes stay in one place. Terms that already have spots keep them. If the partner is starting something fundamentally new, use a regular application instead, which creates a new project.
+
+A project can have one open return at a time.
 
 ## Reports
 

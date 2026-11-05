@@ -4,6 +4,7 @@ import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { parseColumnMapping } from "~/projects/lib/slot-roles";
 import { listActiveCoreMembers, personName, type CoreMemberOption } from "./core-members.server";
 import { PLANNING_NOTE_SELECT, toPlanningNoteView, type PlanningNoteView } from "./planning-notes.server";
+import { listReturnableProjects, type ReturnableProject } from "./partner-returns.server";
 import {
   effectivePi,
   hasSpots,
@@ -36,6 +37,7 @@ export type PlanningApplicationInfo = {
   stage: string;
   partnerName: string | null;
   note: PlanningNoteView | null;
+  continues: { projectId: string; name: string; lastTermCode: string | null } | null;
 };
 
 export type PlanningData = {
@@ -52,6 +54,7 @@ export type PlanningData = {
   intentSetup: IntentSetup;
   projectInfo: Record<string, PlanningProjectInfo>;
   applicationInfo: Record<string, PlanningApplicationInfo>;
+  returnableProjects: ReturnableProject[];
   coreMembers: CoreMemberOption[];
 };
 
@@ -106,6 +109,7 @@ export async function loadPlanningData(
       intentSetup: { kind: "no-form" },
       projectInfo: {},
       applicationInfo: {},
+      returnableProjects: [],
       coreMembers: [],
     };
   }
@@ -158,6 +162,9 @@ export async function loadPlanningData(
         domains: { select: { domainId: true, expectedMembers: true } },
         partnerOrg: { select: { name: true } },
         planningNote: PLANNING_NOTE_SELECT,
+        continuesProject: {
+          select: { id: true, name: true, projectTerms: { select: { term: { select: { code: true, sortKey: true } } } } },
+        },
       },
     }),
     prisma.staffingCycle.findUnique({
@@ -213,7 +220,10 @@ export async function loadPlanningData(
       note: toPlanningNoteView(p.planningNote),
     };
   }
-  const coreMembers = request ? await listActiveCoreMembers(request) : [];
+  const [coreMembers, returnableProjects] = await Promise.all([
+    request ? listActiveCoreMembers(request) : Promise.resolve([]),
+    listReturnableProjects(term.sortKey),
+  ]);
 
   const items: PlanningItem[] = [];
   const listOnlyItems: PlanningItem[] = [];
@@ -250,6 +260,14 @@ export async function loadPlanningData(
       stage: a.stage,
       partnerName: a.partnerOrg?.name ?? null,
       note: toPlanningNoteView(a.planningNote),
+      continues: a.continuesProject
+        ? {
+            projectId: a.continuesProject.id,
+            name: a.continuesProject.name,
+            lastTermCode:
+              [...a.continuesProject.projectTerms].sort((x, y) => y.term.sortKey - x.term.sortKey)[0]?.term.code ?? null,
+          }
+        : null,
     };
     const spotsByDomain: Record<string, number> = {};
     for (const d of a.domains) if (d.expectedMembers > 0) addSpots(spotsByDomain, d.domainId, d.expectedMembers);
@@ -263,6 +281,7 @@ export async function loadPlanningData(
       source: "new",
       state: a.stage as PlanningState,
       spotsByDomain,
+      ...(a.continuesProject ? { returning: true } : {}),
     };
     (hasSpots(item) ? items : listOnlyItems).push(item);
   }
@@ -306,6 +325,7 @@ export async function loadPlanningData(
     }),
     projectInfo,
     applicationInfo,
+    returnableProjects,
     coreMembers,
   };
 }

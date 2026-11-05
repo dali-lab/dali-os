@@ -14,6 +14,9 @@ vi.mock("~/partners/lib/partner-activity.server", () => ({
   setApplicationStage: vi.fn().mockResolvedValue("New"),
 }));
 vi.mock("~/partners/lib/planning-notes.server", () => ({ movePlanningNoteToProject: vi.fn() }));
+vi.mock("~/partners/lib/partner-returns.server", () => ({
+  reopenProjectFromApplication: vi.fn().mockResolvedValue({ id: "proj-old" }),
+}));
 // Stub the registry so the BY_NAME map side-effect doesn't pull in every
 // tool module. We only need the error classes here.
 vi.mock("~/mcp/registry", () => {
@@ -47,6 +50,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { setApplicationStage } from "~/partners/lib/partner-activity.server";
 import { movePlanningNoteToProject } from "~/partners/lib/planning-notes.server";
+import { reopenProjectFromApplication } from "~/partners/lib/partner-returns.server";
 import {
   runPromotePartnerApplication,
   PROMOTE_PARTNER_APPLICATION_TOOL,
@@ -232,5 +236,53 @@ describe("promote_partner_application", () => {
     expect(createCall.data).not.toHaveProperty("projectTerms");
     expect(createCall.data).not.toHaveProperty("roleRequests");
     expect(createCall.data).not.toHaveProperty("domains");
+  });
+});
+
+describe("promote_partner_application for a returning project", () => {
+  const returning = {
+    id: "app-r",
+    title: "Research Computing",
+    summary: null,
+    resultingProjectId: null,
+    continuesProjectId: "proj-old",
+    partnerOrgId: "org-1",
+    piUserId: "pi-1",
+    targetTerms: [{ termId: "t27w" }, { termId: "t27s" }],
+    domains: [{ domainId: "eng", expectedMembers: 2 }],
+  };
+
+  it("reopens the old project instead of creating one", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.partnerApplication = { findUnique: vi.fn().mockResolvedValue(returning) };
+    const create = vi.fn();
+    const tx = { project: { create } };
+    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => (fn as (t: unknown) => unknown)(tx));
+
+    const out = await runPromotePartnerApplication("u1", { applicationId: "app-r" });
+
+    expect(out).toEqual({ projectId: "proj-old", alreadyExisted: false, reopened: true });
+    expect(create).not.toHaveBeenCalled();
+    expect(reopenProjectFromApplication).toHaveBeenCalledWith(tx, {
+      app: {
+        id: "app-r",
+        continuesProjectId: "proj-old",
+        partnerOrgId: "org-1",
+        piUserId: "pi-1",
+        targetTermIds: ["t27w", "t27s"],
+        domains: [{ domainId: "eng", expectedMembers: 2 }],
+      },
+      actorUserId: "u1",
+    });
+  });
+
+  it("refuses to reopen without a target term", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.partnerApplication = { findUnique: vi.fn().mockResolvedValue({ ...returning, targetTerms: [] }) };
+    mockPrisma.$transaction = vi.fn();
+    await expect(runPromotePartnerApplication("u1", { applicationId: "app-r" })).rejects.toMatchObject({
+      name: "McpInvalidError",
+    });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 });
