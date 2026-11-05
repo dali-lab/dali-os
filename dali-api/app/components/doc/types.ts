@@ -4,6 +4,7 @@
 // server/entry chunk.
 
 import type React from "react";
+import type * as Y from "yjs";
 import type { TocHeading } from "./blocks-util";
 import type { Features, EditorPresetName } from "./features";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
@@ -93,6 +94,10 @@ export interface DocEditorProps {
   initialContent?: DocPartialBlock[] | unknown;
   /** Presence of this prop switches the editor to collaborative mode. */
   collab?: DocCollabConfig;
+  /** Collab mode: bind to this fragment of the room's Y.Doc instead of the document body ("blocknote"). */
+  fragment?: Y.XmlFragment;
+  /** Collab mode: a BlockNote extension that replaces per-editor undo. When set, "yUndo" is disabled and undo is the host's. */
+  undoExtension?: unknown;
   /** Fired (throttled) with the live body word count as content changes. */
   onWordCountChange?: (count: number) => void;
   /** Fired when the collaborative save/sync state changes (collab mode only).
