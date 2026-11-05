@@ -1,9 +1,10 @@
-import type { BaseElement, Element, Image, Shape, Slide, Text } from "pptxtojson";
+import type { BaseElement, Element, Image, Shape, Slide, Table, Text } from "pptxtojson";
 import { STAGE_W } from "~/components/slides/deck/layouts";
 import type { FillId, ShapeKind } from "~/components/slides/deck/model";
 import { TEXT_STYLE_IDS, type TextStyleId } from "~/components/slides/deck/themes";
 import { blocksText, parseTextHtml } from "./import-html";
-import type { ImportBlock, ImportFree, ImportPlacement, ImportPlan, ImportSlide, ImportSlot, SkippedKind } from "./import-types";
+import { MAX_TABLE_COLS, MAX_TABLE_ROWS } from "~/components/slides/deck/clipboard";
+import type { ImportBlock, ImportFree, ImportInline, ImportPlacement, ImportPlan, ImportSlide, ImportSlot, SkippedKind } from "./import-types";
 
 export interface ParsedPresentation {
   slides: Slide[];
@@ -155,12 +156,28 @@ function linePlacement(el: Shape, kind: ShapeKind, scale: Scale, z: number): Imp
   return { x: Math.round(cx - length / 2), y: Math.round(cy - thickness / 2), w: length, h: thickness, rot: vertical ? 90 : Math.round((el.rotate ?? 0) % 360), z };
 }
 
+function tableBlock(el: Table): ImportBlock | null {
+  const data = Array.isArray(el.data) ? el.data.slice(0, MAX_TABLE_ROWS) : [];
+  const rows = data.map((row) =>
+    (Array.isArray(row) ? row : []).slice(0, MAX_TABLE_COLS).map((cell): ImportInline[] => {
+      const text = blocksText(parseTextHtml(cell?.text ?? "").blocks).trim();
+      return text ? [{ type: "text", text, styles: {} }] : [];
+    }),
+  );
+  const width = Math.max(0, ...rows.map((r) => r.length));
+  if (rows.length === 0 || width === 0) return null;
+  const padded = rows.map((r) => [...r, ...Array.from({ length: width - r.length }, (): ImportInline[] => [])]);
+  const header = (data[0] ?? []).length > 0 && data[0].every((c) => c?.fontBold === true);
+  return { type: "table", content: [], children: [], table: { header, rows: padded } };
+}
+
 function mapSlide(slide: Slide, index: number, size: { width: number; height: number }, skipped: ImportPlan["skipped"]): ImportSlide {
   const elements = flatten(slide.elements ?? []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const scale: Scale = { k: STAGE_W / size.width };
   const texts: TextCandidate[] = [];
   const images: Image[] = [];
   const decor: Array<{ el: Shape; kind: ShapeKind }> = [];
+  const tables: Array<{ el: Table; block: ImportBlock }> = [];
 
   for (const el of elements) {
     switch (el.type) {
@@ -179,7 +196,12 @@ function mapSlide(slide: Slide, index: number, size: { width: number; height: nu
         if (imageSource(el)) images.push(el);
         else countSkipped(skipped, "image");
         break;
-      case "table":
+      case "table": {
+        const block = tableBlock(el);
+        if (block) tables.push({ el, block });
+        else countSkipped(skipped, "table");
+        break;
+      }
       case "chart":
       case "diagram":
       case "video":
@@ -203,7 +225,7 @@ function mapSlide(slide: Slide, index: number, size: { width: number; height: nu
   const [hero, ...extra] = [...images].sort((a, b) => area(b) - area(a));
   const fullBleed = hero ? area(hero) >= size.width * size.height * FULL_BLEED : false;
 
-  const free = freeTexts.length + extra.length + decor.length > 0;
+  const free = freeTexts.length + extra.length + decor.length + tables.length > 0;
   const layoutId =
     free && !hero && title.length === 0 && subtitle.length === 0 && body.length === 0
       ? "blank"
@@ -255,6 +277,7 @@ function mapSlide(slide: Slide, index: number, size: { width: number; height: nu
       blocks: t.blocks,
       textStyle: styleForSize(t.maxFontPt * scale.k),
     })),
+    ...tables.map(({ el, block }): ImportFree => ({ kind: "text", placed: placementOf(el, scale, z(el)), blocks: [block], textStyle: "body" })),
     ...extra.map((el, i): ImportFree => ({ kind: "image", placed: placementOf(el, scale, z(el)), dataUrl: imageSource(el)!, alt: "", name: `slide-${index + 1}-extra-${i + 1}` })),
     ...decor.map(({ el, kind }): ImportFree => {
       const line = kind === "line" || kind === "arrow";

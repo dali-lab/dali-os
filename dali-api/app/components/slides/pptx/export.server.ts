@@ -1,4 +1,9 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import PptxGenJS from "pptxgenjs";
+import { chartColors } from "~/components/slides/deck/content";
+import { ICONS } from "~/components/slides/deck/icon-set";
+import { parseVideoEmbed } from "~/lib/video-embed";
 import type { DeckRead, DeckReadElement } from "~/collab/read-deck.server";
 import type { DocBlock, DocInline } from "~/collab/blocknote-server";
 import { layoutById, STAGE_H, STAGE_W, type LayoutSlot } from "~/components/slides/deck/layouts";
@@ -15,6 +20,8 @@ export interface ExportImage {
 export interface BuildPptxOptions {
   title: string;
   loadImage: (src: string) => Promise<ExportImage | null>;
+  /** Draws an SVG as a PNG (`image/png;base64,...`). Without it, icons are left out of the file. */
+  rasterize?: (svg: string, size: number) => Promise<string | null>;
   origin?: string;
 }
 
@@ -89,6 +96,7 @@ const LIST_TYPES = new Set(["bulletListItem", "numberedListItem", "checkListItem
 function blockRuns(blocks: DocBlock[], ctx: RunContext, level = 0): PptxRun[] {
   const out: PptxRun[] = [];
   for (const block of blocks) {
+    if (block.type === "table") continue;
     const content = Array.isArray(block.content) ? block.content : undefined;
     const isList = LIST_TYPES.has(block.type);
     const blockCtx: RunContext = { ...ctx, boldAll: ctx.boldAll || block.type === "heading" };
@@ -212,6 +220,126 @@ function addShape(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadEleme
   pptxSlide.addShape(pptx.ShapeType[SHAPE_TYPES[kind]], { ...box, fill: { color }, line: { type: "none" } });
 }
 
+interface TableData {
+  header: number;
+  rows: DocInline[][][];
+}
+
+function tableOf(block: DocBlock): TableData | null {
+  const content = block.content as unknown as { headerRows?: number; rows?: Array<{ cells?: Array<DocInline[] | { content?: DocInline[] }> }> } | undefined;
+  if (block.type !== "table" || !content || !Array.isArray(content.rows)) return null;
+  const rows = content.rows.map((row) => (row.cells ?? []).map((cell) => (Array.isArray(cell) ? cell : (cell.content ?? []))));
+  return rows.length ? { header: content.headerRows ?? 0, rows } : null;
+}
+
+function addTables(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef, origin?: string): void {
+  const tables = el.blocks.map(tableOf).filter((t): t is TableData => t !== null);
+  const hasText = el.blocks.some((b) => b.type !== "table" && blockRuns([b], { upper: false, origin, boldAll: false }).some((r) => r.text !== ""));
+  const top = hasText ? rect.h * 0.3 : 0;
+  const per = (rect.h - top) / Math.max(1, tables.length);
+  const border = { type: "solid" as const, pt: 1, color: resolveThemeColor(theme.colors.rule) ?? "888888" };
+  const size = Math.round(unitsToPoints(theme.textStyles.body.size) * 10) / 10;
+  tables.forEach((table, t) => {
+    const cols = Math.max(...table.rows.map((r) => r.length));
+    const rows = table.rows.map((cells, r) =>
+      Array.from({ length: cols }, (_, c) => {
+        const header = r < table.header;
+        const runs = inlineRuns(cells[c], { upper: false, origin, boldAll: header });
+        return {
+          text: (runs.length ? runs : [{ text: "", options: {} }]) as PptxGenJS.TextProps[],
+          options: { bold: header, ...(header ? { fill: { color: resolveThemeColor(theme.colors.surface) ?? "222222" } } : {}) },
+        };
+      }),
+    );
+    pptxSlide.addTable(rows as PptxGenJS.TableRow[], {
+      x: unitsToInches(rect.x),
+      y: unitsToInches(rect.y + top + t * per),
+      w: unitsToInches(rect.w),
+      colW: Array.from({ length: cols }, () => unitsToInches(rect.w) / cols),
+      border,
+      fontFace: resolveThemeFont(theme.fonts.body),
+      fontSize: size,
+      color: colorOf(theme, "fg"),
+      valign: "top",
+      margin: 0.08,
+    });
+  });
+}
+
+function addChartElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef): boolean {
+  const chart = el.chart;
+  if (!chart) return false;
+  const palette = chartColors(theme).map((c) => resolveThemeColor(c) ?? "888888");
+  const { labels, series } = chart.data;
+  const pie = chart.type === "pie";
+  const data = (pie ? series.slice(0, 1) : series).map((s) => ({ name: s.name, labels, values: s.values }));
+  const colors = pie ? labels.map((_, i) => palette[i % palette.length]) : data.map((_, i) => palette[i % palette.length]);
+  const type = chart.type;
+  const muted = colorOf(theme, "muted");
+  pptxSlide.addChart(type, data, {
+    x: unitsToInches(rect.x),
+    y: unitsToInches(rect.y),
+    w: unitsToInches(rect.w),
+    h: unitsToInches(rect.h),
+    chartColors: colors,
+    showLegend: pie || data.length > 1,
+    legendPos: pie ? "r" : "t",
+    legendColor: muted,
+    legendFontSize: 14,
+    legendFontFace: resolveThemeFont(theme.fonts.body),
+    catAxisLabelColor: muted,
+    valAxisLabelColor: muted,
+    catAxisLabelFontSize: 14,
+    valAxisLabelFontSize: 14,
+    valGridLine: { color: resolveThemeColor(theme.colors.rule) ?? "888888", size: 0.5 },
+    catGridLine: { style: "none" },
+    lineSize: 3,
+    lineDataSymbolSize: 9,
+    showPercent: pie,
+    dataLabelColor: colorOf(theme, "fg"),
+    dataLabelFontSize: 14,
+  } as PptxGenJS.IChartOpts);
+  return true;
+}
+
+async function addIconElement(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef, rasterize: BuildPptxOptions["rasterize"]): Promise<boolean> {
+  const Icon = el.icon ? ICONS[el.icon] : undefined;
+  if (!Icon || !rasterize) return false;
+  const color = resolveThemeColor(theme.colors[el.fill ?? "accent"]) ?? "FFFFFF";
+  const svg = renderToStaticMarkup(createElement(Icon, { size: 256, color: `#${color}`, strokeWidth: 1.5 }));
+  const data = await rasterize(svg, 256);
+  if (!data) return false;
+  const side = Math.min(rect.w, rect.h);
+  pptxSlide.addImage({
+    data,
+    altText: el.icon ?? "",
+    x: unitsToInches(rect.x + (rect.w - side) / 2),
+    y: unitsToInches(rect.y + (rect.h - side) / 2),
+    w: unitsToInches(side),
+    h: unitsToInches(side),
+    ...rotation(el.rot ?? 0),
+  });
+  return true;
+}
+
+function addVideoElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef): void {
+  const embed = el.videoUrl ? parseVideoEmbed(el.videoUrl) : null;
+  if (!el.videoUrl || !embed) return;
+  const box = { x: unitsToInches(rect.x), y: unitsToInches(rect.y), w: unitsToInches(rect.w), h: unitsToInches(rect.h), ...rotation(el.rot ?? 0) };
+  const hyperlink = { url: el.videoUrl, tooltip: `Open the ${embed.provider} video` };
+  pptxSlide.addShape(pptx.ShapeType.roundRect, { ...box, rectRadius: 0.2, fill: { color: resolveThemeColor(theme.colors.surface) ?? "222222" }, line: { type: "none" }, hyperlink } as PptxGenJS.ShapeProps);
+  pptxSlide.addText([{ text: `\u25B6  ${embed.provider} video`, options: { hyperlink } }], {
+    ...box,
+    margin: 0,
+    align: "center",
+    valign: "middle",
+    fontFace: resolveThemeFont(theme.fonts.body),
+    fontSize: Math.round(unitsToPoints(theme.textStyles.body.size) * 10) / 10,
+    color: colorOf(theme, "accent"),
+    bold: true,
+  });
+}
+
 export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Promise<BuiltPptx> {
   const theme = themeById(deck.themeId);
   const pptx = new PptxGenJS();
@@ -240,7 +368,15 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
       const rect = own ?? slot?.rect;
       if (!rect) continue;
       const place: Place = { rect, rot: el.rot ?? 0, align: slot?.align ?? "left", valign: slot?.valign ?? "top", style: slot?.style ?? "body" };
-      if (el.kind === "text" && (!slot || slot.kind === "text")) addText(pptxSlide, el, place, theme, opts.origin);
+      if (el.kind === "text" && (!slot || slot.kind === "text")) {
+        const hasTable = el.blocks.some((b) => b.type === "table");
+        const hasOther = el.blocks.some((b) => b.type !== "table");
+        if (!hasTable || hasOther) addText(pptxSlide, el, hasTable ? { ...place, rect: { ...place.rect, h: place.rect.h * 0.3 } } : place, theme, opts.origin);
+        if (hasTable) addTables(pptxSlide, el, rect, theme, opts.origin);
+      } else if (el.kind === "chart" && !slot && own) addChartElement(pptx, pptxSlide, el, own, theme);
+      else if (el.kind === "icon" && !slot && own) {
+        if (!(await addIconElement(pptxSlide, el, own, theme, opts.rasterize))) skippedImages++;
+      } else if (el.kind === "video" && !slot && own) addVideoElement(pptx, pptxSlide, el, own, theme);
       else if (el.kind === "image" && (!slot || slot.kind === "image")) {
         if (!(await addImage(pptxSlide, el, place, opts.loadImage))) skippedImages++;
       } else if (el.kind === "shape" && !slot && own) addShape(pptx, pptxSlide, el, own, theme);

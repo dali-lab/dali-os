@@ -349,3 +349,38 @@ describe("free items", () => {
     expect(out.skipped.image).toBe(1);
   });
 });
+
+describe("writeBlocks tables and code", () => {
+  const read = (blocks: ImportBlock[]) => {
+    const doc = new Y.Doc();
+    const fragment = doc.getXmlFragment("f");
+    writeBlocks(fragment, blocks);
+    return fragmentToBlocks(fragment);
+  };
+  const text = (t: string, styles: Record<string, boolean> = {}) => [{ type: "text" as const, text: t, styles }];
+
+  it("writes a table the server reader decodes with its header row and cell text", () => {
+    const [table] = read([
+      { type: "table", content: [], children: [], table: { header: true, rows: [[text("A"), text("B", { bold: true })], [text("1"), []]] } },
+    ]);
+    const content = table.content as unknown as { headerRows?: number; rows: Array<{ cells: Array<{ content: Array<{ text: string; styles: Record<string, boolean> }> }> }> };
+    expect(table.type).toBe("table");
+    expect(content.headerRows).toBe(1);
+    expect(content.rows).toHaveLength(2);
+    expect(content.rows[0].cells.map((c) => c.content[0].text)).toEqual(["A", "B"]);
+    expect(content.rows[0].cells[1].content[0].styles).toEqual({ bold: true });
+    expect(content.rows[1].cells[1].content).toEqual([]);
+  });
+
+  it("writes a table without a header row when asked", () => {
+    const [table] = read([{ type: "table", content: [], children: [], table: { header: false, rows: [[text("A")]] } }]);
+    expect((table.content as unknown as { headerRows?: number }).headerRows ?? 0).toBe(0);
+  });
+
+  it("writes a code block with its language and text", () => {
+    const [code] = read([{ type: "codeBlock", content: text("const a = 1;"), children: [], language: "typescript" }]);
+    expect(code.type).toBe("codeBlock");
+    expect(code.props.language).toBe("typescript");
+    expect((code.content as Array<{ text: string }>)[0].text).toBe("const a = 1;");
+  });
+});

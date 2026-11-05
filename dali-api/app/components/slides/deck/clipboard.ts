@@ -1,4 +1,5 @@
-import type { ImportBlock, ImportInline } from "~/components/slides/pptx/import-types";
+import type { ImportBlock, ImportInline, ImportTable } from "~/components/slides/pptx/import-types";
+import { cleanChart, cleanIcon, cleanVideoUrl, type ChartSpec } from "./content";
 import { placementOf, expandToLeaves, type Placed } from "./freeform";
 import { boundsOf, rotatedBounds } from "./geometry";
 import { FILL_IDS, SHAPE_KINDS, type FillId, type ShapeKind } from "./model";
@@ -14,7 +15,7 @@ const MAX_DEPTH = 4;
 const MAX_TEXT = 20_000;
 const MAX_ALT = 500;
 
-export type ClipKind = "text" | "image" | "shape" | "group";
+export type ClipKind = "text" | "image" | "shape" | "group" | "chart" | "icon" | "video";
 
 export interface ClipItem {
   key: string;
@@ -27,6 +28,9 @@ export interface ClipItem {
   textStyle?: TextStyleId;
   blocks?: ImportBlock[];
   children?: string[];
+  chart?: ChartSpec;
+  icon?: string;
+  videoUrl?: string;
 }
 
 const MARKS = ["bold", "italic", "underline", "strike"] as const;
@@ -45,13 +49,49 @@ function inlinesOf(content: unknown): ImportInline[] {
   return out;
 }
 
-function blocksOf(blocks: unknown): ImportBlock[] {
-  if (!Array.isArray(blocks)) return [];
-  return (blocks as Array<Record<string, unknown>>).map((b) => ({
+export const MAX_TABLE_ROWS = 50;
+export const MAX_TABLE_COLS = 20;
+const LANGUAGE = /^[a-z0-9+#.-]{1,40}$/i;
+
+function tableOf(content: unknown): ImportTable | null {
+  if (!isObj(content) || !Array.isArray(content.rows)) return null;
+  const rows = (content.rows as unknown[]).slice(0, MAX_TABLE_ROWS).map((row) => {
+    const cells = isObj(row) && Array.isArray(row.cells) ? (row.cells as unknown[]) : [];
+    return cells.slice(0, MAX_TABLE_COLS).map((cell) => inlinesOf(isObj(cell) ? cell.content : cell));
+  });
+  if (rows.length === 0 || rows.every((r) => r.length === 0)) return null;
+  const width = Math.max(...rows.map((r) => r.length));
+  const padded = rows.map((r) => [...r, ...Array.from({ length: width - r.length }, (): ImportInline[] => [])]);
+  const header = typeof content.headerRows === "number" && content.headerRows > 0;
+  return { header, rows: padded };
+}
+
+function importTableOf(raw: unknown): ImportTable | null {
+  if (!isObj(raw) || !Array.isArray(raw.rows)) return null;
+  const rows = (raw.rows as unknown[]).slice(0, MAX_TABLE_ROWS).map((row) => (Array.isArray(row) ? row : []).slice(0, MAX_TABLE_COLS).map((cell) => inlinesOf(cell)));
+  return rows.length && rows.some((r) => r.length) ? { header: raw.header === true, rows } : null;
+}
+
+function blockOf(b: Record<string, unknown>): ImportBlock {
+  const children = blocksOf(b.children);
+  if (b.type === "table") {
+    const table = isObj(b.table) ? importTableOf(b.table) : tableOf(b.content);
+    if (table) return { type: "table", content: [], children, table };
+  }
+  if (b.type === "codeBlock") {
+    const language = isObj(b.props) && typeof b.props.language === "string" && LANGUAGE.test(b.props.language) ? b.props.language : "text";
+    return { type: "codeBlock", content: inlinesOf(b.content), children, language };
+  }
+  return {
     type: b.type === "bulletListItem" || b.type === "checkListItem" ? "bulletListItem" : b.type === "numberedListItem" ? "numberedListItem" : "paragraph",
     content: inlinesOf(b.content),
-    children: blocksOf(b.children),
-  }));
+    children,
+  };
+}
+
+function blocksOf(blocks: unknown): ImportBlock[] {
+  if (!Array.isArray(blocks)) return [];
+  return (blocks as Array<Record<string, unknown>>).map(blockOf);
 }
 
 /** Plain blocks for the clipboard from a text element's rich blocks. Formatting beyond bold, italic, underline, strike and links is dropped. */
@@ -77,6 +117,9 @@ function itemOf(slide: RenderSlide, el: RenderElement): ClipItem | null {
   if (el.kind === "text") return { ...base, kind: "text", blocks: importBlocksOf(el.blocks), ...(el.textStyle ? { textStyle: el.textStyle } : {}) };
   if (el.kind === "image") return { ...base, kind: "image", src: el.src ?? "", alt: el.alt ?? "" };
   if (el.kind === "shape") return { ...base, kind: "shape", shape: el.shape ?? "rect", ...(el.fill ? { fill: el.fill } : {}) };
+  if (el.kind === "chart" && el.chart) return { ...base, kind: "chart", chart: el.chart };
+  if (el.kind === "icon" && el.icon) return { ...base, kind: "icon", icon: el.icon, ...(el.fill ? { fill: el.fill } : {}) };
+  if (el.kind === "video" && el.videoUrl) return { ...base, kind: "video", videoUrl: el.videoUrl };
   return null;
 }
 
@@ -134,7 +177,14 @@ function cleanBlocks(blocks: unknown, budget: { chars: number; blocks: number },
   for (const block of blocksOf(blocks)) {
     if (budget.blocks <= 0) break;
     budget.blocks--;
-    out.push({ type: block.type, content: cleanInlines(block.content, budget), children: cleanBlocks(block.children, budget, depth + 1) });
+    const table = block.table && { header: block.table.header, rows: block.table.rows.map((row) => row.map((cell) => cleanInlines(cell, budget))) };
+    out.push({
+      type: block.type,
+      content: cleanInlines(block.content, budget),
+      children: cleanBlocks(block.children, budget, depth + 1),
+      ...(table ? { table } : {}),
+      ...(block.language ? { language: block.language } : {}),
+    });
   }
   return out;
 }
@@ -188,6 +238,18 @@ export function parseClipboard(text: string): ClipItem[] | null {
         shape: SHAPE_KINDS.includes(raw.shape as ShapeKind) ? (raw.shape as ShapeKind) : "rect",
         ...(FILL_IDS.includes(raw.fill as FillId) ? { fill: raw.fill as FillId } : {}),
       });
+    } else if (raw.kind === "chart") {
+      const chart = cleanChart(raw.chart);
+      if (!chart) continue;
+      out.push({ ...base, kind: "chart", chart });
+    } else if (raw.kind === "icon") {
+      const icon = cleanIcon(raw.icon);
+      if (!icon) continue;
+      out.push({ ...base, kind: "icon", icon, ...(FILL_IDS.includes(raw.fill as FillId) ? { fill: raw.fill as FillId } : {}) });
+    } else if (raw.kind === "video") {
+      const videoUrl = cleanVideoUrl(raw.videoUrl);
+      if (!videoUrl) continue;
+      out.push({ ...base, kind: "video", videoUrl });
     } else if (raw.kind === "group") {
       out.push({ ...base, kind: "group", children: Array.isArray(raw.children) ? raw.children.filter((c): c is string => typeof c === "string") : [] });
     } else continue;

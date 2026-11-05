@@ -97,3 +97,21 @@ export async function renderHtmlToPdf(html: string, opts: RenderPdfOptions = {})
     }
   });
 }
+
+/** An SVG drawn on a transparent background and returned as `image/png;base64,...`, for places that cannot take SVG. */
+export async function renderSvgToPng(svg: string, size: number): Promise<string | null> {
+  return serialized(async () => {
+    const browser = await getBrowser();
+    const context = await browser.newContext({ viewport: { width: size, height: size } });
+    try {
+      const page = await context.newPage();
+      await page.setContent(`<!doctype html><html><body style="margin:0;background:transparent">${svg}</body></html>`, { waitUntil: "load" });
+      const png = await page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
+      return `image/png;base64,${Buffer.from(png).toString("base64")}`;
+    } catch {
+      return null;
+    } finally {
+      await context.close();
+    }
+  });
+}

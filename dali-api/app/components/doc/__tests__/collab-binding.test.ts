@@ -30,9 +30,10 @@ describe("undoOptions", () => {
 });
 
 describe("slide preset", () => {
-  it("is minimal: mentions and images only, nothing that needs a gutter or block library", () => {
-    expect(resolveFeatures("slide")).toEqual({ mentions: true, images: true });
+  it("is minimal: mentions, images and tables, nothing that needs a gutter or block library", () => {
+    expect(resolveFeatures("slide")).toEqual({ mentions: true, images: true, tables: true });
     expect(EDITOR_PRESETS.slide.columns).toBeUndefined();
     expect(EDITOR_PRESETS.slide.components).toBeUndefined();
+    expect(EDITOR_PRESETS.slide.richBlocks).toBeUndefined();
   });
 });

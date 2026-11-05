@@ -12,7 +12,7 @@ You can move slides between DALI OS and PowerPoint. Text, images and speaker not
 
 Open the deck, click the **⋯** menu and choose **Download PowerPoint**, or open the **Deck** tab on the right and click **Download PowerPoint**. Anyone who can view the deck can download it.
 
-The file has one slide per slide in the deck, in order, with your theme's background and fonts, editable text boxes, images and speaker notes. Slides you deleted are left out. The order in which things appear on a slide is not included. The fonts are Plus Jakarta Sans and Mulish, so slides use a stand-in font on a computer that doesn't have them.
+The file has one slide per slide in the deck, in order, with your theme's background and fonts, editable text boxes, images and speaker notes. Tables become PowerPoint tables and charts become PowerPoint charts, so you can edit their numbers in PowerPoint. Icons come across as pictures. A video becomes a card that opens the video link when you click it. Code blocks keep their text in a monospace font. Slides you deleted are left out. The order in which things appear on a slide is not included. The fonts are Plus Jakarta Sans and Mulish, so slides use a stand-in font on a computer that doesn't have them.
 
 ## Add slides from a PowerPoint file
 
@@ -20,7 +20,7 @@ Open a deck you can edit, then click **⋯** and choose **Import slides**, or us
 
 Each slide is matched to the closest layout. Titles, subtitles and body text go into the layout's text boxes, the largest picture becomes the slide's image, and speaker notes come across. When the import finishes you see how many slides were added.
 
-Some things can't be imported: tables, charts, SmartArt diagrams, videos, audio, equations and extra pictures on a slide. The message at the end says how many items were left out so you know which slides to check.
+Tables come across as tables, placed where they were on the slide, with the first row as the header when it is bold. Some things can't be imported: charts, SmartArt diagrams, videos, audio, equations and extra pictures on a slide. The message at the end says how many items were left out so you know which slides to check.
 
 Old .ppt files aren't supported. Save the file as .pptx in PowerPoint first.
 

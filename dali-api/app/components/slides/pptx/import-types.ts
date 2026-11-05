@@ -9,10 +9,17 @@ export interface ImportInline {
   content?: ImportInline[];
 }
 
+export interface ImportTable {
+  header: boolean;
+  rows: ImportInline[][][];
+}
+
 export interface ImportBlock {
-  type: "paragraph" | "bulletListItem" | "numberedListItem";
+  type: "paragraph" | "bulletListItem" | "numberedListItem" | "codeBlock" | "table";
   content: ImportInline[];
   children: ImportBlock[];
+  language?: string;
+  table?: ImportTable;
 }
 
 export interface ImportImage {

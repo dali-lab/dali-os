@@ -14,6 +14,7 @@ import {
   textOf,
 } from "~/components/slides/deck/model";
 import { buildOf } from "~/components/slides/deck/builds";
+import { contentFields, type ChartSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
 import { geometryFields, linkGroups, shapeFields, type RenderSlide } from "~/components/slides/deck/snapshot";
@@ -40,6 +41,9 @@ export interface DeckReadElement {
   shape?: ShapeKind;
   fill?: FillId;
   children?: string[];
+  chart?: ChartSpec;
+  icon?: string;
+  videoUrl?: string;
 }
 
 export interface DeckReadSlide {
@@ -87,6 +91,7 @@ export function readDeck(live: Y.Doc): DeckRead {
           ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
           ...geometryFields((k) => el.get(k)),
           ...shapeFields((k) => el.get(k)),
+          ...contentFields((k) => el.get(k)),
         });
       });
       elements.sort(compareZ);
@@ -164,6 +169,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
         ...(e.buildBullets ? { buildBullets: true } : {}),
         ...geometryFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...shapeFields((k) => (e as unknown as Record<string, unknown>)[k]),
+        ...contentFields((k) => (e as unknown as Record<string, unknown>)[k]),
       }))),
     })),
   };

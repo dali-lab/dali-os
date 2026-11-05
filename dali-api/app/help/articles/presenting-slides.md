@@ -39,8 +39,12 @@ While someone is presenting, people with the deck open follow along on their own
 
 ## Make things appear one step at a time
 
-Select a text box or an image on a slide and open the **Text** tab in the inspector. Under **Appears**, choose **With slide** or a step number. A small badge on the slide shows which step it belongs to.
+Select a text box, image, chart, table or other item on a slide and open the **Text** tab in the inspector. Under **Appears**, choose **With slide** or a step number. A small badge on the slide shows which step it belongs to.
 
 For a text box, turn on **Bullets one at a time** to show one top-level bullet per step after the box itself appears.
 
 When you present, the forward keys go through the steps of a slide before moving to the next slide. The presenter view shows **Step 2 of 3**, and followers see the same step you do. In the editor and in the filmstrip, everything shows.
+
+## Play a video
+
+A video on a slide shows as a card with a play button. Click it while presenting to play the video in place. Clicking it does not move to the next slide. Press the forward keys to carry on when it is done.

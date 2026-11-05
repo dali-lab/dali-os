@@ -137,7 +137,7 @@ describe("SlidesEditorImpl", () => {
   it("offers PowerPoint download to everyone and import only to editors", () => {
     h.snap = snap(1);
     const menu = (el: HTMLElement) => [...el.querySelectorAll("[data-menu-items] button")].map((b) => b.textContent);
-    expect(menu(render(true))).toEqual(["Download PowerPoint", "Import slides"]);
+    expect(menu(render(true))).toEqual(["Download PowerPoint", "Import slides", "Find and replace", "Keyboard shortcuts"]);
     act(() => root.unmount());
     root = createRoot(container);
     expect(menu(render(false))).toEqual(["Download PowerPoint"]);

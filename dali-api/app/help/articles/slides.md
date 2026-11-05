@@ -29,7 +29,7 @@ If you only have view access, the deck opens straight into the viewer.
 
 When the live deck editor is on for you, you can put text, images and shapes anywhere on a slide, not just in the layout's boxes. Choose the **Blank** layout for an empty slide.
 
-- **Add an item**: click **Text box** or **Shape** in the toolbar, then click the slide where it should go. Shapes are rectangles, rounded rectangles, ellipses, lines and arrows. **Image** adds a picture in the middle of the slide.
+- **Add an item**: open **Insert** in the toolbar. Choose **Text box** or a shape, then click the slide where it should go. Shapes are rectangles, rounded rectangles, ellipses, lines and arrows. **Image** and everything in the next section is added in the middle of the slide.
 - **Move, resize and rotate**: drag an item to move it, drag a handle to resize it, and drag the dot above it to turn it. Pictures keep their proportions when you drag a corner. Hold **Shift** while resizing to flip that, and while turning to move in 15 degree steps. Guides show when edges and centers line up with other items or the slide margins, and numbers show the space between items. Hold **⌘** to skip snapping. Turn snapping and the grid on or off in the inspector.
 - **Edit text**: click a selected text box again to type in it. Drag its border to move it.
 - **Move a layout box**: dragging a title, body or image box lifts it off the layout. It keeps its spot if you change layouts. Select it and choose **Snap back to layout** in the inspector to put it back.
@@ -37,7 +37,26 @@ When the live deck editor is on for you, you can put text, images and shapes any
 - **Fine tuning**: the inspector tab for the selected item has X, Y, width, height and rotation, align to the slide, **Bring forward** and **Send back**, and a theme fill for shapes. Arrow keys nudge by 1, and Shift with an arrow nudges by 10.
 - **Delete, copy and paste**: Delete removes the selected item. ⌘C, ⌘X and ⌘V copy, cut and paste, also into another deck, and ⌘D duplicates.
 
-Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate or group is one step for **Undo**. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, rectangles, ellipses and lines where they were on the slide.
+Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate or group is one step for **Undo**. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, tables, rectangles, ellipses and lines where they were on the slide.
+
+## Insert tables, charts, icons, emoji, code and video
+
+Everything here is a free item. You can move, resize, rotate, group, copy, comment on and animate it like a text box or shape.
+
+- **Table**: **Insert**, then **Table** adds a table with a header row. Type in the cells. Hover the table's edges to add or remove rows and columns, and open a row or column menu to turn the header row on or off. The table takes the deck's theme.
+- **Charts**: choose **Bar chart**, **Line chart** or **Pie chart**. Select the chart and edit its numbers in the inspector. You can change the type, add rows and series, or paste cells copied from a spreadsheet to replace the data. A pie chart uses the first series. Charts use the deck's theme colors.
+- **Icon**: opens a searchable list of icons. Select an icon to change it or pick another color in the inspector.
+- **Emoji**: adds an emoji as large text. Resize the text box to make it bigger.
+- **Code block**: adds a text box with a code block in it. Pick the language from the block's own menu.
+- **Video**: paste a YouTube link. The slide shows a video card while you edit. When you present, click the card to play the video on the slide.
+
+## Find and replace
+
+Press **⌘F**, or choose **Find and replace** in the **⋯** menu. It searches the text on every slide and the speaker notes. The arrows step through matches and show each one's slide. **Replace** changes the current match, and **Replace all** changes every match, and one **Undo** puts them all back. Turn on **Match case** to match capital letters exactly.
+
+## Keyboard shortcuts
+
+Press **?**, or choose **Keyboard shortcuts** in the **⋯** menu, to see every shortcut for editing, selecting, arranging and presenting.
 
 ## Download as PDF
 

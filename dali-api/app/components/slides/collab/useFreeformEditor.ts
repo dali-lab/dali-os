@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseClipboard, serializeSelection } from "~/components/slides/deck/clipboard";
 import {
+  addChart,
+  addCodeBlock,
+  addEmoji,
+  addIcon,
   addShape,
+  addTable,
   addTextBox,
+  addVideo,
   alignElements,
   deleteElements,
   distributeElements,
@@ -11,13 +17,17 @@ import {
   moveElements,
   pasteItems,
   reorderElements,
+  setChart,
   setFill,
+  setIconName,
   setPlacements,
+  setVideoUrl,
   snapBack,
   ungroupElements,
 } from "~/components/slides/deck/freeform-ops";
 import { selectionTarget, type Placed } from "~/components/slides/deck/freeform";
 import { nudgeDelta } from "~/components/slides/deck/geometry";
+import type { ChartSpec, ChartType } from "~/components/slides/deck/content";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import type { ArmedTool } from "./FreeformLayer";
 import type { InspectorFreeform } from "./ElementInspector";
@@ -27,6 +37,18 @@ import { useSlideDrags, type DeckDoc } from "./useDeckDoc";
 
 const inEditable = (target: EventTarget | null) => Boolean((target as HTMLElement | null)?.closest?.("[contenteditable='true'], input, textarea, select"));
 
+type At = { x: number; y: number };
+
+/** Each puts one element on the current slide as one undo step, selects it, and returns its id. */
+export interface ContentInsert {
+  table: (at?: At) => string | null;
+  code: (at?: At) => string | null;
+  chart: (type: ChartType, at?: At) => string | null;
+  icon: (name: string, at?: At) => string | null;
+  emoji: (emoji: string, at?: At) => string | null;
+  video: (url: string, at?: At) => string | null;
+}
+
 export interface FreeformEditor {
   selection: string[];
   setSelection: (ids: string[]) => void;
@@ -34,6 +56,7 @@ export interface FreeformEditor {
   inspector: InspectorFreeform;
   armed: ArmedTool | null;
   arm: (tool: ArmedTool | null) => void;
+  insert: ContentInsert;
 }
 
 /** Selection, the armed insert tool, and every freeform edit for the slide on screen. Each gesture is one undo step. */
@@ -98,6 +121,27 @@ export function useFreeformEditor({
     [],
   );
 
+  const insert = useMemo<ContentInsert>(() => {
+    const place = (make: (d: DeckDoc, slideId: string) => string | null, edit = false) => {
+      const { deck: d, slide: s } = latest.current;
+      if (!d || !s) return null;
+      const id = d.undo.step(() => make(d, s.id));
+      if (id) {
+        setSelectionState([id]);
+        if (edit) setEditingId(id);
+      }
+      return id;
+    };
+    return {
+      table: (at) => place((d, sid) => addTable(d.doc, sid, at), true),
+      code: (at) => place((d, sid) => addCodeBlock(d.doc, sid, at), true),
+      chart: (type, at) => place((d, sid) => addChart(d.doc, sid, type, at)),
+      icon: (name, at) => place((d, sid) => addIcon(d.doc, sid, name, at)),
+      emoji: (emoji, at) => place((d, sid) => addEmoji(d.doc, sid, emoji, at)),
+      video: (url, at) => place((d, sid) => addVideo(d.doc, sid, url, at)),
+    };
+  }, []);
+
   const inspector = useMemo<InspectorFreeform>(
     () => ({
       onPlace: (id, placed) => run((d, s) => setPlacements(d.doc, s.id, { [id]: placed })),
@@ -125,6 +169,13 @@ export function useFreeformEditor({
       onReorder: (dir) => run((d, s, ids) => reorderElements(d.doc, s.id, ids, dir)),
       onSnapBack: (id) => run((d, s) => snapBack(d.doc, s.id, [id])),
       onFill: (fill) => run((d, s, ids) => setFill(d.doc, s.id, ids, fill)),
+      onChart: (id: string, chart: ChartSpec) => run((d, s) => setChart(d.doc, s.id, id, chart)),
+      onIcon: (id: string, name: string) => run((d, s) => setIconName(d.doc, s.id, id, name)),
+      onVideo: (id: string, url: string) => {
+        let ok = false;
+        run((d, s) => void (ok = setVideoUrl(d.doc, s.id, id, url)));
+        return ok;
+      },
       onDeselect: () => setSelectionState([]),
       prefs,
       onPrefs,
@@ -221,5 +272,5 @@ export function useFreeformEditor({
     [live, setSelection, editingId, prefs, armed, onPlace, onCommit, drags.peers, drags.publish],
   );
 
-  return { selection: live, setSelection, stage, inspector, armed, arm: setArmed };
+  return { selection: live, setSelection, stage, inspector, armed, arm: setArmed, insert };
 }

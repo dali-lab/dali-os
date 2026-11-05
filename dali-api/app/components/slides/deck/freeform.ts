@@ -16,6 +16,12 @@ export const FREE_DEFAULTS = {
   ellipse: { w: 400, h: 400 },
   line: { w: 480, h: 8 },
   arrow: { w: 480, h: 56 },
+  table: { w: 1040, h: 360 },
+  code: { w: 1040, h: 360 },
+  chart: { w: 960, h: 540 },
+  icon: { w: 240, h: 240 },
+  video: { w: 960, h: 540 },
+  emoji: { w: 240, h: 200 },
 } as const;
 
 export function explicitPlacement(el: RenderElement): Placed | null {
