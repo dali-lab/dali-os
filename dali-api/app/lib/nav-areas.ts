@@ -451,7 +451,7 @@ export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/ro
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor({ community: true, "onboarding-journeys": true, "refer-a-partner": true }),
+  ...areasFor({ community: true, "onboarding-journeys": true, "refer-a-partner": true, "core-taskboard": true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: the sidebar

@@ -59,7 +59,7 @@ export default function CoreTaskboardPage() {
   const { projectId, tasks, options, currentUserId, currentUserName } = useLoaderData<typeof loader>();
   return (
     <div className="flex flex-col gap-6">
-      <OsPageHeader title="Taskboard" description="Core's own tasks, in one place." />
+      <OsPageHeader title="Taskboard" />
       <CoreTaskBoard
         projectId={projectId}
         initialTasks={tasks}
