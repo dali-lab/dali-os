@@ -229,6 +229,40 @@ describe("thumbnail menu in the editor", () => {
   });
 });
 
+describe("undoing New slide", () => {
+  const manager = () => (h.undo as { manager: Y.UndoManager }).manager;
+  const shown = () => (h.stage as unknown as { slide: { id: string } }).slide.id;
+
+  it("tombstones the new slide and does not leave it selected", () => {
+    const [a, b, c] = threeSlides();
+    act1(a, "new-after");
+    const added = ids()[1];
+    expect(stackSize()).toBe(1);
+    expect(shown()).toBe(added);
+    act(() => void manager().undo());
+    rerender();
+    expect(ids()).toEqual([a, b, c]);
+    expect(shown()).toBe(a);
+    act(() => void manager().redo());
+    rerender();
+    expect(ids()[1]).toBe(added);
+  });
+
+  it("undoes a duplicated slide and a pasted slide as one step each", async () => {
+    const [a, , c] = threeSlides();
+    act1(a, "duplicate");
+    expect(stackSize()).toBe(1);
+    act(() => void manager().undo());
+    expect(ids()).toHaveLength(3);
+    await act(async () => menu(a).find((x) => x.id === "copy-slide")!.run!());
+    manager().clear();
+    await act(async () => menu(c).find((x) => x.id === "paste-slide")!.run!());
+    expect(stackSize()).toBe(1);
+    act(() => void manager().undo());
+    expect(ids()).toHaveLength(3);
+  });
+});
+
 describe("images dropped or pasted on the slide", () => {
   const file = (name: string) => new File(["x"], name, { type: "image/png" });
   const freeImages = () => slides()[0].elements.filter((e) => e.kind === "image" && !e.slot);

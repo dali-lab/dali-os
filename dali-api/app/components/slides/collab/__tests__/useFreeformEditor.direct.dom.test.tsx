@@ -163,7 +163,10 @@ describe("alt drag duplicate", () => {
     expect(editor.selection).toEqual([copy.id]);
     expect(undo.manager.undoStack).toHaveLength(1);
     undo.manager.undo();
-    expect(els(doc).find((e) => e.id === copy.id)).toMatchObject({ x: orig.x, y: orig.y });
+    expect(els(doc)).toHaveLength(1);
+    expect(els(doc)[0]).toMatchObject({ id: a, x: orig.x, y: orig.y });
+    undo.manager.redo();
+    expect(els(doc).find((e) => e.id === copy.id)).toMatchObject({ x: orig.x! + 200, y: orig.y });
   });
 
   it("a plain drag moves the element in one undo step", () => {
@@ -382,6 +385,35 @@ describe("menu handlers", () => {
     key("a", { metaKey: true });
     expect(editor.selection).toHaveLength(1);
     key("Escape");
+    expect(editor.selection).toEqual([]);
+  });
+});
+
+describe("undoing an insert", () => {
+  it("clears the selection of an undone insert and does not bring it back on redo", () => {
+    const { doc, undo, render } = setup();
+    act(() => void editor.insert.chart("bar", { x: 960, y: 540 }));
+    render();
+    const id = els(doc)[0].id;
+    expect(editor.selection).toEqual([id]);
+    expect(undo.manager.undoStack).toHaveLength(1);
+    act(() => void undo.manager.undo());
+    render();
+    expect(els(doc)).toHaveLength(0);
+    expect(editor.selection).toEqual([]);
+    act(() => void undo.manager.redo());
+    render();
+    expect(els(doc).map((e) => e.id)).toEqual([id]);
+  });
+
+  it("undoes a text box placed by the armed tool as one step and leaves no editing target behind", () => {
+    const { doc, undo, render } = setup();
+    act(() => editor.stage.onPlace({ type: "text" }, { x: 960, y: 540 }));
+    render();
+    expect(undo.manager.undoStack).toHaveLength(1);
+    act(() => void undo.manager.undo());
+    render();
+    expect(els(doc)).toHaveLength(0);
     expect(editor.selection).toEqual([]);
   });
 });

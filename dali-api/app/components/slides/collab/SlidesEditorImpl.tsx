@@ -134,10 +134,11 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   const [zoom, setZoom] = useState(1);
   const [thumbSel, setThumbSel] = useState<ThumbSelection>({ selected: [], anchor: null });
 
+  const undone = deletedHere && selectedId !== null && !snap.deletedBy[selectedId];
   useEffect(() => {
-    if (deletedHere || current || snap.slides.length === 0) return;
+    if ((deletedHere && !undone) || current || snap.slides.length === 0) return;
     setSelectedId(snap.slides[0].id);
-  }, [current, deletedHere, snap.slides]);
+  }, [current, deletedHere, undone, snap.slides]);
 
   const slideComments = useSlideComments(pageId, canComment);
   const [commentsOpen, setCommentsOpen] = useState(Boolean(link?.threadId));
@@ -250,10 +251,10 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   }, [editable]);
 
   const add = (layoutId: string) => {
-    if (deck) select(addSlide(deck.doc, layoutId, selectedId));
+    if (deck) select(deck.undo.step(() => addSlide(deck.doc, layoutId, selectedId)));
   };
   const duplicate = (id: string) => {
-    const copy = deck && duplicateSlide(deck.doc, id);
+    const copy = deck && deck.undo.step(() => duplicateSlide(deck.doc, id));
     if (copy) select(copy);
   };
   const remove = (id: string) => {
@@ -274,7 +275,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     const ids = actingSet(order, thumbSel.selected, id);
     const targets = snap.slides.filter((s) => ids.includes(s.id));
     const last = ids[ids.length - 1];
-    const step = (fn: () => void) => deck.undo.step(fn);
+    const step = <T,>(fn: () => T): T => deck.undo.step(fn);
     return thumbnailActions({
       targets,
       index: order.indexOf(id),
@@ -282,10 +283,10 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
       canPaste: canReadClip(),
       canComment,
       handlers: {
-        newAfter: () => select(addSlide(deck.doc, "content", last)),
+        newAfter: () => select(step(() => addSlide(deck.doc, "content", last))),
         duplicate: () => {
           let copy: string | null = null;
-          for (const sid of ids) copy = duplicateSlide(deck.doc, sid) ?? copy;
+          step(() => ids.forEach((sid) => (copy = duplicateSlide(deck.doc, sid) ?? copy)));
           if (copy) select(copy);
         },
         remove: () => {
@@ -305,7 +306,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           void readClip().then((text) => {
             const clips = parseSlideClipboard(text);
             if (!clips) return;
-            const created = pasteSlides(deck.doc, clips, last);
+            const created = step(() => pasteSlides(deck.doc, clips, last));
             if (created[0]) select(created[0]);
           });
         },

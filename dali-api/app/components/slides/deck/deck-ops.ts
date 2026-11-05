@@ -18,9 +18,34 @@ import {
 import type { TextStyleId } from "./themes";
 
 export const DECK_LOCAL = Symbol("deck-local");
-/** Creating a slide is not undoable: undo would remove its structs while a peer may be typing in it. Delete is the way back. */
+/** Untracked by undo: the first half of every insert (see insertTracked), PPTX import and text auto-height. */
 export const DECK_CREATE = Symbol("deck-create");
 
+
+type Hide = (map: Y.Map<unknown>) => void;
+
+/**
+ * Every insert goes through here. `build` writes new entries (and their text fragments) in an untracked
+ * transaction, marking each entry it wants undoable with `hide`; those entries are written deleted. A second,
+ * tracked transaction then clears `deleted`, so undo tombstones the insert and redo brings it back. Nothing is
+ * ever hard-removed, so a peer typing into a new element is never cut off. Run it inside `deckUndo.step()` to
+ * make the whole gesture one history entry.
+ */
+export function insertTracked<T>(doc: Y.Doc, build: (hide: Hide) => T): T {
+  const hidden: Array<Y.Map<unknown>> = [];
+  let out!: T;
+  doc.transact(() => {
+    out = build((map) => void hidden.push(map));
+    for (const map of hidden) map.set("deleted", true);
+  }, DECK_CREATE);
+  doc.transact(() => {
+    for (const map of hidden) {
+      map.set("deleted", false);
+      if (map.has("deletedBy")) map.delete("deletedBy");
+    }
+  }, DECK_LOCAL);
+  return out;
+}
 
 export const newId = () => crypto.randomUUID();
 
@@ -72,11 +97,12 @@ export function posAfter(doc: Y.Doc, afterId: string | null): number {
 
 export function addSlide(doc: Y.Doc, layoutId: string, afterId: string | null): string {
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const slide = newSlideMap(id, posAfter(doc, afterId), layoutId);
     slidesMap(doc).set(id, slide);
     ensureLayoutSlots(slide, layoutId);
-  }, DECK_CREATE);
+    hide(slide);
+  });
   return id;
 }
 
@@ -98,7 +124,7 @@ export function duplicateSlide(doc: Y.Doc, sourceId: string): string | null {
   const source = slidesMap(doc).get(sourceId);
   if (!source || isDeleted(source)) return null;
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const copy = newSlideMap(id, posAfter(doc, sourceId), String(source.get("layoutId")));
     source.forEach((value, key) => {
       if (key === "id" || key === "pos" || key === "deleted") return;
@@ -106,7 +132,8 @@ export function duplicateSlide(doc: Y.Doc, sourceId: string): string | null {
     });
     slidesMap(doc).set(id, copy);
     ensureLayoutSlots(copy, String(copy.get("layoutId")));
-  }, DECK_CREATE);
+    hide(copy);
+  });
   return id;
 }
 

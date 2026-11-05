@@ -5,7 +5,7 @@ import { cleanChart, cleanIcon, cleanVideoUrl, DEFAULT_CHART_DATA, type ChartSpe
 import type { ImportBlock } from "~/components/slides/pptx/import-types";
 import { cleanCrop, type Crop } from "./crop";
 import type { StyleClip } from "./style-clip";
-import { cloneValue, DECK_CREATE, DECK_LOCAL, newId } from "./deck-ops";
+import { cloneValue, DECK_CREATE, DECK_LOCAL, insertTracked, newId } from "./deck-ops";
 import { expandToLeaves, FREE_DEFAULTS, MIN_SIZE, LINE_MIN_SIZE, placementOf, type Placed } from "./freeform";
 import { alignDeltas, boundsOf, distributeDeltas, rotatedBounds, SLIDE_RECT, type AlignMode, type Axis, type Rect } from "./geometry";
 import { STAGE_H, STAGE_W } from "./layouts";
@@ -65,12 +65,13 @@ export function addTextBox(doc: Y.Doc, slideId: string, at?: Point): string | nu
   const slide = slideOf(doc, slideId);
   if (!slide) return null;
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const el = newElementMap(id, "text", topZ(slide));
     writePlacement(el, centeredAt(FREE_DEFAULTS.text, at));
     elementsOf(slide).set(id, el);
     textOf(slide).set(id, new Y.XmlFragment());
-  }, DECK_CREATE);
+    hide(el);
+  });
   return id;
 }
 
@@ -83,11 +84,12 @@ export function addFreeImage(doc: Y.Doc, slideId: string, src: string, alt: stri
     const scale = Math.min(1, FREE_DEFAULTS.image.w / natural.width, 640 / natural.height) || 1;
     size = { w: Math.max(MIN_SIZE, Math.round(natural.width * scale)), h: Math.max(MIN_SIZE, Math.round(natural.height * scale)) };
   }
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const el = newElementMap(id, "image", topZ(slide), { src, alt });
     writePlacement(el, centeredAt(size, at));
     elementsOf(slide).set(id, el);
-  }, DECK_LOCAL);
+    hide(el);
+  });
   return id;
 }
 
@@ -95,11 +97,12 @@ export function addShape(doc: Y.Doc, slideId: string, shape: ShapeKind, at?: Poi
   const slide = slideOf(doc, slideId);
   if (!slide) return null;
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const el = newElementMap(id, "shape", topZ(slide), { shape, fill });
     writePlacement(el, centeredAt(FREE_DEFAULTS[shape], at));
     elementsOf(slide).set(id, el);
-  }, DECK_LOCAL);
+    hide(el);
+  });
   return id;
 }
 
@@ -107,14 +110,15 @@ function addTextWith(doc: Y.Doc, slideId: string, size: { w: number; h: number }
   const slide = slideOf(doc, slideId);
   if (!slide) return null;
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const el = newElementMap(id, "text", topZ(slide), style ? { textStyle: style } : {});
     writePlacement(el, centeredAt(size, at));
     elementsOf(slide).set(id, el);
     const fragment = new Y.XmlFragment();
     textOf(slide).set(id, fragment);
     writeBlocks(fragment, blocks);
-  }, DECK_CREATE);
+    hide(el);
+  });
   return id;
 }
 
@@ -142,11 +146,12 @@ function addContent(doc: Y.Doc, slideId: string, kind: "chart" | "icon" | "video
   const slide = slideOf(doc, slideId);
   if (!slide) return null;
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const el = newElementMap(id, kind, topZ(slide), fields);
     writePlacement(el, centeredAt(size, at));
     elementsOf(slide).set(id, el);
-  }, DECK_LOCAL);
+    hide(el);
+  });
   return id;
 }
 
@@ -451,7 +456,7 @@ export function duplicateElements(doc: Y.Doc, slideId: string, ids: string[], of
   const idMap = mapping ?? new Map<string, string>();
   for (const l of leaves) idMap.set(l, newId());
   const result: string[] = [];
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     let z = topZ(slide);
     const sorted = leaves.map((l) => snap.elements.find((e) => e.id === l)!).sort(compareZ);
     for (const source of sorted) {
@@ -468,6 +473,7 @@ export function duplicateElements(doc: Y.Doc, slideId: string, ids: string[], of
       copy.set("deleted", false);
       if (placed) writePlacement(copy, { ...placed, x: placed.x + offset, y: placed.y + offset });
       elementsOf(slide).set(newKey, copy);
+      hide(copy);
       const fragment = textOf(slide).get(source.id);
       if (fragment) textOf(slide).set(newKey, cloneValue(fragment) as Y.XmlFragment);
       else if (source.kind === "text") textOf(slide).set(newKey, new Y.XmlFragment());
@@ -477,7 +483,9 @@ export function duplicateElements(doc: Y.Doc, slideId: string, ids: string[], of
       const children = (g.children ?? []).map((c) => idMap.get(c)).filter((c): c is string => Boolean(c));
       if (children.length < 2) continue;
       const gid = newId();
-      elementsOf(slide).set(gid, newElementMap(gid, "group", z++, { children }));
+      const group = newElementMap(gid, "group", z++, { children });
+      elementsOf(slide).set(gid, group);
+      hide(group);
       children.forEach((c) => groupedLeaves.add(c));
       result.push(gid);
     }
@@ -485,7 +493,7 @@ export function duplicateElements(doc: Y.Doc, slideId: string, ids: string[], of
       const copied = idMap.get(l)!;
       if (!groupedLeaves.has(copied)) result.push(copied);
     }
-  }, DECK_CREATE);
+  });
   return result;
 }
 
@@ -499,7 +507,7 @@ function pasteShift(items: ClipItem[], offset: number | { at: Point }): { dx: nu
   return { dx, dy };
 }
 
-export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: number; dy: number }): string[] {
+export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: number; dy: number }, hide: (map: Y.Map<unknown>) => void = () => {}): string[] {
   const idMap = new Map<string, string>(items.map((i) => [i.key, newId()]));
   const result: string[] = [];
   let z = topZ(slide);
@@ -516,6 +524,7 @@ export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: 
     const el = newElementMap(id, item.kind, z++, fields);
     writePlacement(el, { ...item.placed, x: item.placed.x + shift.dx, y: item.placed.y + shift.dy });
     elementsOf(slide).set(id, el);
+    hide(el);
     if (item.kind === "text") {
       const fragment = new Y.XmlFragment();
       textOf(slide).set(id, fragment);
@@ -528,7 +537,9 @@ export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: 
     const children = (item.children ?? []).map((c) => idMap.get(c)).filter((c): c is string => Boolean(c));
     if (children.length < 2) continue;
     const gid = newId();
-    elementsOf(slide).set(gid, newElementMap(gid, "group", z++, { children }));
+    const group = newElementMap(gid, "group", z++, { children });
+    elementsOf(slide).set(gid, group);
+    hide(group);
     children.forEach((c) => grouped.add(c));
     result.push(gid);
   }
@@ -541,9 +552,9 @@ export function pasteItems(doc: Y.Doc, slideId: string, items: ClipItem[], offse
   const slide = slideOf(doc, slideId);
   if (!slide || items.length === 0) return [];
   let result: string[] = [];
-  doc.transact(() => {
-    result = writeClipItems(slide, items, pasteShift(items, offset));
-  }, DECK_CREATE);
+  insertTracked(doc, (hide) => {
+    result = writeClipItems(slide, items, pasteShift(items, offset), hide);
+  });
   return result;
 }
 
