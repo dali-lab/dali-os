@@ -48,3 +48,7 @@ When you present, the forward keys go through the steps of a slide before moving
 ## Play a video
 
 A video on a slide shows as a card with a play button. Click it while presenting to play the video in place. Clicking it does not move to the next slide. Press the forward keys to carry on when it is done.
+
+## Transitions
+
+A slide with a transition plays it as you arrive at it, for you and for people following along. The forward keys then run the slide's build steps. If your device is set to reduce motion, slides change with no animation.

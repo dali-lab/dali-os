@@ -12,7 +12,7 @@ You can move slides between DALI OS and PowerPoint. Text, images and speaker not
 
 Open the deck, click the **⋯** menu and choose **Download PowerPoint**, or open the **Deck** tab on the right and click **Download PowerPoint**. Anyone who can view the deck can download it.
 
-The file has one slide per slide in the deck, in order, with your theme's background and fonts, editable text boxes, images and speaker notes. Tables become PowerPoint tables and charts become PowerPoint charts, so you can edit their numbers in PowerPoint. Icons come across as pictures. A video becomes a card that opens the video link when you click it. Code blocks keep their text in a monospace font. Slides you deleted are left out. The order in which things appear on a slide is not included. The fonts are Plus Jakarta Sans and Mulish, so slides use a stand-in font on a computer that doesn't have them.
+The file has one slide per slide in the deck, in order, with your theme's background and fonts, editable text boxes, images and speaker notes. Tables become PowerPoint tables and charts become PowerPoint charts, so you can edit their numbers in PowerPoint. Icons come across as pictures. A video becomes a card that opens the video link when you click it. Code blocks keep their text in a monospace font. Slide backgrounds, sections, and Dissolve and Push transitions come across. Magic Move becomes Morph in recent versions of PowerPoint and a fade in older ones. Slides you deleted are left out. The order in which things appear on a slide is not included. The fonts are Plus Jakarta Sans and Mulish, so slides use a stand-in font on a computer that doesn't have them.
 
 ## Add slides from a PowerPoint file
 
