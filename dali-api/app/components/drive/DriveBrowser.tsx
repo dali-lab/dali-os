@@ -103,7 +103,7 @@ import { CORAL_FOLDER, glyphLabel, pickGlyph, type ItemGlyph } from "~/component
 import { droppedFiles } from "~/components/drive/dropped-files";
 import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
-import { EmptyFolder } from "~/components/drive/EmptyFolder";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
 
 function useDriveText() {
@@ -1898,7 +1898,7 @@ export function DriveBrowser({
                           ? "Documents shared with you by name appear here."
                           : sId === FAVORITES_SPACE_KEY
                             ? "Items you favorite appear here."
-                            : <EmptyFolder className="py-6">This folder is empty.</EmptyFolder>
+                            : <EmptyState className="py-6">This folder is empty.</EmptyState>
                       }
                       marquee={marqueeFor(levelIdx)}
                     >
@@ -2803,7 +2803,7 @@ export function ScopeContents({
     return isSharedSpace ? (
       <EmptyLine>Documents shared with you by name appear here.</EmptyLine>
     ) : (
-      <EmptyFolder>This folder is empty. Drop files here to upload.</EmptyFolder>
+      <EmptyState>This folder is empty. Drop files here to upload.</EmptyState>
     );
   }
 

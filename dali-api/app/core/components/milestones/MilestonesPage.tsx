@@ -17,6 +17,7 @@ import { ChevronLeft, ChevronRight, GripVertical, MoreHorizontal, Plus } from "l
 import { OsPageHeader } from "~/components/os-section";
 import { useOsChrome } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { Menu, MenuItem, MultiSelect } from "~/components/ui/floating";
@@ -80,8 +81,10 @@ export function MilestonesPage({ page }: { page: MilestonesPageData }) {
       {page.term ? (
         <TermBody key={page.term.id} page={page} />
       ) : (
-        <div className={cn(os && "rounded-os-card bg-os-card", "p-8 text-center text-sm text-os-grey")}>
-          <p>{page.missingLabel} isn't set up yet. An admin needs to add the term first.</p>
+        <div className={cn(os && "rounded-os-card bg-os-card")}>
+          <EmptyState className="py-12">
+            {page.missingLabel} isn't set up yet. An admin needs to add the term first.
+          </EmptyState>
         </div>
       )}
     </div>
@@ -190,16 +193,23 @@ function TermBody({ page }: { page: MilestonesPageData }) {
     <DndContext sensors={sensors} collisionDetection={collision} onDragEnd={onDragEnd}>
       <div className="flex flex-col gap-5">
         {empty && (
-          <div className={cn(os && "rounded-os-card bg-os-card", "flex flex-wrap items-center gap-3 p-4 text-sm text-os-grey")}>
-            <span>Nothing planned for {term.label} yet.</span>
-            {page.lastYear && (
-              <Button size="sm" onClick={() => send({ intent: "fill", termId: term.id })}>
-                Fill from last year
-              </Button>
-            )}
-            <Button size="sm" variant="secondary" onClick={() => setBlank(true)}>
-              Start blank
-            </Button>
+          <div className={cn(os && "rounded-os-card bg-os-card")}>
+            <EmptyState
+              actions={
+                <>
+                  {page.lastYear && (
+                    <Button size="sm" onClick={() => send({ intent: "fill", termId: term.id })}>
+                      Fill from last year
+                    </Button>
+                  )}
+                  <Button size="sm" variant="secondary" onClick={() => setBlank(true)}>
+                    Start blank
+                  </Button>
+                </>
+              }
+            >
+              Nothing planned for {term.label} yet.
+            </EmptyState>
           </div>
         )}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-11">
@@ -304,6 +314,9 @@ function WeekDetail({
           {fmt(range.startMs)} to {fmt(range.endMs)}
         </p>
       </header>
+      {items.length > 0 && items.every((i) => i.week !== week) && (
+        <EmptyState className="py-4">Nothing for week {week} yet. Add a milestone or something to plan below.</EmptyState>
+      )}
       {(["Milestone", "Plan"] as const).map((kind) => (
         <Section
           key={kind}

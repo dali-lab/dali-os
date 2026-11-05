@@ -5,6 +5,7 @@ import { Confetti } from "~/components/Confetti";
 import { KanbanBoard } from "~/components/board/KanbanBoard";
 import { useOsChrome } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { ToggleChip } from "~/components/ui/ToggleChip";
 import { useSearchParamState } from "~/hooks/useSearchParamState";
@@ -140,10 +141,37 @@ export function CoreTaskBoard({
         </Button>
       </div>
 
-      {query.trim() && visible.length === 0 && (
-        <p className="text-sm text-muted-foreground">No tasks match &ldquo;{query.trim()}&rdquo;.</p>
-      )}
-
+      {tasks.length === 0 ? (
+        <EmptyState
+          className="py-16"
+          actions={
+            <Button onClick={() => startCreate("Todo")}>
+              <Plus className="h-4 w-4" aria-hidden />
+              New task
+            </Button>
+          }
+        >
+          No Core tasks yet.
+        </EmptyState>
+      ) : visible.length === 0 ? (
+        <EmptyState
+          className="py-16"
+          actions={
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setQuery("");
+                setAssigneeParam("");
+                setMineParam("");
+              }}
+            >
+              Clear filters
+            </Button>
+          }
+        >
+          No tasks match these filters.
+        </EmptyState>
+      ) : (
       <KanbanBoard<TaskCardModel>
         id="core-task-board"
         columns={columns}
@@ -172,6 +200,7 @@ export function CoreTaskBoard({
           />
         )}
       />
+      )}
 
       {openTask && (
         <TaskModal
