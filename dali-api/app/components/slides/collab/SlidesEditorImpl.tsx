@@ -35,6 +35,8 @@ import {
   notesFragment,
   setBuild,
   setBuildBullets,
+  applyBuildPatches,
+  setBuildEffect,
   setLayout,
   setSlideSkipped,
   setSlotImage,
@@ -646,6 +648,9 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           onClearImage={() => current && clearSlotImage(deck.doc, current.id)}
           onBuild={(slot, build) => current && setBuild(deck.doc, current.id, slot, build)}
           onBuildBullets={(slot, on) => current && setBuildBullets(deck.doc, current.id, slot, on)}
+          onBuildPlan={(patches) => current && deck.undo.step(() => applyBuildPatches(deck.doc, current.id, patches))}
+          onBuildEffect={(id, effect) => current && deck.undo.step(() => setBuildEffect(deck.doc, current.id, id, effect))}
+          onSelect={freeform.setSelection}
           onDownloadPdf={(withNotes) => window.location.assign(deckPdfUrl(pageId, withNotes))}
           onImport={pptx.pick}
           importing={pptx.busy}

@@ -1,4 +1,6 @@
 import * as Y from "yjs";
+import { BUILD_EFFECTS, MAX_BUILD_DELAY, type BuildEffect } from "./builds";
+import type { BuildPatch } from "./build-order";
 import { layoutById, SLOT_Z } from "./layouts";
 import {
   between,
@@ -219,6 +221,46 @@ export function setBuild(doc: Y.Doc, slideId: string, slot: string, build: numbe
   const slide = slidesMap(doc).get(slideId);
   const el = slide && elementsOf(slide).get(slot);
   if (el) doc.transact(() => el.set("build", build && build >= 1 ? Math.floor(build) : null), DECK_LOCAL);
+}
+
+function writeBuildPatch(el: Y.Map<unknown>, patch: BuildPatch): void {
+  el.set("build", patch.build);
+  if (patch.buildAfter) el.set("buildAfter", true);
+  else el.delete("buildAfter");
+  if (patch.buildDelay) el.set("buildDelay", patch.buildDelay);
+  else el.delete("buildDelay");
+  if (patch.buildBullets === false) el.set("buildBullets", false);
+  if (patch.buildEffect === null) el.delete("buildEffect");
+}
+
+export function applyBuildPatches(doc: Y.Doc, slideId: string, patches: Record<string, BuildPatch>): void {
+  const slide = slidesMap(doc).get(slideId);
+  if (!slide) return;
+  doc.transact(() => {
+    for (const [id, patch] of Object.entries(patches)) {
+      const el = elementsOf(slide).get(id);
+      if (el && !isDeleted(el)) writeBuildPatch(el, patch);
+    }
+  }, DECK_LOCAL);
+}
+
+export function setBuildTiming(doc: Y.Doc, slideId: string, id: string, after: boolean, delay: number | null): void {
+  const slide = slidesMap(doc).get(slideId);
+  const el = slide && elementsOf(slide).get(id);
+  if (!el) return;
+  doc.transact(() => {
+    if (after) el.set("buildAfter", true);
+    else el.delete("buildAfter");
+    if (after && delay && delay > 0) el.set("buildDelay", Math.min(MAX_BUILD_DELAY, Math.round(delay)));
+    else el.delete("buildDelay");
+  }, DECK_LOCAL);
+}
+
+export function setBuildEffect(doc: Y.Doc, slideId: string, id: string, effect: BuildEffect | null): void {
+  const slide = slidesMap(doc).get(slideId);
+  const el = slide && elementsOf(slide).get(id);
+  if (!el) return;
+  doc.transact(() => (effect && BUILD_EFFECTS.includes(effect) ? el.set("buildEffect", effect) : el.delete("buildEffect")), DECK_LOCAL);
 }
 
 export function setBuildBullets(doc: Y.Doc, slideId: string, slot: string, on: boolean): void {

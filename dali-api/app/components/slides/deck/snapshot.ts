@@ -16,7 +16,7 @@ import {
   textOf,
   type SlideMap,
 } from "./model";
-import { buildOf } from "./builds";
+import { cleanBuildFields, type BuildEffect } from "./builds";
 import { slideMetaFields, type SlideBackground, type SlideTransition } from "./slide-meta";
 import { contentFields, type ChartSpec, type PollSpec } from "./content";
 import { cleanCrop, type Crop } from "./crop";
@@ -35,6 +35,12 @@ export interface RenderElement {
   build?: number;
   /** A text slot whose top-level blocks appear one per step after its own step. */
   buildBullets?: boolean;
+  /** How the element enters while presenting. Absent means fade. */
+  buildEffect?: BuildEffect;
+  /** The step starts by itself after the previous one instead of waiting for a key press. */
+  buildAfter?: boolean;
+  /** Milliseconds to wait before an automatic step, 0 to 5000. */
+  buildDelay?: number;
   x?: number;
   y?: number;
   w?: number;
@@ -113,7 +119,6 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
   elementsOf(slide).forEach((el, elId) => {
     if (isDeleted(el)) return;
     const style = el.get("textStyle");
-    const build = buildOf(el.get("build"));
     elements.push({
       id: elId,
       kind: String(el.get("kind")),
@@ -123,8 +128,7 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
       src: str(el.get("src")),
       alt: str(el.get("alt")),
       textStyle: TEXT_STYLE_IDS.includes(style as TextStyleId) ? (style as TextStyleId) : null,
-      ...(build ? { build } : {}),
-      ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
+      ...cleanBuildFields((k) => el.get(k)),
       ...geometryFields((k) => el.get(k)),
       ...shapeFields((k) => el.get(k)),
       ...contentFields((k) => el.get(k)),

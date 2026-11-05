@@ -4,6 +4,7 @@ import { SlideBody } from "~/components/slides/SlideBody";
 import { cn } from "~/lib/cn";
 import { cropFrame } from "./crop";
 import { isVisibleAt, visibleBlocks } from "./builds";
+import { buildEnterCss } from "./build-enter";
 import { explicitPlacement, isFreeRendered, type Placed } from "./freeform";
 import { layoutById, SLOT_Z, STAGE_H, STAGE_W, type LayoutSlot } from "./layouts";
 import { placedStyle, rectStyle, u } from "./units";
@@ -39,6 +40,8 @@ export interface SlideRenderProps {
   renderFree?: (ctx: FreeContext) => ReactNode;
   /** The build step to show while presenting. Leave it out to show everything, as the editor and thumbnails do. */
   step?: number;
+  /** With `step`, the step just reached by moving forward one, so what it reveals plays its entrance effect. */
+  enterStep?: number;
   /** Element ids and slot names drawn invisible, for a transition that moves them on another layer. */
   hide?: ReadonlySet<string>;
   /** Leaves out the slide background, so a layer can fade over another slide. */
@@ -220,10 +223,11 @@ type Item =
  * A slide drawn from data and the theme alone. It fills the width of its parent at 16:9 and sizes everything
  * from `--slide-u`, one stage unit of the 1920 by 1080 design, so text and popups inside it keep their real size.
  */
-export function SlideRender({ slide, theme, placeholders = false, renderSlot, renderFree, step, hide, transparent = false, morph = false, className }: SlideRenderProps & { className?: string }) {
+export function SlideRender({ slide, theme, placeholders = false, renderSlot, renderFree, step, enterStep, hide, transparent = false, morph = false, className }: SlideRenderProps & { className?: string }) {
   const def = typeof theme === "string" ? themeById(theme) : theme;
   const layout = layoutById(slide.layoutId);
   const visible = (el: RenderElement | undefined) => !(step !== undefined && el && !isVisibleAt(el, step));
+  const enterCss = step !== undefined && enterStep !== undefined && enterStep === step ? buildEnterCss(slide, step) : "";
   const items: Item[] = [
     ...layout.slots.map((slot): Item => {
       const found = slide.elements.find((e) => e.slot === slot.slot);
@@ -263,6 +267,7 @@ export function SlideRender({ slide, theme, placeholders = false, renderSlot, re
           />
         )}
         {hide && hide.size > 0 && <style>{hiddenCss(hide)}</style>}
+        {enterCss && <style data-build-enter>{enterCss}</style>}
         {items.map((item) => {
           if (item.kind === "free") {
             const fallback = <FreeBox element={item.element} placed={item.placed} placeholders={placeholders} theme={def} />;

@@ -32,6 +32,21 @@ const boxStyle = (r: Rect & { rot?: number }) => ({
   ...(r.rot ? { transform: `rotate(${r.rot}deg)` } : {}),
 });
 
+export const FRAME_OUTSET = 4;
+
+/** A box drawn FRAME_OUTSET screen pixels outside `r` on every side, with its border outside that gap. Percent children land on the outset edge. */
+export const outsetStyle = (r: Rect & { rot?: number }, border: number) => {
+  const edge = FRAME_OUTSET + border;
+  return {
+    ...boxStyle(r),
+    boxSizing: "content-box" as const,
+    left: `calc(${pct(r.x, STAGE_W)} - ${edge}px)`,
+    top: `calc(${pct(r.y, STAGE_H)} - ${edge}px)`,
+    width: `calc(${pct(r.w, STAGE_W)} + ${FRAME_OUTSET * 2}px)`,
+    height: `calc(${pct(r.h, STAGE_H)} + ${FRAME_OUTSET * 2}px)`,
+  };
+};
+
 const signed = (n: number) => (n < 0 ? `−${Math.abs(n)}` : String(n));
 
 export interface FreeformLayerProps {
@@ -340,7 +355,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
         );
       })}
       {hoverRect && (
-        <div data-hover-outline aria-hidden className="pointer-events-none absolute border border-os-accent/60" style={boxStyle(hoverRect)} />
+        <div data-hover-outline aria-hidden className="pointer-events-none absolute border border-os-accent/60" style={outsetStyle(hoverRect, 1)} />
       )}
       {lockedHover && (
         <span
@@ -353,7 +368,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
         </span>
       )}
       {frameRect && (
-        <div data-selection-frame style={{ ...boxStyle(frameRect), pointerEvents: "none" }} className="border-[1.5px] border-os-accent">
+        <div data-selection-frame style={{ ...outsetStyle(frameRect, 1.5), pointerEvents: "none" }} className="border-[1.5px] border-os-accent">
           {editingId !== null && singleItem && (
             <>
               {(["top", "bottom"] as const).map((side) => (

@@ -22,7 +22,8 @@ import {
   type ShapeKind,
   type SlideMap,
 } from "~/components/slides/deck/model";
-import { duplicateSlide, setBuild, setBuildBullets, setLayout, setSlotImage, setThemeId } from "~/components/slides/deck/deck-ops";
+import { BUILD_EFFECTS, MAX_BUILD_DELAY, type BuildEffect } from "~/components/slides/deck/builds";
+import { duplicateSlide, setBuild, setBuildBullets, setBuildEffect, setBuildTiming, setLayout, setSlotImage, setThemeId } from "~/components/slides/deck/deck-ops";
 import {
   addChart,
   addFreeImage,
@@ -128,7 +129,10 @@ export const ELEMENT_INPUT_SCHEMA = {
     h: { type: "number", description: "Height on the stage." },
     rot: { type: "number", description: "Rotation in degrees." },
     build: { type: "integer", minimum: 0, maximum: 50, description: "The presenting step it appears at. 0 shows it from the start." },
-    buildBullets: { type: "boolean", description: "Text: show its top-level blocks one per step after its own build step." },
+    buildBullets: { type: "boolean", description: "Text: show its top-level blocks one per step, the first together with the box." },
+    buildEffect: { type: "string", enum: ["appear", "fade", "rise", "scale"], description: "How it enters while presenting. Fade when left out." },
+    buildAfter: { type: "boolean", description: "Its step plays by itself after the previous step instead of waiting for a key press." },
+    buildDelay: { type: "integer", minimum: 0, maximum: 5000, description: "Milliseconds to wait before an automatic step." },
   },
   additionalProperties: false,
 };
@@ -154,6 +158,9 @@ export type ElementInput = {
   rot?: number;
   build?: number;
   buildBullets?: boolean;
+  buildEffect?: BuildEffect;
+  buildAfter?: boolean;
+  buildDelay?: number;
 };
 
 export type DeckArgs = {
@@ -194,6 +201,9 @@ async function elementView(layoutId: string, el: DeckReadSlide["elements"][numbe
     ...(el.slot !== null && el.x !== undefined ? { detached: true } : {}),
     ...(el.build ? { build: el.build } : {}),
     ...(el.buildBullets ? { buildBullets: true } : {}),
+    ...(el.buildEffect ? { buildEffect: el.buildEffect } : {}),
+    ...(el.buildAfter ? { buildAfter: true } : {}),
+    ...(el.buildDelay ? { buildDelay: el.buildDelay } : {}),
   };
 }
 
@@ -251,6 +261,8 @@ const hasGeometry = (e: ElementInput) => GEOMETRY.some((k) => e[k] !== undefined
 function checkFields(kind: string, el: ElementMap | null, e: ElementInput, shape: string | null): void {
   if (e.markdown !== undefined && kind !== "text") throw invalid("Only text elements take markdown.");
   if (e.textStyle !== undefined && kind !== "text") throw invalid("Only text elements take a text style.");
+  if (e.buildEffect !== undefined && !BUILD_EFFECTS.includes(e.buildEffect)) throw invalid(`buildEffect must be one of ${BUILD_EFFECTS.join(", ")}.`);
+  if (e.buildDelay !== undefined && (!Number.isInteger(e.buildDelay) || e.buildDelay < 0 || e.buildDelay > MAX_BUILD_DELAY)) throw invalid(`buildDelay must be a whole number from 0 to ${MAX_BUILD_DELAY}.`);
   if (e.buildBullets !== undefined && kind !== "text") throw invalid("Only text elements build bullet by bullet.");
   if ((e.src !== undefined || e.alt !== undefined) && kind !== "image") throw invalid("Only image elements take src and alt.");
   if (e.src !== undefined) checkImageSrc(e.src);
@@ -314,6 +326,11 @@ function writeFields(doc: Y.Doc, slideId: string, slide: SlideMap, id: string, e
   if (placed) setPlacements(doc, slideId, { [id]: placed });
   if (e.build !== undefined) setBuild(doc, slideId, id, e.build || null);
   if (e.buildBullets !== undefined) setBuildBullets(doc, slideId, id, e.buildBullets);
+  if (e.buildEffect !== undefined) setBuildEffect(doc, slideId, id, e.buildEffect);
+  if (e.buildAfter !== undefined || e.buildDelay !== undefined) {
+    const current = elementsOf(slidesMap(doc).get(slideId)!).get(id);
+    setBuildTiming(doc, slideId, id, e.buildAfter ?? current?.get("buildAfter") === true, e.buildDelay ?? (current?.get("buildDelay") as number | undefined) ?? null);
+  }
 }
 
 function addElement(doc: Y.Doc, slideId: string, e: ElementInput): string {
