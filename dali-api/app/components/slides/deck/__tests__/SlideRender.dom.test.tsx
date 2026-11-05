@@ -160,3 +160,47 @@ describe("static text from a Y fragment", () => {
     expect(render({ slide: snap.slides[0], theme: snap.themeId }).textContent).toBe("Slide a");
   });
 });
+
+describe("SlideRender build steps", () => {
+  const builds = slide("split", [
+    el("title", para("Plan")),
+    el("body", [...para("one"), ...para("two"), ...para("three")], { build: 1, buildBullets: true }),
+    el("image", [], { build: 3, src: "https://example.test/a.png" }),
+  ]);
+  const view = (step?: number) => {
+    const stage = render({ slide: builds, theme: "dali-dark", step });
+    return {
+      body: stage.querySelector("[data-slot=body]"),
+      shown: stage.querySelector("[data-slot=body]")?.textContent ?? null,
+      image: stage.querySelector("[data-slot=image]"),
+      title: stage.querySelector("[data-slot=title]")?.textContent,
+    };
+  };
+
+  it("shows everything when no step is given, as the editor and thumbnails do", () => {
+    const v = view();
+    expect(v.shown).toContain("three");
+    expect(v.image).not.toBeNull();
+  });
+
+  it("hides what hasn't appeared at step 0 and keeps the rest", () => {
+    const v = view(0);
+    expect(v.title).toBe("Plan");
+    expect(v.body).toBeNull();
+    expect(v.image).toBeNull();
+  });
+
+  it("shows the slot at its step with no bullets, then one more bullet per step", () => {
+    expect(view(1).shown).toBe("");
+    expect(view(2).shown).toBe("one");
+    expect(view(3).shown).toBe("onetwo");
+    expect(view(3).image).not.toBeNull();
+    expect(view(4).shown).toBe("onetwothree");
+  });
+
+  it("does not split a slot's blocks when it isn't set to build bullets", () => {
+    const plain = slide("content", [el("body", [...para("one"), ...para("two")], { build: 1 })]);
+    const stage = render({ slide: plain, theme: "dali-dark", step: 1 });
+    expect(stage.querySelector("[data-slot=body]")!.textContent).toBe("onetwo");
+  });
+});

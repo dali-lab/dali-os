@@ -13,6 +13,7 @@ import {
   slidesMap,
   textOf,
 } from "~/components/slides/deck/model";
+import { buildOf } from "~/components/slides/deck/builds";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
@@ -28,6 +29,8 @@ export interface DeckReadElement {
   textStyle: string | null;
   blocks: DocBlock[];
   text: string;
+  build?: number;
+  buildBullets?: boolean;
 }
 
 export interface DeckReadSlide {
@@ -71,6 +74,8 @@ export function readDeck(live: Y.Doc): DeckRead {
           textStyle: str(el.get("textStyle")),
           blocks,
           text: blocksToPlainText(blocks as never),
+          ...(buildOf(el.get("build")) ? { build: buildOf(el.get("build")) } : {}),
+          ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
         });
       });
       elements.sort(compareZ);
@@ -139,6 +144,8 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
         src: e.src,
         alt: e.alt,
         textStyle: TEXT_STYLE_IDS.includes(e.textStyle as TextStyleId) ? (e.textStyle as TextStyleId) : null,
+        ...(e.build ? { build: e.build } : {}),
+        ...(e.buildBullets ? { buildBullets: true } : {}),
       })),
     })),
   };
@@ -147,4 +154,8 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
 /** Whether any live slide lacks an element for a slot its layout draws. */
 export function deckMissingSlots(read: DeckRead): boolean {
   return read.slides.some((s) => layoutById(s.layoutId).slots.some((slot) => !s.elements.some((e) => e.slot === slot.slot)));
+}
+
+export function notesBySlide(read: DeckRead): Record<string, string> {
+  return Object.fromEntries(read.slides.map((s) => [s.id, s.notes.text]));
 }

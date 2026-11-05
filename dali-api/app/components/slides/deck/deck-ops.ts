@@ -187,3 +187,15 @@ export function notesFragment(doc: Y.Doc, slideId: string): Y.XmlFragment | null
   const slide = slidesMap(doc).get(slideId);
   return slide ? notesOf(slide) : null;
 }
+
+export function setBuild(doc: Y.Doc, slideId: string, slot: string, build: number | null): void {
+  const slide = slidesMap(doc).get(slideId);
+  const el = slide && elementsOf(slide).get(slot);
+  if (el) doc.transact(() => el.set("build", build && build >= 1 ? Math.floor(build) : null), DECK_LOCAL);
+}
+
+export function setBuildBullets(doc: Y.Doc, slideId: string, slot: string, on: boolean): void {
+  const slide = slidesMap(doc).get(slideId);
+  const el = slide && elementsOf(slide).get(slot);
+  if (el) doc.transact(() => el.set("buildBullets", on), DECK_LOCAL);
+}

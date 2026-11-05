@@ -21,6 +21,8 @@ import {
   duplicateSlide,
   moveSlide,
   notesFragment,
+  setBuild,
+  setBuildBullets,
   setLayout,
   setSlotImage,
   setTextStyle,
@@ -182,7 +184,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
       </PageBarPortal>
       <PageBarPortal slot="actions">
         {canManageAccess && <PageBarShareButton onClick={() => setShareOpen(true)} />}
-        {actionsSlot}
+        {typeof actionsSlot === "function" ? actionsSlot({ currentSlideId: current?.id ?? null }) : actionsSlot}
       </PageBarPortal>
       {canManageAccess && (
         <ShareDialog page={{ id: pageId, title, workspaceType }} open={shareOpen} onClose={() => setShareOpen(false)} onChanged={() => revalidator.revalidate()} />
@@ -264,6 +266,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
           onTextStyle={(slot, style) => current && setTextStyle(deck.doc, current.id, slot, style)}
           onPickImage={pickImage}
           onClearImage={() => current && clearSlotImage(deck.doc, current.id)}
+          onBuild={(slot, build) => current && setBuild(deck.doc, current.id, slot, build)}
+          onBuildBullets={(slot, on) => current && setBuildBullets(deck.doc, current.id, slot, on)}
         />
       </div>
       <input ref={fileRef} type="file" accept={IMAGE_UPLOAD_ACCEPT} hidden onChange={(e) => (onFile(e.target.files?.[0]), (e.target.value = ""))} />

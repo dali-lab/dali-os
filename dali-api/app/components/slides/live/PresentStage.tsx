@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Maximize2 } from "lucide-react";
 import { useDesktopVersion } from "~/lib/desktop";
 import { Button } from "~/components/ui/Button";
+import { movePosition, samePosition, type DeckPosition } from "~/components/slides/deck/builds";
 import { navActionFor, nextIndex } from "./keys";
 import type { RenderSlide } from "./types";
 
@@ -9,6 +10,10 @@ export interface PresentStageProps {
   slideIds: string[];
   index: number;
   onIndexChange: (index: number) => void;
+  /** With `onPositionChange`, navigation moves through build steps as well as slides. */
+  step?: number;
+  stepsOf?: (index: number) => number;
+  onPositionChange?: (pos: DeckPosition) => void;
   renderSlide: RenderSlide;
   onExit?: () => void;
   navigable?: boolean;
@@ -17,7 +22,7 @@ export interface PresentStageProps {
 
 const ASPECT = 16 / 9;
 
-export function PresentStage({ slideIds, index, onIndexChange, renderSlide, onExit, navigable = true, children }: PresentStageProps) {
+export function PresentStage({ slideIds, index, onIndexChange, step, stepsOf, onPositionChange, renderSlide, onExit, navigable = true, children }: PresentStageProps) {
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const desktop = useDesktopVersion() != null;
@@ -38,10 +43,16 @@ export function PresentStage({ slideIds, index, onIndexChange, renderSlide, onEx
     (action: NonNullable<ReturnType<typeof navActionFor>>) => {
       if (action === "exit") return onExit?.();
       if (!navigable) return;
+      if (onPositionChange) {
+        const from = { index, step: step ?? 0 };
+        const to = movePosition(action, from, total, stepsOf ?? (() => 0));
+        if (!samePosition(from, to)) onPositionChange(to);
+        return;
+      }
       const next = nextIndex(action, index, total);
       if (next !== index) onIndexChange(next);
     },
-    [index, total, navigable, onIndexChange, onExit],
+    [index, step, stepsOf, total, navigable, onIndexChange, onPositionChange, onExit],
   );
 
   useEffect(() => {
@@ -68,7 +79,7 @@ export function PresentStage({ slideIds, index, onIndexChange, renderSlide, onEx
         onClick={() => go("next")}
         data-testid="present-slide"
       >
-        {slideId && width > 0 ? renderSlide(slideId, { width }) : null}
+        {slideId && width > 0 ? renderSlide(slideId, { width, step }) : null}
       </div>
       <div className="absolute right-3 top-3 flex items-center gap-2">
         {desktop ? (

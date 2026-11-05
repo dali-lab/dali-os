@@ -200,6 +200,57 @@ describe("Inspector", () => {
     expect(render(createElement(Inspector, { ...base, slide: { ...snap.slides[0], layoutId: "title" } })).textContent).not.toContain("Add image");
   });
 
+  describe("Appears", () => {
+    const withBuilds = (over: Record<string, unknown> = {}) => {
+      const { snap } = deck(1);
+      const slide = { ...snap.slides[0], layoutId: "content" };
+      return { ...base, slide, selectedSlot: "body", ...over };
+    };
+    const openText = (el: HTMLElement) => click([...el.querySelectorAll("[role=radio]")].find((b) => b.textContent === "Text") ?? null);
+
+    it("sets the step a text slot appears at and its bullets", () => {
+      const onBuild = vi.fn();
+      const onBuildBullets = vi.fn();
+      const el = render(createElement(Inspector, { ...withBuilds(), onBuild, onBuildBullets }));
+      openText(el);
+      click(el.querySelector("button[aria-label='Appears']"));
+      click([...document.body.querySelectorAll("[role=option]")].find((o) => o.textContent === "Step 2") ?? null);
+      expect(onBuild).toHaveBeenCalledWith("body", 2);
+      click(el.querySelector("input[role=switch]"));
+      expect(onBuildBullets).toHaveBeenCalledWith("body", true);
+    });
+
+    it("clears a build with With slide", () => {
+      const onBuild = vi.fn();
+      const { snap } = deck(1);
+      const slide = { ...snap.slides[0], layoutId: "content", elements: snap.slides[0].elements.map((e) => (e.slot === "body" ? { ...e, build: 2 } : e)) };
+      const el = render(createElement(Inspector, { ...base, slide, selectedSlot: "body", onBuild }));
+      openText(el);
+      expect(el.querySelector("button[aria-label='Appears']")!.textContent).toContain("Step 2");
+      click(el.querySelector("button[aria-label='Appears']"));
+      click([...document.body.querySelectorAll("[role=option]")].find((o) => o.textContent === "With slide") ?? null);
+      expect(onBuild).toHaveBeenCalledWith("body", null);
+    });
+
+    it("offers a step past the highest one in use", () => {
+      const { snap } = deck(1);
+      const slide = { ...snap.slides[0], layoutId: "content", elements: snap.slides[0].elements.map((e) => (e.slot === "body" ? { ...e, build: 3 } : e)) };
+      const el = render(createElement(Inspector, { ...base, slide, selectedSlot: "body", onBuild: vi.fn() }));
+      openText(el);
+      click(el.querySelector("button[aria-label='Appears']"));
+      expect([...document.body.querySelectorAll("[role=option]")].map((o) => o.textContent)).toContain("Step 4");
+    });
+
+    it("is read-only when the deck can't be edited, and absent without a handler", () => {
+      const el = render(createElement(Inspector, { ...withBuilds({ editable: false }), onBuild: vi.fn() }));
+      openText(el);
+      expect((el.querySelector("button[aria-label='Appears']") as HTMLButtonElement).disabled).toBe(true);
+      const bare = render(createElement(Inspector, withBuilds()));
+      openText(bare);
+      expect(bare.querySelector("button[aria-label='Appears']")).toBeNull();
+    });
+  });
+
   it("changes the text style of the selected slot", () => {
     const { snap } = deck(1);
     const onTextStyle = vi.fn();
