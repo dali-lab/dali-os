@@ -16,7 +16,4 @@ test('Every Drive item has the same top bar', async ({ page, stage, loginAs }) =
   await page.waitForTimeout(1500);
   await page.keyboard.press('Escape');
 
-  await page.goto('/documents/file-does-not-matter').catch(() => {});
-  await page.goto('/drive');
-  await page.waitForTimeout(800);
 });

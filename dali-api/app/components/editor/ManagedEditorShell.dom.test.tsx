@@ -44,7 +44,7 @@ async function mount(props: Record<string, unknown> = {}) {
               null,
               createElement(Bar),
               createElement(
-                ManagedEditorShell,
+                ManagedEditorShell as never,
                 {
                   name: "Mentor agreement",
                   status: "v4 · In force",
