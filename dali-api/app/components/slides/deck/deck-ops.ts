@@ -18,6 +18,8 @@ import {
 import type { TextStyleId } from "./themes";
 
 export const DECK_LOCAL = Symbol("deck-local");
+/** Creating a slide is not undoable: undo would remove its structs while a peer may be typing in it. Delete is the way back. */
+export const DECK_CREATE = Symbol("deck-create");
 
 const SLOT_Z: Record<SlotName, number> = { image: 1, title: 2, subtitle: 3, body: 4 };
 
@@ -43,16 +45,20 @@ export function ensureLayoutSlots(slide: SlideMap, layoutId: string): void {
   }
 }
 
-export function ensureSlotsOn(doc: Y.Doc, slideId: string): boolean {
-  const slide = slidesMap(doc).get(slideId);
-  if (!slide || isDeleted(slide)) return false;
-  const missing = layoutById(String(slide.get("layoutId"))).slots.some((s) => {
+export function slideMissingSlot(slide: SlideMap): boolean {
+  return layoutById(String(slide.get("layoutId"))).slots.some((s) => {
     const el = elementsOf(slide).get(s.slot);
     return !el || isDeleted(el) || (s.kind === "text" && !textOf(slide).get(s.slot));
   });
-  if (!missing) return false;
-  doc.transact(() => ensureLayoutSlots(slide, String(slide.get("layoutId"))), "ensure-slots");
-  return true;
+}
+
+/** Completes every slide's slots. Only for a server-side transaction: clients never create slots after sync. */
+export function repairDeckSlots(doc: Y.Doc): void {
+  doc.transact(() => {
+    slidesMap(doc).forEach((slide) => {
+      if (!isDeleted(slide) && slideMissingSlot(slide)) ensureLayoutSlots(slide, String(slide.get("layoutId")));
+    });
+  }, "repair-slots");
 }
 
 function posAfter(doc: Y.Doc, afterId: string | null): number {
@@ -71,7 +77,7 @@ export function addSlide(doc: Y.Doc, layoutId: string, afterId: string | null): 
     const slide = newSlideMap(id, posAfter(doc, afterId), layoutId);
     slidesMap(doc).set(id, slide);
     ensureLayoutSlots(slide, layoutId);
-  }, DECK_LOCAL);
+  }, DECK_CREATE);
   return id;
 }
 
@@ -100,7 +106,8 @@ export function duplicateSlide(doc: Y.Doc, sourceId: string): string | null {
       copy.set(key, cloneValue(value));
     });
     slidesMap(doc).set(id, copy);
-  }, DECK_LOCAL);
+    ensureLayoutSlots(copy, String(copy.get("layoutId")));
+  }, DECK_CREATE);
   return id;
 }
 

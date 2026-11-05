@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { blocksToFragment } from "~/collab/blocknote-server";
 import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
+import { seedDeckDoc } from "~/collab/deck-write.server";
 import {
   addSlide,
   clearSlotImage,
   deleteSlide,
   duplicateSlide,
-  ensureSlotsOn,
+  repairDeckSlots,
+  DECK_LOCAL,
   moveSlide,
   setLayout,
   setSlotImage,
@@ -17,7 +19,7 @@ import {
   undeleteSlide,
   visibleSlideIds,
 } from "../deck-ops";
-import { elementsOf, initDeck, isDeleted, notesOf, slidesMap, deckMap, newSlideMap } from "../model";
+import { elementsOf, initDeck, isDeleted, notesOf, slidesMap, deckMap, newElementMap, newSlideMap } from "../model";
 import { snapshotDeck } from "../snapshot";
 
 function deck(n = 3) {
@@ -135,20 +137,19 @@ describe("layouts and slots", () => {
     expect(readDeck(doc).slides[0].elements.find((e) => e.slot === "body")!.text).toBe("Body text");
   });
 
-  it("revives a slot a legacy write tombstoned", () => {
-    const { doc, ids } = deck(1);
-    elementsOf(slidesMap(doc).get(ids[0])!).get("body")!.set("deleted", true);
-    expect(ensureSlotsOn(doc, ids[0])).toBe(true);
-    expect(isDeleted(elementsOf(slidesMap(doc).get(ids[0])!).get("body")!)).toBe(false);
-    expect(ensureSlotsOn(doc, ids[0])).toBe(false);
-  });
-
-  it("creates the missing slots of a slide converted from JSON", () => {
+  it("repairs a slide converted without slots in one server-side transaction", () => {
     const doc = new Y.Doc();
     initDeck(doc);
     slidesMap(doc).set("s", newSlideMap("s", 1, "split"));
-    expect(ensureSlotsOn(doc, "s")).toBe(true);
-    expect([...elementsOf(slidesMap(doc).get("s")!).keys()].sort()).toEqual(["body", "image", "title"]);
+    elementsOf(slidesMap(doc).get("s")!).set("title", newElementMap("title", "text", 1, { slot: "title", deleted: true }));
+    let origin: unknown;
+    doc.on("afterTransaction", (tr: Y.Transaction) => (origin = tr.origin));
+    repairDeckSlots(doc);
+    expect(origin).toBe("repair-slots");
+    const slide = slidesMap(doc).get("s")!;
+    expect([...elementsOf(slide).keys()].sort()).toEqual(["body", "image", "title"]);
+    expect(isDeleted(elementsOf(slide).get("title")!)).toBe(false);
+    expect(slideFragment(doc, "s", "body")).toBeInstanceOf(Y.XmlFragment);
   });
 
   it("stores an image as a URL only and clears it without removing the element", () => {
@@ -179,5 +180,46 @@ describe("layouts and slots", () => {
     setLayout(doc, ids[1], "bignumber");
     const out = projectLegacySlides(readDeck(doc));
     expect(out.map((s) => s.layout)).toEqual(["title", "title"]);
+  });
+});
+
+describe("slot elements exist from the moment a slide exists", () => {
+  it("a duplicate of a slide missing a slot is completed in the same transaction", () => {
+    const { doc, ids } = deck(1);
+    elementsOf(slidesMap(doc).get(ids[0])!).get("body")!.set("deleted", true);
+    const copy = duplicateSlide(doc, ids[0])!;
+    expect(isDeleted(elementsOf(slidesMap(doc).get(copy)!).get("body")!)).toBe(false);
+  });
+
+  it("an MCP or conversion write creates every slot of every slide, empty ones included", () => {
+    const doc = new Y.Doc();
+    seedDeckDoc(doc, [{ id: "a", layout: "split", title: "" }, { id: "b", layout: "title", title: "T" }]);
+    for (const [id, slots] of [["a", ["body", "image", "title"]], ["b", ["subtitle", "title"]]] as const) {
+      const slide = slidesMap(doc).get(id)!;
+      expect(slots.every((k) => elementsOf(slide).get(k) && !isDeleted(elementsOf(slide).get(k)!))).toBe(true);
+    }
+    expect(slideFragment(doc, "a", "title")).not.toBeNull();
+  });
+
+  it("peers typing into a freshly added slide at the same time both keep their text", () => {
+    const { doc, ids } = deck(1);
+    blocksToFragment([{ type: "paragraph", content: "x" }] as never, slideFragment(doc, ids[0], "title")!);
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    const before = JSON.stringify([...elementsOf(slidesMap(peer).get(ids[0])!).keys()]);
+    const findText = (d: Y.Doc) => {
+      const group = slideFragment(d, ids[0], "title")!.get(0) as Y.XmlElement;
+      const container = group.get(0) as Y.XmlElement;
+      return container.get(0).get(0) as unknown as Y.XmlText;
+    };
+    findText(doc).insert(1, "A");
+    findText(peer).insert(1, "B");
+    Y.applyUpdate(doc, Y.encodeStateAsUpdate(peer));
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(doc));
+    const text = readDeck(doc).slides[0].elements.find((e) => e.slot === "title")!.text;
+    expect(text).toContain("A");
+    expect(text).toContain("B");
+    expect(readDeck(peer).slides[0].elements.find((e) => e.slot === "title")!.text).toBe(text);
+    expect(JSON.stringify([...elementsOf(slidesMap(doc).get(ids[0])!).keys()])).toBe(before);
   });
 });

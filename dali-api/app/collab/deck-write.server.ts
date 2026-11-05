@@ -1,5 +1,6 @@
 import * as Y from "yjs";
 import { blocksToFragment, plainTextToBlocks, type DocBlock } from "./blocknote-server";
+import { ensureLayoutSlots } from "~/components/slides/deck/deck-ops";
 import { legacyLayout, projectLegacySlides, readDeck } from "./read-deck.server";
 import {
   between,
@@ -52,6 +53,8 @@ function writeTextSlot(slide: SlideMap, slot: string, z: number, blocks: DocBloc
   const elements = elementsOf(slide);
   const existing = elements.get(slot);
   if (!blocks) {
+    const old = textOf(slide).get(slot);
+    if (old && old.length > 0) old.delete(0, old.length);
     if (existing && !isDeleted(existing)) tombstoneElement(existing);
     return;
   }
@@ -69,7 +72,10 @@ function writeImageSlot(slide: SlideMap, image: Slide["image"]): void {
   const elements = elementsOf(slide);
   const existing = elements.get("image");
   if (!image) {
-    if (existing && !isDeleted(existing)) tombstoneElement(existing);
+    if (existing && !isDeleted(existing)) {
+      existing.set("src", "");
+      tombstoneElement(existing);
+    }
     return;
   }
   if (!existing) {
@@ -99,6 +105,7 @@ function applySlide(slide: SlideMap, target: Slide, current: Slide | undefined):
   }
   if (!current || JSON.stringify(current.image ?? null) !== JSON.stringify(target.image ?? null)) writeImageSlot(slide, target.image);
   if (!current || (current.notes ?? "") !== (target.notes ?? "")) writeNotes(slide, target.notes);
+  ensureLayoutSlots(slide, String(slide.get("layoutId")));
 }
 
 /**

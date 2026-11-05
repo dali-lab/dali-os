@@ -14,6 +14,7 @@ import {
   textOf,
 } from "~/components/slides/deck/model";
 import type { Slide, SlideLayout } from "~/components/slides/types";
+import { layoutById } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { TEXT_STYLE_IDS, type TextStyleId } from "~/components/slides/deck/themes";
 
@@ -141,4 +142,9 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
       })),
     })),
   };
+}
+
+/** Whether any live slide lacks an element for a slot its layout draws. */
+export function deckMissingSlots(read: DeckRead): boolean {
+  return read.slides.some((s) => layoutById(s.layoutId).slots.some((slot) => !s.elements.some((e) => e.slot === slot.slot)));
 }

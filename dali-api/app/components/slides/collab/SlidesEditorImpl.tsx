@@ -3,6 +3,8 @@ import "~/components/doc/theme.css";
 import "./slide-editor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
+import { PresenceProvider } from "~/components/collab/PresenceProvider";
+import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PageBarPortal, PageBarTitle } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
@@ -17,7 +19,6 @@ import {
   clearSlotImage,
   deleteSlide,
   duplicateSlide,
-  ensureSlotsOn,
   moveSlide,
   notesFragment,
   setLayout,
@@ -57,7 +58,7 @@ function usePageSaver(pageId: string) {
   );
 }
 
-export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAccess, workspaceType, collab, actionsSlot }: SlidesEditorProps) {
+function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, workspaceType, collab, actionsSlot }: SlidesEditorProps) {
   const toast = useToast();
   const revalidator = useRevalidator();
   const savePage = usePageSaver(pageId);
@@ -65,7 +66,7 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
   const [shareOpen, setShareOpen] = useState(false);
   const deck = useDeckDoc(pageId, collab.token);
   const snap = useDeckSnapshot(deck);
-  const { state: syncState, synced } = useDeckSync(deck);
+  const { state: syncState } = useDeckSync(deck);
   const { canUndo, canRedo } = useUndoState(deck?.undo ?? null);
   const me = useMemo(
     () => ({ userId: collab.userId, name: collab.userName, color: nameToHexColor(collab.userName), photoUrl: collab.photoUrl }),
@@ -77,16 +78,12 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
   const current = snap.slides.find((s) => s.id === selectedId) ?? null;
   const deletedHere = selectedId !== null && !current && snap.deletedIds.includes(selectedId);
   const known = snap.v === undefined ? null : snap.v === DECK_VERSION;
-  const editable = known === true;
+  const editable = canEdit && known === true;
 
   useEffect(() => {
     if (deletedHere || current || snap.slides.length === 0) return;
     setSelectedId(snap.slides[0].id);
   }, [current, deletedHere, snap.slides]);
-
-  useEffect(() => {
-    if (deck && current && editable && synced) ensureSlotsOn(deck.doc, current.id);
-  }, [deck, current?.id, current?.layoutId, editable, synced]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     deck?.undo.setCurrentSlide(selectedId);
@@ -180,6 +177,9 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
           {SYNC_LABEL[syncState]}
         </div>
       </PageBarPortal>
+      <PageBarPortal slot="presence">
+        <PresenceBar />
+      </PageBarPortal>
       <PageBarPortal slot="actions">
         {canManageAccess && <PageBarShareButton onClick={() => setShareOpen(true)} />}
         {actionsSlot}
@@ -206,7 +206,7 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
         <ReadOnlyDeck
           slides={snap.slides}
           themeId={snap.themeId}
-          notice="This deck was made with a newer version of Slides, so you can view it but not edit it."
+          notice={known === false ? "This deck was made with a newer version of Slides, so you can view it but not edit it." : undefined}
         />
       </>
     );
@@ -268,5 +268,19 @@ export default function SlidesEditorImpl({ pageId, title, iconEmoji, canManageAc
       </div>
       <input ref={fileRef} type="file" accept={IMAGE_UPLOAD_ACCEPT} hidden onChange={(e) => (onFile(e.target.files?.[0]), (e.target.value = ""))} />
     </div>
+  );
+}
+
+export default function SlidesEditorImpl(props: SlidesEditorProps) {
+  return (
+    <PresenceProvider
+      pageId={`doc:${props.pageId}`}
+      token={props.collab.token}
+      userName={props.collab.userName}
+      userId={props.collab.userId}
+      photoUrl={props.collab.photoUrl}
+    >
+      <SlidesEditorBody {...props} />
+    </PresenceProvider>
   );
 }

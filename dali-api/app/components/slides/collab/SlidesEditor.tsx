@@ -4,6 +4,8 @@ export interface SlidesEditorProps {
   pageId: string;
   title: string;
   iconEmoji: string | null;
+  /** False for viewers: they connect read-only and watch edits arrive. */
+  canEdit: boolean;
   canManageAccess: boolean;
   workspaceType: string;
   collab: { token: string; userId: string; userName: string; photoUrl: string | null };
