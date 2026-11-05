@@ -25,6 +25,20 @@ Changes save as you go, and a status next to the switch shows the state. If some
 
 If you only have view access, the deck opens straight into the viewer.
 
+## Place and arrange items
+
+When the live deck editor is on for you, you can put text, images and shapes anywhere on a slide, not just in the layout's boxes. Choose the **Blank** layout for an empty slide.
+
+- **Add an item**: click **Text box** or **Shape** in the toolbar, then click the slide where it should go. Shapes are rectangles, rounded rectangles, ellipses, lines and arrows. **Image** adds a picture in the middle of the slide.
+- **Move, resize and rotate**: drag an item to move it, drag a handle to resize it, and drag the dot above it to turn it. Pictures keep their proportions when you drag a corner. Hold **Shift** while resizing to flip that, and while turning to move in 15 degree steps. Guides show when edges and centers line up with other items or the slide margins, and numbers show the space between items. Hold **⌘** to skip snapping. Turn snapping and the grid on or off in the inspector.
+- **Edit text**: click a selected text box again to type in it. Drag its border to move it.
+- **Move a layout box**: dragging a title, body or image box lifts it off the layout. It keeps its spot if you change layouts. Select it and choose **Snap back to layout** in the inspector to put it back.
+- **Select several**: Shift-click items, or drag across empty space. The inspector then offers align, distribute, **Group** and **Duplicate**. A group moves as one item, and **Ungroup** breaks it up.
+- **Fine tuning**: the inspector tab for the selected item has X, Y, width, height and rotation, align to the slide, **Bring forward** and **Send back**, and a theme fill for shapes. Arrow keys nudge by 1, and Shift with an arrow nudges by 10.
+- **Delete, copy and paste**: Delete removes the selected item. ⌘C, ⌘X and ⌘V copy, cut and paste, also into another deck, and ⌘D duplicates.
+
+Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate or group is one step for **Undo**. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, rectangles, ellipses and lines where they were on the slide.
+
 ## Download as PDF
 
 Open the **⋯** menu and choose **Download PDF** to get every slide as a page, with all builds showing. The **Deck** tab in the inspector has the same button. People who can edit a deck also get **Download PDF with notes**, which adds a page of speaker notes after each slide. Decks over 200 slides can't be exported.

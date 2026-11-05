@@ -38,8 +38,8 @@ describe("themes", () => {
 });
 
 describe("layouts", () => {
-  it("has the six layouts", () => {
-    expect(LAYOUTS.map((l) => l.id)).toEqual(["title", "content", "split", "image", "section", "bignumber"]);
+  it("has the six layouts and a blank one", () => {
+    expect(LAYOUTS.map((l) => l.id)).toEqual(["title", "content", "split", "image", "section", "bignumber", "blank"]);
   });
 
   it("keeps every slot inside the 1920 by 1080 stage", () => {

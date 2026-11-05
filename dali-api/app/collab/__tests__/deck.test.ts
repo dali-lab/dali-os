@@ -16,6 +16,8 @@ import {
   tombstoneSlide,
 } from "~/components/slides/deck/model";
 import type { Slide } from "~/components/slides/types";
+import { addShape, addTextBox, groupElements, moveElements } from "~/components/slides/deck/freeform-ops";
+import { setLayout } from "~/components/slides/deck/deck-ops";
 
 const LEGACY: Slide[] = [
   { id: "a", layout: "title", title: "Hello", subtitle: "Sub", notes: "say hi" },
@@ -317,5 +319,43 @@ describe("builds on a deck", () => {
 
   it("returns each slide's notes text for the presenter view", () => {
     expect(notesBySlide(readDeck(seeded()))).toEqual({ a: "say hi", b: "", c: "" });
+  });
+});
+
+describe("freeform elements on the server read path", () => {
+  it("reads geometry, rotation, shape, fill and group children, and carries them into the render deck", () => {
+    const doc = seeded();
+    setLayout(doc, "a", "blank");
+    const shape = addShape(doc, "a", "arrow", { x: 700, y: 500 })!;
+    const text = addTextBox(doc, "a")!;
+    const group = groupElements(doc, "a", [shape, text])!;
+    const read = readDeck(doc).slides.find((s) => s.id === "a")!;
+    expect(read.elements.find((e) => e.id === shape)).toMatchObject({ kind: "shape", slot: null, shape: "arrow", fill: "accent", w: 480, h: 56 });
+    expect(read.elements.find((e) => e.id === group)).toMatchObject({ kind: "group", children: [shape, text] });
+    const render = toRenderDeck(readDeck(doc)).slides.find((s) => s.id === "a")!;
+    expect(render.elements.find((e) => e.id === shape)).toMatchObject({ parentId: group, shape: "arrow", w: 480 });
+  });
+
+  it("keeps free text in the deck's searchable text and leaves free elements out of the legacy projection", () => {
+    const doc = seeded();
+    const text = addTextBox(doc, "b")!;
+    textOf(slidesMap(doc).get("b")!).get(text)!.insert(0, []);
+    const before = projectLegacySlides(readDeck(doc)).find((s) => s.id === "b")!;
+    expect(before.title).toBe("Agenda");
+    expect(JSON.stringify(before)).not.toContain(text);
+  });
+
+  it("reports a detached slot's geometry and projects it back to the same legacy slide", () => {
+    const doc = seeded();
+    moveElements(doc, "b", ["body"], 10, 10);
+    const read = readDeck(doc).slides.find((s) => s.id === "b")!;
+    expect(read.elements.find((e) => e.id === "body")).toMatchObject({ slot: "body", x: 170, y: 320 });
+    expect(projectLegacySlides(readDeck(doc)).find((s) => s.id === "b")!.body).toBeDefined();
+  });
+
+  it("maps the blank layout to the closest legacy layout", () => {
+    const doc = seeded();
+    setLayout(doc, "b", "blank");
+    expect(projectLegacySlides(readDeck(doc)).find((s) => s.id === "b")!.layout).toBe("content");
   });
 });

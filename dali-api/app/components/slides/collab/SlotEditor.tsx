@@ -2,7 +2,7 @@ import type * as Y from "yjs";
 import { DocEditor } from "~/components/doc/DocEditor";
 import type { DocCommentsConfig } from "~/components/doc/types";
 import type { LayoutSlot } from "~/components/slides/deck/layouts";
-import { rectStyle, u } from "~/components/slides/deck/units";
+import { placedStyle } from "~/components/slides/deck/units";
 import { textStyleCss, type TextStyleId } from "~/components/slides/deck/themes";
 import type { DeckUser } from "./useDeckDoc";
 
@@ -23,7 +23,10 @@ export function SlotEditor({
   collab,
   selected,
   onFocus,
+  onBlur,
   comments,
+  elementId,
+  rot,
 }: {
   slot: LayoutSlot;
   style: TextStyleId;
@@ -31,24 +34,30 @@ export function SlotEditor({
   collab: SlotCollab;
   selected: boolean;
   onFocus: () => void;
+  onBlur?: () => void;
   comments?: DocCommentsConfig;
+  elementId?: string;
+  rot?: number;
 }) {
   return (
     <div
       data-slot={slot.slot}
+      data-element-id={elementId ?? slot.slot}
       data-valign={slot.valign}
+      data-selected={selected || undefined}
       className="dali-slide-slot"
       onFocusCapture={onFocus}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onBlur?.();
+      }}
       onContextMenu={(e) => e.stopPropagation()}
       style={{
-        ...rectStyle(slot.rect),
+        ...placedStyle({ ...slot.rect, rot }),
         display: "flex",
         flexDirection: "column",
         justifyContent: FLEX_ALIGN[slot.valign],
         textAlign: slot.align,
         overflow: "hidden",
-        outline: selected ? `${u(4)} solid var(--slide-accent)` : "none",
-        outlineOffset: u(8),
         ...textStyleCss(style),
       }}
     >

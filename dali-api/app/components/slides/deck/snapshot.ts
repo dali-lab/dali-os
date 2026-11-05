@@ -4,6 +4,10 @@ import { fragmentToRichDoc } from "./fragment-blocks";
 import {
   comparePos,
   compareZ,
+  FILL_IDS,
+  SHAPE_KINDS,
+  type FillId,
+  type ShapeKind,
   deckMap,
   elementsOf,
   isDeleted,
@@ -28,6 +32,15 @@ export interface RenderElement {
   build?: number;
   /** A text slot whose top-level blocks appear one per step after its own step. */
   buildBullets?: boolean;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  rot?: number;
+  shape?: ShapeKind;
+  fill?: FillId;
+  children?: string[];
+  parentId?: string;
 }
 
 export interface RenderSlide {
@@ -48,8 +61,30 @@ export interface DeckSnapshot {
 }
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
-export function snapshotSlide(id: string, slide: SlideMap): RenderSlide {
+export function geometryFields(read: (key: string) => unknown) {
+  const x = num(read("x"));
+  const y = num(read("y"));
+  const w = num(read("w"));
+  const h = num(read("h"));
+  if (x === undefined || y === undefined || w === undefined || h === undefined || w <= 0 || h <= 0) return {};
+  const rot = num(read("rot"));
+  return { x, y, w, h, ...(rot ? { rot } : {}) };
+}
+
+export function shapeFields(read: (key: string) => unknown) {
+  const shape = read("shape");
+  const fill = read("fill");
+  const children = read("children");
+  return {
+    ...(SHAPE_KINDS.includes(shape as ShapeKind) ? { shape: shape as ShapeKind } : {}),
+    ...(FILL_IDS.includes(fill as FillId) ? { fill: fill as FillId } : {}),
+    ...(Array.isArray(children) ? { children: children.filter((c): c is string => typeof c === "string") } : {}),
+  };
+}
+
+export function snapshotSlide(id: string, slide: SlideMap, withText = true): RenderSlide {
   const fragments = textOf(slide);
   const elements: RenderElement[] = [];
   elementsOf(slide).forEach((el, elId) => {
@@ -61,16 +96,30 @@ export function snapshotSlide(id: string, slide: SlideMap): RenderSlide {
       kind: String(el.get("kind")),
       slot: str(el.get("slot")),
       z: Number(el.get("z") ?? 0),
-      blocks: fragmentToRichDoc(fragments.get(elId)),
+      blocks: withText ? fragmentToRichDoc(fragments.get(elId)) : [],
       src: str(el.get("src")),
       alt: str(el.get("alt")),
       textStyle: TEXT_STYLE_IDS.includes(style as TextStyleId) ? (style as TextStyleId) : null,
       ...(build ? { build } : {}),
       ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
+      ...geometryFields((k) => el.get(k)),
+      ...shapeFields((k) => el.get(k)),
     });
   });
   elements.sort(compareZ);
+  linkGroups(elements);
   return { id, pos: Number(slide.get("pos") ?? 0), layoutId: String(slide.get("layoutId") ?? "content"), elements };
+}
+
+export function linkGroups(elements: RenderElement[]): void {
+  const byId = new Map(elements.map((e) => [e.id, e]));
+  for (const group of elements) {
+    if (group.kind !== "group") continue;
+    for (const childId of group.children ?? []) {
+      const child = byId.get(childId);
+      if (child && child.kind !== "group" && !child.parentId) child.parentId = group.id;
+    }
+  }
 }
 
 export function snapshotDeck(doc: Y.Doc): DeckSnapshot {

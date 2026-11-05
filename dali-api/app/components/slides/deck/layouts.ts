@@ -96,7 +96,10 @@ export const LAYOUTS: readonly LayoutDef[] = [
       text("subtitle", { x: 360, y: 640, w: 1200, h: 220 }, "body", "What it measures", { align: "center" }),
     ],
   },
+  { id: "blank", name: "Blank", slots: [] },
 ];
+
+export const SLOT_Z: Record<SlotName, number> = { image: 1, title: 2, subtitle: 3, body: 4 };
 
 export const DEFAULT_LAYOUT_ID = "content";
 

@@ -53,6 +53,7 @@ vi.mock("../useDeckDoc", () => ({
   useDeckSync: () => ({ state: "saved", synced: true }),
   useUndoState: () => ({ canUndo: false, canRedo: false }),
   useSlidePresence: () => new Map(),
+  useSlideDrags: () => ({ peers: new Map(), publish: vi.fn() }),
 }));
 vi.mock("~/components/slides/deck/deck-undo", () => ({ deckUndoExtension: () => ({}) }));
 vi.mock("~/components/slides/deck/deck-ops", async (orig) => ({ ...(await orig<object>()), notesFragment: () => null }));

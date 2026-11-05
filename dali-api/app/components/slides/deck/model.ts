@@ -3,7 +3,21 @@ import * as Y from "yjs";
 export const DECK_VERSION = 1;
 export const DEFAULT_THEME_ID = "dali-dark";
 
-export type ElementKind = "text" | "image" | "shape" | "embed";
+export type ElementKind = "text" | "image" | "shape" | "embed" | "group";
+
+export const SHAPE_KINDS = ["rect", "rounded", "ellipse", "line", "arrow"] as const;
+export type ShapeKind = (typeof SHAPE_KINDS)[number];
+export const SHAPE_LABELS: Record<ShapeKind, string> = {
+  rect: "Rectangle",
+  rounded: "Rounded rectangle",
+  ellipse: "Ellipse",
+  line: "Line",
+  arrow: "Arrow",
+};
+
+export const FILL_IDS = ["accent", "fg", "muted", "surface", "rule"] as const;
+export type FillId = (typeof FILL_IDS)[number];
+export const FILL_LABELS: Record<FillId, string> = { accent: "Accent", fg: "Text", muted: "Muted", surface: "Surface", rule: "Rule" };
 
 export type ElementMap = Y.Map<unknown>;
 export type SlideMap = Y.Map<unknown>;

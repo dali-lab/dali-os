@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Segmented } from "~/components/ui/Segmented";
 import { Button } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
@@ -7,6 +7,7 @@ import { layoutById } from "~/components/slides/deck/layouts";
 import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
 import { TEXT_STYLE_IDS, TEXT_STYLE_LABELS, THEMES, type TextStyleId } from "~/components/slides/deck/themes";
 import { cn } from "~/lib/cn";
+import { ElementView, elementTabLabel, type InspectorFreeform } from "./ElementInspector";
 import { LayoutGrid } from "./LayoutPicker";
 
 type Tab = "slide" | "text" | "deck";
@@ -96,7 +97,8 @@ export function Inspector({
   slide,
   themeId,
   slideCount,
-  selectedSlot,
+  selection,
+  freeform,
   editable,
   onLayout,
   onTheme,
@@ -113,7 +115,8 @@ export function Inspector({
   slide: RenderSlide | null;
   themeId: string;
   slideCount: number;
-  selectedSlot: string | null;
+  selection: string[];
+  freeform?: InspectorFreeform;
   editable: boolean;
   onLayout: (layoutId: string) => void;
   onTheme: (themeId: string) => void;
@@ -128,11 +131,15 @@ export function Inspector({
   downloadHref?: string;
 }) {
   const [tab, setTab] = useState<Tab>("slide");
+  const selectionKey = selection.join("|");
+  useEffect(() => {
+    if (selectionKey) setTab("text");
+  }, [selectionKey]);
   const layout = slide ? layoutById(slide.layoutId) : null;
   const imageSlot = layout?.slots.find((s) => s.kind === "image");
   const image = slide?.elements.find((e) => e.slot === "image");
-  const textSlot = layout?.slots.find((s) => s.slot === selectedSlot && s.kind === "text");
-  const element = slide?.elements.find((e) => e.slot === selectedSlot);
+  const element = selection.length === 1 ? slide?.elements.find((e) => e.id === selection[0]) : undefined;
+  const textSlot = element?.kind === "text" ? { slot: element.id, style: layout?.slots.find((s) => s.slot === element.slot)?.style ?? ("body" as TextStyleId) } : undefined;
   const activeStyle = element?.textStyle ?? textSlot?.style ?? null;
 
   return (
@@ -144,7 +151,7 @@ export function Inspector({
         onChange={setTab}
         options={[
           { value: "slide", label: "Slide" },
-          { value: "text", label: "Text" },
+          { value: "text", label: elementTabLabel(slide, selection) },
           { value: "deck", label: "Deck" },
         ]}
       />
@@ -184,39 +191,50 @@ export function Inspector({
       )}
       {tab === "text" && (
         <>
-        <Section title="Text style">
-          {textSlot ? (
-            <div className="flex flex-col gap-1.5" role="group" aria-label="Text style">
-              {TEXT_STYLE_IDS.map((id) => (
-                <button
-                  key={id}
-                  type="button"
-                  disabled={!editable}
-                  aria-pressed={activeStyle === id}
-                  onClick={() => onTextStyle(textSlot.slot, id === textSlot.style ? null : id)}
-                  className={cn(
-                    "rounded-lg border px-2 py-1.5 text-left text-sm transition-colors",
-                    activeStyle === id ? "border-os-accent bg-os-hover" : "border-os-container hover:bg-os-hover",
-                  )}
-                >
-                  {TEXT_STYLE_LABELS[id]}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-os-grey">Click a text box on the slide to change its style.</p>
+          {textSlot && (
+            <Section title="Text style">
+              <div className="flex flex-col gap-1.5" role="group" aria-label="Text style">
+                {TEXT_STYLE_IDS.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    disabled={!editable}
+                    aria-pressed={activeStyle === id}
+                    onClick={() => onTextStyle(textSlot.slot, id === textSlot.style ? null : id)}
+                    className={cn(
+                      "rounded-lg border px-2 py-1.5 text-left text-sm transition-colors",
+                      activeStyle === id ? "border-os-accent bg-os-hover" : "border-os-container hover:bg-os-hover",
+                    )}
+                  >
+                    {TEXT_STYLE_LABELS[id]}
+                  </button>
+                ))}
+              </div>
+            </Section>
           )}
-        </Section>
-        {textSlot && slide && onBuild && (
-          <Appears
-            slide={slide}
-            element={element}
-            bullets
-            editable={editable}
-            onBuild={(b) => onBuild(textSlot.slot, b)}
-            onBuildBullets={(on) => onBuildBullets?.(textSlot.slot, on)}
-          />
-        )}
+          {selection.length === 0 && (
+            <Section title="Text style">
+              <p className="text-sm text-os-grey">Click a text box on the slide to change its style.</p>
+            </Section>
+          )}
+          {textSlot && slide && onBuild && (
+            <Appears
+              slide={slide}
+              element={element}
+              bullets
+              editable={editable}
+              onBuild={(b) => onBuild(textSlot.slot, b)}
+              onBuildBullets={(on) => onBuildBullets?.(textSlot.slot, on)}
+            />
+          )}
+          {slide && freeform && selection.length > 0 && (
+            <>
+              {element && element.kind !== "text" && element.kind !== "group" && onBuild && (
+                <Appears slide={slide} element={element} bullets={false} editable={editable} onBuild={(b) => onBuild(element.id, b)} onBuildBullets={() => {}} />
+              )}
+              <ElementView slide={slide} themeId={themeId} selection={selection} editable={editable} freeform={freeform} />
+            </>
+          )}
         </>
       )}
       {tab === "deck" && (

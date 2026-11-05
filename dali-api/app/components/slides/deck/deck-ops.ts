@@ -1,5 +1,5 @@
 import * as Y from "yjs";
-import { layoutById, type SlotName } from "./layouts";
+import { layoutById, SLOT_Z } from "./layouts";
 import {
   between,
   comparePos,
@@ -21,7 +21,6 @@ export const DECK_LOCAL = Symbol("deck-local");
 /** Creating a slide is not undoable: undo would remove its structs while a peer may be typing in it. Delete is the way back. */
 export const DECK_CREATE = Symbol("deck-create");
 
-const SLOT_Z: Record<SlotName, number> = { image: 1, title: 2, subtitle: 3, body: 4 };
 
 export const newId = () => crypto.randomUUID();
 
@@ -81,7 +80,7 @@ export function addSlide(doc: Y.Doc, layoutId: string, afterId: string | null): 
   return id;
 }
 
-function cloneValue(value: unknown): unknown {
+export function cloneValue(value: unknown): unknown {
   if (value instanceof Y.Map) {
     const m = new Y.Map();
     value.forEach((v, k) => m.set(k, cloneValue(v)));

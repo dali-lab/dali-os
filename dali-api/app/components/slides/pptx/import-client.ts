@@ -1,5 +1,5 @@
 import { mapPresentation, type ParsedPresentation } from "./import-map";
-import { skippedTotal, SKIPPED_LABELS, type ImportPlan, type ReadySlide, type SkippedKind } from "./import-types";
+import { skippedTotal, SKIPPED_LABELS, type ImportPlan, type ReadyFree, type ReadySlide, type SkippedKind } from "./import-types";
 
 export const MAX_PPTX_BYTES = 50 * 1024 * 1024;
 export const MAX_PPTX_SLIDES = 300;
@@ -55,7 +55,7 @@ export async function uploadImages(
 ): Promise<UploadedPlan> {
   const skipped = { ...plan.skipped };
   const unique = new Map<string, Promise<string | null>>();
-  const jobs = plan.slides.flatMap((s) => (s.image ? [s.image] : []));
+  const jobs = plan.slides.flatMap((s) => [...(s.image ? [s.image] : []), ...(s.free ?? []).flatMap((f) => (f.kind === "image" ? [f] : []))]);
   const total = new Set(jobs.map((j) => j.dataUrl)).size;
   let done = 0;
   const queue = jobs.filter((job, i) => jobs.findIndex((j) => j.dataUrl === job.dataUrl) === i);
@@ -78,10 +78,20 @@ export async function uploadImages(
 
   const slides: ReadySlide[] = [];
   for (const slide of plan.slides) {
-    const { image, ...rest } = slide;
+    const { image, free, ...rest } = slide;
     const src = image ? await unique.get(image.dataUrl) : null;
     if (image && !src) skipped.image = (skipped.image ?? 0) + 1;
-    slides.push({ ...rest, image: image && src ? { src, alt: image.alt } : null });
+    const ready: ReadyFree[] = [];
+    for (const item of free ?? []) {
+      if (item.kind !== "image") {
+        ready.push(item);
+        continue;
+      }
+      const url = await unique.get(item.dataUrl);
+      if (url) ready.push({ kind: "image", placed: item.placed, src: url, alt: item.alt });
+      else skipped.image = (skipped.image ?? 0) + 1;
+    }
+    slides.push({ ...rest, image: image && src ? { src, alt: image.alt } : null, ...(free ? { free: ready } : {}) });
   }
   return { slides, skipped };
 }

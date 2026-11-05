@@ -287,3 +287,65 @@ describe("pending import hand-off", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("free items", () => {
+  const placed = (z: number, over: Record<string, number> = {}) => ({ x: 100, y: 200, w: 300, h: 80, rot: 0, z, ...over });
+
+  it("writes free text, images and shapes as slotless elements and moves slot elements to their place", () => {
+    const doc = newDeck();
+    const [id] = appendSlides(doc, [
+      ready({
+        layoutId: "content",
+        placements: { title: placed(2, { x: 50 }), body: placed(3) },
+        free: [
+          { kind: "shape", shape: "ellipse", fill: "muted", placed: placed(1) },
+          { kind: "text", textStyle: "heading", blocks: [para("Callout")], placed: placed(4, { rot: 5 }) },
+          { kind: "image", src: "https://x/a.png", alt: "a", placed: placed(5) },
+        ],
+      }),
+    ]);
+    const slide = readDeck(doc).slides.find((s) => s.id === id)!;
+    const byId = new Map(slide.elements.map((e) => [e.id, e]));
+    expect(byId.get("title")).toMatchObject({ slot: "title", x: 50, y: 200, w: 300, h: 80, z: 2 });
+    expect(byId.get("body")).toMatchObject({ slot: "body", z: 3 });
+    const free = slide.elements.filter((e) => e.slot === null);
+    expect(free.map((e) => e.kind).sort()).toEqual(["image", "shape", "text"]);
+    expect(free.find((e) => e.kind === "text")).toMatchObject({ textStyle: "heading", rot: 5, text: "Callout", z: 4 });
+    expect(free.find((e) => e.kind === "image")).toMatchObject({ src: "https://x/a.png", alt: "a" });
+    expect(free.find((e) => e.kind === "shape")).toMatchObject({ shape: "ellipse", fill: "muted", z: 1 });
+  });
+
+  it("leaves slot elements unplaced when the slide has no placements", () => {
+    const doc = newDeck();
+    const [id] = appendSlides(doc, [ready()]);
+    const title = readDeck(doc).slides.find((s) => s.id === id)!.elements.find((e) => e.id === "title")!;
+    expect(title.x).toBeUndefined();
+  });
+
+  it("uploads free images with the rest and counts the ones that fail", async () => {
+    const png = (name: string) => ({ dataUrl: `data:image/png;base64,${btoa(name)}`, alt: "", name });
+    const plan: ImportPlan = {
+      slides: [
+        {
+          ...ready({ image: null }),
+          image: png("hero"),
+          free: [
+            { kind: "image", placed: placed(1), ...png("one") },
+            { kind: "image", placed: placed(2), ...png("two") },
+            { kind: "shape", shape: "rect", fill: "accent", placed: placed(3) },
+          ],
+        },
+      ],
+      skipped: {},
+    };
+    const upload = vi.fn(async (file: File) => {
+      if (file.name.includes("two")) throw new Error("nope");
+      return `/uploads/${file.name}`;
+    });
+    const out = await uploadImages(plan, upload);
+    expect(out.slides[0].image?.src).toContain("/uploads/");
+    const kinds = out.slides[0].free!.map((f) => f.kind);
+    expect(kinds).toEqual(["image", "shape"]);
+    expect(out.skipped.image).toBe(1);
+  });
+});

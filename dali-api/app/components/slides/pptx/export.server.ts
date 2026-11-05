@@ -116,17 +116,31 @@ export function blocksToRuns(blocks: DocBlock[], opts: { upper?: boolean; origin
   return blockRuns(blocks, { upper: opts.upper === true, origin: opts.origin, boldAll: false });
 }
 
-function styleFor(el: DeckReadElement, slot: LayoutSlot, theme: ThemeDef): TextStyleDef {
-  const id = TEXT_STYLE_IDS.includes(el.textStyle as TextStyleId) ? (el.textStyle as TextStyleId) : slot.style;
+interface Place {
+  rect: LayoutSlot["rect"];
+  rot: number;
+  align: "left" | "center";
+  valign: "top" | "center" | "bottom";
+  style: TextStyleId;
+}
+
+function styleFor(el: DeckReadElement, place: Place, theme: ThemeDef): TextStyleDef {
+  const id = TEXT_STYLE_IDS.includes(el.textStyle as TextStyleId) ? (el.textStyle as TextStyleId) : place.style;
   return theme.textStyles[id];
 }
+
+function ownRect(el: DeckReadElement): LayoutSlot["rect"] | null {
+  return el.x !== undefined && el.y !== undefined && el.w !== undefined && el.h !== undefined ? { x: el.x, y: el.y, w: el.w, h: el.h } : null;
+}
+
+const rotation = (rot: number) => (rot ? { rotate: ((rot % 360) + 360) % 360 } : {});
 
 function colorOf(theme: ThemeDef, key: TextStyleDef["color"]): string {
   return resolveThemeColor(theme.colors[key]) ?? "FFFFFF";
 }
 
-function addText(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, slot: LayoutSlot, theme: ThemeDef, origin?: string): void {
-  const def = styleFor(el, slot, theme);
+function addText(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, place: Place, theme: ThemeDef, origin?: string): void {
+  const def = styleFor(el, place, theme);
   const size = unitsToPoints(def.size);
   const runs = blocksToRuns(el.blocks, { upper: def.uppercase, origin }).map((r) => {
     const { fontSize, ...rest } = r.options;
@@ -136,7 +150,7 @@ function addText(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, slot: LayoutSl
     };
   });
   if (runs.every((r) => r.text === "")) return;
-  const rect = slot.rect;
+  const rect = place.rect;
   pptxSlide.addText(runs as PptxGenJS.TextProps[], {
     x: unitsToInches(rect.x),
     y: unitsToInches(rect.y),
@@ -147,8 +161,9 @@ function addText(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, slot: LayoutSl
     fontSize: Math.round(size * 10) / 10,
     bold: def.weight >= 600,
     color: colorOf(theme, def.color),
-    align: slot.align,
-    valign: slot.valign === "center" ? "middle" : slot.valign,
+    align: place.align,
+    valign: place.valign === "center" ? "middle" : place.valign,
+    ...rotation(place.rot),
     lineSpacingMultiple: def.leading,
     fit: "none",
     wrap: true,
@@ -170,12 +185,31 @@ function placeImage(rect: LayoutSlot["rect"], size: ImageSize | null) {
   };
 }
 
-async function addImage(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, slot: LayoutSlot, load: BuildPptxOptions["loadImage"]): Promise<boolean> {
+async function addImage(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, place: Place, load: BuildPptxOptions["loadImage"]): Promise<boolean> {
   if (!el.src) return true;
   const image = await load(el.src);
   if (!image) return false;
-  pptxSlide.addImage({ data: image.data, altText: el.alt ?? "", ...placeImage(slot.rect, image.size) });
+  pptxSlide.addImage({ data: image.data, altText: el.alt ?? "", ...placeImage(place.rect, image.size), ...rotation(place.rot) });
   return true;
+}
+
+const SHAPE_TYPES = { rect: "rect", rounded: "roundRect", ellipse: "ellipse" } as const;
+
+function addShape(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef): void {
+  const color = resolveThemeColor(theme.colors[el.fill ?? "accent"]) ?? "FFFFFF";
+  const box = { x: unitsToInches(rect.x), y: unitsToInches(rect.y), w: unitsToInches(rect.w), h: unitsToInches(rect.h), ...rotation(el.rot ?? 0) };
+  const kind = el.shape ?? "rect";
+  if (kind === "line" || kind === "arrow") {
+    const thickness = kind === "arrow" ? rect.h / 4 : rect.h;
+    pptxSlide.addShape(pptx.ShapeType.line, {
+      ...box,
+      y: unitsToInches(rect.y + rect.h / 2),
+      h: 0,
+      line: { color, width: Math.max(0.25, unitsToPoints(thickness)), ...(kind === "arrow" ? { endArrowType: "triangle" as const } : {}) },
+    });
+    return;
+  }
+  pptxSlide.addShape(pptx.ShapeType[SHAPE_TYPES[kind]], { ...box, fill: { color }, line: { type: "none" } });
 }
 
 export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Promise<BuiltPptx> {
@@ -200,12 +234,16 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
     const pptxSlide = pptx.addSlide({ masterName: MASTER });
     const layout = layoutById(slide.layoutId);
     for (const el of slide.elements) {
+      if (el.kind === "group") continue;
       const slot = layout.slots.find((s) => s.slot === el.slot);
-      if (!slot) continue;
-      if (el.kind === "text" && slot.kind === "text") addText(pptxSlide, el, slot, theme, opts.origin);
-      else if (el.kind === "image" && slot.kind === "image") {
-        if (!(await addImage(pptxSlide, el, slot, opts.loadImage))) skippedImages++;
-      }
+      const own = ownRect(el);
+      const rect = own ?? slot?.rect;
+      if (!rect) continue;
+      const place: Place = { rect, rot: el.rot ?? 0, align: slot?.align ?? "left", valign: slot?.valign ?? "top", style: slot?.style ?? "body" };
+      if (el.kind === "text" && (!slot || slot.kind === "text")) addText(pptxSlide, el, place, theme, opts.origin);
+      else if (el.kind === "image" && (!slot || slot.kind === "image")) {
+        if (!(await addImage(pptxSlide, el, place, opts.loadImage))) skippedImages++;
+      } else if (el.kind === "shape" && !slot && own) addShape(pptx, pptxSlide, el, own, theme);
     }
     if (slide.notes.text) pptxSlide.addNotes(slide.notes.text);
   }
