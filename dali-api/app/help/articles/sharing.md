@@ -46,7 +46,7 @@ For a folder, **Folder access** sets who can open it and everything inside. Choo
 
 ## Share an uploaded file
 
-An uploaded file, such as a PDF or spreadsheet, can be shared by name like a document. In [Drive](/drive), right-click the file or open its menu and choose **Share…**. If you don't see it, or the dialog says you can't manage it, you don't manage that file's sharing.
+An uploaded file, such as a PDF or spreadsheet, can be shared by name like a document. In [Drive](/drive), right-click the file or open its menu and choose **Share…**, or open the file and click **Share** at the top. If you don't see it, or the dialog says you can't manage it, you don't manage that file's sharing.
 
 The dialog works like the one for documents, with a few differences:
 
