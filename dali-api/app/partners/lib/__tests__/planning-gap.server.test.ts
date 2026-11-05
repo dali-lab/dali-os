@@ -87,7 +87,7 @@ describe("loadPlanningData term selection", () => {
       projectTerms: { some: { term: { sortKey: { lte: 3 } } } },
     });
     expect(db.project.findMany.mock.calls[0][0].select.roleRequests.where).toEqual({
-      termId: { in: ["t26s", "t26w"] },
+      term: { sortKey: { gte: 2 } },
     });
     expect(db.partnerApplication.findMany.mock.calls[0][0].where).toMatchObject({
       resultingProjectId: null,
@@ -174,6 +174,67 @@ describe("loadPlanningData projects", () => {
     ]);
     const data = await loadPlanningData("t26s");
     expect([...data.items, ...data.listOnlyItems][0].piName).toBe("Grace Hopper");
+  });
+});
+
+describe("loadPlanningData popup spots", () => {
+  beforeEach(() => {
+    db.domain.findMany.mockResolvedValue([
+      { id: "eng", displayName: "Engineering", active: true, isSystem: false },
+      { id: "des", displayName: "Design", active: true, isSystem: false },
+      { id: "old", displayName: "Retired", active: false, isSystem: false },
+      { id: "sys", displayName: "Core", active: true, isSystem: true },
+    ]);
+  });
+
+  it("totals spots per domain for each upcoming term, sorted by domain name", async () => {
+    db.project.findMany.mockResolvedValue([
+      project({
+        projectTerms: [
+          { termId: "t26w", pi: ada },
+          { termId: "t26s", pi: ada },
+          { termId: "t26f", pi: null },
+        ],
+        roleRequests: [
+          { termId: "t26w", domainId: "eng", slots: 9 },
+          { termId: "t26s", domainId: "eng", slots: 2 },
+          { termId: "t26s", domainId: "eng", slots: 1 },
+          { termId: "t26s", domainId: "des", slots: 1 },
+          { termId: "t26f", domainId: "des", slots: 2 },
+        ],
+      }),
+    ]);
+    const { projectInfo } = await loadPlanningData("t26s");
+    expect(projectInfo.p1.spotsByTerm).toEqual({
+      t26s: [
+        { domainId: "des", name: "Design", slots: 1 },
+        { domainId: "eng", name: "Engineering", slots: 3 },
+      ],
+      t26f: [{ domainId: "des", name: "Design", slots: 2 }],
+    });
+  });
+
+  it("gives a planned term with no role requests an empty spot list", async () => {
+    db.project.findMany.mockResolvedValue([project({ projectTerms: [{ termId: "t26s", pi: null }] })]);
+    const { projectInfo } = await loadPlanningData("t26s");
+    expect(projectInfo.p1.spotsByTerm).toEqual({ t26s: [] });
+  });
+
+  it("does not count a later term's spots as last term's", async () => {
+    db.project.findMany.mockResolvedValue([
+      project({
+        projectTerms: [{ termId: "t26w", pi: ada }, { termId: "t26f", pi: ada }],
+        roleRequests: [{ termId: "t26f", domainId: "eng", slots: 5 }],
+      }),
+    ]);
+    const data = await loadPlanningData("t26s");
+    expect([...data.items, ...data.listOnlyItems][0].spotsByDomain ?? {}).toEqual({});
+  });
+
+  it("offers only active, non-system domains for new spots", async () => {
+    const data = await loadPlanningData("t26s");
+    expect(data.spotDomains.map((d) => d.id)).toEqual(["eng", "des"]);
+    expect(data.domains.map((d) => d.id)).toEqual(["eng", "des", "old", "sys"]);
   });
 });
 
