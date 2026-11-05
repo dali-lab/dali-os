@@ -106,6 +106,9 @@ export function Inspector({
   onBuild,
   onBuildBullets,
   onDownloadPdf,
+  onImport,
+  importing = false,
+  downloadHref,
 }: {
   slide: RenderSlide | null;
   themeId: string;
@@ -120,6 +123,9 @@ export function Inspector({
   onBuild?: (slot: string, build: number | null) => void;
   onBuildBullets?: (slot: string, on: boolean) => void;
   onDownloadPdf?: (withNotes: boolean) => void;
+  onImport?: () => void;
+  importing?: boolean;
+  downloadHref?: string;
 }) {
   const [tab, setTab] = useState<Tab>("slide");
   const layout = slide ? layoutById(slide.layoutId) : null;
@@ -230,6 +236,22 @@ export function Inspector({
                 {editable && (
                   <Button variant="secondary" size="sm" onClick={() => onDownloadPdf(true)}>
                     Download PDF with notes
+                  </Button>
+                )}
+              </div>
+            </Section>
+          )}
+          {(downloadHref || (editable && onImport)) && (
+            <Section title="PowerPoint">
+              <div className="flex flex-wrap gap-2">
+                {downloadHref && (
+                  <Button variant="secondary" size="sm" onClick={() => window.location.assign(downloadHref)}>
+                    Download PowerPoint
+                  </Button>
+                )}
+                {editable && onImport && (
+                  <Button variant="secondary" size="sm" disabled={importing} onClick={onImport}>
+                    Import slides
                   </Button>
                 )}
               </div>

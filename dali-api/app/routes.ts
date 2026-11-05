@@ -785,6 +785,7 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+  route("slides/:pageId/export.pptx", "routes/slides.$pageId.export-pptx.ts"),
 
   // Public read-only render for "Anyone with the link" documents — registered
   // OUTSIDE the app-shell layout so an unauthenticated visitor can read it. The

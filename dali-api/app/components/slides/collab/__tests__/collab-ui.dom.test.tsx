@@ -369,6 +369,28 @@ describe("Inspector", () => {
     });
   });
 
+  it("offers PowerPoint download and import in the Deck tab, import only to editors", () => {
+    const { snap } = deck(1);
+    const onImport = vi.fn();
+    const assign = vi.fn();
+    vi.stubGlobal("location", { assign });
+    const open = (props: object) => {
+      const el = render(createElement(Inspector, { ...base, slide: snap.slides[0], downloadHref: "/slides/p1/export.pptx", ...props }));
+      click([...el.querySelectorAll("[role=radio]")].find((b) => b.textContent === "Deck") ?? null);
+      return el;
+    };
+    const buttons = (el: HTMLElement) => [...el.querySelectorAll("button")].filter((b) => /PowerPoint|Import slides/.test(b.textContent ?? ""));
+    const editor = open({ onImport });
+    expect(buttons(editor).map((b) => b.textContent)).toEqual(["Download PowerPoint", "Import slides"]);
+    click(buttons(editor)[0]);
+    expect(assign).toHaveBeenCalledWith("/slides/p1/export.pptx");
+    click(buttons(editor)[1]);
+    expect(onImport).toHaveBeenCalledTimes(1);
+    expect(buttons(open({ onImport, editable: false })).map((b) => b.textContent)).toEqual(["Download PowerPoint"]);
+    expect(buttons(open({ onImport, importing: true }))[1].hasAttribute("disabled")).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it("changes the text style of the selected slot", () => {
     const { snap } = deck(1);
     const onTextStyle = vi.fn();

@@ -24,6 +24,7 @@ import { DeckFollowLayer } from "~/components/slides/live/DeckFollowLayer";
 import { PresentMenu } from "~/components/slides/live/PresentMenu";
 import { ReadOnlyDeck } from "~/components/slides/collab/ReadOnlyDeck";
 import { PageBarTitle } from "~/components/shell/page-bar-slot";
+import { DeckDownloadItems } from "~/components/slides/pptx/DeckDownloadItems";
 import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
 import { loadDrivePageAncestry } from "~/lib/drive-page-trail.server";
 import { prisma } from "~/lib/db.server";
@@ -163,6 +164,7 @@ export default function SlideDeckPage({ loaderData }: Route.ComponentProps) {
     ) : (
       <>
         <PageBarTitle title={title} emoji={iconEmoji ?? null} />
+        <DeckDownloadItems pageId={pageId} />
         <ReadOnlyDeck
           slides={deck?.slides ?? []}
           themeId={deck?.themeId ?? "dali-dark"}
