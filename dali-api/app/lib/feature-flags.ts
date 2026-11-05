@@ -83,7 +83,7 @@ export const FEATURE_FLAGS = [
     key: "community",
     label: "Community",
     description:
-      "The Community sidebar area: Connect, Opportunities, Gallery and Blogs. Blogs opens /resources: a front page of member blog posts (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Connect stays under Lab and the other Community pages are not reachable.",
+      "The Community sidebar area: Connect, Opportunities, Gallery and Stories. Stories opens /resources: a front page of member stories (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Connect stays under Lab and the other Community pages are not reachable.",
   },
   {
     key: "email-personal",

@@ -254,7 +254,7 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Connect", href: "/connect", icon: MapPinned },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Blogs", href: "/resources", icon: Newspaper },
+      { label: "Stories", href: "/resources", icon: Newspaper },
     ],
   },
   {
@@ -413,7 +413,7 @@ const ALUMNI_AREAS: NavArea[] = [
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Blogs", href: "/resources", icon: Newspaper },
+      { label: "Stories", href: "/resources", icon: Newspaper },
       REFER_NAV_ITEM,
     ],
   },
