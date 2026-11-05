@@ -21,7 +21,7 @@ import {
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Segmented } from "~/components/ui/Segmented";
-import { PageBarHideCopyLink, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarHideCopyLink, PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { FormQrDialog } from "~/forms/components/FormQrDialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
@@ -362,18 +362,9 @@ export function FormDetail() {
     }
   }
 
-  async function renameForm() {
-    const next = await dialog.prompt({
-      title: "Rename form",
-      label: "Form name",
-      defaultValue: form.name,
-      confirmLabel: "Rename",
-      validate: (v) => (v.trim() ? null : "Enter a name."),
-    });
-    const name = next?.trim();
-    if (!name || name === form.name) return;
-    renameFetcher.submit({ intent: "rename-form", id: form.id, name }, { method: "post" });
-  }
+  const [icon, setIcon] = useState(form.iconEmoji ?? null);
+  useEffect(() => setIcon(form.iconEmoji ?? null), [form.iconEmoji]);
+  const iconFetcher = useFetcher();
 
   const primary = isEditing ? (
     <Tooltip
@@ -403,6 +394,15 @@ export function FormDetail() {
   return (
     <div className="space-y-6">
       <PageBarHideCopyLink />
+      <PageBarTitle
+        title={form.name}
+        onRename={(name) => renameFetcher.submit({ intent: "rename-form", id: form.id, name }, { method: "post" })}
+        emoji={icon}
+        onEmojiChange={(next) => {
+          setIcon(next);
+          iconFetcher.submit({ intent: "set-form-icon", id: form.id, iconEmoji: next ?? "" }, { method: "post" });
+        }}
+      />
       <PageBarPortal slot="status">
         <div className="flex items-center gap-2">
           <FormVersionMenu
@@ -472,9 +472,6 @@ export function FormDetail() {
         {primary}
       </PageBarPortal>
       <PageBarMenuItems>
-        <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => void renameForm()}>
-          Rename
-        </Menu.Item>
         <Menu.Item icon={<Settings className="h-3.5 w-3.5" />} onSelect={() => setSettingsOpen(true)}>
           Form settings
         </Menu.Item>

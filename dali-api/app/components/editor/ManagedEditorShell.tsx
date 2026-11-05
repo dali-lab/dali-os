@@ -3,7 +3,7 @@
 // version history alongside a live collab working draft.
 //
 // What it provides:
-//   • Page-bar slots: status, actions and overflow rows (rename included)
+//   • Page-bar slots: status, actions, overflow rows and click-to-rename on the title crumb
 //   • Version sidebar slot: scrollable version list with "New version" button
 //   • "Restore this version" affordance: seeds the collab room from a past version
 //   • Unsaved-changes guard: warns before leaving while a "new version" draft
@@ -17,10 +17,9 @@ import {
   useEffect,
 } from "react";
 import { useSubmit } from "react-router";
-import { Pencil, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
-import { Menu } from "~/components/ui/floating";
-import { PageBarMenuItems, PageBarPortal } from "~/components/shell/page-bar-slot";
+import { PageBarMenuItems, PageBarPortal, PageBarTitle } from "~/components/shell/page-bar-slot";
 
 // ─── Save-state indicator ────────────────────────────────────────────────────
 
@@ -55,27 +54,16 @@ interface RenameProps {
   renameError?: string;
 }
 
-function RenameMenuItem({ name, onRename, renameIntent }: RenameProps) {
-  const dialog = useDialog();
+function RenameRegistration({ name, onRename, renameIntent }: RenameProps) {
   const submit = useSubmit();
-  async function rename() {
-    const next = (
-      await dialog.prompt({
-        title: "Rename",
-        label: "Name",
-        defaultValue: name,
-        confirmLabel: "Rename",
-        validate: (v) => (v.trim() ? null : "Enter a name."),
-      })
-    )?.trim();
-    if (!next || next === name) return;
-    onRename?.(next);
-    if (renameIntent) submit({ intent: renameIntent, name: next }, { method: "post" });
-  }
   return (
-    <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => void rename()}>
-      Rename
-    </Menu.Item>
+    <PageBarTitle
+      title={name}
+      onRename={(next) => {
+        onRename?.(next);
+        if (renameIntent) submit({ intent: renameIntent, name: next }, { method: "post" });
+      }}
+    />
   );
 }
 
@@ -189,10 +177,8 @@ export function ManagedEditorShell({
         </PageBarPortal>
       )}
       {headerActions && <PageBarPortal slot="actions">{headerActions}</PageBarPortal>}
-      <PageBarMenuItems>
-        {rename && <RenameMenuItem {...rename} name={rename.name ?? name} />}
-        {menuItems}
-      </PageBarMenuItems>
+      {rename && <RenameRegistration {...rename} name={rename.name ?? name} />}
+      {menuItems && <PageBarMenuItems>{menuItems}</PageBarMenuItems>}
       {rename?.renameError && <p className="text-sm text-destructive">{rename.renameError}</p>}
       {metaBadges && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{metaBadges}</div>

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Download, Upload } from "lucide-react";
 import { Menu, Tooltip } from "~/components/ui/floating";
-import { PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
@@ -188,6 +188,7 @@ export default function FilePage() {
   const {
     fileId,
     projectId,
+    title,
     tags,
     allTags,
     versions,
@@ -238,8 +239,19 @@ export default function FilePage() {
     }
   }
 
+  async function rename(next: string) {
+    await fetch(`/api/files/${fileId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ intent: "rename", title: next }),
+    });
+    revalidator.revalidate();
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      <PageBarTitle title={title} onRename={canEdit ? rename : undefined} />
       {selected && (
         <PageBarPortal slot="status">
           <span className="text-[13px] text-os-muted">

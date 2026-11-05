@@ -91,14 +91,8 @@ describe("ManagedEditorShell", () => {
     expect(container.textContent).toContain("slug: mentor");
   });
 
-  it("lists Rename then the page's own rows in the overflow", async () => {
+  it("lists only the page's own rows in the overflow, with no Rename row", async () => {
     await mount();
-    await act(async () => container.querySelector<HTMLElement>("[aria-label='More actions']")!.click());
-    expect([...document.body.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent)).toEqual(["Rename", "Archive"]);
-  });
-
-  it("offers no Rename without a rename config", async () => {
-    await mount({ rename: undefined });
     await act(async () => container.querySelector<HTMLElement>("[aria-label='More actions']")!.click());
     expect([...document.body.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent)).toEqual(["Archive"]);
   });

@@ -35,6 +35,7 @@ import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
 import { PageBarSlotProvider, usePageBarTargetSetters } from "~/components/shell/page-bar-slot";
 import { OverflowMenu } from "~/components/shell/OverflowMenu";
+import { PageBarTrail } from "~/components/Breadcrumbs";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -96,6 +97,7 @@ function Bar() {
   return createElement(
     "header",
     null,
+    createElement(PageBarTrail, { crumbs: [{ label: "Forms", to: "/forms" }, { label: "My form", icon: createElement("span", { "data-testid": "glyph" }, "G") }] }),
     createElement("div", { "data-testid": "status", ref: statusRef }),
     createElement("div", { "data-testid": "actions", ref: actionsRef }),
     createElement(OverflowMenu, { shellItems: createElement("span", null, "shell") }),
@@ -450,12 +452,12 @@ describe("FormDetail", () => {
 
     it("moves settings, QR code and Unpublish into the overflow", async () => {
       await mount(published());
-      expect(await overflow()).toEqual(["Rename", "Form settings", "QR code", "Unpublish"]);
+      expect(await overflow()).toEqual(["Form settings", "QR code", "Unpublish"]);
     });
 
     it("offers no QR code or Unpublish before publishing", async () => {
       await mount(loaderData());
-      expect(await overflow()).toEqual(["Rename", "Form settings"]);
+      expect(await overflow()).toEqual(["Form settings"]);
     });
 
     it("adds Discard draft to the overflow when a draft exists", async () => {
@@ -465,12 +467,31 @@ describe("FormDetail", () => {
       expect(await overflow()).toContain("Discard draft");
     });
 
-    it("renames from the overflow", async () => {
+    it("renames from the title crumb with the existing rename action", async () => {
       await mount(loaderData());
-      await overflow();
-      await click([...document.body.querySelectorAll('[role="menuitem"]')].find((e) => e.textContent?.trim() === "Rename"));
-      const input = document.body.querySelector<HTMLInputElement>('[role="dialog"] input, [role="alertdialog"] input')!;
+      await click(container.querySelector("button[aria-label='Rename']"));
+      const input = container.querySelector<HTMLInputElement>("input[aria-label='Page name']")!;
       expect(input.value).toBe("My form");
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Renamed form");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => void input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+      await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+      expect(submitted).toContainEqual({ intent: "rename-form", id: "f1", name: "Renamed form" });
+    });
+
+    it("sets the form icon from the crumb glyph with set-form-icon", async () => {
+      await mount(loaderData());
+      await click(container.querySelector("[data-testid=glyph]")!.closest("button"));
+      await click([...document.body.querySelectorAll("button")].find((b) => b.textContent === "🚀"));
+      await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+      expect(submitted).toContainEqual({ intent: "set-form-icon", id: "f1", iconEmoji: "🚀" });
+    });
+
+    it("has no Rename row in the overflow", async () => {
+      await mount(loaderData());
+      expect(await overflow()).not.toContain("Rename");
     });
 
     it("hides Copy link and Share for a managed form and offers Publish only while drafting", async () => {

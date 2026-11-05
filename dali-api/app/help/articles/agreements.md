@@ -27,7 +27,7 @@ Click **Issue all** at the top of the console (or **Issue term agreements** on t
 ## Create an agreement
 
 1. In the [Drive](/drive), open the **Core** drive and choose **New** then **New agreement**. Type a name and click **Create**. The agreement opens with no enforcement and no audience, so nothing is sent yet.
-2. Set who it applies to with the pills at the top of the page. The agreement's name is in the breadcrumb, and the status next to it reads, for example, **v4 · In force** or **v2 · Draft**. To rename it, open the three-dot menu and choose **Rename**:
+2. Set who it applies to with the pills at the top of the page. The agreement's name is in the breadcrumb, and the status next to it reads, for example, **v4 · In force** or **v2 · Draft**. To rename it, click its name in the breadcrumb, type a new name and press Enter:
    - **Enforcement**: not enforced, hard-gate the app until signed, or gate hiring data (confidentiality).
    - **Audience**: manual (nobody is required automatically), new members, returning members, mentors, hiring participants, or everyone active this term.
    - **Cadence**: one time, each term, or each hiring cycle.

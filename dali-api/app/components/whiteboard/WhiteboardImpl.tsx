@@ -12,7 +12,7 @@ import {
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Trash2, Maximize2, Minimize2, Workflow, Frame, Wand2, FolderSearch } from "lucide-react";
-import { PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { Tooltip } from "~/components/ui/floating";
@@ -38,6 +38,17 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   const navigate = useNavigate();
   const revalidator = useRevalidator();
   const [shareOpen, setShareOpen] = useState(false);
+  const [emoji, setEmoji] = useState(props.iconEmoji);
+  async function savePage(patch: { title?: string; iconEmoji?: string | null }) {
+    if (patch.iconEmoji !== undefined) setEmoji(patch.iconEmoji);
+    await fetch(`/api/documents/${pageId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    revalidator.revalidate();
+  }
   const dialog = useDialog();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const bindingRef = useRef<WhiteboardBinding | null>(null);
@@ -128,6 +139,12 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
           : "dali-whiteboard relative flex min-h-0 flex-1 flex-col bg-page"
       }
     >
+      <PageBarTitle
+        title={title}
+        onRename={canEdit ? (name) => savePage({ title: name }) : undefined}
+        emoji={emoji}
+        onEmojiChange={canEdit ? (next) => savePage({ iconEmoji: next }) : undefined}
+      />
       <PageBarPortal slot="actions">
         <Tooltip content={isFullscreen ? "Exit full screen" : "Full screen"}>
           <button

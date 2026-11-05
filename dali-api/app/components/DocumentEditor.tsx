@@ -20,6 +20,7 @@ import { PresenceBar } from "./collab/PresenceBar";
 import { FIND_SHORTCUT, isFindShortcut, isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, canManageDocTags, type DocTag } from "./TagPicker";
+import { PageBarTitle } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useTaskProjects } from "~/components/doc/task/task-api";
@@ -552,31 +553,37 @@ export function DocumentEditor({
     pendingTitleRef.current = text;
     setLocallyEdited(true);
     if (titleTimer.current) clearTimeout(titleTimer.current);
-    titleTimer.current = setTimeout(async () => {
+    titleTimer.current = setTimeout(() => {
       const trimmed = pendingTitleRef.current.trim();
-      if (!trimmed) return;
-      setSavingTitle(true);
-      try {
-        await fetch(`/api/documents/${pageId}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: trimmed }),
-        });
-        // Refresh the tab title elsewhere on the page.
-        revalidator.revalidate();
-        // Tell the page around this editor (a project hub with the doc in its
-        // side panel). At the top level window.parent is this window.
-        if (typeof window !== "undefined") {
-          window.parent.postMessage(
-            { type: "dali:documentTitleChanged", pageId, title: trimmed },
-            window.location.origin,
-          );
-        }
-      } finally {
-        setSavingTitle(false);
-      }
+      if (trimmed) void persistTitle(trimmed);
     }, 800);
+  }
+
+  async function persistTitle(trimmed: string) {
+    setSavingTitle(true);
+    try {
+      await fetch(`/api/documents/${pageId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      revalidator.revalidate();
+      if (typeof window !== "undefined") {
+        window.parent.postMessage(
+          { type: "dali:documentTitleChanged", pageId, title: trimmed },
+          window.location.origin,
+        );
+      }
+    } finally {
+      setSavingTitle(false);
+    }
+  }
+
+  function renameFromCrumb(name: string) {
+    pendingTitleRef.current = name;
+    if (titleRef.current) titleRef.current.textContent = name;
+    return persistTitle(name);
   }
 
   // FIX 5: Set the h1 DOM text once on mount and when pageId changes (cross-tab
@@ -1300,6 +1307,14 @@ export function DocumentEditor({
 
   const body = (
     <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
+      {inPageBar && (
+        <PageBarTitle
+          title={initialTitle}
+          onRename={canEdit ? renameFromCrumb : undefined}
+          emoji={iconEmoji}
+          onEmojiChange={canEdit ? (e) => void savePageMeta({ iconEmoji: e }) : undefined}
+        />
+      )}
       {inPageBar && meetingStrip}
       {inPanel ? <PageBarPortal slot="actions">{topBar}</PageBarPortal> : topBar}
       {docked && <PageBarMenuItems>{overflowRows}</PageBarMenuItems>}
