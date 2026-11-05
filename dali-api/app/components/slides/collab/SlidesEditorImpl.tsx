@@ -7,6 +7,7 @@ import { MessageSquare } from "lucide-react";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
 import { DeckPdfMenuItems } from "./PdfMenuItems";
 import { deckPdfUrl } from "~/components/slides/live/urls";
 import { Upload } from "lucide-react";
@@ -254,7 +255,14 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
         title={title}
         onRename={editable ? (name) => savePage({ title: name }) : undefined}
         emoji={emoji}
-        onEmojiChange={editable ? (next) => (setEmoji(next), savePage({ iconEmoji: next })) : undefined}
+      />
+      <PageTitleHeader
+        className="px-4 pt-4 pb-3"
+        title={title}
+        iconEmoji={emoji ?? null}
+        canEdit={editable}
+        onRename={(name) => savePage({ title: name })}
+        onIconChange={(next) => (setEmoji(next), void savePage({ iconEmoji: next }))}
       />
       <DeckPdfMenuItems pageId={pageId} canExportNotes={canEdit} />
       <DeckDownloadItems pageId={pageId} />

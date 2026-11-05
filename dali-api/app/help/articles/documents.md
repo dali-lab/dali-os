@@ -11,7 +11,7 @@ If you only have view access, you read the same page but can't edit. Who can ope
 
 ## Write with blocks
 
-Click the title to rename the document, or click its name in the breadcrumb at the top. Below the title you can add an icon and a cover image, and the icon beside the breadcrumb name changes it too. Core members can also add tags to project and General documents.
+Click the title to rename the document, or click its name in the breadcrumb at the top. Above the title you can add an icon and a cover image. Core members can also add tags to project and General documents.
 
 Type `/` on an empty line to open the slash menu, then keep typing to filter it. It offers headings, bullet, numbered and check lists, quotes, code, dividers, toggle lists, tables, images, files, videos, callouts, bookmarks, a page break and two or three column layouts. Press Enter to insert the one you highlighted.
 

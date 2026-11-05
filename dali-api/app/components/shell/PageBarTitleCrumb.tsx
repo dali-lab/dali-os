@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { PageIconPicker } from '~/components/doc-chrome/PageIconPicker'
 import type { PageBarTitleValue } from '~/components/shell/page-bar-slot'
 
 const TITLE_CLASS = 'font-semibold text-foreground'
@@ -59,9 +58,6 @@ export function RenameCrumb({ title, onRename }: { title: string; onRename: (nam
 }
 
 export function TitleCrumbIcon({ title, fallback }: { title: PageBarTitleValue | null; fallback: ReactNode }) {
-  if (title?.onEmojiChange) {
-    return <PageIconPicker compact canEdit iconEmoji={title.emoji ?? null} fallback={fallback} onChange={title.onEmojiChange} />
-  }
   if (title?.emoji) return <span aria-hidden>{title.emoji}</span>
   return <>{fallback}</>
 }

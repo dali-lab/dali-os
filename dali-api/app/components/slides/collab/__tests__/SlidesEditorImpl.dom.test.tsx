@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { DeckSnapshot } from "~/components/slides/deck/snapshot";
 
-const h = vi.hoisted(() => ({ snap: null as unknown, presenceProps: null as unknown }));
+const h = vi.hoisted(() => ({ snap: null as unknown, presenceProps: null as unknown, titleHeader: null as null | { canEdit: boolean; onRename: (n: string) => Promise<void>; onIconChange: (e: string | null) => void } }));
 
 vi.mock("@blocknote/shadcn/style.css", () => ({}));
 vi.mock("~/components/doc/theme.css", () => ({}));
@@ -26,6 +26,7 @@ vi.mock("~/components/ui/floating", () => ({
       createElement("button", { type: "button", disabled: p.disabled, onClick: p.onSelect }, p.children),
   },
 }));
+vi.mock("~/components/doc-chrome/PageTitleHeader", () => ({ PageTitleHeader: (p: NonNullable<typeof h.titleHeader>) => ((h.titleHeader = p), null) }));
 vi.mock("~/components/shell/PageBarShareButton", () => ({ PageBarShareButton: () => null }));
 vi.mock("~/components/sharing/ShareDialog", () => ({ ShareDialog: () => null }));
 vi.mock("~/components/collab/PresenceProvider", () => ({
@@ -106,6 +107,30 @@ describe("SlidesEditorImpl", () => {
     const el = render(true);
     expect(el.querySelector("[data-testid=toolbar]")).not.toBeNull();
     expect(el.querySelector("[data-testid=read-only]")).toBeNull();
+  });
+
+  it("shows the deck title on the page, editable only by an editor", () => {
+    h.snap = snap(1);
+    render(true);
+    expect(h.titleHeader!.canEdit).toBe(true);
+    act(() => root.unmount());
+    root = createRoot(container);
+    render(false);
+    expect(h.titleHeader!.canEdit).toBe(false);
+  });
+
+  it("saves a rename and an icon from the page title through /api/documents/:id", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    h.snap = snap(1);
+    render(true);
+    await act(async () => {
+      await h.titleHeader!.onRename("Q3 review");
+      h.titleHeader!.onIconChange("🚀");
+    });
+    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body as string));
+    expect(bodies).toEqual([{ title: "Q3 review" }, { iconEmoji: "🚀" }]);
+    vi.unstubAllGlobals();
   });
 
   it("offers PowerPoint download to everyone and import only to editors", () => {

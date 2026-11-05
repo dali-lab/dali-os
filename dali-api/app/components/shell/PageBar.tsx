@@ -8,7 +8,7 @@ import { COPY_LINK_SHORTCUT, FAVORITE_SHORTCUT } from '~/lib/shortcuts'
 import { PageDocButton } from '~/components/page-docs/PageDocButton'
 import { PageBarTrail, useDocumentTitle, usePageTrail } from '~/components/Breadcrumbs'
 import { TablessHistoryNav } from '~/components/TablessHistoryNav'
-import { usePageBarCopyLinkHidden, usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
+import { usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
 import { pageBarCrumbs } from '~/components/shell/page-bar-model'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { AskButton } from '~/ask/components/AskButton'
@@ -87,7 +87,6 @@ export function PageBar({
   onCopyLink: () => void
 }) {
   const { statusRef, actionsRef, presenceRef } = usePageBarTargetSetters()
-  const copyLinkHidden = usePageBarCopyLinkHidden()
   const labels = starLabels(star)
   const browserDesktop = useIsBrowserDesktopCandidate()
   const openInApp = useOpenCurrentPageInDesktop()
@@ -144,15 +143,13 @@ export function PageBar({
                   Open in desktop app
                 </Menu.Item>
               )}
-              {!copyLinkHidden && (
-                <Menu.Item
-                  icon={<LinkIcon className="h-3.5 w-3.5" />}
-                  shortcut={COPY_LINK_SHORTCUT}
-                  onSelect={onCopyLink}
-                >
-                  Copy link
-                </Menu.Item>
-              )}
+              <Menu.Item
+                icon={<LinkIcon className="h-3.5 w-3.5" />}
+                shortcut={COPY_LINK_SHORTCUT}
+                onSelect={onCopyLink}
+              >
+                Copy link
+              </Menu.Item>
             </>
           }
         />

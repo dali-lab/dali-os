@@ -194,17 +194,43 @@ describe("WhiteboardImpl title crumb", () => {
     expect(bodies(fetchMock, "/api/documents/w1")).toEqual([{ title: "Renamed board" }]);
   });
 
-  it("saves the icon from the crumb glyph through /api/documents/:id", async () => {
+  it("keeps the crumb glyph static for an editor", async () => {
+    await mount();
+    expect(container.querySelector("[data-testid=glyph]")!.closest("button")).toBeNull();
+  });
+});
+
+describe("WhiteboardImpl page title", () => {
+  it("renames from the page title through /api/documents/:id", async () => {
     const fetchMock = mockFetch();
     await mount();
-    await act(async () => container.querySelector("[data-testid=glyph]")!.closest("button")!.click());
+    const input = container.querySelector<HTMLInputElement>("input[aria-label='Title']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Renamed board");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => void input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+    expect(bodies(fetchMock, "/api/documents/w1")).toEqual([{ title: "Renamed board" }]);
+  });
+
+  it("saves the icon from the page title through /api/documents/:id", async () => {
+    const fetchMock = mockFetch();
+    await mount();
+    await act(async () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Add icon")!.click());
     await act(async () => [...document.body.querySelectorAll("button")].find((b) => b.textContent === "🚀")!.click());
     expect(bodies(fetchMock, "/api/documents/w1")).toEqual([{ iconEmoji: "🚀" }]);
   });
 
-  it("keeps a static crumb for a viewer", async () => {
+  it("shows a plain title for a viewer", async () => {
     await mount({ canEdit: false });
     expect(container.querySelector("button[aria-label='Rename']")).toBeNull();
-    expect(container.querySelector("[data-testid=glyph]")!.closest("button")).toBeNull();
+    expect(container.querySelector("input[aria-label='Title']")).toBeNull();
+    expect(container.querySelector("h1")).not.toBeNull();
+  });
+
+  it("hides the page title in full screen", async () => {
+    await mount();
+    await act(async () => container.querySelector<HTMLElement>("button[aria-label='Full screen']")!.click());
+    expect(container.querySelector("input[aria-label='Title']")).toBeNull();
   });
 });
