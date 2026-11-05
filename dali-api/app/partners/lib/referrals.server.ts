@@ -3,9 +3,18 @@
 // See referral-quiz.ts for the quiz content.
 
 import { prisma } from "~/lib/db.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getUserRoles } from "~/lib/roles";
 import type { PartnerReferralTier } from "~/generated/prisma/enums";
 import { notifyPartners } from "./partner-notify.server";
 import { REFERRAL_TIER_LABEL } from "./referral-quiz";
+
+export async function requireReferralsEnabled(userId: string, request: Request): Promise<void> {
+  const roles = await getUserRoles(userId, request);
+  if (!(await isFeatureEnabled("refer-a-partner", userId, roles, request))) {
+    throw new Response("Not found", { status: 404 });
+  }
+}
 
 export async function hasPassedReferralQuiz(userId: string): Promise<boolean> {
   const row = await prisma.partnerReferralQuizPass.findUnique({

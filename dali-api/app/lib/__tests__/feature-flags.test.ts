@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  FEATURE_FLAGS,
   evaluateFlag,
   evaluateVariant,
   type FeatureFlagDef,
@@ -87,5 +88,12 @@ describe("evaluateVariant", () => {
   it("falls back when the row names an option the registry has dropped", () => {
     expect(evaluateVariant(def, { ...base, everyone: true, variant: "retired" }, "u1", noRoles))
       .toBe("search");
+  });
+});
+
+describe("refer-a-partner flag", () => {
+  it("seeds on for everyone so the live /refer page keeps working until an operator turns it off", () => {
+    const def = FEATURE_FLAGS.find((f) => f.key === "refer-a-partner");
+    expect(def).toMatchObject({ defaultEnabled: true, defaultEveryone: true });
   });
 });

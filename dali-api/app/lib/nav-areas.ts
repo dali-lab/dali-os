@@ -218,6 +218,7 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 // Onboarding journeys. A first-term member gets it pinned under Drive, where
 // they'll see it every day; everyone else finds it in the Lab area.
 const ONBOARDING_NAV_ITEM: SubTab = { label: "Journeys", href: "/journeys", icon: MapIcon };
+const REFER_NAV_ITEM: SubTab = { label: "Refer a partner", href: "/refer", icon: Handshake };
 
 const REGROUPED_AREAS: NavArea[] = [
   {
@@ -235,8 +236,7 @@ const REGROUPED_AREAS: NavArea[] = [
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },
-      // Partner Bounty — members (and alumni) refer potential partners for the lab.
-      { label: "Refer a partner", href: "/refer", icon: Handshake },
+      REFER_NAV_ITEM,
       ONBOARDING_NAV_ITEM,
     ],
   },
@@ -367,6 +367,7 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   const hidden = new Set<string>();
   if (flags.community) hidden.add("/connect");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
+  if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
   return REGROUPED_AREAS.filter((a) => flags.community || a.key !== "community").map((a) =>
     a.key === "projects" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
   );
@@ -403,7 +404,7 @@ const ALUMNI_AREAS: NavArea[] = [
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
       { label: "Blogs", href: "/resources", icon: Newspaper },
-      { label: "Refer a partner", href: "/refer", icon: Handshake },
+      REFER_NAV_ITEM,
     ],
   },
 ];
@@ -420,13 +421,13 @@ function areasForViewer(
     }));
   }
   if (!r?.isAlumni) return areasFor(flags);
-  if (flags.community) return ALUMNI_AREAS;
-  const communityHrefs = new Set(
-    REGROUPED_AREAS.find((a) => a.key === "community")!.subtabs.map((t) => t.href),
+  const hidden = new Set<string>(
+    flags.community ? [] : REGROUPED_AREAS.find((a) => a.key === "community")!.subtabs.map((t) => t.href),
   );
+  if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
   return ALUMNI_AREAS.map((a) => ({
     ...a,
-    subtabs: a.subtabs.filter((t) => !communityHrefs.has(t.href)),
+    subtabs: a.subtabs.filter((t) => !hidden.has(t.href)),
   }));
 }
 
@@ -440,7 +441,7 @@ export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/ro
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor({ community: true, "onboarding-journeys": true }),
+  ...areasFor({ community: true, "onboarding-journeys": true, "refer-a-partner": true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: the sidebar

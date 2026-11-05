@@ -16,6 +16,7 @@ import {
 import {
   createPartnerReferral,
   hasPassedReferralQuiz,
+  requireReferralsEnabled,
 } from "~/partners/lib/referrals.server";
 import { cn } from "~/lib/cn";
 
@@ -35,6 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const redirectResp = await redirectNonMemberToPortal(auth, request);
   if (redirectResp) return redirectResp;
+  await requireReferralsEnabled(auth.user.sub, request);
   if (!(await hasPassedReferralQuiz(auth.user.sub))) {
     return redirect("/refer");
   }
@@ -47,6 +49,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+  await requireReferralsEnabled(auth.user.sub, request);
   if (!(await hasPassedReferralQuiz(auth.user.sub))) {
     return redirect("/refer");
   }
