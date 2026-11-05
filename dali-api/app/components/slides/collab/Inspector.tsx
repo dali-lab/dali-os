@@ -56,7 +56,6 @@ function Appears({
   editable,
   onBuild,
   onBuildBullets,
-  onDownloadPdf,
 }: {
   slide: RenderSlide;
   element: RenderElement | undefined;
