@@ -15,7 +15,7 @@ import {
 } from "~/components/slides/deck/model";
 import { buildOf } from "~/components/slides/deck/builds";
 import { slideMetaFields } from "~/components/slides/deck/slide-meta";
-import { contentFields, type ChartSpec } from "~/components/slides/deck/content";
+import { contentFields, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
 import { extraFields, geometryFields, linkGroups, shapeFields, type RenderSlide } from "~/components/slides/deck/snapshot";
@@ -46,6 +46,7 @@ export interface DeckReadElement {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  poll?: PollSpec;
   crop?: Crop;
   locked?: boolean;
   hFixed?: boolean;

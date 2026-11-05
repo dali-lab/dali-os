@@ -24,7 +24,7 @@ import { applyLive, readLive, slidesLiveEnabled } from "~/lib/slide-live.server"
 import { action, loader } from "../api.slides.$pageId.live";
 import { loader as streamLoader } from "../api.slides.$pageId.live.stream";
 
-const live = { active: true, slideId: "s1", build: 0, presenter: { id: "u1", name: "Ada" }, startedAt: "x" };
+const live = { active: true, slideId: "s1", build: 0, presenter: { id: "u1", name: "Ada" }, startedAt: "x", reactionsOff: false };
 
 beforeEach(() => {
   vi.resetAllMocks();

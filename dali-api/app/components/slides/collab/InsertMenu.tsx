@@ -1,7 +1,8 @@
-import { ArrowRight, BarChart3, Circle, Code2, Image as ImageIcon, LineChart, Minus, PieChart, Plus, Shapes, Smile, Square, Table2, Type, Video } from "lucide-react";
+import { ArrowRight, BarChart3, Circle, Code2, Image as ImageIcon, LineChart, Minus, PieChart, Plus, Shapes, Smile, Square, Table2, Type, Video, Vote } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { Button } from "~/components/ui/Button";
 import { Menu } from "~/components/ui/floating";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { ChartType } from "~/components/slides/deck/content";
 import { SHAPE_KINDS, SHAPE_LABELS, type ShapeKind } from "~/components/slides/deck/model";
 
@@ -14,6 +15,7 @@ export type InsertItem =
   | { type: "code" }
   | { type: "icon" }
   | { type: "emoji" }
+  | { type: "poll" }
   | { type: "shape"; shape: ShapeKind };
 
 const ICON = "h-3.5 w-3.5";
@@ -52,7 +54,11 @@ export const INSERT_GROUPS: Entry[][] = [
   SHAPE_KINDS.map((shape) => ({ label: SHAPE_LABELS[shape], icon: SHAPE_ICONS[shape], item: { type: "shape" as const, shape } })),
 ];
 
+const POLL_ENTRY: Entry = { label: "Poll", icon: <Vote className={ICON} aria-hidden />, item: { type: "poll" } };
+
 export function InsertMenu({ armed, onInsert }: { armed: boolean; onInsert: (item: InsertItem) => void }) {
+  const live = useFeatureFlag("slides-live");
+  const groups = live ? INSERT_GROUPS.map((g, i) => (i === 2 ? [...g, POLL_ENTRY] : g)) : INSERT_GROUPS;
   return (
     <Menu
       ariaLabel="Insert"
@@ -63,7 +69,7 @@ export function InsertMenu({ armed, onInsert }: { armed: boolean; onInsert: (ite
         </Button>
       }
     >
-      {INSERT_GROUPS.map((group, i) => (
+      {groups.map((group, i) => (
         <Fragment key={i}>
           {i > 0 && <Menu.Separator />}
           {group.map((entry) => (

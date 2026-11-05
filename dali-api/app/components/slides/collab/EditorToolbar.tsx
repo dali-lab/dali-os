@@ -3,7 +3,7 @@ import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import type { ArmedTool } from "./FreeformLayer";
 import { InsertMenu, type InsertItem } from "./InsertMenu";
-import { NewSlideSplit } from "./NewSlideSplit";
+import { NewSlideSplit, type SlideLibrary } from "./NewSlideSplit";
 
 export function EditorToolbar({
   canUndo,
@@ -12,6 +12,7 @@ export function EditorToolbar({
   onRedo,
   onAdd,
   onInsert,
+  library,
   armed = null,
   themeId = "dali-dark",
   currentLayoutId = null,
@@ -24,6 +25,7 @@ export function EditorToolbar({
   onRedo: () => void;
   onAdd: (layoutId: string) => void;
   onInsert?: (item: InsertItem) => void;
+  library?: SlideLibrary;
   armed?: ArmedTool | null;
   themeId?: string;
   currentLayoutId?: string | null;
@@ -35,7 +37,7 @@ export function EditorToolbar({
       <IconButton label="Undo" icon={Undo2} disabled={!canUndo} onClick={onUndo} />
       <IconButton label="Redo" icon={Redo2} disabled={!canRedo} onClick={onRedo} />
       <span aria-hidden className="mx-1 h-5 w-px bg-os-container" />
-      <NewSlideSplit themeId={themeId} layoutId={currentLayoutId} onAdd={onAdd} />
+      <NewSlideSplit themeId={themeId} layoutId={currentLayoutId} onAdd={onAdd} library={library} />
       {onInsert && <InsertMenu armed={armed !== null} onInsert={onInsert} />}
       {onGrid && (
         <Button variant="ghost" size="sm" aria-pressed={grid} onClick={onGrid} className="ml-auto">

@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { writeBlocks } from "~/components/slides/pptx/fragment-write";
 import type { ClipItem } from "./clipboard";
-import { cleanChart, cleanIcon, cleanVideoUrl, DEFAULT_CHART_DATA, type ChartSpec, type ChartType } from "./content";
+import { cleanChart, cleanIcon, cleanPoll, cleanVideoUrl, DEFAULT_CHART_DATA, DEFAULT_POLL, type ChartSpec, type ChartType, type PollSpec } from "./content";
 import type { ImportBlock } from "~/components/slides/pptx/import-types";
 import { cleanCrop, type Crop } from "./crop";
 import type { StyleClip } from "./style-clip";
@@ -142,7 +142,7 @@ export function addEmoji(doc: Y.Doc, slideId: string, emoji: string, at?: Point)
   return addTextWith(doc, slideId, FREE_DEFAULTS.emoji, [{ type: "paragraph", content: [{ type: "text", text: glyph, styles: {} }], children: [] }], at, "title");
 }
 
-function addContent(doc: Y.Doc, slideId: string, kind: "chart" | "icon" | "video", size: { w: number; h: number }, fields: Record<string, unknown>, at?: Point): string | null {
+function addContent(doc: Y.Doc, slideId: string, kind: "chart" | "icon" | "video" | "poll", size: { w: number; h: number }, fields: Record<string, unknown>, at?: Point): string | null {
   const slide = slideOf(doc, slideId);
   if (!slide) return null;
   const id = newId();
@@ -169,6 +169,11 @@ export function addVideo(doc: Y.Doc, slideId: string, url: string, at?: Point): 
   return videoUrl ? addContent(doc, slideId, "video", FREE_DEFAULTS.video, { videoUrl }, at) : null;
 }
 
+export function addPoll(doc: Y.Doc, slideId: string, poll: PollSpec = DEFAULT_POLL, at?: Point): string | null {
+  const clean = cleanPoll(poll);
+  return clean ? addContent(doc, slideId, "poll", FREE_DEFAULTS.poll, { poll: clean }, at) : null;
+}
+
 function setOnKind(doc: Y.Doc, slideId: string, id: string, kind: string, write: (el: ElementMap) => void): void {
   const slide = slideOf(doc, slideId);
   const el = slide && elementsOf(slide).get(id);
@@ -179,6 +184,13 @@ function setOnKind(doc: Y.Doc, slideId: string, id: string, kind: string, write:
 export function setChart(doc: Y.Doc, slideId: string, id: string, chart: ChartSpec): void {
   const clean = cleanChart(chart);
   if (clean) setOnKind(doc, slideId, id, "chart", (el) => el.set("chart", clean));
+}
+
+export function setPoll(doc: Y.Doc, slideId: string, id: string, poll: PollSpec): boolean {
+  const clean = cleanPoll(poll);
+  if (!clean) return false;
+  setOnKind(doc, slideId, id, "poll", (el) => el.set("poll", clean));
+  return true;
 }
 
 export function setIconName(doc: Y.Doc, slideId: string, id: string, name: string): void {
@@ -521,6 +533,7 @@ export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: 
     if (item.kind === "chart" && item.chart) fields.chart = item.chart;
     if (item.kind === "icon" && item.icon) Object.assign(fields, { icon: item.icon, fill: item.fill ?? "accent" });
     if (item.kind === "video" && item.videoUrl) fields.videoUrl = item.videoUrl;
+    if (item.kind === "poll" && item.poll) fields.poll = item.poll;
     const el = newElementMap(id, item.kind, z++, fields);
     writePlacement(el, { ...item.placed, x: item.placed.x + shift.dx, y: item.placed.y + shift.dy });
     elementsOf(slide).set(id, el);

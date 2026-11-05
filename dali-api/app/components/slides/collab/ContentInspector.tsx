@@ -3,12 +3,18 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Segmented } from "~/components/ui/Segmented";
+import { Toggle } from "~/components/ui/Toggle";
 import {
   CHART_LABELS,
   CHART_TYPES,
   chartDataFromTsv,
   MAX_CHART_CATEGORIES,
   MAX_CHART_SERIES,
+  MAX_POLL_OPTION,
+  MAX_POLL_OPTIONS,
+  MAX_POLL_QUESTION,
+  MIN_POLL_OPTIONS,
+  type PollSpec,
   type ChartData,
   type ChartSpec,
   type ChartType,
@@ -195,9 +201,80 @@ function VideoSection({ element, editable, onChange }: { element: RenderElement;
   );
 }
 
+export function PollSection({ element, editable, onChange }: { element: RenderElement; editable: boolean; onChange: (poll: PollSpec) => void }) {
+  const poll = element.poll;
+  if (!poll) return <p className="text-sm text-os-grey">This poll has no question.</p>;
+  const setOption = (i: number, text: string) => onChange({ ...poll, options: poll.options.map((o, j) => (j === i ? text : o)) });
+  return (
+    <>
+      <Section title="Question">
+        <PollText value={poll.question} label="Poll question" max={MAX_POLL_QUESTION} disabled={!editable} onCommit={(question) => onChange({ ...poll, question })} />
+      </Section>
+      <Section title="Options">
+        <div className="flex flex-col gap-1.5">
+          {poll.options.map((option, i) => (
+            <div key={i} className="flex items-center gap-0.5">
+              <PollText value={option} label={`Option ${i + 1}`} max={MAX_POLL_OPTION} disabled={!editable} onCommit={(t) => setOption(i, t)} />
+              {editable && poll.options.length > MIN_POLL_OPTIONS && (
+                <IconButton label={`Remove option ${i + 1}`} icon={Trash2} onClick={() => onChange({ ...poll, options: poll.options.filter((_, j) => j !== i) })} />
+              )}
+            </div>
+          ))}
+        </div>
+        {editable && (
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={poll.options.length >= MAX_POLL_OPTIONS}
+            onClick={() => onChange({ ...poll, options: [...poll.options, `Option ${poll.options.length + 1}`] })}
+          >
+            <Plus className="h-3 w-3" aria-hidden />
+            Option
+          </Button>
+        )}
+      </Section>
+      <Toggle
+        tone="os"
+        label="Allow several answers"
+        checked={poll.multi === true}
+        disabled={!editable}
+        onChange={(e) => onChange({ question: poll.question, options: poll.options, ...(e.target.checked ? { multi: true } : {}) })}
+      />
+      <p className="text-xs text-os-grey">People following your presentation can vote. Results show on the slide and in presenter view.</p>
+    </>
+  );
+}
+
+function PollText({ value, label, max, disabled, onCommit }: { value: string; label: string; max: number; disabled: boolean; onCommit: (value: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const commit = () => {
+    const next = draft.trim().slice(0, max);
+    if (next === "" || next === value) setDraft(value);
+    else onCommit(next);
+  };
+  return (
+    <input
+      type="text"
+      aria-label={label}
+      value={draft}
+      maxLength={max}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.currentTarget.blur(), e.preventDefault());
+        else if (e.key === "Escape") setDraft(value);
+      }}
+      className="w-full rounded-md border border-os-container bg-transparent px-1.5 py-1 text-xs text-foreground focus:border-os-accent focus:outline-none disabled:opacity-60"
+    />
+  );
+}
+
 export function ContentSection({ element, editable, freeform }: { element: RenderElement; editable: boolean; freeform: InspectorFreeform }) {
   if (element.kind === "chart" && freeform.onChart) return <ChartSection element={element} editable={editable} onChange={(chart) => freeform.onChart!(element.id, chart)} />;
   if (element.kind === "icon" && freeform.onIcon) return <IconSection element={element} editable={editable} onPick={(name) => freeform.onIcon!(element.id, name)} />;
+  if (element.kind === "poll" && freeform.onPoll) return <PollSection element={element} editable={editable} onChange={(poll) => freeform.onPoll!(element.id, poll)} />;
   if (element.kind === "video" && freeform.onVideo) return <VideoSection element={element} editable={editable} onChange={(url) => freeform.onVideo!(element.id, url)} />;
   return null;
 }

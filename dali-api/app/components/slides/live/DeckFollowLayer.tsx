@@ -52,10 +52,12 @@ export function DeckFollowLayer({ pageId, viewerId, canEdit, token, deck, childr
           <DeckSource pageId={pageId} token={token} fallback={deck}>
             {(view) => (
               <FollowStage
+                pageId={pageId}
                 deck={view}
                 presenterName={presenterName}
                 slideId={follow.slideId}
                 build={follow.build}
+                reactionsOff={follow.reactionsOff}
                 onBrowse={() => {
                   setAccepted(false);
                   follow.browseOnMyOwn();

@@ -60,6 +60,12 @@ export function serializeSlides(slides: RenderSlide[]): string | null {
   return JSON.stringify({ mark: SLIDE_CLIP_MARK, v: SLIDE_CLIP_VERSION, slides: clips });
 }
 
+/** The slides as plain clip objects, the form a template stores. Empty when there is nothing to save. */
+export function slidesToClips(slides: RenderSlide[]): unknown[] {
+  const text = serializeSlides(slides);
+  return text ? (JSON.parse(text) as { slides: unknown[] }).slides : [];
+}
+
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 function cleanSlot(raw: unknown, layoutId: string): SlotClip | null {
@@ -109,6 +115,12 @@ export function parseSlideClipboard(text: string): SlideClip[] | null {
     out.push({ layoutId, ...(raw.skipped === true ? { skipped: true } : {}), ...(background ? { background } : {}), ...(transition ? { transition } : {}), slots, items });
   }
   return out.length ? out : null;
+}
+
+/** Clips from stored data (a saved template), checked the same way as clipboard text. Null when nothing survives. */
+export function sanitizeClips(raw: unknown): SlideClip[] | null {
+  if (!Array.isArray(raw)) return null;
+  return parseSlideClipboard(JSON.stringify({ mark: SLIDE_CLIP_MARK, v: SLIDE_CLIP_VERSION, slides: raw }));
 }
 
 /** Adds the clipped slides after `afterId` in order. One undo step when run inside `deckUndo.step()`. Returns the new slide ids. */

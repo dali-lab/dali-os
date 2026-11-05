@@ -11,6 +11,11 @@ import type { PresentDeck } from "./deck-source";
 import { usePresenterSession } from "./usePresenterSession";
 import { useFollowDeck } from "./useFollowDeck";
 import { positionFor, useDeckRender } from "./useDeckRender";
+import { PollLayer } from "./PollLayer";
+import { PresenterPolls, pollsOnSlide } from "./PresenterPolls";
+import { ReactionOverlay } from "./ReactionOverlay";
+import { usePolls } from "./usePolls";
+import { useReactions } from "./useReactions";
 
 export interface DriverProps {
   pageId: string;
@@ -25,6 +30,8 @@ export interface DriverProps {
 /** Runs the presentation: starts it on open, posts every move, and ends it on Esc or End. */
 export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, view, onLeave }: DriverProps) {
   const { live, ready, start, go, end } = usePresenterSession(pageId);
+  const polls = usePolls(pageId);
+  const reactions = useReactions(pageId, !live.reactionsOff);
   const { slideIds, stepsOf, renderSlide } = useDeckRender(deck);
   const desktop = useDesktopVersion() != null;
   const started = useRef(false);
@@ -55,43 +62,64 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const finish = useCallback(() => void end(), [end]);
   const ignore = useCallback(() => {}, []);
 
+  const currentId = slideIds[pos.index];
+  const slidePolls = pollsOnSlide(deck.slides.find((x) => x.id === currentId)?.elements);
+
   if (view === "presenter") {
     return (
-      <PresenterView
-        title={title}
+      <PollLayer state={polls.state}>
+        <PresenterView
+          title={title}
+          slideIds={slideIds}
+          notes={deck.notes}
+          index={pos.index}
+          step={pos.step}
+          stepsOf={stepsOf}
+          onIndexChange={ignore}
+          onPositionChange={move}
+          renderSlide={renderSlide}
+          onEnd={finish}
+          shareUrl={typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`}
+          startedAt={live.startedAt}
+          overlay={<ReactionOverlay items={reactions} />}
+          extras={
+            <PresenterPolls
+              polls={slidePolls}
+              state={polls.state}
+              reactionsOff={live.reactionsOff}
+              onClose={polls.close}
+              onOpen={polls.open}
+              onReset={polls.reset}
+              onReactionsOff={polls.setReactionsOff}
+            />
+          }
+          actions={
+            desktop ? (
+              <Link to={presentUrl(pageId, slideIds[pos.index])} className="text-xs text-os-accent underline">
+                Open slide show
+              </Link>
+            ) : undefined
+          }
+        />
+      </PollLayer>
+    );
+  }
+  return (
+    <PollLayer state={polls.state}>
+      <PresentStage
         slideIds={slideIds}
-        notes={deck.notes}
         index={pos.index}
         step={pos.step}
         stepsOf={stepsOf}
         onIndexChange={ignore}
         onPositionChange={move}
         renderSlide={renderSlide}
-        onEnd={finish}
-        shareUrl={typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`}
-        startedAt={live.startedAt}
-        actions={
-          desktop ? (
-            <Link to={presentUrl(pageId, slideIds[pos.index])} className="text-xs text-os-accent underline">
-              Open slide show
-            </Link>
-          ) : undefined
-        }
-      />
-    );
-  }
-  return (
-    <PresentStage
-      slideIds={slideIds}
-      index={pos.index}
-      step={pos.step}
-      stepsOf={stepsOf}
-      onIndexChange={ignore}
-      onPositionChange={move}
-      renderSlide={renderSlide}
-      transitions={{ slides: deck.slides, themeId: deck.themeId }}
-      onExit={finish}
-    />
+        transitions={{ slides: deck.slides, themeId: deck.themeId }}
+        onExit={finish}
+      >
+        <ReactionOverlay items={reactions} />
+      </PresentStage>
+    </PollLayer>
   );
 }
 
@@ -110,5 +138,15 @@ export function PresentFollower({ pageId, deck, onLeave }: { pageId: string; dec
       </div>
     );
   }
-  return <FollowStage deck={deck} presenterName={follow.presenter.name} slideId={follow.slideId} build={follow.build} onBrowse={onLeave} />;
+  return (
+    <FollowStage
+      pageId={pageId}
+      deck={deck}
+      presenterName={follow.presenter.name}
+      slideId={follow.slideId}
+      build={follow.build}
+      reactionsOff={follow.reactionsOff}
+      onBrowse={onLeave}
+    />
+  );
 }

@@ -37,6 +37,20 @@ While someone is presenting, people with the deck open follow along on their own
 - If you can edit the deck, a bar at the top says who is presenting. Choose **Follow** to join. You are never moved without asking.
 - Choose **Browse on my own** to look around the deck yourself. Choose **Follow** to rejoin.
 
+## Ask the audience with a poll
+
+Choose **Insert**, then **Poll**, to add a question to a slide. Select it and use the inspector to write the question, add or remove options (two to six), and choose whether people can pick more than one answer.
+
+- **Voting**: when you present, everyone following sees the poll on their own screen and can tap an option. Each person has one vote per poll, and they can change it until voting closes. Tap the chosen option again to take the vote back.
+- **Results**: bars and counts update live on the slide, and in presenter view.
+- **Control**: in presenter view, each poll on the current slide has **Close voting** (and **Reopen voting**) and **Reset**, which clears its votes.
+- **Fresh start**: votes and closed polls reset each time you start presenting.
+- **Downloads**: PDF and PowerPoint downloads show the question and options, without votes.
+
+## Reactions
+
+People following your presentation can tap an emoji (thumbs up, clap, heart, laugh, party, thinking) and it floats up the slide on your screen and everyone else's. People can send one a second. Turn **Allow reactions** off in presenter view to hide them for everyone. Reactions aren't saved.
+
 ## Make things appear one step at a time
 
 Select a text box, image, chart, table or other item on a slide and open the **Text** tab in the inspector. Under **Appears**, choose **With slide** or a step number. A small badge on the slide shows which step it belongs to.

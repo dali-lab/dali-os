@@ -104,7 +104,28 @@ export function cleanVideoUrl(raw: unknown): string | null {
   return parseVideoEmbed(url) ? url : null;
 }
 
+export const MIN_POLL_OPTIONS = 2;
+export const MAX_POLL_OPTIONS = 6;
+export const MAX_POLL_QUESTION = 200;
+export const MAX_POLL_OPTION = 80;
+
+export interface PollSpec {
+  question: string;
+  options: string[];
+  multi?: boolean;
+}
+
+export const DEFAULT_POLL: PollSpec = { question: "What do you think?", options: ["Option 1", "Option 2"] };
+
+export function cleanPoll(raw: unknown): PollSpec | null {
+  if (!isObj(raw) || typeof raw.question !== "string" || !Array.isArray(raw.options)) return null;
+  const options = raw.options.filter((o): o is string => typeof o === "string").map((o) => o.trim().slice(0, MAX_POLL_OPTION));
+  if (options.length < MIN_POLL_OPTIONS || options.length > MAX_POLL_OPTIONS || options.some((o) => o === "")) return null;
+  return { question: raw.question.trim().slice(0, MAX_POLL_QUESTION), options, ...(raw.multi === true ? { multi: true } : {}) };
+}
+
 export function contentFields(read: (key: string) => unknown) {
+  const poll = cleanPoll(read("poll"));
   const chart = cleanChart(read("chart"));
   const icon = cleanIcon(read("icon"));
   const videoUrl = cleanVideoUrl(read("videoUrl"));
@@ -112,5 +133,6 @@ export function contentFields(read: (key: string) => unknown) {
     ...(chart ? { chart } : {}),
     ...(icon ? { icon } : {}),
     ...(videoUrl ? { videoUrl } : {}),
+    ...(poll ? { poll } : {}),
   };
 }

@@ -18,7 +18,7 @@ import type { ActionSpec } from "./actions";
 import { ScaledSlide } from "~/components/slides/deck/SlideRender";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { cn } from "~/lib/cn";
-import { NewSlideSplit } from "./NewSlideSplit";
+import { NewSlideSplit, type SlideLibrary } from "./NewSlideSplit";
 import { sectionsOf } from "~/components/slides/deck/slide-meta";
 import type { SlidePeer } from "./useDeckDoc";
 
@@ -181,6 +181,7 @@ export function Filmstrip({
   currentLayoutId = null,
   onSelect,
   onAdd,
+  library,
   onDuplicate,
   onDelete,
   onMove,
@@ -192,6 +193,7 @@ export function Filmstrip({
   editable: boolean;
   onSelect: (id: string, mods: { shift: boolean; meta: boolean }) => void;
   onAdd: (layoutId: string) => void;
+  library?: SlideLibrary;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   /** Drops `id` (and the thumbnails selected with it) onto the thumbnail `overId`. */
@@ -259,7 +261,7 @@ export function Filmstrip({
           </SortableContext>
         </DndContext>
       </div>
-      {editable && <NewSlideSplit themeId={themeId} layoutId={currentLayoutId} onAdd={onAdd} variant="secondary" className="w-full" />}
+      {editable && <NewSlideSplit themeId={themeId} layoutId={currentLayoutId} onAdd={onAdd} variant="secondary" className="w-full" library={library} />}
     </nav>
   );
 }

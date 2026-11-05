@@ -345,6 +345,18 @@ async function addIconElement(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, r
   return true;
 }
 
+function addPollElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef): void {
+  if (!el.poll) return;
+  const font = resolveThemeFont(theme.fonts.body);
+  const box = { x: unitsToInches(rect.x), y: unitsToInches(rect.y), w: unitsToInches(rect.w), h: unitsToInches(rect.h), ...rotation(el.rot ?? 0) };
+  pptxSlide.addShape(pptx.ShapeType.roundRect, { ...box, rectRadius: 0.2, fill: { color: resolveThemeColor(theme.colors.surface) ?? "222222" }, line: { type: "none" } } as PptxGenJS.ShapeProps);
+  const runs: PptxGenJS.TextProps[] = [
+    { text: el.poll.question, options: { bold: true, fontSize: 28, breakLine: true } },
+    ...el.poll.options.map((option) => ({ text: `\u25CB  ${option}`, options: { fontSize: 20, breakLine: true } })),
+  ];
+  pptxSlide.addText(runs, { ...box, margin: 18, align: "left", valign: "top", fontFace: font, color: colorOf(theme, "fg"), paraSpaceAfter: 8 });
+}
+
 function addVideoElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef): void {
   const embed = el.videoUrl ? parseVideoEmbed(el.videoUrl) : null;
   if (!el.videoUrl || !embed) return;
@@ -468,6 +480,7 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
       else if (el.kind === "icon" && !slot && own) {
         if (!(await addIconElement(pptxSlide, el, own, theme, opts.rasterize))) skippedImages++;
       } else if (el.kind === "video" && !slot && own) addVideoElement(pptx, pptxSlide, el, own, theme);
+      else if (el.kind === "poll" && !slot && own) addPollElement(pptx, pptxSlide, el, own, theme);
       else if (el.kind === "image" && (!slot || slot.kind === "image")) {
         if (!(await addImage(pptxSlide, el, place, opts.loadImage))) skippedImages++;
       } else if (el.kind === "shape" && !slot && own) addShape(pptx, pptxSlide, el, own, theme);

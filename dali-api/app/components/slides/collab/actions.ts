@@ -8,6 +8,7 @@ import {
   AlignStartVertical,
   ArrowDownToLine,
   ArrowUpToLine,
+  BookmarkPlus,
   ClipboardPaste,
   Copy,
   Crop,
@@ -286,6 +287,7 @@ export interface ThumbnailHandlers {
   paste: () => void;
   moveTo: (where: "top" | "bottom") => void;
   comment: () => void;
+  saveToLibrary?: () => void;
 }
 
 export interface ThumbnailActionContext {
@@ -325,6 +327,7 @@ export function thumbnailActions(ctx: ThumbnailActionContext): ActionSpec[] {
     !many && Boolean(ctx.startsSection) && { id: "remove-section", label: "Remove section", icon: PanelTop, run: h.removeSection },
     { id: "copy-slide", label: `Copy ${noun}`, icon: Copy, dividerBefore: true, run: h.copy },
     { id: "paste-slide", label: "Paste slide", icon: ClipboardPaste, disabled: !ctx.canPaste, run: h.paste },
+    h.saveToLibrary ? { id: "save-library", label: `Save ${noun} to library`, icon: BookmarkPlus, run: h.saveToLibrary } : false,
     { id: "move-top", label: "Move to top", icon: ArrowUpToLine, dividerBefore: true, disabled: atTop, run: () => h.moveTo("top") },
     { id: "move-bottom", label: "Move to bottom", icon: ArrowDownToLine, disabled: !many && ctx.index === ctx.count - 1, run: () => h.moveTo("bottom") },
     !many && ctx.canComment && { id: "comment", label: "Comment", icon: MessageSquarePlus, dividerBefore: true, run: h.comment },
