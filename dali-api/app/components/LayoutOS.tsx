@@ -225,6 +225,7 @@ export function LayoutOS({
     community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
+    'core-taskboard': useFeatureFlag('core-taskboard'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const askEnabled = useFeatureFlag('ask-dali')

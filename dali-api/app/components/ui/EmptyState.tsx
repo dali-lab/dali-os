@@ -1,10 +1,18 @@
 import type { ReactNode } from "react";
 
-export function EmptyFolder({ children, className }: { children: ReactNode; className?: string }) {
+export function EmptyState({
+  children,
+  actions,
+  className,
+}: {
+  children: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+}) {
   return (
     <div className={`flex flex-col items-center gap-4 px-3 py-8 text-center ${className ?? ""}`}>
       <div
-        data-empty-folder-art
+        data-empty-state-art
         className="relative flex h-14 w-24 flex-col gap-1.5 rounded-lg border-2 border-dashed border-os-container-hi p-2"
         aria-hidden
       >
@@ -21,6 +29,7 @@ export function EmptyFolder({ children, className }: { children: ReactNode; clas
         </div>
       </div>
       <p className="text-sm text-os-muted">{children}</p>
+      {actions && <div className="flex flex-wrap items-center justify-center gap-2">{actions}</div>}
     </div>
   );
 }

@@ -3,6 +3,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
+import { isCore } from "~/lib/roles";
+import { getCoreBoardProject } from "~/core/lib/taskboard.server";
 import { isTaskStatus, TASK_STATUSES } from "~/projects/lib/task-board";
 import { createIssueForTask, normalizeRepo } from "~/projects/lib/github-task-sync";
 import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
@@ -17,7 +19,16 @@ export const CREATE_TASK_TOOL = {
   inputSchema: {
     type: "object" as const,
     properties: {
-      projectId: { type: "string", minLength: 1 },
+      projectId: {
+        type: "string",
+        minLength: 1,
+        description: "Required unless `core` is true.",
+      },
+      core: {
+        type: "boolean",
+        description:
+          "Set true to file the task on the Core taskboard instead of a project. Core members only; projectId is ignored.",
+      },
       title: { type: "string", minLength: 1, maxLength: 500 },
       description: {
         type: "string",
@@ -56,14 +67,15 @@ export const CREATE_TASK_TOOL = {
           "If set, mirror this task to a GitHub issue in the given repo (must appear in the project's repoUrls). Empty string disables.",
       },
     },
-    required: ["projectId", "title"],
+    required: ["title"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
 };
 
 type Input = {
-  projectId: string;
+  projectId?: string;
+  core?: boolean;
   title: string;
   description?: string;
   status?: string;
@@ -88,10 +100,17 @@ export class CreateTaskError extends Error {
   }
 }
 
-export async function runCreateTask(callerId: string, input: Input) {
-  if (!(await canEditProject(callerId, input.projectId))) {
+export async function runCreateTask(callerId: string, rawInput: Input) {
+  let projectId = rawInput.projectId ?? "";
+  if (rawInput.core) {
+    if (!(await isCore(callerId))) throw new CreateTaskError("Forbidden", 403);
+    projectId = (await getCoreBoardProject()).id;
+  } else if (!projectId) {
+    throw new CreateTaskError("projectId or core is required", 400);
+  } else if (!(await canEditProject(callerId, projectId))) {
     throw new CreateTaskError("Forbidden", 403);
   }
+  const input = { ...rawInput, projectId };
 
   const title = input.title.trim();
   if (!title) throw new CreateTaskError("Title is required", 400);
