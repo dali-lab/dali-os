@@ -1,11 +1,7 @@
-import * as Y from "yjs";
 import type { Route } from "./+types/slides.$pageId.export-pptx";
 import { requireAuth, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
-import { deckAccess, loadDeck } from "~/lib/slide-decks.server";
-import { readLiveDeck } from "~/collab/deck-live.server";
-import { readDeck, type DeckRead } from "~/collab/read-deck.server";
-import { seedDeckDoc } from "~/collab/deck-write.server";
+import { deckAccess, readDeckModel } from "~/lib/slide-decks.server";
 import { buildDeckPptx } from "~/components/slides/pptx/export.server";
 import { createImageLoader } from "~/components/slides/pptx/export-images.server";
 
@@ -13,18 +9,6 @@ const PPTX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.present
 
 function pptxFilename(title: string): string {
   return title.replace(/[^A-Za-z0-9 ._-]/g, "").trim().replace(/\s+/g, "_") || "deck";
-}
-
-async function readForExport(pageId: string): Promise<DeckRead> {
-  const loaded = await loadDeck(pageId);
-  if (loaded.storage === "yjs") return (await readLiveDeck(pageId)).read;
-  const scratch = new Y.Doc();
-  try {
-    seedDeckDoc(scratch, loaded.slides);
-    return readDeck(scratch);
-  } finally {
-    scratch.destroy();
-  }
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
@@ -36,7 +20,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const access = await deckAccess(auth.user.sub, params.pageId, request);
   if (!access.ok) return new Response("Not found", { status: 404 });
 
-  const read = await readForExport(params.pageId);
+  const read = await readDeckModel(params.pageId);
   const built = await buildDeckPptx(read, {
     title: access.page.title,
     loadImage: createImageLoader(),

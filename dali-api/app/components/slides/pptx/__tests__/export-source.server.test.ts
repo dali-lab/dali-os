@@ -7,8 +7,7 @@ const mocks = vi.hoisted(() => ({
   isNonMember: vi.fn(async () => false),
   isPartnerAccount: vi.fn(async () => false),
   deckAccess: vi.fn(),
-  loadDeck: vi.fn(),
-  readLiveDeck: vi.fn(),
+  readDeckModel: vi.fn(),
   logAuditEvent: vi.fn(async () => {}),
 }));
 
@@ -18,12 +17,12 @@ vi.mock("~/lib/auth", () => ({
   isNonMember: mocks.isNonMember,
   isPartnerAccount: mocks.isPartnerAccount,
 }));
-vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: mocks.deckAccess, loadDeck: mocks.loadDeck }));
-vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: mocks.readLiveDeck }));
+vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: mocks.deckAccess, readDeckModel: mocks.readDeckModel }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mocks.logAuditEvent }));
 
 import JSZip from "jszip";
 import { readDeck } from "~/collab/read-deck.server";
+import { seedDeckDoc } from "~/collab/deck-write.server";
 import { addSlide, deleteSlide } from "~/components/slides/deck/deck-ops";
 import { initDeck } from "~/components/slides/deck/model";
 import { buildDeckPptx } from "../export.server";
@@ -90,8 +89,7 @@ describe("export route", () => {
     mocks.isNonMember.mockResolvedValue(false);
     mocks.isPartnerAccount.mockResolvedValue(false);
     mocks.deckAccess.mockResolvedValue({ ok: true, page: { id: "p1", title: "Q4 review!", iconEmoji: null }, canEdit: false });
-    mocks.loadDeck.mockResolvedValue({ slides: [], version: "v", storage: "yjs" });
-    mocks.readLiveDeck.mockResolvedValue({ read: { v: 1, themeId: "dali-dark", slides: [], plainText: "" }, updatedAt: null });
+    mocks.readDeckModel.mockResolvedValue({ v: 1, themeId: "dali-dark", slides: [], plainText: "" });
   });
 
   it("rejects signed-out, non-member and partner callers", async () => {
@@ -108,7 +106,7 @@ describe("export route", () => {
     mocks.deckAccess.mockResolvedValueOnce({ ok: false, status: 404, error: "nope" });
     const res = await loader(request());
     expect(res.status).toBe(404);
-    expect(mocks.readLiveDeck).not.toHaveBeenCalled();
+    expect(mocks.readDeckModel).not.toHaveBeenCalled();
   });
 
   it("serves a view-only member an attachment named after the deck and logs it", async () => {
@@ -121,15 +119,13 @@ describe("export route", () => {
     expect(mocks.logAuditEvent).toHaveBeenCalledWith(expect.objectContaining({ action: "document.export", targetId: "p1", metadata: expect.objectContaining({ format: "pptx" }) }));
   });
 
-  it("exports a deck that has not moved to live storage from its saved slides", async () => {
-    mocks.loadDeck.mockResolvedValueOnce({
-      slides: [{ id: "s1", layout: "title", title: "Legacy title", notes: "old notes" }],
-      version: "v",
-      storage: "json",
-    });
+  it("exports the deck as the live model reads it", async () => {
+    const doc = new Y.Doc();
+    seedDeckDoc(doc, [{ id: "s1", layout: "title", title: "Legacy title" }]);
+    mocks.readDeckModel.mockResolvedValueOnce(readDeck(doc));
     const res = await loader(request());
     const zip = await JSZip.loadAsync(await res.arrayBuffer());
     expect(await zip.file("ppt/slides/slide1.xml")!.async("string")).toContain("Legacy title");
-    expect(mocks.readLiveDeck).not.toHaveBeenCalled();
+    expect(mocks.readDeckModel).toHaveBeenCalledWith("p1");
   });
 });
