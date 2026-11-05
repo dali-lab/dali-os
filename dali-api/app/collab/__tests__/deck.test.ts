@@ -89,6 +89,24 @@ describe("readDeck", () => {
     slidesMap(doc).get("a")!.set("layoutId", "two-column");
     expect(projectLegacySlides(readDeck(doc))[0].layout).toBe("content");
   });
+
+  it("projects the section and big number layouts to the title layout with the same output shape", () => {
+    const doc = seeded();
+    slidesMap(doc).get("a")!.set("layoutId", "section");
+    slidesMap(doc).get("b")!.set("layoutId", "bignumber");
+    const out = projectLegacySlides(readDeck(doc));
+    expect(out.slice(0, 2).map((s) => s.layout)).toEqual(["title", "title"]);
+    expect(Object.keys(out[0]).sort()).toEqual(Object.keys(projectLegacySlides(readDeck(seeded()))[0]).sort());
+  });
+
+  it("an MCP write that echoes the projected layout keeps the richer layout id", () => {
+    const doc = seeded();
+    slidesMap(doc).get("a")!.set("layoutId", "section");
+    applySlides(doc, projectLegacySlides(readDeck(doc)));
+    expect(slidesMap(doc).get("a")!.get("layoutId")).toBe("section");
+    applySlides(doc, projectLegacySlides(readDeck(doc)).map((s) => (s.id === "a" ? { ...s, layout: "content" as const } : s)));
+    expect(slidesMap(doc).get("a")!.get("layoutId")).toBe("content");
+  });
 });
 
 describe("applySlides", () => {

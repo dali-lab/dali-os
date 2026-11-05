@@ -1,0 +1,34 @@
+/* Text boxes on a slide take their look from the theme, not the app: type, colour and spacing come from the slot. */
+html:root .dali-slide-slot {
+  --bn-colors-editor-text: currentColor;
+  --bn-colors-editor-background: transparent;
+  --bn-font-family: inherit;
+}
+html:root .dali-slide-slot .dali-doc,
+html:root .dali-slide-slot .bn-container,
+html:root .dali-slide-slot .bn-editor {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: transparent;
+  min-height: 0;
+  padding: 0;
+}
+html:root .dali-slide-slot .bn-block-content,
+html:root .dali-slide-slot .bn-inline-content {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+html:root .dali-slide-slot[data-valign="center"] .bn-editor,
+html:root .dali-slide-slot[data-valign="bottom"] .bn-editor {
+  display: flex;
+  flex-direction: column;
+}
+html:root .dali-slide-slot .bn-block-group {
+  width: 100%;
+}
+html:root .dali-slide-slot .bn-block-outer {
+  line-height: inherit;
+}
