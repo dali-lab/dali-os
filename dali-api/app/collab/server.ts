@@ -9,7 +9,7 @@ import { notifyCollabDocMentions } from "./mentions.server";
 import { reconcilePageLinks } from "./page-links.server";
 import { attachAgentPresence } from "./agent-presence.server";
 
-const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
+const WS_MAX_PAYLOAD_BYTES = 4_194_304; // 4 MB
 const WS_MAX_CONNECTIONS = 100;
 const WS_MAX_CONNECTIONS_PER_USER = 20;
 

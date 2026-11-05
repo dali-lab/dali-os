@@ -7889,6 +7889,8 @@ model SlideDeck {
   page           Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   // Slide[] (app/components/slides/types.ts).
   slides         Json     @default("[]")
+  // "json" reads `slides`; "yjs" reads the slides:{pageId}:deck room. Flips json to yjs once, never back.
+  storage        String   @default("json")
   updatedAt      DateTime @updatedAt
   lastEditedById String?
 }

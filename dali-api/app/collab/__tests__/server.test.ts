@@ -104,7 +104,7 @@ describe("startCollabServer", () => {
     const a = await boot();
     expect(a.config.port).toBe(3002);
     expect(a.config.debounce).toBe(2000);
-    expect(a.wsOptions).toEqual({ maxPayload: 1_048_576 });
+    expect(a.wsOptions).toEqual({ maxPayload: 4_194_304 });
 
     process.env.COLLAB_PORT = "4555";
     const b = await boot();

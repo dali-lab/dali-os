@@ -4,7 +4,11 @@
 // (kind "Slides"). Access: page view for get, page edit for the rest.
 
 import { McpError, requireForAction } from "../../errors";
-import { deckAccess, editDeck, loadDeck, type DeckResult } from "~/lib/slide-decks.server";
+import { prisma } from "~/lib/db.server";
+import { deckAccess, deckStorage, editDeck, loadDeck, type DeckResult } from "~/lib/slide-decks.server";
+import { parseSlides } from "~/components/slides/slide-schema";
+import { applySlides } from "~/collab/deck-write.server";
+import { transactDeck } from "~/collab/deck-live.server";
 import {
   SLIDE_INPUT_SCHEMA,
   applySlideInput,
@@ -76,7 +80,7 @@ export async function runManageSlideDeck(userId: string, args: Args) {
     delete_slide: ["slideId"],
     move_slide: ["slideId", "toIndex"],
   });
-  const { page } = unwrap(await deckAccess(userId, args.pageId));
+  const { page, canEdit } = unwrap(await deckAccess(userId, args.pageId));
 
   if (args.action === "get") {
     const deck = await loadDeck(args.pageId);
@@ -84,34 +88,45 @@ export async function runManageSlideDeck(userId: string, args: Args) {
     return { ...(await deckOutput(page.title, rows, deck.version)), page: pageInfo };
   }
 
-  const saved = unwrap(
-    await editDeck(userId, args.pageId, async (slides) => {
-      switch (args.action) {
-        case "set_slides":
-          return Promise.all(args.slides!.map((s) => applySlideInput(s)));
-        case "add_slide": {
-          const added = await applySlideInput(args.slide!);
-          const at = Math.min(args.index ?? slides.length, slides.length);
-          return [...slides.slice(0, at), added, ...slides.slice(at)];
-        }
-        case "update_slide": {
-          const at = indexOfSlide(slides, args.slideId!);
-          const updated = await applySlideInput(args.slide!, slides[at]);
-          return slides.map((s, i) => (i === at ? updated : s));
-        }
-        case "delete_slide": {
-          indexOfSlide(slides, args.slideId!);
-          return slides.filter((s) => s.id !== args.slideId);
-        }
-        case "move_slide": {
-          const at = indexOfSlide(slides, args.slideId!);
-          const to = Math.min(Math.max(Math.trunc(args.toIndex!), 0), slides.length - 1);
-          return moveItem(slides, at, to - at);
-        }
-        default:
-          throw new McpError(`Unknown action '${args.action}'.`, 400);
+  const edit = async (slides: Slide[]): Promise<Slide[]> => {
+    switch (args.action) {
+      case "set_slides":
+        return Promise.all(args.slides!.map((s) => applySlideInput(s)));
+      case "add_slide": {
+        const added = await applySlideInput(args.slide!);
+        const at = Math.min(args.index ?? slides.length, slides.length);
+        return [...slides.slice(0, at), added, ...slides.slice(at)];
       }
-    }),
-  );
+      case "update_slide": {
+        const at = indexOfSlide(slides, args.slideId!);
+        const updated = await applySlideInput(args.slide!, slides[at]);
+        return slides.map((s, i) => (i === at ? updated : s));
+      }
+      case "delete_slide": {
+        indexOfSlide(slides, args.slideId!);
+        return slides.filter((s) => s.id !== args.slideId);
+      }
+      case "move_slide": {
+        const at = indexOfSlide(slides, args.slideId!);
+        const to = Math.min(Math.max(Math.trunc(args.toIndex!), 0), slides.length - 1);
+        return moveItem(slides, at, to - at);
+      }
+      default:
+        throw new McpError(`Unknown action '${args.action}'.`, 400);
+    }
+  };
+
+  if ((await deckStorage(args.pageId)) === "yjs") {
+    if (!canEdit) throw new McpError("You can view this deck but not edit it.", 403);
+    const next = await edit((await loadDeck(args.pageId)).slides);
+    const valid = parseSlides(JSON.parse(JSON.stringify(next)));
+    if (!valid) throw new McpError("That isn't a valid deck.", 400);
+    await transactDeck(args.pageId, userId, (doc) => applySlides(doc, valid));
+    await prisma.page.update({ where: { id: args.pageId }, data: { lastEditedById: userId } });
+    const saved = await loadDeck(args.pageId);
+    return deckOutput(page.title, saved.slides, saved.version);
+  }
+
+  const saved = unwrap(await editDeck(userId, args.pageId, edit));
   return deckOutput(page.title, saved.slides, saved.version);
 }

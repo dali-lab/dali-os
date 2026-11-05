@@ -14,6 +14,8 @@ import {
 } from "./blocknote-server";
 import { mapPmDocToBlocks } from "./legacy/pm-to-blocknote";
 import { getStructuredData, ydocToBlocks } from "./read";
+import { readDeck } from "./read-deck.server";
+import { restoreDeck } from "./deck-write.server";
 
 const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
 
@@ -153,7 +155,7 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
 
   if (existing) {
     Y.applyUpdate(doc, new Uint8Array(existing.state));
-    if (convertLegacyFragment(name, doc)) {
+    if (!isSlidesRoom(name) && convertLegacyFragment(name, doc)) {
       // Persist the converted state right away so the conversion is durable
       // (a view-only session never fires onStoreDocument) and so a second
       // instance loading this doc sees a populated "blocknote" fragment
@@ -265,6 +267,16 @@ function getStructuredPlainText(doc: Y.Doc): string {
   }
 }
 
+function isSlidesRoom(name: string): boolean {
+  return parseDocName(name)?.entity === "slides";
+}
+
+function roomPlainText(name: string, doc: Y.Doc): string {
+  if (isSlidesRoom(name)) return readDeck(doc).plainText;
+  const parsed = parseDocName(name);
+  return parsed && isStructuredRoom(parsed.entity) ? getStructuredPlainText(doc) : getPlainText(doc);
+}
+
 /**
  * Store the Y.Doc binary state into CollabDocument, and sync the plain text
  * back to the source field so existing queries/views remain correct.
@@ -284,8 +296,7 @@ export async function storeDocument(
   // runs through the BlockNote fragment path and returns "" for them. Use the
   // JSON serialiser instead so the version snapshot plainText mirror is useful.
   const parsed = parseDocName(name);
-  const structured = parsed ? isStructuredRoom(parsed.entity) : false;
-  const plainText = structured ? getStructuredPlainText(doc) : getPlainText(doc);
+  const plainText = roomPlainText(name, doc);
 
   // Upsert the Y.Doc binary state
   const row = await prisma.collabDocument.upsert({
@@ -326,6 +337,14 @@ export async function storeDocument(
         where: { id },
         data: { interviewPrepNote: plainText },
       });
+    }
+  }
+
+  if (entity === "slides" && field === "deck") {
+    try {
+      await indexPageBody(id, plainText, row.updatedAt);
+    } catch (err) {
+      console.error(`[doc-search] indexing failed for deck ${id}`, err);
     }
   }
 
@@ -461,7 +480,7 @@ export async function forceSnapshot(
     const doc = conn.document;
     if (!doc) throw new Error("Document not found for this name");
     const state = Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>;
-    const plainText = getPlainText(doc);
+    const plainText = roomPlainText(name, doc);
     await prisma.collabDocumentVersion.create({
       data: { name, state, plainText, authorIds, label },
     });
@@ -494,6 +513,18 @@ export async function restoreVersion(
   });
   if (!version || version.name !== name) {
     throw new Error("Version not found for this document");
+  }
+
+  if (isSlidesRoom(name)) {
+    const conn = await server.hocuspocus.openDirectConnection(name);
+    try {
+      await conn.transact((doc) => {
+        restoreDeck(doc, new Uint8Array(version.state));
+      });
+    } finally {
+      await conn.disconnect();
+    }
+    return;
   }
 
   const tmp = new Y.Doc();

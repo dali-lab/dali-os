@@ -6,9 +6,13 @@ const decks = vi.hoisted(() => ({
   deckAccess: vi.fn(),
   loadDeck: vi.fn(),
   editDeck: vi.fn(),
+  deckStorage: vi.fn(),
 }));
 
 vi.mock("~/lib/slide-decks.server", () => decks);
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
+vi.mock("~/collab/deck-write.server", () => ({ applySlides: vi.fn() }));
+vi.mock("~/collab/deck-live.server", () => ({ transactDeck: vi.fn() }));
 // Markdown <-> blocks is BlockNote's job; a one-paragraph stand-in keeps the
 // tool's own logic in view.
 vi.mock("~/collab/blocknote-server", () => ({
@@ -22,6 +26,7 @@ const s = (id: string, title = id): Slide => ({ id, layout: "title", title });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  decks.deckStorage.mockResolvedValue("json");
   store.slides = [s("a"), s("b"), s("c")];
   decks.deckAccess.mockResolvedValue({ ok: true, page: { id: "p1", title: "Deck", iconEmoji: null }, canEdit: true });
   decks.loadDeck.mockImplementation(async () => ({ slides: store.slides, version: "v1" }));
