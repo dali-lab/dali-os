@@ -661,7 +661,12 @@ describe("core-taskboard flag", () => {
     expect(coreHrefs({ "core-taskboard": true })[0]).toBe("/core");
   });
 
-  it("hides Taskboard while the flag is off", () => {
+  it("puts Milestones right after Taskboard while the flag is on", () => {
+    expect(coreHrefs({ "core-taskboard": true }).slice(0, 2)).toEqual(["/core", "/core/milestones"]);
+  });
+
+  it("hides Taskboard and Milestones while the flag is off", () => {
+    expect(coreHrefs({})).not.toContain("/core/milestones");
     expect(coreHrefs({})).not.toContain("/core");
     expect(coreHrefs({})[0]).toBe("/core/staffing");
   });

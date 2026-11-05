@@ -29,6 +29,7 @@ import {
   Map as MapIcon,
   Lightbulb,
   ListTodo,
+  Flag,
   Mail,
   MapPinned,
   Newspaper,
@@ -221,6 +222,7 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 const ONBOARDING_NAV_ITEM: SubTab = { label: "Journeys", href: "/journeys", icon: MapIcon };
 const REFER_NAV_ITEM: SubTab = { label: "Refer a partner", href: "/refer", icon: Handshake };
 const CORE_TASKBOARD_NAV_ITEM: SubTab = { label: "Taskboard", href: "/core", icon: ListTodo };
+const CORE_MILESTONES_NAV_ITEM: SubTab = { label: "Milestones", href: "/core/milestones", icon: Flag };
 
 const REGROUPED_AREAS: NavArea[] = [
   {
@@ -276,6 +278,7 @@ const REGROUPED_AREAS: NavArea[] = [
     gate: (r) => r.isCore,
     subtabs: [
       CORE_TASKBOARD_NAV_ITEM,
+      CORE_MILESTONES_NAV_ITEM,
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Partners", href: "/core/partners", icon: Handshake },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
@@ -371,7 +374,10 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   if (flags.community) hidden.add("/connect");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
-  if (!flags["core-taskboard"]) hidden.add(CORE_TASKBOARD_NAV_ITEM.href);
+  if (!flags["core-taskboard"]) {
+    hidden.add(CORE_TASKBOARD_NAV_ITEM.href);
+    hidden.add(CORE_MILESTONES_NAV_ITEM.href);
+  }
   return REGROUPED_AREAS.filter((a) => flags.community || a.key !== "community").map((a) =>
     a.key === "projects" || a.key === "core" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
   );
