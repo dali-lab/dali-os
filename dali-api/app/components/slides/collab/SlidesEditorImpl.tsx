@@ -6,6 +6,8 @@ import { useRevalidator } from "react-router";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { PageBarPortal, PageBarTitle } from "~/components/shell/page-bar-slot";
+import { DeckPdfMenuItems } from "./PdfMenuItems";
+import { deckPdfUrl } from "~/components/slides/live/urls";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { Button } from "~/components/ui/Button";
@@ -174,6 +176,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
         emoji={emoji}
         onEmojiChange={editable ? (next) => (setEmoji(next), savePage({ iconEmoji: next })) : undefined}
       />
+      <DeckPdfMenuItems pageId={pageId} canExportNotes={canEdit} />
       <PageBarPortal slot="status">
         <div className="flex items-center gap-1 text-[13px] text-os-muted" aria-live="polite">
           {SYNC_LABEL[syncState]}
@@ -268,6 +271,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
           onClearImage={() => current && clearSlotImage(deck.doc, current.id)}
           onBuild={(slot, build) => current && setBuild(deck.doc, current.id, slot, build)}
           onBuildBullets={(slot, on) => current && setBuildBullets(deck.doc, current.id, slot, on)}
+          onDownloadPdf={(withNotes) => window.location.assign(deckPdfUrl(pageId, withNotes))}
         />
       </div>
       <input ref={fileRef} type="file" accept={IMAGE_UPLOAD_ACCEPT} hidden onChange={(e) => (onFile(e.target.files?.[0]), (e.target.value = ""))} />
