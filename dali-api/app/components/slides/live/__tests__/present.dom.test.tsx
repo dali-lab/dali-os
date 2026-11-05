@@ -46,6 +46,7 @@ let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+  localStorage.clear();
   Object.defineProperty(HTMLElement.prototype, "clientWidth", { configurable: true, value: 1600 });
   Object.defineProperty(HTMLElement.prototype, "clientHeight", { configurable: true, value: 900 });
   container = document.createElement("div");

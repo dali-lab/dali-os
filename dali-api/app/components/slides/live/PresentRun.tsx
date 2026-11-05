@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Link } from "react-router";
 import { useDesktopVersion } from "~/lib/desktop";
 import { Button } from "~/components/ui/Button";
@@ -16,6 +16,7 @@ import { PresenterPolls, pollsOnSlide } from "./PresenterPolls";
 import { ReactionOverlay } from "./ReactionOverlay";
 import { JoinCard } from "./JoinCard";
 import { useAutoBuilds } from "./useBuildMotion";
+import { useJoinHidden } from "./useJoinHidden";
 import { usePolls } from "./usePolls";
 import { useReactions } from "./useReactions";
 
@@ -35,7 +36,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const polls = usePolls(pageId);
   const reactions = useReactions(pageId, !live.reactionsOff);
   const { slideIds, stepsOf, autoDelayOf, isAuto, renderSlide } = useDeckRender(deck);
-  const [joinHidden, setJoinHidden] = useState(false);
+  const [joinHidden, setJoinHidden] = useJoinHidden(pageId);
   const desktop = useDesktopVersion() != null;
   const started = useRef(false);
   const wasActive = useRef(false);
