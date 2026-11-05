@@ -275,3 +275,38 @@ describe("pi intent", () => {
     expect(db.partnerApplication.update).not.toHaveBeenCalled();
   });
 });
+
+describe("promote intent", () => {
+  it("creates the project and moves the application's planning note onto it in the same transaction", async () => {
+    db.partnerApplication.findUnique.mockResolvedValue({
+      id: APP_ID,
+      title: "Gallery Kiosk",
+      iconEmoji: null,
+      piUserId: null,
+      summary: null,
+      resultingProjectId: null,
+      partnerOrgId: "org-1",
+      applicantContactId: "c1",
+      applicantContact: { name: "Ada" },
+      targetTerms: [],
+      domains: [],
+    });
+    const tx = {
+      project: { create: vi.fn().mockResolvedValue({ id: "proj-new" }) },
+      partnerApplication: {
+        findUnique: vi.fn().mockResolvedValue({ stage: "Accepted" }),
+        update: vi.fn(),
+      },
+      planningNote: { updateMany: vi.fn() },
+    };
+    db.$transaction = vi.fn(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+    const res = (await callAction({ intent: "promote" })) as Response;
+
+    expect(res.headers.get("Location")).toBe("/projects/proj-new");
+    expect(tx.planningNote.updateMany).toHaveBeenCalledWith({
+      where: { applicationId: APP_ID },
+      data: { applicationId: null, projectId: "proj-new" },
+    });
+  });
+});

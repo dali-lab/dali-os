@@ -4,19 +4,14 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
-import { useOsChrome } from "~/components/os-chrome";
 import type { RenewalRole } from "../../lib/partner-renewals";
 import type { PlanningProjectInfo } from "../../lib/planning-gap.server";
 import { SpotsStepper } from "../SpotsStepper";
+import { fetcherError, noteMeta, PLANNING_ACTION, SavedTextField } from "./SavedTextField";
 
 type CoreMember = { userId: string; name: string };
 type Domain = { id: string; name: string };
 
-const PLANNING_ACTION = "/core/partners/planning";
-
-function fetcherError(data: unknown): string | null {
-  return data && typeof data === "object" && "error" in data ? String((data as { error: unknown }).error) : null;
-}
 
 export function sameSpots(a: RenewalRole[], b: RenewalRole[]): boolean {
   const key = (rs: RenewalRole[]) =>
@@ -72,10 +67,29 @@ export function PlanningProjectModal({
           )}
         </div>
 
-        <DescriptionField
-          key={info.description ?? ""}
-          projectId={project.id}
-          description={info.description}
+        <SavedTextField
+          key={`description:${info.description ?? ""}`}
+          title="Description"
+          label="Project description"
+          placeholder="Add a short description"
+          value={info.description}
+          fields={{ intent: "description", projectId: project.id }}
+          bodyField="description"
+          saveLabel="Save description"
+          canEdit={canEdit}
+        />
+
+        <SavedTextField
+          key={`note:${info.note?.updatedAt ?? ""}`}
+          title="Planning notes"
+          label="Planning notes"
+          placeholder="What's going on with this project right now?"
+          hint="Only shown here on Planning, not on the project page."
+          value={info.note?.body ?? null}
+          meta={noteMeta(info.note)}
+          fields={{ intent: "note", ownerKind: "project", ownerId: project.id }}
+          bodyField="body"
+          saveLabel="Save notes"
           canEdit={canEdit}
         />
 
@@ -115,66 +129,6 @@ export function PlanningProjectModal({
         </div>
       </div>
     </Modal>
-  );
-}
-
-function DescriptionField({
-  projectId,
-  description,
-  canEdit,
-}: {
-  projectId: string;
-  description: string | null;
-  canEdit: boolean;
-}) {
-  const { formClass } = useOsChrome();
-  const fetcher = useFetcher();
-  const [value, setValue] = useState(description ?? "");
-  const busy = fetcher.state !== "idle";
-  const error = fetcherError(fetcher.data);
-  const dirty = value.trim() !== (description ?? "").trim();
-
-  if (!canEdit) {
-    return description ? <p className="whitespace-pre-line text-sm text-foreground">{description}</p> : null;
-  }
-
-  const save = () => {
-    const form = new FormData();
-    form.set("intent", "description");
-    form.set("projectId", projectId);
-    form.set("description", value);
-    fetcher.submit(form, { method: "post", action: PLANNING_ACTION });
-  };
-
-  return (
-    <section className="flex flex-col gap-2">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Description</h3>
-      <div className={formClass}>
-        <textarea
-          aria-label="Project description"
-          rows={4}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="Add a short description"
-          className="w-full resize-y"
-        />
-      </div>
-      {(dirty || error) && (
-        <div className="flex items-center justify-end gap-2">
-          {error && <p className="mr-auto text-xs text-destructive">{error}</p>}
-          {dirty && (
-            <>
-              <Button variant="ghost" size="sm" disabled={busy} onClick={() => setValue(description ?? "")}>
-                Cancel
-              </Button>
-              <Button size="sm" disabled={busy} onClick={save}>
-                {busy ? "Saving" : "Save description"}
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-    </section>
   );
 }
 

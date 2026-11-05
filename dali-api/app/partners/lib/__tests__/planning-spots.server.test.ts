@@ -6,7 +6,7 @@ import { setTermSpots } from "../planning-spots.server";
 
 function fakeDb() {
   const tx = {
-    projectTerm: { findUnique: vi.fn().mockResolvedValue({ id: "pt" }) },
+    projectTerm: { findUnique: vi.fn().mockResolvedValue({ projectId: "p1" }) },
     projectRoleRequest: {
       findMany: vi.fn().mockResolvedValue([]),
       deleteMany: vi.fn(),

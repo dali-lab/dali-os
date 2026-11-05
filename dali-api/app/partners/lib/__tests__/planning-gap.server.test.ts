@@ -39,6 +39,7 @@ function project(over: Record<string, unknown> = {}) {
     termStatuses: [],
     roleRequests: [],
     partners: [],
+    planningNote: null,
     ...over,
   };
 }
@@ -235,6 +236,51 @@ describe("loadPlanningData popup spots", () => {
     const data = await loadPlanningData("t26s");
     expect(data.spotDomains.map((d) => d.id)).toEqual(["eng", "des"]);
     expect(data.domains.map((d) => d.id)).toEqual(["eng", "des", "old", "sys"]);
+  });
+});
+
+describe("loadPlanningData planning notes", () => {
+  const note = {
+    body: "Waiting on budget",
+    updatedAt: new Date("2026-11-05T15:00:00Z"),
+    updatedBy: { firstName: "Ada", lastName: "Lovelace", daliEmail: "ada@example.edu" },
+  };
+
+  it("puts a project's note in its popup info, and null when it has none", async () => {
+    db.project.findMany.mockResolvedValue([
+      project({ id: "p1", projectTerms: [{ termId: "t26s", pi: null }], planningNote: note }),
+      project({ id: "p2", projectTerms: [{ termId: "t26s", pi: null }] }),
+    ]);
+    const { projectInfo } = await loadPlanningData("t26s");
+    expect(projectInfo.p1.note).toEqual({
+      body: "Waiting on budget",
+      updatedAt: "2026-11-05T15:00:00.000Z",
+      updatedByName: "Ada Lovelace",
+    });
+    expect(projectInfo.p2.note).toBeNull();
+  });
+
+  it("gives each application its title, stage, partner and note", async () => {
+    db.partnerApplication.findMany.mockResolvedValue([
+      {
+        id: "a1",
+        title: "Beacon",
+        iconEmoji: null,
+        stage: "Interview",
+        pi: null,
+        domains: [],
+        partnerOrg: { name: "Acme" },
+        planningNote: note,
+      },
+    ]);
+    const { applicationInfo } = await loadPlanningData("t26s");
+    expect(applicationInfo.a1).toEqual({
+      title: "Beacon",
+      iconEmoji: null,
+      stage: "Interview",
+      partnerName: "Acme",
+      note: { body: "Waiting on budget", updatedAt: "2026-11-05T15:00:00.000Z", updatedByName: "Ada Lovelace" },
+    });
   });
 });
 

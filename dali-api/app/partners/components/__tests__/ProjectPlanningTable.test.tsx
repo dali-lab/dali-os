@@ -32,7 +32,7 @@ function render(model: Partial<PlanningProjectModel>) {
       createElement(ProjectPlanningTable, {
         termCode: "27W",
         model: { renewing: [], fresh: [], totals: { renewing: 0, fresh: 0, spots: 0 }, ...model },
-        onProjectClick: () => {},
+        onRowClick: () => {},
       }),
     ),
   );
@@ -63,14 +63,13 @@ describe("ProjectPlanningTable", () => {
     expect(html).not.toContain("Renewing");
   });
 
-  it("links applications to the board, but renders projects as buttons for the info popup", () => {
+  it("renders projects and applications as buttons that open a popup, not links away", () => {
     const html = render({
       renewing: [row()],
       fresh: [row({ key: "application:a", kind: "application", refId: "a", source: "new", state: "Deciding" })],
     });
-    expect(html).not.toContain('href="/projects/p1"');
-    expect(html).toContain('href="/core/partners?application=a"');
-    expect(html).toContain('type="button"');
+    expect(html).not.toContain("href=");
+    expect(html.match(/type="button"/g)).toHaveLength(2);
   });
 
   it("dims rows left out of the totals", () => {
