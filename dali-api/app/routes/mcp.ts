@@ -165,6 +165,7 @@ export async function action({ request }: Route.ActionArgs) {
         clientName: auth.clientName,
         userId: auth.user.id,
         ownerName: `${auth.user.firstName} ${auth.user.lastName}`.trim(),
+        session: auth.grantId,
       });
 
       const result = await dispatchTool(toolName, params?.arguments, {

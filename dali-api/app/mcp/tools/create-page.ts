@@ -7,6 +7,7 @@
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { markdownToBlocks } from "~/collab/blocknote-server";
+import { checkInlineRefs } from "../doc-markdown.server";
 import { replaceCollabDocContent } from "~/collab/write";
 import { pageDocName } from "~/collab/roomName";
 import { pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
@@ -153,12 +154,14 @@ export async function runCreatePage(callerId: string, input: Input) {
 
   // Parse before creating so bad markdown doesn't leave an empty page behind.
   let blocks = null;
+  let warnings: string[] = [];
   if (input.content !== undefined && input.content !== "") {
     try {
       blocks = await markdownToBlocks(input.content);
     } catch {
       throw new CreatePageError("content markdown could not be parsed", 400);
     }
+    ({ blocks, warnings } = await checkInlineRefs(blocks));
   }
 
   const last = await prisma.page.findFirst({
@@ -191,5 +194,5 @@ export async function runCreatePage(callerId: string, input: Input) {
     await replaceCollabDocContent(pageDocName(page.id), blocks, callerId);
   }
 
-  return { id: page.id, kind, parentPageId, position };
+  return { id: page.id, kind, parentPageId, position, ...(warnings.length ? { warnings } : {}) };
 }

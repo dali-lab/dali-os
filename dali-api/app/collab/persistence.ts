@@ -14,6 +14,7 @@ import {
 } from "./blocknote-server";
 import { mapPmDocToBlocks } from "./legacy/pm-to-blocknote";
 import { getStructuredData, ydocToBlocks } from "./read";
+import { stripCommentFormats } from "./comment-formats";
 import { readDeck } from "./read-deck.server";
 import { restoreDeck } from "./deck-write.server";
 
@@ -178,47 +179,6 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
     doc.transact(() => {
       blocksToFragment(plainTextToBlocks(content), doc.getXmlFragment(BLOCKNOTE_FRAGMENT));
     });
-  }
-}
-
-/**
- * Strip inline-comment format attributes from every Y.XmlText node inside
- * `element`. The `comment` ProseMirror mark is stored by y-prosemirror as
- * attributes whose keys start with `"comment"` (e.g. `"comment--<hash>"`).
- * The server's BlockNote schema does not include the comment mark, so when
- * y-prosemirror tries to deserialise those attributes it throws and then
- * *deletes the Y.XmlText item* from the doc — corrupting the live document
- * and causing Hocuspocus to broadcast the deletion to clients.
- *
- * Call this on a **temporary clone** of the doc before reading plain text so
- * the deletion side-effect never touches the live document.
- */
-function stripCommentFormats(element: Y.XmlFragment | Y.XmlElement): void {
-  for (let i = 0; i < element.length; i++) {
-    const child = element.get(i);
-    if (child instanceof Y.XmlText) {
-      const delta = child.toDelta() as Array<{
-        insert?: string;
-        attributes?: Record<string, unknown>;
-      }>;
-      let pos = 0;
-      for (const op of delta) {
-        const len = typeof op.insert === "string" ? op.insert.length : 1;
-        if (op.attributes) {
-          const commentKeys = Object.keys(op.attributes).filter((k) =>
-            k.startsWith("comment"),
-          );
-          if (commentKeys.length > 0) {
-            const nullAttrs: Record<string, null> = {};
-            for (const k of commentKeys) nullAttrs[k] = null;
-            child.format(pos, len, nullAttrs);
-          }
-        }
-        pos += len;
-      }
-    } else if (child instanceof Y.XmlElement) {
-      stripCommentFormats(child);
-    }
   }
 }
 

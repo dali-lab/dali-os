@@ -20,7 +20,7 @@ import { TEXT_PAGE_LIMITS, pageProps, pageText, type PageArgs } from "../paginat
 export const READ_PAGE_TOOL = {
   name: "read_page",
   description:
-    "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten; mentions render as @handle). Round-trips with set_page_content when the whole page fits in one chunk. Long pages come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full Markdown length.",
+    "Read a workspace page's content as Markdown (headings, lists, check lists, quotes, code, tables, images). Lossy for editor-only blocks (callouts/toggles flatten). Mentions read as [@Name](/members/<userId>) and page links as [Title](/documents/<pageId>), and round-trip through set_page_content. To change part of a page, use outline_content and edit_content (when available) rather than rewriting it. Long pages come back in chunks of limit characters (default 50000, max 200000): pass page.nextCursor as cursor until page.hasMore is false. page.total is the full Markdown length.",
   inputSchema: {
     type: "object" as const,
     properties: {

@@ -141,6 +141,12 @@ export const FEATURE_FLAGS = [
     description:
       "Present a deck with a presenter view, and let anyone with the deck open follow along on their own screen, with a way to browse on their own. Ships off.",
   },
+  {
+    key: "mcp-block-edits",
+    label: "AI assistant block edits",
+    description:
+      "AI assistants connected over MCP can edit part of a page or blog post (a phrase, a block, a table row) instead of rewriting the whole body, and can point at text in a document people have open. Their edits light up the changed blocks for anyone watching. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

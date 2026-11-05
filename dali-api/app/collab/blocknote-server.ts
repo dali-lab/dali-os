@@ -49,6 +49,7 @@ import { categorize } from "~/lib/file-type";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { parseComponentData } from "~/components/doc/components/kinds";
 import { ComponentView } from "~/components/doc/components/views";
+import { linksToInlineRefs, mapInlineArrays } from "./inline-refs";
 
 export { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT } from "~/components/doc/schema/configs";
 
@@ -93,35 +94,42 @@ export interface DocBlock {
 
 // ---------------------------------------------------------------------------
 // Core (non-React) specs over the shared configs. Renders are used by the
-// HTML/Markdown serializers: markdown takes each node's textContent, so these
-// double as the plain-text form of every custom node.
+// HTML/Markdown serializers.
 
-const mentionSpec = createInlineContentSpec(mentionConfig, {
-  render: (ic) => {
-    const dom = document.createElement("span");
-    dom.setAttribute("data-mention-id", ic.props.id);
-    dom.textContent = `@${ic.props.label}`;
-    return { dom };
-  },
-});
+function anchor(href: string, text: string): HTMLElement {
+  const dom = document.createElement("a");
+  dom.setAttribute("href", href);
+  dom.textContent = text;
+  return dom;
+}
 
-const pageMentionSpec = createInlineContentSpec(pageMentionConfig, {
-  render: (ic) => {
-    const dom = document.createElement("span");
-    dom.setAttribute("data-page-mention-id", ic.props.pageId);
-    dom.textContent = ic.props.label || "Untitled";
-    return { dom };
-  },
-});
+const createMentionSpec = ({ markdown }: { markdown?: boolean }) =>
+  createInlineContentSpec(mentionConfig, {
+    render: (ic) => {
+      if (markdown && ic.props.id) {
+        return { dom: anchor(`/members/${ic.props.id}`, `@${ic.props.label}`) };
+      }
+      const dom = document.createElement("span");
+      dom.setAttribute("data-mention-id", ic.props.id);
+      dom.textContent = `@${ic.props.label}`;
+      return { dom };
+    },
+  });
 
-// Unlike mention/pageMention (plain spans), this renders as a real anchor —
-// HTML export (blocksToHtml/blocksToFullHtml, which feed docx/education/
-// public-site rendering and the Chromium PDF path) carries a working deep
-// link to the task. Markdown export shares this same render (no
-// toExternalHTML override, same convention as embedSpec below), so the
-// anchor becomes a real markdown link; plain-text export bypasses this
-// entirely (blocksToPlainText's own inlineText() renders the label alone —
-// see configs.ts).
+const createPageMentionSpec = ({ markdown }: { markdown?: boolean }) =>
+  createInlineContentSpec(pageMentionConfig, {
+    render: (ic) => {
+      const label = ic.props.label || "Untitled";
+      if (markdown && ic.props.pageId) {
+        return { dom: anchor(`/documents/${ic.props.pageId}`, label) };
+      }
+      const dom = document.createElement("span");
+      dom.setAttribute("data-page-mention-id", ic.props.pageId);
+      dom.textContent = label;
+      return { dom };
+    },
+  });
+
 const taskMentionSpec = createInlineContentSpec(taskMentionConfig, {
   render: (ic) => {
     const dom = document.createElement("a");
@@ -255,8 +263,8 @@ const buildServerSchema = (media: { markdown?: boolean }) => withMultiColumn(Blo
   blockSpecs: { ...defaultBlockSpecs, image: createMediaImageSpec(media), video: createMediaVideoSpec(media), callout: calloutSpec, embed: embedSpec, component: componentSpec, task: taskSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
-    mention: mentionSpec,
-    pageMention: pageMentionSpec,
+    mention: createMentionSpec(media),
+    pageMention: createPageMentionSpec(media),
     taskMention: taskMentionSpec,
     ...signingFieldSpecs,
     variable: variableSpec,
@@ -345,12 +353,25 @@ export async function renderAnnouncementBody(
   return { html, text: htmlToPlainText(html, { maxLength: NOTIFICATION_BODY_MAX }) };
 }
 
-/** Blocks → Markdown. Custom inline nodes serialize as their plain-text form
- * (mention → "@handle", unfilled field → "__________", variable → value or
- * "{{name}}"). */
+const CELL_BREAK = "\uE000";
+
+function markCellBreaks(inlines: DocInline[]): DocInline[] {
+  return inlines.map((inline) => ({
+    ...inline,
+    ...(typeof inline.text === "string" ? { text: inline.text.replaceAll("\n", CELL_BREAK) } : {}),
+    ...(Array.isArray(inline.content) ? { content: markCellBreaks(inline.content) } : {}),
+  }));
+}
+
+/** Blocks → Markdown. User and page mentions export as `[@label](/members/id)`
+ * and `[label](/documents/id)` links that markdownToBlocks turns back into
+ * chips; other custom inline nodes serialize as their plain-text form. */
 export function blocksToMarkdown(blocks: DocBlock[]): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
-  return serialized(() => getMarkdownEditor().blocksToMarkdownLossy(blocks as any));
+  const marked = mapInlineArrays(blocks, (inlines, kind) => (kind === "cell" ? markCellBreaks(inlines) : inlines));
+  return serialized(() => getMarkdownEditor().blocksToMarkdownLossy(marked as any)).then((markdown) =>
+    markdown.replaceAll(CELL_BREAK, "<br>"),
+  );
 }
 
 /** Markdown → blocks. Empty/whitespace input yields a single empty paragraph
@@ -358,7 +379,7 @@ export function blocksToMarkdown(blocks: DocBlock[]): Promise<string> {
 export function markdownToBlocks(markdown: string): Promise<DocBlock[]> {
   return serialized(async () => {
     const blocks = await getServerEditor().tryParseMarkdownToBlocks(markdown);
-    return restoreVideos(blocks as unknown as DocBlock[]);
+    return linksToInlineRefs(restoreVideos(blocks as unknown as DocBlock[]));
   });
 }
 
