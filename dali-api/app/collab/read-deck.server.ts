@@ -87,9 +87,11 @@ export function readDeck(live: Y.Doc): DeckRead {
 }
 
 const LEGACY_LAYOUTS: readonly SlideLayout[] = ["title", "content", "split", "image"];
+const LEGACY_FOR_NEW_LAYOUT: Record<string, SlideLayout> = { section: "title", bignumber: "title" };
 
 export function legacyLayout(layoutId: string): SlideLayout {
-  return (LEGACY_LAYOUTS as readonly string[]).includes(layoutId) ? (layoutId as SlideLayout) : "content";
+  if ((LEGACY_LAYOUTS as readonly string[]).includes(layoutId)) return layoutId as SlideLayout;
+  return LEGACY_FOR_NEW_LAYOUT[layoutId] ?? "content";
 }
 
 /** The legacy Slide[] shape of a deck, for readers that predate the Yjs model. Freeform (slotless) elements are dropped. */

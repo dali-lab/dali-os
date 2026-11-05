@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import { blocksToFragment, plainTextToBlocks, type DocBlock } from "./blocknote-server";
-import { projectLegacySlides, readDeck } from "./read-deck.server";
+import { legacyLayout, projectLegacySlides, readDeck } from "./read-deck.server";
 import {
   between,
   deckMap,
@@ -88,7 +88,7 @@ function writeNotes(slide: SlideMap, notes: string | undefined): void {
 }
 
 function applySlide(slide: SlideMap, target: Slide, current: Slide | undefined): void {
-  if (slide.get("layoutId") !== target.layout) slide.set("layoutId", target.layout);
+  if (legacyLayout(String(slide.get("layoutId"))) !== target.layout) slide.set("layoutId", target.layout);
   const changed = {
     title: !current || current.title !== target.title,
     subtitle: !current || (current.subtitle ?? "") !== (target.subtitle ?? ""),
