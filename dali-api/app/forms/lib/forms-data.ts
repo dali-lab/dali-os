@@ -396,6 +396,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     questions: z.string(), // JSON-encoded Question[]
     description: z.string().optional(), // JSON-encoded ProseMirror doc
   }),
+  z.object({ intent: z.literal("discard-draft"), id: z.string().min(1) }),
   z.object({
     // "Publish" — freeze the working copy into a new version and publish the
     // form in one step (publishing is skipped for managed forms, whose
@@ -621,6 +622,20 @@ export async function runFormsAction(
           draftIntro: input.description?.trim() || null,
         },
       });
+      return { ok: true };
+    }
+    case "discard-draft": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await prisma.form.update({
+        where: { id: input.id },
+        data: { draftQuestions: Prisma.DbNull, draftIntro: null },
+      });
+      const { clearFormDraftRoom } = await import("~/collab/write");
+      await clearFormDraftRoom(input.id);
       return { ok: true };
     }
     case "save-version": {

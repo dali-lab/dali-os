@@ -16,6 +16,7 @@
 import * as Y from "yjs";
 import { prisma } from "~/lib/db.server";
 import { getCollabServer } from "./server";
+import { formDraftName } from "./roomName";
 import { agentAnnouncer, bodyTexts, changedTextRange } from "./agent-presence.server";
 import { maybeSnapshot, storeDocument } from "./persistence";
 import {
@@ -73,4 +74,22 @@ export async function replaceCollabDocContent(
   } finally {
     live.destroy();
   }
+}
+
+export async function clearFormDraftRoom(formId: string): Promise<void> {
+  const name = formDraftName(formId);
+  const server = getCollabServer();
+  if (server) {
+    const conn = await server.hocuspocus.openDirectConnection(name);
+    try {
+      await conn.transact((live) => {
+        const items = live.getArray("items");
+        items.delete(0, items.length);
+      });
+    } finally {
+      await conn.disconnect();
+    }
+    return;
+  }
+  await prisma.collabDocument.deleteMany({ where: { name } });
 }
