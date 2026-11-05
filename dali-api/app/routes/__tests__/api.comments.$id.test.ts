@@ -177,6 +177,29 @@ describe("set-anchor intent", () => {
   });
 });
 
+describe("set-anchor on slide decks", () => {
+  it("accepts a slide-scoped text anchor on a deck", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ kind: "Slides" });
+    const anchor = { kind: "blocknote", slideId: "s1", elementId: "body" };
+    const res = (await post("set-anchor", AUTHOR_ID, { anchor })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrisma.docComment.update).toHaveBeenCalledWith(expect.objectContaining({ data: { anchor } }));
+  });
+
+  it("rejects a malformed anchor", async () => {
+    const res = (await post("set-anchor", AUTHOR_ID, { anchor: { kind: "slide" } })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.docComment.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a slide anchor on a page that is not a deck", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ kind: "Doc" });
+    const res = (await post("set-anchor", AUTHOR_ID, { anchor: { kind: "blocknote", slideId: "s1" } })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.docComment.update).not.toHaveBeenCalled();
+  });
+});
+
 // ── retired intents ─────────────────────────────────────────────────────────
 // Comments have no open/resolved state, so "resolve"/"reopen" are no longer
 // intents this route knows about.

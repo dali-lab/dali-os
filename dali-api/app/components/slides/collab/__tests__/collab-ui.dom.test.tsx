@@ -7,7 +7,10 @@ import { addSlide, slideFragment } from "~/components/slides/deck/deck-ops";
 import { initDeck } from "~/components/slides/deck/model";
 import { snapshotDeck, type RenderSlide } from "~/components/slides/deck/snapshot";
 
-vi.mock("~/components/doc/DocEditor", () => ({ DocEditor: (p: { placeholder?: string }) => createElement("div", { "data-testid": "doc-editor" }, p.placeholder) }));
+vi.mock("~/components/doc/DocEditor", () => ({
+  DocEditor: (p: { placeholder?: string; comments?: { scope?: { slideId: string; elementId: string }; pageId: string } }) =>
+    createElement("div", { "data-testid": "doc-editor", "data-scope": p.comments?.scope ? `${p.comments.pageId}|${p.comments.scope.slideId}|${p.comments.scope.elementId}` : "" }, p.placeholder),
+}));
 vi.mock("~/components/ui/Avatar", () => ({ Avatar: (p: { name: string }) => createElement("span", { "data-avatar": p.name }) }));
 
 import { Filmstrip } from "../Filmstrip";
@@ -151,6 +154,90 @@ describe("SlideStage", () => {
   });
 });
 
+describe("slide comments in the filmstrip", () => {
+  const filmProps = (slides: RenderSlide[], over: Record<string, unknown> = {}) => ({
+    slides, themeId: "dali-dark", currentId: slides[0].id, peers: new Map(), editable: true,
+    onSelect: noop, onAdd: noop, onDuplicate: noop, onDelete: noop, onMove: noop, ...over,
+  });
+
+  it("badges each thumbnail with its thread count and hides zero", () => {
+    const { snap } = deck(3);
+    const counts = new Map([[snap.slides[0].id, 2], [snap.slides[2].id, 1]]);
+    const el = render(createElement(Filmstrip, filmProps(snap.slides, { commentCounts: counts }) as never));
+    expect([...el.querySelectorAll("[data-testid=slide-comment-count]")].map((n) => n.textContent)).toEqual(["2", "1"]);
+  });
+
+  it("offers Comment on this slide from the thumbnail's context menu", () => {
+    const { snap } = deck(2);
+    const onComment = vi.fn();
+    const el = render(createElement(Filmstrip, filmProps(snap.slides, { onComment }) as never));
+    act(() => void el.querySelector("button[aria-label='Slide 2']")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 5, clientY: 5 })));
+    const item = [...document.body.querySelectorAll("button")].find((b) => b.textContent?.includes("Comment on this slide"));
+    expect(item).toBeTruthy();
+    click(item!);
+    expect(onComment).toHaveBeenCalledWith(snap.slides[1].id);
+  });
+
+  it("has no comment menu when commenting is off", () => {
+    const { snap } = deck(1);
+    const el = render(createElement(Filmstrip, filmProps(snap.slides) as never));
+    act(() => void el.querySelector("button[aria-label='Slide 1']")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })));
+    expect(document.body.textContent).not.toContain("Comment on this slide");
+  });
+});
+
+describe("slide comments on the stage", () => {
+  const stageComments = (over: Record<string, unknown> = {}) => ({
+    pageId: "page-1", viewerId: "u", canComment: true, canModerate: false, pins: [], focusedPinId: null, onOpenPin: noop, onStart: noop, ...over,
+  });
+  const stage = (snapSlide: RenderSlide, doc: Y.Doc, comments: unknown, selectedSlot: string | null = null) =>
+    createElement(SlideStage, {
+      slide: snapSlide, themeId: "dali-dark", doc, collab, editable: true, selectedSlot, onSelectSlot: noop, onPickImage: noop, comments,
+    } as never);
+
+  it("scopes each text box's comment threads to its slide and element", () => {
+    const { doc, snap } = deck(1);
+    const el = render(stage(snap.slides[0], doc, stageComments()));
+    const scopes = [...el.querySelectorAll("[data-testid=doc-editor]")].map((e) => e.getAttribute("data-scope"));
+    expect(scopes.sort()).toEqual([`page-1|${snap.slides[0].id}|body`, `page-1|${snap.slides[0].id}|title`]);
+  });
+
+  it("leaves text boxes without comment scope when comments are off", () => {
+    const { doc, snap } = deck(1);
+    const el = render(stage(snap.slides[0], doc, undefined));
+    expect([...el.querySelectorAll("[data-testid=doc-editor]")].every((e) => e.getAttribute("data-scope") === "")).toBe(true);
+  });
+
+  it("draws a dot for each pinned thread and opens it on click", () => {
+    const { doc, snap } = deck(1);
+    const onOpenPin = vi.fn();
+    const pins = [{ threadId: "t1", x: 0.25, y: 0.5, author: "Grace", authorPhotoUrl: null, replies: 0 }];
+    const el = render(stage(snap.slides[0], doc, stageComments({ pins, onOpenPin })));
+    const pin = el.querySelector("[data-comment-pin=t1]") as HTMLElement;
+    expect(pin.style.left).toBe("25%");
+    expect(pin.style.top).toBe("50%");
+    click(pin);
+    expect(onOpenPin).toHaveBeenCalledWith("t1");
+  });
+
+  it("offers Comment on the selected text box, for the element", () => {
+    const { doc, snap } = deck(1);
+    const onStart = vi.fn();
+    const el = render(stage(snap.slides[0], doc, stageComments({ onStart }), "title"));
+    expect(el.querySelectorAll("button[aria-label^='Comment on ']")).toHaveLength(1);
+    click(el.querySelector("button[aria-label='Comment on title']"));
+    expect(onStart).toHaveBeenCalledWith({ slideId: snap.slides[0].id, elementId: "title" });
+  });
+
+  it("shows pins but no comment buttons to someone who cannot comment", () => {
+    const { doc, snap } = deck(1);
+    const pins = [{ threadId: "t1", x: 0.1, y: 0.1, author: "Grace", authorPhotoUrl: null, replies: 1 }];
+    const el = render(stage(snap.slides[0], doc, stageComments({ canComment: false, pins }), "title"));
+    expect(el.querySelector("[data-comment-pin=t1]")).not.toBeNull();
+    expect(el.querySelector("button[aria-label='Comment on title']")).toBeNull();
+  });
+});
+
 describe("deleted slide notice", () => {
   it("names who deleted it and restores on click", () => {
     const onRestore = vi.fn();
@@ -173,6 +260,25 @@ describe("ReadOnlyDeck", () => {
     expect(el.querySelectorAll("[data-testid=doc-editor]")).toHaveLength(0);
     click(el.querySelector("button[aria-label='Slide 2']"));
     expect(el.querySelector("button[aria-label='Slide 2']")!.getAttribute("aria-current")).toBe("true");
+  });
+
+  it("follows the slide the page chooses and reports thumbnail clicks", () => {
+    const { snap } = deck(3);
+    const onSelect = vi.fn();
+    const el = render(createElement(ReadOnlyDeck, { slides: snap.slides, themeId: "dali-dark", currentId: snap.slides[2].id, onSelect }));
+    expect(el.querySelector("button[aria-label='Slide 3']")!.getAttribute("aria-current")).toBe("true");
+    click(el.querySelector("button[aria-label='Slide 1']"));
+    expect(onSelect).toHaveBeenCalledWith(snap.slides[0].id);
+  });
+
+  it("draws pins on the slide it shows", () => {
+    const { snap } = deck(1);
+    const pins = [{ threadId: "t1", x: 0.5, y: 0.5, author: "Grace", authorPhotoUrl: null, replies: 0 }];
+    const el = render(createElement(ReadOnlyDeck, {
+      slides: snap.slides, themeId: "dali-dark",
+      comments: { pageId: "p", viewerId: "u", canComment: false, canModerate: false, pins, focusedPinId: null, onOpenPin: noop, onStart: noop },
+    }));
+    expect(el.querySelector("[data-comment-pin=t1]")).not.toBeNull();
   });
 
   it("says so when the deck is empty", () => {

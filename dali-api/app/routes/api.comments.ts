@@ -12,6 +12,8 @@ import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } f
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import type { BodySegment } from "~/lib/comment-body";
+import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
+import { docCommentContext } from "~/lib/comment-links.server";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
@@ -28,10 +30,7 @@ import type { BodySegment } from "~/lib/comment-body";
 //   file target  — read/create/reply: Core or project member of owning project
 //   pagedoc      — read/create/reply: any lab member (open FAQ threads)
 
-const AnchorSchema = z
-  .object({ from: z.string(), to: z.string() })
-  .nullable()
-  .optional();
+const AnchorSchema = commentAnchorSchema;
 
 // bodyJson segment schema — mirrors the BodySegment union from MentionTextInput.
 // We accept the raw JSON from the client and store it as-is; validation here
@@ -217,6 +216,12 @@ export async function action({ request }: Route.ActionArgs) {
   }
   // Anchors only make sense on documents.
   const anchor = body.targetType === "doc" ? (body.anchor ?? null) : null;
+  if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
+    const page = await prisma.page.findUnique({ where: { id: body.targetId }, select: { kind: true } });
+    if (page?.kind !== "Slides") {
+      return withCors(request, Response.json({ error: "Slide anchors only apply to slide decks" }, { status: 400 }));
+    }
+  }
 
   // File comments are pinned to a version so feedback reads against the
   // right iteration: the one the commenter was viewing (sent by the file
@@ -315,15 +320,13 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (allIds.size === 0) return;
 
-    const base =
-      body.targetType === "pagedoc"
-        ? pageDocLink(body.path)
-        : body.targetType === "doc"
-          ? `/documents/${body.targetId}`
-          : `/documents/file/${body.targetId}`;
-    // ?comment=<id> tells the comments rail on that surface to scroll to and
-    // flash the exact comment.
-    const link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
+    let link: string;
+    if (body.targetType === "doc") {
+      link = (await docCommentContext(body.targetId, body.parentId ?? created.id, created.id, body.parentId ? undefined : anchor)).link;
+    } else {
+      const base = body.targetType === "pagedoc" ? pageDocLink(body.path) : `/documents/file/${body.targetId}`;
+      link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
+    }
     await notifyMentions({
       recipientUserIds: [...allIds],
       actorId: auth.user.sub,
@@ -360,13 +363,9 @@ async function notifyThreadReply(args: {
   let title: string | null | undefined;
   let link: string;
   if (args.targetType === "doc") {
-    title = (
-      await prisma.page.findUnique({
-        where: { id: args.targetId },
-        select: { title: true },
-      })
-    )?.title;
-    link = `/documents/${args.targetId}`;
+    const context = await docCommentContext(args.targetId, args.rootId, args.rootId);
+    title = context.title;
+    link = context.replyLink;
   } else if (args.targetType === "pagedoc") {
     title = (
       await prisma.pageDoc.findUnique({

@@ -3,9 +3,10 @@ import "~/components/doc/theme.css";
 import "./slide-editor.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
+import { MessageSquare } from "lucide-react";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
-import { PageBarPortal, PageBarTitle } from "~/components/shell/page-bar-slot";
+import { PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { DeckPdfMenuItems } from "./PdfMenuItems";
 import { deckPdfUrl } from "~/components/slides/live/urls";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
@@ -39,7 +40,11 @@ import { Filmstrip } from "./Filmstrip";
 import { Inspector } from "./Inspector";
 import { NotesPane } from "./NotesPane";
 import { ReadOnlyDeck } from "./ReadOnlyDeck";
-import { DeletedSlideNotice, SlideStage, stageKey } from "./SlideStage";
+import { DeletedSlideNotice, SlideStage, stageKey, type StageComments } from "./SlideStage";
+import { SlideCommentsPanel, type CommentTarget } from "./SlideCommentsPanel";
+import { pinsForSlide } from "./comment-pins";
+import { useSlideComments } from "./useSlideComments";
+import { anchorElementId, anchorSlideId, threadCountsBySlide, type SlideThread } from "~/lib/slide-comments";
 import type { SlotCollab } from "./SlotEditor";
 import type { SlidesEditorProps } from "./SlidesEditor";
 import { useDeckDoc, useDeckSnapshot, useDeckSync, useSlidePresence, useUndoState } from "./useDeckDoc";
@@ -62,7 +67,7 @@ function usePageSaver(pageId: string) {
   );
 }
 
-function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, workspaceType, collab, actionsSlot }: SlidesEditorProps) {
+function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canModerateComments, canManageAccess, workspaceType, collab, link, actionsSlot }: SlidesEditorProps) {
   const toast = useToast();
   const revalidator = useRevalidator();
   const savePage = usePageSaver(pageId);
@@ -88,6 +93,66 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
     if (deletedHere || current || snap.slides.length === 0) return;
     setSelectedId(snap.slides[0].id);
   }, [current, deletedHere, snap.slides]);
+
+  const slideComments = useSlideComments(pageId, canComment);
+  const [commentsOpen, setCommentsOpen] = useState(Boolean(link?.threadId));
+  const [commentTarget, setCommentTarget] = useState<CommentTarget | null>(null);
+  const [focusThreadId, setFocusThreadId] = useState<string | null>(link?.threadId ?? null);
+  const linkApplied = useRef(false);
+  useEffect(() => {
+    if (linkApplied.current || known === null || snap.slides.length === 0 || !link?.slideId) return;
+    linkApplied.current = true;
+    const exists = snap.slides.some((s) => s.id === link.slideId) || snap.deletedIds.includes(link.slideId);
+    if (!exists) return;
+    setSelectedId(link.slideId);
+    setSelectedSlot(null);
+  }, [known, link?.slideId, snap.slides, snap.deletedIds]);
+
+  const startComment = (target: CommentTarget) => {
+    setSelectedId(target.slideId);
+    setCommentTarget(target);
+    setCommentsOpen(true);
+  };
+  const openThread = (thread: SlideThread) => {
+    const slideId = anchorSlideId(thread.root.anchor);
+    if (slideId) setSelectedId(slideId);
+    setSelectedSlot(thread.kind === "text" ? anchorElementId(thread.root.anchor) : null);
+    setFocusThreadId(thread.root.id);
+  };
+  const stageComments: StageComments | undefined =
+    canComment && current
+      ? {
+          pageId,
+          viewerId: collab.userId,
+          canComment,
+          canModerate: canModerateComments,
+          pins: pinsForSlide(slideComments.comments, current.id, current.layoutId),
+          focusedPinId: focusThreadId,
+          onOpenPin: (id) => (setFocusThreadId(id), setCommentsOpen(true)),
+          onStart: startComment,
+        }
+      : undefined;
+  const commentsPanel = canComment && commentsOpen && (
+    <SlideCommentsPanel
+      comments={slideComments.comments}
+      error={slideComments.error}
+      viewerId={collab.userId}
+      canComment={canComment}
+      canModerate={canModerateComments}
+      slideIds={snap.slides.map((s) => s.id)}
+      deletedIds={snap.deletedIds}
+      currentSlideId={current?.id ?? null}
+      canRestore={editable}
+      target={commentTarget}
+      focusThreadId={focusThreadId}
+      onClearTarget={() => setCommentTarget(null)}
+      onPost={slideComments.post}
+      onDelete={(id) => void slideComments.remove(id)}
+      onOpenThread={openThread}
+      onRestoreSlide={(id) => deck && undeleteSlide(deck.doc, id)}
+      onClose={() => setCommentsOpen(false)}
+    />
+  );
 
   useEffect(() => {
     deck?.undo.setCurrentSlide(selectedId);
@@ -186,6 +251,18 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
         <PresenceBar />
       </PageBarPortal>
       <PageBarPortal slot="actions">
+        {canComment && (
+          <button
+            type="button"
+            onClick={() => setCommentsOpen((o) => !o)}
+            aria-pressed={commentsOpen}
+            aria-label={commentsOpen ? "Hide comments" : "Show comments"}
+            className={pageBarTextButton(commentsOpen)}
+          >
+            <MessageSquare className="h-4 w-4" aria-hidden />
+            <span className="hidden sm:inline">Comments</span>
+          </button>
+        )}
         {canManageAccess && <PageBarShareButton onClick={() => setShareOpen(true)} />}
         {typeof actionsSlot === "function" ? actionsSlot({ currentSlideId: current?.id ?? null }) : actionsSlot}
       </PageBarPortal>
@@ -208,11 +285,17 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
     return (
       <>
         {pageBar}
-        <ReadOnlyDeck
-          slides={snap.slides}
-          themeId={snap.themeId}
-          notice={known === false ? "This deck was made with a newer version of Slides, so you can view it but not edit it." : undefined}
-        />
+        <div className="flex min-h-0 flex-1">
+          <ReadOnlyDeck
+            slides={snap.slides}
+            themeId={snap.themeId}
+            notice={known === false ? "This deck was made with a newer version of Slides, so you can view it but not edit it." : undefined}
+            currentId={current?.id ?? null}
+            onSelect={select}
+            comments={stageComments}
+          />
+          {commentsPanel}
+        </div>
       </>
     );
   }
@@ -230,6 +313,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
           currentId={current?.id ?? null}
           peers={peers}
           editable
+          commentCounts={canComment ? threadCountsBySlide(slideComments.comments) : undefined}
+          onComment={canComment ? (id) => startComment({ slideId: id }) : undefined}
           onSelect={select}
           onAdd={add}
           onDuplicate={duplicate}
@@ -249,6 +334,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
                 selectedSlot={selectedSlot}
                 onSelectSlot={setSelectedSlot}
                 onPickImage={pickImage}
+                comments={stageComments}
               />
             ) : deletedHere ? (
               <DeletedSlideNotice by={snap.deletedBy[selectedId!] ?? null} onRestore={() => undeleteSlide(deck.doc, selectedId!)} />
@@ -273,6 +359,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canManageAccess, 
           onBuildBullets={(slot, on) => current && setBuildBullets(deck.doc, current.id, slot, on)}
           onDownloadPdf={(withNotes) => window.location.assign(deckPdfUrl(pageId, withNotes))}
         />
+        {commentsPanel}
       </div>
       <input ref={fileRef} type="file" accept={IMAGE_UPLOAD_ACCEPT} hidden onChange={(e) => (onFile(e.target.files?.[0]), (e.target.value = ""))} />
     </div>

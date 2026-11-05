@@ -275,9 +275,10 @@ function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStor
       currentUserId: comments.currentUserId,
       canComment: comments.canComment,
       canModerate: comments.canModerate,
+      scope: comments.scope,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate]);
+  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate, comments?.scope?.slideId, comments?.scope?.elementId]);
 }
 
 /**

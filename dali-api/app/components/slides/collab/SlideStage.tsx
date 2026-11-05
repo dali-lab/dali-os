@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { RotateCcw } from "lucide-react";
+import { MessageSquarePlus, RotateCcw } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { slideFragment } from "~/components/slides/deck/deck-ops";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
 import { rectStyle, u } from "~/components/slides/deck/units";
 import { STAGE_H, STAGE_W, type LayoutSlot } from "~/components/slides/deck/layouts";
 import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
+import { ContextMenu, MenuItem } from "~/components/ui/floating";
+import { CommentPins } from "./CommentPins";
+import { elementAtPoint, type CommentPin } from "./comment-pins";
+import type { CommentTarget } from "./SlideCommentsPanel";
 import { SlotEditor, type SlotCollab } from "./SlotEditor";
 import type * as Y from "yjs";
 
@@ -50,6 +54,63 @@ function BuildBadge({ rect, label }: { rect: LayoutSlot["rect"]; label: string }
   );
 }
 
+export interface StageComments {
+  pageId: string;
+  viewerId: string;
+  canComment: boolean;
+  canModerate: boolean;
+  pins: CommentPin[];
+  focusedPinId: string | null;
+  onOpenPin: (threadId: string) => void;
+  onStart: (target: CommentTarget) => void;
+}
+
+/** Wraps the stage so a right click on it offers to comment at that point. */
+export function CommentableStage({
+  slide,
+  comments,
+  children,
+}: {
+  slide: RenderSlide;
+  comments: StageComments | undefined;
+  children: React.ReactNode;
+}) {
+  const point = useRef({ x: 0.5, y: 0.5 });
+  if (!comments) return <>{children}</>;
+  const shell = (
+    <div
+      className="relative"
+      onContextMenu={(e) => {
+        const box = e.currentTarget.getBoundingClientRect();
+        point.current = { x: (e.clientX - box.left) / box.width, y: (e.clientY - box.top) / box.height };
+      }}
+    >
+      {children}
+      <CommentPins pins={comments.pins} focusedId={comments.focusedPinId} onOpen={comments.onOpenPin} />
+    </div>
+  );
+  if (!comments.canComment) return shell;
+  return (
+    <ContextMenu
+      ariaLabel="Comment"
+      items={
+        <MenuItem
+          icon={<MessageSquarePlus className="h-4 w-4" aria-hidden />}
+          onSelect={() => {
+            const { x, y } = point.current;
+            const elementId = elementAtPoint(slide.layoutId, x, y);
+            comments.onStart({ slideId: slide.id, x, y, ...(elementId ? { elementId } : {}) });
+          }}
+        >
+          Comment here
+        </MenuItem>
+      }
+    >
+      {shell}
+    </ContextMenu>
+  );
+}
+
 export function SlideStage({
   slide,
   themeId,
@@ -59,6 +120,7 @@ export function SlideStage({
   selectedSlot,
   onSelectSlot,
   onPickImage,
+  comments,
 }: {
   slide: RenderSlide;
   themeId: string;
@@ -68,10 +130,12 @@ export function SlideStage({
   selectedSlot: string | null;
   onSelectSlot: (slot: string) => void;
   onPickImage: () => void;
+  comments?: StageComments;
 }) {
   return (
     <FitBox>
       {() => (
+        <CommentableStage slide={slide} comments={comments}>
         <SlideRender
           className="rounded-os-card shadow-sm"
             slide={slide}
@@ -107,12 +171,36 @@ export function SlideStage({
                     collab={collab}
                     selected={selectedSlot === slot.slot}
                     onFocus={() => onSelectSlot(slot.slot)}
+                    comments={
+                      comments
+                        ? {
+                            pageId: comments.pageId,
+                            currentUserId: comments.viewerId,
+                            canComment: comments.canComment,
+                            canModerate: comments.canModerate,
+                            scope: { slideId: slide.id, elementId: element?.id ?? slot.slot },
+                          }
+                        : undefined
+                    }
                   />
                   {badge}
+                  {comments?.canComment && selectedSlot === slot.slot && (
+                    <button
+                      type="button"
+                      aria-label={`Comment on ${slot.slot}`}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => comments.onStart({ slideId: slide.id, elementId: element?.id ?? slot.slot })}
+                      className="absolute flex items-center justify-center rounded-full bg-os-accent text-os-bg"
+                      style={{ left: u(slot.rect.x + slot.rect.w - 28), top: u(slot.rect.y - 28), width: u(56), height: u(56), zIndex: 6 }}
+                    >
+                      <MessageSquarePlus style={{ width: u(32), height: u(32) }} aria-hidden />
+                    </button>
+                  )}
                 </>
               );
             }}
           />
+        </CommentableStage>
       )}
     </FitBox>
   );

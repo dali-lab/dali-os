@@ -28,7 +28,7 @@ const row = (over: Record<string, unknown> = {}) => ({
 });
 
 function asAccess(canEdit: boolean) {
-  access.mockResolvedValue({ ok: true, page: { id: "p1", title: "T", iconEmoji: null }, canEdit });
+  access.mockResolvedValue({ ok: true, page: { id: "p1", title: "T", iconEmoji: null }, canEdit, canComment: true });
 }
 
 beforeEach(() => {

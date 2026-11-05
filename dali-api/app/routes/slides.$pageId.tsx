@@ -15,6 +15,8 @@ import { deckMissingSlots, toRenderDeck } from "~/collab/read-deck.server";
 import { repairDeckSlots } from "~/components/slides/deck/deck-ops";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
+import { parseSlideLink } from "~/lib/slide-comments";
+import { isCore } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { deckAccessMode } from "~/components/slides/deck/model";
 import { SlidesEditor } from "~/components/slides/collab/SlidesEditor";
@@ -109,6 +111,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     viewerId: userId,
     pageId: params.pageId,
     canEdit: access.canEdit,
+    canComment: access.canComment,
+    link: parseSlideLink(new URL(request.url).searchParams),
+    canModerateComments: await isCore(userId, request),
     canManageAccess,
     workspaceType: full.workspaceType,
     unknownVersion: !known,
@@ -138,16 +143,19 @@ export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: { form
 
 export default function SlideDeckPage({ loaderData }: Route.ComponentProps) {
   if (loaderData.mode === "live") {
-    const { collab, deck, title, iconEmoji, pageId, canManageAccess, workspaceType, unknownVersion, slidesLive, viewerId, canEdit } = loaderData;
+    const { collab, deck, title, iconEmoji, pageId, canManageAccess, workspaceType, unknownVersion, slidesLive, viewerId, canEdit, canComment, canModerateComments, link } = loaderData;
     const page = collab ? (
       <SlidesEditor
         pageId={pageId}
         title={title}
         iconEmoji={iconEmoji ?? null}
         canEdit={canEdit}
+        canComment={canComment}
+        canModerateComments={canModerateComments}
         canManageAccess={canManageAccess}
         workspaceType={workspaceType}
         collab={collab}
+        link={link}
         actionsSlot={
           slidesLive && canEdit ? ({ currentSlideId }) => <PresentMenu pageId={pageId} currentSlideId={currentSlideId} /> : undefined
         }

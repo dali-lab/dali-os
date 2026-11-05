@@ -15,6 +15,7 @@ vi.mock("../PdfMenuItems", () => ({
   DeckPdfMenuItems: (p: { pageId: string; canExportNotes: boolean }) => createElement("i", { "data-pdf-menu": `${p.pageId}|${p.canExportNotes}` }),
 }));
 vi.mock("~/components/shell/page-bar-slot", () => ({
+  pageBarTextButton: () => "",
   PageBarTitle: () => null,
   PageBarPortal: ({ slot, children }: { slot: string; children: React.ReactNode }) => createElement("div", { "data-slot-name": slot }, children),
 }));
@@ -31,7 +32,12 @@ vi.mock("../NotesPane", () => ({ NotesPane: () => null }));
 vi.mock("../Inspector", () => ({ Inspector: () => null }));
 vi.mock("../EditorToolbar", () => ({ EditorToolbar: () => createElement("div", { "data-testid": "toolbar" }) }));
 vi.mock("../ReadOnlyDeck", () => ({
-  ReadOnlyDeck: (p: { slides: unknown[]; notice?: string }) => createElement("div", { "data-testid": "read-only" }, `${p.slides.length}|${p.notice ?? ""}`),
+  ReadOnlyDeck: (p: { slides: unknown[]; notice?: string; currentId?: string | null }) =>
+    createElement("div", { "data-testid": "read-only", "data-current": p.currentId ?? "" }, `${p.slides.length}|${p.notice ?? ""}`),
+}));
+vi.mock("../useSlideComments", () => ({ useSlideComments: () => ({ comments: [], error: null, post: vi.fn(), remove: vi.fn() }) }));
+vi.mock("../SlideCommentsPanel", () => ({
+  SlideCommentsPanel: (p: { focusThreadId: string | null }) => createElement("aside", { "data-testid": "comments-panel", "data-focus": p.focusThreadId ?? "" }),
 }));
 vi.mock("../useDeckDoc", () => ({
   useDeckDoc: () => ({ doc: {}, entry: {}, store: {}, undo: { manager: {}, setCurrentSlide: vi.fn(), setNavigator: vi.fn() } }),
@@ -51,15 +57,21 @@ const snap = (v: unknown): DeckSnapshot => ({
   v,
   themeId: "dali-dark",
   epoch: 0,
-  slides: [{ id: "a", pos: 1, layoutId: "content", elements: [] }],
+  slides: [
+    { id: "a", pos: 1, layoutId: "content", elements: [] },
+    { id: "b", pos: 2, layoutId: "content", elements: [] },
+  ],
   deletedIds: [],
   deletedBy: {},
 });
-const props = (canEdit: boolean) => ({
+const props = (canEdit: boolean, extra: Record<string, unknown> = {}) => ({
   pageId: "p1",
   title: "Deck",
   iconEmoji: null,
   canEdit,
+  canComment: false,
+  canModerateComments: false,
+  ...extra,
   canManageAccess: false,
   workspaceType: "Lab",
   collab: { token: "t", userId: "u1", userName: "Ada", photoUrl: null },
@@ -76,8 +88,8 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
-const render = (canEdit: boolean) => {
-  act(() => root.render(createElement(SlidesEditorImpl, props(canEdit))));
+const render = (canEdit: boolean, extra: Record<string, unknown> = {}) => {
+  act(() => root.render(createElement(SlidesEditorImpl, props(canEdit, extra) as never)));
   return container;
 };
 
@@ -93,7 +105,7 @@ describe("SlidesEditorImpl", () => {
     h.snap = snap(1);
     const el = render(false);
     expect(el.querySelector("[data-testid=toolbar]")).toBeNull();
-    expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("1|");
+    expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("2|");
   });
 
   it("adds the PDF download to the page bar menu, with notes only for editors", () => {
@@ -112,5 +124,48 @@ describe("SlidesEditorImpl", () => {
     const el = render(true);
     expect(el.querySelector("[data-slot-name=presence] [data-testid=presence-bar]")).not.toBeNull();
     expect((h.presenceProps as { pageId: string }).pageId).toBe("doc:p1");
+  });
+});
+
+describe("SlidesEditorImpl comments", () => {
+  const button = () => container.querySelector("[data-slot-name=actions] button[aria-pressed]") as HTMLButtonElement | null;
+
+  it("offers no Comments button to someone who cannot comment", () => {
+    h.snap = snap(1);
+    render(true);
+    expect(button()).toBeNull();
+    expect(container.querySelector("[data-testid=comments-panel]")).toBeNull();
+  });
+
+  it("puts a Comments button in the page bar's actions that toggles the panel", () => {
+    h.snap = snap(1);
+    render(true, { canComment: true });
+    expect(button()!.textContent).toContain("Comments");
+    expect(container.querySelector("[data-testid=comments-panel]")).toBeNull();
+    act(() => button()!.click());
+    expect(container.querySelector("[data-testid=comments-panel]")).not.toBeNull();
+    act(() => button()!.click());
+    expect(container.querySelector("[data-testid=comments-panel]")).toBeNull();
+  });
+
+  it("gives a viewer who can comment the button and panel beside the read-only deck", () => {
+    h.snap = snap(1);
+    render(false, { canComment: true });
+    act(() => button()!.click());
+    expect(container.querySelector("[data-testid=read-only]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=comments-panel]")).not.toBeNull();
+  });
+
+  it("opens the slide and thread a comment link names", () => {
+    h.snap = snap(1);
+    render(false, { canComment: true, link: { slideId: "b", threadId: "t9" } });
+    expect(container.querySelector("[data-testid=read-only]")!.getAttribute("data-current")).toBe("b");
+    expect(container.querySelector("[data-testid=comments-panel]")!.getAttribute("data-focus")).toBe("t9");
+  });
+
+  it("falls back to the first slide when the linked slide no longer exists", () => {
+    h.snap = snap(1);
+    render(false, { canComment: true, link: { slideId: "nope", threadId: null } });
+    expect(container.querySelector("[data-testid=read-only]")!.getAttribute("data-current")).toBe("a");
   });
 });
