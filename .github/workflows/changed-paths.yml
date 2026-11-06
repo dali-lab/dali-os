@@ -1,0 +1,43 @@
+name: Changed paths
+
+# Called by PR workflows so jobs can skip when a PR doesn't touch what they
+# check. Required checks treat a skipped job as passing, unlike a
+# workflow-level `paths:` filter, which leaves the check pending forever.
+on:
+  workflow_call:
+    outputs:
+      api:
+        value: ${{ jobs.filter.outputs.api }}
+      asr:
+        value: ${{ jobs.filter.outputs.asr }}
+      migrations:
+        value: ${{ jobs.filter.outputs.migrations }}
+
+jobs:
+  filter:
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      asr: ${{ steps.filter.outputs.asr }}
+      migrations: ${{ steps.filter.outputs.migrations }}
+    steps:
+      - id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          all() { printf 'api=true\nasr=true\nmigrations=true\n' >> "$GITHUB_OUTPUT"; exit 0; }
+          [ "$EVENT" = "pull_request" ] || all
+          FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename') || all
+          [ "$(wc -l <<<"$FILES")" -lt 3000 ] || all
+          echo "$FILES"
+          grep -q '^\.github/' <<<"$FILES" && all
+          has() { grep -qE "$1" <<<"$FILES" && echo true || echo false; }
+          {
+            echo "api=$(grep -vE '^(specs/|mobile/|desktop/|ios/|jobx-extension/|asr/|[^/]+\.(md|html)$)' <<<"$FILES" | grep -q . && echo true || echo false)"
+            echo "asr=$(has '^asr/')"
+            echo "migrations=$(has '^dali-api/prisma/')"
+          } | tee -a "$GITHUB_OUTPUT"
