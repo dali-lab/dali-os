@@ -3,6 +3,8 @@
 
 import type { McpTool, McpCtx } from "../../registry";
 
+import { DOC_CONTENT_TOOLS } from "./doc-content";
+
 import { SEARCH_TOOL, runMcpSearch } from "./search";
 import { LIST_COMMENTS_TOOL, runListComments } from "./comments";
 import {
@@ -198,4 +200,5 @@ export const DOCS_TOOLS: McpTool[] = [
     run: (ctx: McpCtx, args) =>
       runManageBlogPost(ctx.user.id, args as Parameters<typeof runManageBlogPost>[1]),
   },
+  ...DOC_CONTENT_TOOLS,
 ];

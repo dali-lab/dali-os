@@ -211,13 +211,14 @@ describe("tools/list", () => {
 });
 
 describe("tools/call", () => {
-  it("enters the agent context with the caller's identity", async () => {
+  it("enters the agent context with the caller's identity, keyed to its grant", async () => {
     h.readRun.mockResolvedValue({});
     await rpc("tools/call", { name: "read_tool" });
     expect(h.enterAgentContext).toHaveBeenCalledWith({
       clientName: "Test Client",
       userId: "u1",
       ownerName: "Ada Lovelace",
+      session: "g1",
     });
   });
 

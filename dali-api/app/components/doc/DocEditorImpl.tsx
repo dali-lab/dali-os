@@ -67,6 +67,7 @@ import { createFindReplacePlugin } from "./find";
 import { docPasteHandler } from "./paste-embed";
 import { PasteAsMenu } from "./PasteAsMenu";
 import { keepCollabUndoAlive } from "./collab-undo";
+import { createAgentTouchPlugin } from "./agent-touch";
 import { resolveFragment, undoOptions } from "./collab-binding";
 import { createSelectAllPlugin } from "./select-all";
 import { createTableDragSelectPlugin } from "./table-drag-select";
@@ -214,6 +215,16 @@ function CollabDocInner(
   );
 
   useMemo(() => (props.undoExtension ? undefined : keepCollabUndoAlive(editor)), [editor, props.undoExtension]);
+
+  useEffect(() => {
+    const awareness = entry.provider.awareness;
+    if (!awareness) return;
+    const key = "dali-agent-touch-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createAgentTouchPlugin(awareness)] });
+    return () => {
+      editor.unregisterExtension(key);
+    };
+  }, [editor, entry]);
 
   // One-shot seed: if the caller supplied seedContent (e.g. the latest agreement
   // version body) and the Y.Doc is empty after the server syncs, write the seed
