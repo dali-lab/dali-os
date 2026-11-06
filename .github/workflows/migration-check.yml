@@ -3,9 +3,18 @@ name: Migration Safety Check
 on:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    uses: ./.github/workflows/changed-paths.yml
+
   migration-check:
     name: Check migrations
+    needs: changes
+    if: needs.changes.outputs.migrations == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
 
     services:

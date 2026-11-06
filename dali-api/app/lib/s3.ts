@@ -76,12 +76,13 @@ export async function putObject(
   key: string,
   body: Uint8Array,
   contentType: string,
+  metadata?: Record<string, string>,
 ): Promise<void> {
   if (!isS3Configured()) {
     throw new Error("AWS S3 is not configured")
   }
   await s3.send(
-    new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }),
+    new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType, ...(metadata ? { Metadata: metadata } : {}) }),
   )
 }
 
@@ -221,6 +222,19 @@ export async function getObjectBytes(
   const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
   const bytes = await res.Body!.transformToByteArray()
   return { body: Buffer.from(bytes), contentType: res.ContentType ?? undefined }
+}
+
+export async function getObjectWithMetadata(
+  key: string,
+): Promise<{ body: Buffer; metadata: Record<string, string> } | null> {
+  try {
+    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+    const bytes = await res.Body!.transformToByteArray()
+    return { body: Buffer.from(bytes), metadata: res.Metadata ?? {} }
+  } catch (err) {
+    if (err instanceof NoSuchKey) return null
+    throw err
+  }
 }
 
 // An object's bytes as they arrive, for files too large to hold in memory.

@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { HtmlPreviewContext } from "~/components/slides/deck/html-preview";
 
 export interface SlidesEditorProps {
   pageId: string;
@@ -29,10 +30,13 @@ function Loading() {
 export function SlidesEditor(props: SlidesEditorProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const preview = useMemo(() => ({ pageId: props.pageId }), [props.pageId]);
   if (!mounted) return <Loading />;
   return (
-    <Suspense fallback={<Loading />}>
-      <SlidesEditorImpl {...props} />
-    </Suspense>
+    <HtmlPreviewContext.Provider value={preview}>
+      <Suspense fallback={<Loading />}>
+        <SlidesEditorImpl {...props} />
+      </Suspense>
+    </HtmlPreviewContext.Provider>
   );
 }

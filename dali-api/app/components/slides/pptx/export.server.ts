@@ -9,6 +9,7 @@ import { parseVideoEmbed } from "~/lib/video-embed";
 import type { DeckRead, DeckReadElement } from "~/collab/read-deck.server";
 import type { DocBlock, DocInline } from "~/collab/blocknote-server";
 import { htmlFrameDocument } from "~/components/slides/deck/html-element";
+import { htmlPreviewSize } from "~/components/slides/deck/html-preview";
 import { cropFrame, type Crop } from "~/components/slides/deck/crop";
 import { layoutById, STAGE_H, STAGE_W, type LayoutSlot } from "~/components/slides/deck/layouts";
 import { TEXT_STYLE_IDS, themeById, type TextStyleDef, type TextStyleId, type ThemeDef } from "~/components/slides/deck/themes";
@@ -352,7 +353,7 @@ async function addIconElement(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, r
 
 async function addHtmlElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef, rasterize: BuildPptxOptions["rasterizeHtml"]): Promise<boolean> {
   const box = { x: unitsToInches(rect.x), y: unitsToInches(rect.y), w: unitsToInches(rect.w), h: unitsToInches(rect.h), ...rotation(el.rot ?? 0) };
-  const size = { w: Math.min(Math.max(1, Math.round(rect.w)), 3840), h: Math.min(Math.max(1, Math.round(rect.h)), 2160) };
+  const size = htmlPreviewSize(rect);
   const data = rasterize ? await rasterize(htmlFrameDocument(el.html ?? "", theme, size.w, size.h), size) : null;
   if (data) {
     pptxSlide.addImage({ data, altText: "Custom HTML", ...box });

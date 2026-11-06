@@ -5,6 +5,7 @@ import { parseVideoEmbed } from "~/lib/video-embed";
 import { ChartSvg } from "./ChartSvg";
 import { chartColors } from "./content";
 import { htmlSrcDoc } from "./html-element";
+import { HTML_PREVIEW_SETTLE_MS, HtmlPreviewContext, htmlPreviewSize, htmlPreviewUrl, htmlPreviewVersion } from "./html-preview";
 import { useHtmlReloads } from "./html-reload";
 import { ICONS } from "./icon-set";
 import { useCustomCodePaused } from "./pause-custom-code";
@@ -24,7 +25,7 @@ const FILL_VAR: Record<FillId, string> = {
 
 export const fillVar = (fill: FillId | undefined): string => FILL_VAR[fill ?? "accent"];
 
-function Placeholder({ placed, dataKey, label, icon }: { placed: Placed; dataKey: Record<string, string>; label: string; icon: ReactNode }) {
+function Placeholder({ placed, dataKey, label, icon, children }: { placed: Placed; dataKey: Record<string, string>; label: string; icon: ReactNode; children?: ReactNode }) {
   return (
     <div
       {...dataKey}
@@ -43,6 +44,7 @@ function Placeholder({ placed, dataKey, label, icon }: { placed: Placed; dataKey
         {icon}
         {label}
       </span>
+      {children}
     </div>
   );
 }
@@ -57,8 +59,48 @@ export function ChartBox({ placed, element, theme }: { placed: Placed; element: 
   );
 }
 
-export function HtmlBox({ placed, element, label = "Custom HTML" }: { placed: Placed; element: RenderElement; label?: string }) {
-  return <Placeholder placed={placed} dataKey={{ "data-element": element.id, "data-kind": "html" }} label={label} icon={<Code2 style={{ width: u(72), height: u(72) }} aria-hidden />} />;
+export function HtmlBox({ placed, element, label = "Custom HTML", children }: { placed: Placed; element: RenderElement; label?: string; children?: ReactNode }) {
+  return (
+    <Placeholder placed={placed} dataKey={{ "data-element": element.id, "data-kind": "html" }} label={label} icon={<Code2 style={{ width: u(72), height: u(72) }} aria-hidden />}>
+      {children}
+    </Placeholder>
+  );
+}
+
+/** A thumbnail's picture of a custom HTML element, drawn by the server once edits settle; the placeholder card shows until it loads or when it can't. */
+export function HtmlPreview({ placed, element, theme }: { placed: Placed; element: RenderElement; theme: ThemeDef }) {
+  const ctx = useContext(HtmlPreviewContext);
+  const version = htmlPreviewVersion(element.html ?? "", theme.id, htmlPreviewSize(placed));
+  const [shown, setShown] = useState(version);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<string | null>(null);
+  useEffect(() => {
+    if (version === shown) return;
+    const timer = setTimeout(() => setShown(version), HTML_PREVIEW_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [version, shown]);
+  if (!ctx) return <HtmlBox placed={placed} element={element} />;
+  const src = htmlPreviewUrl(ctx.pageId, element.id, shown);
+  if (failed === src) return <HtmlBox placed={placed} element={element} />;
+  const img = (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      draggable={false}
+      data-html-preview
+      onLoad={() => setLoaded(src)}
+      onError={() => setFailed(src)}
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: loaded === null ? 0 : 1 }}
+    />
+  );
+  if (loaded === null) return <HtmlBox placed={placed} element={element}>{img}</HtmlBox>;
+  return (
+    <div data-element={element.id} data-kind="html" style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: u(24) }}>
+      {img}
+    </div>
+  );
 }
 
 export const HTML_DEBOUNCE_MS = 300;
