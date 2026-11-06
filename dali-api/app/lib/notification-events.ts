@@ -70,6 +70,8 @@ export type EventDef = {
   // Only read when coalesceWindowMs is set; omit to keep the latest preview
   // without a count prefix.
   coalesceNoun?: string;
+  // Unread rows older than this drop off live surfaces on their own.
+  staleAfterMs?: number;
   // `desktop` gates the native banner the desktop app raises for an in-app
   // row — it is a sub-preference of inApp (no row, no banner), resolved at
   // feed-read time so a preference change applies to unseen rows too.
@@ -98,6 +100,7 @@ export const EVENT_TYPES = {
     area: "Meetings",
     label: "Meeting cancellations",
     description: "When a meeting you were invited to is cancelled.",
+    staleAfterMs: 3 * 24 * 3_600_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.time_proposed": {
@@ -105,6 +108,7 @@ export const EVENT_TYPES = {
     area: "Meetings",
     label: "Proposed time changes",
     description: "When an invitee proposes a new time for a meeting you organized.",
+    staleAfterMs: 7 * 24 * 3_600_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.record_prompt": {
@@ -113,6 +117,7 @@ export const EVENT_TYPES = {
     label: "Record this meeting?",
     description: "One minute before a meeting you organize starts, when it can be recorded.",
     timeSensitive: true,
+    staleAfterMs: 3 * 3_600_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.transcript_ready": {

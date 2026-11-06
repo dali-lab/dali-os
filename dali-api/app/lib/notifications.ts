@@ -66,6 +66,19 @@ const LIVE_INTERVIEW_ASSIGNMENT: Prisma.NotificationWhereInput = {
   ],
 };
 
+export const STALE_AFTER_EVENTS: [eventType: string, ms: number][] = Object.entries(
+  EVENT_TYPES as Record<string, EventDef>,
+).flatMap(([eventType, def]) => (def.staleAfterMs ? [[eventType, def.staleAfterMs]] : []));
+
+const notAgedOut = (now: Date): Prisma.NotificationWhereInput => ({
+  NOT: {
+    OR: STALE_AFTER_EVENTS.map(([eventType, ms]) => ({
+      eventType,
+      createdAt: { lte: new Date(now.getTime() - ms) },
+    })),
+  },
+});
+
 /**
  * Staleness hides for meeting- and interview-backed notifications that are still
  * awaiting action, as AND clauses. Both read paths build on this — the tasks path
@@ -74,11 +87,16 @@ const LIVE_INTERVIEW_ASSIGNMENT: Prisma.NotificationWhereInput = {
  * dock badge) — so the two counts can't disagree.
  *
  * Only meaningful for unread rows: a row the user has already read is plain
- * history. History (listNotificationHistory) applies none of these and
- * annotates the rows via resolveNotificationState instead.
+ * history. History (listNotificationHistory) applies these only to its open
+ * bucket and annotates the rows via resolveNotificationState instead.
  */
 export function liveMeetingPingClauses(now: Date): Prisma.NotificationWhereInput[] {
-  return [notExpiredMeetingReminder(now), notPastMeetingInvite(now), LIVE_INTERVIEW_ASSIGNMENT];
+  return [
+    notExpiredMeetingReminder(now),
+    notPastMeetingInvite(now),
+    LIVE_INTERVIEW_ASSIGNMENT,
+    notAgedOut(now),
+  ];
 }
 
 export interface ListNotificationsOptions {
@@ -245,7 +263,11 @@ export async function listRetiredMeetingPingIds(
     where: {
       recipientUserId: userId,
       readAt: null,
-      OR: [{ scheduledMeetingId: { not: null } }, { interviewAssignmentId: { not: null } }],
+      OR: [
+        { scheduledMeetingId: { not: null } },
+        { interviewAssignmentId: { not: null } },
+        { eventType: { in: STALE_AFTER_EVENTS.map(([eventType]) => eventType) } },
+      ],
       createdAt: { gte: new Date(now.getTime() - RETIRED_LOOKBACK_MS) },
     },
     orderBy: { createdAt: "desc" },
