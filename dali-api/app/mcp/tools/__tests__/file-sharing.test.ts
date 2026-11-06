@@ -27,6 +27,7 @@ import {
 } from "~/lib/file-share-access.server";
 import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../errors";
 import { MANAGE_DOCUMENT_SHARING_TOOL } from "../faceted/manage-document-sharing";
+import { LIST_FILE_SHARES_TOOL, runListFileShares } from "../file-sharing";
 
 const ctx = { user: { id: "user-1" } } as never;
 
@@ -34,10 +35,10 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
-describe("manage_document_sharing file actions", () => {
+describe("file sharing tools", () => {
   const props = MANAGE_DOCUMENT_SHARING_TOOL.def.inputSchema.properties as Record<string, any>;
 
-  it("keeps its name, scope and the existing actions, and only adds new ones", () => {
+  it("keeps its name and scope, and offers only write actions", () => {
     expect(MANAGE_DOCUMENT_SHARING_TOOL.def.name).toBe("manage_document_sharing");
     expect(MANAGE_DOCUMENT_SHARING_TOOL.def.requiredScope).toBe("mcp:write");
     expect(MANAGE_DOCUMENT_SHARING_TOOL.def.inputSchema.required).toEqual(["action"]);
@@ -46,7 +47,6 @@ describe("manage_document_sharing file actions", () => {
       "delete_document",
       "set_file_sharing",
       "delete_file",
-      "list_file_shares",
       "share_file",
       "unshare_file",
       "set_file_link_access",
@@ -133,6 +133,12 @@ describe("manage_document_sharing file actions", () => {
     expect(unshareFile).toHaveBeenCalledWith({ fileId: "f1", actorId: "user-1", shareId: "s1", via: "mcp" });
   });
 
+  it("list_file_shares is a read tool that takes only a fileId", () => {
+    expect(LIST_FILE_SHARES_TOOL.name).toBe("list_file_shares");
+    expect(LIST_FILE_SHARES_TOOL.requiredScope).toBe("mcp:read");
+    expect(LIST_FILE_SHARES_TOOL.inputSchema.required).toEqual(["fileId"]);
+  });
+
   it("list_file_shares is manager-gated and returns labels without internal fields", async () => {
     vi.mocked(requireFileShareManager).mockResolvedValue({
       file: { id: "f1", title: "Budget", workspaceType: "Lab" },
@@ -144,7 +150,7 @@ describe("manage_document_sharing file actions", () => {
     vi.mocked(listFileShares).mockResolvedValue([
       { id: "s1", principalType: "User", principalId: "u2", permission: "View", label: "Ada", memberCount: undefined },
     ] as never);
-    const res = await MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "list_file_shares", fileId: "f1" });
+    const res = await runListFileShares("user-1", { fileId: "f1" });
     expect(requireFileShareManager).toHaveBeenCalledWith("f1", "user-1");
     expect(res).toEqual({
       file: { id: "f1", title: "Budget", workspaceType: "Lab" },
@@ -157,9 +163,7 @@ describe("manage_document_sharing file actions", () => {
 
   it("list_file_shares refuses a non-manager", async () => {
     vi.mocked(requireFileShareManager).mockRejectedValue(new FileShareForbiddenError());
-    await expect(
-      MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "list_file_shares", fileId: "f1" }),
-    ).rejects.toBeInstanceOf(McpForbiddenError);
+    await expect(runListFileShares("user-1", { fileId: "f1" })).rejects.toBeInstanceOf(McpForbiddenError);
     expect(listFileShares).not.toHaveBeenCalled();
   });
 

@@ -24,7 +24,7 @@ vi.mock("~/collab/deck-live.server", () => ({
 }));
 vi.mock("~/collab/blocknote-server", async (importOriginal) => importOriginal());
 
-import { runManageSlideDeck, MANAGE_SLIDE_DECK_TOOL_DEF } from "../manage-slide-deck";
+import { runManageSlideDeck, GET_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF } from "../manage-slide-deck";
 import { runCreateSlideDeck, CREATE_SLIDE_DECK_TOOL_DEF } from "../create-slide-deck";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { projectLegacySlides, readDeck } from "~/collab/read-deck.server";
@@ -135,11 +135,14 @@ describe("custom HTML through manage_slide_deck", () => {
   });
 
   it("documents the contract in the schema and descriptions", () => {
-    const schema = MANAGE_SLIDE_DECK_TOOL_DEF.inputSchema.properties as any;
+    const schema = MANAGE_SLIDE_ELEMENTS_TOOL_DEF.inputSchema.properties as any;
     expect(schema.element.properties.kind.enum).toContain("html");
     expect(schema.element.properties.html.maxLength).toBe(200_000);
-    expect(schema.includeHtml.type).toBe("boolean");
-    const text = JSON.stringify(MANAGE_SLIDE_DECK_TOOL_DEF) + JSON.stringify(CREATE_SLIDE_DECK_TOOL_DEF);
+    expect((GET_SLIDE_DECK_TOOL_DEF.inputSchema.properties as any).includeHtml.type).toBe("boolean");
+    for (const def of [MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF, CREATE_SLIDE_DECK_TOOL_DEF]) {
+      expect(JSON.stringify(def)).toContain("--slide-accent");
+    }
+    const text = JSON.stringify(MANAGE_SLIDE_ELEMENTS_TOOL_DEF) + JSON.stringify(CREATE_SLIDE_DECK_TOOL_DEF);
     for (const needle of ["1920 by 1080", "--slide-accent", "--slide-font-body", "Network requests", "cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "200000", "PowerPoint export turns it into a picture"]) {
       expect(text).toContain(needle);
     }

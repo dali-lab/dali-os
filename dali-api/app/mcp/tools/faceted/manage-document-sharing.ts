@@ -1,7 +1,3 @@
-// MCP `manage_document_sharing` — faceted router over set_document_sharing /
-// delete_document / set_file_sharing / delete_file.
-// Thin router only: all business logic lives in the underlying run* functions.
-
 import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
 import {
@@ -22,7 +18,10 @@ const MANAGE_DOCUMENT_SHARING_DEF = {
 - \`set_document_sharing\`: change a document's audience (partner visibility, public write-up, pinned). Requires: pageId.
 - \`delete_document\`: archive or permanently delete a project document. Requires: pageId.
 - \`set_file_sharing\`: share a project file with the partner org, or stop sharing it. Requires: fileId, partnerVisible.
-- \`delete_file\`: archive a project file so it drops out of the Files list. Requires: fileId.`,
+- \`delete_file\`: archive a project file so it drops out of the Files list. Requires: fileId.
+- \`share_file\`: share a project file with a member or group. Requires: fileId, principalType, principalId.
+- \`unshare_file\`: remove a share (ids from list_file_shares). Requires: fileId, shareId.
+- \`set_file_link_access\`: set who can open the file by link. Requires: fileId, linkAccess.`,
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -33,7 +32,6 @@ const MANAGE_DOCUMENT_SHARING_DEF = {
           "delete_document",
           "set_file_sharing",
           "delete_file",
-          "list_file_shares",
           "share_file",
           "unshare_file",
           "set_file_link_access",
@@ -80,7 +78,6 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
       return runSetFileSharing(ctx.user.id, rest as any);
     case "delete_file":
       return runDeleteProjectFile(ctx.user.id, rest as any);
-    case "list_file_shares":
     case "share_file":
     case "unshare_file":
     case "set_file_link_access":

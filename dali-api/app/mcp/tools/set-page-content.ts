@@ -66,7 +66,7 @@ export async function loadEditablePage(callerId: string, pageId: string) {
     throw new SetPageContentError(`${page.kind} pages have no editable body`, 400);
   }
   if (page.archivedAt) {
-    throw new SetPageContentError("Page is archived — unarchive it first (update_page)", 400);
+    throw new SetPageContentError("Page is archived. Restore it first with manage_page update.", 400);
   }
   const access = await getPageAccess(callerId, page);
   if (!access.canEdit) throw new SetPageContentError("Forbidden", 403);

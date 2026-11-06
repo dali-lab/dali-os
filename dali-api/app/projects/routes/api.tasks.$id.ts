@@ -19,7 +19,7 @@ import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
 //        column-rebalance logic stays unified. Body is a partial — only
 //        present fields are written. `dependsOn` replaces the task's
 //        "blocked by" set.
-// DELETE /api/tasks/:id — hard-delete. Mirrors MCP delete_task: assignee and
+// DELETE /api/tasks/:id — hard-delete. Mirrors MCP manage_task delete: assignee and
 //        comment rows go first (RESTRICT FKs), reminders cascade via their
 //        FK, and a linked GitHub issue is left untouched on GH.
 //
@@ -166,7 +166,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
-    // Same rows and order as MCP delete_task; TaskReminder rows cascade via
+    // Same rows and order as MCP manage_task delete; TaskReminder rows cascade via
     // their onDelete: Cascade FK. A linked GitHub issue is left as-is on GH —
     // deleting here only severs the mirror.
     await prisma.$transaction([
