@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router";
 import { useDesktopVersion } from "~/lib/desktop";
 import { Button } from "~/components/ui/Button";
@@ -17,6 +17,7 @@ import { ReactionOverlay } from "./ReactionOverlay";
 import { JoinCard } from "./JoinCard";
 import { useAutoBuilds } from "./useBuildMotion";
 import { slideHasHtml } from "~/components/slides/deck/html-element";
+import { HtmlPreviewContext } from "~/components/slides/deck/html-preview";
 import { PauseCustomCodeButton } from "./PauseCustomCodeButton";
 import { useJoinHidden } from "./useJoinHidden";
 import { usePolls } from "./usePolls";
@@ -39,6 +40,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const reactions = useReactions(pageId, !live.reactionsOff);
   const { slideIds, stepsOf, autoDelayOf, isAuto, renderSlide } = useDeckRender(deck);
   const [joinHidden, setJoinHidden] = useJoinHidden(pageId, live.startedAt);
+  const previewCtx = useMemo(() => ({ pageId }), [pageId]);
   const desktop = useDesktopVersion() != null;
   const started = useRef(false);
   const wasActive = useRef(false);
@@ -78,6 +80,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
 
   if (view === "presenter") {
     return (
+      <HtmlPreviewContext.Provider value={previewCtx}>
       <PollLayer state={polls.state}>
         <PresenterView
           title={title}
@@ -124,6 +127,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
           }
         />
       </PollLayer>
+      </HtmlPreviewContext.Provider>
     );
   }
   return (
