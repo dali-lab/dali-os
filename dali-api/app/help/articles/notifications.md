@@ -37,6 +37,18 @@ When someone schedules a meeting with you, an invite appears in the bell and on 
 - **Task deadline reminders** arrive a day before a task you are assigned is due, and again at the end of its due day.
 - Reminders for things that no longer apply, such as a cancelled meeting, go away on their own.
 
+## Old meeting notifications clear on their own
+
+You don't have to dismiss meeting notifications that are out of date. They leave the bell, the **Open** filter in History and desktop banners by themselves:
+
+- a meeting reminder, once the meeting starts;
+- an invite you never answered, once a one-off meeting has happened (invites to a repeating meeting stay, since later meetings can still be answered);
+- **Record this meeting?**, 3 hours after it arrives;
+- a cancellation notice, after 3 days;
+- a proposed new time, after 7 days.
+
+They are still listed under **All** in History, marked **Expired**.
+
 ## Choose what reaches you
 
 Open [Settings → Notifications](/settings/notifications). Each kind of notification is a row, grouped by area such as Meetings, Tasks, Documents and Announcements. Each row has four choices:

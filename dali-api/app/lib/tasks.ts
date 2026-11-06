@@ -6,7 +6,11 @@ import { applicantGroup } from "~/hiring/lib/applicant-groups.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 import { fullName } from "~/lib/display";
 import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
-import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications";
+import {
+  NOT_CANCELLED_MEETING,
+  STALE_AFTER_EVENTS,
+  liveMeetingPingClauses,
+} from "~/lib/notifications";
 import {
   OPEN_WORK_STATUSES,
   projectTaskLink,
@@ -79,11 +83,18 @@ export type NotificationState =
 // The liveness facts resolveNotificationState needs from one fetched row.
 // Mirror this `select` in every caller so the resolver has what it needs.
 export type NotifLiveness = {
+  kind: string;
+  eventType: string;
+  createdAt: Date;
   readAt: Date | null;
   dueAt: Date | null;
   formId: string | null;
   scheduledMeetingId: string | null;
-  scheduledMeeting: { status: string } | null;
+  scheduledMeeting: {
+    status: string;
+    selectedAt: Date | null;
+    recurrenceRule: string | null;
+  } | null;
   interviewAssignment: { status: string; interview: { status: string } } | null;
 };
 
@@ -114,7 +125,30 @@ export function resolveNotificationState(
   }
 
   if (n.dueAt && n.dueAt.getTime() < now.getTime()) return "Expired";
+  if (hiddenFromLiveSurfaces(n, now)) return "Expired";
   return "Open";
+}
+
+// The in-memory twin of liveMeetingPingClauses, for rows already fetched.
+function hiddenFromLiveSurfaces(n: NotifLiveness, now: Date): boolean {
+  const t = now.getTime();
+  const meeting = n.scheduledMeeting;
+  if (n.kind === "MeetingReminder" && !n.dueAt && meeting?.selectedAt && meeting.selectedAt.getTime() <= t) {
+    return true;
+  }
+  if (
+    n.kind === "MeetingInvite" &&
+    n.scheduledMeetingId &&
+    meeting &&
+    !meeting.recurrenceRule &&
+    meeting.selectedAt &&
+    meeting.selectedAt.getTime() <= t
+  ) {
+    return true;
+  }
+  return STALE_AFTER_EVENTS.some(
+    ([eventType, ms]) => n.eventType === eventType && n.createdAt.getTime() <= t - ms,
+  );
 }
 
 // A form-backed todo is self-clearing: submitting the form marks it read
@@ -466,6 +500,7 @@ export interface NotificationHistoryResult {
 const HISTORY_SELECT = {
   id: true,
   kind: true,
+  eventType: true,
   title: true,
   body: true,
   link: true,
@@ -476,7 +511,7 @@ const HISTORY_SELECT = {
   scheduledMeetingId: true,
   createdBy: { select: { id: true, firstName: true, lastName: true } },
   form: { select: { published: true, publicToken: true } },
-  scheduledMeeting: { select: { status: true } },
+  scheduledMeeting: { select: { status: true, selectedAt: true, recurrenceRule: true } },
   interviewAssignment: {
     select: { status: true, interview: { select: { status: true } } },
   },
@@ -484,9 +519,9 @@ const HISTORY_SELECT = {
 
 /**
  * Browsable notification/task history for a user. Unlike listOpenTasks /
- * listMyNotifications this applies NONE of the live-surface hides — stale
- * Cancelled-meeting and inactive interview-assignment rows are returned and
- * annotated via resolveNotificationState so the user can see they existed.
+ * listMyNotifications, only the open bucket applies the live-surface hides;
+ * "all" and "cleared" return stale rows annotated via resolveNotificationState
+ * so the user can see they existed.
  *
  * Keyset pagination on (createdAt desc, id desc) rides the existing
  * [recipientUserId, createdAt] index. `counts` are the open/cleared totals for
@@ -510,9 +545,14 @@ export async function listNotificationHistory(
 
   // status maps onto readAt only; Cancelled/Expired are derived for display,
   // not stored, so they fall under whichever readAt bucket they live in.
+  const now = new Date();
+  const openWhere: Prisma.NotificationWhereInput = {
+    readAt: null,
+    AND: [NOT_CANCELLED_MEETING, ...liveMeetingPingClauses(now)],
+  };
   const statusWhere: Prisma.NotificationWhereInput =
     status === "open"
-      ? { readAt: null }
+      ? openWhere
       : status === "cleared"
         ? { NOT: { readAt: null } }
         : {};
@@ -541,7 +581,7 @@ export async function listNotificationHistory(
       take: limit + 1, // overfetch one to detect nextCursor
       select: HISTORY_SELECT,
     }),
-    prisma.notification.count({ where: { AND: [base, { readAt: null }] } }),
+    prisma.notification.count({ where: { AND: [base, openWhere] } }),
     prisma.notification.count({
       where: { AND: [base, { NOT: { readAt: null } }] },
     }),
@@ -549,27 +589,26 @@ export async function listNotificationHistory(
 
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
-  const items: NotificationHistoryItem[] = page.map((n) => ({
-    id: n.id,
-    kind: n.kind,
-    title: n.title,
-    body: n.body,
-    sender: n.createdBy ? fullName(n.createdBy) || null : null,
-    state: resolveNotificationState(n),
-    sentAt: n.createdAt.toISOString(),
-    clearedAt: n.readAt ? n.readAt.toISOString() : null,
-    // Submitted form tasks link to the submission; everything else re-opens its
-    // own link. Mirrors how listOpenTasks resolves the authed fill route.
-    link:
-      n.formId && n.form?.published && n.form.publicToken
-        ? `/forms/fill/${n.form.publicToken}`
-        : n.link,
-    canRsvp:
-      n.kind === "MeetingInvite" &&
-      !!n.scheduledMeetingId &&
-      !n.readAt &&
-      n.scheduledMeeting?.status !== "Cancelled",
-  }));
+  const items: NotificationHistoryItem[] = page.map((n) => {
+    const state = resolveNotificationState(n, now);
+    return {
+      id: n.id,
+      kind: n.kind,
+      title: n.title,
+      body: n.body,
+      sender: n.createdBy ? fullName(n.createdBy) || null : null,
+      state,
+      sentAt: n.createdAt.toISOString(),
+      clearedAt: n.readAt ? n.readAt.toISOString() : null,
+      // Submitted form tasks link to the submission; everything else re-opens its
+      // own link. Mirrors how listOpenTasks resolves the authed fill route.
+      link:
+        n.formId && n.form?.published && n.form.publicToken
+          ? `/forms/fill/${n.form.publicToken}`
+          : n.link,
+      canRsvp: n.kind === "MeetingInvite" && !!n.scheduledMeetingId && state === "Open",
+    };
+  });
 
   const last = page.at(-1);
   const nextCursor =
