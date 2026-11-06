@@ -174,7 +174,7 @@ describe("ShareDialog Partners audience", () => {
     await mount({ fillUrl: "/forms/fill/tok" }, { "form-prefill": true });
     await click(byLabel("General access audience"));
     const partners = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.startsWith("Partners"));
-    expect(partners?.textContent).toContain("Anyone signed in to the partner portal");
+    expect(partners?.textContent).toContain("Partner accounts that belong to a partner organization");
     await click(partners);
     expect(posts.find((p) => p.intent === "general-access")).toMatchObject({
       linkAccess: "Partners",

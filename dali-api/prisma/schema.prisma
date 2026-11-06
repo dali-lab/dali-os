@@ -5951,7 +5951,7 @@ enum LinkAccess {
   // Any authenticated account, including partner, applicant, and non-member
   // Dartmouth users. Added for forms (the old "SignedIn" fill audience).
   SignedIn
-  // Any signed-in partner-portal account (has a PartnerContact).
+  // Any signed-in partner account with a current org membership.
   Partners
   Public
 }

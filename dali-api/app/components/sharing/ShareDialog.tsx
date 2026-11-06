@@ -96,7 +96,7 @@ export const FORM_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Restricted", label: "Only people you add", description: "Only you and the people and groups above." },
   { value: "LabMembers", label: "Everyone in the lab", description: "Any lab member can fill it." },
   { value: "SignedIn", label: "Anyone signed in", description: "Any account, including applicants and partners." },
-  { value: "Partners", label: "Partners", description: "Anyone signed in to the partner portal." },
+  { value: "Partners", label: "Partners", description: "Partner accounts that belong to a partner organization." },
   { value: "Public", label: "Anyone with the link", description: "No account needed." },
 ];
 

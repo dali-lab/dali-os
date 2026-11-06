@@ -35,4 +35,4 @@ If you change the sharing later and a question can no longer fill in, the questi
 
 ## Share a form with partners
 
-In **Share**, set general access to **Partners**. Anyone signed in to the partner portal can then fill the form. Lab members who can't edit the form can't fill it unless you add them by name. Send partners the form link from **Copy form link**.
+In **Share**, set general access to **Partners**. Partners who belong to a partner organization can then fill the form. A partner contact who isn't linked to an organization yet can't, so link them in Core first. Lab members who can't edit the form can't fill it unless you add them by name. Send partners the form link from **Copy form link**.
