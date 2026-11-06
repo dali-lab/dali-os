@@ -104,7 +104,20 @@ describe("GET /welcome loader", () => {
       step: "setup",
       email: "ada@dartmouth.edu",
       door: "dartmouth",
+      next: null,
       needsName: true,
+    });
+  });
+
+  it("setup step passes a safe next through and drops an unsafe one", async () => {
+    mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
+    const at = (url: string) => loader({ request: makeRequest(url) } as any);
+    expect(await at("http://localhost/welcome?door=partner&next=%2Fpartner%2Fapply")).toMatchObject({
+      step: "setup",
+      next: "/partner/apply",
+    });
+    expect(await at("http://localhost/welcome?door=partner&next=%2F%2Fevil.com")).toMatchObject({
+      next: null,
     });
   });
 
@@ -222,6 +235,24 @@ describe("POST /welcome action — door destinations", () => {
       request: makePostRequest({ door: "partner", intent: "skip", fullName: "Ada Lovelace" }),
     } as any)) as Response;
     expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/welcome?door=partner&step=passkey");
+  });
+
+  it("partner door setup keeps next so they land where they were headed", async () => {
+    mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
+    const res = (await action({
+      request: makePostRequest({ door: "partner", fullName: "Ada Lovelace", next: "/partner/apply" }),
+    } as any)) as Response;
+    expect(res.headers.get("Location")).toBe(
+      "/welcome?door=partner&step=passkey&next=%2Fpartner%2Fapply",
+    );
+  });
+
+  it("drops an unsafe next on setup", async () => {
+    mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
+    const res = (await action({
+      request: makePostRequest({ door: "partner", fullName: "Ada Lovelace", next: "//evil.com" }),
+    } as any)) as Response;
     expect(res.headers.get("Location")).toBe("/welcome?door=partner&step=passkey");
   });
 });

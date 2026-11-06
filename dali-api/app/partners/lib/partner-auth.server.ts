@@ -1,6 +1,7 @@
 import { redirect } from "react-router";
 import { requireAuth, type AuthSuccess } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
+import { redirectToLogin } from "~/lib/login-next";
 
 // A single org the account belongs to (current membership). A partner can hold
 // several of these over time — the portal picks an "active" one for org-scoped
@@ -124,7 +125,7 @@ export async function requirePartnerAccount(
   request: Request,
 ): Promise<PartnerAccountContext> {
   const auth = await requireAuth(request);
-  if (!auth.ok) throw redirect("/partner/login");
+  if (!auth.ok) throw redirectToLogin(request);
   if (auth.user.type === "member") throw redirect("/");
   if (auth.user.type === "dartmouth") throw redirect("/portal");
 
@@ -181,7 +182,7 @@ export async function requirePartnerCandidate(
   request: Request,
 ): Promise<AuthSuccess> {
   const auth = await requireAuth(request);
-  if (!auth.ok) throw redirect("/partner/login");
+  if (!auth.ok) throw redirectToLogin(request);
   if (auth.user.type === "member") throw redirect("/");
   if (auth.user.type === "dartmouth") throw redirect("/portal");
   const member = await prisma.dALIMember.findUnique({
