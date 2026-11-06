@@ -52,6 +52,9 @@ export type AgentAnnouncement = {
   at?: number;
   presenceRoom?: string;
   docRoom?: string;
+  /** A slide deck's room: the agent shows on `slideId` in the filmstrip, and `touched` holds `slideId/elementId` keys. */
+  deckRoom?: string;
+  slideId?: string;
   /** Relative-position JSON of what the write added; null when it added no text. */
   range?: { start: unknown; end: unknown } | null;
   /** Block ids the edit inserted or changed. */
@@ -76,7 +79,7 @@ export function pagePresenceRoom(pageId: string): string {
 
 type AnnounceTarget = Pick<
   AgentAnnouncement,
-  "action" | "presenceRoom" | "docRoom" | "range" | "touched" | "point"
+  "action" | "presenceRoom" | "docRoom" | "deckRoom" | "slideId" | "range" | "touched" | "point"
 >;
 
 function announceAs(agent: AgentIdentity, target: AnnounceTarget): void {
@@ -316,6 +319,16 @@ export function docRoomState(
   };
 }
 
+export function deckRoomState(msg: AgentAnnouncement, look: Look, slideId: string | null, touched: AgentTouched | null) {
+  return {
+    user: { name: look.label, color: look.color, agent: { kind: msg.kind, action: msg.action } },
+    deckSlide: slideId
+      ? { slideId, userId: msg.userId, name: look.label, color: look.color, photoUrl: null, agent: { kind: msg.kind } }
+      : null,
+    ...(touched ? { touched } : {}),
+  };
+}
+
 type Timer = ReturnType<typeof setTimeout>;
 type Range = { start: unknown; end: unknown };
 
@@ -323,7 +336,7 @@ type Live = {
   key: string;
   group: string;
   room: string;
-  role: "presence" | "doc";
+  role: "presence" | "doc" | "deck";
   session: string | undefined;
   hocuspocus: Hocuspocus;
   msg: AgentAnnouncement;
@@ -336,6 +349,7 @@ type Live = {
   selection: boolean;
   highlight: boolean;
   touched: AgentTouched | null;
+  slideId: string | null;
   seq: number;
   linger: Timer | null;
   collapse: Timer | null;
@@ -357,6 +371,8 @@ function unref<T>(timer: T): T {
 /** The logical document a room belongs to: a page's presence and body rooms share one. */
 export function agentDocKey(room: string): string {
   const name = room.startsWith(PRESENCE_ROOM_PREFIX) ? room.slice(PRESENCE_ROOM_PREFIX.length) : room;
+  const deck = /^slides:(.+):deck$/.exec(name);
+  if (deck) return `doc:${deck[1]}`;
   return name.endsWith(":body") ? name.slice(0, -":body".length) : name;
 }
 
@@ -384,6 +400,7 @@ function resolveRange(entry: Live, doc: Y.Doc): Range | null {
 
 function stateFor(entry: Live, doc: Y.Doc): Record<string, unknown> {
   if (entry.role === "presence") return presenceRoomState(entry.msg, entry.look);
+  if (entry.role === "deck") return deckRoomState(entry.msg, entry.look, entry.slideId, entry.touched);
   const range = resolveRange(entry, doc);
   const cursor = range
     ? { anchor: entry.highlight || entry.selection ? range.start : range.end, head: range.end }
@@ -499,6 +516,7 @@ function track(hocuspocus: Hocuspocus, room: string, role: Live["role"], msg: Ag
       selection: false,
       highlight: false,
       touched: null,
+      slideId: null,
       seq: 0,
       linger: null,
       collapse: null,
@@ -513,13 +531,16 @@ function track(hocuspocus: Hocuspocus, room: string, role: Live["role"], msg: Ag
   current.msg = msg;
 
   clearTimer(current, "collapse");
-  if (role === "doc") {
-    current.pending = msg;
+  if (role === "deck" && msg.slideId) current.slideId = msg.slideId;
+  if (role !== "presence") {
     const touched = msg.touched?.slice(-AGENT_TOUCHED_MAX) ?? [];
-    current.highlight =
-      msg.action === "editing" &&
-      touched.length === 0 &&
-      (msg.range ? true : msg.range === undefined && !current.range);
+    if (role === "doc") {
+      current.pending = msg;
+      current.highlight =
+        msg.action === "editing" &&
+        touched.length === 0 &&
+        (msg.range ? true : msg.range === undefined && !current.range);
+    }
     if (touched.length > 0) {
       current.seq = Math.max(current.seq + 1, msg.at ?? 0);
       current.touched = { ids: touched, seq: current.seq };
@@ -553,6 +574,7 @@ function track(hocuspocus: Hocuspocus, room: string, role: Live["role"], msg: Ag
 export function applyAgentAnnouncement(hocuspocus: Hocuspocus, msg: AgentAnnouncement) {
   if (msg.presenceRoom) track(hocuspocus, msg.presenceRoom, "presence", msg);
   if (msg.docRoom) track(hocuspocus, msg.docRoom, "doc", msg);
+  if (msg.deckRoom) track(hocuspocus, msg.deckRoom, "deck", msg);
 }
 
 /** Send every agent in a room again, as newer, so a client that just (re)connected sees them now. */

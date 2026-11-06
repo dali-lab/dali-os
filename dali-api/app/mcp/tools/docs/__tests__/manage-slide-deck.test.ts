@@ -13,6 +13,8 @@ vi.mock("~/lib/slide-decks.server", () => decks);
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/collab/deck-write.server", () => ({ applySlides: vi.fn() }));
 vi.mock("~/collab/deck-live.server", () => ({ transactDeck: vi.fn() }));
+const presence = vi.hoisted(() => ({ announceAgent: vi.fn(), pagePresenceRoom: (id: string) => `presence:doc:${id}` }));
+vi.mock("~/collab/agent-presence.server", () => presence);
 // Markdown <-> blocks is BlockNote's job; a one-paragraph stand-in keeps the
 // tool's own logic in view.
 vi.mock("~/collab/blocknote-server", () => ({
@@ -61,6 +63,24 @@ describe("manage_slide_deck", () => {
       cursor: (first as { page: { nextCursor: string } }).page.nextCursor,
     });
     expect(second).toMatchObject({ slides: [{ id: "c" }], page: { nextCursor: null, hasMore: false } });
+  });
+
+  it("shows the agent reading the deck for get and export, before anything else", async () => {
+    await runManageSlideDeck("u1", { action: "get", pageId: "p1" });
+    await runManageSlideDeck("u1", { action: "export", pageId: "p1" });
+    expect(presence.announceAgent.mock.calls).toEqual([
+      [{ action: "reading", presenceRoom: "presence:doc:p1" }],
+      [{ action: "reading", presenceRoom: "presence:doc:p1" }],
+    ]);
+  });
+
+  it("shows the agent editing an older deck once its save succeeds, and not when it fails", async () => {
+    await runManageSlideDeck("u1", { action: "delete_slide", pageId: "p1", slideId: "b" });
+    expect(presence.announceAgent).toHaveBeenCalledWith({ action: "editing", presenceRoom: "presence:doc:p1" });
+    presence.announceAgent.mockClear();
+    decks.editDeck.mockResolvedValueOnce({ ok: false, status: 409, error: "Conflict" });
+    await expect(runManageSlideDeck("u1", { action: "delete_slide", pageId: "p1", slideId: "a" })).rejects.toThrow();
+    expect(presence.announceAgent).not.toHaveBeenCalled();
   });
 
   it("edit actions still echo the whole deck without a page", async () => {

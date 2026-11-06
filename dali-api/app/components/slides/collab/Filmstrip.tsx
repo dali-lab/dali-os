@@ -11,6 +11,7 @@ import {
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ChevronDown, ChevronRight, Copy, EyeOff, MessageSquare, Trash2 } from "lucide-react";
 import { Avatar } from "~/components/ui/Avatar";
+import { AgentAvatar } from "~/components/collab/AgentAvatar";
 import { IconButton } from "~/components/ui/IconButton";
 import { ContextMenu } from "~/components/ui/floating";
 import { ActionMenuItems } from "./ActionMenuItems";
@@ -30,9 +31,15 @@ function PresenceDots({ peers }: { peers: SlidePeer[] }) {
   if (peers.length === 0) return null;
   return (
     <span className="absolute right-1 top-1 flex -space-x-1.5" data-testid="slide-presence">
-      {peers.slice(0, 3).map((p) => (
-        <Avatar key={p.clientId} name={p.name} photoUrl={p.photoUrl} size="xs" className="ring-2 ring-os-card" />
-      ))}
+      {peers.slice(0, 3).map((p) =>
+        p.agent ? (
+          <span key={p.clientId} className="h-5 w-5 rounded-full ring-2 ring-os-card" aria-label={p.name}>
+            <AgentAvatar kind={p.agent.kind} />
+          </span>
+        ) : (
+          <Avatar key={p.clientId} name={p.name} photoUrl={p.photoUrl} size="xs" className="ring-2 ring-os-card" />
+        ),
+      )}
     </span>
   );
 }

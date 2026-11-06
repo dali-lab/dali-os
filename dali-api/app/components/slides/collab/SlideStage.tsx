@@ -24,6 +24,8 @@ import { elementAtPoint, type CommentPin } from "./comment-pins";
 import type { CommentTarget } from "./SlideCommentsPanel";
 import { SlotEditor, type SlotCollab } from "./SlotEditor";
 import type * as Y from "yjs";
+import { agentTouchCss } from "./agent-touch";
+import type { AgentTouch } from "~/components/collab/agent";
 
 /** Editors remount when the slide changes or a restore replaces the deck's fragments. */
 export const stageKey = (epoch: number, slideId: string) => `${epoch}:${slideId}`;
@@ -200,6 +202,7 @@ export function SlideStage({
   comments,
   zoom = 1,
   onZoom,
+  agentTouches,
 }: {
   slide: RenderSlide;
   themeId: string;
@@ -211,6 +214,7 @@ export function SlideStage({
   comments?: StageComments;
   zoom?: number;
   onZoom?: (zoom: number) => void;
+  agentTouches?: AgentTouch[];
 }) {
   const [local, setLocal] = useState<Map<string, PlacedLive> | null>(null);
   const slide = useMemo(() => withPlacements(base, [freeform?.peerDrags, local]), [base, freeform?.peerDrags, local]);
@@ -220,6 +224,7 @@ export function SlideStage({
     freeform?.onPublishDrag(live);
   };
   const stageRef = useRef<HTMLDivElement>(null);
+  const agentCss = useMemo(() => agentTouchCss(slide.id, agentTouches ?? []), [slide.id, agentTouches]);
   const editingId = freeform?.editingId ?? null;
   const editPoint = freeform?.editPoint;
   useEffect(() => {
@@ -326,7 +331,8 @@ export function SlideStage({
     <FitBox zoom={zoom} onZoom={onZoom}>
       {() => (
         <CommentableStage slide={slide} comments={comments} menu={menu}>
-          <div ref={stageRef}>
+          <div ref={stageRef} data-agent-stage>
+            {agentCss && <style>{agentCss}</style>}
             <SlideRender
               className="rounded-os-card shadow-sm"
               slide={slide}

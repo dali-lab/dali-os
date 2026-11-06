@@ -107,6 +107,16 @@ describe("Filmstrip", () => {
     expect(el.querySelector("[data-avatar='Grace']")).not.toBeNull();
   });
 
+  it("shows an agent on a slide with the agent's badge, not a person's avatar", () => {
+    const { snap } = deck(2);
+    const peers = new Map([[snap.slides[0].id, [{ clientId: 9, userId: "u1", name: "Claude", color: "#d97757", photoUrl: null, agent: { kind: "claude" as const } }]]]);
+    const el = render(createElement(Filmstrip, props(snap.slides, { peers })));
+    const badge = el.querySelector("[data-testid=slide-presence] [data-agent='claude']");
+    expect(badge).not.toBeNull();
+    expect(badge!.parentElement!.getAttribute("aria-label")).toBe("Claude");
+    expect(el.querySelector("[data-avatar='Claude']")).toBeNull();
+  });
+
   it("offers no editing controls to a reader", () => {
     const { snap } = deck(2);
     const el = render(createElement(Filmstrip, props(snap.slides, { editable: false })));
@@ -125,6 +135,28 @@ describe("SlideStage", () => {
     );
     expect(el.querySelectorAll("[data-testid=doc-editor]")).toHaveLength(2);
     expect(el.querySelector("button[aria-label='Add image']")).not.toBeNull();
+  });
+
+  it("outlines what an agent just changed on this slide, and nothing on other slides", () => {
+    const { doc, snap } = deck(2);
+    const touch = (id: string) => ({ id, clientId: 9, seq: 1, name: "Claude", color: "#d97757", at: 0, batch: 1 });
+    const el = render(
+      createElement(SlideStage, {
+        slide: snap.slides[0], themeId: "dali-dark", doc, collab, editable: true, onPickImage: noop,
+        agentTouches: [touch(`${snap.slides[0].id}/title`), touch(`${snap.slides[1].id}/body`)],
+      }),
+    );
+    const css = el.querySelector("[data-agent-stage] > style")!.textContent!;
+    expect(css).toContain('[data-agent-stage] [data-slot="title"]');
+    expect(css).not.toContain('"body"');
+  });
+
+  it("adds no outline style when no agent touched anything", () => {
+    const { doc, snap } = deck(1);
+    const el = render(
+      createElement(SlideStage, { slide: snap.slides[0], themeId: "dali-dark", doc, collab, editable: true, onPickImage: noop }),
+    );
+    expect(el.querySelector("[data-agent-stage] > style")).toBeNull();
   });
 
   it("mounts no editors when the viewer can't edit", () => {
