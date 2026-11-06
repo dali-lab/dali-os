@@ -190,6 +190,9 @@ function summarizeOne(
   if (row.linkAccess === "SignedIn") {
     return { kind: "public", label: "Anyone signed in", permission: tier(row.linkPermission, "View") };
   }
+  if (row.linkAccess === "Partners") {
+    return { kind: "public", label: "Partners", permission: tier(row.linkPermission, "View") };
+  }
 
   const ownerLabel = row.createdById === viewerId ? "Only you" : "Owner only";
 

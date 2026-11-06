@@ -77,3 +77,27 @@ describe("save-version with the new question types", () => {
     });
   });
 });
+
+describe("save-version with a prefill", () => {
+  it.each([
+    q("text", { prefill: "me.name" }),
+    q("email", { prefill: "me.email" }),
+    q("textarea", { prefill: "partnerOrg.address" }),
+    q("reference", { referenceSource: "projects:my-organization", prefill: "partnerOrg.project" }),
+  ])("accepts $data.prefill on a $type question", async (question) => {
+    expect(await saveVersion([question])).toEqual({ ok: true });
+  });
+
+  it.each([
+    q("text", { prefill: "me.password" }),
+    q("radio", { options: ["A", "B"], prefill: "me.name" }),
+    q("email", { prefill: "me.name" }),
+    q("reference", { referenceSource: "projects:active", prefill: "partnerOrg.project" }),
+  ])("rejects $data.prefill on a $type question", async (question) => {
+    expect(await saveVersion([question])).toEqual({
+      error: '"Question" can\'t fill in from that record.',
+      status: 400,
+    });
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+  });
+});

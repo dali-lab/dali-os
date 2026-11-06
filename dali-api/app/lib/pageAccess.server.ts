@@ -20,7 +20,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
-import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
+import { partnerHasProjectAccess, partnerOrgIdsForUser } from "~/partners/lib/partner-access";
 import { groupIdsForUser, permissionAtLeast, PERMISSION_RANK } from "~/lib/page-sharing.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import type { SharePermission, LinkAccess, ScopeKind } from "~/generated/prisma/client";
@@ -201,6 +201,10 @@ async function shareAndLinkGrant(
   } else if (linkAccess === "SignedIn") {
     // getPageAccess only ever runs for an authenticated account.
     level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
+  } else if (linkAccess === "Partners") {
+    if ((await partnerOrgIdsForUser(userSub)).length > 0) {
+      level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
+    }
   } else if (linkAccess === "Public") {
     level = higher(level, "View");
   }

@@ -21,6 +21,7 @@ describe("parsePermission and parseLinkAccess", () => {
     expect(parsePermission("Owner")).toBe("View");
     expect(parsePermission(undefined, "Comment")).toBe("Comment");
     expect(parseLinkAccess("LabMembers")).toBe("LabMembers");
+    expect(parseLinkAccess("Partners")).toBe("Partners");
     expect(parseLinkAccess("Everyone")).toBe("Restricted");
   });
 });

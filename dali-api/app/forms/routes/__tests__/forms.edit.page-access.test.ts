@@ -18,6 +18,7 @@ vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(),
 vi.mock("~/forms/lib/mapped-questions.server", () => ({
   mappedQuestionFeatures: async () => new Map(),
 }));
+vi.mock("~/forms/lib/prefill.server", () => ({ formFillers: async (id: string) => (id === "f1" ? ["partner"] : []) }));
 vi.mock("~/forms/lib/version-responses.server", () => ({ loadVersionResponses: vi.fn() }));
 vi.mock("~/forms/lib/version-summary.server", () => ({ loadVersionSummary: vi.fn() }));
 vi.mock("~/forms/lib/form-response.server", () => ({ deleteFormResponse: vi.fn() }));
@@ -136,6 +137,11 @@ describe("forms.edit loader", () => {
   it("returns the page workspace for the UI", async () => {
     const data = await run();
     expect(data.page).toEqual({ workspaceType: "Project" });
+  });
+
+  it("returns who the form's sharing lets fill it, for the prefill picker", async () => {
+    const data = await run();
+    expect(data.fillers).toEqual(["partner"]);
   });
 });
 

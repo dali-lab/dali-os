@@ -6,6 +6,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { modalCardClass } from "~/components/os-chrome";
 import { audienceLine, type Audience, type InheritedScope } from "~/lib/page-audience";
 
@@ -16,7 +17,7 @@ import { audienceLine, type Audience, type InheritedScope } from "~/lib/page-aud
 // link people copy is just the item's URL.
 
 type Permission = "View" | "Comment" | "Edit" | "FullAccess";
-type LinkAccess = "Restricted" | "LabMembers" | "SignedIn" | "Public";
+type LinkAccess = "Restricted" | "LabMembers" | "SignedIn" | "Partners" | "Public";
 type Option = { id: string; label: string };
 type Share = {
   id: string;
@@ -95,6 +96,7 @@ export const FORM_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Restricted", label: "Only people you add", description: "Only you and the people and groups above." },
   { value: "LabMembers", label: "Everyone in the lab", description: "Any lab member can fill it." },
   { value: "SignedIn", label: "Anyone signed in", description: "Any account, including applicants and partners." },
+  { value: "Partners", label: "Partners", description: "Partner accounts that belong to a partner organization." },
   { value: "Public", label: "Anyone with the link", description: "No account needed." },
 ];
 
@@ -172,6 +174,7 @@ export function ShareDialog({
     workspaceType: target.kind === "page" ? target.workspaceType : "Lab",
   };
   const shareUrl = isFile ? `/api/files/${page.id}/share` : `/api/pages/${page.id}/share`;
+  const partnersAudience = useFeatureFlag("form-prefill");
   const [ctx, setCtx] = useState<Context | null>(null);
   const [shares, setShares] = useState<Share[]>([]);
   const [audience, setAudience] = useState<Audience | null>(null);
@@ -297,7 +300,9 @@ export function ShareDialog({
   const audienceOptions = isFile
     ? FILE_AUDIENCE_OPTIONS
     : isForm
-      ? FORM_AUDIENCE_OPTIONS
+      ? FORM_AUDIENCE_OPTIONS.filter(
+          (o) => o.value !== "Partners" || partnersAudience || ctx?.linkAccess === "Partners",
+        )
       : isLab
         ? LAB_AUDIENCE_OPTIONS
         : AUDIENCE_OPTIONS;
