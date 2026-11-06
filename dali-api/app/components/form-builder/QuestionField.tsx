@@ -11,10 +11,54 @@ import {
 } from "~/lib/file-validation";
 import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
-import { Select } from "~/components/ui/floating";
+import { Combobox, MultiSelect, SEARCH_THRESHOLD, Select } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { OTHER_ANSWER_MAX_LENGTH } from "~/lib/form-answers";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
+
+const INPUT_BASE =
+  "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-os-accent px-4 py-2";
+
+const LONG_CHECKBOX_LIST = 12;
+
+function ChoiceDropdown({
+  value,
+  onChange,
+  options,
+  disabled,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  disabled: boolean;
+  placeholder: string;
+  className: string;
+}) {
+  if (options.length > SEARCH_THRESHOLD) {
+    return (
+      <Combobox
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        placeholder={placeholder}
+        options={options}
+        className={className}
+      />
+    );
+  }
+  return (
+    <Select
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      placeholder={placeholder}
+      options={options}
+      buttonClassName={`${className} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+    />
+  );
+}
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -100,16 +144,27 @@ function CheckboxField({
 
   return (
     <div className={`flex flex-col gap-1.5 ${disabled ? "opacity-60" : ""}`}>
-      {options.map((option) => (
-        <Checkbox
-          key={option}
-          checked={chosen.includes(option)}
-          onChange={() => toggle(option)}
+      {options.length > LONG_CHECKBOX_LIST ? (
+        <MultiSelect
+          values={chosen}
+          onChange={(next) => emit(next, otherText)}
+          options={options.map((o) => ({ value: o, label: o }))}
           disabled={disabled}
-          label={option}
-          className="text-base sm:text-sm text-foreground"
+          placeholder="Select..."
+          buttonClassName={`${INPUT_BASE} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
         />
-      ))}
+      ) : (
+        options.map((option) => (
+          <Checkbox
+            key={option}
+            checked={chosen.includes(option)}
+            onChange={() => toggle(option)}
+            disabled={disabled}
+            label={option}
+            className="text-base sm:text-sm text-foreground"
+          />
+        ))
+      )}
       {allowOther && (
         <>
           <Checkbox
@@ -672,8 +727,7 @@ export function FormQuestionField({
   onUrlBlur,
   disabled = false,
 }: FormQuestionFieldProps) {
-  const inputBase =
-    "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-os-accent px-4 py-2";
+  const inputBase = INPUT_BASE;
   const disabledClass = disabled ? " opacity-60 cursor-not-allowed" : "";
 
   if (question.type === "textarea") {
@@ -703,13 +757,13 @@ export function FormQuestionField({
 
   if (question.type === "select") {
     return (
-      <Select
+      <ChoiceDropdown
         value={value}
         onChange={onChange}
         disabled={disabled}
         placeholder="Select..."
         options={(question.data.options ?? []).map((o) => ({ value: o, label: o }))}
-        buttonClassName={`${inputBase}${disabledClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        className={`${inputBase}${disabledClass}`}
       />
     );
   }
@@ -803,13 +857,13 @@ export function FormQuestionField({
       );
     }
     return (
-      <Select
+      <ChoiceDropdown
         value={value}
         onChange={onChange}
         disabled={disabled || opts.length === 0}
         placeholder={opts.length === 0 ? "Nothing to pick here, you can skip this" : "Select..."}
         options={opts.map((o) => ({ value: o.value, label: o.label }))}
-        buttonClassName={`${inputBase}${disabledClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        className={`${inputBase}${disabledClass}`}
       />
     );
   }

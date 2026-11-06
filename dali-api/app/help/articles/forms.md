@@ -35,7 +35,7 @@ Anyone who can edit the folder can create a form there. Outside a folder, any la
 - **Links and files**: GitHub link, Figma link, Drive link, File upload.
 - **Layout**: Text block (prose shown to respondents) and Page break. These aren't counted as questions and don't appear in responses.
 
-Multiple choice and Checkboxes can include an **Other** option. Skills rating takes one skill per line. Each question can be shown only when an earlier answer matches, using **Show this question**.
+Multiple choice and Checkboxes can include an **Other** option. A Dropdown or Database list with more than 8 choices lets respondents type to search it. Checkboxes with more than 12 choices show as a searchable list where respondents pick several. Skills rating takes one skill per line. Each question can be shown only when an earlier answer matches, using **Show this question**.
 
 ### Versions, preview and publish
 
