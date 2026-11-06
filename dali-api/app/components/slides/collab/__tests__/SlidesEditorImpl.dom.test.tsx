@@ -11,6 +11,7 @@ vi.mock("~/components/doc/theme.css", () => ({}));
 vi.mock("../slide-editor.css", () => ({}));
 vi.mock("react-router", () => ({ useRevalidator: () => ({ revalidate: vi.fn() }) }));
 vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ info: vi.fn(), error: vi.fn() }) }));
+vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn(async () => true) }) }));
 vi.mock("../PdfMenuItems", () => ({
   DeckPdfMenuItems: (p: { pageId: string; canExportNotes: boolean }) => createElement("i", { "data-pdf-menu": `${p.pageId}|${p.canExportNotes}` }),
 }));

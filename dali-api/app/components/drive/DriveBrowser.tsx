@@ -2347,11 +2347,10 @@ function ColumnItemRow({
   onContextMenu?: (e: ReactMouseEvent) => void;
 }) {
   const t = useDriveText();
-  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `col::${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged || !scopeId,
+    disabled: !scopeId,
   });
   // Folders in a column accept drops, the same way the list/grid rows do —
   // dragging into a folder is the gesture this view is shaped around, and
@@ -2960,11 +2959,9 @@ function ListRow({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   const t = useDriveText();
-  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged,
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
@@ -3075,11 +3072,9 @@ function GridTile({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   const t = useDriveText();
-  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged,
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,

@@ -1034,10 +1034,6 @@ export function NewMenu({
     }
   }
 
-  // Create an agreement from the Core New menu. Prompts for a name (like New
-  // document), then follows the admin create action's redirect, rewriting the
-  // admin path to the Drive-namespaced one. The create action files it into
-  // Core ▸ Agreements ▸ {kind} so its breadcrumb resolves.
   async function createAgreement() {
     const name = await dialog.prompt({
       title: "New agreement",
@@ -1054,11 +1050,32 @@ export function NewMenu({
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");
     formData.set("cadence", "Once");
+    const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
+    if (folderPageId) formData.set("folderPageId", folderPageId);
     const res = await fetch("/core/agreements", { method: "POST", body: formData, credentials: "include" });
     if (res.ok || res.redirected) {
       const driveUrl = res.url.replace(/\/core\/agreements\/([^/]+)$/, "/documents/agreement/$1");
       window.location.assign(driveUrl);
     }
+  }
+
+  async function createRubric() {
+    const name = await dialog.prompt({
+      title: "New rubric",
+      label: "Name",
+      defaultValue: "Untitled rubric",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const formData = new FormData();
+    formData.set("name", name.trim());
+    const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
+    if (folderPageId) formData.set("folderPageId", folderPageId);
+    const res = await fetch("/api/rubrics", { method: "POST", body: formData, credentials: "include" });
+    const json = (await res.json().catch(() => ({}))) as { rubricId?: string };
+    if (res.ok && json.rubricId) window.location.assign(`/hiring/rubrics/${json.rubricId}`);
+    else toast.error("Couldn't create the rubric");
   }
 
   return (
@@ -1170,6 +1187,11 @@ export function NewMenu({
       {scope.id === "core" && canManageAgreements && (
         <Menu.Item icon={<FileSignature className="w-3.5 h-3.5" />} onSelect={() => void createAgreement()}>
           <span data-testid="drive-new-agreement">New agreement</span>
+        </Menu.Item>
+      )}
+      {scope.id === "hiring" && canManageAgreements && (
+        <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createRubric()}>
+          <span data-testid="drive-new-rubric">New rubric</span>
         </Menu.Item>
       )}
       {scope.id !== "mine" && (
@@ -1400,20 +1422,11 @@ export default function DriveHub() {
     [scopeActionsMap, driveScopes, toast, history, revalidate, pendingHidden],
   );
 
-  // ── Cross-drive move: relocate an item to another drive (Lab/Core/a
-  // project), optionally into one of its folders. The page-move endpoint
-  // re-scopes visibility automatically (e.g. into Core → Restricted), so we warn
-  // first. Managed types (agreement/rubric/emailTemplate) are filed
-  // automatically and excluded. Files/forms use folderPageId and stay within the
-  // Lab-workspace drives; docs/folders can also cross into projects.
-  // Every artifact now lives in an ordinary (binding) folder, so nothing is
-  // placement-locked — agreements/rubrics/email-templates move like any file.
-  const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] => {
       const home = driveScopes.find((s) => s.items.some((i) => i.id === item.id));
       return driveScopes.filter((s) => {
-        if (s.id === "mine" || isVirtualSpace(s.id) || NON_MOVABLE.has(item.type)) return false;
+        if (s.id === "mine" || isVirtualSpace(s.id)) return false;
         // Items under a typed root stay in that root's drive.
         if (home?.rootFolderId && s.id !== home.id) return false;
         const kind = scopeKindOf(s.id);
@@ -1636,14 +1649,13 @@ export default function DriveHub() {
   // Bulk move: pick a destination once, move everything there, report once.
   const onBulkMove = useCallback(
     async (items: DriveItem[]) => {
-      const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
-      if (movable.length === 0 || !effectiveScopeId) return;
+      if (items.length === 0 || !effectiveScopeId) return;
       if (isVirtualSpace(effectiveScopeId)) {
         toast.error("Open the document to change where it lives");
         return;
       }
-      const dest = await pickMoveDestination(movable[0], effectiveScopeId, `Move ${itemCount(movable.length)}`);
-      if (dest) await moveBatchToScope(movable, effectiveScopeId, dest.scopeId, dest.folderId);
+      const dest = await pickMoveDestination(items[0], effectiveScopeId, `Move ${itemCount(items.length)}`);
+      if (dest) await moveBatchToScope(items, effectiveScopeId, dest.scopeId, dest.folderId);
     },
     [pickMoveDestination, moveBatchToScope, effectiveScopeId, toast],
   );
@@ -1652,9 +1664,8 @@ export default function DriveHub() {
   // scope column) moves it to that drive's top level, confirming the re-scope.
   const onMoveToScope = useCallback(
     (sourceScopeId: string, destScopeId: string, items: DriveItem[]) => {
-      const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
-      if (movable.length === 0) return;
-      void moveBatchToScope(movable, sourceScopeId, destScopeId, null);
+      if (items.length === 0) return;
+      void moveBatchToScope(items, sourceScopeId, destScopeId, null);
     },
     [moveBatchToScope],
   );

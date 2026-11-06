@@ -6,6 +6,9 @@ import {
 } from "~/lib/process-ids";
 import type { ProcessType, SharePermission } from "~/generated/prisma/client";
 import { ensureMentorsGroup } from "~/lib/groups";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
+import { nearestRoot } from "~/lib/drive-roots";
 
 export type RootKey = "core" | "hiring" | "mentorship";
 
@@ -15,7 +18,6 @@ export type RootDef = {
   title: string;
   scopeGroupKey: "core" | "mentors";
   scopePermission: SharePermission;
-  adoptLegacyShell: boolean;
 };
 
 export const ROOTS: Record<RootKey, RootDef> = {
@@ -25,7 +27,6 @@ export const ROOTS: Record<RootKey, RootDef> = {
     title: "Core",
     scopeGroupKey: "core",
     scopePermission: "Edit",
-    adoptLegacyShell: true,
   },
   hiring: {
     processType: "HiringCycle",
@@ -33,7 +34,6 @@ export const ROOTS: Record<RootKey, RootDef> = {
     title: "Hiring",
     scopeGroupKey: "core",
     scopePermission: "Edit",
-    adoptLegacyShell: true,
   },
   mentorship: {
     processType: "Mentorship",
@@ -41,7 +41,6 @@ export const ROOTS: Record<RootKey, RootDef> = {
     title: "Mentorship",
     scopeGroupKey: "mentors",
     scopePermission: "View",
-    adoptLegacyShell: false,
   },
 };
 
@@ -117,11 +116,6 @@ export async function ensureRoot(key: RootKey, createdById: string): Promise<str
   }
 
   try {
-    if (def.adoptLegacyShell) {
-      const adopted = await adoptLegacyShell(def, coreGroupId);
-      if (adopted) return adopted;
-    }
-
     const last = await prisma.page.findFirst({
       where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
       orderBy: { position: "desc" },
@@ -176,39 +170,24 @@ export async function ensureRoot(key: RootKey, createdById: string): Promise<str
   }
 }
 
-async function adoptLegacyShell(def: RootDef, coreGroupId: string): Promise<string | null> {
-  const shell = await prisma.page.findFirst({
-    where: {
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: null,
-      kind: "Folder",
-      archivedAt: null,
-      folderType: null,
-      scopeKind: "Group",
-      scopeGroupId: coreGroupId,
-      title: { equals: def.title, mode: "insensitive" },
-    },
-    orderBy: { createdAt: "asc" },
-    select: { id: true },
-  });
-  if (!shell) return null;
-  await prisma.page.update({
-    where: { id: shell.id },
-    data: {
-      folderType: "Root",
-      processType: def.processType,
-      processId: def.processId,
-      linkAccess: "Restricted",
-      linkPermission: "View",
-    },
-  });
-  return shell.id;
-}
-
 export async function ensureAllRoots(createdById: string): Promise<Record<RootKey, string>> {
   const core = await ensureRoot("core", createdById);
   const hiring = await ensureRoot("hiring", createdById);
   const mentorship = await ensureRoot("mentorship", createdById);
   return { core, hiring, mentorship };
+}
+
+/** The folder a new item may be created in: `folderPageId` when it's a live folder the user can edit under this root, else null. */
+export async function editableFolderInRoot(
+  userId: string,
+  folderPageId: string | null,
+  key: RootKey,
+  request?: Request,
+): Promise<string | null> {
+  if (!folderPageId) return null;
+  const [chain, rootId] = await Promise.all([loadAncestorChain(folderPageId), findRoot(key)]);
+  const folder = chain[0];
+  if (!folder || folder.kind !== "Folder" || folder.archivedAt !== null) return null;
+  if (!rootId || nearestRoot(chain)?.id !== rootId) return null;
+  return (await getPageAccess(userId, folderPageId, request)).canEdit ? folderPageId : null;
 }

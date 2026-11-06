@@ -67,7 +67,7 @@ describe("menuEntries", () => {
 
   it("keeps a file's menu in order", () => {
     expect(menuEntries(item("file"), none)).toEqual(["open", "download", "rename", "move", "delete"]);
-    expect(menuEntries(item("agreement"), none)).toEqual(["open", "rename"]);
-    expect(menuEntries(item("rubric"), none)).toEqual(["open"]);
+    expect(menuEntries(item("agreement"), none)).toEqual(["open", "rename", "move"]);
+    expect(menuEntries(item("rubric"), none)).toEqual(["open", "move"]);
   });
 });

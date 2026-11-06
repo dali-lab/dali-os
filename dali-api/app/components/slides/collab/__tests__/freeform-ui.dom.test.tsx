@@ -144,8 +144,8 @@ describe("Inspector element tab", () => {
     const el = render(inspector(slide, [id], freeform));
     click(el.querySelector("button[aria-label='Align left']"));
     expect(freeform.onAlign).toHaveBeenCalledWith("left", "slide");
-    click([...el.querySelectorAll("button")].find((b) => b.textContent === "Bring forward")!);
-    click([...el.querySelectorAll("button")].find((b) => b.textContent === "Send back")!);
+    click(el.querySelector("[role=group][aria-label=Order] button[aria-label='Bring forward']"));
+    click(el.querySelector("[role=group][aria-label=Order] button[aria-label='Send back']"));
     expect(freeform.onReorder).toHaveBeenNthCalledWith(1, "forward");
     expect(freeform.onReorder).toHaveBeenNthCalledWith(2, "backward");
     click(el.querySelector("button[aria-label=Muted]"));

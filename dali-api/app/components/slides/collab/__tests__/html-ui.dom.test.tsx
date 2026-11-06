@@ -12,7 +12,7 @@ import { HtmlSection } from "../ContentInspector";
 import { IDLE, reduceEditing } from "../editing-model";
 import { FreeformLayer, type FreeformLayerProps } from "../FreeformLayer";
 import { INSERT_GROUPS } from "../InsertMenu";
-import type { InspectorFreeform } from "../ElementInspector";
+import { elementTabLabel, type InspectorFreeform } from "../ElementInspector";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -144,6 +144,19 @@ describe("HtmlSection", () => {
     expect(area().value).toBe("<p>a</p>");
     type("<p>ab</p>");
     expect(freeform.onHtml).toHaveBeenCalledWith(element.id, "<p>ab</p>");
+  });
+
+  it("heads the editor Source once, keeping the box labelled for screen readers", () => {
+    mount("<p>a</p>");
+    expect([...container.querySelectorAll("h3")].map((h) => h.textContent)).toEqual(["Source"]);
+    const label = area().closest("label")!.querySelector("span")!;
+    expect(label.textContent).toBe("Source");
+    expect(label.className).toContain("sr-only");
+  });
+
+  it("names the inspector tab HTML so it fits", () => {
+    const d = deck();
+    expect(elementTabLabel(d.slide(), [d.html])).toBe("HTML");
   });
 
   it("inserts two spaces on Tab and leaves the box on Esc", () => {

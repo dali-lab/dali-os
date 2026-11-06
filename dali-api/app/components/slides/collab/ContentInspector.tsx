@@ -302,9 +302,9 @@ export function HtmlSection({ element, editable, freeform }: { element: RenderEl
   };
   return (
     <>
-      <Section title="Custom HTML">
+      <Section title="Source">
         <div className="os-form">
-          <FormField label="Source" value={draft} multiline mono rows={14} onChange={editable ? commit : () => {}} onKeyDown={onKeyDown} hint="Tab indents. Press Esc, then Tab, to leave the box." />
+          <FormField label="Source" labelHidden value={draft} multiline mono rows={14} onChange={editable ? commit : () => {}} onKeyDown={onKeyDown} hint="Tab indents. Press Esc, then Tab, to leave the box." />
         </div>
         {tooLong && <p role="alert" className="text-xs text-os-accent">Custom HTML is limited to {MAX_HTML_CHARS / 1000} KB. The last change was not saved.</p>}
         <div className="flex flex-wrap gap-2">
