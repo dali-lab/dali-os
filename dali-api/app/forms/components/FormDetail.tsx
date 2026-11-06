@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { QuestionSourceNote } from "~/components/form-builder/QuestionSourceNote";
 import { Link, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import {
   Plus,
@@ -665,6 +666,7 @@ export function FormDetail() {
                         Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions))}
                       </p>
                     )}
+                    <QuestionSourceNote question={q} />
                     {(q.type === "select" ||
                       q.type === "radio" ||
                       q.type === "skills_rating" ||

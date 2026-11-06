@@ -91,3 +91,27 @@ describe("MemberFormFillView prefill", () => {
     expect(input("Organization").value).toBe("Old Co");
   });
 });
+
+describe("MemberFormFillView with nothing to pick", () => {
+  const project: Question = {
+    key: "p",
+    type: "reference",
+    required: true,
+    data: { label: "Project", referenceOptions: [], prefillHint: "Fills in for partners: their project." },
+  };
+
+  it("drops the required mark, explains the empty list, shows the hint and lets them submit", async () => {
+    act(() => {
+      root.render(
+        createElement(MemberFormFillView, {
+          data: { name: "Plan", description: null, versionId: "v1", versionUpdatedAt: "x", questions: [project], token: "tok" },
+        } as never),
+      );
+    });
+    expect(container.querySelector(".os-required-mark")).toBeNull();
+    expect(container.textContent).toContain("Nothing to pick here, you can skip this");
+    expect(container.textContent).toContain("Fills in for partners: their project.");
+    await submit();
+    expect(posted().answers).toEqual({});
+  });
+});

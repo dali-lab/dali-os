@@ -4,6 +4,7 @@ import {
   type UrlCheckState,
 } from "~/components/form-builder/QuestionField";
 import { InfoBody } from "~/components/form-builder/info-body";
+import { hasNothingToPick } from "~/lib/form-answers";
 
 // The per-question wrapper that every fill surface used to hand-write:
 // label + standardized required star + optional description + the field.
@@ -64,7 +65,7 @@ export function FormField({
     <div id={id}>
       <label className={`block text-sm ${labelClassName} text-foreground mb-1`}>
         {question.data.label}
-        {question.required && <span className="os-required-mark">*</span>}
+        {question.required && !hasNothingToPick(question) && <span className="os-required-mark">*</span>}
         {labelSuffix}
       </label>
       {question.data.description && (
@@ -81,6 +82,9 @@ export function FormField({
           urlCheckState={urlCheckState}
           onUrlBlur={onUrlBlur}
         />
+      )}
+      {question.data.prefillHint && (
+        <p className="text-xs text-muted-foreground mt-1">{question.data.prefillHint}</p>
       )}
       {belowField}
     </div>
