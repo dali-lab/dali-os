@@ -1422,20 +1422,11 @@ export default function DriveHub() {
     [scopeActionsMap, driveScopes, toast, history, revalidate, pendingHidden],
   );
 
-  // ── Cross-drive move: relocate an item to another drive (Lab/Core/a
-  // project), optionally into one of its folders. The page-move endpoint
-  // re-scopes visibility automatically (e.g. into Core → Restricted), so we warn
-  // first. Managed types (agreement/rubric/emailTemplate) are filed
-  // automatically and excluded. Files/forms use folderPageId and stay within the
-  // Lab-workspace drives; docs/folders can also cross into projects.
-  // Every artifact now lives in an ordinary (binding) folder, so nothing is
-  // placement-locked — agreements/rubrics/email-templates move like any file.
-  const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] => {
       const home = driveScopes.find((s) => s.items.some((i) => i.id === item.id));
       return driveScopes.filter((s) => {
-        if (s.id === "mine" || isVirtualSpace(s.id) || NON_MOVABLE.has(item.type)) return false;
+        if (s.id === "mine" || isVirtualSpace(s.id)) return false;
         // Items under a typed root stay in that root's drive.
         if (home?.rootFolderId && s.id !== home.id) return false;
         const kind = scopeKindOf(s.id);
@@ -1658,14 +1649,13 @@ export default function DriveHub() {
   // Bulk move: pick a destination once, move everything there, report once.
   const onBulkMove = useCallback(
     async (items: DriveItem[]) => {
-      const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
-      if (movable.length === 0 || !effectiveScopeId) return;
+      if (items.length === 0 || !effectiveScopeId) return;
       if (isVirtualSpace(effectiveScopeId)) {
         toast.error("Open the document to change where it lives");
         return;
       }
-      const dest = await pickMoveDestination(movable[0], effectiveScopeId, `Move ${itemCount(movable.length)}`);
-      if (dest) await moveBatchToScope(movable, effectiveScopeId, dest.scopeId, dest.folderId);
+      const dest = await pickMoveDestination(items[0], effectiveScopeId, `Move ${itemCount(items.length)}`);
+      if (dest) await moveBatchToScope(items, effectiveScopeId, dest.scopeId, dest.folderId);
     },
     [pickMoveDestination, moveBatchToScope, effectiveScopeId, toast],
   );
@@ -1674,9 +1664,8 @@ export default function DriveHub() {
   // scope column) moves it to that drive's top level, confirming the re-scope.
   const onMoveToScope = useCallback(
     (sourceScopeId: string, destScopeId: string, items: DriveItem[]) => {
-      const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
-      if (movable.length === 0) return;
-      void moveBatchToScope(movable, sourceScopeId, destScopeId, null);
+      if (items.length === 0) return;
+      void moveBatchToScope(items, sourceScopeId, destScopeId, null);
     },
     [moveBatchToScope],
   );

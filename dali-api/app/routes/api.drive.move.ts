@@ -1,26 +1,12 @@
-// POST /api/drive/move — set the `folderPageId` placement for a file or form
-// in the unified drive tree (Wave 3, drive-consolidation flag).
-//
-// This endpoint ONLY handles files and forms. Documents (pages) already have
-// their own move endpoint at POST /api/pages/:id/move — do not call this one
-// for pages.
-//
-// ACCESS MODEL (matches the no-widening guarantee in drive.server.ts):
-//   - File:  the caller must be Core OR a member of the file's project.
-//   - Form:  the caller must be able to EDIT the form's page.
-//   - Destination folder: the caller must be able to EDIT the folder page (via
-//     `getPageAccess(...).canEdit`). Null dest (unplace) requires no folder check.
-//
-// Placement is ORGANISATION only — it does not change who can see or fill the
-// item. Access rules in `drive.server.ts` and in the forms fill routes are
-// unchanged by this write.
+// POST /api/drive/move: set `folderPageId` for the non-page Drive items. Pages use /api/pages/:id/move.
 
 import { moveForm } from "~/forms/lib/form-page.server";
 import type { Route } from "./+types/api.drive.move";
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isProjectMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
+import { canEditFile } from "~/lib/fileAccess.server";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { withCors, handlePreflight } from "~/lib/cors";
@@ -32,7 +18,6 @@ import { nearestRoot, rootBoundMoveError } from "~/lib/drive-roots";
 const BodySchema = z.object({
   itemType: z.enum(["file", "form", "rubric", "agreement"]),
   itemId: z.string().min(1),
-  // Null = unplace (remove from the unified tree; falls back to legacy location).
   destFolderPageId: z.string().min(1).nullable(),
 });
 
@@ -52,18 +37,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   const { itemType, itemId, destFolderPageId } = body;
 
-  // ── Block moves on placement-locked types ────────────────────────────────
-  // Agreements and rubrics are auto-filed into Core-managed folders by other
-  // processes; their Drive placement must not be changed via the move endpoint.
-  // (Email templates ARE relocatable — handled below with a Core check.)
-  if (itemType === "agreement" || itemType === "rubric") {
-    return withCors(
-      request,
-      Response.json(
-        { error: "This item is filed automatically and can't be moved." },
-        { status: 400 },
-      ),
-    );
+  if ((itemType === "agreement" || itemType === "rubric") && destFolderPageId === null) {
+    return withCors(request, Response.json({ error: "Pick a folder to move this into" }, { status: 400 }));
   }
 
   // The source and destination checks read independent rows, so they run
@@ -75,25 +50,37 @@ export async function action({ request }: Route.ActionArgs) {
 
   async function refuseSource(): Promise<Response | null> {
     if (itemType === "file") {
-      // File manage: Core or, for project-scoped files, a member of the owning
-      // project. Lab-scoped files (no projectId) require Core for now.
-      const [file, core] = await Promise.all([
-        prisma.projectFile.findUnique({
-          where: { id: itemId },
-          select: { projectId: true, archivedAt: true, folderPageId: true },
-        }),
-        isCore(userId, request),
-      ]);
+      const file = await prisma.projectFile.findUnique({
+        where: { id: itemId },
+        select: {
+          id: true,
+          projectId: true,
+          workspaceType: true,
+          workspaceId: true,
+          folderPageId: true,
+          linkAccess: true,
+          linkPermission: true,
+          archivedAt: true,
+        },
+      });
       if (!file || file.archivedAt !== null) return refuse("File not found", 404);
       sourceFolderId = file.folderPageId ?? null;
-      const canManage =
-        core || (file.projectId != null && (await isProjectMember(userId, file.projectId, request)));
-      return canManage ? null : refuse("You can't move this file", 403);
+      return (await canEditFile(userId, file, request)) ? null : refuse("You can't move this file", 403);
     }
-    // form — agreements and rubrics are rejected by the guard above.
+    if (itemType === "agreement" || itemType === "rubric") {
+      const [row, core] = await Promise.all([
+        itemType === "agreement"
+          ? prisma.signingDocument.findUnique({ where: { id: itemId }, select: { folderPageId: true, archivedAt: true } })
+          : prisma.rubric.findUnique({ where: { id: itemId }, select: { folderPageId: true } }),
+        isCore(userId, request),
+      ]);
+      const label = itemType === "agreement" ? "Agreement" : "Rubric";
+      if (!row || ("archivedAt" in row && row.archivedAt !== null)) return refuse(`${label} not found`, 404);
+      sourceFolderId = row.folderPageId ?? null;
+      return core ? null : refuse(`You can't move this ${label.toLowerCase()}`, 403);
+    }
     const [form, canManage] = await Promise.all([
       prisma.form.findUnique({ where: { id: itemId }, select: { id: true, folderPageId: true } }),
-      // Form manage: edit on the form's page.
       canManageFormPlacement(userId, itemId, request),
     ]);
     if (!form) return refuse("Form not found", 404);
@@ -144,12 +131,12 @@ export async function action({ request }: Route.ActionArgs) {
   // ── Apply the placement ───────────────────────────────────────────────────
 
   if (itemType === "file") {
-    await prisma.projectFile.update({
-      where: { id: itemId },
-      data: { folderPageId: destFolderPageId },
-    });
+    await prisma.projectFile.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
+  } else if (itemType === "agreement") {
+    await prisma.signingDocument.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
+  } else if (itemType === "rubric") {
+    await prisma.rubric.update({ where: { id: itemId }, data: { folderPageId: destFolderPageId } });
   } else {
-    // form — agreements and rubrics are rejected by the guard above.
     await moveForm(itemId, destFolderPageId);
   }
 
