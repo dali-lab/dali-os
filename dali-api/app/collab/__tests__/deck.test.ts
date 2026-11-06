@@ -16,7 +16,7 @@ import {
   tombstoneSlide,
 } from "~/components/slides/deck/model";
 import type { Slide } from "~/components/slides/types";
-import { addShape, addTextBox, groupElements, moveElements } from "~/components/slides/deck/freeform-ops";
+import { addShape, addTextBox, deleteElements, groupElements, moveElements } from "~/components/slides/deck/freeform-ops";
 import { setLayout } from "~/components/slides/deck/deck-ops";
 
 const LEGACY: Slide[] = [
@@ -150,6 +150,16 @@ describe("applySlides", () => {
     expect(titles(doc)[0]).toBe("Hello again");
     expect(textOf(slidesMap(doc).get("a")!).get("subtitle")).toBe(subtitleFrag);
     expect(projectLegacySlides(readDeck(doc))[0].subtitle).toBe("Sub");
+  });
+
+  it("leaves a removed layout box removed when its slot didn't change, and brings it back with new text", () => {
+    const doc = seeded([{ id: "b", layout: "content", title: "Agenda" }]);
+    deleteElements(doc, "b", ["body"]);
+    applySlides(doc, projectLegacySlides(readDeck(doc)).map((s) => ({ ...s, title: "Agenda 2" })));
+    expect(readDeck(doc).slides[0].elements.map((e) => e.slot)).toEqual(["title"]);
+    applySlides(doc, projectLegacySlides(readDeck(doc)).map((s) => ({ ...s, body: [{ type: "paragraph", content: "new" }] as never })));
+    expect(readDeck(doc).slides[0].elements.map((e) => e.slot)).toEqual(["title", "body"]);
+    expect(elementsOf(slidesMap(doc).get("b")!).get("body")!.has("slotRemoved")).toBe(false);
   });
 
   it("tombstones an element whose slot is cleared and its slide keeps the rest", () => {

@@ -6,6 +6,7 @@ import type { ImportBlock } from "~/components/slides/pptx/import-types";
 import { cleanCrop, type Crop } from "./crop";
 import type { StyleClip } from "./style-clip";
 import { cloneValue, DECK_CREATE, DECK_LOCAL, insertTracked, newId } from "./deck-ops";
+import { fragmentToRichDoc } from "./fragment-blocks";
 import { expandToLeaves, FREE_DEFAULTS, MIN_SIZE, LINE_MIN_SIZE, placementOf, type Placed } from "./freeform";
 import { alignDeltas, boundsOf, distributeDeltas, rotatedBounds, SLIDE_RECT, type AlignMode, type Axis, type Rect } from "./geometry";
 import { STAGE_H, STAGE_W } from "./layouts";
@@ -13,7 +14,10 @@ import {
   compareZ,
   elementsOf,
   isDeleted,
+  isRemovedSlot,
   newElementMap,
+  tombstoneSlot,
+  reviveSlot,
   slidesMap,
   textOf,
   tombstoneElement,
@@ -331,13 +335,14 @@ export function distributeElements(doc: Y.Doc, slideId: string, ids: string[], a
   setPlacements(doc, slideId, updates);
 }
 
-/** Puts slot elements back where their layout draws them. */
+/** Puts slot elements back where their layout draws them, bringing back removed ones. */
 export function snapBack(doc: Y.Doc, slideId: string, ids: string[]): void {
   const slide = slideOf(doc, slideId);
   if (!slide) return;
   doc.transact(() => {
     for (const id of ids) {
       const el = elementsOf(slide).get(id);
+      if (el && isRemovedSlot(el)) reviveSlot(el);
       if (el && !isDeleted(el) && typeof el.get("slot") === "string") for (const key of GEOMETRY_KEYS) el.delete(key);
     }
   }, DECK_LOCAL);
@@ -377,7 +382,7 @@ export function ungroupElements(doc: Y.Doc, slideId: string, ids: string[]): str
   return groups.flatMap((g) => g.children ?? []);
 }
 
-/** Free elements and groups only: a slot belongs to its layout. Image slots lose their picture instead. */
+/** A layout box goes only once it's empty: an image box loses its picture first, a text box with text stays. */
 export function deleteElements(doc: Y.Doc, slideId: string, ids: string[]): string[] {
   const slide = slideOf(doc, slideId);
   if (!slide) return [];
@@ -388,7 +393,10 @@ export function deleteElements(doc: Y.Doc, slideId: string, ids: string[]): stri
       const el = elementsOf(slide).get(id);
       if (!el || isDeleted(el) || isLocked(el)) return;
       if (typeof el.get("slot") === "string") {
-        if (el.get("kind") === "image") el.set("src", "");
+        if (el.get("kind") === "image" && el.get("src")) return void el.set("src", "");
+        if (el.get("kind") === "text" && fragmentToRichDoc(textOf(slide).get(id)).length > 0) return;
+        tombstoneSlot(el);
+        removed.push(id);
         return;
       }
       tombstoneElement(el);

@@ -153,7 +153,7 @@ export function elementActions(ctx: ElementActionContext): ActionSpec[] {
   const f = selectionFacts(slide, selection);
   if (f.leaves.length === 0) return [];
   const single = f.single;
-  const deletable = f.leaves.some((e) => e.slot === null || e.kind === "image") && !f.anyLocked;
+  const deletable = f.leaves.some((e) => e.slot === null || e.kind === "image" || (e.kind === "text" && e.blocks.length === 0)) && !f.anyLocked;
   const to: "slide" | "selection" = f.leaves.length > 1 ? "selection" : "slide";
   const styleKind = single && (single.kind === "text" || single.kind === "shape") ? single.kind : null;
   const buildLabel = single?.build ? "Remove build" : "Add build";

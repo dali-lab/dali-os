@@ -99,6 +99,20 @@ export function tombstoneElement(el: ElementMap): void {
   el.set("deleted", true);
 }
 
+export function isRemovedSlot(el: ElementMap): boolean {
+  return isDeleted(el) && el.get("slotRemoved") === true;
+}
+
+export function tombstoneSlot(el: ElementMap): void {
+  el.set("deleted", true);
+  el.set("slotRemoved", true);
+}
+
+export function reviveSlot(el: ElementMap): void {
+  el.set("deleted", false);
+  if (el.has("slotRemoved")) el.delete("slotRemoved");
+}
+
 export function restoreSlide(slide: SlideMap): void {
   slide.set("deleted", false);
 }

@@ -14,6 +14,8 @@ import {
   textOf,
   tombstoneSlide,
   restoreSlide,
+  isRemovedSlot,
+  reviveSlot,
   deckMap,
   type SlideMap,
 } from "./model";
@@ -60,14 +62,16 @@ export function visibleSlideIds(doc: Y.Doc): string[] {
   return rows.sort(comparePos).map((r) => r.id);
 }
 
-/** Makes sure every slot the layout draws has an element, reviving tombstoned ones. Existing content is never touched. */
-export function ensureLayoutSlots(slide: SlideMap, layoutId: string): void {
+/** Existing content is never touched. Boxes someone removed stay removed unless `reviveRemoved`. */
+export function ensureLayoutSlots(slide: SlideMap, layoutId: string, reviveRemoved = false): void {
   const elements = elementsOf(slide);
   const fragments = textOf(slide);
   for (const slot of layoutById(layoutId).slots) {
     const existing = elements.get(slot.slot);
     if (!existing) elements.set(slot.slot, newElementMap(slot.slot, slot.kind, SLOT_Z[slot.slot], { slot: slot.slot }));
-    else if (isDeleted(existing)) existing.set("deleted", false);
+    else if (isRemovedSlot(existing)) {
+      if (reviveRemoved) reviveSlot(existing);
+    } else if (isDeleted(existing)) existing.set("deleted", false);
     if (slot.kind === "text" && !fragments.get(slot.slot)) fragments.set(slot.slot, new Y.XmlFragment());
   }
 }
@@ -75,6 +79,7 @@ export function ensureLayoutSlots(slide: SlideMap, layoutId: string): void {
 export function slideMissingSlot(slide: SlideMap): boolean {
   return layoutById(String(slide.get("layoutId"))).slots.some((s) => {
     const el = elementsOf(slide).get(s.slot);
+    if (el && isRemovedSlot(el)) return false;
     return !el || isDeleted(el) || (s.kind === "text" && !textOf(slide).get(s.slot));
   });
 }
@@ -174,7 +179,7 @@ export function setLayout(doc: Y.Doc, slideId: string, layoutId: string): void {
   if (!slide) return;
   doc.transact(() => {
     slide.set("layoutId", layoutId);
-    ensureLayoutSlots(slide, layoutId);
+    ensureLayoutSlots(slide, layoutId, true);
   }, DECK_LOCAL);
 }
 
@@ -189,7 +194,7 @@ export function setSlotImage(doc: Y.Doc, slideId: string, src: string, alt: stri
     ensureLayoutSlots(slide, String(slide.get("layoutId")));
     const el = elementsOf(slide).get("image") ?? newElementMap("image", "image", SLOT_Z.image, { slot: "image" });
     if (!elementsOf(slide).get("image")) elementsOf(slide).set("image", el);
-    el.set("deleted", false);
+    reviveSlot(el);
     el.set("src", src);
     el.set("alt", alt);
   }, DECK_LOCAL);

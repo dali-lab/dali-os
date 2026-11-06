@@ -9,6 +9,7 @@ import {
   deckVersionOf,
   elementsOf,
   isDeleted,
+  isRemovedSlot,
   notesOf,
   slidesMap,
   textOf,
@@ -64,6 +65,7 @@ export interface DeckReadSlide {
   transition?: RenderSlide["transition"];
   section?: string;
   elements: DeckReadElement[];
+  removedSlots?: string[];
   notes: { blocks: DocBlock[]; text: string };
 }
 
@@ -86,7 +88,9 @@ export function readDeck(live: Y.Doc): DeckRead {
       if (isDeleted(slide)) return;
       const fragments = textOf(slide);
       const elements: DeckReadElement[] = [];
+      const removedSlots: string[] = [];
       elementsOf(slide).forEach((el, elId) => {
+        if (isRemovedSlot(el)) removedSlots.push(elId);
         if (isDeleted(el)) return;
         const frag = fragments.get(elId);
         const blocks = frag ? fragmentToBlocks(frag) : [];
@@ -116,6 +120,7 @@ export function readDeck(live: Y.Doc): DeckRead {
         ...(slide.get("skipped") === true ? { skipped: true } : {}),
         ...slideMetaFields((k) => slide.get(k)),
         elements,
+        ...(removedSlots.length > 0 ? { removedSlots } : {}),
         notes: { blocks: notesBlocks, text: blocksToPlainText(notesBlocks as never) },
       });
     });
@@ -192,9 +197,11 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
   };
 }
 
-/** Whether any live slide lacks an element for a slot its layout draws. */
+/** Whether any live slide lacks an element for a slot its layout draws and nobody removed. */
 export function deckMissingSlots(read: DeckRead): boolean {
-  return read.slides.some((s) => layoutById(s.layoutId).slots.some((slot) => !s.elements.some((e) => e.slot === slot.slot)));
+  return read.slides.some((s) =>
+    layoutById(s.layoutId).slots.some((slot) => !s.removedSlots?.includes(slot.slot) && !s.elements.some((e) => e.slot === slot.slot)),
+  );
 }
 
 export function notesBySlide(read: DeckRead): Record<string, string> {
