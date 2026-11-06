@@ -16,8 +16,9 @@ import {
   textOf,
   type SlideMap,
 } from "./model";
-import { buildOf } from "./builds";
-import { contentFields, type ChartSpec } from "./content";
+import { cleanBuildFields, type BuildEffect } from "./builds";
+import { slideMetaFields, type SlideBackground, type SlideTransition } from "./slide-meta";
+import { contentFields, type ChartSpec, type PollSpec } from "./content";
 import { cleanCrop, type Crop } from "./crop";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
 
@@ -34,6 +35,12 @@ export interface RenderElement {
   build?: number;
   /** A text slot whose top-level blocks appear one per step after its own step. */
   buildBullets?: boolean;
+  /** How the element enters while presenting. Absent means fade. */
+  buildEffect?: BuildEffect;
+  /** The step starts by itself after the previous one instead of waiting for a key press. */
+  buildAfter?: boolean;
+  /** Milliseconds to wait before an automatic step, 0 to 5000. */
+  buildDelay?: number;
   x?: number;
   y?: number;
   w?: number;
@@ -46,6 +53,7 @@ export interface RenderElement {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  poll?: PollSpec;
   crop?: Crop;
   locked?: boolean;
   hFixed?: boolean;
@@ -56,6 +64,9 @@ export interface RenderSlide {
   pos: number;
   layoutId: string;
   skipped?: boolean;
+  background?: SlideBackground;
+  transition?: SlideTransition;
+  section?: string;
   elements: RenderElement[];
 }
 
@@ -108,7 +119,6 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
   elementsOf(slide).forEach((el, elId) => {
     if (isDeleted(el)) return;
     const style = el.get("textStyle");
-    const build = buildOf(el.get("build"));
     elements.push({
       id: elId,
       kind: String(el.get("kind")),
@@ -118,8 +128,7 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
       src: str(el.get("src")),
       alt: str(el.get("alt")),
       textStyle: TEXT_STYLE_IDS.includes(style as TextStyleId) ? (style as TextStyleId) : null,
-      ...(build ? { build } : {}),
-      ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
+      ...cleanBuildFields((k) => el.get(k)),
       ...geometryFields((k) => el.get(k)),
       ...shapeFields((k) => el.get(k)),
       ...contentFields((k) => el.get(k)),
@@ -133,6 +142,7 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
     pos: Number(slide.get("pos") ?? 0),
     layoutId: String(slide.get("layoutId") ?? "content"),
     ...(slide.get("skipped") === true ? { skipped: true as const } : {}),
+    ...slideMetaFields((k) => slide.get(k)),
     elements,
   };
 }

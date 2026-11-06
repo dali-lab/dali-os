@@ -57,9 +57,12 @@ beforeEach(() => {
 });
 
 describe("requirePartnerAccount redirect matrix", () => {
-  it("unauthenticated → /partner/login", async () => {
+  it("unauthenticated → /login, keeping the page they asked for", async () => {
     (requireAuth as any).mockResolvedValue({ ok: false });
-    expect(await redirectTarget(requirePartner(req()))).toBe("/partner/login");
+    expect(await redirectTarget(requirePartner(req()))).toBe("/login?next=%2Fpartner");
+    expect(
+      await redirectTarget(requirePartner(new Request("http://localhost/partner/apply"))),
+    ).toBe("/login?next=%2Fpartner%2Fapply");
   });
 
   it("member → /", async () => {
@@ -121,6 +124,13 @@ describe("requirePartnerAccount redirect matrix", () => {
 });
 
 describe("requirePartnerCandidate", () => {
+  it("sends a signed-out visitor to /login, keeping the page they asked for", async () => {
+    (requireAuth as any).mockResolvedValue({ ok: false });
+    expect(
+      await redirectTarget(requirePartnerCandidate(new Request("http://localhost/partner/onboarding"))),
+    ).toBe("/login?next=%2Fpartner%2Fonboarding");
+  });
+
   it("allows partner-type users with no contact row", async () => {
     authedAs("partner");
     const auth = await requirePartnerCandidate(req());

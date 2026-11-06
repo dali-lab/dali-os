@@ -28,7 +28,7 @@ import { cn } from "~/lib/cn";
 import type { SnapPrefs } from "./snap-prefs";
 import type { ReorderDirection } from "~/components/slides/deck/freeform-ops";
 import { useState } from "react";
-import type { ChartSpec } from "~/components/slides/deck/content";
+import type { ChartSpec, PollSpec } from "~/components/slides/deck/content";
 import { ContentSection } from "./ContentInspector";
 
 export interface InspectorFreeform {
@@ -43,6 +43,7 @@ export interface InspectorFreeform {
   onSnapBack: (id: string) => void;
   onFill: (fill: FillId) => void;
   onChart?: (id: string, chart: ChartSpec) => void;
+  onPoll?: (id: string, poll: PollSpec) => boolean;
   onIcon?: (id: string, name: string) => void;
   onVideo?: (id: string, url: string) => boolean;
   onLock: (locked: boolean) => void;

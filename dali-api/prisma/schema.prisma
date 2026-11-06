@@ -22,6 +22,8 @@ model User {
   // unique identifier
   id String @id @default(cuid())
   slidePresentations SlidePresentation[]
+  slidePollVotes     SlidePollVote[]
+  slideTemplates     SlideTemplate[]
 
   // Term-by-term PI assignments, and applications this person is PI of.
   piProjectTerms        ProjectTerm[]        @relation("ProjectTermPi")
@@ -7935,6 +7937,52 @@ model SlidePresentation {
   startedAt   DateTime  @default(now())
   endedAt     DateTime?
   updatedAt   DateTime  @updatedAt
+  // Poll element ids the presenter closed this session, and whether followers may react.
+  closedPolls  String[]  @default([])
+  reactionsOff Boolean   @default(false)
+  pollVotes    SlidePollVote[]
+}
+
+// A follower's vote on a poll element during one presentation. choices holds
+// option indexes. Votes are cleared when a new presentation starts.
+model SlidePollVote {
+  id             String            @id @default(cuid())
+  presentationId String
+  presentation   SlidePresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  pollElementId  String
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  choices        Int[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([presentationId, pollElementId, userId])
+  @@index([presentationId, pollElementId])
+}
+
+enum SlideTemplateKind {
+  Deck
+  Slide
+}
+
+// A saved deck (theme and slides) or single slide, reusable across decks.
+// payload is the sanitized slide clipboard JSON. Scoped like page templates:
+// the lab, or one project.
+model SlideTemplate {
+  id            String            @id @default(cuid())
+  kind          SlideTemplateKind
+  workspaceType WorkspaceType
+  workspaceId   String?
+  title         String
+  themeId       String
+  slideCount    Int
+  payload       Json
+  createdById   String
+  createdBy     User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([workspaceType, workspaceId, kind])
 }
 
 enum OnboardingLabSubmissionStatus {

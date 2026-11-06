@@ -5,6 +5,7 @@ import { cn } from "~/lib/cn";
 import { movePosition, samePosition, type DeckPosition, type NavMove } from "~/components/slides/deck/builds";
 import { navActionFor, nextIndex } from "./keys";
 import type { RenderSlide } from "./types";
+import { useEnterStep } from "./useBuildMotion";
 
 export interface PresenterViewProps {
   title: string;
@@ -15,6 +16,7 @@ export interface PresenterViewProps {
   /** With `onPositionChange`, Back and Next move through build steps as well as slides. */
   step?: number;
   stepsOf?: (index: number) => number;
+  isAuto?: (index: number, step: number) => boolean;
   onPositionChange?: (pos: DeckPosition) => void;
   actions?: ReactNode;
   renderSlide: RenderSlide;
@@ -22,6 +24,8 @@ export interface PresenterViewProps {
   shareUrl?: string;
   followerCount?: number;
   startedAt?: string | null;
+  overlay?: ReactNode;
+  extras?: ReactNode;
 }
 
 const NOW_WIDTH = 560;
@@ -44,6 +48,7 @@ export function PresenterView({
   onIndexChange,
   step,
   stepsOf,
+  isAuto,
   onPositionChange,
   actions,
   renderSlide,
@@ -51,6 +56,8 @@ export function PresenterView({
   shareUrl,
   followerCount,
   startedAt,
+  overlay,
+  extras,
 }: PresenterViewProps) {
   const total = slideIds.length;
   const [now, setNow] = useState(() => Date.now());
@@ -64,10 +71,11 @@ export function PresenterView({
   }, []);
 
   const here: DeckPosition = { index, step: step ?? 0 };
+  const enterStep = useEnterStep(index, here.step);
   const steps = stepsOf ?? (() => 0);
   const move = (action: NavMove) => {
     if (onPositionChange) {
-      const to = movePosition(action, here, total, steps);
+      const to = movePosition(action, here, total, steps, isAuto);
       if (!samePosition(here, to)) onPositionChange(to);
       return;
     }
@@ -141,8 +149,9 @@ export function PresenterView({
       <div className="flex min-h-0 flex-1 gap-4 p-4">
         <section className="flex min-w-0 flex-1 flex-col gap-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-os-grey">Now</div>
-          <div className="overflow-hidden rounded-os-item border border-os-container" style={{ width: NOW_WIDTH, aspectRatio: "16 / 9" }}>
-            {slideId ? renderSlide(slideId, { width: NOW_WIDTH, step: onPositionChange ? here.step : undefined }) : null}
+          <div className="relative overflow-hidden rounded-os-item border border-os-container" style={{ width: NOW_WIDTH, aspectRatio: "16 / 9" }}>
+            {slideId ? renderSlide(slideId, { width: NOW_WIDTH, step: onPositionChange ? here.step : undefined, enterStep }) : null}
+            {overlay}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="secondary" size="sm" disabled={index <= 0 && here.step <= 0} onClick={() => move("prev")}>
@@ -182,6 +191,7 @@ export function PresenterView({
           >
             {nextId ? renderSlide(nextId, { width: NEXT_WIDTH, step: onPositionChange ? nextPos.step : undefined }) : "End of deck"}
           </div>
+          {extras}
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold uppercase tracking-wide text-os-grey">Notes</span>
             <span className="flex items-center gap-1">

@@ -61,6 +61,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     step: "setup" as const,
     email: user.email,
     door,
+    next: pickSafeLoginNext(url.searchParams.get("next")),
     // Magic-link signups arrive without a name (no Google to supply one), so
     // ask for it when the session user has no firstName yet.
     needsName: !user.firstName,
@@ -142,7 +143,9 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Setup only captures the name and runs door provisioning — the credential
   // itself is a passkey, offered on the next step.
-  return redirect(`/welcome?door=${door}&step=passkey`);
+  const next = pickSafeLoginNext(String(formData.get("next") ?? ""));
+  const nextParam = next ? `&next=${encodeURIComponent(next)}` : "";
+  return redirect(`/welcome?door=${door}&step=passkey${nextParam}`);
 }
 
 export default function Welcome() {
@@ -150,16 +153,18 @@ export default function Welcome() {
   if (data.step === "passkey") {
     return <PasskeyStep destination={data.destination} />;
   }
-  return <SetupStep email={data.email} door={data.door} needsName={data.needsName} />;
+  return <SetupStep email={data.email} door={data.door} next={data.next} needsName={data.needsName} />;
 }
 
 function SetupStep({
   email,
   door,
+  next,
   needsName,
 }: {
   email: string;
   door: Door;
+  next: string | null;
   needsName: boolean;
 }) {
   const actionData = useActionData<typeof action>();
@@ -176,6 +181,7 @@ function SetupStep({
 
       <Form method="post" className="flex flex-col gap-4">
         <input type="hidden" name="door" value={door} />
+        {next && <input type="hidden" name="next" value={next} />}
 
         {/* Verified email — display-only */}
         <AuthInput label="Email" type="email" value={email} readOnly disabled />

@@ -343,15 +343,17 @@ describe("copying slides across decks", () => {
     expect(pasted.elements.find((e) => e.kind === "image" && !e.slot)).toMatchObject({ src: "https://x/y.png", crop: { l: 0.1, t: 0, r: 0, b: 0 } });
   });
 
-  it("pastes several slides in order after the target, without an undo step", () => {
+  it("pastes several slides in order after the target, as one undo step", () => {
     const src = sourceDeck();
     const two = serializeSlides([snap(src.doc, src.slideId), snap(src.doc, src.slideId)])!;
     const { doc, slideId } = setup();
     const after = addSlide(doc, "blank", slideId);
     const undo = undoFor(doc);
-    const created = pasteSlides(doc, parseSlideClipboard(two)!, slideId);
+    const created = undo.step(() => pasteSlides(doc, parseSlideClipboard(two)!, slideId));
     expect(visibleSlideIds(doc)).toEqual([slideId, created[0], created[1], after]);
-    expect(undo.manager.undoStack).toHaveLength(0);
+    expect(undo.manager.undoStack).toHaveLength(1);
+    undo.manager.undo();
+    expect(visibleSlideIds(doc)).toEqual([slideId, after]);
   });
 
   it("rejects text that is not ours and sanitizes what is", () => {

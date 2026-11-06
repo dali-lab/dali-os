@@ -75,7 +75,7 @@ Use **⌘+**, **⌘−** and **⌘0** (or pinch on a trackpad, or the zoom contr
 
 Click a slide in the list, Shift-click to select a range, and ⌘-click to add or remove one. Drag any selected slide to move all of them together. Slide menu actions apply to everything selected. Moving slides is one step for **Undo**.
 
-Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate or group is one step for **Undo**. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, tables, rectangles, ellipses and lines where they were on the slide.
+Everyone editing the deck sees an item move while you drag it. Each move, resize, rotate, group or insert (a new item, a duplicate, a paste or a new slide) is one step for **Undo**. Undoing an insert removes it, and **Redo** brings it back. Items you add show up in PDF and PowerPoint downloads, in the filmstrip and when presenting, and can have a build step like any other item. Importing a PowerPoint file keeps text boxes, pictures, tables, rectangles, ellipses and lines where they were on the slide.
 
 ## Insert tables, charts, icons, emoji, code and video
 
@@ -87,6 +87,26 @@ Everything here is a free item. You can move, resize, rotate, group, copy, comme
 - **Emoji**: adds an emoji as large text. Resize the text box to make it bigger.
 - **Code block**: adds a text box with a code block in it. Pick the language from the block's own menu.
 - **Video**: paste a YouTube link. The slide shows a video card while you edit. When you present, click the card to play the video on the slide.
+
+## Layouts, backgrounds, sections and the grid
+
+- **Layout gallery**: **New slide** adds a slide with the same layout as the one you are on. Click the arrow next to it to pick from layouts drawn in your deck's theme. **Change layout** (right-click a slide or empty space, or the **Slide** tab) has **Browse layouts** at the top of its list. Changing the layout keeps your content, and items you moved keep their spot.
+- **Background**: in the **Slide** tab, choose a theme color or add an image, and pick whether the image fills or fits the slide. Right-click empty space and choose **Background** for the same colors. Backgrounds show in the filmstrip, when presenting, in PDF and in PowerPoint downloads.
+- **Sections**: right-click a slide in the filmstrip and choose **Add section here** to start a named section. Click a section's header to collapse it. Right-click the header to rename it, move it up or down with its slides, or remove it. A section moves with its first slide when you drag that slide. PowerPoint downloads keep sections.
+- **Grid**: click **Grid** in the toolbar, or press **G**, to see every slide at once. Drag to reorder (the slides you selected move together), double-click a slide to open it, and right-click for the same menu as in the filmstrip.
+- **Transitions**: in the **Slide** tab, choose **Dissolve**, **Push** or **Magic Move** for how a slide appears, and click **Preview**. Magic Move glides items that match the slide before it (the same item after **Duplicate slide**, or the same text or picture) and fades the rest. Transitions play when presenting and when following a presenter. They are skipped if your device is set to reduce motion, and builds still run after the transition.
+
+## Save and reuse slides
+
+When the live deck editor is on for you, you can keep decks and single slides for the lab to start from.
+
+- **Save a whole deck**: open the **⋯** menu and choose **Save as template**. Name it and choose who can use it: the whole lab, or, for a deck in a project, that project. The template keeps the deck's theme and every slide, without speaker notes or comments.
+- **Save slides to the library**: right-click a slide in the list (or several selected slides) and choose **Save slide to library**.
+- **Start a deck from a template**: in [Drive](/drive), click **New** and choose **New deck from template**, then pick a deck.
+- **Add saved slides to a deck**: click the arrow beside **New slide** and open the **Library** tab. Click a saved slide or deck to add its slides after the slide you are on. Adding them is one step for **Undo**.
+- **Delete a template**: open the **Library** tab and click the bin beside it. Only the person who saved it, or Core, can delete it.
+
+Everyone who can use a scope can use its templates, and anyone who can edit a deck can save it.
 
 ## Find and replace
 
@@ -112,4 +132,4 @@ Click a comment in the panel to jump to its slide. Replies and @mentions notify 
 
 ## Work on a deck with an AI assistant
 
-A connected AI assistant, such as Claude, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text. It can also place text boxes, pictures and shapes, then align, group, layer and set build steps for them the way you can in the editor. Its changes show up live for everyone who has the deck open. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.
+A connected AI assistant outside DALI OS, such as Claude Desktop or Claude Code, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. Ask it to draft a deck from an outline, or to add slides from a document, and it makes the slides with their layouts, text, speaker notes and theme. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text, including tables and code. It can also place text boxes, pictures, shapes, charts with their data, icons, videos and polls, then align, group, layer and set build steps for them the way you can in the editor. Ask DALI inside DALI OS can read a deck and answer questions about it, but it does not change decks. Its changes show up live for everyone who has the deck open. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.

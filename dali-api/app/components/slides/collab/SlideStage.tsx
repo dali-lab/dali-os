@@ -258,6 +258,7 @@ export function SlideStage({
         ? elementActions(actionContext)
         : stageActions({
             layoutId: slide.layoutId,
+            background: slide.background,
             canPaste: freeform.canPaste,
             canComment: Boolean(comments?.canComment),
             guides: freeform.prefs.items && freeform.prefs.margins,

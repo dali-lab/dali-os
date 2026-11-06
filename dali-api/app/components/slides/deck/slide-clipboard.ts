@@ -1,12 +1,14 @@
 import * as Y from "yjs";
 import { writeBlocks } from "~/components/slides/pptx/fragment-write";
 import type { ImportBlock } from "~/components/slides/pptx/import-types";
+import { cleanBuildFields, type BuildFields } from "./builds";
 import { cleanBlocksFor, cleanItems, importBlocksOf, safeImageUrl, serializeSelection, type ClipItem } from "./clipboard";
-import { ensureLayoutSlots, posAfter, DECK_CREATE, newId } from "./deck-ops";
+import { ensureLayoutSlots, insertTracked, posAfter, newId } from "./deck-ops";
 import { explicitPlacement } from "./freeform";
 import { writeClipItems } from "./freeform-ops";
 import { LAYOUTS, layoutById } from "./layouts";
 import { elementsOf, isDeleted, newSlideMap, slidesMap, textOf } from "./model";
+import { cleanBackground, cleanTransition, type SlideBackground, type SlideTransition } from "./slide-meta";
 import type { RenderSlide } from "./snapshot";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
 
@@ -14,7 +16,7 @@ export const SLIDE_CLIP_MARK = "dali-slides-slides";
 export const SLIDE_CLIP_VERSION = 1;
 const MAX_SLIDES = 50;
 
-export interface SlotClip {
+export interface SlotClip extends BuildFields {
   slot: string;
   blocks?: ImportBlock[];
   textStyle?: TextStyleId;
@@ -26,6 +28,8 @@ export interface SlotClip {
 export interface SlideClip {
   layoutId: string;
   skipped?: boolean;
+  background?: SlideBackground;
+  transition?: SlideTransition;
   slots: SlotClip[];
   items: ClipItem[];
 }
@@ -41,6 +45,7 @@ function slotClip(slide: RenderSlide, id: string): SlotClip | null {
     ...(el.kind === "text" ? { blocks: importBlocksOf(el.blocks) } : { src: el.src ?? "", alt: el.alt ?? "" }),
     ...(el.textStyle ? { textStyle: el.textStyle } : {}),
     ...(placed ? { placed } : {}),
+    ...cleanBuildFields((k) => (el as unknown as Record<string, unknown>)[k]),
   };
 }
 
@@ -52,9 +57,15 @@ export function serializeSlides(slides: RenderSlide[]): string | null {
     const raw = free.length ? serializeSelection(slide, free) : null;
     const items = raw ? (JSON.parse(raw) as { items: unknown[] }).items : [];
     const slots = slide.elements.filter((e) => e.slot).map((e) => slotClip(slide, e.id)).filter((c): c is SlotClip => Boolean(c));
-    return { layoutId: slide.layoutId, ...(slide.skipped ? { skipped: true } : {}), slots, items };
+    return { layoutId: slide.layoutId, ...(slide.skipped ? { skipped: true } : {}), ...(slide.background ? { background: slide.background } : {}), ...(slide.transition ? { transition: slide.transition } : {}), slots, items };
   });
   return JSON.stringify({ mark: SLIDE_CLIP_MARK, v: SLIDE_CLIP_VERSION, slides: clips });
+}
+
+/** The slides as plain clip objects, the form a template stores. Empty when there is nothing to save. */
+export function slidesToClips(slides: RenderSlide[]): unknown[] {
+  const text = serializeSlides(slides);
+  return text ? (JSON.parse(text) as { slides: unknown[] }).slides : [];
 }
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -71,6 +82,8 @@ function cleanSlot(raw: unknown, layoutId: string): SlotClip | null {
     out.alt = typeof raw.alt === "string" ? raw.alt.slice(0, 500) : "";
   }
   if (TEXT_STYLE_IDS.includes(raw.textStyle as TextStyleId)) out.textStyle = raw.textStyle as TextStyleId;
+  Object.assign(out, cleanBuildFields((k) => raw[k]));
+  if (def.kind !== "text") delete out.buildBullets;
   const p = raw.placed;
   if (isObj(p) && [p.x, p.y, p.w, p.h].every(finite) && (p.w as number) > 0 && (p.h as number) > 0) {
     const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -101,15 +114,23 @@ export function parseSlideClipboard(text: string): SlideClip[] | null {
     const layoutId = LAYOUTS.some((l) => l.id === raw.layoutId) ? String(raw.layoutId) : layoutById(undefined).id;
     const slots = (Array.isArray(raw.slots) ? raw.slots : []).map((s) => cleanSlot(s, layoutId)).filter((s): s is SlotClip => Boolean(s));
     const items = Array.isArray(raw.items) ? (cleanItems(raw.items) ?? []) : [];
-    out.push({ layoutId, ...(raw.skipped === true ? { skipped: true } : {}), slots, items });
+    const background = cleanBackground(raw.background);
+    const transition = cleanTransition(raw.transition);
+    out.push({ layoutId, ...(raw.skipped === true ? { skipped: true } : {}), ...(background ? { background } : {}), ...(transition ? { transition } : {}), slots, items });
   }
   return out.length ? out : null;
 }
 
-/** Adds the clipped slides after `afterId` in order. Creation is not an undo step. Returns the new slide ids. */
+/** Clips from stored data (a saved template), checked the same way as clipboard text. Null when nothing survives. */
+export function sanitizeClips(raw: unknown): SlideClip[] | null {
+  if (!Array.isArray(raw)) return null;
+  return parseSlideClipboard(JSON.stringify({ mark: SLIDE_CLIP_MARK, v: SLIDE_CLIP_VERSION, slides: raw }));
+}
+
+/** Adds the clipped slides after `afterId` in order. One undo step when run inside `deckUndo.step()`. Returns the new slide ids. */
 export function pasteSlides(doc: Y.Doc, clips: SlideClip[], afterId: string | null): string[] {
   const ids: string[] = [];
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     let after = afterId;
     for (const clip of clips) {
       const id = newId();
@@ -117,6 +138,8 @@ export function pasteSlides(doc: Y.Doc, clips: SlideClip[], afterId: string | nu
       slidesMap(doc).set(id, slide);
       ensureLayoutSlots(slide, clip.layoutId);
       if (clip.skipped) slide.set("skipped", true);
+      if (clip.background) slide.set("background", clip.background);
+      if (clip.transition) slide.set("transition", clip.transition);
       for (const s of clip.slots) {
         const el = elementsOf(slide).get(s.slot);
         if (!el || isDeleted(el)) continue;
@@ -128,12 +151,14 @@ export function pasteSlides(doc: Y.Doc, clips: SlideClip[], afterId: string | nu
           el.set("alt", s.alt ?? "");
         }
         if (s.textStyle) el.set("textStyle", s.textStyle);
+        for (const key of ["build", "buildBullets", "buildEffect", "buildAfter", "buildDelay"] as const) if (s[key]) el.set(key, s[key]);
         if (s.placed) for (const [k, v] of Object.entries(s.placed)) el.set(k, v);
       }
       writeClipItems(slide, clip.items, { dx: 0, dy: 0 });
       ids.push(id);
+      hide(slide);
       after = id;
     }
-  }, DECK_CREATE);
+  });
   return ids;
 }

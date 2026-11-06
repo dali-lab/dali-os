@@ -22,11 +22,16 @@ import {
   type ShapeKind,
   type SlideMap,
 } from "~/components/slides/deck/model";
-import { duplicateSlide, setBuild, setBuildBullets, setLayout, setSlotImage, setThemeId } from "~/components/slides/deck/deck-ops";
+import { BUILD_EFFECTS, MAX_BUILD_DELAY, type BuildEffect } from "~/components/slides/deck/builds";
+import { duplicateSlide, setBuild, setBuildBullets, setBuildEffect, setBuildTiming, setLayout, setSlotImage, setThemeId } from "~/components/slides/deck/deck-ops";
 import {
+  addChart,
   addFreeImage,
+  addIcon,
+  addPoll,
   addShape,
   addTextBox,
+  addVideo,
   alignElements,
   deleteElements,
   distributeElements,
@@ -35,14 +40,19 @@ import {
   minSizeFor,
   placementsOf,
   reorderElements,
+  setChart,
   setFill,
   setImageSource,
+  setPoll,
+  setVideoUrl,
+  setIconName,
   setPlacements,
   snapBack,
   ungroupElements,
   type ReorderDirection,
 } from "~/components/slides/deck/freeform-ops";
 import { placementOf, type Placed } from "~/components/slides/deck/freeform";
+import { CHART_TYPES, cleanChart, cleanIcon, cleanPoll, cleanVideoUrl, MAX_CHART_CATEGORIES, MAX_CHART_SERIES, MAX_POLL_OPTION, MAX_POLL_OPTIONS, MAX_POLL_QUESTION, MIN_POLL_OPTIONS, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
 import type { AlignMode, Axis } from "~/components/slides/deck/geometry";
 import type { RenderElement } from "~/components/slides/deck/snapshot";
 
@@ -72,26 +82,69 @@ const DEFAULT_STYLE = "default";
 export const ELEMENT_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
-    kind: { type: "string", enum: ["text", "image", "shape"], description: "add_element only." },
+    kind: { type: "string", enum: ["text", "image", "shape", "chart", "icon", "video", "poll"], description: "add_element only. Tables and code go in a text element's markdown (a pipe table or a fenced block)." },
     shape: { type: "string", enum: [...SHAPE_KINDS], description: "Shapes: required when adding one." },
     fill: { type: "string", enum: [...FILL_IDS], description: "Shapes: a theme color." },
     markdown: { type: "string", maxLength: 20_000, description: "Text: the whole text, replacing what is there." },
     textStyle: { type: "string", enum: [...TEXT_STYLE_IDS, DEFAULT_STYLE], description: "Text: a theme text style. 'default' goes back to the layout's style." },
     src: { type: "string", maxLength: 2_000, description: "Images: an http(s) URL or a path on this site. Required when adding one." },
     alt: { type: "string", maxLength: 300 },
+    chart: {
+      type: "object",
+      description: "Charts: required when adding one; on update it replaces the chart. Every series needs one value per label.",
+      properties: {
+        type: { type: "string", enum: [...CHART_TYPES] },
+        labels: { type: "array", items: { type: "string", maxLength: 60 }, minItems: 1, maxItems: MAX_CHART_CATEGORIES },
+        series: {
+          type: "array",
+          minItems: 1,
+          maxItems: MAX_CHART_SERIES,
+          items: {
+            type: "object",
+            properties: { name: { type: "string", maxLength: 60 }, values: { type: "array", items: { type: "number" }, maxItems: MAX_CHART_CATEGORIES } },
+            required: ["name", "values"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["type", "labels", "series"],
+      additionalProperties: false,
+    },
+    icon: { type: "string", maxLength: 60, description: "Icons: a lucide icon name such as 'rocket' or 'bar-chart-3'. Required when adding one." },
+    videoUrl: { type: "string", maxLength: 2_048, description: "Videos: a YouTube link. Required when adding one." },
+    poll: {
+      type: "object",
+      description: "Polls: required when adding one. Followers vote while you present.",
+      properties: {
+        question: { type: "string", maxLength: MAX_POLL_QUESTION },
+        options: { type: "array", items: { type: "string", maxLength: MAX_POLL_OPTION }, minItems: MIN_POLL_OPTIONS, maxItems: MAX_POLL_OPTIONS },
+        multi: { type: "boolean", description: "Allow several answers." },
+      },
+      required: ["question", "options"],
+      additionalProperties: false,
+    },
     x: { type: "number", description: "Left edge on the 1920 by 1080 stage." },
     y: { type: "number", description: "Top edge on the stage." },
     w: { type: "number", description: "Width on the stage." },
     h: { type: "number", description: "Height on the stage." },
     rot: { type: "number", description: "Rotation in degrees." },
     build: { type: "integer", minimum: 0, maximum: 50, description: "The presenting step it appears at. 0 shows it from the start." },
-    buildBullets: { type: "boolean", description: "Text: show its top-level blocks one per step after its own build step." },
+    buildBullets: { type: "boolean", description: "Text: show its top-level blocks one per step, the first together with the box." },
+    buildEffect: { type: "string", enum: ["appear", "fade", "rise", "scale"], description: "How it enters while presenting. Fade when left out." },
+    buildAfter: { type: "boolean", description: "Its step plays by itself after the previous step instead of waiting for a key press." },
+    buildDelay: { type: "integer", minimum: 0, maximum: 5000, description: "Milliseconds to wait before an automatic step." },
   },
   additionalProperties: false,
 };
 
+export type ChartInput = { type: ChartSpec["type"]; labels: string[]; series: Array<{ name: string; values: number[] }> };
+
 export type ElementInput = {
-  kind?: "text" | "image" | "shape";
+  kind?: "text" | "image" | "shape" | "chart" | "icon" | "video" | "poll";
+  chart?: ChartInput;
+  icon?: string;
+  videoUrl?: string;
+  poll?: PollSpec;
   shape?: ShapeKind;
   fill?: FillId;
   markdown?: string;
@@ -105,6 +158,9 @@ export type ElementInput = {
   rot?: number;
   build?: number;
   buildBullets?: boolean;
+  buildEffect?: BuildEffect;
+  buildAfter?: boolean;
+  buildDelay?: number;
 };
 
 export type DeckArgs = {
@@ -135,12 +191,19 @@ async function elementView(layoutId: string, el: DeckReadSlide["elements"][numbe
     ...(el.kind === "text" ? { markdown: await richDocToMarkdown(el.blocks as never) } : {}),
     ...(el.kind === "text" && el.textStyle ? { textStyle: el.textStyle } : {}),
     ...(el.kind === "image" ? { src: el.src ?? "", alt: el.alt ?? "" } : {}),
+    ...(el.chart ? { chart: { type: el.chart.type, labels: el.chart.data.labels, series: el.chart.data.series } } : {}),
+    ...(el.icon ? { icon: el.icon } : {}),
+    ...(el.videoUrl ? { videoUrl: el.videoUrl } : {}),
+    ...(el.poll ? { poll: el.poll } : {}),
     ...(el.shape ? { shape: el.shape } : {}),
     ...(el.fill ? { fill: el.fill } : {}),
     ...(placed ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h, rot: placed.rot } : {}),
     ...(el.slot !== null && el.x !== undefined ? { detached: true } : {}),
     ...(el.build ? { build: el.build } : {}),
     ...(el.buildBullets ? { buildBullets: true } : {}),
+    ...(el.buildEffect ? { buildEffect: el.buildEffect } : {}),
+    ...(el.buildAfter ? { buildAfter: true } : {}),
+    ...(el.buildDelay ? { buildDelay: el.buildDelay } : {}),
   };
 }
 
@@ -183,6 +246,10 @@ function liveElement(slide: SlideMap, id: string): ElementMap {
   return el;
 }
 
+function chartSpecOf(chart: ChartInput): ChartSpec | null {
+  return cleanChart({ type: chart.type, data: { labels: chart.labels, series: chart.series } });
+}
+
 function checkImageSrc(src: string): void {
   if (!/^https?:\/\//i.test(src) && !/^\/(?!\/)/.test(src)) throw invalid("Image src must be an http(s) URL or a path on this site.");
 }
@@ -194,10 +261,20 @@ const hasGeometry = (e: ElementInput) => GEOMETRY.some((k) => e[k] !== undefined
 function checkFields(kind: string, el: ElementMap | null, e: ElementInput, shape: string | null): void {
   if (e.markdown !== undefined && kind !== "text") throw invalid("Only text elements take markdown.");
   if (e.textStyle !== undefined && kind !== "text") throw invalid("Only text elements take a text style.");
+  if (e.buildEffect !== undefined && !BUILD_EFFECTS.includes(e.buildEffect)) throw invalid(`buildEffect must be one of ${BUILD_EFFECTS.join(", ")}.`);
+  if (e.buildDelay !== undefined && (!Number.isInteger(e.buildDelay) || e.buildDelay < 0 || e.buildDelay > MAX_BUILD_DELAY)) throw invalid(`buildDelay must be a whole number from 0 to ${MAX_BUILD_DELAY}.`);
   if (e.buildBullets !== undefined && kind !== "text") throw invalid("Only text elements build bullet by bullet.");
   if ((e.src !== undefined || e.alt !== undefined) && kind !== "image") throw invalid("Only image elements take src and alt.");
   if (e.src !== undefined) checkImageSrc(e.src);
-  if (e.fill !== undefined && kind !== "shape") throw invalid("Only shapes take a fill.");
+  if (e.chart !== undefined && kind !== "chart") throw invalid("Only chart elements take chart data.");
+  if (e.icon !== undefined && kind !== "icon") throw invalid("Only icon elements take an icon name.");
+  if (e.videoUrl !== undefined && kind !== "video") throw invalid("Only video elements take a videoUrl.");
+  if (e.poll !== undefined && kind !== "poll") throw invalid("Only poll elements take a poll.");
+  if (e.chart !== undefined && !chartSpecOf(e.chart)) throw invalid(`chart needs a type (${CHART_TYPES.join(", ")}), up to ${MAX_CHART_CATEGORIES} labels and up to ${MAX_CHART_SERIES} series with numbers.`);
+  if (e.icon !== undefined && !cleanIcon(e.icon)) throw invalid("That isn't an icon name. Use a lucide name such as 'rocket'.");
+  if (e.videoUrl !== undefined && !cleanVideoUrl(e.videoUrl)) throw invalid("videoUrl must be a YouTube link.");
+  if (e.poll !== undefined && !cleanPoll(e.poll)) throw invalid(`poll needs a question and ${MIN_POLL_OPTIONS} to ${MAX_POLL_OPTIONS} non-empty options.`);
+  if (e.fill !== undefined && kind !== "shape" && kind !== "icon") throw invalid("Only shapes and icons take a fill.");
   if (e.shape !== undefined && el) throw invalid("A shape's kind is set when it is added.");
   if (hasGeometry(e) && kind === "group") throw invalid("Move a group's items, not the group.");
   for (const k of GEOMETRY) if (e[k] !== undefined && !Number.isFinite(e[k])) throw invalid(`${k} must be a number.`);
@@ -242,9 +319,18 @@ function writeFields(doc: Y.Doc, slideId: string, slide: SlideMap, id: string, e
     else setImageSource(doc, slideId, id, src, alt);
   }
   if (e.fill !== undefined) setFill(doc, slideId, [id], e.fill);
+  if (e.chart !== undefined) setChart(doc, slideId, id, chartSpecOf(e.chart)!);
+  if (e.icon !== undefined) setIconName(doc, slideId, id, e.icon);
+  if (e.videoUrl !== undefined) setVideoUrl(doc, slideId, id, e.videoUrl);
+  if (e.poll !== undefined) setPoll(doc, slideId, id, e.poll);
   if (placed) setPlacements(doc, slideId, { [id]: placed });
   if (e.build !== undefined) setBuild(doc, slideId, id, e.build || null);
   if (e.buildBullets !== undefined) setBuildBullets(doc, slideId, id, e.buildBullets);
+  if (e.buildEffect !== undefined) setBuildEffect(doc, slideId, id, e.buildEffect);
+  if (e.buildAfter !== undefined || e.buildDelay !== undefined) {
+    const current = elementsOf(slidesMap(doc).get(slideId)!).get(id);
+    setBuildTiming(doc, slideId, id, e.buildAfter ?? current?.get("buildAfter") === true, e.buildDelay ?? (current?.get("buildDelay") as number | undefined) ?? null);
+  }
 }
 
 function addElement(doc: Y.Doc, slideId: string, e: ElementInput): string {
@@ -256,6 +342,22 @@ function addElement(doc: Y.Doc, slideId: string, e: ElementInput): string {
     if (!e.shape) throw invalid("Adding a shape needs shape.");
     return addShape(doc, slideId, e.shape, undefined, e.fill ?? "accent")!;
   }
+  if (e.kind === "chart") {
+    if (!e.chart) throw invalid("Adding a chart needs chart.");
+    return addChart(doc, slideId, e.chart.type)!;
+  }
+  if (e.kind === "icon") {
+    if (!e.icon) throw invalid("Adding an icon needs icon.");
+    return addIcon(doc, slideId, e.icon, undefined, e.fill ?? "accent")!;
+  }
+  if (e.kind === "video") {
+    if (!e.videoUrl) throw invalid("Adding a video needs videoUrl.");
+    return addVideo(doc, slideId, e.videoUrl)!;
+  }
+  if (e.kind === "poll") {
+    if (!e.poll) throw invalid("Adding a poll needs poll.");
+    return addPoll(doc, slideId, cleanPoll(e.poll)!)!;
+  }
   return addTextBox(doc, slideId)!;
 }
 
@@ -264,6 +366,27 @@ function idsOf(slide: SlideMap, args: DeckArgs, min: number): string[] {
   if (ids.length < min) throw invalid(`This action needs at least ${min} element${min === 1 ? "" : "s"}.`);
   for (const id of ids) liveElement(slide, id);
   return ids;
+}
+
+/** Throws before any write when `e` can't be added as a new element. */
+export function checkNewElement(e: ElementInput): void {
+  if (!e.kind) throw invalid("add_element needs element.kind.");
+  if (e.shape !== undefined && e.kind !== "shape") throw invalid("Only shapes take a shape kind.");
+  checkFields(e.kind, null, { ...e, kind: undefined, shape: undefined }, e.shape ?? null);
+  if (e.kind === "image" && !e.src) throw invalid("Adding an image needs src.");
+  if (e.kind === "shape" && !e.shape) throw invalid("Adding a shape needs shape.");
+  if (e.kind === "chart" && !e.chart) throw invalid("Adding a chart needs chart.");
+  if (e.kind === "icon" && !e.icon) throw invalid("Adding an icon needs icon.");
+  if (e.kind === "video" && !e.videoUrl) throw invalid("Adding a video needs videoUrl.");
+  if (e.kind === "poll" && !e.poll) throw invalid("Adding a poll needs poll.");
+}
+
+/** Adds a free element to a slide and returns its id. `blocks` is the text of a text element, already converted. */
+export function placeNewElement(doc: Y.Doc, slideId: string, slide: SlideMap, e: ElementInput, blocks: DocBlock[] | null): string {
+  checkNewElement(e);
+  const id = addElement(doc, slideId, e);
+  writeFields(doc, slideId, slide, id, { ...e, src: undefined, alt: undefined, fill: undefined, chart: e.kind === "chart" ? e.chart : undefined, icon: undefined, videoUrl: undefined, poll: undefined }, blocks);
+  return id;
 }
 
 type Outcome = { slideId?: string; created?: Record<string, unknown> };
@@ -286,12 +409,7 @@ function apply(doc: Y.Doc, action: DeckAction, args: DeckArgs, blocks: DocBlock[
       return { slideId: copy, created: { slideId: copy } };
     }
     case "add_element": {
-      const e = args.element!;
-      if (!e.kind) throw invalid("add_element needs element.kind.");
-      if (e.shape !== undefined && e.kind !== "shape") throw invalid("Only shapes take a shape kind.");
-      checkFields(e.kind, null, { ...e, kind: undefined, shape: undefined }, e.shape ?? null);
-      const id = addElement(doc, slideId, e);
-      writeFields(doc, slideId, slide, id, { ...e, src: undefined, alt: undefined, fill: undefined }, blocks);
+      const id = placeNewElement(doc, slideId, slide, args.element!, blocks);
       return { slideId, created: { elementId: id } };
     }
     case "update_element": {

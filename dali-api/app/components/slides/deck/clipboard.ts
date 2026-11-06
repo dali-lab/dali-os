@@ -1,6 +1,7 @@
 import type { ImportBlock, ImportInline, ImportTable } from "~/components/slides/pptx/import-types";
-import { cleanChart, cleanIcon, cleanVideoUrl, type ChartSpec } from "./content";
+import { cleanChart, cleanIcon, cleanPoll, cleanVideoUrl, type ChartSpec, type PollSpec } from "./content";
 import { placementOf, expandToLeaves, type Placed } from "./freeform";
+import { cleanBuildFields, type BuildFields } from "./builds";
 import { cleanCrop, type Crop } from "./crop";
 import { boundsOf, rotatedBounds } from "./geometry";
 import { FILL_IDS, SHAPE_KINDS, type FillId, type ShapeKind } from "./model";
@@ -16,9 +17,9 @@ const MAX_DEPTH = 4;
 const MAX_TEXT = 20_000;
 const MAX_ALT = 500;
 
-export type ClipKind = "text" | "image" | "shape" | "group" | "chart" | "icon" | "video";
+export type ClipKind = "text" | "image" | "shape" | "group" | "chart" | "icon" | "video" | "poll";
 
-export interface ClipItem {
+export interface ClipItem extends BuildFields {
   key: string;
   kind: ClipKind;
   placed: Placed;
@@ -33,6 +34,7 @@ export interface ClipItem {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  poll?: PollSpec;
 }
 
 const MARKS = ["bold", "italic", "underline", "strike"] as const;
@@ -111,10 +113,16 @@ function groupBounds(slide: RenderSlide, el: RenderElement): Placed | null {
   return boxes.length ? { ...boundsOf(boxes), rot: 0 } : null;
 }
 
+const buildOf = (el: RenderElement): BuildFields => {
+  const fields = cleanBuildFields((k) => (el as unknown as Record<string, unknown>)[k]);
+  if (el.kind !== "text") delete fields.buildBullets;
+  return fields;
+};
+
 function itemOf(slide: RenderSlide, el: RenderElement): ClipItem | null {
   const placed = el.kind === "group" ? groupBounds(slide, el) : placementOf(slide.layoutId, el);
   if (!placed) return null;
-  const base = { key: el.id, placed };
+  const base = { key: el.id, placed, ...(el.kind === "group" ? {} : buildOf(el)) };
   if (el.kind === "group") return { ...base, kind: "group", children: el.children ?? [] };
   if (el.kind === "text") return { ...base, kind: "text", blocks: importBlocksOf(el.blocks), ...(el.textStyle ? { textStyle: el.textStyle } : {}) };
   if (el.kind === "image") return { ...base, kind: "image", src: el.src ?? "", alt: el.alt ?? "", ...(el.crop ? { crop: el.crop } : {}) };
@@ -122,6 +130,7 @@ function itemOf(slide: RenderSlide, el: RenderElement): ClipItem | null {
   if (el.kind === "chart" && el.chart) return { ...base, kind: "chart", chart: el.chart };
   if (el.kind === "icon" && el.icon) return { ...base, kind: "icon", icon: el.icon, ...(el.fill ? { fill: el.fill } : {}) };
   if (el.kind === "video" && el.videoUrl) return { ...base, kind: "video", videoUrl: el.videoUrl };
+  if (el.kind === "poll" && el.poll) return { ...base, kind: "poll", poll: el.poll };
   return null;
 }
 
@@ -230,7 +239,9 @@ export function cleanItems(rawItems: unknown[]): ClipItem[] | null {
     if (!isObj(raw) || typeof raw.key !== "string" || seen.has(raw.key)) continue;
     const placed = cleanPlaced(raw.placed);
     if (!placed) continue;
-    const base = { key: raw.key, placed };
+    const fields = raw.kind === "group" ? {} : cleanBuildFields((k) => raw[k]);
+    if (raw.kind !== "text") delete (fields as BuildFields).buildBullets;
+    const base = { key: raw.key, placed, ...fields };
     if (raw.kind === "text") {
       out.push({
         ...base,
@@ -262,6 +273,10 @@ export function cleanItems(rawItems: unknown[]): ClipItem[] | null {
       const videoUrl = cleanVideoUrl(raw.videoUrl);
       if (!videoUrl) continue;
       out.push({ ...base, kind: "video", videoUrl });
+    } else if (raw.kind === "poll") {
+      const poll = cleanPoll(raw.poll);
+      if (!poll) continue;
+      out.push({ ...base, kind: "poll", poll });
     } else if (raw.kind === "group") {
       out.push({ ...base, kind: "group", children: Array.isArray(raw.children) ? raw.children.filter((c): c is string => typeof c === "string") : [] });
     } else continue;

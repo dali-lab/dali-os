@@ -1,4 +1,6 @@
 import * as Y from "yjs";
+import { BUILD_EFFECTS, MAX_BUILD_DELAY, type BuildEffect } from "./builds";
+import type { BuildPatch } from "./build-order";
 import { layoutById, SLOT_Z } from "./layouts";
 import {
   between,
@@ -15,12 +17,38 @@ import {
   deckMap,
   type SlideMap,
 } from "./model";
+import { cleanBackground, cleanSection, cleanTransition, sectionsOf, type SlideBackground, type SlideTransition } from "./slide-meta";
 import type { TextStyleId } from "./themes";
 
 export const DECK_LOCAL = Symbol("deck-local");
-/** Creating a slide is not undoable: undo would remove its structs while a peer may be typing in it. Delete is the way back. */
+/** Untracked by undo: the first half of every insert (see insertTracked), PPTX import and text auto-height. */
 export const DECK_CREATE = Symbol("deck-create");
 
+
+type Hide = (map: Y.Map<unknown>) => void;
+
+/**
+ * Every insert goes through here. `build` writes new entries (and their text fragments) in an untracked
+ * transaction, marking each entry it wants undoable with `hide`; those entries are written deleted. A second,
+ * tracked transaction then clears `deleted`, so undo tombstones the insert and redo brings it back. Nothing is
+ * ever hard-removed, so a peer typing into a new element is never cut off. Run it inside `deckUndo.step()` to
+ * make the whole gesture one history entry.
+ */
+export function insertTracked<T>(doc: Y.Doc, build: (hide: Hide) => T): T {
+  const hidden: Array<Y.Map<unknown>> = [];
+  let out!: T;
+  doc.transact(() => {
+    out = build((map) => void hidden.push(map));
+    for (const map of hidden) map.set("deleted", true);
+  }, DECK_CREATE);
+  doc.transact(() => {
+    for (const map of hidden) {
+      map.set("deleted", false);
+      if (map.has("deletedBy")) map.delete("deletedBy");
+    }
+  }, DECK_LOCAL);
+  return out;
+}
 
 export const newId = () => crypto.randomUUID();
 
@@ -72,11 +100,12 @@ export function posAfter(doc: Y.Doc, afterId: string | null): number {
 
 export function addSlide(doc: Y.Doc, layoutId: string, afterId: string | null): string {
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const slide = newSlideMap(id, posAfter(doc, afterId), layoutId);
     slidesMap(doc).set(id, slide);
     ensureLayoutSlots(slide, layoutId);
-  }, DECK_CREATE);
+    hide(slide);
+  });
   return id;
 }
 
@@ -98,15 +127,16 @@ export function duplicateSlide(doc: Y.Doc, sourceId: string): string | null {
   const source = slidesMap(doc).get(sourceId);
   if (!source || isDeleted(source)) return null;
   const id = newId();
-  doc.transact(() => {
+  insertTracked(doc, (hide) => {
     const copy = newSlideMap(id, posAfter(doc, sourceId), String(source.get("layoutId")));
     source.forEach((value, key) => {
-      if (key === "id" || key === "pos" || key === "deleted") return;
+      if (key === "id" || key === "pos" || key === "deleted" || key === "section") return;
       copy.set(key, cloneValue(value));
     });
     slidesMap(doc).set(id, copy);
     ensureLayoutSlots(copy, String(copy.get("layoutId")));
-  }, DECK_CREATE);
+    hide(copy);
+  });
   return id;
 }
 
@@ -193,6 +223,46 @@ export function setBuild(doc: Y.Doc, slideId: string, slot: string, build: numbe
   if (el) doc.transact(() => el.set("build", build && build >= 1 ? Math.floor(build) : null), DECK_LOCAL);
 }
 
+function writeBuildPatch(el: Y.Map<unknown>, patch: BuildPatch): void {
+  el.set("build", patch.build);
+  if (patch.buildAfter) el.set("buildAfter", true);
+  else el.delete("buildAfter");
+  if (patch.buildDelay) el.set("buildDelay", patch.buildDelay);
+  else el.delete("buildDelay");
+  if (patch.buildBullets === false) el.set("buildBullets", false);
+  if (patch.buildEffect === null) el.delete("buildEffect");
+}
+
+export function applyBuildPatches(doc: Y.Doc, slideId: string, patches: Record<string, BuildPatch>): void {
+  const slide = slidesMap(doc).get(slideId);
+  if (!slide) return;
+  doc.transact(() => {
+    for (const [id, patch] of Object.entries(patches)) {
+      const el = elementsOf(slide).get(id);
+      if (el && !isDeleted(el)) writeBuildPatch(el, patch);
+    }
+  }, DECK_LOCAL);
+}
+
+export function setBuildTiming(doc: Y.Doc, slideId: string, id: string, after: boolean, delay: number | null): void {
+  const slide = slidesMap(doc).get(slideId);
+  const el = slide && elementsOf(slide).get(id);
+  if (!el) return;
+  doc.transact(() => {
+    if (after) el.set("buildAfter", true);
+    else el.delete("buildAfter");
+    if (after && delay && delay > 0) el.set("buildDelay", Math.min(MAX_BUILD_DELAY, Math.round(delay)));
+    else el.delete("buildDelay");
+  }, DECK_LOCAL);
+}
+
+export function setBuildEffect(doc: Y.Doc, slideId: string, id: string, effect: BuildEffect | null): void {
+  const slide = slidesMap(doc).get(slideId);
+  const el = slide && elementsOf(slide).get(id);
+  if (!el) return;
+  doc.transact(() => (effect && BUILD_EFFECTS.includes(effect) ? el.set("buildEffect", effect) : el.delete("buildEffect")), DECK_LOCAL);
+}
+
 export function setBuildBullets(doc: Y.Doc, slideId: string, slot: string, on: boolean): void {
   const slide = slidesMap(doc).get(slideId);
   const el = slide && elementsOf(slide).get(slot);
@@ -232,4 +302,46 @@ export function moveSlides(doc: Y.Doc, ids: string[], index: number): void {
       map.get(id)!.set("pos", next);
     });
   }, DECK_LOCAL);
+}
+
+function setSlideField(doc: Y.Doc, ids: string[], key: string, value: unknown | null): void {
+  doc.transact(() => {
+    for (const id of ids) {
+      const slide = slidesMap(doc).get(id);
+      if (!slide || isDeleted(slide)) continue;
+      if (value === null) slide.delete(key);
+      else slide.set(key, value);
+    }
+  }, DECK_LOCAL);
+}
+
+/** Sets or clears (null) the background of slides. A background that fails validation is ignored. */
+export function setSlideBackground(doc: Y.Doc, ids: string[], background: SlideBackground | null): void {
+  if (background === null) return setSlideField(doc, ids, "background", null);
+  const clean = cleanBackground(background);
+  if (clean) setSlideField(doc, ids, "background", clean);
+}
+
+export function setSlideTransition(doc: Y.Doc, ids: string[], transition: SlideTransition | null): void {
+  const clean = transition === null ? null : cleanTransition(transition);
+  setSlideField(doc, ids, "transition", clean);
+}
+
+/** Starts, renames (a name) or ends (null) the section that begins at a slide. */
+export function setSectionStart(doc: Y.Doc, slideId: string, name: string | null): void {
+  const clean = name === null ? null : cleanSection(name);
+  if (name !== null && clean === null) return;
+  setSlideField(doc, [slideId], "section", clean);
+}
+
+/** The slides of the section that begins at `firstId`, in order. */
+export function sectionSlideIds(doc: Y.Doc, firstId: string): string[] {
+  const rows = visibleSlideIds(doc).map((id) => ({ id, section: cleanSection(slidesMap(doc).get(id)!.get("section")) ?? undefined }));
+  return sectionsOf(rows).sections.find((s) => s.firstId === firstId)?.slideIds ?? [];
+}
+
+/** Moves a whole section so it starts at `index` among the slides left over. */
+export function moveSection(doc: Y.Doc, firstId: string, index: number): void {
+  const ids = sectionSlideIds(doc, firstId);
+  if (ids.length) moveSlides(doc, ids, index);
 }

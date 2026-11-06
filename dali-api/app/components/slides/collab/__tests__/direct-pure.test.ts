@@ -156,13 +156,13 @@ describe("element menu", () => {
 
 describe("stage menu", () => {
   const sh = (): StageHandlers => ({
-    paste: vi.fn(), insert: vi.fn(), changeLayout: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn(),
+    paste: vi.fn(), insert: vi.fn(), changeLayout: vi.fn(), openLayoutGallery: vi.fn(), setBackground: vi.fn(), pickBackgroundImage: vi.fn(), selectAll: vi.fn(), comment: vi.fn(), setGuides: vi.fn(), setGrid: vi.fn(),
   });
   const base = (h: StageHandlers, over = {}) => stageActions({ layoutId: "content", canPaste: true, canComment: true, guides: true, grid: false, handlers: h, ...over });
 
   it("lists paste here, the adders, layouts, select all, comment and the snap toggles", () => {
     const list = base(sh());
-    expect(labels(list)).toEqual(["Paste here", "Add text box here", "Add shape here", "Add image here", "Insert here", "Change layout", "Select all", "Comment here", "Show guides", "Show grid"]);
+    expect(labels(list)).toEqual(["Paste here", "Add text box here", "Add shape here", "Add image here", "Insert here", "Change layout", "Background", "Select all", "Comment here", "Show guides", "Show grid"]);
     expect(findAction(list, "add-shape")!.children!.map((a) => a.label)).toEqual(["Rectangle", "Rounded rectangle", "Ellipse", "Line", "Arrow"]);
   });
 
@@ -197,7 +197,7 @@ describe("stage menu", () => {
 });
 
 describe("thumbnail menu", () => {
-  const th = (): ThumbnailHandlers => ({ newAfter: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), skip: vi.fn(), changeLayout: vi.fn(), copy: vi.fn(), paste: vi.fn(), moveTo: vi.fn(), comment: vi.fn() });
+  const th = (): ThumbnailHandlers => ({ newAfter: vi.fn(), duplicate: vi.fn(), remove: vi.fn(), skip: vi.fn(), changeLayout: vi.fn(), openLayoutGallery: vi.fn(), addSection: vi.fn(), renameSection: vi.fn(), removeSection: vi.fn(), copy: vi.fn(), paste: vi.fn(), moveTo: vi.fn(), comment: vi.fn() });
   const slides = (): RenderSlide[] => {
     const doc = new Y.Doc();
     initDeck(doc);
@@ -212,7 +212,7 @@ describe("thumbnail menu", () => {
 
   it("lists slide actions, with Move to top disabled on the first slide", () => {
     const list = make();
-    expect(labels(list)).toEqual(["New slide after", "Duplicate slide", "Delete slide", "Skip slide", "Change layout", "Copy slide", "Paste slide", "Move to top", "Move to bottom", "Comment"]);
+    expect(labels(list)).toEqual(["New slide after", "Duplicate slide", "Delete slide", "Skip slide", "Change layout", "Add section here", "Copy slide", "Paste slide", "Move to top", "Move to bottom", "Comment"]);
     expect(findAction(list, "move-top")!.disabled).toBe(true);
     expect(findAction(list, "move-bottom")!.disabled).toBe(false);
     expect(findAction(list, "delete")!.destructive).toBe(true);

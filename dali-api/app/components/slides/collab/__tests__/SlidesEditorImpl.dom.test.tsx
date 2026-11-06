@@ -129,7 +129,7 @@ describe("SlidesEditorImpl", () => {
       await h.titleHeader!.onRename("Q3 review");
       h.titleHeader!.onIconChange("🚀");
     });
-    const bodies = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body as string));
+    const bodies = fetchMock.mock.calls.filter(([, init]) => init.body).map(([, init]) => JSON.parse(init.body as string));
     expect(bodies).toEqual([{ title: "Q3 review" }, { iconEmoji: "🚀" }]);
     vi.unstubAllGlobals();
   });
@@ -137,7 +137,7 @@ describe("SlidesEditorImpl", () => {
   it("offers PowerPoint download to everyone and import only to editors", () => {
     h.snap = snap(1);
     const menu = (el: HTMLElement) => [...el.querySelectorAll("[data-menu-items] button")].map((b) => b.textContent);
-    expect(menu(render(true))).toEqual(["Download PowerPoint", "Import slides", "Find and replace", "Keyboard shortcuts"]);
+    expect(menu(render(true))).toEqual(["Download PowerPoint", "Import slides", "Save as template", "Find and replace", "Keyboard shortcuts"]);
     act(() => root.unmount());
     root = createRoot(container);
     expect(menu(render(false))).toEqual(["Download PowerPoint"]);

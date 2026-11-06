@@ -27,6 +27,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: "zoomIn", label: "Zoom in", group: "Editing", display: [["mod", "+"]] },
   { id: "zoomOut", label: "Zoom out", group: "Editing", display: [["mod", "−"]] },
   { id: "zoomFit", label: "Fit the slide to the window", group: "Editing", display: [["mod", "0"]] },
+  { id: "grid", label: "Show all slides as a grid", group: "Editing", combos: [{ key: "g" }] },
   { id: "selectAll", label: "Select all", group: "Selection", combos: [{ key: "a", mod: true }] },
   { id: "deselect", label: "Deselect", group: "Selection", combos: [{ key: "Escape" }] },
   { id: "addToSelection", label: "Add to selection", group: "Selection", display: [["Shift", "Click"]] },

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Segmented } from "~/components/ui/Segmented";
 import { Button } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
@@ -7,8 +7,13 @@ import { layoutById } from "~/components/slides/deck/layouts";
 import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
 import { TEXT_STYLE_IDS, TEXT_STYLE_LABELS, THEMES, type TextStyleId } from "~/components/slides/deck/themes";
 import { cn } from "~/lib/cn";
+import { BuildOrderPanel } from "./BuildOrderPanel";
+import type { BuildPatch } from "~/components/slides/deck/build-order";
+import type { BuildEffect } from "~/components/slides/deck/builds";
 import { ElementView, elementTabLabel, type InspectorFreeform } from "./ElementInspector";
 import { LayoutGrid } from "./LayoutPicker";
+import { BackgroundSection, TransitionSection } from "./SlideSettings";
+import type { SlideBackground, SlideTransition } from "~/components/slides/deck/slide-meta";
 
 type Tab = "slide" | "text" | "deck";
 
@@ -107,10 +112,17 @@ export function Inspector({
   onClearImage,
   onBuild,
   onBuildBullets,
+  onBuildPlan,
+  onBuildEffect,
+  onSelect,
   onDownloadPdf,
   onImport,
   importing = false,
   downloadHref,
+  onBackground,
+  onPickBackground,
+  onTransition,
+  onPreviewTransition,
 }: {
   slide: RenderSlide | null;
   themeId: string;
@@ -125,15 +137,24 @@ export function Inspector({
   onClearImage: () => void;
   onBuild?: (slot: string, build: number | null) => void;
   onBuildBullets?: (slot: string, on: boolean) => void;
+  onBuildPlan?: (patches: Record<string, BuildPatch>) => void;
+  onBuildEffect?: (id: string, effect: BuildEffect) => void;
+  onSelect?: (ids: string[]) => void;
   onDownloadPdf?: (withNotes: boolean) => void;
   onImport?: () => void;
   importing?: boolean;
   downloadHref?: string;
+  onBackground?: (background: SlideBackground | null) => void;
+  onPickBackground?: () => void;
+  onTransition?: (transition: SlideTransition | null) => void;
+  onPreviewTransition?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>("slide");
   const selectionKey = selection.join("|");
+  const stayOnTab = useRef(false);
   useEffect(() => {
-    if (selectionKey) setTab("text");
+    if (stayOnTab.current) stayOnTab.current = false;
+    else if (selectionKey) setTab("text");
   }, [selectionKey]);
   const layout = slide ? layoutById(slide.layoutId) : null;
   const imageSlot = layout?.slots.find((s) => s.kind === "image");
@@ -158,7 +179,7 @@ export function Inspector({
       {tab === "slide" && (
         <>
           <Section title="Layout">
-            {slide ? <LayoutGrid value={slide.layoutId} onPick={editable ? onLayout : () => {}} /> : <p className="text-sm text-os-grey">No slide selected.</p>}
+            {slide ? <LayoutGrid value={slide.layoutId} themeId={themeId} onPick={editable ? onLayout : () => {}} /> : <p className="text-sm text-os-grey">No slide selected.</p>}
           </Section>
           {imageSlot && editable && (
             <Section title="Image">
@@ -184,6 +205,23 @@ export function Inspector({
               onBuildBullets={() => {}}
             />
           )}
+          {slide && onBuildPlan && onBuildEffect && onSelect && (
+            <Section title="Builds">
+              <BuildOrderPanel
+                slide={slide}
+                selection={selection}
+                editable={editable}
+                onApply={onBuildPlan}
+                onEffect={onBuildEffect}
+                onSelect={(ids) => {
+                  stayOnTab.current = ids.join("|") !== selectionKey;
+                  onSelect(ids);
+                }}
+              />
+            </Section>
+          )}
+          {slide && onBackground && onPickBackground && <BackgroundSection slide={slide} themeId={themeId} editable={editable} onChange={onBackground} onPickImage={onPickBackground} />}
+          {slide && onTransition && <TransitionSection slide={slide} editable={editable} onChange={onTransition} onPreview={onPreviewTransition ?? (() => {})} />}
           <Section title="Theme">
             <ThemeCards value={themeId} onPick={editable ? onTheme : () => {}} />
           </Section>

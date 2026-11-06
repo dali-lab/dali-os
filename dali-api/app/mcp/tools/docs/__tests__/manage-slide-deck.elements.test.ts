@@ -197,6 +197,16 @@ describe("element actions", () => {
     expect(el("b", "body")).not.toHaveProperty("buildBullets");
   });
 
+  it("update_element sets build effect and automatic timing, and rejects bad values", async () => {
+    await run({ action: "update_element", slideId: "b", elementId: "body", element: { build: 1, buildEffect: "rise", buildAfter: true, buildDelay: 800 } });
+    expect(el("b", "body")).toMatchObject({ buildEffect: "rise", buildAfter: true, buildDelay: 800 });
+    await run({ action: "update_element", slideId: "b", elementId: "body", element: { buildAfter: false } });
+    expect(el("b", "body")).not.toHaveProperty("buildAfter");
+    expect(el("b", "body")).not.toHaveProperty("buildDelay");
+    await expect(run({ action: "update_element", slideId: "b", elementId: "body", element: { buildEffect: "spin" } })).rejects.toThrow(/buildEffect/);
+    await expect(run({ action: "update_element", slideId: "b", elementId: "body", element: { buildDelay: 9000 } })).rejects.toThrow(/buildDelay/);
+  });
+
   it("update_element changes an image slot's picture and a shape's fill", async () => {
     await run({ action: "set_layout", slideId: "b", layoutId: "split" });
     await run({ action: "update_element", slideId: "b", elementId: "image", element: { src: "https://img.example/p.png", alt: "P" } });

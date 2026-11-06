@@ -3,7 +3,7 @@ import * as Y from "yjs";
 export const DECK_VERSION = 1;
 export const DEFAULT_THEME_ID = "dali-dark";
 
-export type ElementKind = "text" | "image" | "shape" | "embed" | "group" | "chart" | "icon" | "video";
+export type ElementKind = "text" | "image" | "shape" | "embed" | "group" | "chart" | "icon" | "video" | "poll";
 
 export const SHAPE_KINDS = ["rect", "rounded", "ellipse", "line", "arrow"] as const;
 export type ShapeKind = (typeof SHAPE_KINDS)[number];

@@ -9,11 +9,12 @@ export interface LiveState {
   build: number;
   presenter: LivePresenter | null;
   startedAt: string | null;
+  reactionsOff: boolean;
 }
 
-export const INACTIVE_LIVE: LiveState = { active: false, slideId: null, build: 0, presenter: null, startedAt: null };
+export const INACTIVE_LIVE: LiveState = { active: false, slideId: null, build: 0, presenter: null, startedAt: null, reactionsOff: false };
 
-export type RenderSlide = (slideId: string, opts: { width: number; step?: number }) => import("react").ReactNode;
+export type RenderSlide = (slideId: string, opts: { width: number; step?: number; enterStep?: number }) => import("react").ReactNode;
 
 export const liveUrl = (pageId: string) => `/api/slides/${encodeURIComponent(pageId)}/live`;
 export const liveStreamUrl = (pageId: string) => `${liveUrl(pageId)}/stream`;

@@ -98,13 +98,13 @@ describe("inserting content", () => {
     expect(el(doc, slideId, c).z).toBeGreaterThan(el(doc, slideId, t).z);
   });
 
-  it("uses the creation origin for elements with new text and the local origin for the rest", () => {
+  it("writes every insert untracked as a tombstone, then reveals it in a tracked transaction", () => {
     const { doc, slideId } = setup();
     const origins: unknown[] = [];
     doc.on("afterTransaction", (tr: Y.Transaction) => origins.push(tr.origin));
     addTable(doc, slideId);
     addChart(doc, slideId);
-    expect(origins).toEqual([DECK_CREATE, DECK_LOCAL]);
+    expect(origins).toEqual([DECK_CREATE, DECK_LOCAL, DECK_CREATE, DECK_LOCAL]);
   });
 });
 

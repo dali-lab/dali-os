@@ -13,8 +13,9 @@ import {
   slidesMap,
   textOf,
 } from "~/components/slides/deck/model";
-import { buildOf } from "~/components/slides/deck/builds";
-import { contentFields, type ChartSpec } from "~/components/slides/deck/content";
+import { cleanBuildFields, type BuildEffect } from "~/components/slides/deck/builds";
+import { slideMetaFields } from "~/components/slides/deck/slide-meta";
+import { contentFields, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
 import { extraFields, geometryFields, linkGroups, shapeFields, type RenderSlide } from "~/components/slides/deck/snapshot";
@@ -34,6 +35,9 @@ export interface DeckReadElement {
   text: string;
   build?: number;
   buildBullets?: boolean;
+  buildEffect?: BuildEffect;
+  buildAfter?: boolean;
+  buildDelay?: number;
   x?: number;
   y?: number;
   w?: number;
@@ -45,6 +49,7 @@ export interface DeckReadElement {
   chart?: ChartSpec;
   icon?: string;
   videoUrl?: string;
+  poll?: PollSpec;
   crop?: Crop;
   locked?: boolean;
   hFixed?: boolean;
@@ -55,6 +60,9 @@ export interface DeckReadSlide {
   pos: number;
   layoutId: string;
   skipped?: boolean;
+  background?: RenderSlide["background"];
+  transition?: RenderSlide["transition"];
+  section?: string;
   elements: DeckReadElement[];
   notes: { blocks: DocBlock[]; text: string };
 }
@@ -92,8 +100,7 @@ export function readDeck(live: Y.Doc): DeckRead {
           textStyle: str(el.get("textStyle")),
           blocks,
           text: blocksToPlainText(blocks as never),
-          ...(buildOf(el.get("build")) ? { build: buildOf(el.get("build")) } : {}),
-          ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
+          ...cleanBuildFields((k) => el.get(k)),
           ...geometryFields((k) => el.get(k)),
           ...shapeFields((k) => el.get(k)),
           ...contentFields((k) => el.get(k)),
@@ -107,6 +114,7 @@ export function readDeck(live: Y.Doc): DeckRead {
         pos: Number(slide.get("pos")),
         layoutId: String(slide.get("layoutId")),
         ...(slide.get("skipped") === true ? { skipped: true } : {}),
+        ...slideMetaFields((k) => slide.get(k)),
         elements,
         notes: { blocks: notesBlocks, text: blocksToPlainText(notesBlocks as never) },
       });
@@ -164,6 +172,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
       pos: s.pos,
       layoutId: s.layoutId,
       ...(s.skipped ? { skipped: true } : {}),
+      ...slideMetaFields((k) => (s as unknown as Record<string, unknown>)[k]),
       elements: withParents(s.elements.map((e) => ({
         id: e.id,
         kind: e.kind,
@@ -173,8 +182,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
         src: e.src,
         alt: e.alt,
         textStyle: TEXT_STYLE_IDS.includes(e.textStyle as TextStyleId) ? (e.textStyle as TextStyleId) : null,
-        ...(e.build ? { build: e.build } : {}),
-        ...(e.buildBullets ? { buildBullets: true } : {}),
+        ...cleanBuildFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...geometryFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...shapeFields((k) => (e as unknown as Record<string, unknown>)[k]),
         ...contentFields((k) => (e as unknown as Record<string, unknown>)[k]),

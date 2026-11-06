@@ -139,7 +139,7 @@ export const FEATURE_FLAGS = [
     key: "slides-live",
     label: "Slides: live presenting",
     description:
-      "Present a deck with a presenter view, and let anyone with the deck open follow along on their own screen, with a way to browse on their own. Ships off.",
+      "Present a deck with a presenter view, and let anyone with the deck open follow along on their own screen, with a way to browse on their own. Also polls and emoji reactions while presenting. Ships off.",
   },
   {
     key: "mcp-block-edits",
