@@ -11,6 +11,7 @@ import { canBuildForm } from "~/forms/lib/form-access.server";
 import { isQuestionArray } from "~/forms/lib/forms-data";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
+import { resolvePrefill } from "~/forms/lib/prefill.server";
 
 export async function action({ request }: Route.ActionArgs) {
   // Resolves reference options for the preview modal; writes nothing.
@@ -40,5 +41,9 @@ export async function action({ request }: Route.ActionArgs) {
     }),
   );
 
-  return { ok: true, questions: normalizeQuestionBodies(resolved) };
+  return {
+    ok: true,
+    questions: normalizeQuestionBodies(resolved),
+    prefill: await resolvePrefill(resolved, auth.user.sub),
+  };
 }

@@ -19,6 +19,7 @@ vi.mock("~/lib/roles", () => ({
 
 vi.mock("~/partners/lib/partner-access", () => ({
   partnerHasProjectAccess: vi.fn().mockResolvedValue(false),
+  isPartnerUser: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("~/lib/groups", () => ({
@@ -28,7 +29,7 @@ vi.mock("~/lib/groups", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
-import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
+import { isPartnerUser, partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
 import {
   getPageAccess,
@@ -46,6 +47,7 @@ beforeEach(() => {
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isLabMember).mockResolvedValue(false);
   vi.mocked(partnerHasProjectAccess).mockResolvedValue(false);
+  vi.mocked(isPartnerUser).mockResolvedValue(false);
   vi.mocked(resolveGroupMembers).mockResolvedValue([]);
   vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
   mockPrisma.groupDefinition.findMany.mockResolvedValue([]);
@@ -163,6 +165,30 @@ describe("Member workspace", () => {
     vi.mocked(isCore).mockResolvedValue(true);
     const result = await getPageAccess("core-user", note());
     expect(result).toEqual(denied());
+  });
+});
+
+describe("Partners general access", () => {
+  const forPartners = (over: Record<string, unknown> = {}) =>
+    page({ linkAccess: "Partners", linkPermission: "View", ...over });
+
+  it("lets a partner-portal account in at the link's tier", async () => {
+    vi.mocked(isPartnerUser).mockResolvedValue(true);
+    expect(await getPageAccess("partner", forPartners())).toEqual({
+      canView: true,
+      canEdit: false,
+      canComment: false,
+    });
+    expect(isPartnerUser).toHaveBeenCalledWith("partner");
+  });
+
+  it("keeps out a lab member with no partner account", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await getPageAccess("lab-member", forPartners())).toEqual(denied());
+  });
+
+  it("keeps out any other signed-in account", async () => {
+    expect(await getPageAccess("stranger", forPartners())).toEqual(denied());
   });
 });
 

@@ -147,6 +147,12 @@ export const FEATURE_FLAGS = [
     description:
       "AI assistants connected over MCP can edit part of a page or blog post (a phrase, a block, a table row) instead of rewriting the whole body, and can point at text in a document people have open. Their edits light up the changed blocks for anyone watching. Ships off.",
   },
+  {
+    key: "form-prefill",
+    label: "Forms: fill in from records",
+    description:
+      "Form questions can start filled in from what DALI OS already knows about the person filling them (their name and email, and for partners their organization and project). The answer stays editable. Also adds a \"Partners\" option to a form's sharing. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

@@ -14,6 +14,7 @@ import { createForm, deleteForm, moveForm, renameForm, setFormAudience, setFormI
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
+import { isPrefillFieldKey, prefillFieldFits } from "./prefill-fields";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
 import { newPublicToken, setFormPublished } from "./form-publish.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
@@ -22,6 +23,11 @@ import { isLayoutOnly } from "~/lib/form-answers";
 import { showIfProblems } from "~/lib/form-logic";
 import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
+
+function prefillFits(q: Question): boolean {
+  const key = q.data.prefill;
+  return key === undefined || (isPrefillFieldKey(key) && prefillFieldFits(key, q));
+}
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -138,6 +144,11 @@ export function validateVersionQuestions(
     )
       return {
         error: `"${q.data.label}" needs a term selected for its data source.`,
+        status: 400,
+      };
+    if (!prefillFits(q))
+      return {
+        error: `"${q.data.label}" can't fill in from that record.`,
         status: 400,
       };
   }

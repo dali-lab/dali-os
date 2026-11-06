@@ -88,7 +88,7 @@ function nestingStyle(questions: Question[], q: Question) {
 // published fills always serve the latest frozen version, never the draft.
 // Publish freezes the draft into an immutable version (save-version).
 export function FormDetail() {
-  const { form, terms, mappedQuestions, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, summary, tracker, page } = useLoaderData<typeof loader>();
+  const { form, terms, mappedQuestions, fillers, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, summary, tracker, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -212,9 +212,10 @@ export function FormDetail() {
   const [previewData, setPreviewData] = useState<{
     questions: Question[];
     description: unknown;
+    prefill?: Record<string, string>;
   } | null>(null);
   const previewFetcher = useFetcher<
-    { ok: true; questions: Question[] } | { error: string }
+    { ok: true; questions: Question[]; prefill?: Record<string, string> } | { error: string }
   >();
   const previewPendingDescription = useRef<unknown>(null);
   function requestPreview(payload: { questions: Question[]; description: unknown }) {
@@ -230,6 +231,7 @@ export function FormDetail() {
       setPreviewData({
         questions: data.questions,
         description: previewPendingDescription.current,
+        prefill: data.prefill,
       });
     }
   }, [previewFetcher.data]);
@@ -545,6 +547,7 @@ export function FormDetail() {
           initialDescription={seed.description}
           terms={terms}
           mappedQuestions={mappedQuestions}
+          fillers={fillers}
           allowCheckbox
           onChange={autosave.schedule}
           snapshotRef={builderSnapshot}
@@ -723,6 +726,7 @@ export function FormDetail() {
           description={previewData.description}
           confirmationMessage={form.confirmationMessage}
           questions={previewData.questions}
+          prefill={previewData.prefill}
           onClose={() => setPreviewData(null)}
         />
       )}

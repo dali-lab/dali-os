@@ -175,3 +175,29 @@ describe("projects:* option cards", () => {
     expect(options).toEqual([{ value: "d1", label: "Dev" }]);
   });
 });
+
+describe("projects:my-organization", () => {
+  const contact = prisma.partnerContact.findUnique as ReturnType<typeof vi.fn>;
+
+  it("is empty for someone not signed in, without a query", async () => {
+    expect(await resolveReferenceOptions("projects:my-organization")).toEqual([]);
+    expect(contact).not.toHaveBeenCalled();
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("is empty for an account with no current org", async () => {
+    contact.mockResolvedValue({ memberships: [] });
+    expect(await resolveReferenceOptions("projects:my-organization", { userId: "u1" })).toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("lists only projects actively linked to the filler's own orgs, private ones included", async () => {
+    contact.mockResolvedValue({ memberships: [{ orgId: "org1" }] });
+    const options = await resolveReferenceOptions("projects:my-organization", { userId: "u1" });
+    expect(options.map((o) => o.value)).toEqual(["p1"]);
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.status).toEqual({ not: "Archived" });
+    expect(where.partners.some.partnerOrgId).toEqual({ in: ["org1"] });
+    expect(where).not.toHaveProperty("isPrivate");
+  });
+});

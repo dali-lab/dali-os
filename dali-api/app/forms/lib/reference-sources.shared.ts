@@ -12,6 +12,7 @@ export const REFERENCE_SOURCE_LABELS = {
   // `open-this-term`, the term is fixed at authoring time rather than
   // resolved to the current term at fill time.
   "projects:active-in-term": "Projects — active in a chosen term",
+  "projects:my-organization": "Projects of my organization (partners)",
   "domains:active": "Domains — active",
   // Member-scoped: only the domains THIS member is eligible in. Resolved per
   // filling member, so it's empty on the public (unauthenticated) fill path.
