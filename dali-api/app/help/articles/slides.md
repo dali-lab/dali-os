@@ -72,6 +72,14 @@ A small bar floats above the selected item with the things you reach for most: t
 
 Use **⌘+**, **⌘−** and **⌘0** (or pinch on a trackpad, or the zoom control in the corner of the slide) to zoom in and out. **⌘0** fits the slide to the window. When the slide is larger than the window you can scroll around it.
 
+### Inspector and focus mode
+
+The inspector on the right has a **Slide** tab (layout, background, builds, transitions), a tab for the selected item, and a **Deck** tab. The theme applies to the whole deck, so it lives in the **Deck** tab.
+
+Click **Hide panel** at the right end of the toolbar, or press **⌥⌘I**, to give the slide more room. Selecting an item does not bring the panel back. Double-click a picture, shape, chart, icon, video or poll, or right-click an item and choose **Format…**, to open the panel on that item. Double-clicking a text box still edits its text.
+
+Press **⌘⇧\** for focus mode. It hides the inspector, the slide list and the toolbar's extra buttons, leaving the slide with undo, redo, **Insert**, zoom and **Exit focus**. Press **⌘⇧\** again, or **Esc** when nothing is selected, to come back to the layout you had. Your choices are remembered on this browser.
+
 ### Select and reorder slides
 
 Click a slide in the list, Shift-click to select a range, and ⌘-click to add or remove one. Drag any selected slide to move all of them together. Slide menu actions apply to everything selected. Moving slides is one step for **Undo**.

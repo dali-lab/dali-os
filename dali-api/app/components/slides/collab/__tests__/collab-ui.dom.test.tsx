@@ -292,12 +292,14 @@ describe("ReadOnlyDeck", () => {
 describe("Inspector", () => {
   const base = { themeId: "dali-dark", slideCount: 2, selection: [], editable: true, onLayout: noop, onTheme: noop, onTextStyle: noop, onPickImage: noop, onClearImage: noop };
 
-  it("picks a layout and a theme", () => {
+  it("picks a layout on the Slide tab and a theme on the Deck tab", () => {
     const { snap } = deck(1);
     const onLayout = vi.fn();
     const onTheme = vi.fn();
     const el = render(createElement(Inspector, { ...base, slide: snap.slides[0], onLayout, onTheme }));
     click(el.querySelector("[aria-label='Layouts'] [data-layout-thumb=bignumber]")!.closest("button"));
+    expect(el.querySelector("[aria-label='Theme']")).toBeNull();
+    click([...el.querySelectorAll("[aria-label='Inspector'] button")].find((b) => b.textContent === "Deck") ?? null);
     click([...el.querySelectorAll("[aria-label='Theme'] button")].find((b) => b.textContent === "DALI Light") ?? null);
     expect(onLayout).toHaveBeenCalledWith("bignumber");
     expect(onTheme).toHaveBeenCalledWith("dali-light");

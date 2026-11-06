@@ -80,6 +80,7 @@ import { sectionsOf } from "~/components/slides/deck/slide-meta";
 import { FindBar } from "./FindBar";
 import { ShortcutsSheet } from "./ShortcutsSheet";
 import { shortcutFor } from "./shortcuts";
+import { usePanelPrefs } from "./panel-prefs";
 import { useDeckFind } from "./useDeckFind";
 import { useDeckDoc, useDeckSnapshot, useDeckSync, useSlidePresence, useUndoState } from "./useDeckDoc";
 
@@ -140,6 +141,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
       addImages: (files, at) => externalRef.current.addImages?.(files, at),
       comment: (target) => externalRef.current.comment?.(target),
       changeLayout: (id) => externalRef.current.changeLayout?.(id),
+      openInspector: (id) => externalRef.current.openInspector?.(id),
     }),
     [],
   );
@@ -241,16 +243,22 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   const [gallery, setGallery] = useState<{ ids: string[] } | null>(null);
   const [sectionModal, setSectionModal] = useState<{ slideId: string; initial: string } | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const panels = usePanelPrefs();
+  const [tabRequest, setTabRequest] = useState(0);
+  const selectionCount = freeform.selection.length;
   useEffect(() => {
     if (!editable) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest("[contenteditable='true'], input, textarea")) return;
+      if (target?.closest("[contenteditable='true'], input, textarea, select")) return;
+      if (e.key === "Escape" && panels.focus && selectionCount === 0) return void panels.exitFocus();
       const id = shortcutFor(e);
       if (id === "undo") (e.preventDefault(), undo());
       else if (id === "redo") (e.preventDefault(), redo());
       else if (id === "help") (e.preventDefault(), setHelpOpen(true));
       else if (id === "grid") (e.preventDefault(), setGridOpen((g) => !g));
+      else if (id === "inspector" && !panels.focus) (e.preventDefault(), panels.toggleInspector());
+      else if (id === "focus") (e.preventDefault(), panels.toggleFocus());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -448,6 +456,11 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     openLayoutGallery: () => current && setGallery({ ids: [current.id] }),
     setBackground: (background) => current && deck && deck.undo.step(() => setSlideBackground(deck.doc, [current.id], background)),
     pickBackgroundImage: () => openPicker({ type: "background" }),
+    openInspector: (id) => {
+      freeform.setSelection([id]);
+      panels.revealInspector();
+      setTabRequest((n) => n + 1);
+    },
   };
 
   const appendImported = useCallback((slides: Parameters<typeof appendSlides>[1]) => (deck ? appendSlides(deck.doc, slides) : []), [deck]);
@@ -575,9 +588,9 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-os-card bg-os-card">
       {pageBar}
-      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onInsert={insertItem} library={slideLibrary} armed={freeform.armed} themeId={snap.themeId} currentLayoutId={current?.layoutId ?? null} grid={gridOpen} onGrid={() => setGridOpen((g) => !g)} />
+      <EditorToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} onAdd={add} onInsert={insertItem} library={slideLibrary} armed={freeform.armed} themeId={snap.themeId} currentLayoutId={current?.layoutId ?? null} grid={gridOpen} onGrid={() => setGridOpen((g) => !g)} inspectorHidden={panels.inspectorHidden} onToggleInspector={panels.toggleInspector} focus={panels.focus} onExitFocus={panels.exitFocus} />
       <div className="flex min-h-0 flex-1">
-        <Filmstrip
+        {!panels.focus && <Filmstrip
           slides={snap.slides}
           themeId={snap.themeId}
           currentId={current?.id ?? null}
@@ -594,7 +607,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           onDuplicate={duplicate}
           onDelete={remove}
           onMove={onMoveSlides}
-        />
+        />}
         <div className="relative flex min-w-0 flex-1 flex-col">
           {find.open && <FindBar find={find} />}
           {gridOpen ? (
@@ -632,9 +645,10 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
             )}
           </div>
           )}
-          {!gridOpen && current && notes && slotCollab && <NotesPane key={stageKey(snap.epoch, current.id)} fragment={notes} collab={slotCollab} />}
+          {!gridOpen && !panels.focus && current && notes && slotCollab && <NotesPane key={stageKey(snap.epoch, current.id)} fragment={notes} collab={slotCollab} />}
         </div>
-        <Inspector
+        {!panels.focus && !panels.inspectorHidden && <Inspector
+          tabRequest={tabRequest}
           slide={current}
           themeId={snap.themeId}
           slideCount={snap.slides.length}
@@ -659,7 +673,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           onPickBackground={() => openPicker({ type: "background" })}
           onTransition={(transition) => current && deck.undo.step(() => setSlideTransition(deck.doc, [current.id], transition))}
           onPreviewTransition={() => setPreviewOpen(true)}
-        />
+        />}
         {commentsPanel}
       </div>
       {pickers}
