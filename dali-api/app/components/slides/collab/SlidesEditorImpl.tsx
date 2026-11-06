@@ -17,6 +17,7 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { Button } from "~/components/ui/Button";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { useToast } from "~/components/ui/toast";
+import { useDialog } from "~/components/ui/dialog";
 import { SaveTemplateModal } from "~/components/slides/templates/SaveTemplateModal";
 import { fetchTemplate, removeTemplate, saveTemplate, type TemplateRow } from "~/components/slides/templates/templates-client";
 import { useTemplates } from "~/components/slides/templates/useTemplates";
@@ -116,6 +117,14 @@ function usePageSaver(pageId: string) {
 
 function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canModerateComments, canManageAccess, workspaceType, collab, link, actionsSlot }: SlidesEditorProps) {
   const toast = useToast();
+  const dialog = useDialog();
+  const confirmDeleteSlides = (count: number) =>
+    dialog.confirm({
+      title: count > 1 ? `Delete ${count} slides?` : "Delete this slide?",
+      description: count > 1 ? "They're removed for everyone in this deck. Undo brings them back." : "It's removed for everyone in this deck. Undo brings it back.",
+      confirmLabel: "Delete",
+      tone: "destructive",
+    });
   const revalidator = useRevalidator();
   const savePage = usePageSaver(pageId);
   const [emoji, setEmoji] = useState(iconEmoji);
@@ -287,8 +296,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     const copy = deck && deck.undo.step(() => duplicateSlide(deck.doc, id));
     if (copy) select(copy);
   };
-  const remove = (id: string) => {
-    if (!deck) return;
+  const remove = async (id: string) => {
+    if (!deck || !(await confirmDeleteSlides(1))) return;
     const i = snap.slides.findIndex((s) => s.id === id);
     const next = snap.slides[i + 1] ?? snap.slides[i - 1] ?? null;
     deleteSlide(deck.doc, id, me.name);
@@ -361,7 +370,8 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
           step(() => ids.forEach((sid) => (copy = duplicateSlide(deck.doc, sid) ?? copy)));
           if (copy) select(copy);
         },
-        remove: () => {
+        remove: async () => {
+          if (!(await confirmDeleteSlides(ids.length))) return;
           const i = order.indexOf(ids[0]);
           const next = snap.slides.find((s, j) => j > i && !ids.includes(s.id)) ?? [...snap.slides].reverse().find((s) => !ids.includes(s.id)) ?? null;
           step(() => ids.forEach((sid) => deleteSlide(deck.doc, sid, me.name)));

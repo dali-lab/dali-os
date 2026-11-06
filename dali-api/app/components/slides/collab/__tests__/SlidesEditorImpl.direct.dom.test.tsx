@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   film: null as null | Record<string, (...a: never[]) => unknown> & { selectedIds: string[] },
   stage: null as null | { zoom: number; freeform: { onDropFiles: (f: File[], at: { x: number; y: number }) => void; selection: string[] } },
   upload: vi.fn(async (f: File) => `https://cdn.example/${f.name}`),
+  confirm: vi.fn(async (_: { title: string; tone?: string }) => true),
 }));
 
 vi.mock("@blocknote/shadcn/style.css", () => ({}));
@@ -22,6 +23,7 @@ vi.mock("~/components/doc/theme.css", () => ({}));
 vi.mock("../slide-editor.css", () => ({}));
 vi.mock("react-router", () => ({ useRevalidator: () => ({ revalidate: vi.fn() }) }));
 vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ info: vi.fn(), error: vi.fn() }) }));
+vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: h.confirm }) }));
 vi.mock("../PdfMenuItems", () => ({ DeckPdfMenuItems: () => null }));
 vi.mock("~/components/shell/page-bar-slot", () => ({
   pageBarTextButton: () => "",
@@ -101,6 +103,7 @@ beforeEach(() => {
     },
   );
   h.upload.mockClear();
+  h.confirm.mockReset().mockResolvedValue(true);
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -147,15 +150,35 @@ describe("thumbnail menu in the editor", () => {
     expect(b).toBeDefined();
   });
 
-  it("deletes the selected slides in one step and undo brings them back", () => {
+  it("asks before deleting the selected slides, then deletes them in one step that undo brings back", async () => {
     const [a, b, c] = threeSlides();
     select(a);
     select(b, { shift: true, meta: false });
-    act1(a, "delete");
+    await act(async () => void (await menu(a).find((x) => x.id === "delete")!.run!()));
+    expect(h.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Delete 2 slides?", tone: "destructive" }));
     expect(ids()).toEqual([c]);
     expect(stackSize()).toBe(1);
     (h.undo as { manager: Y.UndoManager }).manager.undo();
     expect(ids()).toEqual([a, b, c]);
+  });
+
+  it("keeps the slides when the delete is cancelled from the menu", async () => {
+    const [a, b, c] = threeSlides();
+    h.confirm.mockResolvedValue(false);
+    await act(async () => void (await menu(a).find((x) => x.id === "delete")!.run!()));
+    expect(h.confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Delete this slide?" }));
+    expect(ids()).toEqual([a, b, c]);
+  });
+
+  it("asks before the filmstrip's delete button removes a slide, and keeps it on cancel", async () => {
+    const [a, b, c] = threeSlides();
+    h.confirm.mockResolvedValue(false);
+    await act(async () => void (await (h.film!.onDelete as unknown as (id: string) => Promise<void>)(b)));
+    expect(ids()).toEqual([a, b, c]);
+    h.confirm.mockResolvedValue(true);
+    await act(async () => void (await (h.film!.onDelete as unknown as (id: string) => Promise<void>)(b)));
+    expect(h.confirm).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Delete this slide?", tone: "destructive" }));
+    expect(ids()).toEqual([a, c]);
   });
 
   it("changes the layout of every acted-on slide in one step", () => {

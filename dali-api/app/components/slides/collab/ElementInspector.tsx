@@ -91,7 +91,8 @@ export function elementTabLabel(slide: RenderSlide | null, selection: string[]):
   if (!slide || selection.length === 0) return "Text";
   if (selection.length > 1) return "Selection";
   const el = slide.elements.find((e) => e.id === selection[0]);
-  return el ? (KIND_LABELS[el.kind] ?? "Text") : "Text";
+  if (!el) return "Text";
+  return el.kind === "html" ? "HTML" : (KIND_LABELS[el.kind] ?? "Text");
 }
 
 function selectionNoun(slide: RenderSlide, ids: string[]): string {
@@ -130,15 +131,9 @@ function PositionFields({ placed, onPlace, disabled }: { placed: Placed; onPlace
 function OrderButtons({ freeform }: { freeform: InspectorFreeform }) {
   return (
     <Section title="Order">
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" size="sm" onClick={() => freeform.onReorder("forward")}>
-          <ArrowUpToLine className="h-3.5 w-3.5" aria-hidden />
-          Bring forward
-        </Button>
-        <Button variant="secondary" size="sm" onClick={() => freeform.onReorder("backward")}>
-          <ArrowDownToLine className="h-3.5 w-3.5" aria-hidden />
-          Send back
-        </Button>
+      <div role="group" aria-label="Order" className="flex gap-0.5">
+        <IconButton label="Bring forward" icon={ArrowUpToLine} onClick={() => freeform.onReorder("forward")} />
+        <IconButton label="Send back" icon={ArrowDownToLine} onClick={() => freeform.onReorder("backward")} />
       </div>
     </Section>
   );
