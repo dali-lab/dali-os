@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useFetcher } from "react-router";
-import { Tooltip } from "~/components/ui/floating";
+import { MultiSelect, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
@@ -438,6 +438,12 @@ function StatusTabs({
   );
 }
 
+export function groupMemberOptions(members: MemberCardData[]) {
+  return members
+    .filter((m) => m.isCurrentMember)
+    .map((m) => ({ value: m.id, label: memberLabel(m), description: m.daliEmail ?? undefined }));
+}
+
 function CreateGroupForm({
   members,
   terms,
@@ -450,20 +456,9 @@ function CreateGroupForm({
   const fetcher = useFetcher();
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
   // "always" = never term-bound; "terms" = archive after the chosen term(s) end.
   const [scope, setScope] = useState<"always" | "terms">("always");
   const [boundTerms, setBoundTerms] = useState<string[]>([]);
-
-  const filtered = members.filter((m) => {
-    if (!m.isCurrentMember) return false;
-    if (!query) return true;
-    const ql = query.toLowerCase();
-    return (
-      `${m.firstName} ${m.lastName}`.toLowerCase().includes(ql) ||
-      (m.daliEmail ?? "").toLowerCase().includes(ql)
-    );
-  });
 
   const submitting = fetcher.state !== "idle";
   const termsOk = scope === "always" || boundTerms.length > 0;
@@ -560,77 +555,18 @@ function CreateGroupForm({
         </fieldset>
 
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
+          <span className="block text-sm font-medium text-foreground mb-1">
             Members ({selected.length})
-          </label>
-          {selected.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {selected.map((id) => {
-                const m = findMember(members, id);
-                if (!m) return null;
-                return (
-                  <span
-                    key={id}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-xs font-medium",
-                      "bg-os-accent/15 text-os-accent",
-                    )}
-                  >
-                    {memberLabel(m)}
-                    <button
-                      type="button"
-                      onClick={() => setSelected(selected.filter((s) => s !== id))}
-                      aria-label={`Remove ${memberLabel(m)}`}
-                      className="hover:text-foreground"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          <SearchInput
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name or email…"
-            size="sm"
-            containerClassName="w-full"
+          </span>
+          <MultiSelect
+            values={selected}
+            onChange={setSelected}
+            options={groupMemberOptions(members)}
+            searchable
+            ariaLabel="Members"
+            placeholder="Add members"
+            searchPlaceholder="Search by name or email"
           />
-          <div
-            className={cn(
-              "mt-2 max-h-48 overflow-y-auto border border-border bg-background",
-              "rounded-os-item",
-            )}
-          >
-            {filtered.slice(0, 50).map((m) => {
-              const isSel = selected.includes(m.id);
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    if (isSel) {
-                      setSelected(selected.filter((s) => s !== m.id));
-                    } else {
-                      setSelected([...selected, m.id]);
-                      setQuery("");
-                    }
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 flex justify-between items-center ${
-                    isSel ? "bg-muted/30" : ""
-                  }`}
-                >
-                  <span>{memberLabel(m)}</span>
-                  {isSel && (
-                    <span className={cn("text-xs", "text-os-accent")}>
-                      Selected
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-1">
@@ -666,11 +602,6 @@ function CreateGroupForm({
       </fetcher.Form>
     </div>
   );
-}
-
-// Lookup helper used inside CreateGroupForm where we only have the array.
-function findMember(members: MemberCardData[], id: string): MemberCardData | undefined {
-  return members.find((m) => m.id === id);
 }
 
 function GroupCard({
