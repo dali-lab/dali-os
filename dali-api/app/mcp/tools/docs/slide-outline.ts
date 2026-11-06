@@ -22,7 +22,7 @@ export const OUTLINE_SLIDE_SCHEMA = {
     },
     html: { type: "string", maxLength: MAX_HTML_CHARS, description: `A custom slide: this HTML fills a Blank-layout slide. layoutId and slots are not used with it. ${HTML_NOTE}` },
     notes: { type: "string", maxLength: 20_000, description: "Speaker notes." },
-    elements: { type: "array", maxItems: MAX_OUTLINE_ELEMENTS, items: ELEMENT_INPUT_SCHEMA, description: "Free elements to add to the slide, each as in add_element." },
+    elements: { type: "array", maxItems: MAX_OUTLINE_ELEMENTS, items: ELEMENT_INPUT_SCHEMA, description: "Free elements to add to the slide, each as in manage_slide_elements add_element." },
   },
   additionalProperties: false,
 };

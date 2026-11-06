@@ -5,7 +5,6 @@ import type { McpTool } from "../../registry";
 
 import { UPDATE_PROJECT_TOOL, runUpdateProject } from "./update-project";
 import { MANAGE_TASK_FILES_TOOL, runManageTaskFiles } from "./manage-task-files";
-import { SET_PAGE_VISIBILITY_TOOL, runSetPageVisibility } from "./set-page-visibility";
 import { SET_FILE_PARTNER_VISIBILITY_TOOL, runSetFilePartnerVisibility } from "./set-file-partner-visibility";
 import { MANAGE_STAFFING_TOOL, runManageStaffing } from "./manage-staffing";
 import { FINALIZE_STAFFING_TOOL, runFinalizeStaffing } from "./finalize-staffing";
@@ -44,10 +43,6 @@ export const PROJECTS_EXTRA_TOOLS: McpTool[] = [
   {
     def: MANAGE_TASK_FILES_TOOL,
     run: (ctx, args) => runManageTaskFiles(ctx.user.id, args as any),
-  },
-  {
-    def: SET_PAGE_VISIBILITY_TOOL,
-    run: (ctx, args) => runSetPageVisibility(ctx.user.id, args as any),
   },
   {
     def: SET_FILE_PARTNER_VISIBILITY_TOOL,

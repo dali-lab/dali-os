@@ -22,7 +22,13 @@ vi.mock("~/collab/blocknote-server", () => ({
   blocksToMarkdown: vi.fn(async (blocks: { content: { text: string }[] }[]) => blocks.map((b) => b.content[0].text).join("\n")),
 }));
 
-import { runManageSlideDeck } from "../manage-slide-deck";
+import {
+  GET_SLIDE_DECK_TOOL_DEF,
+  MANAGE_SLIDE_DECK_TOOL_DEF,
+  MANAGE_SLIDE_ELEMENTS_TOOL_DEF,
+  runGetSlideDeck,
+  runManageSlideDeck,
+} from "../manage-slide-deck";
 
 const s = (id: string, title = id): Slide => ({ id, layout: "title", title });
 
@@ -39,6 +45,53 @@ beforeEach(() => {
 });
 
 const ids = () => store.slides.map((x) => x.id);
+
+describe("slide deck tool split", () => {
+  const actionsOf = (def: { inputSchema: { properties: Record<string, unknown> } }) =>
+    (def.inputSchema.properties.action as { enum: string[] } | undefined)?.enum ?? [];
+
+  it("reads with mcp:read and writes with mcp:write", () => {
+    expect(GET_SLIDE_DECK_TOOL_DEF.requiredScope).toBe("mcp:read");
+    expect(MANAGE_SLIDE_DECK_TOOL_DEF.requiredScope).toBe("mcp:write");
+    expect(MANAGE_SLIDE_ELEMENTS_TOOL_DEF.requiredScope).toBe("mcp:write");
+  });
+
+  it("gives the read tool no action, and keeps get and export out of the write tools", () => {
+    expect(GET_SLIDE_DECK_TOOL_DEF.inputSchema.properties).not.toHaveProperty("action");
+    for (const def of [MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF]) {
+      expect(actionsOf(def)).not.toContain("get");
+      expect(actionsOf(def)).not.toContain("export");
+    }
+  });
+
+  it("splits slide actions from element actions with no overlap", () => {
+    const slides = actionsOf(MANAGE_SLIDE_DECK_TOOL_DEF);
+    const elements = actionsOf(MANAGE_SLIDE_ELEMENTS_TOOL_DEF);
+    expect(slides).toEqual(["set_slides", "add_slide", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"]);
+    expect(elements.every((a) => a.endsWith("_element") || a.endsWith("_elements") || a === "snap_back")).toBe(true);
+    expect(slides.filter((a) => elements.includes(a))).toEqual([]);
+    expect(MANAGE_SLIDE_DECK_TOOL_DEF.inputSchema.properties).not.toHaveProperty("element");
+    expect(MANAGE_SLIDE_ELEMENTS_TOOL_DEF.inputSchema.required).toEqual(["action", "pageId", "slideId"]);
+  });
+
+  it("get_slide_deck reads the slides without writing", async () => {
+    const out = await runGetSlideDeck("u1", { pageId: "p1", limit: 2 });
+    expect(out).toMatchObject({ title: "Deck", slides: [{ id: "a" }, { id: "b" }], page: { hasMore: true } });
+    expect(decks.editDeck).not.toHaveBeenCalled();
+  });
+
+  it("get_slide_deck returns download links instead when exportLinks is set", async () => {
+    const out = (await runGetSlideDeck("u1", { pageId: "p1", exportLinks: true })) as Record<string, unknown>;
+    expect(out.title).toBe("Deck");
+    expect(out).not.toHaveProperty("slides");
+    expect(decks.editDeck).not.toHaveBeenCalled();
+  });
+
+  it("get_slide_deck still checks access", async () => {
+    decks.deckAccess.mockResolvedValue({ ok: false, error: "Not found", status: 404 });
+    await expect(runGetSlideDeck("u1", { pageId: "p1" })).rejects.toMatchObject({ status: 404 });
+  });
+});
 
 describe("manage_slide_deck", () => {
   it("get returns the title, version and slides with Markdown bodies", async () => {

@@ -13,7 +13,7 @@ import { runCreateLabDocument } from "./lab-documents";
 export const CREATE_SLIDE_DECK_TOOL_DEF = {
   name: "create_slide_deck",
   description:
-    "Create a lab slide deck from an outline in one step. Each slide has a layoutId, its text by box name in slots (Markdown), speaker notes, and free elements (text, image by URL, shape, chart with data, icon, video, poll, custom HTML) as in manage_slide_deck add_element. A slide can instead be one custom HTML page: give it html (a Blank-layout slide filled by your HTML). " + HTML_NOTE + " Returns the deck's pageId and every slide with its element ids; edit it afterwards with manage_slide_deck. Needs the live deck editor to be on for you.",
+    "Create a lab slide deck from an outline in one step. Each slide has a layoutId, its text by box name in slots (Markdown), speaker notes, and free elements (text, image by URL, shape, chart with data, icon, video, poll, custom HTML) as in manage_slide_elements add_element. A slide can instead be one custom HTML page: give it html (a Blank-layout slide filled by your HTML). " + HTML_NOTE + " Returns the deck's pageId and every slide with its element ids; edit it afterwards with manage_slide_deck and manage_slide_elements. Needs the live deck editor to be on for you.",
   inputSchema: {
     type: "object" as const,
     properties: {

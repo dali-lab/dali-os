@@ -151,7 +151,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     case "tools/list":
       return rpcResult(body.id, {
-        tools: registryToolDefs().map((d) => ({
+        tools: registryToolDefs().filter((d) => auth.scopes.includes(d.requiredScope)).map((d) => ({
           name: d.name,
           description: d.description,
           inputSchema: d.inputSchema,

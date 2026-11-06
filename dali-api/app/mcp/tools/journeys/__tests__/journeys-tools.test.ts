@@ -50,8 +50,12 @@ describe("registration", () => {
   it("registers each tool once with a scope", () => {
     const names = JOURNEYS_TOOLS.map((t) => t.def.name);
     expect(new Set(names).size).toBe(names.length);
-    expect(names).toEqual(expect.arrayContaining(["list_journeys", "get_journey", "manage_journey", "manage_journey_module", "manage_journey_page", "manage_journey_slides", "set_journey_lab", "set_journey_quiz", "manage_journey_access"]));
+    expect(names).toEqual(expect.arrayContaining(["list_journeys", "get_journey", "manage_journey", "manage_journey_module", "manage_journey_page", "manage_journey_slides", "set_journey_activity", "list_journey_reviews", "get_journey_review", "review_journey_submission", "list_journey_access", "manage_journey_access"]));
+    for (const gone of ["set_journey_lab", "set_journey_quiz", "set_journey_studio_lab", "manage_journey_reviews"]) expect(names).not.toContain(gone);
     for (const t of JOURNEYS_TOOLS) expect(t.def.requiredScope).toMatch(/^mcp:(read|write)$/);
+    for (const name of ["list_journeys", "get_journey", "list_journey_reviews", "get_journey_review", "list_journey_access"]) {
+      expect(tool(name).def.requiredScope).toBe("mcp:read");
+    }
   });
 
   it("refuses callers without journeys turned on", async () => {
@@ -183,23 +187,24 @@ describe("manage_journey_slides", () => {
   });
 });
 
-describe("set_journey_lab", () => {
+describe("set_journey_activity code_lab", () => {
   it("needs an index.html", async () => {
-    await expect(call("set_journey_lab", { journeyId: "j", moduleId: "a", lab: { title: "L", files: { "a.js": "" }, steps: [] } })).rejects.toThrow(/index.html/);
+    await expect(call("set_journey_activity", { activity: "code_lab", journeyId: "j", moduleId: "a", codeLab: { title: "L", files: { "a.js": "" }, steps: [] } })).rejects.toThrow(/index.html/);
   });
 
   it("gives steps ids and can remove the lab", async () => {
-    await call("set_journey_lab", { journeyId: "j", moduleId: "a", lab: { title: "L", files: { "index.html": "<h1>x</h1>" }, steps: [{ title: "S", check: "true" }] } });
+    await call("set_journey_activity", { activity: "code_lab", journeyId: "j", moduleId: "a", codeLab: { title: "L", files: { "index.html": "<h1>x</h1>" }, steps: [{ title: "S", check: "true" }] } });
     expect(state.draft.modules[0].lab?.steps[0]).toMatchObject({ title: "S", check: "true", instructions: "" });
     expect(state.draft.modules[0].lab?.steps[0].id).toMatch(/^step-/);
-    await call("set_journey_lab", { journeyId: "j", moduleId: "a", remove: true });
+    await call("set_journey_activity", { activity: "code_lab", journeyId: "j", moduleId: "a", remove: true });
     expect(state.draft.modules[0].lab).toBeUndefined();
   });
 });
 
-describe("set_journey_quiz", () => {
+describe("set_journey_activity quiz", () => {
   it("turns option strings and a correct index into a quiz", async () => {
-    await call("set_journey_quiz", {
+    await call("set_journey_activity", {
+      activity: "quiz",
       journeyId: "j",
       moduleId: "a",
       quiz: { title: "Q", questions: [{ type: "multiple-choice", prompt: "2+2?", options: ["3", "4"], correctOption: 1 }, { type: "short-answer", prompt: "Why?" }] },
@@ -211,13 +216,64 @@ describe("set_journey_quiz", () => {
   });
 
   it("rejects a correct index outside the options, and too few options", async () => {
-    const q = (extra: object) => call("set_journey_quiz", { journeyId: "j", moduleId: "a", quiz: { title: "Q", questions: [{ type: "multiple-choice", prompt: "?", ...extra }] } });
+    const q = (extra: object) => call("set_journey_activity", { activity: "quiz", journeyId: "j", moduleId: "a", quiz: { title: "Q", questions: [{ type: "multiple-choice", prompt: "?", ...extra }] } });
     await expect(q({ options: ["a", "b"], correctOption: 2 })).rejects.toThrow(/correctOption/);
     await expect(q({ options: ["a"], correctOption: 0 })).rejects.toThrow(/two options/);
   });
 });
 
+describe("set_journey_activity", () => {
+  it("needs the activity's content or remove", async () => {
+    await expect(call("set_journey_activity", { activity: "quiz", journeyId: "j", moduleId: "a", codeLab: {} })).rejects.toThrow(/Pass quiz, or remove: true/);
+    expect(server.editDraft).not.toHaveBeenCalled();
+  });
+
+  it("removes only the chosen activity", async () => {
+    await call("set_journey_activity", { activity: "quiz", journeyId: "j", moduleId: "a", quiz: { title: "Q", questions: [] } });
+    await call("set_journey_activity", { activity: "code_lab", journeyId: "j", moduleId: "a", codeLab: { title: "L", files: { "index.html": "" }, steps: [] } });
+    await call("set_journey_activity", { activity: "quiz", journeyId: "j", moduleId: "a", remove: true });
+    expect(state.draft.modules[0].quiz).toBeUndefined();
+    expect(state.draft.modules[0].lab).toMatchObject({ title: "L" });
+  });
+
+  it("sets a studio lab and keeps one lab per module", async () => {
+    await call("set_journey_activity", { activity: "studio_lab", journeyId: "j", moduleId: "a", studioLab: { kind: "document", title: "Ticket", criteria: [] } });
+    expect(state.draft.modules[0].studio).toMatchObject({ kind: "document", title: "Ticket" });
+    await expect(
+      call("set_journey_activity", { activity: "code_lab", journeyId: "j", moduleId: "a", codeLab: { title: "L", files: { "index.html": "" }, steps: [] } }),
+    ).rejects.toThrow(/set_journey_activity \(activity studio_lab, remove: true\)/);
+  });
+
+  it("offers each activity's schema in its own field", () => {
+    const props = tool("set_journey_activity").def.inputSchema.properties as Record<string, { enum?: string[] }>;
+    expect(props.activity.enum).toEqual(["code_lab", "studio_lab", "quiz"]);
+    for (const field of ["codeLab", "studioLab", "quiz"]) expect(props[field]).toBeDefined();
+    expect(tool("set_journey_activity").def.inputSchema.required).toEqual(["activity", "journeyId", "moduleId"]);
+  });
+});
+
+describe("list_journey_access", () => {
+  it("lists people without changing access", async () => {
+    server.loadAccessEntries.mockResolvedValue([{ id: "j", title: "J", role: "editor", people: [{ id: "u2", name: "Ana", email: "ana@x", role: "owner" }] }]);
+    const out = await call("list_journey_access", { journeyId: "j" });
+    expect(out).toEqual({ journeyId: "j", title: "J", yourRole: "editor", people: [{ userId: "u2", name: "Ana", email: "ana@x", role: "owner" }] });
+    expect(server.addCollaborator).not.toHaveBeenCalled();
+    expect(server.removeCollaborator).not.toHaveBeenCalled();
+    expect(server.setCollaboratorRole).not.toHaveBeenCalled();
+  });
+
+  it("reports a journey the caller can't see", async () => {
+    server.loadAccessEntries.mockResolvedValue([]);
+    await expect(call("list_journey_access", { journeyId: "j" })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
 describe("manage_journey_access", () => {
+  it("no longer offers list", () => {
+    const props = tool("manage_journey_access").def.inputSchema.properties as Record<string, { enum?: string[] }>;
+    expect(props.action.enum).toEqual(["add", "set_role", "remove"]);
+  });
+
   it("adds by email and returns the people with access", async () => {
     db.user.findFirst.mockResolvedValue({ id: "u2" });
     server.addCollaborator.mockResolvedValue({ ok: true });

@@ -1,5 +1,5 @@
-// MCP file sharing, reached through manage_document_sharing actions. Thin
-// wrappers over the same gate, audit and notify path the web route uses.
+// MCP file sharing: list_file_shares, plus the manage_document_sharing write
+// actions. Thin wrappers over the same gate, audit and notify path the web route uses.
 
 import { listFileShares } from "~/lib/file-sharing.server";
 import { SharePrincipalError } from "~/lib/page-sharing.server";
@@ -23,7 +23,7 @@ export const FILE_SHARING_PROPERTIES = {
     enum: ["View", "Comment", "Edit", "FullAccess"],
     description: "share_file: access level. Defaults to View. FullAccess lets them re-share.",
   },
-  shareId: { type: "string", minLength: 1, description: "unshare_file: the share id from list_file_shares." },
+  shareId: { type: "string", minLength: 1, description: "unshare_file: the share id from the list_file_shares tool." },
   linkAccess: {
     type: "string",
     enum: ["Restricted", "LabMembers"],
@@ -36,8 +36,20 @@ export const FILE_SHARING_PROPERTIES = {
   },
 };
 
+export const LIST_FILE_SHARES_TOOL = {
+  name: "list_file_shares",
+  description:
+    "List who a project file is shared with: each share's id, person or group, and permission, plus the file's link access and any access it inherits from its folder. Needs permission to manage the file's sharing. Use the share ids with manage_document_sharing unshare_file.",
+  inputSchema: {
+    type: "object" as const,
+    properties: { fileId: { type: "string", minLength: 1 } },
+    required: ["fileId"],
+    additionalProperties: false,
+  },
+  requiredScope: "mcp:read" as const,
+};
+
 export const FILE_SHARING_REQUIRED: Record<string, string[]> = {
-  list_file_shares: ["fileId"],
   share_file: ["fileId", "principalType", "principalId"],
   unshare_file: ["fileId", "shareId"],
   set_file_link_access: ["fileId", "linkAccess"],
@@ -66,6 +78,25 @@ function permissionArg(v: unknown, fallback: SharePermission): SharePermission {
   return v as SharePermission;
 }
 
+export async function runListFileShares(callerId: string, args: { fileId: string }) {
+  return mapErrors(async () => {
+    const context = await requireFileShareManager(args.fileId, callerId);
+    return {
+      file: context.file,
+      linkAccess: context.linkAccess,
+      linkPermission: context.linkPermission,
+      inheritedFrom: context.inheritedAccess,
+      shares: (await listFileShares(args.fileId)).map((s) => ({
+        id: s.id,
+        principalType: s.principalType,
+        principalId: s.principalId,
+        label: s.label,
+        permission: s.permission,
+      })),
+    };
+  });
+}
+
 export async function runFileSharingAction(
   callerId: string,
   action: string,
@@ -74,22 +105,6 @@ export async function runFileSharingAction(
   const fileId = String(args.fileId);
   return mapErrors(async () => {
     switch (action) {
-      case "list_file_shares": {
-        const context = await requireFileShareManager(fileId, callerId);
-        return {
-          file: context.file,
-          linkAccess: context.linkAccess,
-          linkPermission: context.linkPermission,
-          inheritedFrom: context.inheritedAccess,
-          shares: (await listFileShares(fileId)).map((s) => ({
-            id: s.id,
-            principalType: s.principalType,
-            principalId: s.principalId,
-            label: s.label,
-            permission: s.permission,
-          })),
-        };
-      }
       case "share_file": {
         if (args.principalType !== "User" && args.principalType !== "Group") {
           throw new McpInvalidError("principalType must be User or Group");

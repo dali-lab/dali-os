@@ -50,6 +50,10 @@ vi.mock("~/mcp/registry", async () => {
       def: { name: "read_tool", description: "r", requiredScope: "mcp:read", inputSchema: { type: "object" } },
       run: h.readRun,
     },
+    admin_tool: {
+      def: { name: "admin_tool", description: "a", requiredScope: "mcp:admin", inputSchema: { type: "object" } },
+      run: vi.fn(),
+    },
   };
   return {
     findRegistryTool: (n: string) => tools[n],
@@ -207,6 +211,24 @@ describe("tools/list", () => {
     for (const t of result.tools) {
       expect(Object.keys(t).sort()).toEqual(["description", "inputSchema", "name"]);
     }
+  });
+
+  it("lists only the tools a read-only caller can call", async () => {
+    h.authenticate.mockResolvedValue({ ...AUTH, scopes: ["mcp:read"] });
+    const { result } = await (await rpc("tools/list")).json();
+    expect(result.tools.map((t: { name: string }) => t.name)).toEqual(["read_tool"]);
+  });
+
+  it("lists admin tools only with the admin scope", async () => {
+    h.authenticate.mockResolvedValue({ ...AUTH, scopes: ["mcp:read", "mcp:write", "mcp:admin"] });
+    const { result } = await (await rpc("tools/list")).json();
+    expect(result.tools.map((t: { name: string }) => t.name)).toEqual(["reg_tool", "read_tool", "admin_tool"]);
+  });
+
+  it("lists nothing for a caller with no MCP scopes", async () => {
+    h.authenticate.mockResolvedValue({ ...AUTH, scopes: [] });
+    const { result } = await (await rpc("tools/list")).json();
+    expect(result.tools).toEqual([]);
   });
 });
 

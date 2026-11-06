@@ -16,7 +16,7 @@ vi.mock("~/collab/blocknote-server", () => ({
   blocksToMarkdown: vi.fn(async () => "### Why\nBecause"),
 }));
 
-import { MANAGE_JOURNEY_REVIEWS, SET_JOURNEY_STUDIO_LAB } from "../manage-studio";
+import { GET_JOURNEY_REVIEW, LIST_JOURNEY_REVIEWS, REVIEW_JOURNEY_SUBMISSION, SET_JOURNEY_STUDIO_LAB } from "../manage-studio";
 import { mod } from "~/journeys/lib/__tests__/fixtures";
 import { createLab } from "~/journeys/lib/journey-edit";
 
@@ -71,7 +71,7 @@ describe("set_journey_studio_lab", () => {
   });
 });
 
-describe("manage_journey_reviews", () => {
+describe("journey review tools", () => {
   const studio = {
     kind: "canvas" as const,
     title: "Critique",
@@ -109,9 +109,9 @@ describe("manage_journey_reviews", () => {
   });
 
   it("lists waiting work by default, and reviewed work on request", async () => {
-    const waiting = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list" })) as { submissions: { submissionId: string }[] };
+    const waiting = (await LIST_JOURNEY_REVIEWS.run(ctx, {})) as { submissions: { submissionId: string }[] };
     expect(waiting.submissions.map((s) => s.submissionId)).toEqual(["sub-submitted"]);
-    const done = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", status: "reviewed" })) as { submissions: { submissionId: string }[] };
+    const done = (await LIST_JOURNEY_REVIEWS.run(ctx, { status: "reviewed" })) as { submissions: { submissionId: string }[] };
     expect(done.submissions.map((s) => s.submissionId)).toEqual(["sub-approved"]);
     expect(studioServer.listReviewIds).toHaveBeenCalledWith(expect.anything(), "reviewed");
   });
@@ -122,16 +122,16 @@ describe("manage_journey_reviews", () => {
     studioServer.loadReviewEntries.mockImplementation(async (_v, page: string[]) =>
       page.map((id) => ({ ...entry("submitted"), submission: { ...entry("submitted").submission, id } })),
     );
-    const first = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", limit: 2 })) as any;
+    const first = (await LIST_JOURNEY_REVIEWS.run(ctx, { limit: 2 })) as any;
     expect(studioServer.loadReviewEntries).toHaveBeenLastCalledWith(expect.anything(), ["a", "b"]);
     expect(first.page).toMatchObject({ hasMore: true, total: 3 });
-    const second = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "list", limit: 2, cursor: first.page.nextCursor })) as any;
+    const second = (await LIST_JOURNEY_REVIEWS.run(ctx, { limit: 2, cursor: first.page.nextCursor })) as any;
     expect(second.submissions.map((s: any) => s.submissionId)).toEqual(["c"]);
     expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 
   it("gets a submission by id even when it is not on the first page of the list", async () => {
-    const out = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "get", submissionId: "sub-approved" })) as Record<string, unknown>;
+    const out = (await GET_JOURNEY_REVIEW.run(ctx, { submissionId: "sub-approved" })) as Record<string, unknown>;
     expect(studioServer.loadReviewEntries).toHaveBeenCalledWith(expect.anything(), ["sub-approved"]);
     expect(studioServer.listReviewIds).not.toHaveBeenCalled();
     expect(out.submissionId).toBe("sub-approved");
@@ -139,23 +139,30 @@ describe("manage_journey_reviews", () => {
 
   it("reports a missing submission", async () => {
     studioServer.loadReviewEntries.mockResolvedValue([]);
-    await expect(MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "get", submissionId: "nope" })).rejects.toThrow(/not found/);
+    await expect(GET_JOURNEY_REVIEW.run(ctx, { submissionId: "nope" })).rejects.toThrow(/not found/);
   });
 
   it("describes the learner's own board items and found problem areas", async () => {
-    const out = (await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "get", submissionId: "sub-submitted" })) as Record<string, unknown>;
+    const out = (await GET_JOURNEY_REVIEW.run(ctx, { submissionId: "sub-submitted" })) as Record<string, unknown>;
     expect(out.work).toEqual([{ type: "pin", color: undefined, text: "Contrast", x: 10, y: 10 }]);
     expect(out.hotspots).toEqual([{ label: "Title", found: true }]);
   });
 
   it("passes a review through to the server", async () => {
     studioServer.reviewSubmission.mockResolvedValue({ ok: true });
-    await MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "review", submissionId: "sub-submitted", decision: "approved", mentorChecks: { m: true } });
+    await REVIEW_JOURNEY_SUBMISSION.run(ctx, { submissionId: "sub-submitted", decision: "approved", mentorChecks: { m: true } });
     expect(studioServer.reviewSubmission).toHaveBeenCalledWith(expect.anything(), "sub-submitted", { mentorChecks: { m: true }, note: "", decision: "approved" });
+  });
+
+  it("reads with mcp:read and reviews with mcp:write", () => {
+    expect(LIST_JOURNEY_REVIEWS.def.requiredScope).toBe("mcp:read");
+    expect(GET_JOURNEY_REVIEW.def.requiredScope).toBe("mcp:read");
+    expect(REVIEW_JOURNEY_SUBMISSION.def.requiredScope).toBe("mcp:write");
+    expect(REVIEW_JOURNEY_SUBMISSION.def.inputSchema.required).toEqual(["submissionId", "decision"]);
   });
 
   it("maps a refused review to an MCP error", async () => {
     studioServer.reviewSubmission.mockResolvedValue({ ok: false, status: 400, error: "Tick every review item to approve." });
-    await expect(MANAGE_JOURNEY_REVIEWS.run(ctx, { action: "review", submissionId: "x", decision: "approved" })).rejects.toThrow(/Tick every/);
+    await expect(REVIEW_JOURNEY_SUBMISSION.run(ctx, { submissionId: "x", decision: "approved" })).rejects.toThrow(/Tick every/);
   });
 });

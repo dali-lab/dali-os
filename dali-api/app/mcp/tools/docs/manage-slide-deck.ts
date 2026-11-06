@@ -33,38 +33,77 @@ import { OUTLINE_SLIDE_SCHEMA, MAX_OUTLINE_SLIDES, prepareOutline, writeOutline,
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
-const ACTIONS = ["get", "set_slides", "add_slide", "update_slide", "delete_slide", "move_slide", "export", "add_slides", ...DECK_ACTIONS] as const;
+const SLIDE_ACTIONS = ["set_slides", "add_slide", "add_slides", "update_slide", "delete_slide", "move_slide", "duplicate_slide", "set_layout", "set_theme"] as const;
+const ELEMENT_ACTIONS = ["add_element", "update_element", "delete_elements", "duplicate_elements", "reorder_elements", "group_elements", "ungroup_elements", "align_elements", "distribute_elements", "snap_back"] as const;
+const ACTIONS = ["get", "export", ...SLIDE_ACTIONS, ...ELEMENT_ACTIONS] as const;
 type Action = (typeof ACTIONS)[number];
+
+const pageIdProp = { type: "string", minLength: 1, description: "The deck's page id." };
+const slideIdProp = { type: "string", description: "The slide to act on." };
+
+export const GET_SLIDE_DECK_TOOL_DEF = {
+  name: "get_slide_deck",
+  description:
+    "Read a Drive slide deck. Returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count). Pass elements: true to also get the theme, each slide's layoutId and its elements (text boxes, images, shapes, charts, icons, videos, polls, custom HTML and layout boxes, whose id is their slot name). Pass exportLinks: true to get PDF and PowerPoint download links instead. Edit slides with manage_slide_deck and elements with manage_slide_elements. Version history is list_collab_versions with docName 'slides:{pageId}:deck'.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      pageId: pageIdProp,
+      elements: { type: "boolean", description: "Also return the theme, each slide's layoutId and its elements. A custom HTML element comes back with htmlLength and a short htmlPreview." },
+      includeHtml: { type: "boolean", description: "With elements: return each custom HTML element's full source as html instead of the preview." },
+      exportLinks: { type: "boolean", description: "Return PDF and PowerPoint download links instead of the slides." },
+      ...pageProps(PAGE_LIMITS),
+    },
+    required: ["pageId"],
+    additionalProperties: false,
+  },
+  requiredScope: "mcp:read" as const,
+};
 
 export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   name: "manage_slide_deck",
   description:
-    "Read or edit a Drive slide deck. Slide actions: get · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout. Deck: set_theme · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · export (PDF and PowerPoint download links). Elements, the text boxes, images, shapes, charts (with data), icons, videos, polls and layout boxes on a slide: add_element · update_element (text, style, image, fill, place on the 1920 by 1080 stage, build step; fields left out are kept) · delete_elements · duplicate_elements · reorder_elements · group_elements · ungroup_elements · align_elements · distribute_elements · snap_back (return layout boxes to their layout). Layout boxes have their slot name as id (title, subtitle, body, image); update_element with a slot name sets that box's text. delete_elements removes a layout box only once it is empty (an image box loses its picture first); set_layout, snap_back or update_element on its slot name brings it back. Bodies and text are Markdown, including pipe tables and fenced code blocks. Custom HTML: add_element or update_element with kind 'html' and html, or an outline slide with html, makes a slide or element whose content is your own HTML, CSS and script. " + HTML_NOTE + " To draft a whole deck from an outline, use create_slide_deck. Polls only work while presenting. Create a deck with create_lab_document kind 'Slides'. get returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count); pass elements: true to also get the theme, each slide's layoutId and its elements. The slide actions return the whole deck; the element, layout and theme actions return the slide they changed. Version history is list_collab_versions with docName 'slides:{pageId}:deck'.",
+    "Edit the slides of a Drive slide deck. Actions: set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout · set_theme. Bodies are Markdown, including pipe tables and fenced code blocks. An outline slide with html makes a slide whose content is your own HTML, CSS and script. " + HTML_NOTE + " Read the deck with get_slide_deck; edit what's on a slide with manage_slide_elements. Create a new deck from an outline with create_slide_deck. set_slides, add_slide, update_slide, delete_slide and move_slide return the whole deck; the others return what they changed.",
   inputSchema: {
     type: "object" as const,
     properties: {
-      action: { type: "string", enum: [...ACTIONS] },
-      pageId: { type: "string", minLength: 1, description: "The deck's page id." },
+      action: { type: "string", enum: [...SLIDE_ACTIONS] },
+      pageId: pageIdProp,
       slides: { type: "array", items: SLIDE_INPUT_SCHEMA, maxItems: 300, description: "set_slides: the whole deck, in order." },
       slide: { ...SLIDE_INPUT_SCHEMA, description: "add_slide and update_slide: the slide's fields." },
-      slideId: { type: "string", description: "update_slide, delete_slide and move_slide." },
-      index: { type: "number", minimum: 0, description: "add_slide: where to insert, 0-based." },
+      slideId: { ...slideIdProp, description: "update_slide, delete_slide, move_slide, duplicate_slide and set_layout." },
+      index: { type: "number", minimum: 0, description: "add_slide and add_slides: where to insert, 0-based." },
       toIndex: { type: "number", minimum: 0, description: "move_slide: the new 0-based position." },
       outline: { type: "array", items: OUTLINE_SLIDE_SCHEMA, minItems: 1, maxItems: MAX_OUTLINE_SLIDES, description: "add_slides: the slides to add, in order, at index (the end when left out)." },
-      elements: { type: "boolean", description: "get: also return the theme, each slide's layoutId and its elements. A custom HTML element comes back with htmlLength and a short htmlPreview." },
-      includeHtml: { type: "boolean", description: "get with elements: return each custom HTML element's full source as html instead of the preview." },
       themeId: { type: "string", enum: THEME_IDS, description: "set_theme." },
       layoutId: { type: "string", enum: LAYOUT_IDS, description: "set_layout, and add_slide for layouts beyond the four in slide.layout." },
+      ...pageProps(PAGE_LIMITS),
+    },
+    required: ["action", "pageId"],
+    additionalProperties: false,
+  },
+  requiredScope: "mcp:write" as const,
+};
+
+export const MANAGE_SLIDE_ELEMENTS_TOOL_DEF = {
+  name: "manage_slide_elements",
+  description:
+    "Edit what's on one slide of a Drive slide deck: text boxes, images, shapes, charts (with data), icons, videos, polls, custom HTML and layout boxes. Actions: add_element · update_element (text, style, image, fill, place on the 1920 by 1080 stage, build step; fields left out are kept) · delete_elements · duplicate_elements · reorder_elements · group_elements · ungroup_elements · align_elements · distribute_elements · snap_back (return layout boxes to their layout). Layout boxes have their slot name as id (title, subtitle, body, image); update_element with a slot name sets that box's text. delete_elements removes a layout box only once it is empty (an image box loses its picture first); manage_slide_deck set_layout, snap_back or update_element on its slot name brings it back. Text is Markdown, including pipe tables and fenced code blocks. Custom HTML: kind 'html' with html. " + HTML_NOTE + " Polls only work while presenting. Get element ids from get_slide_deck with elements: true. Returns the slide it changed.",
+  inputSchema: {
+    type: "object" as const,
+    properties: {
+      action: { type: "string", enum: [...ELEMENT_ACTIONS] },
+      pageId: pageIdProp,
+      slideId: slideIdProp,
       element: { ...ELEMENT_INPUT_SCHEMA, description: "add_element and update_element: the element's fields." },
       elementId: { type: "string", description: "update_element." },
-      elementIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 200, description: "The elements the other element actions act on. A group id stands for its items." },
+      elementIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 200, description: "The elements the other actions act on. A group id stands for its items." },
       direction: { type: "string", enum: ["forward", "backward", "front", "back"], description: "reorder_elements." },
       align: { type: "string", enum: ["left", "center", "right", "top", "middle", "bottom"], description: "align_elements." },
       relativeTo: { type: "string", enum: ["slide", "selection"], description: "align_elements: defaults to the selection for several elements, the slide for one." },
       axis: { type: "string", enum: ["x", "y"], description: "distribute_elements: x spaces them across, y down. Needs three or more." },
-      ...pageProps(PAGE_LIMITS),
     },
-    required: ["action", "pageId"],
+    required: ["action", "pageId", "slideId"],
     additionalProperties: false,
   },
   requiredScope: "mcp:write" as const,
@@ -222,4 +261,9 @@ export async function runManageSlideDeck(userId: string, args: Args) {
   const saved = unwrap(await editDeck(userId, args.pageId, edit));
   void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(args.pageId) });
   return deckOutput(page.title, saved.slides, saved.version);
+}
+
+export function runGetSlideDeck(userId: string, args: PageArgs & { pageId: string; elements?: boolean; includeHtml?: boolean; exportLinks?: boolean }) {
+  const { exportLinks: wantsExport, ...rest } = args;
+  return runManageSlideDeck(userId, { ...rest, action: wantsExport ? "export" : "get" });
 }
