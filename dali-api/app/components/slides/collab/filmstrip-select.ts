@@ -19,6 +19,20 @@ export function nextThumbSelection(order: string[], state: ThumbSelection, id: s
   return { selected: [id], anchor: id };
 }
 
+const PREV_KEYS = new Set(["ArrowUp", "ArrowLeft", "PageUp"]);
+const NEXT_KEYS = new Set(["ArrowDown", "ArrowRight", "PageDown"]);
+
+/** The slide a navigation key moves to from `currentId`, staying put at either end, or null for any other key. */
+export function slideKeyTarget(order: string[], currentId: string | null, key: string): string | null {
+  if (order.length === 0) return null;
+  const i = currentId === null ? -1 : order.indexOf(currentId);
+  if (key === "Home") return order[0];
+  if (key === "End") return order[order.length - 1];
+  if (PREV_KEYS.has(key)) return order[Math.max(0, i - 1)];
+  if (NEXT_KEYS.has(key)) return order[Math.min(order.length - 1, i + 1)];
+  return null;
+}
+
 /** The slides a drag or menu acts on: the whole selection if the grabbed one is in it, else just the grabbed one. */
 export function actingSet(order: string[], selected: string[], grabbed: string): string[] {
   return selected.includes(grabbed) ? order.filter((id) => selected.includes(id)) : [grabbed];

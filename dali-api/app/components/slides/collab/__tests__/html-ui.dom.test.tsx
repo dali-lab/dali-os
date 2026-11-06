@@ -181,6 +181,13 @@ describe("HtmlSection", () => {
     expect(container.textContent).toContain("Fill slide");
   });
 
+  it("describes what the sandbox allows the way the policy does", () => {
+    mount("<p>a</p>");
+    expect(container.textContent).not.toContain("no network access");
+    expect(container.textContent).toContain("can't send requests");
+    for (const host of ["cdnjs.cloudflare.com", "cdn.jsdelivr.net", "unpkg.com"]) expect(container.textContent).toContain(host);
+  });
+
   it("offers to stop interacting while it is on", () => {
     const { freeform, element } = mount("<p>a</p>", { interactingId: "x" });
     expect(button("Interact")).toBeTruthy();

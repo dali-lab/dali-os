@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import * as Y from "yjs";
 import { addSlide } from "../deck-ops";
-import { HtmlFrame, HTML_DEBOUNCE_MS } from "../content-render";
+import { HtmlFrame, HtmlPrintFrame, HTML_DEBOUNCE_MS, HTML_SWAP_TIMEOUT_MS } from "../content-render";
 import { addHtml } from "../freeform-ops";
 import { reloadHtml } from "../html-reload";
 import { initDeck } from "../model";
@@ -116,16 +116,70 @@ describe("HtmlFrame", () => {
     expect(container.querySelector("iframe")).toBeNull();
   });
 
-  it("updates the frame a moment after the source changes", () => {
+  function edited(sources: string[]) {
     vi.useFakeTimers();
-    const d = deck("<p>one</p>");
+    const d = deck(sources[0]);
     const theme = themeById("dali-dark");
+    const show = (html: string) => act(() => root.render(createElement(HtmlFrame, { element: { ...d.element(), html }, placed: d.placed(), theme })));
+    show(sources[0]);
+    for (const s of sources.slice(1)) {
+      show(s);
+      act(() => void vi.advanceTimersByTime(HTML_DEBOUNCE_MS + 1));
+    }
+  }
+  const frames = () => [...container.querySelectorAll("iframe")];
+  const pendingFrame = () => container.querySelector<HTMLIFrameElement>("iframe[data-html-pending]");
+  const visibleFrame = () => container.querySelector<HTMLIFrameElement>("iframe:not([data-html-pending])")!;
+
+  it("keeps the old page on screen while an edit loads behind it", () => {
+    edited(["<p>one</p>", "<p>two</p>"]);
+    expect(frames()).toHaveLength(2);
+    expect(visibleFrame().getAttribute("srcdoc")).toContain("<p>one</p>");
+    expect(visibleFrame().style.opacity).toBe("1");
+    const next = pendingFrame()!;
+    expect(next.getAttribute("srcdoc")).toContain("<p>two</p>");
+    expect(next.style.opacity).toBe("0");
+    expect(next.style.pointerEvents).toBe("none");
+    expect(next.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("swaps to the edit once it has loaded, keeping the same frame", () => {
+    edited(["<p>one</p>", "<p>two</p>"]);
+    const next = pendingFrame()!;
+    act(() => void next.dispatchEvent(new Event("load")));
+    expect(frames()).toEqual([next]);
+    expect(next.hasAttribute("data-html-pending")).toBe(false);
+    expect(next.style.opacity).toBe("1");
+    expect(next.style.pointerEvents).toBe("auto");
+  });
+
+  it("swaps anyway when the edit never finishes loading", () => {
+    edited(["<p>one</p>", "<p>two</p>"]);
+    act(() => void vi.advanceTimersByTime(HTML_SWAP_TIMEOUT_MS + 1));
+    expect(frames()).toHaveLength(1);
+    expect(visibleFrame().getAttribute("srcdoc")).toContain("<p>two</p>");
+  });
+
+  it("replaces a waiting edit with a newer one instead of queueing both", () => {
+    edited(["<p>one</p>", "<p>two</p>", "<p>three</p>"]);
+    expect(frames()).toHaveLength(2);
+    expect(visibleFrame().getAttribute("srcdoc")).toContain("<p>one</p>");
+    expect(pendingFrame()!.getAttribute("srcdoc")).toContain("<p>three</p>");
+  });
+
+  it("does not load a second frame when the source is unchanged", () => {
+    edited(["<p>one</p>", "<p>one</p>"]);
+    expect(frames()).toHaveLength(1);
+  });
+
+  it("has square corners when it fills the slide and rounded ones otherwise", () => {
+    const d = deck();
+    const theme = themeById("dali-dark");
+    const box = () => container.querySelector<HTMLElement>("[data-html-live]")!;
     act(() => root.render(createElement(HtmlFrame, { element: d.element(), placed: d.placed(), theme })));
-    expect(frame().getAttribute("srcdoc")).toContain("<p>one</p>");
-    act(() => root.render(createElement(HtmlFrame, { element: { ...d.element(), html: "<p>two</p>" }, placed: d.placed(), theme })));
-    expect(frame().getAttribute("srcdoc")).toContain("<p>one</p>");
-    act(() => void vi.advanceTimersByTime(HTML_DEBOUNCE_MS + 1));
-    expect(frame().getAttribute("srcdoc")).toContain("<p>two</p>");
+    expect(box().style.borderRadius).not.toBe("0px");
+    act(() => root.render(createElement(HtmlFrame, { element: { ...d.element(), htmlFill: true }, placed: d.placed(), theme })));
+    expect(box().style.borderRadius).toBe("0px");
   });
 
   it("re-mounts the frame on reload", () => {
@@ -134,6 +188,17 @@ describe("HtmlFrame", () => {
     const before = frame();
     act(() => reloadHtml(d.id));
     expect(frame()).not.toBe(before);
+  });
+});
+
+describe("HtmlPrintFrame", () => {
+  it("has square corners when it fills the slide", () => {
+    const d = deck();
+    const theme = themeById("dali-dark");
+    const radius = (htmlFill?: true) =>
+      renderToStaticMarkup(createElement(HtmlPrintFrame, { element: { ...d.element(), htmlFill }, placed: d.placed(), theme })).match(/border-radius:([^;"]+)/)![1];
+    expect(radius(true)).toBe("0");
+    expect(radius()).not.toBe("0");
   });
 });
 

@@ -317,7 +317,7 @@ export function HtmlSection({ element, editable, freeform }: { element: RenderEl
         </div>
       </Section>
       <Toggle tone="os" label="Fill slide" checked={element.htmlFill === true} disabled={!editable} onChange={(e) => freeform.onHtmlFill?.(element.id, e.target.checked)} />
-      <p className="text-xs text-os-grey">Runs in a sandbox with no network access. Double-click the element, press Enter or choose Interact to use it on the stage. Slide size is 1920 by 1080.</p>
+      <p className="text-xs text-os-grey">Runs in a sandbox that can't send requests or see the rest of DALI OS. It can load images over https and scripts from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com. Double-click the element, press Enter or choose Interact to use it on the stage. Slide size is 1920 by 1080.</p>
     </>
   );
 }

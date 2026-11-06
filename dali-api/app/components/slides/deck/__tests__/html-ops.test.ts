@@ -8,6 +8,7 @@ import { addSlide } from "../deck-ops";
 import { createDeckUndo } from "../deck-undo";
 import { addHtml, deleteElements, duplicateElements, pasteItems, setHtmlFill, setHtmlSource } from "../freeform-ops";
 import { htmlSrcDoc, htmlThemeVars, HTML_THEME_VARS } from "../html-element";
+import { themeFontsHref } from "../theme-tokens";
 import { deckMap, elementsOf, initDeck, slidesMap } from "../model";
 import { snapshotDeck, type RenderElement } from "../snapshot";
 import { parseSlideClipboard, pasteSlides, serializeSlides } from "../slide-clipboard";
@@ -212,5 +213,14 @@ describe("html theme", () => {
     expect(doc).toContain("--slide-accent:#00ADAB");
     expect(doc).toContain("html,body{margin:0;height:100%}");
     expect(doc.indexOf("<style>")).toBeLessThan(doc.indexOf("<p id=mine>"));
+  });
+
+  it("loads the theme fonts inside the frame, before the source", () => {
+    const doc = htmlSrcDoc("<p id=mine>x</p>", "dali-dark");
+    const href = /<link rel="stylesheet" href="([^"]+)">/.exec(doc)![1].replace(/&amp;/g, "&");
+    expect(href).toBe(themeFontsHref());
+    expect(href).toContain("family=Mulish");
+    expect(href).toContain("family=Plus+Jakarta+Sans");
+    expect(doc.indexOf("<link")).toBeLessThan(doc.indexOf("<p id=mine>"));
   });
 });
