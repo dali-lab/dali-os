@@ -33,6 +33,19 @@ describe("forms preview-resolve", () => {
     expect(resolvePrefill).toHaveBeenCalledWith(questions, "editor");
   });
 
+  it("tells the editor who a question fills in for when it didn't fill in for them", async () => {
+    vi.mocked(resolvePrefill).mockResolvedValue({});
+    const res = await run();
+    expect(res.questions[0].data.prefillHint).toBe(
+      "Fills in for lab members, partners and other signed-in people: their name.",
+    );
+  });
+
+  it("adds no hint to a question that filled in", async () => {
+    const res = await run();
+    expect(res.questions[0].data.prefillHint).toBeUndefined();
+  });
+
   it("refuses someone who can't build the form, before resolving anything", async () => {
     vi.mocked(canBuildForm).mockResolvedValue(false);
     const res = await run();

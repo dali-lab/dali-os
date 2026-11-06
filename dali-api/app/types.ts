@@ -160,6 +160,9 @@ export interface Question {
     // A PREFILL_FIELDS key (app/forms/lib/prefill-fields.ts): the answer starts
     // as the filler's own record and stays editable.
     prefill?: string
+    // Transient, editor preview only: who this question fills in for when it
+    // didn't fill in for the person previewing.
+    prefillHint?: string
     // Transient: populated by the server at fill time from the resolved
     // source (label shown, value = stored answer / DB id). Never persisted —
     // save-version rebuilds `data` and drops it. `projects:*` sources also

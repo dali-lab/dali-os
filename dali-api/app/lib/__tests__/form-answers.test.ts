@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   isAnswered,
   findMissingRequired,
+  hasNothingToPick,
   isLayoutOnly,
   isValidIsoDate,
   isValidOtherText,
@@ -350,4 +351,21 @@ describe("question types in required handling", () => {
       expect(findMissingRequired([question], () => "1")).toHaveLength(0);
     },
   );
+});
+
+describe("hasNothingToPick", () => {
+  const ref = (referenceOptions?: { value: string; label: string }[]) =>
+    q({ key: "p", type: "reference", required: true, data: { label: "Project", referenceOptions } });
+
+  it("is true only for a Database list whose choices resolved to nothing", () => {
+    expect(hasNothingToPick(ref([]))).toBe(true);
+    expect(hasNothingToPick(ref([{ value: "a", label: "A" }]))).toBe(false);
+    expect(hasNothingToPick(ref(undefined))).toBe(false);
+    expect(hasNothingToPick(q({ key: "t", type: "text", data: { label: "T", referenceOptions: [] } }))).toBe(false);
+  });
+
+  it("keeps an empty list out of the missing answers, but not an unresolved one", () => {
+    expect(findMissingRequired([ref([])], () => undefined)).toEqual([]);
+    expect(findMissingRequired([ref(undefined)], () => undefined)).toHaveLength(1);
+  });
 });

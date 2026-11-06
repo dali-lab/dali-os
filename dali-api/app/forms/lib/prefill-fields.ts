@@ -91,6 +91,18 @@ function joinNouns(nouns: string[]): string {
   return `${nouns.slice(0, -1).join(", ")} and ${nouns[nouns.length - 1]}`;
 }
 
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+export function prefillSummary(key: PrefillFieldKey): string {
+  return `Fills in ${lowerFirst(PREFILL_FIELDS[key].label)}`;
+}
+
+export function prefillHint(key: PrefillFieldKey): string {
+  return `Fills in for ${fillersNoun(PREFILL_FIELDS[key].fillers)}: ${lowerFirst(PREFILL_FIELDS[key].label)}.`;
+}
+
 export function fillersNoun(fillers: readonly FillerKind[]): string {
   return joinNouns(fillers.map((f) => FILLER_NOUNS[f]));
 }
