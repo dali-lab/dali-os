@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PROJECT_ID: falling-morning-15858013
+  PROJECT_ID: super-queen-83493050
   PARENT_BRANCH_NAME: development
   FLY_ORG_OVERRIDE: ${{ vars.FLY_ORG }}
   FLY_ORG_REFERENCE_APP: dali-api-staging
