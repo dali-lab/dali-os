@@ -242,6 +242,7 @@ export default [
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("slides/:pageId", "routes/slides.$pageId.tsx"),
     route("slides/:pageId/export.pdf", "routes/slides.$pageId.export-pdf.ts"),
+    route("slides/:pageId/html-preview/:elementId", "routes/slides.$pageId.html-preview.$elementId.ts"),
     route("slides/:pageId/present", "routes/slides.$pageId.present.tsx"),
     route("slides/:pageId/presenter", "routes/slides.$pageId.presenter.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
