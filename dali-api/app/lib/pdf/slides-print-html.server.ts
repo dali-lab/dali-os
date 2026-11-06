@@ -68,17 +68,19 @@ export interface DeckPrintInput {
   themeId: string;
   slides: RenderSlide[];
   notes?: Record<string, string>;
+  /** Draw custom HTML as its placeholder card instead of a running frame. */
+  staticHtml?: boolean;
 }
 
 /** Every slide at 1920 by 1080 on its own page with all builds showing, each followed by a notes page when `notes` is given. */
-export async function deckToPrintHtml({ title, themeId, slides, notes }: DeckPrintInput): Promise<string> {
+export async function deckToPrintHtml({ title, themeId, slides, notes, staticHtml = false }: DeckPrintInput): Promise<string> {
   const pages = presentable(slides).map((slide, i) => {
     const page = `<section class="pdf-page" data-slide-id="${escapeHtml(slide.id)}">${renderToStaticMarkup(
       SlideRender({
         slide,
         theme: themeId,
         renderFree: ({ element, placed, fallback }) =>
-          element.kind === "html" ? createElement(HtmlPrintFrame, { element, placed, theme: themeById(themeId) }) : fallback,
+          element.kind === "html" && !staticHtml ? createElement(HtmlPrintFrame, { element, placed, theme: themeById(themeId) }) : fallback,
       }),
     )}</section>`;
     if (!notes) return page;
