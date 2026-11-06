@@ -97,6 +97,17 @@ async function killRender(browser: Browser, context: { close(): Promise<void> })
   await raceMs(browser.close().catch(() => {}), 3000);
 }
 
+export const FONTS_WAIT_MS = 5000;
+
+export interface FontsPage {
+  evaluate(fn: (ms: number) => unknown, arg: number): Promise<unknown>;
+}
+
+/** Waits for the page's web fonts, giving up after ms so a slow font host cannot stall a print. */
+export function waitForFonts(page: FontsPage, ms: number = FONTS_WAIT_MS): Promise<unknown> {
+  return page.evaluate((limit) => Promise.race([(document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready, new Promise((resolve) => setTimeout(resolve, limit))]), ms);
+}
+
 export const HTML_FRAME_TIMEOUT_MS = 2000;
 export const HTML_FRAME_SETTLE_MS = 500;
 
@@ -182,8 +193,7 @@ export async function renderHtmlToPdf(html: string, opts: RenderPdfOptions = {})
         } else {
           await page.setContent(html, { waitUntil: "load" });
         }
-        // Let embedded fonts settle before printing.
-        await page.evaluate(() => (document as unknown as { fonts?: { ready: Promise<unknown> } }).fonts?.ready);
+        await waitForFonts(page as unknown as FontsPage);
         const pdf = await page.pdf({
           format: opts.format ?? "Letter",
           printBackground: true,

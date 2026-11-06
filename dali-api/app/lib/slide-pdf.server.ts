@@ -43,15 +43,13 @@ export async function exportDeckPdf(
   const render = toRenderDeck(read);
   const input = { title: access.page.title, themeId: render.themeId, slides: render.slides, notes: opts.notes ? notesBySlide(read) : undefined };
   const hasHtml = deckHasHtml(render.slides);
+  const guarded = { guardNetwork: true, hardTimeoutMs: PDF_HARD_TIMEOUT_MS };
   let pdf: Buffer;
-  if (!hasHtml) pdf = await renderHtmlToPdf(await deckToPrintHtml(input));
-  else {
-    try {
-      pdf = await renderHtmlToPdf(await deckToPrintHtml(input), { settleHtmlFrames: true, guardNetwork: true, hardTimeoutMs: PDF_HARD_TIMEOUT_MS });
-    } catch (err) {
-      if (!(err instanceof RenderTimeoutError)) throw err;
-      pdf = await renderHtmlToPdf(await deckToPrintHtml({ ...input, staticHtml: true }), { guardNetwork: true, javaScriptEnabled: false, hardTimeoutMs: PDF_HARD_TIMEOUT_MS });
-    }
+  try {
+    pdf = await renderHtmlToPdf(await deckToPrintHtml(input), hasHtml ? { ...guarded, settleHtmlFrames: true } : guarded);
+  } catch (err) {
+    if (!(err instanceof RenderTimeoutError)) throw err;
+    pdf = await renderHtmlToPdf(await deckToPrintHtml({ ...input, staticHtml: true, fonts: false }), { ...guarded, javaScriptEnabled: false });
   }
   return { ok: true, pdf, filename: `${pdfFilename(access.page.title)}.pdf` };
 }

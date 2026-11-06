@@ -66,10 +66,18 @@ describe("PDF export with custom HTML", () => {
     expect(mocks.render).toHaveBeenCalledTimes(1);
   });
 
-  it("renders a deck with no custom HTML exactly as before", async () => {
+  it("guards and bounds a deck with no custom HTML too, without frame settling", async () => {
     mocks.readLiveDeck.mockResolvedValue(live(false));
     mocks.render.mockResolvedValue(Buffer.from("%PDF"));
     await exportDeckPdf("u1", "p1", { notes: false });
-    expect(mocks.render.mock.calls[0]).toHaveLength(1);
+    expect(mocks.render.mock.calls[0][1]).toEqual({ guardNetwork: true, hardTimeoutMs: 15_000 });
+    expect(mocks.render.mock.calls[0][0]).toContain("fonts.googleapis.com/css2");
+  });
+
+  it("retries a plain deck without the font link when the first render times out", async () => {
+    mocks.readLiveDeck.mockResolvedValue(live(false));
+    mocks.render.mockRejectedValueOnce(new RenderTimeoutError(15_000)).mockResolvedValueOnce(Buffer.from("%PDF2"));
+    await exportDeckPdf("u1", "p1", { notes: false });
+    expect(mocks.render.mock.calls[1][0]).not.toContain("fonts.googleapis.com");
   });
 });

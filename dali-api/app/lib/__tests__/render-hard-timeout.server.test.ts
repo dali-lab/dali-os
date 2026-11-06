@@ -63,6 +63,26 @@ describe("renderHtmlToPdf", () => {
     expect(f.context.route).toHaveBeenCalledWith("**/*", expect.any(Function));
   });
 
+  it("waits for fonts before printing", async () => {
+    const f = fake();
+    pw.launch.mockResolvedValue(f.browser);
+    await renderHtmlToPdf("<p>x</p>", { guardNetwork: true, hardTimeoutMs: 1000 });
+    const page = await f.context.newPage.mock.results[0].value;
+    const fontCall = page.evaluate.mock.calls.findIndex((c: unknown[]) => c[1] === 5000);
+    expect(fontCall).toBeGreaterThanOrEqual(0);
+    expect(page.evaluate.mock.invocationCallOrder[fontCall]).toBeLessThan(page.pdf.mock.invocationCallOrder[0]);
+  });
+
+  it("still hits the hard deadline when fonts never load", async () => {
+    const f = fake();
+    pw.launch.mockResolvedValue(f.browser);
+    const page = await (f.context.newPage as () => Promise<{ evaluate: ReturnType<typeof vi.fn> }>)();
+    page.evaluate.mockImplementation(() => new Promise(() => {}));
+    await expect(renderHtmlToPdf("<p>x</p>", { hardTimeoutMs: 30 })).rejects.toBeInstanceOf(RenderTimeoutError);
+    expect(f.context.close).toHaveBeenCalled();
+    expect(f.browser.close).toHaveBeenCalled();
+  });
+
   it("turns scripts off when asked", async () => {
     const f = fake();
     pw.launch.mockResolvedValue(f.browser);

@@ -4,6 +4,7 @@ import { presentable } from "~/components/slides/deck/skip";
 import { HtmlPrintFrame } from "~/components/slides/deck/content-render";
 import { slideHasHtml } from "~/components/slides/deck/html-element";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
+import { themeTokenCss, themeFontsHref } from "~/components/slides/deck/theme-tokens";
 import { themeById } from "~/components/slides/deck/themes";
 import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
@@ -18,6 +19,7 @@ const PRINT_CSS = `
   *, *::before, *::after { box-sizing: border-box; border: 0 solid; }
   html, body { margin: 0; padding: 0; background: #fff; }
   :root {
+    ${themeTokenCss()}
     --font-os: "Mulish", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --font-os-logo: "Plus Jakarta Sans", "Mulish", ui-sans-serif, system-ui, sans-serif;
   }
@@ -70,10 +72,12 @@ export interface DeckPrintInput {
   notes?: Record<string, string>;
   /** Draw custom HTML as its placeholder card instead of a running frame. */
   staticHtml?: boolean;
+  /** Load the theme fonts from Google Fonts. Off for a retry that must not wait on the network. */
+  fonts?: boolean;
 }
 
 /** Every slide at 1920 by 1080 on its own page with all builds showing, each followed by a notes page when `notes` is given. */
-export async function deckToPrintHtml({ title, themeId, slides, notes, staticHtml = false }: DeckPrintInput): Promise<string> {
+export async function deckToPrintHtml({ title, themeId, slides, notes, staticHtml = false, fonts = true }: DeckPrintInput): Promise<string> {
   const pages = presentable(slides).map((slide, i) => {
     const page = `<section class="pdf-page" data-slide-id="${escapeHtml(slide.id)}">${renderToStaticMarkup(
       SlideRender({
@@ -95,6 +99,7 @@ export async function deckToPrintHtml({ title, themeId, slides, notes, staticHtm
 <head>
 <meta charset="utf-8" />
 <title>${escapeHtml(title)}</title>
+${fonts ? `<link rel="stylesheet" href="${themeFontsHref()}" />` : ""}
 <style>${PRINT_CSS}</style>
 </head>
 <body>${pages.join("")}</body>
