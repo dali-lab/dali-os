@@ -4023,6 +4023,7 @@ model Project {
   mailAccounts      MailAccount[]
   roleRequests      ProjectRoleRequest[]
   planningNote      PlanningNote?
+  returnApplications PartnerApplication[] @relation("PartnerApplicationContinues")
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
   epics             Epic[]
@@ -6975,6 +6976,9 @@ model PartnerApplication {
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?
+  // Set when this application is a past project coming back: promotion
+  // reopens that project for the target terms instead of creating a new one.
+  continuesProjectId String?
   // The partner's answers to the lab-configured application form (see
   // PartnerApplicationFormBinding), captured at submit time. Null when no
   // form was bound when they applied. SetNull because deleting the Form
@@ -6995,12 +6999,14 @@ model PartnerApplication {
   meetingRequests  PartnerMeetingRequest[]
   invoices         PartnerInvoice[]
   planningNote     PlanningNote?
+  continuesProject Project?                       @relation("PartnerApplicationContinues", fields: [continuesProjectId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([partnerOrgId])
   @@index([applicantContactId])
+  @@index([continuesProjectId])
   @@index([stage, position])
   @@index([lastActivityAt])
 }

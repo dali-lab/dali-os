@@ -78,6 +78,7 @@ import { StageActions } from "../components/application/StageActions";
 import { SowTab } from "../components/application/SowTab";
 import { ScheduleInterviewModal } from "../components/ScheduleInterviewModal";
 import { movePlanningNoteToProject } from "../lib/planning-notes.server";
+import { reopenProjectFromApplication } from "../lib/partner-returns.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -116,6 +117,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       sowDocId: true,
       sowState: true,
       resultingProjectId: true,
+      continuesProject: { select: { id: true, name: true } },
       source: true,
       evalRubric: true,
       interviewRating: true,
@@ -283,6 +285,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       sowDocId: application.sowDocId,
       sowState: application.sowState,
       resultingProjectId: application.resultingProjectId,
+      continuesProject: application.continuesProject,
       targetTerms: application.targetTerms.map((t) => ({
         termId: t.termId,
         code: t.term.code,
@@ -450,6 +453,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         piUserId: true,
         summary: true,
         resultingProjectId: true,
+        continuesProjectId: true,
         partnerOrgId: true,
         applicantContactId: true,
         applicantContact: { select: { name: true } },
@@ -469,6 +473,27 @@ export async function action({ request, params }: Route.ActionArgs) {
         : "";
     if (app.resultingProjectId) {
       return redirect(`/projects/${app.resultingProjectId}`);
+    }
+    if (app.continuesProjectId) {
+      if (app.targetTerms.length === 0) {
+        return { error: "Pick at least one target term before reopening the project." };
+      }
+      const continuesProjectId = app.continuesProjectId;
+      const reopened = await prisma.$transaction((tx) =>
+        reopenProjectFromApplication(tx, {
+          app: {
+            id: app.id,
+            continuesProjectId,
+            partnerOrgId: app.partnerOrgId,
+            piUserId: app.piUserId,
+            targetTermIds: app.targetTerms.map((t) => t.termId),
+            domains: app.domains,
+          },
+          actorUserId: auth.user.sub,
+          request,
+        }),
+      );
+      return redirect(`/projects/${reopened.id}`);
     }
 
     // Earliest target term (targetTerms is sorted by sortKey asc) seeds the

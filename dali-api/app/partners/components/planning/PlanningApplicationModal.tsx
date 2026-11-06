@@ -35,8 +35,19 @@ export function PlanningApplicationModal({
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="rounded-full bg-os-container/70 px-2 py-0.5 font-medium text-foreground">{info.stage}</span>
-          <span>Application</span>
+          <span>{info.continues ? "Returning project" : "Application"}</span>
         </div>
+
+        {info.continues && (
+          <p className="rounded-os-card bg-os-container/40 p-3 text-sm text-foreground">
+            Return of{" "}
+            <Link to={`/projects/${info.continues.projectId}`} className="font-medium text-os-accent hover:underline">
+              {info.continues.name}
+            </Link>
+            {info.continues.lastTermCode && <span className="text-muted-foreground"> (last ran {info.continues.lastTermCode})</span>}
+            . Accepting it reopens this project for its target terms.
+          </p>
+        )}
 
         <SavedTextField
           key={`note:${info.note?.updatedAt ?? ""}`}
