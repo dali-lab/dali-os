@@ -123,6 +123,7 @@ export function Inspector({
   onPickBackground,
   onTransition,
   onPreviewTransition,
+  tabRequest = 0,
 }: {
   slide: RenderSlide | null;
   themeId: string;
@@ -148,6 +149,7 @@ export function Inspector({
   onPickBackground?: () => void;
   onTransition?: (transition: SlideTransition | null) => void;
   onPreviewTransition?: () => void;
+  tabRequest?: number;
 }) {
   const [tab, setTab] = useState<Tab>("slide");
   const selectionKey = selection.join("|");
@@ -156,6 +158,12 @@ export function Inspector({
     if (stayOnTab.current) stayOnTab.current = false;
     else if (selectionKey) setTab("text");
   }, [selectionKey]);
+  const seenRequest = useRef(tabRequest);
+  useEffect(() => {
+    if (tabRequest === seenRequest.current) return;
+    seenRequest.current = tabRequest;
+    setTab("text");
+  }, [tabRequest]);
   const layout = slide ? layoutById(slide.layoutId) : null;
   const imageSlot = layout?.slots.find((s) => s.kind === "image");
   const image = slide?.elements.find((e) => e.slot === "image");
@@ -222,9 +230,6 @@ export function Inspector({
           )}
           {slide && onBackground && onPickBackground && <BackgroundSection slide={slide} themeId={themeId} editable={editable} onChange={onBackground} onPickImage={onPickBackground} />}
           {slide && onTransition && <TransitionSection slide={slide} editable={editable} onChange={onTransition} onPreview={onPreviewTransition ?? (() => {})} />}
-          <Section title="Theme">
-            <ThemeCards value={themeId} onPick={editable ? onTheme : () => {}} />
-          </Section>
         </>
       )}
       {tab === "text" && (

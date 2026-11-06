@@ -42,7 +42,7 @@ describe("element menu", () => {
     const { doc, slideId, slide } = setup();
     const id = addTextBox(doc, slideId)!;
     const list = elementActions(ctx(slide(), [id]));
-    expect(labels(list)).toEqual(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Copy style", "Paste style", "Arrange", "Align to slide", "Lock", "Add link", "Add build", "Comment"]);
+    expect(labels(list)).toEqual(["Cut", "Copy", "Paste", "Duplicate", "Delete", "Copy style", "Paste style", "Arrange", "Align to slide", "Lock", "Add link", "Format…", "Add build", "Comment"]);
     expect(findAction(list, "arrange")!.children!.map((a) => a.label)).toEqual(["Bring to front", "Bring forward", "Send backward", "Send to back"]);
     expect(findAction(list, "align")!.children!.map((a) => a.label)).toEqual(["Left", "Center", "Right", "Top", "Middle", "Bottom"]);
     expect(findAction(list, "delete")!.destructive).toBe(true);

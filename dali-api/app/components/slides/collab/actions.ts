@@ -28,6 +28,7 @@ import {
   MessageSquarePlus,
   MousePointerSquareDashed,
   Paintbrush,
+  SlidersHorizontal,
   PaintBucket,
   Plus,
   Redo2,
@@ -97,6 +98,7 @@ export interface ElementHandlers {
   toggleBuild: (id: string) => void;
   comment: (id: string) => void;
   snapBack: (id: string) => void;
+  format: (id: string) => void;
 }
 
 export interface ElementActionContext {
@@ -185,6 +187,7 @@ export function elementActions(ctx: ElementActionContext): ActionSpec[] {
     single?.kind === "image" && { id: "crop", label: "Crop", icon: Crop, disabled: single.locked, run: () => h.crop(single.id) },
     single?.kind === "image" && { id: "reset-size", label: "Reset size", icon: RotateCcw, disabled: single.locked, run: () => h.resetSize(single.id) },
     single?.kind === "text" && { id: "add-link", label: "Add link", shortcut: "⌘K", icon: Link, dividerBefore: true, disabled: single.locked, run: () => h.addLink(single.id) },
+    single && { id: "format", label: "Format…", icon: SlidersHorizontal, dividerBefore: true, run: () => h.format(single.id) },
     single && { id: "build", label: buildLabel, icon: Redo2, run: () => h.toggleBuild(single.id) },
     single && ctx.canComment && { id: "comment", label: "Comment", icon: MessageSquarePlus, run: () => h.comment(single.id) },
     single && isDetached(single) && { id: "snap-back", label: "Snap back to layout", icon: RotateCcw, dividerBefore: true, disabled: single.locked, run: () => h.snapBack(single.id) },

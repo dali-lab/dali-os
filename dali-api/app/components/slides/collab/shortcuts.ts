@@ -1,11 +1,13 @@
 export interface Combo {
   key: string;
+  code?: string;
   mod?: boolean;
+  alt?: boolean;
   shift?: boolean;
   anyShift?: boolean;
 }
 
-export type ShortcutGroup = "Editing" | "Selection" | "Arrange" | "Clipboard" | "While dragging" | "Presenting";
+export type ShortcutGroup = "Editing" | "View" | "Selection" | "Arrange" | "Clipboard" | "While dragging" | "Presenting";
 
 export interface ShortcutDef {
   id: string;
@@ -15,7 +17,7 @@ export interface ShortcutDef {
   display?: string[][];
 }
 
-export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ["Editing", "Selection", "Arrange", "Clipboard", "While dragging", "Presenting"];
+export const SHORTCUT_GROUPS: readonly ShortcutGroup[] = ["Editing", "View", "Selection", "Arrange", "Clipboard", "While dragging", "Presenting"];
 
 export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: "undo", label: "Undo", group: "Editing", combos: [{ key: "z", mod: true }] },
@@ -28,6 +30,9 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   { id: "zoomOut", label: "Zoom out", group: "Editing", display: [["mod", "−"]] },
   { id: "zoomFit", label: "Fit the slide to the window", group: "Editing", display: [["mod", "0"]] },
   { id: "grid", label: "Show all slides as a grid", group: "Editing", combos: [{ key: "g" }] },
+  { id: "inspector", label: "Show or hide the inspector", group: "View", combos: [{ key: "i", code: "KeyI", mod: true, alt: true }] },
+  { id: "focus", label: "Focus mode", group: "View", combos: [{ key: "\\", code: "Backslash", mod: true, shift: true }] },
+  { id: "exitFocus", label: "Leave focus mode when nothing is selected", group: "View", display: [["Esc"]] },
   { id: "selectAll", label: "Select all", group: "Selection", combos: [{ key: "a", mod: true }] },
   { id: "deselect", label: "Deselect", group: "Selection", combos: [{ key: "Escape" }] },
   { id: "addToSelection", label: "Add to selection", group: "Selection", display: [["Shift", "Click"]] },
@@ -59,21 +64,24 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
 
 export type ShortcutId = (typeof SHORTCUTS)[number]["id"];
 
-export function comboMatches(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">, combo: Combo): boolean {
-  if (e.altKey) return false;
+type KeyLike = Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey"> & { code?: string };
+
+export function comboMatches(e: KeyLike, combo: Combo): boolean {
+  if (e.altKey !== Boolean(combo.alt)) return false;
   if ((e.metaKey || e.ctrlKey) !== Boolean(combo.mod)) return false;
   if (!combo.anyShift && e.shiftKey !== Boolean(combo.shift)) return false;
+  if (combo.code) return e.code === combo.code;
   return e.key.toLowerCase() === combo.key.toLowerCase();
 }
 
-export function shortcutFor(e: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey">): string | null {
+export function shortcutFor(e: KeyLike): string | null {
   for (const def of SHORTCUTS) if (def.combos?.some((c) => comboMatches(e, c))) return def.id;
   return null;
 }
 
 export function formatCombo(combo: Combo, mac: boolean): string[] {
   const key = combo.key === "Escape" ? "Esc" : combo.key.length === 1 ? combo.key.toUpperCase() : combo.key;
-  return [...(combo.shift ? [mac ? "⇧" : "Shift"] : []), ...(combo.mod ? [mac ? "⌘" : "Ctrl"] : []), key];
+  return [...(combo.alt ? [mac ? "⌥" : "Alt"] : []), ...(combo.shift ? [mac ? "⇧" : "Shift"] : []), ...(combo.mod ? [mac ? "⌘" : "Ctrl"] : []), key];
 }
 
 export function keysOf(def: ShortcutDef, mac: boolean): string[][] {
@@ -82,3 +90,9 @@ export function keysOf(def: ShortcutDef, mac: boolean): string[][] {
 }
 
 export const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+export function shortcutHint(id: string, mac = isMac()): string {
+  const def = SHORTCUTS.find((s) => s.id === id);
+  const keys = def ? keysOf(def, mac)[0] ?? [] : [];
+  return keys.join(mac ? "" : "+");
+}

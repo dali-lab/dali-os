@@ -123,6 +123,7 @@ export interface FreeformExternal {
   openLayoutGallery?: () => void;
   setBackground?: (background: SlideBackground | null) => void;
   pickBackgroundImage?: () => void;
+  openInspector?: (id: string) => void;
 }
 
 export interface FreeformEditor {
@@ -304,6 +305,7 @@ export function useFreeformEditor({
         if (s) ext?.comment?.({ slideId: s.id, elementId: id });
       },
       snapBack: (id) => run((d, s) => snapBack(d.doc, s.id, [id])),
+      format: (id) => latest.current.external?.openInspector?.(id),
     }),
     [copySelection, pasteClipboard, run],
   );
@@ -517,6 +519,8 @@ export function useFreeformEditor({
       onActivate: (id, point) => {
         editPoint.current = point;
         dispatch({ type: "dblclick", id });
+        const kind = latest.current.slide?.elements.find((e) => e.id === id)?.kind;
+        if (kind && kind !== "text" && kind !== "group" && kind !== "html") latest.current.external?.openInspector?.(id);
       },
       editPoint,
       onEscape: () => {
