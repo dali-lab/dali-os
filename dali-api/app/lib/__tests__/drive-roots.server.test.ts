@@ -78,47 +78,18 @@ describe("ensureRoot", () => {
     expect(m.page.update).not.toHaveBeenCalled();
   });
 
-  it("adopts the legacy Core shell by title and core scope, keeping its id", async () => {
-    m.page.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "legacy_core" });
+  it("creates a fresh root rather than adopting a same-titled Core folder", async () => {
+    m.page.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "lookalike", position: 2 });
 
-    expect(await ensureRoot("core", "u1")).toBe("legacy_core");
+    expect(await ensureRoot("hiring", "u1")).toBe("new_root");
 
-    expect(m.page.findFirst.mock.calls[1][0].where).toMatchObject({
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: null,
-      kind: "Folder",
-      archivedAt: null,
-      folderType: null,
-      scopeKind: "Group",
-      scopeGroupId: "grp_core",
-      title: { equals: "Core", mode: "insensitive" },
-    });
-    expect(m.page.update).toHaveBeenCalledWith({
-      where: { id: "legacy_core" },
-      data: {
-        folderType: "Root",
-        processType: "Core",
-        processId: "core",
-        linkAccess: "Restricted",
-        linkPermission: "View",
-      },
-    });
-    expect(m.page.create).not.toHaveBeenCalled();
+    expect(m.page.findFirst).toHaveBeenCalledTimes(2);
+    expect(m.page.update).not.toHaveBeenCalled();
+    expect(m.page.create.mock.calls[0][0].data).toMatchObject({ title: "Hiring", folderType: "Root", position: 3 });
   });
 
-  it("adopts a legacy Hiring shell the same way", async () => {
-    m.page.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: "legacy_hiring" });
-    expect(await ensureRoot("hiring", "u1")).toBe("legacy_hiring");
-    expect(m.page.findFirst.mock.calls[1][0].where.title).toEqual({ equals: "Hiring", mode: "insensitive" });
-    expect(m.page.update.mock.calls[0][0].data).toMatchObject({ processType: "HiringCycle", processId: "hiring" });
-  });
-
-  it("creates a Lab top-level group-scoped folder when there is nothing to adopt", async () => {
-    m.page.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ position: 4 });
+  it("creates a Lab top-level group-scoped folder when there is no root", async () => {
+    m.page.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ position: 4 });
 
     expect(await ensureRoot("core", "u1")).toBe("new_root");
 
@@ -149,7 +120,6 @@ describe("ensureRoot", () => {
     m.page.findFirst
       .mockResolvedValueOnce(null)
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
       .mockResolvedValueOnce({ id: "winner" });
     m.page.create.mockRejectedValue({ code: "P2002" });
 
@@ -165,13 +135,6 @@ describe("ensureRoot", () => {
     GROUPS.core = null;
     await expect(ensureRoot("core", "u1")).rejects.toThrow(/Core group/);
     GROUPS.core = { id: "grp_core" };
-  });
-
-  it("does not look for a legacy shell for Mentorship", async () => {
-    GROUPS.mentors = { id: "grp_mentors" };
-    await ensureRoot("mentorship", "u1");
-    expect(m.page.update).not.toHaveBeenCalled();
-    expect(m.page.findFirst).toHaveBeenCalledTimes(2);
   });
 
   it("refuses to create the Mentorship root without a mentors group", async () => {

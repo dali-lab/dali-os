@@ -15,7 +15,6 @@ export type RootDef = {
   title: string;
   scopeGroupKey: "core" | "mentors";
   scopePermission: SharePermission;
-  adoptLegacyShell: boolean;
 };
 
 export const ROOTS: Record<RootKey, RootDef> = {
@@ -25,7 +24,6 @@ export const ROOTS: Record<RootKey, RootDef> = {
     title: "Core",
     scopeGroupKey: "core",
     scopePermission: "Edit",
-    adoptLegacyShell: true,
   },
   hiring: {
     processType: "HiringCycle",
@@ -33,7 +31,6 @@ export const ROOTS: Record<RootKey, RootDef> = {
     title: "Hiring",
     scopeGroupKey: "core",
     scopePermission: "Edit",
-    adoptLegacyShell: true,
   },
   mentorship: {
     processType: "Mentorship",
@@ -41,7 +38,6 @@ export const ROOTS: Record<RootKey, RootDef> = {
     title: "Mentorship",
     scopeGroupKey: "mentors",
     scopePermission: "View",
-    adoptLegacyShell: false,
   },
 };
 
@@ -117,11 +113,6 @@ export async function ensureRoot(key: RootKey, createdById: string): Promise<str
   }
 
   try {
-    if (def.adoptLegacyShell) {
-      const adopted = await adoptLegacyShell(def, coreGroupId);
-      if (adopted) return adopted;
-    }
-
     const last = await prisma.page.findFirst({
       where: { workspaceType: "Lab", workspaceId: null, parentPageId: null },
       orderBy: { position: "desc" },
@@ -174,36 +165,6 @@ export async function ensureRoot(key: RootKey, createdById: string): Promise<str
     if (raced) return raced;
     throw err;
   }
-}
-
-async function adoptLegacyShell(def: RootDef, coreGroupId: string): Promise<string | null> {
-  const shell = await prisma.page.findFirst({
-    where: {
-      workspaceType: "Lab",
-      workspaceId: null,
-      parentPageId: null,
-      kind: "Folder",
-      archivedAt: null,
-      folderType: null,
-      scopeKind: "Group",
-      scopeGroupId: coreGroupId,
-      title: { equals: def.title, mode: "insensitive" },
-    },
-    orderBy: { createdAt: "asc" },
-    select: { id: true },
-  });
-  if (!shell) return null;
-  await prisma.page.update({
-    where: { id: shell.id },
-    data: {
-      folderType: "Root",
-      processType: def.processType,
-      processId: def.processId,
-      linkAccess: "Restricted",
-      linkPermission: "View",
-    },
-  });
-  return shell.id;
 }
 
 export async function ensureAllRoots(createdById: string): Promise<Record<RootKey, string>> {
