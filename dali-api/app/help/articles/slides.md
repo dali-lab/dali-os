@@ -141,6 +141,8 @@ Press **⌘F**, or choose **Find and replace** in the **⋯** menu. It searches 
 
 Press **?**, or choose **Keyboard shortcuts** in the **⋯** menu, to see every shortcut for editing, selecting, arranging and presenting.
 
+When nothing on the slide is selected, the arrow keys move between slides: **↑** or **←** goes back and **↓** or **→** goes forward. **Page Up** and **Page Down** do the same, **Home** and **End** jump to the first and last slide, and holding **Shift** adds slides to the selection. With an item selected, the arrow keys nudge it instead.
+
 ## Download as PDF
 
 Open the **⋯** menu and choose **Download PDF** to get every slide as a page, with all builds showing. The **Deck** tab in the inspector has the same button. People who can edit a deck also get **Download PDF with notes**, which adds a page of speaker notes after each slide. Decks over 200 slides can't be exported.

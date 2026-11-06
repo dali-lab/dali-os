@@ -34,7 +34,10 @@ vi.mock("~/components/collab/PresenceProvider", () => ({
 }));
 vi.mock("~/components/collab/PresenceBar", () => ({ PresenceBar: () => createElement("span", { "data-testid": "presence-bar" }) }));
 vi.mock("~/components/doc/upload", () => ({ uploadEditorImage: vi.fn(), uploadErrorMessage: () => "Upload failed", withUploadErrorToast: (f: unknown) => f, IMAGE_UPLOAD_ACCEPT: "image/*" }));
-vi.mock("../Filmstrip", () => ({ Filmstrip: () => createElement("div", { "data-testid": "filmstrip" }) }));
+vi.mock("../Filmstrip", () => ({
+  Filmstrip: (p: { currentId: string | null; selectedIds: string[] }) =>
+    createElement("div", { "data-testid": "filmstrip", "data-current": p.currentId ?? "", "data-selected": p.selectedIds.join(",") }, createElement("button", { type: "button", "data-thumb": "" })),
+}));
 vi.mock("../SlideStage", () => ({ SlideStage: () => createElement("div", { "data-testid": "stage" }), DeletedSlideNotice: () => null, stageKey: (e: number, s: string) => `${e}:${s}` }));
 vi.mock("../NotesPane", () => ({ NotesPane: () => null }));
 vi.mock("../Inspector", () => ({ Inspector: () => null }));
@@ -48,7 +51,7 @@ vi.mock("../SlideCommentsPanel", () => ({
   SlideCommentsPanel: (p: { focusThreadId: string | null }) => createElement("aside", { "data-testid": "comments-panel", "data-focus": p.focusThreadId ?? "" }),
 }));
 vi.mock("../useDeckDoc", () => ({
-  useDeckDoc: () => ({ doc: {}, entry: {}, store: {}, undo: { manager: {}, setCurrentSlide: vi.fn(), setNavigator: vi.fn() } }),
+  useDeckDoc: () => ({ doc: {}, entry: { provider: {} }, store: {}, undo: { manager: {}, setCurrentSlide: vi.fn(), setNavigator: vi.fn() } }),
   useDeckSnapshot: () => h.snap,
   useDeckSync: () => ({ state: "saved", synced: true }),
   useUndoState: () => ({ canUndo: false, canRedo: false }),
@@ -209,5 +212,95 @@ describe("SlidesEditorImpl comments", () => {
     h.snap = snap(1);
     render(false, { canComment: true, link: { slideId: "nope", threadId: null } });
     expect(container.querySelector("[data-testid=read-only]")!.getAttribute("data-current")).toBe("a");
+  });
+});
+
+describe("SlidesEditorImpl arrow keys between slides", () => {
+  const three = (): DeckSnapshot => ({ ...snap(1), slides: ["a", "b", "c"].map((id, i) => ({ id, pos: i + 1, layoutId: "content", elements: [] })) });
+  const strip = () => container.querySelector<HTMLElement>("[data-testid=filmstrip]")!;
+  const current = () => strip().dataset.current;
+  const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = document.body) => {
+    const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+    act(() => void target.dispatchEvent(e));
+    return e;
+  };
+
+  it("moves forward and back with the arrow keys and stays put at either end", () => {
+    h.snap = three();
+    render(true);
+    expect(current()).toBe("a");
+    press("ArrowUp");
+    expect(current()).toBe("a");
+    press("ArrowDown");
+    expect(current()).toBe("b");
+    press("ArrowRight");
+    expect(current()).toBe("c");
+    press("ArrowDown");
+    expect(current()).toBe("c");
+    press("ArrowLeft");
+    expect(current()).toBe("b");
+    press("ArrowUp");
+    expect(current()).toBe("a");
+  });
+
+  it("also takes Page Up, Page Down, Home and End, and keeps the page from scrolling", () => {
+    h.snap = three();
+    render(true);
+    expect(press("PageDown").defaultPrevented).toBe(true);
+    expect(current()).toBe("b");
+    press("End");
+    expect(current()).toBe("c");
+    press("PageUp");
+    expect(current()).toBe("b");
+    press("Home");
+    expect(current()).toBe("a");
+  });
+
+  it("selects the slide it moves to, and extends the selection with Shift", () => {
+    h.snap = three();
+    render(true);
+    press("ArrowDown");
+    expect(strip().dataset.selected).toBe("b");
+    press("ArrowDown", { shiftKey: true });
+    expect(strip().dataset.selected).toBe("b,c");
+    expect(current()).toBe("c");
+    press("ArrowUp");
+    expect(strip().dataset.selected).toBe("b");
+  });
+
+  it("works with focus on a filmstrip thumbnail", () => {
+    h.snap = three();
+    render(true);
+    press("ArrowDown", {}, container.querySelector("[data-thumb]")!);
+    expect(current()).toBe("b");
+  });
+
+  it("leaves arrows alone while typing, in menus, with a modifier, or when something else handled them", () => {
+    h.snap = three();
+    render(true);
+    for (const html of ['<input />', '<textarea></textarea>', '<div contenteditable="true"></div>', '<div role="menu"><button></button></div>', '<div role="radiogroup"><button></button></div>']) {
+      const host = document.createElement("div");
+      host.innerHTML = html;
+      container.appendChild(host);
+      const target = host.querySelector("button") ?? host.firstElementChild!;
+      expect(press("ArrowDown", {}, target).defaultPrevented).toBe(false);
+      host.remove();
+    }
+    press("ArrowDown", { metaKey: true });
+    press("ArrowDown", { altKey: true });
+    press("ArrowDown", { ctrlKey: true });
+    const handled = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true });
+    handled.preventDefault();
+    act(() => void document.body.dispatchEvent(handled));
+    expect(current()).toBe("a");
+  });
+
+  it("lets a viewer page through a read-only deck", () => {
+    h.snap = three();
+    render(false);
+    const shown = () => container.querySelector<HTMLElement>("[data-testid=read-only]")!.dataset.current;
+    expect(shown()).toBe("a");
+    press("ArrowRight");
+    expect(shown()).toBe("b");
   });
 });

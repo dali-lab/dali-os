@@ -55,7 +55,7 @@ import { usePptxImport } from "~/components/slides/pptx/usePptxImport";
 import { EditorToolbar } from "./EditorToolbar";
 import { thumbnailActions } from "./actions";
 import { planDrop } from "./drop-images";
-import { actingSet, dropIndex, nextThumbSelection, type ThumbSelection } from "./filmstrip-select";
+import { actingSet, dropIndex, nextThumbSelection, slideKeyTarget, type ThumbSelection } from "./filmstrip-select";
 import { Filmstrip } from "./Filmstrip";
 import { zoomIn, zoomKey, zoomOut } from "./zoom";
 import { Inspector } from "./Inspector";
@@ -84,6 +84,8 @@ import { usePanelPrefs } from "./panel-prefs";
 import { useDeckFind } from "./useDeckFind";
 import { useAgentTouches } from "./agent-touch";
 import { useDeckDoc, useDeckSnapshot, useDeckSync, useSlidePresence, useUndoState } from "./useDeckDoc";
+
+const SLIDE_KEYS_SKIP = "[contenteditable='true'], input, textarea, select, [role=menu], [role=listbox], [role=slider], [role=tablist], [role=radiogroup], [role=dialog]";
 
 function naturalSize(src: string): Promise<{ width: number; height: number } | null> {
   return new Promise((resolve) => {
@@ -322,6 +324,23 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
     setThumbSel((prev) => nextThumbSelection(order, prev, id, mods));
     select(id);
   };
+  const currentId = current?.id ?? null;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || selectionCount > 0) return;
+      if ((e.target as HTMLElement | null)?.closest?.(SLIDE_KEYS_SKIP)) return;
+      const id = slideKeyTarget(order, currentId, e.key);
+      if (!id) return;
+      e.preventDefault();
+      setThumbSel((prev) => {
+        if (!e.shiftKey || !currentId) return { selected: [id], anchor: id };
+        return nextThumbSelection(order, prev.anchor ? prev : { selected: [currentId], anchor: currentId }, id, { shift: true, meta: false });
+      });
+      select(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const thumbnailMenu = (id: string) => {
     if (!deck) return [];
     const ids = actingSet(order, thumbSel.selected, id);

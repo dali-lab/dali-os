@@ -1,5 +1,6 @@
 import { CODE_SANDBOX, codeSrcDoc } from "~/components/doc/components/kinds";
 import { resolveThemeColor } from "~/components/slides/pptx/theme-colors";
+import { themeFontsHref } from "./theme-tokens";
 import { themeById, type ThemeDef } from "./themes";
 
 export const HTML_THEME_VARS = [
@@ -41,7 +42,8 @@ export function htmlSrcDoc(source: string, theme: ThemeDef | string): string {
   const vars = Object.entries(htmlThemeVars(theme))
     .map(([name, value]) => `${name}:${value}`)
     .join(";");
-  const base = `<style>:root{${vars}}html,body{margin:0;height:100%}body{color:var(--slide-fg);font-family:var(--slide-font-body)}</style>`;
+  const fonts = `<link rel="stylesheet" href="${themeFontsHref().replace(/&/g, "&amp;")}">`;
+  const base = `${fonts}<style>:root{${vars}}html,body{margin:0;height:100%}body{color:var(--slide-fg);font-family:var(--slide-font-body)}</style>`;
   return codeSrcDoc(`${base}${source}`);
 }
 

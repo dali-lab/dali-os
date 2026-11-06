@@ -97,13 +97,21 @@ export function HtmlPreview({ placed, element, theme }: { placed: Placed; elemen
   );
   if (loaded === null) return <HtmlBox placed={placed} element={element}>{img}</HtmlBox>;
   return (
-    <div data-element={element.id} data-kind="html" style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: u(24) }}>
+    <div data-element={element.id} data-kind="html" style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: htmlRadius(element) }}>
       {img}
     </div>
   );
 }
 
 export const HTML_DEBOUNCE_MS = 300;
+export const HTML_SWAP_TIMEOUT_MS = 3000;
+
+interface HtmlFrameDoc {
+  n: number;
+  doc: string;
+}
+
+const htmlRadius = (element: RenderElement) => (element.htmlFill ? 0 : u(24));
 
 /** A custom HTML element running in the sandbox, laid out at its size in stage units and scaled to fit, so 1px of its HTML is one stage unit. */
 export function HtmlFrame({ placed, element, theme, interactive = true }: { placed: Placed; element: RenderElement; theme: ThemeDef; interactive?: boolean }) {
@@ -114,6 +122,13 @@ export function HtmlFrame({ placed, element, theme, interactive = true }: { plac
   const [width, setWidth] = useState(0);
   const source = element.html ?? "";
   const [shown, setShown] = useState(source);
+  const doc = htmlSrcDoc(shown, theme);
+  const [frames, setFrames] = useState<HtmlFrameDoc[]>(() => [{ n: 0, doc }]);
+  const pending = frames.length > 1 ? frames[frames.length - 1] : null;
+  const promote = (n: number) => setFrames((fs) => {
+    const i = fs.findIndex((f) => f.n === n);
+    return i > 0 ? fs.slice(i) : fs;
+  });
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -122,6 +137,14 @@ export function HtmlFrame({ placed, element, theme, interactive = true }: { plac
     const timer = setTimeout(() => setShown(source), HTML_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [source, shown]);
+  useEffect(() => {
+    setFrames((fs) => (fs[fs.length - 1].doc === doc ? fs : [fs[0], { n: fs[fs.length - 1].n + 1, doc }]));
+  }, [doc]);
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setTimeout(() => promote(pending.n), HTML_SWAP_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [pending?.n]);
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -139,30 +162,38 @@ export function HtmlFrame({ placed, element, theme, interactive = true }: { plac
       data-element={element.id}
       data-kind="html"
       data-html-live
-      style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: u(24) }}
+      style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: htmlRadius(element) }}
       onClick={(e) => e.stopPropagation()}
     >
-      {mounted && (
-        <iframe
-          key={reloadKey}
-          title="Custom HTML"
-          sandbox={CODE_SANDBOX}
-          referrerPolicy="no-referrer"
-          srcDoc={htmlSrcDoc(shown, theme)}
-          style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            width: placed.w,
-            height: placed.h,
-            border: 0,
-            background: "transparent",
-            transformOrigin: "0 0",
-            transform: `scale(${scale})`,
-            pointerEvents: interactive ? "auto" : "none",
-          }}
-        />
-      )}
+      {mounted &&
+        frames.map((f) => {
+          const waiting = f === pending;
+          return (
+            <iframe
+              key={`${reloadKey}:${f.n}`}
+              title="Custom HTML"
+              sandbox={CODE_SANDBOX}
+              referrerPolicy="no-referrer"
+              srcDoc={f.doc}
+              aria-hidden={waiting || undefined}
+              data-html-pending={waiting || undefined}
+              onLoad={waiting ? () => promote(f.n) : undefined}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: placed.w,
+                height: placed.h,
+                border: 0,
+                background: "transparent",
+                transformOrigin: "0 0",
+                transform: `scale(${scale})`,
+                opacity: waiting ? 0 : 1,
+                pointerEvents: interactive && !waiting ? "auto" : "none",
+              }}
+            />
+          );
+        })}
     </div>
   );
 }
@@ -171,7 +202,7 @@ export function HtmlFrame({ placed, element, theme, interactive = true }: { plac
 export function HtmlPrintFrame({ placed, element, theme }: { placed: Placed; element: RenderElement; theme: ThemeDef }) {
   return (
     <>
-      <div data-element={element.id} data-kind="html" style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: u(24) }}>
+      <div data-element={element.id} data-kind="html" style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: htmlRadius(element) }}>
         <iframe
           data-html-print
           title="Custom HTML"
