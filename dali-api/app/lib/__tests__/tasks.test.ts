@@ -276,7 +276,7 @@ describe("resolveNotificationState", () => {
       resolveNotificationState(
         liveness({
           scheduledMeetingId: "m1",
-          scheduledMeeting: { status: "Cancelled" },
+          scheduledMeeting: { status: "Cancelled", selectedAt: null, recurrenceRule: null },
         }),
         now,
       ),
@@ -396,7 +396,7 @@ describe("resolveNotificationState", () => {
         liveness({
           readAt: now,
           scheduledMeetingId: "m1",
-          scheduledMeeting: { status: "Cancelled" },
+          scheduledMeeting: { status: "Cancelled", selectedAt: null, recurrenceRule: null },
         }),
         now,
       ),
