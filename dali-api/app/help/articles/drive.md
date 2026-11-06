@@ -47,7 +47,7 @@ Open a drive or folder, then click **New**.
 
 Right-click an item, or use its menu, for **Open**, **Download** (files only), **Rename**, **Move to…** and **Delete**. Documents, folders, forms and files also offer **Share…**. To share a file, see [Sharing and visibility](/help/articles/sharing). You can drag an item onto a folder to move it, and select several items to move or delete them together.
 
-Moving an item into another drive changes who can see it, because it takes on that drive's audience. The move dialog tells you who that will be.
+Moving an item into another drive changes who can see it, because it takes on that drive's audience. The move dialog tells you who that will be. Agreements and rubrics are the exception: only Core can move them, and they stay visible to Core only wherever they go.
 
 Core, Hiring and other process folders at the top of a drive can't be deleted.
 
