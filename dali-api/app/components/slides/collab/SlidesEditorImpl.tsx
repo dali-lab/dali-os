@@ -82,6 +82,7 @@ import { ShortcutsSheet } from "./ShortcutsSheet";
 import { shortcutFor } from "./shortcuts";
 import { usePanelPrefs } from "./panel-prefs";
 import { useDeckFind } from "./useDeckFind";
+import { useAgentTouches } from "./agent-touch";
 import { useDeckDoc, useDeckSnapshot, useDeckSync, useSlidePresence, useUndoState } from "./useDeckDoc";
 
 function naturalSize(src: string): Promise<{ width: number; height: number } | null> {
@@ -225,6 +226,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
   }, [deck]);
 
   const peers = useSlidePresence(deck, me, editable ? selectedId : null);
+  const agentTouches = useAgentTouches(deck?.entry.provider.awareness ?? null);
 
   const slotCollab = useMemo<SlotCollab | null>(
     () =>
@@ -637,6 +639,7 @@ function SlidesEditorBody({ pageId, title, iconEmoji, canEdit, canComment, canMo
                 comments={stageComments}
                 zoom={zoom}
                 onZoom={setZoom}
+                agentTouches={agentTouches}
               />
             ) : deletedHere ? (
               <DeletedSlideNotice by={snap.deletedBy[selectedId!] ?? null} onRestore={() => undeleteSlide(deck.doc, selectedId!)} />

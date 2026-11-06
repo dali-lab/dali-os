@@ -117,6 +117,10 @@ export interface AgentBatch {
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const FALLBACK_COLOR = AGENT_COLORS.other;
 
+export function agentKindOf(kind: unknown): AgentKind {
+  return typeof kind === "string" && Object.hasOwn(AGENT_COLORS, kind) ? (kind as AgentKind) : "other";
+}
+
 export function isAgentState(state: unknown): boolean {
   const user = (state as { user?: { agent?: unknown } } | null | undefined)?.user;
   return !!user && typeof user.agent === "object" && user.agent !== null;

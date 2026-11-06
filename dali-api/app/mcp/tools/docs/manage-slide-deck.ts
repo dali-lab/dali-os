@@ -1,5 +1,6 @@
 import { McpError, requireForAction } from "../../errors";
 import { prisma } from "~/lib/db.server";
+import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 import { deckAccess, deckStorage, editDeck, loadDeck, migrateDeckOnOpen, readDeckModel, type DeckResult } from "~/lib/slide-decks.server";
 import { parseSlides } from "~/components/slides/slide-schema";
 import { applySlides } from "~/collab/deck-write.server";
@@ -127,6 +128,7 @@ export async function runManageSlideDeck(userId: string, args: Args) {
     snap_back: ["slideId", "elementIds"],
   });
   const { page, canEdit } = unwrap(await deckAccess(userId, args.pageId));
+  if (args.action === "get" || args.action === "export") void announceAgent({ action: "reading", presenceRoom: pagePresenceRoom(args.pageId) });
 
   if (args.action === "get") {
     const deck = await loadDeck(args.pageId);
@@ -218,5 +220,6 @@ export async function runManageSlideDeck(userId: string, args: Args) {
   }
 
   const saved = unwrap(await editDeck(userId, args.pageId, edit));
+  void announceAgent({ action: "editing", presenceRoom: pagePresenceRoom(args.pageId) });
   return deckOutput(page.title, saved.slides, saved.version);
 }

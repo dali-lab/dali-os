@@ -4,6 +4,7 @@ import { acquireCollabDoc, releaseCollabDoc, type CollabDocEntry } from "~/compo
 import { useReportSyncState } from "~/components/doc/use-report-sync-state";
 import type { DocSyncState } from "~/components/doc/types";
 import { slidesRoomName } from "~/collab/roomName";
+import { agentKindOf, isAgentState, type AgentKind } from "~/components/collab/agent";
 import { createDeckStore, type DeckStore } from "~/components/slides/deck/deck-store";
 import { createDeckUndo, type DeckUndo } from "~/components/slides/deck/deck-undo";
 import { deckMap, slidesMap } from "~/components/slides/deck/model";
@@ -101,6 +102,7 @@ export interface SlidePeer {
   name: string;
   color: string;
   photoUrl: string | null;
+  agent?: { kind: AgentKind };
 }
 
 export interface DeckUser {
@@ -123,10 +125,13 @@ export function useSlidePresence(deck: DeckDoc | null, me: DeckUser, slideId: st
     const update = () => {
       const next = new Map<string, SlidePeer[]>();
       awareness.getStates().forEach((state, clientId) => {
-        const s = state.deckSlide as ({ slideId: string } & DeckUser) | null | undefined;
-        if (!s || clientId === awareness.clientID || s.userId === me.userId) return;
+        const s = state.deckSlide as ({ slideId: string; agent?: { kind?: unknown } } & DeckUser) | null | undefined;
+        if (!s || typeof s.slideId !== "string" || clientId === awareness.clientID) return;
+        const agent = isAgentState(state) ? { kind: agentKindOf(s.agent?.kind) } : undefined;
+        if (!agent && s.userId === me.userId) return;
         const list = next.get(s.slideId) ?? [];
-        if (!list.some((p) => p.userId === s.userId)) list.push({ clientId, userId: s.userId, name: s.name, color: s.color, photoUrl: s.photoUrl ?? null });
+        const seen = agent ? list.some((p) => p.clientId === clientId) : list.some((p) => !p.agent && p.userId === s.userId);
+        if (!seen) list.push({ clientId, userId: s.userId, name: s.name, color: s.color, photoUrl: agent ? null : (s.photoUrl ?? null), ...(agent ? { agent } : {}) });
         next.set(s.slideId, list);
       });
       setPeers(next);

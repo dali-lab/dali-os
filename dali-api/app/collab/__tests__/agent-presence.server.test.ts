@@ -715,7 +715,65 @@ describe("agentDocKey", () => {
     expect(agentDocKey("presence:doc:p1")).toBe("doc:p1");
     expect(agentDocKey("doc:p1:body")).toBe("doc:p1");
     expect(agentDocKey("blogPost:b1:body")).toBe("blogPost:b1");
-    expect(agentDocKey("slides:p1:deck")).toBe("slides:p1:deck");
+  });
+
+  it("maps a slide deck's room to its page, so the deck and the page bar share one look", () => {
+    expect(agentDocKey("slides:p1:deck")).toBe("doc:p1");
+  });
+});
+
+describe("slide decks", () => {
+  beforeEach(() => vi.useFakeTimers());
+
+  const room = () => {
+    const doc = new Y.Doc() as LiveDoc;
+    doc.awareness = new Awareness(doc);
+    return doc;
+  };
+
+  it("puts the agent on the slide it changed, with its look and kind", () => {
+    const deck = room();
+    applyAgentAnnouncement(fakeHocuspocus({ "slides:p1:deck": deck }), announcement({ deckRoom: "slides:p1:deck", slideId: "s2" }));
+    const state = deck.awareness.getStates().get(ID)!;
+    expect(state.user).toEqual({ name: "Claude", color: AGENT_COLORS.claude, agent: { kind: "claude", action: "editing" } });
+    expect(state.deckSlide).toEqual({ slideId: "s2", userId: "u-ada", name: "Claude", color: AGENT_COLORS.claude, photoUrl: null, agent: { kind: "claude" } });
+    expect(state).not.toHaveProperty("cursor");
+  });
+
+  it("is in the deck on no slide until a write names one, then stays on the last one named", () => {
+    const deck = room();
+    const hp = fakeHocuspocus({ "slides:p1:deck": deck });
+    applyAgentAnnouncement(hp, announcement({ action: "reading", deckRoom: "slides:p1:deck" }));
+    expect(deck.awareness.getStates().get(ID)!.deckSlide).toBeNull();
+    applyAgentAnnouncement(hp, announcement({ deckRoom: "slides:p1:deck", slideId: "s1" }));
+    applyAgentAnnouncement(hp, announcement({ deckRoom: "slides:p1:deck" }));
+    expect(deck.awareness.getStates().get(ID)!.deckSlide.slideId).toBe("s1");
+  });
+
+  it("carries touched element keys and drops them after AGENT_TOUCH_MS", () => {
+    const deck = room();
+    applyAgentAnnouncement(fakeHocuspocus({ "slides:p1:deck": deck }), announcement({ deckRoom: "slides:p1:deck", slideId: "s1", touched: ["s1/title"] }));
+    expect(deck.awareness.getStates().get(ID)!.touched.ids).toEqual(["s1/title"]);
+    vi.advanceTimersByTime(AGENT_TOUCH_MS);
+    expect(deck.awareness.getStates().get(ID)).not.toHaveProperty("touched");
+    expect(deck.awareness.getStates().get(ID)!.deckSlide.slideId).toBe("s1");
+  });
+
+  it("joins the page's presence bar and the deck in one announcement", () => {
+    const bar = room();
+    const deck = room();
+    applyAgentAnnouncement(
+      fakeHocuspocus({ "presence:doc:p1": bar, "slides:p1:deck": deck }),
+      announcement({ presenceRoom: "presence:doc:p1", deckRoom: "slides:p1:deck", slideId: "s1" }),
+    );
+    expect(bar.awareness.getStates().get(ID)!.user.subtitle).toBe("Ada Lovelace's agent");
+    expect(deck.awareness.getStates().get(ID)!.deckSlide.slideId).toBe("s1");
+  });
+
+  it("publishes the slide and touched keys from the announcer", async () => {
+    vi.useRealTimers();
+    await asAgent(() => announceAgent({ action: "editing", deckRoom: "slides:p1:deck", slideId: "s1", touched: ["s1/e1"] }));
+    expect(JSON.parse(publish.mock.calls[0]![1])).toMatchObject({ deckRoom: "slides:p1:deck", slideId: "s1", touched: ["s1/e1"] });
   });
 });
 
