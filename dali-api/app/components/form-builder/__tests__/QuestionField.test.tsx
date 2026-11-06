@@ -285,7 +285,7 @@ describe("FormQuestionField — long option lists get search", () => {
     const q: Question = { key: "c", type: "checkbox", required: false, data: { label: "C", options: names(13) } };
     const html = renderField({ question: q, value: JSON.stringify(["Choice 1", "Choice 7"]), onChange: () => {} });
     expect(html).not.toContain('type="checkbox"');
-    expect(html).toMatch(/<button[^>]*aria-haspopup="dialog"/);
+    expect(html).toMatch(/<button[^>]*aria-haspopup="listbox"/);
     expect(html).toContain("2 selected");
     expect(html).toContain('aria-label="Remove Choice 1"');
     expect(html).toContain('aria-label="Remove Choice 7"');

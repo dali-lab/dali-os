@@ -1,5 +1,5 @@
 export { Select, type SelectOption } from "./Select";
-export { MultiSelect } from "./MultiSelect";
+export { MultiSelect, MultiSelectList, toggledValue, type MultiSelectOption } from "./MultiSelect";
 export { Combobox } from "./Combobox";
 export { SEARCH_THRESHOLD } from "./search";
 export { Menu, MenuItem, MenuLinkItem, MenuSeparator, MenuSub, MenuContext } from "./Menu";

@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { createElement, act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MultiSelect } from "./MultiSelect";
+import { MultiSelect, toggledValue } from "./MultiSelect";
 import { SEARCH_THRESHOLD } from "./search";
 import type { SelectOption } from "./Select";
 
@@ -159,4 +159,54 @@ describe("MultiSelect", () => {
     mount(createElement(Harness, { options: makeOptions(3), initial: ["v0"] }));
     expect(container.querySelectorAll("input[type='hidden']")).toHaveLength(0);
   });
+
+  it("does not add a second dialog role when the panel searches, so it can open inside a modal", () => {
+    mount(createElement(Harness, { options: makeOptions(12) }));
+    openPanel();
+    expect(document.querySelector("[role='dialog']")).toBeNull();
+    expect(trigger().getAttribute("aria-haspopup")).toBe("listbox");
+    expect(trigger().getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("swaps in a custom trigger and leaves chips off when asked", () => {
+    mount(
+      createElement(MultiSelect, {
+        values: ["v1"],
+        onChange: () => {},
+        options: makeOptions(3),
+        chips: false,
+        renderTrigger: ({ chosen }) => `Picked ${chosen.map((c) => c.label).join(", ")}`,
+      }),
+    );
+    expect(trigger().textContent).toBe("Picked Option 1");
+    expect(container.querySelector("button[aria-label^='Remove']")).toBeNull();
+  });
+
+  it("offers a clear row only while something is chosen", () => {
+    mount(createElement(MultiSelect, { values: [], onChange: () => {}, options: makeOptions(3), clearLabel: "Clear all" }));
+    openPanel();
+    expect(document.body.textContent).not.toContain("Clear all");
+  });
+
+  it.each([3, 12])("empties the selection from the clear row (%i options)", (n) => {
+    mount(createElement(ClearHarness, { options: makeOptions(n) }));
+    openPanel();
+    const clear = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Clear all")!;
+    act(() => clear.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(latest).toEqual([]);
+  });
 });
+
+describe("toggledValue", () => {
+  it("names the value a single toggle added or removed", () => {
+    expect(toggledValue(["a"], ["a", "b"])).toBe("b");
+    expect(toggledValue(["a", "b"], ["a"])).toBe("b");
+    expect(toggledValue(["a"], ["a"])).toBeUndefined();
+  });
+});
+
+function ClearHarness(props: { options: SelectOption[] }) {
+  const [values, setValues] = useState<string[]>(["v0", "v1"]);
+  latest = values;
+  return createElement(MultiSelect, { values, onChange: setValues, options: props.options, clearLabel: "Clear all" });
+}
