@@ -49,6 +49,7 @@ import { categorize } from "~/lib/file-type";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { parseComponentData } from "~/components/doc/components/kinds";
 import { ComponentView } from "~/components/doc/components/views";
+import { linksToInlineRefs, mapInlineArrays, type InlineArrayKind } from "./inline-refs";
 
 export { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT } from "~/components/doc/schema/configs";
 
@@ -93,8 +94,7 @@ export interface DocBlock {
 
 // ---------------------------------------------------------------------------
 // Core (non-React) specs over the shared configs. Renders are used by the
-// HTML/Markdown serializers: markdown takes each node's textContent, so these
-// double as the plain-text form of every custom node.
+// HTML/Markdown serializers.
 
 const mentionSpec = createInlineContentSpec(mentionConfig, {
   render: (ic) => {
@@ -114,14 +114,6 @@ const pageMentionSpec = createInlineContentSpec(pageMentionConfig, {
   },
 });
 
-// Unlike mention/pageMention (plain spans), this renders as a real anchor —
-// HTML export (blocksToHtml/blocksToFullHtml, which feed docx/education/
-// public-site rendering and the Chromium PDF path) carries a working deep
-// link to the task. Markdown export shares this same render (no
-// toExternalHTML override, same convention as embedSpec below), so the
-// anchor becomes a real markdown link; plain-text export bypasses this
-// entirely (blocksToPlainText's own inlineText() renders the label alone —
-// see configs.ts).
 const taskMentionSpec = createInlineContentSpec(taskMentionConfig, {
   render: (ic) => {
     const dom = document.createElement("a");
@@ -345,20 +337,65 @@ export async function renderAnnouncementBody(
   return { html, text: htmlToPlainText(html, { maxLength: NOTIFICATION_BODY_MAX }) };
 }
 
+const CELL_BREAK = "\uE000";
+const REF_TYPES = new Set(["mention", "pageMention", "taskMention"]);
+
+export interface MarkdownOptions {
+  inlineRefs?: boolean;
+}
+
+const escapeMarkdown = (text: string) => text.replace(/[\\[\]*_`<>]/g, "\\$&");
+
+function refLink(inline: DocInline): DocInline | null {
+  const props = inline.props ?? {};
+  const label = String(props.label ?? "");
+  const link = (href: string, text: string): DocInline => ({
+    type: "link",
+    href,
+    content: [{ type: "text", text: escapeMarkdown(text), styles: {} }],
+  });
+  if (inline.type === "mention" && props.id) return link(`/members/${props.id}`, `@${label}`);
+  if (inline.type === "pageMention" && props.pageId) return link(`/documents/${props.pageId}`, label || "Untitled");
+  if (inline.type === "taskMention" && props.taskId && props.projectId) {
+    return link(`/projects/${props.projectId}?tab=progress&task=${props.taskId}`, label || "Untitled task");
+  }
+  return null;
+}
+
+function prepareInlines(inlines: DocInline[], kind: InlineArrayKind, options: MarkdownOptions): DocInline[] {
+  const clean = (text: string) => text.replaceAll(CELL_BREAK, "");
+  return inlines.map((inline) => {
+    if (REF_TYPES.has(inline.type) && typeof inline.props?.label === "string") {
+      const label = clean(inline.props.label);
+      const ref = { ...inline, props: { ...inline.props, label: kind === "cell" ? label.replaceAll("\n", " ") : label } };
+      return (options.inlineRefs && refLink(ref)) || ref;
+    }
+    const next = { ...inline };
+    if (typeof next.text === "string") {
+      next.text = kind === "cell" ? clean(next.text).replaceAll("\n", CELL_BREAK) : clean(next.text);
+    }
+    if (Array.isArray(next.content)) next.content = prepareInlines(next.content, kind, options);
+    return next;
+  });
+}
+
 /** Blocks → Markdown. Custom inline nodes serialize as their plain-text form
- * (mention → "@handle", unfilled field → "__________", variable → value or
- * "{{name}}"). */
-export function blocksToMarkdown(blocks: DocBlock[]): Promise<string> {
+ * unless `inlineRefs` is set, which writes user, page and task mentions as
+ * links that `markdownToBlocks(md, { inlineRefs: true })` turns back into chips. */
+export function blocksToMarkdown(blocks: DocBlock[], options: MarkdownOptions = {}): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
-  return serialized(() => getMarkdownEditor().blocksToMarkdownLossy(blocks as any));
+  const prepared = mapInlineArrays(blocks, (inlines, kind) => prepareInlines(inlines, kind, options));
+  return serialized(() => getMarkdownEditor().blocksToMarkdownLossy(prepared as any)).then((markdown) =>
+    markdown.replaceAll(CELL_BREAK, "<br>"),
+  );
 }
 
 /** Markdown → blocks. Empty/whitespace input yields a single empty paragraph
  * (BlockNote's empty-document normal form). */
-export function markdownToBlocks(markdown: string): Promise<DocBlock[]> {
+export function markdownToBlocks(markdown: string, options: MarkdownOptions = {}): Promise<DocBlock[]> {
   return serialized(async () => {
-    const blocks = await getServerEditor().tryParseMarkdownToBlocks(markdown);
-    return restoreVideos(blocks as unknown as DocBlock[]);
+    const blocks = restoreVideos((await getServerEditor().tryParseMarkdownToBlocks(markdown)) as unknown as DocBlock[]);
+    return options.inlineRefs ? linksToInlineRefs(blocks) : blocks;
   });
 }
 
