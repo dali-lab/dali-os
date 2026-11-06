@@ -1,5 +1,5 @@
 import { MessageSquarePlus, MessagesSquare, PenLine } from "lucide-react";
-import { Menu, MenuItem } from "~/components/ui/floating";
+import { Menu, MenuItem, Tooltip } from "~/components/ui/floating";
 import { useFeedbackComposer } from "./FeedbackComposer";
 
 /**
@@ -25,17 +25,19 @@ export function FeedbackButton({
             align="right"
             ariaLabel="Feedback"
             trigger={
-              <button
-                type="button"
-                aria-label="Feedback"
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-os-accent text-os-bg shadow-[0_8px_24px_var(--color-os-shadow)] transition-colors hover:bg-os-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent focus-visible:ring-offset-2"
-              >
-                <MessageSquarePlus className="h-5 w-5" aria-hidden />
-              </button>
+              <Tooltip content="Send feedback or view requests" placement="left">
+                <button
+                  type="button"
+                  aria-label="Feedback"
+                  className="flex h-12 w-12 items-center justify-center rounded-full bg-os-accent text-os-bg shadow-[0_8px_24px_var(--color-os-shadow)] transition-colors hover:bg-os-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent focus-visible:ring-offset-2"
+                >
+                  <MessageSquarePlus className="h-5 w-5" aria-hidden />
+                </button>
+              </Tooltip>
             }
           >
             <MenuItem icon={<MessagesSquare className="h-4 w-4" />} onSelect={onOpenFeed}>
-              Feature requests
+              View requests
             </MenuItem>
             <MenuItem icon={<PenLine className="h-4 w-4" />} onSelect={composer.startWithCapture}>
               Send feedback
