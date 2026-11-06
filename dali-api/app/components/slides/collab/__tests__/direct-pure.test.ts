@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { addSlide } from "~/components/slides/deck/deck-ops";
+import { blocksToFragment } from "~/collab/blocknote-server";
+import { addSlide, slideFragment } from "~/components/slides/deck/deck-ops";
 import { addFreeImage, addShape, addTextBox, setLocked, setPlacements } from "~/components/slides/deck/freeform-ops";
 import { initDeck } from "~/components/slides/deck/model";
 import { snapshotDeck, type RenderSlide } from "~/components/slides/deck/snapshot";
@@ -81,6 +82,13 @@ describe("element menu", () => {
     h.group();
     const grouped = { ...slide(), elements: [...slide().elements, { id: "g", kind: "group", slot: null, z: 9, blocks: [], src: null, alt: null, textStyle: null, children: [a, b] }] } as RenderSlide;
     expect(actionIds(elementActions(ctx(grouped, ["g"])))).toContain("ungroup");
+  });
+
+  it("lets an empty layout text box be deleted, but not one with text", () => {
+    const { doc, slideId, slide } = setup("content");
+    blocksToFragment([{ type: "paragraph", content: "Heading" }] as never, slideFragment(doc, slideId, "title")!);
+    expect(findAction(elementActions(ctx(slide(), ["body"])), "delete")!.disabled).toBe(false);
+    expect(findAction(elementActions(ctx(slide(), ["title"])), "delete")!.disabled).toBe(true);
   });
 
   it("switches Lock to Unlock and disables edits for locked elements", () => {

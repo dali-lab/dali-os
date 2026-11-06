@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { blocksToFragment } from "~/collab/blocknote-server";
-import { readDeck } from "~/collab/read-deck.server";
-import { addSlide, setLayout, slideFragment } from "../deck-ops";
+import { deckMissingSlots, readDeck } from "~/collab/read-deck.server";
+import { addSlide, duplicateSlide, repairDeckSlots, setLayout, setSlotImage, slideFragment, slideMissingSlot } from "../deck-ops";
 import {
   addFreeImage,
   addShape,
@@ -261,12 +261,15 @@ describe("delete is a tombstone", () => {
     for (const id of [a, b, g]) expect(isDeleted(raw(doc, slideId, id))).toBe(true);
   });
 
-  it("never deletes a layout slot, and clears an image slot's picture instead", () => {
+  it("keeps a layout text box that has text, and clears an image box's picture before removing it", () => {
     const { doc, slideId } = setup("split");
+    blocksToFragment([{ type: "paragraph", content: "Heading" }] as never, slideFragment(doc, slideId, "title")!);
     elementsOf(slidesMap(doc).get(slideId)!).get("image")!.set("src", "https://x/y.png");
     expect(deleteElements(doc, slideId, ["title", "image"])).toEqual([]);
     expect(isDeleted(raw(doc, slideId, "title"))).toBe(false);
     expect(el(doc, slideId, "image").src).toBe("");
+    expect(deleteElements(doc, slideId, ["image"])).toEqual(["image"]);
+    expect(snap(doc, slideId).elements.some((e) => e.id === "image")).toBe(false);
   });
 
   it("a peer's concurrent typing into a deleted text box still lands in the doc", () => {
@@ -440,5 +443,68 @@ describe("fill and snapshot safety", () => {
     const a = addShape(doc, slideId, "rect", { x: 300, y: 300 })!;
     const map = placementsOf(doc, slideId, ["title", a]);
     expect([...map.keys()].sort()).toEqual(["title", a].sort());
+  });
+});
+
+describe("removing empty layout boxes", () => {
+  const live = (doc: Y.Doc, slideId: string) => snap(doc, slideId).elements.map((e) => e.id);
+  const removeBody = () => {
+    const { doc, slideId } = setup();
+    expect(deleteElements(doc, slideId, ["body"])).toEqual(["body"]);
+    return { doc, slideId };
+  };
+
+  it("removes an empty text box and keeps the rest of the slide", () => {
+    const { doc, slideId } = removeBody();
+    expect(live(doc, slideId)).toEqual(["title"]);
+    expect(readDeck(doc).slides[0].elements.map((e) => e.id)).toEqual(["title"]);
+  });
+
+  it("counts a box holding only an empty paragraph as empty", () => {
+    const { doc, slideId } = setup();
+    blocksToFragment([{ type: "paragraph", content: "" }] as never, slideFragment(doc, slideId, "body")!);
+    expect(deleteElements(doc, slideId, ["body"])).toEqual(["body"]);
+  });
+
+  it("isn't brought back by the open-time repair, writes that complete slots, or duplicating", () => {
+    const { doc, slideId } = removeBody();
+    const slide = slidesMap(doc).get(slideId)!;
+    expect(slideMissingSlot(slide)).toBe(false);
+    expect(deckMissingSlots(readDeck(doc))).toBe(false);
+    expect(readDeck(doc).slides[0].removedSlots).toEqual(["body"]);
+    repairDeckSlots(doc);
+    expect(live(doc, slideId)).toEqual(["title"]);
+    const copy = duplicateSlide(doc, slideId)!;
+    expect(live(doc, copy)).toEqual(["title"]);
+  });
+
+  it("still repairs a slot that went missing without anyone removing it", () => {
+    const { doc, slideId } = setup();
+    raw(doc, slideId, "body").set("deleted", true);
+    expect(deckMissingSlots(readDeck(doc))).toBe(true);
+    repairDeckSlots(doc);
+    expect(live(doc, slideId)).toContain("body");
+  });
+
+  it("comes back when a layout is chosen", () => {
+    const { doc, slideId } = removeBody();
+    setLayout(doc, slideId, "content");
+    expect(live(doc, slideId)).toEqual(["title", "body"]);
+    expect(raw(doc, slideId, "body").has("slotRemoved")).toBe(false);
+  });
+
+  it("comes back on snap back, in its layout place", () => {
+    const { doc, slideId } = removeBody();
+    snapBack(doc, slideId, ["body"]);
+    expect(live(doc, slideId)).toContain("body");
+    expect(isDetached(el(doc, slideId, "body"))).toBe(false);
+  });
+
+  it("an image box comes back when a picture is set on it", () => {
+    const { doc, slideId } = setup("split");
+    deleteElements(doc, slideId, ["image"]);
+    setSlotImage(doc, slideId, "https://x/y.png", "A picture");
+    expect(el(doc, slideId, "image")).toMatchObject({ src: "https://x/y.png" });
+    expect(raw(doc, slideId, "image").has("slotRemoved")).toBe(false);
   });
 });

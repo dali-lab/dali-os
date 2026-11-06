@@ -15,6 +15,8 @@ import {
   SHAPE_KINDS,
   elementsOf,
   isDeleted,
+  isRemovedSlot,
+  reviveSlot,
   slidesMap,
   textOf,
   type ElementMap,
@@ -240,9 +242,9 @@ function liveSlide(doc: Y.Doc, slideId: string | undefined): SlideMap {
   return slide;
 }
 
-function liveElement(slide: SlideMap, id: string): ElementMap {
+function liveElement(slide: SlideMap, id: string, allowRemovedSlot = false): ElementMap {
   const el = elementsOf(slide).get(id);
-  if (!el || isDeleted(el)) throw new McpError(`Element '${id}' not found.`, 404);
+  if (!el || (isDeleted(el) && !(allowRemovedSlot && isRemovedSlot(el)))) throw new McpError(`Element '${id}' not found.`, 404);
   return el;
 }
 
@@ -361,10 +363,10 @@ function addElement(doc: Y.Doc, slideId: string, e: ElementInput): string {
   return addTextBox(doc, slideId)!;
 }
 
-function idsOf(slide: SlideMap, args: DeckArgs, min: number): string[] {
+function idsOf(slide: SlideMap, args: DeckArgs, min: number, allowRemovedSlots = false): string[] {
   const ids = [...new Set(args.elementIds ?? [])];
   if (ids.length < min) throw invalid(`This action needs at least ${min} element${min === 1 ? "" : "s"}.`);
-  for (const id of ids) liveElement(slide, id);
+  for (const id of ids) liveElement(slide, id, allowRemovedSlots);
   return ids;
 }
 
@@ -413,7 +415,8 @@ function apply(doc: Y.Doc, action: DeckAction, args: DeckArgs, blocks: DocBlock[
       return { slideId, created: { elementId: id } };
     }
     case "update_element": {
-      const el = liveElement(slide, args.elementId!);
+      const el = liveElement(slide, args.elementId!, true);
+      if (isRemovedSlot(el)) reviveSlot(el);
       const shape = el.get("shape");
       checkFields(String(el.get("kind")), el, args.element!, typeof shape === "string" ? shape : null);
       writeFields(doc, slideId, slide, args.elementId!, args.element!, blocks);
@@ -447,7 +450,7 @@ function apply(doc: Y.Doc, action: DeckAction, args: DeckArgs, blocks: DocBlock[
       distributeElements(doc, slideId, idsOf(slide, args, 3), args.axis);
       return { slideId };
     case "snap_back":
-      snapBack(doc, slideId, idsOf(slide, args, 1));
+      snapBack(doc, slideId, idsOf(slide, args, 1, true));
       return { slideId };
   }
 }

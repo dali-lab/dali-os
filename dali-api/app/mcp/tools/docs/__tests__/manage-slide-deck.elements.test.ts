@@ -230,12 +230,34 @@ describe("element actions", () => {
     await expect(run({ action: "update_element", slideId: "b", elementId: g, element: { x: 5 } })).rejects.toMatchObject({ status: 400 });
   });
 
-  it("delete_elements removes free elements and only empties layout boxes", async () => {
+  it("delete_elements removes free elements and empty layout boxes, and keeps a layout box with text", async () => {
     const box = addTextBox(env.doc, "b")!;
-    const out = await run({ action: "delete_elements", slideId: "b", elementIds: [box, "title"] });
-    expect(out.removed).toEqual([box]);
+    const out = await run({ action: "delete_elements", slideId: "b", elementIds: [box, "title", "body"] });
+    expect(out.removed).toEqual([box, "body"]);
     expect(isDeleted(elementsOf(slidesMap(env.doc).get("b")!).get(box)!)).toBe(true);
     expect(el("b", "title")).toBeDefined();
+    expect(el("b", "body")).toBeUndefined();
+    expect(out.slide.elements.map((e: { id: string }) => e.id)).not.toContain("body");
+  });
+
+  it("brings a removed layout box back through snap_back, update_element on its slot or set_layout", async () => {
+    await run({ action: "delete_elements", slideId: "b", elementIds: ["body"] });
+    await run({ action: "snap_back", slideId: "b", elementIds: ["body"] });
+    expect(el("b", "body")).toBeDefined();
+
+    await run({ action: "delete_elements", slideId: "b", elementIds: ["body"] });
+    await run({ action: "update_element", slideId: "b", elementId: "body", element: { markdown: "Back again" } });
+    expect(el("b", "body")!.text).toBe("Back again");
+
+    await run({ action: "update_element", slideId: "b", elementId: "body", element: { markdown: "" } });
+    await run({ action: "delete_elements", slideId: "b", elementIds: ["body"] });
+    await run({ action: "set_layout", slideId: "b", layoutId: "content" });
+    expect(el("b", "body")).toBeDefined();
+  });
+
+  it("still answers 404 for a removed layout box on other element actions", async () => {
+    await run({ action: "delete_elements", slideId: "b", elementIds: ["body"] });
+    await expect(run({ action: "duplicate_elements", slideId: "b", elementIds: ["body"] })).rejects.toMatchObject({ status: 404 });
   });
 
   it("duplicate_elements copies next to the originals", async () => {
