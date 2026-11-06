@@ -51,6 +51,7 @@ import { AiBar } from "./ai/AiBar";
 import { AiCardHost } from "./ai/AiCardHost";
 import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
+import { DaliThread } from "./comments/DaliThread";
 import { CommentComposer } from "./comments/CommentComposer";
 import { CommentEditorProvider, commentEditorSchema } from "./comments/CommentEditor";
 import { BlockNoteView } from "@blocknote/shadcn";
@@ -734,6 +735,7 @@ function DocView(
             the reply box receives focus when the popover opens. */}
         {hasComments && !railVisible && (
           <FloatingThreadController
+            floatingThread={DaliThread}
             portalElement={floatingRootRef.current ?? undefined}
             floatingUIOptions={{ focusManagerProps: { disabled: false } }}
           />

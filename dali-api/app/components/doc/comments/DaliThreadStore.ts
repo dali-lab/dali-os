@@ -31,6 +31,7 @@ import {
   type CommentBody,
   type CommentReactionData,
 } from "@blocknote/core/comments";
+import type { CommentMeta, CommentReactionInfo } from "./comment-reactions";
 import type { BodySegment } from "~/lib/comment-body";
 import { anchorElementId, anchorSlideId, type SlideScope } from "~/lib/slide-comments";
 import { subscribeCommentNudges } from "./comment-nudges";
@@ -45,6 +46,8 @@ interface ApiReaction {
   userId: string;
   emoji: string;
   createdAt: string;
+  name?: string;
+  imageUrl?: string | null;
 }
 
 interface ApiComment {
@@ -203,6 +206,16 @@ export function groupReactions(rows: ApiReaction[]): CommentReactionData[] {
   }));
 }
 
+function reactionInfo(rows: ApiReaction[]): Record<string, CommentReactionInfo> {
+  const info: Record<string, CommentReactionInfo> = {};
+  for (const r of rows) {
+    const entry = (info[r.emoji] ??= { names: {} });
+    if (r.name) entry.names[r.userId] = r.name;
+    if (r.imageUrl !== undefined) entry.imageUrl = r.imageUrl;
+  }
+  return info;
+}
+
 function toCommentData(c: ApiComment): CommentData {
   return {
     type: "comment",
@@ -211,7 +224,11 @@ function toCommentData(c: ApiComment): CommentData {
     createdAt: new Date(c.createdAt),
     updatedAt: new Date(c.createdAt), // DocComment has no updatedAt; createdAt is the best proxy
     reactions: groupReactions(c.reactions ?? []),
-    metadata: { author: c.author, authorPhotoUrl: c.authorPhotoUrl ?? null },
+    metadata: {
+      author: c.author,
+      authorPhotoUrl: c.authorPhotoUrl ?? null,
+      reactionInfo: reactionInfo(c.reactions ?? []),
+    } satisfies CommentMeta,
     body: deserializeBody(c.body),
   };
 }
@@ -269,10 +286,15 @@ export function apiCommentsToThreadMap(
 
 export class DaliThreadStoreAuth extends ThreadStoreAuth {
   constructor(
-    private readonly userId: string,
-    private readonly role: "comment" | "editor",
+    private userId: string,
+    private role: "comment" | "editor",
   ) {
     super();
+  }
+
+  setViewer(userId: string, role: "comment" | "editor") {
+    this.userId = userId;
+    this.role = role;
   }
 
   canCreateThread(): boolean { return true; }
@@ -337,16 +359,22 @@ export class DaliThreadStore extends ThreadStore {
   // a single refetch 300ms after the last nudge.
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private readonly viewer: DaliThreadStoreAuth;
+  viewerId: string;
+
   constructor(config: DaliThreadStoreConfig) {
-    super(
-      new DaliThreadStoreAuth(
-        config.currentUserId,
-        config.canModerate ? "editor" : "comment",
-      ),
-    );
+    const viewer = new DaliThreadStoreAuth(config.currentUserId, config.canModerate ? "editor" : "comment");
+    super(viewer);
+    this.viewer = viewer;
+    this.viewerId = config.currentUserId;
     this.pageId = config.pageId;
     this.scope = config.scope;
     this.pollIntervalMs = config.pollIntervalMs;
+  }
+
+  setViewer(currentUserId: string, canModerate: boolean) {
+    this.viewerId = currentUserId;
+    this.viewer.setViewer(currentUserId, canModerate ? "editor" : "comment");
   }
 
   // ── Read interface ──────────────────────────────────────────────────────
@@ -749,11 +777,7 @@ export class DaliThreadStore extends ThreadStore {
 
 const _storeRegistry = new Map<string, DaliThreadStore>();
 
-/**
- * Return the shared DaliThreadStore for `pageId`, creating it with the given
- * config on first call.  Subsequent calls for the same pageId return the cached
- * instance regardless of the config argument (the first caller wins).
- */
+/** The shared DaliThreadStore for `pageId`; a call with a config sets the viewer on it. */
 export function getOrCreateStore(
   pageId: string,
   config?: Omit<DaliThreadStoreConfig, "pageId">,
@@ -770,6 +794,8 @@ export function getOrCreateStore(
       pollIntervalMs: config?.pollIntervalMs,
     });
     _storeRegistry.set(key, store);
+  } else if (config) {
+    store.setViewer(config.currentUserId, config.canModerate);
   }
   return store;
 }

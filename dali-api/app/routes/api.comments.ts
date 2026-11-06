@@ -7,6 +7,7 @@ import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { withEmojiImages } from "~/lib/reactions.server";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
 import { getPageAccess } from "~/lib/pageAccess.server";
@@ -156,7 +157,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   if (!allowed) return forbidden(request);
 
-  const authors = await hydrateAuthors([...new Set(rows.map((r) => r.authorId))]);
+  const authors = await hydrateAuthors([
+    ...new Set(rows.flatMap((r) => [r.authorId, ...r.reactions.map((x) => x.userId)])),
+  ]);
   const nameById = new Map(authors.map((a) => [a.id, a.name]));
   const photoById = new Map(authors.map((a) => [a.id, a.photoUrl]));
 
@@ -172,10 +175,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,
-    reactions: r.reactions,
+    reactions: r.reactions.map((x) => ({ ...x, name: nameById.get(x.userId) ?? "Unknown" })),
   }));
 
-  return withCors(request, Response.json({ comments }));
+  return withCors(request, Response.json({ comments: await withEmojiImages(comments) }));
 }
 
 export async function action({ request }: Route.ActionArgs) {
