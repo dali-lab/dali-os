@@ -1,11 +1,17 @@
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { presentable } from "~/components/slides/deck/skip";
+import { HtmlPrintFrame } from "~/components/slides/deck/content-render";
+import { slideHasHtml } from "~/components/slides/deck/html-element";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
+import { themeById } from "~/components/slides/deck/themes";
 import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { inlineUploadImages } from "./print-html.server";
 
 export const MAX_PDF_SLIDES = 200;
+
+export const deckHasHtml = (slides: RenderSlide[]): boolean => slideHasHtml(presentable(slides));
 
 const PRINT_CSS = `
   @page { size: ${STAGE_W}px ${STAGE_H}px; margin: 0; }
@@ -68,7 +74,12 @@ export interface DeckPrintInput {
 export async function deckToPrintHtml({ title, themeId, slides, notes }: DeckPrintInput): Promise<string> {
   const pages = presentable(slides).map((slide, i) => {
     const page = `<section class="pdf-page" data-slide-id="${escapeHtml(slide.id)}">${renderToStaticMarkup(
-      SlideRender({ slide, theme: themeId }),
+      SlideRender({
+        slide,
+        theme: themeId,
+        renderFree: ({ element, placed, fallback }) =>
+          element.kind === "html" ? createElement(HtmlPrintFrame, { element, placed, theme: themeById(themeId) }) : fallback,
+      }),
     )}</section>`;
     if (!notes) return page;
     const text = (notes[slide.id] ?? "").trim();

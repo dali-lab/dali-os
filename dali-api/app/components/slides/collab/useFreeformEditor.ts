@@ -26,6 +26,9 @@ import {
   setChart,
   setPoll,
   addPoll,
+  addHtml,
+  setHtmlSource,
+  setHtmlFill,
   setCrop,
   setFill,
   setFreeTextStyle,
@@ -107,6 +110,7 @@ export interface ContentInsert {
   emoji: (emoji: string, at?: At) => string | null;
   video: (url: string, at?: At) => string | null;
   poll: (at?: At) => string | null;
+  html: (at?: At) => string | null;
 }
 
 export interface FreeformExternal {
@@ -363,6 +367,7 @@ export function useFreeformEditor({
       emoji: (emoji, at) => place((d, sid) => addEmoji(d.doc, sid, emoji, at)),
       video: (url, at) => place((d, sid) => addVideo(d.doc, sid, url, at)),
       poll: (at) => place((d, sid) => addPoll(d.doc, sid, undefined, at)),
+      html: (at) => place((d, sid) => addHtml(d.doc, sid, undefined, {}, at)),
     };
   }, [onPlace]);
 
@@ -390,12 +395,20 @@ export function useFreeformEditor({
         run((d, s) => void (ok = setVideoUrl(d.doc, s.id, id, url)));
         return ok;
       },
+      onHtml: (id: string, source: string) => {
+        let ok = false;
+        run((d, s) => void (ok = setHtmlSource(d.doc, s.id, id, source)));
+        return ok;
+      },
+      onHtmlFill: (id: string, fill: boolean) => run((d, s) => setHtmlFill(d.doc, s.id, id, fill)),
+      onInteract: (id: string | null) => setEdit((e) => ({ ...e, selection: id ? [id] : e.selection, editingId: id, cropId: null })),
+      interactingId: edit.editingId,
       onLock: handlers.lock,
       onDeselect: () => setEdit(EMPTY),
       prefs,
       onPrefs,
     }),
-    [run, prefs, onPrefs, handlers],
+    [run, prefs, onPrefs, handlers, edit.editingId],
   );
 
   useEffect(() => {

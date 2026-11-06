@@ -109,6 +109,8 @@ function contentKey(el: RenderElement): string | null {
       return el.icon ?? null;
     case "video":
       return el.videoUrl ?? null;
+    case "html":
+      return el.html ?? null;
     default:
       return null;
   }

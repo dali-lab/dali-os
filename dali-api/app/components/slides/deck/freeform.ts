@@ -27,6 +27,7 @@ export const FREE_DEFAULTS = {
   video: { w: 960, h: 540 },
   emoji: { w: 240, h: 200 },
   poll: { w: 960, h: 540 },
+  html: { w: 960, h: 540 },
 } as const;
 
 export function explicitPlacement(el: RenderElement): Placed | null {

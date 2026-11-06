@@ -9,7 +9,7 @@ import { explicitPlacement, isFreeRendered, type Placed } from "./freeform";
 import { layoutById, SLOT_Z, STAGE_H, STAGE_W, type LayoutSlot } from "./layouts";
 import { placedStyle, rectStyle, u } from "./units";
 import type { RenderElement, RenderSlide } from "./snapshot";
-import { ChartBox, IconBox, PollBox, VideoBox, fillVar } from "./content-render";
+import { ChartBox, HtmlBox, IconBox, PollBox, VideoBox, fillVar } from "./content-render";
 import { textStyleCss, themeById, themeVars, type TextStyleId, type ThemeDef } from "./themes";
 
 export { fillVar };
@@ -179,6 +179,7 @@ function FreeBox({ element, placed, placeholders, theme }: { element: RenderElem
   if (element.kind === "icon") return <IconBox placed={placed} element={element} />;
   if (element.kind === "video") return <VideoBox placed={placed} element={element} />;
   if (element.kind === "poll") return <PollBox placed={placed} element={element} />;
+  if (element.kind === "html") return <HtmlBox placed={placed} element={element} />;
   return null;
 }
 

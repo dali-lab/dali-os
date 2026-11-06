@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { slideHasHtml } from "~/components/slides/deck/html-element";
 import { PresentStage } from "./PresentStage";
 import { FollowChip } from "./FollowChip";
 import type { PresentDeck } from "./deck-source";
@@ -45,6 +46,7 @@ export function FollowStage({
         renderSlide={renderSlide}
         transitions={{ slides: deck.slides, themeId: deck.themeId }}
         navigable={false}
+        hasCustomCode={slideHasHtml(deck.slides)}
         onExit={onBrowse}
       >
         <ReactionOverlay items={reactions} />

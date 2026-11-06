@@ -109,6 +109,22 @@ When the live deck editor is on for you, you can keep decks and single slides fo
 
 Everyone who can use a scope can use its templates, and anyone who can edit a deck can save it.
 
+## Custom HTML
+
+For something the built-in items can't do, such as an animation, a small interactive demo or a layout of your own, choose **Insert**, then **Custom HTML**. Write HTML, CSS and script in the **Source** box in the inspector, and the slide updates a moment after you stop typing.
+
+- **Fill slide**: turn it on to make the HTML cover the whole slide. It can't be moved or resized until you turn it off.
+- **Interact**: while editing, a click selects the item and does not reach your page. Double-click it, press **Enter** or choose **Interact** to use the page on the stage. Click outside it to go back to editing. **Reload** starts the page again.
+- **What it can do**: run scripts, draw with CSS, canvas and SVG, and load images over https. Scripts can be inline or come from cdnjs.cloudflare.com, cdn.jsdelivr.net or unpkg.com.
+- **What it can't do**: it can't reach the network (no fetch, requests or forms), read cookies or see anything else in DALI OS. It is limited to 200 KB of source.
+- **Not shared live**: while you present, each person's screen runs its own copy. What one person does on the page doesn't show on another screen, so don't use it for anything that has to stay in sync.
+- **Size**: the page lays out at the item's size on the 1920 by 1080 slide, so 1 pixel of your CSS is one slide unit. In the filmstrip, grid and layout gallery it shows as a "Custom HTML" card instead of running.
+- **Theme variables**: your page can use `--slide-accent`, `--slide-fg`, `--slide-muted`, `--slide-surface`, `--slide-ground`, `--slide-rule`, `--slide-font-display` and `--slide-font-body` to match the deck's theme. Both `html` and `body` have no margin and fill the item.
+- **Pause custom code**: when you present or follow, **Pause custom code** swaps every custom page for a card. It is saved in your browser, starts off, and only affects you. Use it if you don't want to run a deck's code.
+- **Download**: the PDF shows what the page looks like once it has loaded, and falls back to a card if it takes longer than a couple of seconds. PowerPoint gets a picture of the page, so it no longer moves or runs.
+
+Anyone who can edit the deck can edit the code, and it runs for everyone who opens the slide. Only add code from people you trust.
+
 ## Find and replace
 
 Press **⌘F**, or choose **Find and replace** in the **⋯** menu. It searches the text on every slide and the speaker notes. The arrows step through matches and show each one's slide. **Replace** changes the current match, and **Replace all** changes every match, and one **Undo** puts them all back. Turn on **Match case** to match capital letters exactly.
@@ -133,4 +149,4 @@ Click a comment in the panel to jump to its slide. Replies and @mentions notify 
 
 ## Work on a deck with an AI assistant
 
-A connected AI assistant outside DALI OS, such as Claude Desktop or Claude Code, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. Ask it to draft a deck from an outline, or to add slides from a document, and it makes the slides with their layouts, text, speaker notes and theme. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text, including tables and code. It can also place text boxes, pictures, shapes, charts with their data, icons, videos and polls, then align, group, layer and set build steps for them the way you can in the editor. Ask DALI inside DALI OS can read a deck and answer questions about it, but it does not change decks. Its changes show up live for everyone who has the deck open. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.
+A connected AI assistant outside DALI OS, such as Claude Desktop or Claude Code, can build and edit decks you can edit. See [AI assistants](/help/articles/ai-assistants) to connect one. Ask it to draft a deck from an outline, or to add slides from a document, and it makes the slides with their layouts, text, speaker notes and theme. It can add, move, duplicate and delete slides, change a slide's layout or the deck's theme, and write text, including tables and code. It can also place text boxes, pictures, shapes, charts with their data, icons, videos, polls and custom HTML pages, then align, group, layer and set build steps for them the way you can in the editor. An assistant can write a whole slide as custom HTML, using the theme colors and fonts, as described in Custom HTML above. Ask DALI inside DALI OS can read a deck and answer questions about it, but it does not change decks. Its changes show up live for everyone who has the deck open. It can also give you links to download the deck as a PDF or PowerPoint file. If you can only view a deck, the assistant can read it but not change it.

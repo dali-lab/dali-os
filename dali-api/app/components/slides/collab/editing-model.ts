@@ -28,6 +28,7 @@ export function reduceEditing(state: EditState, event: EditEvent, facts: EditFac
     if (facts.locked(id)) return { selection: [id], editingId: null, cropId: null };
     if (kind === "text") return { selection: [id], editingId: id, cropId: null };
     if (kind === "image") return { selection: [id], editingId: null, cropId: id };
+    if (kind === "html") return { selection: [id], editingId: id, cropId: null };
     return { selection: [id], editingId: null, cropId: null };
   };
   switch (event.type) {

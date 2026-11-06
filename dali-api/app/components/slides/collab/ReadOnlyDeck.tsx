@@ -3,6 +3,8 @@ import { ScaledSlide } from "~/components/slides/deck/SlideRender";
 import type { RenderSlide } from "~/components/slides/deck/snapshot";
 import { cn } from "~/lib/cn";
 import { CommentableStage, FitBox, type StageComments } from "./SlideStage";
+import { HtmlFrame } from "~/components/slides/deck/content-render";
+import { themeById } from "~/components/slides/deck/themes";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
 
 /** A deck drawn from loader data: the view for people who can't edit, and for decks this build doesn't know how to edit. */
@@ -63,7 +65,12 @@ export function ReadOnlyDeck({
             <FitBox>
               {() => (
                 <CommentableStage slide={current} comments={comments}>
-                  <SlideRender className="rounded-os-card shadow-sm" slide={current} theme={themeId} />
+                  <SlideRender
+                    className="rounded-os-card shadow-sm"
+                    slide={current}
+                    theme={themeId}
+                    renderFree={({ element, placed, fallback }) => (element.kind === "html" ? <HtmlFrame element={element} placed={placed} theme={themeById(themeId)} /> : fallback)}
+                  />
                 </CommentableStage>
               )}
             </FitBox>

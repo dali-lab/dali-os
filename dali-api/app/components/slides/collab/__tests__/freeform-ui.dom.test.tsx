@@ -265,7 +265,7 @@ describe("EditorToolbar insert tools", () => {
     expect([...el.querySelectorAll("button")].some((b) => ["Text box", "Shape", "Image"].includes(b.textContent?.trim() ?? ""))).toBe(false);
     open(el);
     expect(items()).toEqual([
-      "Text box", "Image", "Video", "Table", "Bar chart", "Line chart", "Pie chart", "Code block", "Icon", "Emoji",
+      "Text box", "Image", "Video", "Table", "Bar chart", "Line chart", "Pie chart", "Code block", "Custom HTML", "Icon", "Emoji",
       "Rectangle", "Rounded rectangle", "Ellipse", "Line", "Arrow",
     ]);
   });

@@ -11,6 +11,7 @@ export function FormField({
   multiline = false,
   rows = 3,
   mono = false,
+  onKeyDown,
 }: {
   label: string;
   value: string;
@@ -20,6 +21,7 @@ export function FormField({
   multiline?: boolean;
   rows?: number;
   mono?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const { fieldLabel } = useOsChrome();
   const control = cn("w-full", mono && "font-mono text-[13px]", multiline && "resize-y leading-6");
@@ -33,6 +35,7 @@ export function FormField({
           placeholder={placeholder}
           spellCheck={!mono}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
           className={control}
         />
       ) : (

@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { writeBlocks } from "~/components/slides/pptx/fragment-write";
 import type { ClipItem } from "./clipboard";
-import { cleanChart, cleanIcon, cleanPoll, cleanVideoUrl, DEFAULT_CHART_DATA, DEFAULT_POLL, type ChartSpec, type ChartType, type PollSpec } from "./content";
+import { cleanChart, cleanHtmlSource, cleanIcon, cleanPoll, cleanVideoUrl, DEFAULT_CHART_DATA, DEFAULT_POLL, type ChartSpec, type ChartType, type PollSpec } from "./content";
 import type { ImportBlock } from "~/components/slides/pptx/import-types";
 import { cleanCrop, type Crop } from "./crop";
 import type { StyleClip } from "./style-clip";
@@ -146,7 +146,7 @@ export function addEmoji(doc: Y.Doc, slideId: string, emoji: string, at?: Point)
   return addTextWith(doc, slideId, FREE_DEFAULTS.emoji, [{ type: "paragraph", content: [{ type: "text", text: glyph, styles: {} }], children: [] }], at, "title");
 }
 
-function addContent(doc: Y.Doc, slideId: string, kind: "chart" | "icon" | "video" | "poll", size: { w: number; h: number }, fields: Record<string, unknown>, at?: Point): string | null {
+function addContent(doc: Y.Doc, slideId: string, kind: "chart" | "icon" | "video" | "poll" | "html", size: { w: number; h: number }, fields: Record<string, unknown>, at?: Point): string | null {
   const slide = slideOf(doc, slideId);
   if (!slide) return null;
   const id = newId();
@@ -176,6 +176,45 @@ export function addVideo(doc: Y.Doc, slideId: string, url: string, at?: Point): 
 export function addPoll(doc: Y.Doc, slideId: string, poll: PollSpec = DEFAULT_POLL, at?: Point): string | null {
   const clean = cleanPoll(poll);
   return clean ? addContent(doc, slideId, "poll", FREE_DEFAULTS.poll, { poll: clean }, at) : null;
+}
+
+export const HTML_STARTER = `<div style="display:grid;place-items:center;height:100%;font:700 64px var(--slide-font-display);color:var(--slide-accent)">Custom HTML</div>`;
+
+export function addHtml(doc: Y.Doc, slideId: string, source: string = HTML_STARTER, opts: { fill?: boolean } = {}, at?: Point): string | null {
+  const clean = cleanHtmlSource(source);
+  if (clean === null) return null;
+  const size = opts.fill ? { w: STAGE_W, h: STAGE_H } : FREE_DEFAULTS.html;
+  return addContent(doc, slideId, "html", size, { html: new Y.Text(clean), ...(opts.fill ? { htmlFill: true } : {}) }, at);
+}
+
+/** Replaces the source by editing the shared text, so peers typing in it keep their changes. Refuses source over the cap. */
+export function setHtmlSource(doc: Y.Doc, slideId: string, id: string, source: string): boolean {
+  const next = cleanHtmlSource(source);
+  if (next === null) return false;
+  setOnKind(doc, slideId, id, "html", (el) => {
+    const text = el.get("html");
+    if (!(text instanceof Y.Text)) return void el.set("html", new Y.Text(next));
+    const old = text.toString();
+    let head = 0;
+    while (head < old.length && head < next.length && old[head] === next[head]) head++;
+    let tail = 0;
+    while (tail < old.length - head && tail < next.length - head && old[old.length - 1 - tail] === next[next.length - 1 - tail]) tail++;
+    if (old.length - head - tail > 0) text.delete(head, old.length - head - tail);
+    if (next.length - head - tail > 0) text.insert(head, next.slice(head, next.length - tail));
+  });
+  return true;
+}
+
+export function setHtmlFill(doc: Y.Doc, slideId: string, id: string, fill: boolean): void {
+  setOnKind(doc, slideId, id, "html", (el) => {
+    if (fill) {
+      el.set("htmlFill", true);
+      writePlacement(el, { x: 0, y: 0, w: STAGE_W, h: STAGE_H, rot: 0 });
+    } else {
+      el.delete("htmlFill");
+      writePlacement(el, centeredAt(FREE_DEFAULTS.html, undefined));
+    }
+  });
 }
 
 function setOnKind(doc: Y.Doc, slideId: string, id: string, kind: string, write: (el: ElementMap) => void): void {
@@ -544,6 +583,7 @@ export function writeClipItems(slide: SlideMap, items: ClipItem[], shift: { dx: 
     if (item.kind === "icon" && item.icon) Object.assign(fields, { icon: item.icon, fill: item.fill ?? "accent" });
     if (item.kind === "video" && item.videoUrl) fields.videoUrl = item.videoUrl;
     if (item.kind === "poll" && item.poll) fields.poll = item.poll;
+    if (item.kind === "html" && item.html !== undefined) Object.assign(fields, { html: new Y.Text(item.html), ...(item.htmlFill ? { htmlFill: true } : {}) });
     const el = newElementMap(id, item.kind, z++, fields);
     writePlacement(el, { ...item.placed, x: item.placed.x + shift.dx, y: item.placed.y + shift.dy });
     elementsOf(slide).set(id, el);

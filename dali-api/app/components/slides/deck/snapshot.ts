@@ -20,6 +20,7 @@ import { cleanBuildFields, type BuildEffect } from "./builds";
 import { slideMetaFields, type SlideBackground, type SlideTransition } from "./slide-meta";
 import { contentFields, type ChartSpec, type PollSpec } from "./content";
 import { cleanCrop, type Crop } from "./crop";
+import { STAGE_H, STAGE_W } from "./layouts";
 import { TEXT_STYLE_IDS, type TextStyleId } from "./themes";
 
 export interface RenderElement {
@@ -54,6 +55,8 @@ export interface RenderElement {
   icon?: string;
   videoUrl?: string;
   poll?: PollSpec;
+  html?: string;
+  htmlFill?: true;
   crop?: Crop;
   locked?: boolean;
   hFixed?: boolean;
@@ -113,13 +116,22 @@ export function extraFields(read: (key: string) => unknown) {
   };
 }
 
+const FILL_RECT = { x: 0, y: 0, w: STAGE_W, h: STAGE_H } as const;
+
+/** A fill-slide HTML element covers the whole stage and cannot be moved, whatever geometry it holds. */
+export function withFill<T extends { kind: string; htmlFill?: true; rot?: number }>(el: T): T {
+  if (el.kind !== "html" || !el.htmlFill) return el;
+  const { rot: _rot, ...rest } = el;
+  return { ...rest, ...FILL_RECT, locked: true } as unknown as T;
+}
+
 export function snapshotSlide(id: string, slide: SlideMap, withText = true): RenderSlide {
   const fragments = textOf(slide);
   const elements: RenderElement[] = [];
   elementsOf(slide).forEach((el, elId) => {
     if (isDeleted(el)) return;
     const style = el.get("textStyle");
-    elements.push({
+    elements.push(withFill({
       id: elId,
       kind: String(el.get("kind")),
       slot: str(el.get("slot")),
@@ -133,7 +145,7 @@ export function snapshotSlide(id: string, slide: SlideMap, withText = true): Ren
       ...shapeFields((k) => el.get(k)),
       ...contentFields((k) => el.get(k)),
       ...extraFields((k) => el.get(k)),
-    });
+    }));
   });
   elements.sort(compareZ);
   linkGroups(elements);

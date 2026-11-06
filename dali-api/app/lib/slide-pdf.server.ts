@@ -3,7 +3,7 @@ import { deckAccess, deckStorage, loadDeck } from "~/lib/slide-decks.server";
 import { readLiveDeck } from "~/collab/deck-live.server";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { notesBySlide, readDeck, toRenderDeck, type DeckRead } from "~/collab/read-deck.server";
-import { deckToPrintHtml, MAX_PDF_SLIDES } from "~/lib/pdf/slides-print-html.server";
+import { deckHasHtml, deckToPrintHtml, MAX_PDF_SLIDES } from "~/lib/pdf/slides-print-html.server";
 import { renderHtmlToPdf } from "~/lib/pdf/render.server";
 
 export function pdfFilename(title: string): string {
@@ -46,6 +46,6 @@ export async function exportDeckPdf(
     slides: render.slides,
     notes: opts.notes ? notesBySlide(read) : undefined,
   });
-  const pdf = await renderHtmlToPdf(html);
+  const pdf = await renderHtmlToPdf(html, { settleHtmlFrames: deckHasHtml(render.slides) });
   return { ok: true, pdf, filename: `${pdfFilename(access.page.title)}.pdf` };
 }
