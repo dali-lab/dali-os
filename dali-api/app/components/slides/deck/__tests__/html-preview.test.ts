@@ -23,6 +23,10 @@ describe("htmlPreviewVersion", () => {
     expect(htmlPreviewVersion("<p>a</p>", "dali-dark", { w: 101, h: 100 })).not.toBe(base);
     expect(htmlPreviewVersion("<p>a</p>", "dali-dark", { w: 100, h: 101 })).not.toBe(base);
   });
+
+  it("does not reuse pictures drawn before the frame loaded the theme fonts", () => {
+    expect(base).not.toBe("9147a52a");
+  });
 });
 
 describe("htmlPreviewUrl", () => {

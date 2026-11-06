@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   KeyboardSensor,
@@ -115,8 +115,13 @@ function Item({
   onDelete: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slide.id, disabled: !editable });
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (active) button.current?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
   const thumbButton = (
     <button
+      ref={button}
       type="button"
       onClick={(e) => onSelect({ shift: e.shiftKey, meta: e.metaKey || e.ctrlKey })}
       onContextMenu={onContext}

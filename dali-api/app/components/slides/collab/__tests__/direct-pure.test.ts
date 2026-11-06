@@ -8,7 +8,7 @@ import { snapshotDeck, type RenderSlide } from "~/components/slides/deck/snapsho
 import { setBuild } from "~/components/slides/deck/deck-ops";
 import { actionIds, arrangeActions, elementActions, findAction, stageActions, thumbnailActions, type ActionSpec, type ElementHandlers, type StageHandlers, type ThumbnailHandlers } from "../actions";
 import { neededHeight } from "../auto-height";
-import { actingSet, dropIndex, nextThumbSelection } from "../filmstrip-select";
+import { actingSet, dropIndex, nextThumbSelection, slideKeyTarget } from "../filmstrip-select";
 import { hasFiles, imageFilesOf, imageUnder, planDrop } from "../drop-images";
 import { contextSelection, IDLE, reduceEditing, type EditFacts, type EditState } from "../editing-model";
 import { formatWholeText, placeCaretAt, registerTextEditor } from "../text-format";
@@ -480,5 +480,34 @@ describe("new content kinds", () => {
     const before = JSON.stringify(slide().elements.map((e) => [e.x, e.y]));
     setPlacements(doc, slideId, { [chart]: { x: 5, y: 5, w: 50, h: 50, rot: 0 } });
     expect(JSON.stringify(slide().elements.map((e) => [e.x, e.y]))).toBe(before);
+  });
+});
+
+describe("slideKeyTarget", () => {
+  const order = ["a", "b", "c"];
+
+  it("steps back with Up, Left and Page Up, and forward with Down, Right and Page Down", () => {
+    for (const key of ["ArrowUp", "ArrowLeft", "PageUp"]) expect(slideKeyTarget(order, "b", key)).toBe("a");
+    for (const key of ["ArrowDown", "ArrowRight", "PageDown"]) expect(slideKeyTarget(order, "b", key)).toBe("c");
+  });
+
+  it("stays on the first or last slide at either end", () => {
+    expect(slideKeyTarget(order, "a", "ArrowUp")).toBe("a");
+    expect(slideKeyTarget(order, "c", "ArrowDown")).toBe("c");
+  });
+
+  it("jumps to the ends with Home and End", () => {
+    expect(slideKeyTarget(order, "b", "Home")).toBe("a");
+    expect(slideKeyTarget(order, "b", "End")).toBe("c");
+  });
+
+  it("starts from the first slide when none is current or the current one is gone", () => {
+    expect(slideKeyTarget(order, null, "ArrowDown")).toBe("a");
+    expect(slideKeyTarget(order, "gone", "ArrowUp")).toBe("a");
+  });
+
+  it("ignores other keys and an empty deck", () => {
+    expect(slideKeyTarget(order, "b", "Enter")).toBeNull();
+    expect(slideKeyTarget([], null, "ArrowDown")).toBeNull();
   });
 });
