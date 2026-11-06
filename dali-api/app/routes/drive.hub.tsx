@@ -1034,10 +1034,6 @@ export function NewMenu({
     }
   }
 
-  // Create an agreement from the Core New menu. Prompts for a name (like New
-  // document), then follows the admin create action's redirect, rewriting the
-  // admin path to the Drive-namespaced one. The create action files it into
-  // Core ▸ Agreements ▸ {kind} so its breadcrumb resolves.
   async function createAgreement() {
     const name = await dialog.prompt({
       title: "New agreement",
@@ -1054,11 +1050,32 @@ export function NewMenu({
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");
     formData.set("cadence", "Once");
+    const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
+    if (folderPageId) formData.set("folderPageId", folderPageId);
     const res = await fetch("/core/agreements", { method: "POST", body: formData, credentials: "include" });
     if (res.ok || res.redirected) {
       const driveUrl = res.url.replace(/\/core\/agreements\/([^/]+)$/, "/documents/agreement/$1");
       window.location.assign(driveUrl);
     }
+  }
+
+  async function createRubric() {
+    const name = await dialog.prompt({
+      title: "New rubric",
+      label: "Name",
+      defaultValue: "Untitled rubric",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const formData = new FormData();
+    formData.set("name", name.trim());
+    const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
+    if (folderPageId) formData.set("folderPageId", folderPageId);
+    const res = await fetch("/api/rubrics", { method: "POST", body: formData, credentials: "include" });
+    const json = (await res.json().catch(() => ({}))) as { rubricId?: string };
+    if (res.ok && json.rubricId) window.location.assign(`/hiring/rubrics/${json.rubricId}`);
+    else toast.error("Couldn't create the rubric");
   }
 
   return (
@@ -1170,6 +1187,11 @@ export function NewMenu({
       {scope.id === "core" && canManageAgreements && (
         <Menu.Item icon={<FileSignature className="w-3.5 h-3.5" />} onSelect={() => void createAgreement()}>
           <span data-testid="drive-new-agreement">New agreement</span>
+        </Menu.Item>
+      )}
+      {scope.id === "hiring" && canManageAgreements && (
+        <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createRubric()}>
+          <span data-testid="drive-new-rubric">New rubric</span>
         </Menu.Item>
       )}
       {scope.id !== "mine" && (

@@ -6,6 +6,9 @@ import {
 } from "~/lib/process-ids";
 import type { ProcessType, SharePermission } from "~/generated/prisma/client";
 import { ensureMentorsGroup } from "~/lib/groups";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
+import { nearestRoot } from "~/lib/drive-roots";
 
 export type RootKey = "core" | "hiring" | "mentorship";
 
@@ -172,4 +175,19 @@ export async function ensureAllRoots(createdById: string): Promise<Record<RootKe
   const hiring = await ensureRoot("hiring", createdById);
   const mentorship = await ensureRoot("mentorship", createdById);
   return { core, hiring, mentorship };
+}
+
+/** The folder a new item may be created in: `folderPageId` when it's a live folder the user can edit under this root, else null. */
+export async function editableFolderInRoot(
+  userId: string,
+  folderPageId: string | null,
+  key: RootKey,
+  request?: Request,
+): Promise<string | null> {
+  if (!folderPageId) return null;
+  const [chain, rootId] = await Promise.all([loadAncestorChain(folderPageId), findRoot(key)]);
+  const folder = chain[0];
+  if (!folder || folder.kind !== "Folder" || folder.archivedAt !== null) return null;
+  if (!rootId || nearestRoot(chain)?.id !== rootId) return null;
+  return (await getPageAccess(userId, folderPageId, request)).canEdit ? folderPageId : null;
 }
