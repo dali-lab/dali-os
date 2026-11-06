@@ -276,7 +276,15 @@ export async function validateAnswers(
       v === "" ||
       (Array.isArray(v) && v.length === 0) ||
       (typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length === 0);
-    if (empty) return { error: `"${q.data.label}" is required.`, status: 400 };
+    if (!empty) continue;
+    if (q.type === "reference") {
+      const options = await resolveReferenceOptions(q.data.referenceSource, {
+        userId,
+        termId: q.data.referenceTermId,
+      });
+      if (options.length === 0) continue;
+    }
+    return { error: `"${q.data.label}" is required.`, status: 400 };
   }
 
   // Re-resolve `reference` questions server-side and reject any answer that

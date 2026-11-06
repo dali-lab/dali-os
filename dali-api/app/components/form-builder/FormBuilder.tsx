@@ -52,6 +52,7 @@ import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/re
 import { isPrefillFieldKey, prefillFieldFits, type FillerKind } from '~/forms/lib/prefill-fields'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { PrefillPicker } from './PrefillPicker'
+import { QuestionSourceNote } from './QuestionSourceNote'
 import { Checkbox } from '~/components/ui/Checkbox'
 import { Segmented } from '~/components/ui/Segmented'
 import {
@@ -1285,6 +1286,7 @@ export function FormBuilderTab({
                                 Shown when {showIfSentence(q.data.showIf, numbers)}
                               </p>
                             )}
+                            <QuestionSourceNote question={q} />
                             {problemByKey.get(q.key) && (
                               <p className="text-sm text-os-amber mb-2">{problemByKey.get(q.key)}</p>
                             )}

@@ -12,6 +12,7 @@ import { isQuestionArray } from "~/forms/lib/forms-data";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { resolvePrefill } from "~/forms/lib/prefill.server";
+import { isPrefillFieldKey, prefillFieldFits, prefillHint } from "~/forms/lib/prefill-fields";
 
 export async function action({ request }: Route.ActionArgs) {
   // Resolves reference options for the preview modal; writes nothing.
@@ -41,9 +42,11 @@ export async function action({ request }: Route.ActionArgs) {
     }),
   );
 
-  return {
-    ok: true,
-    questions: normalizeQuestionBodies(resolved),
-    prefill: await resolvePrefill(resolved, auth.user.sub),
-  };
+  const prefill = await resolvePrefill(resolved, auth.user.sub);
+  const hinted = resolved.map((q) =>
+    isPrefillFieldKey(q.data.prefill) && prefillFieldFits(q.data.prefill, q) && !(q.key in prefill)
+      ? { ...q, data: { ...q.data, prefillHint: prefillHint(q.data.prefill) } }
+      : q,
+  );
+  return { ok: true, questions: normalizeQuestionBodies(hinted), prefill };
 }

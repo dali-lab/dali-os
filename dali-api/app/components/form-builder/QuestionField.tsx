@@ -807,7 +807,7 @@ export function FormQuestionField({
         value={value}
         onChange={onChange}
         disabled={disabled || opts.length === 0}
-        placeholder={opts.length === 0 ? "No options available" : "Select..."}
+        placeholder={opts.length === 0 ? "Nothing to pick here, you can skip this" : "Select..."}
         options={opts.map((o) => ({ value: o.value, label: o.label }))}
         buttonClassName={`${inputBase}${disabledClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
       />
