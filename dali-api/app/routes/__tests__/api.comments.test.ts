@@ -15,6 +15,14 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/reactions.server", () => ({
+  withEmojiImages: vi.fn(async (items: { reactions: { emoji: string }[] }[]) =>
+    items.map((c) => ({
+      ...c,
+      reactions: c.reactions.map((r) => (r.emoji === ":party:" ? { ...r, imageUrl: "/party.png" } : r)),
+    })),
+  ),
+}));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/mentions", () => ({
   extractHandlesFromText: vi.fn(() => []),
@@ -37,6 +45,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { hydrateAuthors } from "~/lib/collabAuth";
 import { action, loader } from "~/routes/api.comments";
 
 const FILE_ID = "file-1";
@@ -244,10 +253,46 @@ describe("GET /api/comments loader", () => {
         createdAt: now,
         updatedAt: now,
         versionId: null,
+        reactions: [],
       },
     ]);
     const res = (await get({ targetType: "file", targetId: FILE_ID })) as Response;
     const data = await res.json();
     expect(data.comments[0]).toHaveProperty("updatedAt");
+  });
+});
+
+describe("GET /api/comments reactions", () => {
+  it("names each reactor and fills in custom emoji images", async () => {
+    mockPrisma.docComment.findMany.mockResolvedValue([
+      {
+        id: "c1",
+        parentId: null,
+        authorId: "author-1",
+        body: "hi",
+        bodyJson: null,
+        anchor: null,
+        createdAt: new Date("2026-11-01T00:00:00Z"),
+        updatedAt: new Date("2026-11-01T00:00:00Z"),
+        versionId: null,
+        reactions: [
+          { userId: "reactor-1", emoji: ":party:", createdAt: new Date("2026-11-01T00:00:00Z") },
+          { userId: "reactor-2", emoji: "👍", createdAt: new Date("2026-11-01T00:00:00Z") },
+        ],
+      },
+    ]);
+    vi.mocked(hydrateAuthors).mockResolvedValue([
+      { id: "author-1", name: "Ada Lovelace", photoUrl: null },
+      { id: "reactor-1", name: "Grace Hopper", photoUrl: null },
+    ] as never);
+
+    const res = (await get({ targetType: "doc", targetId: PAGE_ID })) as Response;
+    const { comments } = await res.json();
+
+    expect(vi.mocked(hydrateAuthors).mock.calls[0][0].sort()).toEqual(["author-1", "reactor-1", "reactor-2"]);
+    expect(comments[0].reactions).toEqual([
+      expect.objectContaining({ userId: "reactor-1", emoji: ":party:", name: "Grace Hopper", imageUrl: "/party.png" }),
+      expect.objectContaining({ userId: "reactor-2", emoji: "👍", name: "Unknown" }),
+    ]);
   });
 });

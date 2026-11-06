@@ -1197,7 +1197,7 @@ export function DocumentEditor({
                   pageId,
                   currentUserId,
                   canComment,
-                  canModerate: canEdit,
+                  canModerate: isCore,
                   panelOpen: false,
                   panelTargetId: "doc-comments-dropdown",
                   railVisible,

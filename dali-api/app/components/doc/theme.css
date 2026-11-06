@@ -577,26 +577,6 @@ html:root .doc-canvas--small .doc-title {
   display: none;
 }
 
-/* One "add reaction" control per comment. BlockNote draws two once a comment
- * has any reaction: the emoji button in the hover toolbar beside the body, and
- * the "+" badge at the end of the reaction row. Keep the badge — it sits with
- * the reactions it adds to — and drop the toolbar's copy. A comment with no
- * reactions has no badge, so there the toolbar button stays and remains the
- * only way to add the first one. It is the toolbar's first child: our
- * ThreadStoreAuth allows reactions for everyone, and resolve is gone. */
-.bn-root .bn-thread-comment:has(.bn-comment-reactions) .bn-comment-actions > :first-child {
-  /* !important because the popover trigger carries an inline display:flex. */
-  display: none !important;
-}
-
-/* ...and the toolbar itself when that trigger was the only thing in it, so
- * hiding the button doesn't leave an empty bordered box over the comment. */
-.bn-root
-  .bn-thread-comment:has(.bn-comment-reactions)
-  .bn-comment-actions:has(> :only-child) {
-  display: none !important;
-}
-
 /* Mark flash: temporary bright highlight when navigating to a mark from a
  * card — instant on, eased fade back to the resting mark color. */
 .bn-thread-mark-flash {

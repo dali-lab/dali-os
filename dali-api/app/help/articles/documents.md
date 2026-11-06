@@ -23,7 +23,7 @@ Type `@` and start a name to mention a member, or a page title to link to it. Me
 
 ## Comments
 
-To comment on a passage, select the text and click **Add comment** in the toolbar that appears. You need comment access or higher. Comments show beside the document, or at the bottom on a narrow screen, and only once the document has some. Use **Hide comments** or **Show comments** in the document's menu (the three dots) to toggle them. You can reply to a comment and delete your own. People who can edit can delete any comment.
+To comment on a passage, select the text and click **Add comment** in the toolbar that appears. You need comment access or higher. Comments show beside the document, or at the bottom on a narrow screen, and only once the document has some. Use **Hide comments** or **Show comments** in the document's menu (the three dots) to toggle them. You can reply to a comment, react to it with any emoji (including the lab's custom ones), and edit or delete your own from the **More actions** button (the three dots) that shows when you hover it. Core can delete any comment.
 
 ## Find and replace
 

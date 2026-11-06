@@ -18,6 +18,7 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
+vi.mock("~/lib/reactions.server", () => ({ reactionRefusal: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
@@ -25,6 +26,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { isCore } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { reactionRefusal } from "~/lib/reactions.server";
 import { action } from "~/routes/api.comments.$id";
 
 const mockPrismaTyped = prisma as any;
@@ -295,6 +297,20 @@ describe("react intent", () => {
       canComment: true,
     });
     mockPrismaTyped.docCommentReaction.upsert.mockResolvedValue({});
+    mockPrismaTyped.docCommentReaction.findMany.mockResolvedValue([{ emoji: "❤️" }]);
+    vi.mocked(reactionRefusal).mockResolvedValue(null);
+  });
+
+  it("checks the emoji against the ones already on the comment", async () => {
+    await post("react", AUTHOR_ID, { emoji: "👍" });
+    expect(reactionRefusal).toHaveBeenCalledWith("👍", ["❤️"]);
+  });
+
+  it.each([400, 409] as const)("refuses with %i when the emoji isn't allowed", async (status) => {
+    vi.mocked(reactionRefusal).mockResolvedValue(status);
+    const res = (await post("react", AUTHOR_ID, { emoji: ":gone:" })) as Response;
+    expect(res.status).toBe(status);
+    expect(mockPrismaTyped.docCommentReaction.upsert).not.toHaveBeenCalled();
   });
 
   it("upserts a reaction row for a valid emoji", async () => {
