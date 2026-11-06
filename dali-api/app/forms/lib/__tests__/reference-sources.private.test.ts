@@ -191,13 +191,10 @@ describe("projects:my-organization", () => {
     expect(findMany).not.toHaveBeenCalled();
   });
 
-  it("lists only projects actively linked to the filler's own orgs, private ones included", async () => {
+  it("lists every project the filler's orgs ever partnered on: ended, archived and private included", async () => {
     contact.mockResolvedValue({ memberships: [{ orgId: "org1" }] });
     const options = await resolveReferenceOptions("projects:my-organization", { userId: "u1" });
     expect(options.map((o) => o.value)).toEqual(["p1"]);
-    const where = findMany.mock.calls[0][0].where;
-    expect(where.status).toEqual({ not: "Archived" });
-    expect(where.partners.some.partnerOrgId).toEqual({ in: ["org1"] });
-    expect(where).not.toHaveProperty("isPrivate");
+    expect(findMany.mock.calls[0][0].where).toEqual({ partners: { some: { partnerOrgId: { in: ["org1"] } } } });
   });
 });

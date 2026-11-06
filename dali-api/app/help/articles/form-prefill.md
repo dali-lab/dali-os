@@ -19,7 +19,7 @@ What you can pick depends on the question type:
 - **Short answer**: their name, their job title or phone (partners), or their organization's name, legal name, address or website (partners).
 - **Email**: their email.
 - **Long answer**: their organization's address (partners).
-- **Database list** with the data source **Projects of my organization (partners)**: their project, picked for them when their organization has just one.
+- **Database list** with the data source **Projects of my organization (partners)**: their project, picked for them when their organization has just one. The list includes every project their organization has worked on with DALI, including past ones.
 
 Organization answers fill in only when the partner belongs to one organization. If they belong to several, those questions start blank.
 

@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { partnerOrgIdsForUser, partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
+import { partnerOrgIdsForUser } from "~/partners/lib/partner-access";
 import {
   REFERENCE_SOURCE_LABELS,
   isReferenceSourceKey,
@@ -200,13 +200,14 @@ const LOADERS = {
     });
     return toProjectOptions(projects, ctx.termId);
   },
-  // A partner's own projects, private ones included: this isn't an offer list.
+  // Every project the filler's orgs ever partnered on: ended, archived and
+  // private included, since a past partner may come back for support.
   "projects:my-organization": async (ctx?: ReferenceContext) => {
     if (!ctx?.userId) return [];
     const orgIds = await partnerOrgIdsForUser(ctx.userId);
     if (orgIds.length === 0) return [];
     const projects = await prisma.project.findMany({
-      where: partnerProjectsWhereForOrgs(orgIds),
+      where: { partners: { some: { partnerOrgId: { in: orgIds } } } },
       orderBy: { name: "asc" },
       select: PROJECT_CARD_SELECT,
     });
