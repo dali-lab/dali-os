@@ -68,7 +68,7 @@ These live in `.github/workflows/`. Gating on PRs (treat failures as blocking):
 - `build-check.yml` — Docker build validation via flyctl. The build runs `react-router build`, not `tsc`, so **no CI job typechecks**; run `npm run typecheck` yourself when you touch TS.
 - `migration-check.yml` — Prisma migration safety: no schema drift, no deleted applied migrations, pgfence safety analysis.
 - `codeql.yml` — static security scanning.
-- `preview-deploy.yml` — per-PR Neon branch + Fly app (don't worry about this one unless it's failing specifically). `preview-teardown.yml` and `preview-sweeper.yml` clean them up.
+- `preview-deploy.yml` — per-PR Neon branch + Fly app, opt-in: add the `preview` label to a PR (don't worry about this one unless it's failing specifically). `preview-teardown.yml` and `preview-sweeper.yml` clean them up.
 
 Deploy and release:
 - `deploy.yml` — Fly deploy on push to `staging` or `prod`.
