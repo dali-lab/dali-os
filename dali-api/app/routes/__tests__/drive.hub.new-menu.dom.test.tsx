@@ -73,7 +73,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountMenu(s: Scope, currentFolderId: string | null = null, actions: object = {}) {
+async function mountMenu(s: Scope, currentFolderId: string | null = null, actions: object = {}, canManageAgreements = false) {
   container = document.createElement("div");
   document.body.appendChild(container);
   const mounted = createRoot(container);
@@ -83,7 +83,7 @@ async function mountMenu(s: Scope, currentFolderId: string | null = null, action
       createElement(NewMenu, {
         scope: s,
         actions: actions as never,
-        canManageAgreements: false,
+        canManageAgreements,
         onUploadClick: () => {},
         uploading: false,
         onTemplate: () => {},
@@ -312,6 +312,87 @@ describe("New menu: creating in place", () => {
     });
     expect(assign).toHaveBeenCalledWith("/forms/edit/form1");
     expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("New menu: agreements and rubrics", () => {
+  const entry = (testId: string) => document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  const click = async (testId: string) => {
+    await act(async () => {
+      entry(testId)!.closest<HTMLElement>('[role="menuitem"]')!.click();
+    });
+  };
+  const posted = (fetchMock: ReturnType<typeof vi.fn>) => {
+    const [url, init] = fetchMock.mock.calls[0];
+    return { url, body: Object.fromEntries((init.body as FormData).entries()) };
+  };
+
+  it.each([
+    ["core", true, false],
+    ["hiring", false, true],
+    ["lab", false, false],
+    ["mentorship", false, false],
+  ])("in %s offers agreement=%s, rubric=%s to Core", async (id, agreement, rubric) => {
+    await mountMenu(scope({ id }), null, {}, true);
+    expect(!!entry("drive-new-agreement")).toBe(agreement);
+    expect(!!entry("drive-new-rubric")).toBe(rubric);
+  });
+
+  it("offers neither to someone who can't manage agreements", async () => {
+    await mountMenu(scope({ id: "hiring" }));
+    expect(entry("drive-new-rubric")).toBeNull();
+    act(() => root?.unmount());
+    await mountMenu(scope({ id: "core" }));
+    expect(entry("drive-new-agreement")).toBeNull();
+  });
+
+  it("creates a rubric in the open folder and opens its editor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, rubricId: "r1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue("  Design rubric ");
+    await mountMenu(scope({ id: "hiring", rootFolderId: "hiring-root" }), "sub", {}, true);
+    await click("drive-new-rubric");
+    expect(posted(fetchMock)).toEqual({ url: "/api/rubrics", body: { name: "Design rubric", folderPageId: "sub" } });
+    expect(assign).toHaveBeenCalledWith("/hiring/rubrics/r1");
+  });
+
+  it("files a rubric at the Hiring root when no folder is open", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, rubricId: "r1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue("Design rubric");
+    await mountMenu(scope({ id: "hiring", rootFolderId: "hiring-root" }), null, {}, true);
+    await click("drive-new-rubric");
+    expect(posted(fetchMock).body.folderPageId).toBe("hiring-root");
+  });
+
+  it("says so and stays put when the rubric can't be created", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "Forbidden" }) }));
+    prompt.mockResolvedValue("Design rubric");
+    await mountMenu(scope({ id: "hiring" }), null, {}, true);
+    await click("drive-new-rubric");
+    expect(toastError).toHaveBeenCalledWith("Couldn't create the rubric");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("posts nothing when the rubric name prompt is cancelled", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue(null);
+    await mountMenu(scope({ id: "hiring" }), null, {}, true);
+    await click("drive-new-rubric");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("creates an agreement in the open folder", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, redirected: true, url: "http://x/core/agreements/a1" });
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue("NDA");
+    await mountMenu(scope({ id: "core", rootFolderId: "core-root" }), "legal", {}, true);
+    await click("drive-new-agreement");
+    const { url, body } = posted(fetchMock);
+    expect(url).toBe("/core/agreements");
+    expect(body).toMatchObject({ intent: "create", name: "NDA", folderPageId: "legal" });
+    expect(assign).toHaveBeenCalledWith("http://x/documents/agreement/a1");
   });
 });
 

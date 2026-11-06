@@ -9,10 +9,14 @@ vi.mock("~/lib/db.server", () => ({
 }));
 
 vi.mock("~/lib/groups", () => ({ ensureMentorsGroup: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
+vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { ensureMentorsGroup } from "~/lib/groups";
-import { ROOTS, findRoot, ensureRoot, ensureAllRoots, isRoot } from "~/lib/drive-roots.server";
+import { getPageAccess } from "~/lib/pageAccess.server";
+import { loadAncestorChain } from "~/lib/page-ancestry.server";
+import { ROOTS, findRoot, ensureRoot, ensureAllRoots, isRoot, editableFolderInRoot } from "~/lib/drive-roots.server";
 
 const m = prisma as any;
 
@@ -218,5 +222,55 @@ describe("ensureAllRoots", () => {
       .mockResolvedValueOnce({ id: "h" })
       .mockResolvedValueOnce({ id: "m" });
     expect(await ensureAllRoots("u1")).toEqual({ core: "c", hiring: "h", mentorship: "m" });
+  });
+});
+
+describe("editableFolderInRoot", () => {
+  const folder = (id: string, over: object = {}) => ({ id, title: id, kind: "Folder", archivedAt: null, folderType: null, ...over });
+  const hiringRoot = folder("hiring-root", { folderType: "Root" });
+
+  beforeEach(() => {
+    m.page.findFirst.mockResolvedValue({ id: "hiring-root" });
+    vi.mocked(loadAncestorChain).mockResolvedValue([folder("sub"), hiringRoot] as never);
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true } as never);
+  });
+
+  it("returns null without a folder, reading nothing", async () => {
+    expect(await editableFolderInRoot("u1", null, "hiring")).toBeNull();
+    expect(loadAncestorChain).not.toHaveBeenCalled();
+  });
+
+  it("accepts an editable folder under the root, and the root itself", async () => {
+    expect(await editableFolderInRoot("u1", "sub", "hiring")).toBe("sub");
+    expect(getPageAccess).toHaveBeenCalledWith("u1", "sub", undefined);
+    vi.mocked(loadAncestorChain).mockResolvedValue([hiringRoot] as never);
+    expect(await editableFolderInRoot("u1", "hiring-root", "hiring")).toBe("hiring-root");
+  });
+
+  it("rejects a folder under another root or under no root", async () => {
+    vi.mocked(loadAncestorChain).mockResolvedValue([folder("sub"), folder("core-root", { folderType: "Root" })] as never);
+    expect(await editableFolderInRoot("u1", "sub", "hiring")).toBeNull();
+    vi.mocked(loadAncestorChain).mockResolvedValue([folder("sub")] as never);
+    expect(await editableFolderInRoot("u1", "sub", "hiring")).toBeNull();
+  });
+
+  it("rejects a folder when the root doesn't exist", async () => {
+    m.page.findFirst.mockResolvedValue(null);
+    expect(await editableFolderInRoot("u1", "sub", "hiring")).toBeNull();
+  });
+
+  it("rejects a missing, trashed or non-folder page", async () => {
+    vi.mocked(loadAncestorChain).mockResolvedValue([] as never);
+    expect(await editableFolderInRoot("u1", "gone", "hiring")).toBeNull();
+    vi.mocked(loadAncestorChain).mockResolvedValue([folder("sub", { archivedAt: new Date() }), hiringRoot] as never);
+    expect(await editableFolderInRoot("u1", "sub", "hiring")).toBeNull();
+    vi.mocked(loadAncestorChain).mockResolvedValue([folder("doc", { kind: "FreeForm" }), hiringRoot] as never);
+    expect(await editableFolderInRoot("u1", "doc", "hiring")).toBeNull();
+    expect(getPageAccess).not.toHaveBeenCalled();
+  });
+
+  it("rejects a folder the user can't edit", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false } as never);
+    expect(await editableFolderInRoot("u1", "sub", "hiring")).toBeNull();
   });
 });

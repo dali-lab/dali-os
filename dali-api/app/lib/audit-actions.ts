@@ -81,6 +81,7 @@ export const AUDIT_ACTIONS = [
   "delibs.open",
   "delibs.close",
   "interview.config",
+  "rubric.create",
   "rubric.version.create",
   "cycle.create",
   "confidentiality.version.create",

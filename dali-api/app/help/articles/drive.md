@@ -33,7 +33,7 @@ Use the **Search Drive** box in the toolbar to search across every drive you can
 Open a drive or folder, then click **New**.
 
 - **New document**, **New folder**, **New whiteboard**, **New notebook** and **New form** ask for a name, then create the item in the folder you are viewing.
-- **New agreement** appears in Core, for people who manage agreements.
+- **New agreement** appears in Core and **New rubric** appears in Hiring, for Core members. Both ask for a name, then create the item in the folder you are viewing and open it.
 - **From template…** starts a document from a template (not offered in My Drive).
 - **Upload files** picks files from your computer. You can also drag files into the folder.
 
