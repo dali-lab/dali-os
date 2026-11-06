@@ -21,7 +21,7 @@ async function pick(page: Page, field: string, option: string) {
     .locator('.os-field-group')
     .filter({ has: page.locator('.os-field-label', { hasText: new RegExp(`^${field}`) }) })
     .first();
-  await row.locator('button[aria-haspopup="listbox"]').first().click();
+  await row.locator('button[aria-haspopup]').first().click();
   await page.getByRole('option', { name: option }).first().click();
   if (await page.getByRole('listbox').isVisible()) {
     await row.locator('.os-field-label').click();
