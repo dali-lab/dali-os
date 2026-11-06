@@ -3,7 +3,8 @@ import { deckAccess, deckStorage, loadDeck } from "~/lib/slide-decks.server";
 import { readLiveDeck } from "~/collab/deck-live.server";
 import { seedDeckDoc } from "~/collab/deck-write.server";
 import { notesBySlide, readDeck, toRenderDeck, type DeckRead } from "~/collab/read-deck.server";
-import { deckToPrintHtml, MAX_PDF_SLIDES } from "~/lib/pdf/slides-print-html.server";
+import { deckHasHtml, deckToPrintHtml, MAX_PDF_SLIDES } from "~/lib/pdf/slides-print-html.server";
+import { PDF_HARD_TIMEOUT_MS, RenderTimeoutError } from "~/lib/pdf/render-guard.server";
 import { renderHtmlToPdf } from "~/lib/pdf/render.server";
 
 export function pdfFilename(title: string): string {
@@ -40,12 +41,15 @@ export async function exportDeckPdf(
     return { ok: false, status: 413, error: `This deck has more than ${MAX_PDF_SLIDES} slides, which is too many to export as one PDF.` };
   }
   const render = toRenderDeck(read);
-  const html = await deckToPrintHtml({
-    title: access.page.title,
-    themeId: render.themeId,
-    slides: render.slides,
-    notes: opts.notes ? notesBySlide(read) : undefined,
-  });
-  const pdf = await renderHtmlToPdf(html);
+  const input = { title: access.page.title, themeId: render.themeId, slides: render.slides, notes: opts.notes ? notesBySlide(read) : undefined };
+  const hasHtml = deckHasHtml(render.slides);
+  const guarded = { guardNetwork: true, hardTimeoutMs: PDF_HARD_TIMEOUT_MS };
+  let pdf: Buffer;
+  try {
+    pdf = await renderHtmlToPdf(await deckToPrintHtml(input), hasHtml ? { ...guarded, settleHtmlFrames: true } : guarded);
+  } catch (err) {
+    if (!(err instanceof RenderTimeoutError)) throw err;
+    pdf = await renderHtmlToPdf(await deckToPrintHtml({ ...input, staticHtml: true, fonts: false }), { ...guarded, javaScriptEnabled: false });
+  }
   return { ok: true, pdf, filename: `${pdfFilename(access.page.title)}.pdf` };
 }

@@ -46,6 +46,10 @@ export interface InspectorFreeform {
   onPoll?: (id: string, poll: PollSpec) => boolean;
   onIcon?: (id: string, name: string) => void;
   onVideo?: (id: string, url: string) => boolean;
+  onHtml?: (id: string, source: string) => boolean;
+  onHtmlFill?: (id: string, fill: boolean) => void;
+  onInteract?: (id: string | null) => void;
+  interactingId?: string | null;
   onLock: (locked: boolean) => void;
   onDeselect: () => void;
   prefs: SnapPrefs;
@@ -80,7 +84,7 @@ export function AlignRow({ onAlign, disabled = false }: { onAlign: (mode: AlignM
   );
 }
 
-export const KIND_LABELS: Record<string, string> = { text: "Text", image: "Image", shape: "Shape", group: "Group", chart: "Chart", icon: "Icon", video: "Video" };
+export const KIND_LABELS: Record<string, string> = { text: "Text", image: "Image", shape: "Shape", group: "Group", chart: "Chart", icon: "Icon", video: "Video", html: "Custom HTML" };
 
 /** What the element tab is called: the kind of the one selected item, or a count. */
 export function elementTabLabel(slide: RenderSlide | null, selection: string[]): string {
@@ -262,7 +266,7 @@ export function ElementView({ slide, themeId, selection, editable, freeform }: {
       <OrderButtons freeform={freeform} />
       <ContentSection element={el} editable={editable} freeform={freeform} />
       {(el.kind === "shape" || el.kind === "icon") && <FillSwatches value={el.fill ?? "accent"} themeId={themeId} onPick={freeform.onFill} />}
-      {editable && <Toggle tone="os" label="Lock position" checked={Boolean(el.locked)} onChange={(e) => freeform.onLock(e.target.checked)} />}
+      {editable && !el.htmlFill && <Toggle tone="os" label="Lock position" checked={Boolean(el.locked)} onChange={(e) => freeform.onLock(e.target.checked)} />}
       <SnapToggles prefs={freeform.prefs} onPrefs={freeform.onPrefs} />
       {editable && (
         <div className="flex flex-wrap gap-2">

@@ -120,6 +120,7 @@ export function cloneValue(value: unknown): unknown {
     value.forEach((v, k) => m.set(k, cloneValue(v)));
     return m;
   }
+  if (value instanceof Y.Text) return new Y.Text(value.toString());
   if (value instanceof Y.XmlFragment) {
     const f = new Y.XmlFragment();
     f.insert(0, value.toArray().map((n) => n.clone()) as Array<Y.XmlText | Y.XmlElement>);

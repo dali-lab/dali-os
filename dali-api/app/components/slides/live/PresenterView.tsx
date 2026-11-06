@@ -177,7 +177,7 @@ export function PresenterView({
                 )}
                 style={{ width: THUMB_WIDTH, aspectRatio: "16 / 9" }}
               >
-                {renderSlide(id, { width: THUMB_WIDTH })}
+                {renderSlide(id, { width: THUMB_WIDTH, thumb: true })}
               </button>
             ))}
           </div>
@@ -189,7 +189,7 @@ export function PresenterView({
             className="flex items-center justify-center overflow-hidden rounded-os-item border border-os-container bg-os-card text-xs text-os-grey"
             style={{ width: NEXT_WIDTH, aspectRatio: "16 / 9" }}
           >
-            {nextId ? renderSlide(nextId, { width: NEXT_WIDTH, step: onPositionChange ? nextPos.step : undefined }) : "End of deck"}
+            {nextId ? renderSlide(nextId, { width: NEXT_WIDTH, step: onPositionChange ? nextPos.step : undefined, thumb: true }) : "End of deck"}
           </div>
           {extras}
           <div className="flex items-center justify-between">

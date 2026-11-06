@@ -16,6 +16,8 @@ import { PresenterPolls, pollsOnSlide } from "./PresenterPolls";
 import { ReactionOverlay } from "./ReactionOverlay";
 import { JoinCard } from "./JoinCard";
 import { useAutoBuilds } from "./useBuildMotion";
+import { slideHasHtml } from "~/components/slides/deck/html-element";
+import { PauseCustomCodeButton } from "./PauseCustomCodeButton";
 import { useJoinHidden } from "./useJoinHidden";
 import { usePolls } from "./usePolls";
 import { useReactions } from "./useReactions";
@@ -36,7 +38,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const polls = usePolls(pageId);
   const reactions = useReactions(pageId, !live.reactionsOff);
   const { slideIds, stepsOf, autoDelayOf, isAuto, renderSlide } = useDeckRender(deck);
-  const [joinHidden, setJoinHidden] = useJoinHidden(pageId);
+  const [joinHidden, setJoinHidden] = useJoinHidden(pageId, live.startedAt);
   const desktop = useDesktopVersion() != null;
   const started = useRef(false);
   const wasActive = useRef(false);
@@ -71,6 +73,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const currentId = slideIds[pos.index];
   const slidePolls = pollsOnSlide(deck.slides.find((x) => x.id === currentId)?.elements);
   const shareUrl = typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`;
+  const hasCustomCode = slideHasHtml(deck.slides);
   const joinCard = shareUrl && slidePolls.length > 0 && !joinHidden ? <JoinCard url={shareUrl} onHide={() => setJoinHidden(true)} /> : null;
 
   if (view === "presenter") {
@@ -110,11 +113,14 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
             />
           }
           actions={
-            desktop ? (
-              <Link to={presentUrl(pageId, slideIds[pos.index])} className="text-xs text-os-accent underline">
-                Open slide show
-              </Link>
-            ) : undefined
+            <>
+              {hasCustomCode && <PauseCustomCodeButton />}
+              {desktop && (
+                <Link to={presentUrl(pageId, slideIds[pos.index])} className="text-xs text-os-accent underline">
+                  Open slide show
+                </Link>
+              )}
+            </>
           }
         />
       </PollLayer>
@@ -133,6 +139,7 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
         renderSlide={renderSlide}
         transitions={{ slides: deck.slides, themeId: deck.themeId }}
         onExit={finish}
+        hasCustomCode={hasCustomCode}
       >
         <ReactionOverlay items={reactions} />
         {joinCard}

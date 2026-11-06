@@ -8,6 +8,7 @@ import { ICONS } from "~/components/slides/deck/icon-set";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import type { DeckRead, DeckReadElement } from "~/collab/read-deck.server";
 import type { DocBlock, DocInline } from "~/collab/blocknote-server";
+import { htmlFrameDocument } from "~/components/slides/deck/html-element";
 import { cropFrame, type Crop } from "~/components/slides/deck/crop";
 import { layoutById, STAGE_H, STAGE_W, type LayoutSlot } from "~/components/slides/deck/layouts";
 import { TEXT_STYLE_IDS, themeById, type TextStyleDef, type TextStyleId, type ThemeDef } from "~/components/slides/deck/themes";
@@ -25,8 +26,12 @@ export interface BuildPptxOptions {
   loadImage: (src: string) => Promise<ExportImage | null>;
   /** Draws an SVG as a PNG (`image/png;base64,...`). Without it, icons are left out of the file. */
   rasterize?: (svg: string, size: number) => Promise<string | null>;
+  /** Draws a page of custom HTML as a PNG at the given size, or null when it did not load. Without it, custom HTML becomes a placeholder card. */
+  rasterizeHtml?: (page: string, size: { w: number; h: number }) => Promise<string | null>;
   origin?: string;
 }
+
+export const MAX_HTML_RASTERS = 20;
 
 export interface BuiltPptx {
   buffer: Buffer;
@@ -345,6 +350,27 @@ async function addIconElement(pptxSlide: PptxGenJS.Slide, el: DeckReadElement, r
   return true;
 }
 
+async function addHtmlElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef, rasterize: BuildPptxOptions["rasterizeHtml"]): Promise<boolean> {
+  const box = { x: unitsToInches(rect.x), y: unitsToInches(rect.y), w: unitsToInches(rect.w), h: unitsToInches(rect.h), ...rotation(el.rot ?? 0) };
+  const size = { w: Math.min(Math.max(1, Math.round(rect.w)), 3840), h: Math.min(Math.max(1, Math.round(rect.h)), 2160) };
+  const data = rasterize ? await rasterize(htmlFrameDocument(el.html ?? "", theme, size.w, size.h), size) : null;
+  if (data) {
+    pptxSlide.addImage({ data, altText: "Custom HTML", ...box });
+    return true;
+  }
+  pptxSlide.addShape(pptx.ShapeType.roundRect, { ...box, rectRadius: 0.2, fill: { color: resolveThemeColor(theme.colors.surface) ?? "222222" }, line: { type: "none" } } as PptxGenJS.ShapeProps);
+  pptxSlide.addText("Custom HTML", {
+    ...box,
+    margin: 0,
+    align: "center",
+    valign: "middle",
+    fontFace: resolveThemeFont(theme.fonts.body),
+    fontSize: Math.round(unitsToPoints(theme.textStyles.body.size) * 10) / 10,
+    color: colorOf(theme, "muted"),
+  });
+  return false;
+}
+
 function addPollElement(pptx: PptxGenJS, pptxSlide: PptxGenJS.Slide, el: DeckReadElement, rect: LayoutSlot["rect"], theme: ThemeDef): void {
   if (!el.poll) return;
   const font = resolveThemeFont(theme.fonts.body);
@@ -441,6 +467,7 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
   });
 
   let skippedImages = 0;
+  let htmlRasters = 0;
   const slides = deck.slides;
   const { lead, sections } = sectionsOf(slides.map((x) => ({ id: x.id, section: x.section })));
   const titleOf = new Map<string, string>();
@@ -481,6 +508,10 @@ export async function buildDeckPptx(deck: DeckRead, opts: BuildPptxOptions): Pro
         if (!(await addIconElement(pptxSlide, el, own, theme, opts.rasterize))) skippedImages++;
       } else if (el.kind === "video" && !slot && own) addVideoElement(pptx, pptxSlide, el, own, theme);
       else if (el.kind === "poll" && !slot && own) addPollElement(pptx, pptxSlide, el, own, theme);
+      else if (el.kind === "html" && !slot && own) {
+        const rasterize = htmlRasters++ < MAX_HTML_RASTERS ? opts.rasterizeHtml : undefined;
+        if (!(await addHtmlElement(pptx, pptxSlide, el, own, theme, rasterize))) skippedImages++;
+      }
       else if (el.kind === "image" && (!slot || slot.kind === "image")) {
         if (!(await addImage(pptxSlide, el, place, opts.loadImage))) skippedImages++;
       } else if (el.kind === "shape" && !slot && own) addShape(pptx, pptxSlide, el, own, theme);

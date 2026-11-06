@@ -1,3 +1,4 @@
+import * as Y from "yjs";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { isIconName } from "./icon-set";
 import type { ThemeDef } from "./themes";
@@ -124,7 +125,25 @@ export function cleanPoll(raw: unknown): PollSpec | null {
   return { question: raw.question.trim().slice(0, MAX_POLL_QUESTION), options, ...(raw.multi === true ? { multi: true } : {}) };
 }
 
+export const MAX_HTML_CHARS = 200_000;
+
+const NUL = /\u0000/g;
+
+/** Source text for a custom HTML element, with NUL bytes removed. Null when it is not text or is over the cap. */
+export function cleanHtmlSource(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.replace(NUL, "");
+  return text.length > MAX_HTML_CHARS ? null : text;
+}
+
+/** The same source read defensively from a doc: a Y.Text or a string, cut at the cap instead of refused. */
+export function htmlSourceOf(raw: unknown): string | undefined {
+  const text = raw instanceof Y.Text ? raw.toString() : typeof raw === "string" ? raw : null;
+  return text === null ? undefined : text.replace(NUL, "").slice(0, MAX_HTML_CHARS);
+}
+
 export function contentFields(read: (key: string) => unknown) {
+  const html = htmlSourceOf(read("html"));
   const poll = cleanPoll(read("poll"));
   const chart = cleanChart(read("chart"));
   const icon = cleanIcon(read("icon"));
@@ -134,5 +153,7 @@ export function contentFields(read: (key: string) => unknown) {
     ...(icon ? { icon } : {}),
     ...(videoUrl ? { videoUrl } : {}),
     ...(poll ? { poll } : {}),
+    ...(html !== undefined ? { html } : {}),
+    ...(read("htmlFill") === true ? { htmlFill: true as const } : {}),
   };
 }

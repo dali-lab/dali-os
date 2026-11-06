@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { Segmented } from "~/components/ui/Segmented";
+import { FormField } from "~/components/ui/FormField";
 import { Toggle } from "~/components/ui/Toggle";
 import {
   CHART_LABELS,
   CHART_TYPES,
   chartDataFromTsv,
   MAX_CHART_CATEGORIES,
+  MAX_HTML_CHARS,
   MAX_CHART_SERIES,
   MAX_POLL_OPTION,
   MAX_POLL_OPTIONS,
@@ -19,6 +21,7 @@ import {
   type ChartSpec,
   type ChartType,
 } from "~/components/slides/deck/content";
+import { reloadHtml } from "~/components/slides/deck/html-reload";
 import type { RenderElement } from "~/components/slides/deck/snapshot";
 import type { InspectorFreeform } from "./ElementInspector";
 import { IconPickerModal, VideoUrlModal } from "./InsertPickers";
@@ -271,10 +274,59 @@ function PollText({ value, label, max, disabled, onCommit }: { value: string; la
   );
 }
 
+export function HtmlSection({ element, editable, freeform }: { element: RenderElement; editable: boolean; freeform: InspectorFreeform }) {
+  const value = element.html ?? "";
+  const [draft, setDraft] = useState(value);
+  const [tooLong, setTooLong] = useState(false);
+  const written = useRef(value);
+  useEffect(() => {
+    if (value !== written.current) {
+      written.current = value;
+      setDraft(value);
+    }
+  }, [value]);
+  const commit = (next: string) => {
+    setDraft(next);
+    const ok = freeform.onHtml?.(element.id, next) ?? false;
+    setTooLong(!ok);
+    if (ok) written.current = next;
+  };
+  const interacting = freeform.interactingId === element.id;
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Escape") return e.currentTarget.blur();
+    if (e.key !== "Tab" || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+    e.preventDefault();
+    const area = e.currentTarget;
+    area.setRangeText("  ", area.selectionStart, area.selectionEnd, "end");
+    commit(area.value);
+  };
+  return (
+    <>
+      <Section title="Custom HTML">
+        <div className="os-form">
+          <FormField label="Source" value={draft} multiline mono rows={14} onChange={editable ? commit : () => {}} onKeyDown={onKeyDown} hint="Tab indents. Press Esc, then Tab, to leave the box." />
+        </div>
+        {tooLong && <p role="alert" className="text-xs text-os-accent">Custom HTML is limited to {MAX_HTML_CHARS / 1000} KB. The last change was not saved.</p>}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" onClick={() => reloadHtml(element.id)}>
+            Reload
+          </Button>
+          <Button variant="secondary" size="sm" aria-pressed={interacting} onClick={() => freeform.onInteract?.(interacting ? null : element.id)}>
+            {interacting ? "Stop interacting" : "Interact"}
+          </Button>
+        </div>
+      </Section>
+      <Toggle tone="os" label="Fill slide" checked={element.htmlFill === true} disabled={!editable} onChange={(e) => freeform.onHtmlFill?.(element.id, e.target.checked)} />
+      <p className="text-xs text-os-grey">Runs in a sandbox with no network access. Double-click the element, press Enter or choose Interact to use it on the stage. Slide size is 1920 by 1080.</p>
+    </>
+  );
+}
+
 export function ContentSection({ element, editable, freeform }: { element: RenderElement; editable: boolean; freeform: InspectorFreeform }) {
   if (element.kind === "chart" && freeform.onChart) return <ChartSection element={element} editable={editable} onChange={(chart) => freeform.onChart!(element.id, chart)} />;
   if (element.kind === "icon" && freeform.onIcon) return <IconSection element={element} editable={editable} onPick={(name) => freeform.onIcon!(element.id, name)} />;
   if (element.kind === "poll" && freeform.onPoll) return <PollSection element={element} editable={editable} onChange={(poll) => freeform.onPoll!(element.id, poll)} />;
+  if (element.kind === "html" && freeform.onHtml) return <HtmlSection element={element} editable={editable} freeform={freeform} />;
   if (element.kind === "video" && freeform.onVideo) return <VideoSection element={element} editable={editable} onChange={(url) => freeform.onVideo!(element.id, url)} />;
   return null;
 }

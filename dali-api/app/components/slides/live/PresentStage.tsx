@@ -3,6 +3,7 @@ import { Maximize2 } from "lucide-react";
 import { useDesktopVersion } from "~/lib/desktop";
 import { Button } from "~/components/ui/Button";
 import { movePosition, samePosition, type DeckPosition } from "~/components/slides/deck/builds";
+import { PauseCustomCodeButton } from "./PauseCustomCodeButton";
 import { navActionFor, nextIndex } from "./keys";
 import type { RenderSlide } from "./types";
 import type { RenderSlide as DeckSlide } from "~/components/slides/deck/snapshot";
@@ -22,12 +23,13 @@ export interface PresentStageProps {
   transitions?: { slides: DeckSlide[]; themeId: string };
   onExit?: () => void;
   navigable?: boolean;
+  hasCustomCode?: boolean;
   children?: React.ReactNode;
 }
 
 const ASPECT = 16 / 9;
 
-export function PresentStage({ slideIds, index, onIndexChange, step, stepsOf, isAuto, onPositionChange, renderSlide, transitions, onExit, navigable = true, children }: PresentStageProps) {
+export function PresentStage({ slideIds, index, onIndexChange, step, stepsOf, isAuto, onPositionChange, renderSlide, transitions, onExit, navigable = true, hasCustomCode = false, children }: PresentStageProps) {
   const root = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const desktop = useDesktopVersion() != null;
@@ -94,6 +96,7 @@ export function PresentStage({ slideIds, index, onIndexChange, step, stepsOf, is
         ) : null}
       </div>
       <div className="absolute right-3 top-3 flex items-center gap-2">
+        {hasCustomCode && <PauseCustomCodeButton />}
         {desktop ? (
           <span className="rounded-os-item bg-os-card px-2.5 py-1 text-xs text-os-grey">Press ⌃⌘F for full screen</span>
         ) : (

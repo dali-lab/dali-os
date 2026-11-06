@@ -22,12 +22,14 @@ class FakeChannel {
 
 let roots: Array<{ root: Root; el: HTMLElement }> = [];
 let setters: Array<(h: boolean) => void> = [];
+let presentation: string | null = "run-1";
 const Probe = ({ i }: { i: number }) => {
-  const [hidden, set] = useJoinHidden("p1");
+  const [hidden, set] = useJoinHidden("p1", presentation);
   setters[i] = set;
   return createElement("output", null, String(hidden));
 };
-const open = (i: number) => {
+const open = (i: number, id: string | null = "run-1") => {
+  presentation = id;
   const el = document.createElement("div");
   document.body.appendChild(el);
   const root = createRoot(el);
@@ -63,8 +65,39 @@ describe("useJoinHidden", () => {
   });
 
   it("reads the current state when a window opens", () => {
-    localStorage.setItem(joinKey("p1"), "1");
+    localStorage.setItem(joinKey("p1"), "run-1");
     expect(open(0)()).toBe("true");
+  });
+
+  it("shows the card for a new presentation even if the last one hid it", () => {
+    const a = open(0, "run-1");
+    act(() => setters[0](true));
+    expect(a()).toBe("true");
+    act(() => roots[0].root.unmount());
+    expect(open(1, "run-2")()).toBe("false");
+  });
+
+  it("keeps the card hidden when the same presentation is reloaded", () => {
+    const a = open(0, "run-1");
+    act(() => setters[0](true));
+    act(() => roots[0].root.unmount());
+    expect(a()).toBe("");
+    expect(open(1, "run-1")()).toBe("true");
+  });
+
+  it("does not sync a hide from a window on another presentation", () => {
+    const a = open(0, "run-1");
+    open(1, "run-2");
+    act(() => setters[1](true));
+    expect(a()).toBe("false");
+  });
+
+  it("resets when the presentation id changes in an open window", () => {
+    const a = open(0, "run-1");
+    act(() => setters[0](true));
+    presentation = "run-2";
+    act(() => roots[0].root.render(createElement(Probe, { i: 0 })));
+    expect(a()).toBe("false");
   });
 
   it("works in a single window", () => {
@@ -76,7 +109,7 @@ describe("useJoinHidden", () => {
   it("follows the storage event when there is no BroadcastChannel", () => {
     vi.stubGlobal("BroadcastChannel", undefined);
     const a = open(0);
-    act(() => void window.dispatchEvent(new StorageEvent("storage", { key: joinKey("p1"), newValue: "1" })));
+    act(() => void window.dispatchEvent(new StorageEvent("storage", { key: joinKey("p1"), newValue: "run-1" })));
     expect(a()).toBe("true");
     act(() => void window.dispatchEvent(new StorageEvent("storage", { key: "other", newValue: "0" })));
     expect(a()).toBe("true");

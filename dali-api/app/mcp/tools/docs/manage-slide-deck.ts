@@ -16,6 +16,7 @@ import { setLayout } from "~/components/slides/deck/deck-ops";
 import {
   DECK_ACTIONS,
   ELEMENT_INPUT_SCHEMA,
+  HTML_NOTE,
   LAYOUT_IDS,
   THEME_IDS,
   deckModelView,
@@ -37,7 +38,7 @@ type Action = (typeof ACTIONS)[number];
 export const MANAGE_SLIDE_DECK_TOOL_DEF = {
   name: "manage_slide_deck",
   description:
-    "Read or edit a Drive slide deck. Slide actions: get · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout. Deck: set_theme · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · export (PDF and PowerPoint download links). Elements, the text boxes, images, shapes, charts (with data), icons, videos, polls and layout boxes on a slide: add_element · update_element (text, style, image, fill, place on the 1920 by 1080 stage, build step; fields left out are kept) · delete_elements · duplicate_elements · reorder_elements · group_elements · ungroup_elements · align_elements · distribute_elements · snap_back (return layout boxes to their layout). Layout boxes have their slot name as id (title, subtitle, body, image); update_element with a slot name sets that box's text. delete_elements removes a layout box only once it is empty (an image box loses its picture first); set_layout, snap_back or update_element on its slot name brings it back. Bodies and text are Markdown, including pipe tables and fenced code blocks. To draft a whole deck from an outline, use create_slide_deck. Polls only work while presenting. Create a deck with create_lab_document kind 'Slides'. get returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count); pass elements: true to also get the theme, each slide's layoutId and its elements. The slide actions return the whole deck; the element, layout and theme actions return the slide they changed. Version history is list_collab_versions with docName 'slides:{pageId}:deck'.",
+    "Read or edit a Drive slide deck. Slide actions: get · set_slides (replace every slide) · add_slide (optional index, else at the end; layoutId for any layout) · update_slide (fields left out are kept) · delete_slide · move_slide (to toIndex) · duplicate_slide · set_layout. Deck: set_theme · add_slides (draft several slides at once from an outline: each has a layoutId, text per box in slots, notes and free elements) · export (PDF and PowerPoint download links). Elements, the text boxes, images, shapes, charts (with data), icons, videos, polls and layout boxes on a slide: add_element · update_element (text, style, image, fill, place on the 1920 by 1080 stage, build step; fields left out are kept) · delete_elements · duplicate_elements · reorder_elements · group_elements · ungroup_elements · align_elements · distribute_elements · snap_back (return layout boxes to their layout). Layout boxes have their slot name as id (title, subtitle, body, image); update_element with a slot name sets that box's text. delete_elements removes a layout box only once it is empty (an image box loses its picture first); set_layout, snap_back or update_element on its slot name brings it back. Bodies and text are Markdown, including pipe tables and fenced code blocks. Custom HTML: add_element or update_element with kind 'html' and html, or an outline slide with html, makes a slide or element whose content is your own HTML, CSS and script. " + HTML_NOTE + " To draft a whole deck from an outline, use create_slide_deck. Polls only work while presenting. Create a deck with create_lab_document kind 'Slides'. get returns slides in pages of limit: pass page.nextCursor as cursor until page.hasMore is false (page.total is the slide count); pass elements: true to also get the theme, each slide's layoutId and its elements. The slide actions return the whole deck; the element, layout and theme actions return the slide they changed. Version history is list_collab_versions with docName 'slides:{pageId}:deck'.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -49,7 +50,8 @@ export const MANAGE_SLIDE_DECK_TOOL_DEF = {
       index: { type: "number", minimum: 0, description: "add_slide: where to insert, 0-based." },
       toIndex: { type: "number", minimum: 0, description: "move_slide: the new 0-based position." },
       outline: { type: "array", items: OUTLINE_SLIDE_SCHEMA, minItems: 1, maxItems: MAX_OUTLINE_SLIDES, description: "add_slides: the slides to add, in order, at index (the end when left out)." },
-      elements: { type: "boolean", description: "get: also return the theme, each slide's layoutId and its elements." },
+      elements: { type: "boolean", description: "get: also return the theme, each slide's layoutId and its elements. A custom HTML element comes back with htmlLength and a short htmlPreview." },
+      includeHtml: { type: "boolean", description: "get with elements: return each custom HTML element's full source as html instead of the preview." },
       themeId: { type: "string", enum: THEME_IDS, description: "set_theme." },
       layoutId: { type: "string", enum: LAYOUT_IDS, description: "set_layout, and add_slide for layouts beyond the four in slide.layout." },
       element: { ...ELEMENT_INPUT_SCHEMA, description: "add_element and update_element: the element's fields." },
@@ -77,6 +79,7 @@ type Args = PageArgs & Omit<DeckArgs, "pageId"> & {
   index?: number;
   toIndex?: number;
   elements?: boolean;
+  includeHtml?: boolean;
 };
 
 function unwrap<T extends object>(result: DeckResult<T>): T {
@@ -130,7 +133,7 @@ export async function runManageSlideDeck(userId: string, args: Args) {
     const { rows, page: pageInfo } = pageArray(deck.slides, args, PAGE_LIMITS);
     const out = { ...(await deckOutput(page.title, rows, deck.version)), page: pageInfo };
     if (!args.elements) return out;
-    const model = await deckModelView(args.pageId, rows.map((s) => s.id));
+    const model = await deckModelView(args.pageId, rows.map((s) => s.id), { includeHtml: args.includeHtml === true });
     return {
       ...out,
       themeId: model.themeId,
@@ -152,7 +155,7 @@ export async function runManageSlideDeck(userId: string, args: Args) {
     await prisma.page.update({ where: { id: args.pageId }, data: { lastEditedById: userId } });
     const read = await readDeckModel(args.pageId);
     const added = read.slides.filter((s) => slideIds.includes(s.id)).sort((a, b) => slideIds.indexOf(a.id) - slideIds.indexOf(b.id));
-    return { title: page.title, slideIds, slides: await Promise.all(added.map(slideView)) };
+    return { title: page.title, slideIds, slides: await Promise.all(added.map((s) => slideView(s))) };
   }
 
   if (args.action === "export") return { title: page.title, ...exportLinks(args.pageId, canEdit) };

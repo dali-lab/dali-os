@@ -1,5 +1,5 @@
 import type { ImportBlock, ImportInline, ImportTable } from "~/components/slides/pptx/import-types";
-import { cleanChart, cleanIcon, cleanPoll, cleanVideoUrl, type ChartSpec, type PollSpec } from "./content";
+import { cleanChart, cleanHtmlSource, cleanIcon, cleanPoll, cleanVideoUrl, type ChartSpec, type PollSpec } from "./content";
 import { placementOf, expandToLeaves, type Placed } from "./freeform";
 import { cleanBuildFields, type BuildFields } from "./builds";
 import { cleanCrop, type Crop } from "./crop";
@@ -17,7 +17,7 @@ const MAX_DEPTH = 4;
 const MAX_TEXT = 20_000;
 const MAX_ALT = 500;
 
-export type ClipKind = "text" | "image" | "shape" | "group" | "chart" | "icon" | "video" | "poll";
+export type ClipKind = "text" | "image" | "shape" | "group" | "chart" | "icon" | "video" | "poll" | "html";
 
 export interface ClipItem extends BuildFields {
   key: string;
@@ -35,6 +35,8 @@ export interface ClipItem extends BuildFields {
   icon?: string;
   videoUrl?: string;
   poll?: PollSpec;
+  html?: string;
+  htmlFill?: true;
 }
 
 const MARKS = ["bold", "italic", "underline", "strike"] as const;
@@ -131,6 +133,7 @@ function itemOf(slide: RenderSlide, el: RenderElement): ClipItem | null {
   if (el.kind === "icon" && el.icon) return { ...base, kind: "icon", icon: el.icon, ...(el.fill ? { fill: el.fill } : {}) };
   if (el.kind === "video" && el.videoUrl) return { ...base, kind: "video", videoUrl: el.videoUrl };
   if (el.kind === "poll" && el.poll) return { ...base, kind: "poll", poll: el.poll };
+  if (el.kind === "html" && el.html !== undefined) return { ...base, kind: "html", html: el.html, ...(el.htmlFill ? { htmlFill: true as const } : {}) };
   return null;
 }
 
@@ -277,6 +280,10 @@ export function cleanItems(rawItems: unknown[]): ClipItem[] | null {
       const poll = cleanPoll(raw.poll);
       if (!poll) continue;
       out.push({ ...base, kind: "poll", poll });
+    } else if (raw.kind === "html") {
+      const html = cleanHtmlSource(raw.html);
+      if (html === null) continue;
+      out.push({ ...base, kind: "html", html, ...(raw.htmlFill === true ? { htmlFill: true as const } : {}) });
     } else if (raw.kind === "group") {
       out.push({ ...base, kind: "group", children: Array.isArray(raw.children) ? raw.children.filter((c): c is string => typeof c === "string") : [] });
     } else continue;

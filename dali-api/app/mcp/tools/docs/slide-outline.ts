@@ -5,7 +5,8 @@ import { markdownToRichDoc } from "~/components/slides/slide-markdown.server";
 import { addSlide, moveSlide, notesFragment, setSlotImage, slideFragment, visibleSlideIds } from "~/components/slides/deck/deck-ops";
 import { LAYOUTS, layoutById } from "~/components/slides/deck/layouts";
 import { slidesMap } from "~/components/slides/deck/model";
-import { ELEMENT_INPUT_SCHEMA, LAYOUT_IDS, checkNewElement, placeNewElement, type ElementInput } from "./slide-deck-elements";
+import { MAX_HTML_CHARS } from "~/components/slides/deck/content";
+import { ELEMENT_INPUT_SCHEMA, HTML_NOTE, LAYOUT_IDS, checkNewElement, placeNewElement, type ElementInput } from "./slide-deck-elements";
 
 export const MAX_OUTLINE_SLIDES = 60;
 export const MAX_OUTLINE_ELEMENTS = 30;
@@ -19,6 +20,7 @@ export const OUTLINE_SLIDE_SCHEMA = {
       description: "Text for the layout's boxes, by slot name (title, subtitle, body and so on). Text is Markdown. An image box takes an object { src, alt } instead of text.",
       additionalProperties: true,
     },
+    html: { type: "string", maxLength: MAX_HTML_CHARS, description: `A custom slide: this HTML fills a Blank-layout slide. layoutId and slots are not used with it. ${HTML_NOTE}` },
     notes: { type: "string", maxLength: 20_000, description: "Speaker notes." },
     elements: { type: "array", maxItems: MAX_OUTLINE_ELEMENTS, items: ELEMENT_INPUT_SCHEMA, description: "Free elements to add to the slide, each as in add_element." },
   },
@@ -30,6 +32,7 @@ export type OutlineSlot = string | { src: string; alt?: string };
 export interface OutlineSlide {
   layoutId?: string;
   slots?: Record<string, OutlineSlot>;
+  html?: string;
   notes?: string;
   elements?: ElementInput[];
 }
@@ -51,7 +54,9 @@ export async function prepareOutline(outline: OutlineSlide[]): Promise<PreparedS
   const prepared: PreparedSlide[] = [];
   for (const [i, slide] of outline.entries()) {
     const where = `Slide ${i + 1}`;
-    const layoutId = slide.layoutId ?? "content";
+    if (slide.html !== undefined && slide.layoutId !== undefined && slide.layoutId !== "blank") throw invalid(`${where}: a slide with html uses the blank layout.`);
+    if (slide.html !== undefined && Object.keys(slide.slots ?? {}).length > 0) throw invalid(`${where}: a slide with html has no boxes for slots.`);
+    const layoutId = slide.html !== undefined ? "blank" : (slide.layoutId ?? "content");
     if (!LAYOUTS.some((l) => l.id === layoutId)) throw invalid(`${where}: layoutId must be one of: ${LAYOUT_IDS.join(", ")}.`);
     const layout = layoutById(layoutId);
     const text: PreparedSlide["text"] = [];
@@ -69,7 +74,8 @@ export async function prepareOutline(outline: OutlineSlide[]): Promise<PreparedS
       }
     }
     const elements: PreparedSlide["elements"] = [];
-    for (const input of slide.elements ?? []) {
+    const inputs: ElementInput[] = [...(slide.html !== undefined ? [{ kind: "html" as const, html: slide.html, htmlFill: true }] : []), ...(slide.elements ?? [])];
+    for (const input of inputs) {
       try {
         checkNewElement(input);
       } catch (err) {

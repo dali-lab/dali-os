@@ -19,7 +19,7 @@ import { slideMetaFields } from "~/components/slides/deck/slide-meta";
 import { contentFields, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
-import { extraFields, geometryFields, linkGroups, shapeFields, type RenderSlide } from "~/components/slides/deck/snapshot";
+import { extraFields, geometryFields, linkGroups, shapeFields, withFill, type RenderSlide } from "~/components/slides/deck/snapshot";
 import type { FillId, ShapeKind } from "~/components/slides/deck/model";
 import type { Crop } from "~/components/slides/deck/crop";
 import { TEXT_STYLE_IDS, type TextStyleId } from "~/components/slides/deck/themes";
@@ -51,6 +51,8 @@ export interface DeckReadElement {
   icon?: string;
   videoUrl?: string;
   poll?: PollSpec;
+  html?: string;
+  htmlFill?: true;
   crop?: Crop;
   locked?: boolean;
   hFixed?: boolean;
@@ -94,7 +96,7 @@ export function readDeck(live: Y.Doc): DeckRead {
         if (isDeleted(el)) return;
         const frag = fragments.get(elId);
         const blocks = frag ? fragmentToBlocks(frag) : [];
-        elements.push({
+        elements.push(withFill({
           id: elId,
           kind: String(el.get("kind")),
           slot: str(el.get("slot")),
@@ -109,7 +111,7 @@ export function readDeck(live: Y.Doc): DeckRead {
           ...shapeFields((k) => el.get(k)),
           ...contentFields((k) => el.get(k)),
           ...extraFields((k) => el.get(k)),
-        });
+        }));
       });
       elements.sort(compareZ);
       const notesBlocks = fragmentToBlocks(notesOf(slide));
@@ -178,7 +180,7 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
       layoutId: s.layoutId,
       ...(s.skipped ? { skipped: true } : {}),
       ...slideMetaFields((k) => (s as unknown as Record<string, unknown>)[k]),
-      elements: withParents(s.elements.map((e) => ({
+      elements: withParents(s.elements.map((e) => withFill({
         id: e.id,
         kind: e.kind,
         slot: e.slot,

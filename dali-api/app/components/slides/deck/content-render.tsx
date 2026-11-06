@@ -1,9 +1,13 @@
-import { createContext, useContext, useState, type CSSProperties, type ReactNode } from "react";
-import { BarChart3, Play } from "lucide-react";
+import { createContext, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { BarChart3, Code2, Play } from "lucide-react";
+import { CODE_SANDBOX } from "~/components/doc/components/kinds";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { ChartSvg } from "./ChartSvg";
 import { chartColors } from "./content";
+import { htmlSrcDoc } from "./html-element";
+import { useHtmlReloads } from "./html-reload";
 import { ICONS } from "./icon-set";
+import { useCustomCodePaused } from "./pause-custom-code";
 import type { Placed } from "./freeform";
 import type { FillId } from "./model";
 import type { RenderElement } from "./snapshot";
@@ -50,6 +54,95 @@ export function ChartBox({ placed, element, theme }: { placed: Placed; element: 
     <div {...dataKey} style={placedStyle(placed)}>
       <ChartSvg chart={element.chart} colors={chartColors(theme)} w={Math.round(placed.w)} h={Math.round(placed.h)} />
     </div>
+  );
+}
+
+export function HtmlBox({ placed, element, label = "Custom HTML" }: { placed: Placed; element: RenderElement; label?: string }) {
+  return <Placeholder placed={placed} dataKey={{ "data-element": element.id, "data-kind": "html" }} label={label} icon={<Code2 style={{ width: u(72), height: u(72) }} aria-hidden />} />;
+}
+
+export const HTML_DEBOUNCE_MS = 300;
+
+/** A custom HTML element running in the sandbox, laid out at its size in stage units and scaled to fit, so 1px of its HTML is one stage unit. */
+export function HtmlFrame({ placed, element, theme, interactive = true }: { placed: Placed; element: RenderElement; theme: ThemeDef; interactive?: boolean }) {
+  const [paused] = useCustomCodePaused();
+  const reloadKey = useHtmlReloads(element.id);
+  const box = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+  const [width, setWidth] = useState(0);
+  const source = element.html ?? "";
+  const [shown, setShown] = useState(source);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  useEffect(() => {
+    if (source === shown) return;
+    const timer = setTimeout(() => setShown(source), HTML_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [source, shown]);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const measure = () => setWidth(el.clientWidth);
+    measure();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
+    observer?.observe(el);
+    return () => observer?.disconnect();
+  }, [paused, mounted]);
+  if (paused) return <HtmlBox placed={placed} element={element} label="Custom code paused" />;
+  const scale = width > 0 ? width / placed.w : 1;
+  return (
+    <div
+      ref={box}
+      data-element={element.id}
+      data-kind="html"
+      data-html-live
+      style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: u(24) }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {mounted && (
+        <iframe
+          key={reloadKey}
+          title="Custom HTML"
+          sandbox={CODE_SANDBOX}
+          referrerPolicy="no-referrer"
+          srcDoc={htmlSrcDoc(shown, theme)}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: placed.w,
+            height: placed.h,
+            border: 0,
+            background: "transparent",
+            transformOrigin: "0 0",
+            transform: `scale(${scale})`,
+            pointerEvents: interactive ? "auto" : "none",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Static markup for the PDF: the sandboxed frame at full size, with a hidden placeholder the exporter swaps in when the frame does not load in time. */
+export function HtmlPrintFrame({ placed, element, theme }: { placed: Placed; element: RenderElement; theme: ThemeDef }) {
+  return (
+    <>
+      <div data-element={element.id} data-kind="html" style={{ ...placedStyle(placed), overflow: "hidden", borderRadius: u(24) }}>
+        <iframe
+          data-html-print
+          title="Custom HTML"
+          sandbox={CODE_SANDBOX}
+          referrerPolicy="no-referrer"
+          srcDoc={htmlSrcDoc(element.html ?? "", theme)}
+          style={{ position: "absolute", left: 0, top: 0, width: placed.w, height: placed.h, border: 0, background: "transparent" }}
+        />
+      </div>
+      <div data-html-fallback style={{ display: "none" }}>
+        <HtmlBox placed={placed} element={element} />
+      </div>
+    </>
   );
 }
 

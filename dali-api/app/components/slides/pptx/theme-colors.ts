@@ -1,4 +1,4 @@
-const TOKENS: Record<string, string> = {
+export const THEME_TOKENS: Record<string, string> = {
   "--color-navy-deep": "082330",
   "--color-brand-white": "FFFFFF",
   "--color-brand-off": "F1F3F4",
@@ -50,7 +50,7 @@ export function resolveThemeColor(css: string): string | null {
   const direct = /^#?([0-9a-fA-F]{6})$/.exec(value);
   if (direct) return direct[1].toUpperCase();
   const variable = /^var\((--[\w-]+)\)$/.exec(value);
-  if (variable) return TOKENS[variable[1]] ?? null;
+  if (variable) return THEME_TOKENS[variable[1]] ?? null;
   const mix = /^color-mix\((.*)\)$/.exec(value);
   if (!mix) return null;
   const [, a, b] = splitTopLevel(mix[1]);

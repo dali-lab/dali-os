@@ -1,4 +1,4 @@
-import { ArrowRight, BarChart3, Circle, Code2, Image as ImageIcon, LineChart, Minus, PieChart, Plus, Shapes, Smile, Square, Table2, Type, Video, Vote } from "lucide-react";
+import { ArrowRight, BarChart3, Circle, Braces, Code2, Image as ImageIcon, LineChart, Minus, PieChart, Plus, Shapes, Smile, Square, Table2, Type, Video, Vote } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { Button } from "~/components/ui/Button";
 import { Menu } from "~/components/ui/floating";
@@ -16,6 +16,7 @@ export type InsertItem =
   | { type: "icon" }
   | { type: "emoji" }
   | { type: "poll" }
+  | { type: "html" }
   | { type: "shape"; shape: ShapeKind };
 
 const ICON = "h-3.5 w-3.5";
@@ -46,6 +47,7 @@ export const INSERT_GROUPS: Entry[][] = [
     { label: "Line chart", icon: <LineChart className={ICON} aria-hidden />, item: { type: "chart", chart: "line" } },
     { label: "Pie chart", icon: <PieChart className={ICON} aria-hidden />, item: { type: "chart", chart: "pie" } },
     { label: "Code block", icon: <Code2 className={ICON} aria-hidden />, item: { type: "code" } },
+    { label: "Custom HTML", icon: <Braces className={ICON} aria-hidden />, item: { type: "html" } },
   ],
   [
     { label: "Icon", icon: <Shapes className={ICON} aria-hidden />, item: { type: "icon" } },

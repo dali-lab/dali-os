@@ -29,6 +29,7 @@ import { duplicateSlide, setBuild, setBuildBullets, setBuildEffect, setBuildTimi
 import {
   addChart,
   addFreeImage,
+  addHtml,
   addIcon,
   addPoll,
   addShape,
@@ -44,6 +45,8 @@ import {
   reorderElements,
   setChart,
   setFill,
+  setHtmlFill,
+  setHtmlSource,
   setImageSource,
   setPoll,
   setVideoUrl,
@@ -54,7 +57,7 @@ import {
   type ReorderDirection,
 } from "~/components/slides/deck/freeform-ops";
 import { placementOf, type Placed } from "~/components/slides/deck/freeform";
-import { CHART_TYPES, cleanChart, cleanIcon, cleanPoll, cleanVideoUrl, MAX_CHART_CATEGORIES, MAX_CHART_SERIES, MAX_POLL_OPTION, MAX_POLL_OPTIONS, MAX_POLL_QUESTION, MIN_POLL_OPTIONS, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
+import { CHART_TYPES, cleanChart, cleanHtmlSource, cleanIcon, cleanPoll, cleanVideoUrl, MAX_CHART_CATEGORIES, MAX_CHART_SERIES, MAX_HTML_CHARS, MAX_POLL_OPTION, MAX_POLL_OPTIONS, MAX_POLL_QUESTION, MIN_POLL_OPTIONS, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
 import type { AlignMode, Axis } from "~/components/slides/deck/geometry";
 import type { RenderElement } from "~/components/slides/deck/snapshot";
 
@@ -81,10 +84,15 @@ const ALIGN_MODES: AlignMode[] = ["left", "center", "right", "top", "middle", "b
 const REORDER: ReorderDirection[] = ["forward", "backward", "front", "back"];
 const DEFAULT_STYLE = "default";
 
+export const HTML_NOTE =
+  "Custom HTML (kind 'html'): html is the page's markup, CSS and script as one string, up to 200000 characters. It runs in a sandboxed frame laid out at the element's w by h in stage units, so 1px of your CSS is one stage unit; a full slide is 1920 by 1080. Set htmlFill: true to cover the whole slide (x, y, w, h are then ignored). Theme CSS variables are set on :root: --slide-accent, --slide-fg, --slide-muted, --slide-surface, --slide-ground, --slide-rule, --slide-font-display, --slide-font-body; html and body have no margin and are 100% tall. Network requests (fetch, XHR, WebSocket, forms) are blocked. Scripts run inline or from cdnjs.cloudflare.com, cdn.jsdelivr.net and unpkg.com only; images load over https or data:. It is not shared live between screens. PDF export prints what the frame shows after it loads; PowerPoint export turns it into a picture.";
+
+export const HTML_PREVIEW_CHARS = 400;
+
 export const ELEMENT_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
-    kind: { type: "string", enum: ["text", "image", "shape", "chart", "icon", "video", "poll"], description: "add_element only. Tables and code go in a text element's markdown (a pipe table or a fenced block)." },
+    kind: { type: "string", enum: ["text", "image", "shape", "chart", "icon", "video", "poll", "html"], description: "add_element only. Tables and code go in a text element's markdown (a pipe table or a fenced block)." },
     shape: { type: "string", enum: [...SHAPE_KINDS], description: "Shapes: required when adding one." },
     fill: { type: "string", enum: [...FILL_IDS], description: "Shapes: a theme color." },
     markdown: { type: "string", maxLength: 20_000, description: "Text: the whole text, replacing what is there." },
@@ -125,6 +133,8 @@ export const ELEMENT_INPUT_SCHEMA = {
       required: ["question", "options"],
       additionalProperties: false,
     },
+    html: { type: "string", maxLength: MAX_HTML_CHARS, description: `Custom HTML: the source, replacing what is there. Required when adding one. ${HTML_NOTE}` },
+    htmlFill: { type: "boolean", description: "Custom HTML: cover the whole slide." },
     x: { type: "number", description: "Left edge on the 1920 by 1080 stage." },
     y: { type: "number", description: "Top edge on the stage." },
     w: { type: "number", description: "Width on the stage." },
@@ -142,7 +152,9 @@ export const ELEMENT_INPUT_SCHEMA = {
 export type ChartInput = { type: ChartSpec["type"]; labels: string[]; series: Array<{ name: string; values: number[] }> };
 
 export type ElementInput = {
-  kind?: "text" | "image" | "shape" | "chart" | "icon" | "video" | "poll";
+  kind?: "text" | "image" | "shape" | "chart" | "icon" | "video" | "poll" | "html";
+  html?: string;
+  htmlFill?: boolean;
   chart?: ChartInput;
   icon?: string;
   videoUrl?: string;
@@ -181,7 +193,11 @@ export type DeckArgs = {
 
 const invalid = (message: string) => new McpError(message, 400);
 
-async function elementView(layoutId: string, el: DeckReadSlide["elements"][number], groupOf: Map<string, string>) {
+export interface ViewOptions {
+  includeHtml?: boolean;
+}
+
+async function elementView(layoutId: string, el: DeckReadSlide["elements"][number], groupOf: Map<string, string>, opts: ViewOptions) {
   const placed = el.kind === "group" ? null : placementOf(layoutId, el as unknown as RenderElement);
   return {
     id: el.id,
@@ -197,6 +213,7 @@ async function elementView(layoutId: string, el: DeckReadSlide["elements"][numbe
     ...(el.icon ? { icon: el.icon } : {}),
     ...(el.videoUrl ? { videoUrl: el.videoUrl } : {}),
     ...(el.poll ? { poll: el.poll } : {}),
+    ...(el.kind === "html" ? { htmlLength: (el.html ?? "").length, ...(opts.includeHtml ? { html: el.html ?? "" } : { htmlPreview: (el.html ?? "").slice(0, HTML_PREVIEW_CHARS) }), ...(el.htmlFill ? { htmlFill: true } : {}) } : {}),
     ...(el.shape ? { shape: el.shape } : {}),
     ...(el.fill ? { fill: el.fill } : {}),
     ...(placed ? { x: placed.x, y: placed.y, w: placed.w, h: placed.h, rot: placed.rot } : {}),
@@ -209,21 +226,21 @@ async function elementView(layoutId: string, el: DeckReadSlide["elements"][numbe
   };
 }
 
-export async function slideView(slide: DeckReadSlide) {
+export async function slideView(slide: DeckReadSlide, opts: ViewOptions = {}) {
   const groupOf = new Map<string, string>();
   for (const el of slide.elements) for (const child of el.children ?? []) groupOf.set(child, el.id);
   return {
     id: slide.id,
     layoutId: slide.layoutId,
-    elements: await Promise.all(slide.elements.map((el) => elementView(slide.layoutId, el, groupOf))),
+    elements: await Promise.all(slide.elements.map((el) => elementView(slide.layoutId, el, groupOf, opts))),
   };
 }
 
 /** The live-model fields `get` adds when asked for elements. */
-export async function deckModelView(pageId: string, slideIds: string[]) {
+export async function deckModelView(pageId: string, slideIds: string[], opts: ViewOptions = {}) {
   const read = await readDeckModel(pageId);
   const byId = new Map(read.slides.map((s) => [s.id, s]));
-  const slides = await Promise.all(slideIds.map(async (id) => (byId.has(id) ? slideView(byId.get(id)!) : null)));
+  const slides = await Promise.all(slideIds.map(async (id) => (byId.has(id) ? slideView(byId.get(id)!, opts) : null)));
   return { themeId: read.themeId, docName: slidesRoomName(pageId), slides };
 }
 
@@ -276,6 +293,11 @@ function checkFields(kind: string, el: ElementMap | null, e: ElementInput, shape
   if (e.icon !== undefined && !cleanIcon(e.icon)) throw invalid("That isn't an icon name. Use a lucide name such as 'rocket'.");
   if (e.videoUrl !== undefined && !cleanVideoUrl(e.videoUrl)) throw invalid("videoUrl must be a YouTube link.");
   if (e.poll !== undefined && !cleanPoll(e.poll)) throw invalid(`poll needs a question and ${MIN_POLL_OPTIONS} to ${MAX_POLL_OPTIONS} non-empty options.`);
+  if ((e.html !== undefined || e.htmlFill !== undefined) && kind !== "html") throw invalid("Only html elements take html and htmlFill.");
+  if (e.html !== undefined && (typeof e.html !== "string" || cleanHtmlSource(e.html) === null)) {
+    throw invalid(`html must be text of at most ${MAX_HTML_CHARS} characters${typeof e.html === "string" ? ` (got ${e.html.length})` : ""}.`);
+  }
+  if (e.htmlFill !== undefined && typeof e.htmlFill !== "boolean") throw invalid("htmlFill must be true or false.");
   if (e.fill !== undefined && kind !== "shape" && kind !== "icon") throw invalid("Only shapes and icons take a fill.");
   if (e.shape !== undefined && el) throw invalid("A shape's kind is set when it is added.");
   if (hasGeometry(e) && kind === "group") throw invalid("Move a group's items, not the group.");
@@ -325,6 +347,8 @@ function writeFields(doc: Y.Doc, slideId: string, slide: SlideMap, id: string, e
   if (e.icon !== undefined) setIconName(doc, slideId, id, e.icon);
   if (e.videoUrl !== undefined) setVideoUrl(doc, slideId, id, e.videoUrl);
   if (e.poll !== undefined) setPoll(doc, slideId, id, e.poll);
+  if (e.html !== undefined) setHtmlSource(doc, slideId, id, e.html);
+  if (e.htmlFill !== undefined) setHtmlFill(doc, slideId, id, e.htmlFill);
   if (placed) setPlacements(doc, slideId, { [id]: placed });
   if (e.build !== undefined) setBuild(doc, slideId, id, e.build || null);
   if (e.buildBullets !== undefined) setBuildBullets(doc, slideId, id, e.buildBullets);
@@ -360,6 +384,10 @@ function addElement(doc: Y.Doc, slideId: string, e: ElementInput): string {
     if (!e.poll) throw invalid("Adding a poll needs poll.");
     return addPoll(doc, slideId, cleanPoll(e.poll)!)!;
   }
+  if (e.kind === "html") {
+    if (e.html === undefined) throw invalid("Adding custom HTML needs html.");
+    return addHtml(doc, slideId, cleanHtmlSource(e.html)!, { fill: e.htmlFill === true })!;
+  }
   return addTextBox(doc, slideId)!;
 }
 
@@ -381,13 +409,14 @@ export function checkNewElement(e: ElementInput): void {
   if (e.kind === "icon" && !e.icon) throw invalid("Adding an icon needs icon.");
   if (e.kind === "video" && !e.videoUrl) throw invalid("Adding a video needs videoUrl.");
   if (e.kind === "poll" && !e.poll) throw invalid("Adding a poll needs poll.");
+  if (e.kind === "html" && e.html === undefined) throw invalid("Adding custom HTML needs html.");
 }
 
 /** Adds a free element to a slide and returns its id. `blocks` is the text of a text element, already converted. */
 export function placeNewElement(doc: Y.Doc, slideId: string, slide: SlideMap, e: ElementInput, blocks: DocBlock[] | null): string {
   checkNewElement(e);
   const id = addElement(doc, slideId, e);
-  writeFields(doc, slideId, slide, id, { ...e, src: undefined, alt: undefined, fill: undefined, chart: e.kind === "chart" ? e.chart : undefined, icon: undefined, videoUrl: undefined, poll: undefined }, blocks);
+  writeFields(doc, slideId, slide, id, { ...e, src: undefined, alt: undefined, fill: undefined, chart: e.kind === "chart" ? e.chart : undefined, icon: undefined, videoUrl: undefined, poll: undefined, html: undefined, htmlFill: undefined }, blocks);
   return id;
 }
 

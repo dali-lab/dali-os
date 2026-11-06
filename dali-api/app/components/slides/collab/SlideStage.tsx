@@ -3,6 +3,8 @@ import { Maximize, MessageSquarePlus, Minus, Plus, RotateCcw } from "lucide-reac
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { slideFragment } from "~/components/slides/deck/deck-ops";
+import { HtmlFrame } from "~/components/slides/deck/content-render";
+import { themeById } from "~/components/slides/deck/themes";
 import { SlideRender } from "~/components/slides/deck/SlideRender";
 import { placedStyle, u } from "~/components/slides/deck/units";
 import { selectionTarget, withPlacements, type PlacedLive } from "~/components/slides/deck/freeform";
@@ -333,6 +335,15 @@ export function SlideStage({
               renderFree={({ element, placed, fallback }) => {
                 const label = buildBadgeLabel(element);
                 const badge = label ? <BuildBadge rect={placed} label={label} /> : null;
+                if (element.kind === "html") {
+                  const interactive = !editable || !collab || editingId === element.id;
+                  return (
+                    <>
+                      <HtmlFrame element={element} placed={placed} theme={themeById(themeId)} interactive={interactive} />
+                      {badge}
+                    </>
+                  );
+                }
                 if (!editable || !collab || element.kind !== "text") return <>{fallback}{badge}</>;
                 const fragment = slideFragment(doc, slide.id, element.id);
                 if (!fragment) return <>{fallback}{badge}</>;
