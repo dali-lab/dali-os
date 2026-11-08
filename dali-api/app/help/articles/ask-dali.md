@@ -15,7 +15,7 @@ There are three ways in:
 - Select **Ask** in the page bar at the top of the page.
 - Press **⌘K** to open search, type your question, and choose the **Ask DALI** row. If what you typed reads like a question, the row appears at the top. Otherwise it is at the bottom.
 
-Ask DALI opens as a panel beside the page, so you can keep working. If you don't see these, it hasn't been turned on for you yet.
+Ask DALI opens as a panel beside the page, so you can keep working. In the desktop app it stays open as you switch tabs. If you don't see these, it hasn't been turned on for you yet.
 
 ## Ask a question
 
