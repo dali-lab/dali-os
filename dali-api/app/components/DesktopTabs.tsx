@@ -32,7 +32,7 @@ import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
 import { useVisibleSidePanel } from '~/components/side-panel/use-side-panel'
-import { sidePanelForUrl, withSidePanel } from '~/lib/side-panel'
+import { sidePanelForUrl, tabUrlWithSidePanel } from '~/lib/side-panel'
 import { useLiveSession } from '~/components/meeting-recorder/live-session'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
@@ -73,7 +73,7 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
   const navigateRef = useRef(navigate)
   navigateRef.current = navigate
   const sidePanel = useVisibleSidePanel()
-  const url = withSidePanel(location.pathname + location.search, sidePanel)
+  const url = tabUrlWithSidePanel(location.pathname + location.search, sidePanel)
   const recordedKey = useRef(location.key)
   const arrivalRef = useRef(url)
   arrivalRef.current = url

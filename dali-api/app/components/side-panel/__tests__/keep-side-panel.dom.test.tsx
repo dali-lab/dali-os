@@ -4,7 +4,7 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
-import { setKeptSidePanel } from "~/lib/side-panel";
+import { ASK_PANEL, setKeptSidePanel } from "~/lib/side-panel";
 
 vi.mock("~/components/FeatureFlags", () => ({ useFeatureFlag: () => true }));
 
@@ -16,6 +16,7 @@ let panelMounts = 0;
 let api: {
   navigate: ReturnType<typeof useNavigate>;
   open: (id: string) => void;
+  openAsk: () => void;
   close: () => void;
 };
 
@@ -31,7 +32,7 @@ function Harness() {
   const navigate = useNavigate();
   const location = useLocation();
   useKeepSidePanel();
-  api = { navigate, open: (id) => open({ type: "doc", id }), close };
+  api = { navigate, open: (id) => open({ type: "doc", id }), openAsk: () => open(ASK_PANEL), close };
   return (
     <>
       <span data-testid="at">{location.pathname + location.search}</span>
@@ -53,6 +54,10 @@ function mount(entry = "/one") {
   );
 }
 
+const switchTab = (url: string) =>
+  act(() => {
+    void api.navigate(url, { replace: true, state: { tabSwitch: true } });
+  });
 const shown = () => container.querySelector("[data-testid=panel]")?.textContent ?? null;
 const at = () => container.querySelector("[data-testid=at]")!.textContent;
 
@@ -162,6 +167,38 @@ describe("keeping the side panel across navigation", () => {
     act(() => {
       void api.navigate("/tab-b", { replace: true, state: { tabSwitch: true } });
     });
+    expect(shown()).toBeNull();
+  });
+
+  it("opens a document on a tab moved to", () => {
+    mount();
+    act(() => api.open("abc"));
+    switchTab("/tab-b");
+    act(() => api.open("xyz"));
+    expect(shown()).toBe("xyz");
+  });
+
+  it("opens Ask on a tab moved to", () => {
+    mount();
+    switchTab("/tab-b");
+    act(() => api.openAsk());
+    expect(shown()).toBe("dali");
+  });
+
+  it("keeps Ask open on a move to another tab", () => {
+    mount();
+    act(() => api.openAsk());
+    switchTab("/tab-b");
+    expect(shown()).toBe("dali");
+    expect(panelMounts).toBe(1);
+  });
+
+  it("keeps Ask closed on a tab whose url still names it", () => {
+    mount();
+    act(() => api.openAsk());
+    switchTab("/tab-b");
+    act(() => api.close());
+    switchTab("/tab-a?side=ask:dali");
     expect(shown()).toBeNull();
   });
 
