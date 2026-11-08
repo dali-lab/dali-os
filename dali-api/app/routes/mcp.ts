@@ -42,7 +42,22 @@ import { RETRO_PROMPT } from "~/mcp/prompts/retro";
 import type { PromptDefinition } from "~/mcp/prompts/types";
 
 const PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "dali-os", version: "1.0.0" };
+// `title`, `websiteUrl` and `icons` come from later protocol versions; older
+// clients ignore them. Without an icon, clients fall back to dartmouth.edu's
+// favicon. Absolute prod URL so staging and preview apps show the same icon.
+const SERVER_INFO = {
+  name: "dali-os",
+  title: "DALI OS",
+  version: "1.0.0",
+  websiteUrl: "https://os.dali.dartmouth.edu",
+  icons: [
+    {
+      src: "https://os.dali.dartmouth.edu/icon-blue.png",
+      mimeType: "image/png",
+      sizes: ["360x360"],
+    },
+  ],
+};
 
 const RATE_LIMIT_MAX = 120;
 const RATE_LIMIT_WINDOW_MS = 60_000;

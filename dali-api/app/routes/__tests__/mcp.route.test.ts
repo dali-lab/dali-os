@@ -129,7 +129,11 @@ describe("mcp transport gate", () => {
     const json = await (await loader()).json();
     expect(json).toMatchObject({
       protocolVersion: "2024-11-05",
-      serverInfo: { name: "dali-os" },
+      serverInfo: {
+        name: "dali-os",
+        title: "DALI OS",
+        icons: [expect.objectContaining({ src: expect.stringMatching(/\/icon-blue\.png$/) })],
+      },
       capabilities: { tools: { listChanged: false } },
     });
   });
