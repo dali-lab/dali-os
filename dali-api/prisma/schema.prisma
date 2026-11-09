@@ -22,6 +22,8 @@ model User {
   // unique identifier
   id String @id @default(cuid())
   slidePresentations SlidePresentation[]
+  hostedCommunityEvents CommunityEvent[]     @relation("CommunityEventHost")
+  communityEventRsvps   CommunityEventRsvp[]
   slidePollVotes     SlidePollVote[]
   slideTemplates     SlideTemplate[]
 
@@ -8198,4 +8200,45 @@ model PlanningNote {
   project     Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   application PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   updatedBy   User?               @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// An alumni-hosted event on the Connect map. Posts immediately; the host or an
+// admin can cancel it. audience is "alumni" or "alumni_and_students".
+model CommunityEvent {
+  id           String    @id @default(cuid())
+  hostId       String
+  title        String
+  description  String?
+  startsAt     DateTime
+  endsAt       DateTime
+  online       Boolean   @default(false)
+  meetingUrl   String?
+  placeName    String?
+  address      String?
+  lat          Float?
+  lng          Float?
+  audience     String    @default("alumni_and_students")
+  notifyNearby Boolean   @default(false)
+  cancelledAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  host  User                 @relation("CommunityEventHost", fields: [hostId], references: [id], onDelete: Cascade)
+  rsvps CommunityEventRsvp[]
+
+  @@index([startsAt])
+  @@index([hostId])
+}
+
+// Going = a row exists.
+model CommunityEventRsvp {
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  event CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId])
 }

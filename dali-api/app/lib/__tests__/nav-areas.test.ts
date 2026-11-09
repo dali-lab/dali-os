@@ -481,7 +481,6 @@ describe("refer-a-partner flag", () => {
   it("keeps the alumni community pages filtered independently of the refer flag", () => {
     expect(labHrefs(ALUM, COMMUNITY)).toEqual([
       "/projects",
-      "/members",
       "/community/opportunities",
       "/community/gallery",
       "/resources",
@@ -502,11 +501,10 @@ describe("alumni nav", () => {
     }
   });
 
-  it("gives alumni Projects, People and the community pages, but not Connect", () => {
+  it("gives alumni Projects and the community pages, with Connect replacing People", () => {
     const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
-      "/members",
       "/community/opportunities",
       "/community/gallery",
       "/resources",
@@ -518,7 +516,6 @@ describe("alumni nav", () => {
     const lab = visibleAreas(ALUM, REFER)[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
-      "/members",
       "/refer",
     ]);
     expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();

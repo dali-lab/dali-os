@@ -410,7 +410,6 @@ const ALUMNI_AREAS: NavArea[] = [
     hubPath: "/projects",
     subtabs: [
       { label: "Projects", href: "/projects", icon: FolderKanban },
-      { label: "People", href: "/members", icon: UsersRound },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
       { label: "Stories", href: "/resources", icon: Newspaper },

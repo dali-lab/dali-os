@@ -16,6 +16,7 @@ import { enqueueOutbound } from "~/lib/outbound.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { getAppEnv } from "~/lib/app-env";
 import { notify } from "~/lib/notify.server";
+import { EVENT_TYPES } from "~/lib/notification-events";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -658,5 +659,46 @@ describe("notify — operator-editable copy", () => {
     expect(byUser.u1.title).toBe("You're on Course Scheduler");
     expect(byUser.u1.body).toBe("Design — P2, 26F.");
     expect(byUser.u2.body).toBe("Engineering — P1, 26F.");
+  });
+});
+
+describe("community.event_nearby opt-in", () => {
+  it("defaults off on every channel", () => {
+    expect(EVENT_TYPES["community.event_nearby"].defaults).toEqual({
+      inApp: false,
+      desktop: false,
+      slackDm: false,
+      email: "Off",
+    });
+  });
+
+  const send = (recipients: string[]) =>
+    notify({
+      eventType: "community.event_nearby",
+      message: { title: "Ada is hosting an event near you", dedupKey: "community.event_nearby:ev1" },
+      recipients: recipients.map((userId) => ({ userId })),
+    });
+
+  it("reaches nobody who has no preference row", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2")]);
+    const result = await send(["u1", "u2"]);
+    expect(result).toEqual({ inApp: 0, emailed: 0, slackDmed: 0 });
+    expect(mockPrisma.notification.create).not.toHaveBeenCalled();
+    expect(mockPrisma.notification.createManyAndReturn).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("reaches a member who turned it on, once", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([user("u1"), user("u2")]);
+    mockPrisma.notificationPreference.findMany.mockResolvedValue([
+      { userId: "u1", eventType: "community.event_nearby", inApp: true, slackDm: false, digestFrequency: null },
+    ]);
+    mockPrisma.notification.create.mockResolvedValue({ id: "n1", recipientUserId: "u1" });
+    const result = await send(["u1", "u2"]);
+    expect(result.inApp).toBe(1);
+    expect(mockPrisma.notification.create.mock.calls[0][0].data).toMatchObject({
+      recipientUserId: "u1",
+      dedupKey: "community.event_nearby:ev1",
+    });
   });
 });

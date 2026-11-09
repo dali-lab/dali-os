@@ -489,6 +489,15 @@ export const NOTIFICATION_COPY = {
     body: "{{itemDetail}}",
     linkLabel: "Open photo",
   },
+  "community.event_nearby": {
+    eventType: "community.event_nearby",
+    label: "Alumni event nearby",
+    description: "Sent to opted-in members when an alum posts an event within 50 km of them.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} is hosting an event near you",
+    body: "{{itemDetail}}",
+    linkLabel: "See event",
+  },
 
   // ── Onboarding ───────────────────────────────────────────────────────────
   "journey.lab_submitted": {
