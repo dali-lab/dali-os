@@ -41,6 +41,20 @@ describe("loadShareOptions", () => {
     });
   });
 
+  it("matches a full name word by word", async () => {
+    await loadShareOptions("me", "Ada Lovelace");
+    const where = m.user.findMany.mock.calls[0][0].where;
+    expect(where.AND).toEqual([
+      { OR: [{ firstName: { contains: "ada", mode: "insensitive" } }, { lastName: { contains: "ada", mode: "insensitive" } }] },
+      {
+        OR: [
+          { firstName: { contains: "lovelace", mode: "insensitive" } },
+          { lastName: { contains: "lovelace", mode: "insensitive" } },
+        ],
+      },
+    ]);
+  });
+
   it("does not list members for a query under two characters", async () => {
     const res = await loadShareOptions("me", "a");
     expect(m.user.findMany).not.toHaveBeenCalled();

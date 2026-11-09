@@ -4,6 +4,7 @@
 // queries live in search.server.ts.
 
 import type { FileCategory } from "~/lib/file-type";
+import { matchesAllWords } from "~/lib/person-search";
 
 export type SearchResultType =
   | "person"
@@ -145,7 +146,7 @@ export const buildUrl: Record<Exclude<SearchResultType, "task">, (id: string) =>
 };
 
 // Lower is better; null means no match. exact(0) > prefix(1) > word-start(2) >
-// substring(3). Whitespace-trimmed, case-insensitive.
+// substring(3) > every word somewhere(4). Whitespace-trimmed, case-insensitive.
 export function matchScore(text: string, query: string): number | null {
   const t = text.trim().toLowerCase();
   const q = query.trim().toLowerCase();
@@ -154,6 +155,7 @@ export function matchScore(text: string, query: string): number | null {
   if (t.startsWith(q)) return 1;
   if (t.split(/\s+/).some((word) => word.startsWith(q))) return 2;
   if (t.includes(q)) return 3;
+  if (matchesAllWords(t, q)) return 4;
   return null;
 }
 

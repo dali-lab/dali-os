@@ -68,6 +68,16 @@ describe("list_members", () => {
     expect(LIST_MEMBERS_DEF.requiredScope).toBe("mcp:read");
   });
 
+  it("matches a full name word by word", async () => {
+    mockUser.user.findMany.mockResolvedValue([ALICE]);
+    mockUser.user.count.mockResolvedValue(1);
+    await runListMembers({ q: "Alice Smith" });
+    const search = mockUser.user.findMany.mock.calls[0][0].where.AND[1];
+    expect(search.AND).toHaveLength(2);
+    expect(search.AND[0].OR).toContainEqual({ firstName: { contains: "alice", mode: "insensitive" } });
+    expect(search.AND[1].OR).toContainEqual({ lastName: { contains: "smith", mode: "insensitive" } });
+  });
+
   it("returns all current-term members (no filters)", async () => {
     mockUser.user.findMany.mockResolvedValue([ALICE, BOB_CORE]);
     mockUser.user.count.mockResolvedValue(2);

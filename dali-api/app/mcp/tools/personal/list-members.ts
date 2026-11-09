@@ -5,6 +5,7 @@
 // with additional optional filters. Requires the `mcp:read` scope.
 
 import { prisma } from "~/lib/db.server";
+import { userTextWhere } from "~/lib/person-search";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
 import { offsetPage, offsetWindow, pageArray, pageProps, type PageArgs } from "~/mcp/pagination";
 
@@ -67,13 +68,7 @@ export async function runListMembers(input: Input) {
   if (input.q) {
     const q = input.q.trim();
     if (q.length > 0) {
-      andFilters.push({
-        OR: [
-          { firstName: { contains: q, mode: "insensitive" } },
-          { lastName: { contains: q, mode: "insensitive" } },
-          { daliEmail: { contains: q, mode: "insensitive" } },
-        ],
-      });
+      andFilters.push(userTextWhere(q, ["firstName", "lastName", "daliEmail"]));
     }
   }
 

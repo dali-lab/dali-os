@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "~/generated/prisma/client";
+import { userTextWhere } from "~/lib/person-search";
 import { AUDIT_ACTIONS, AUDIT_AREAS, actionsInArea, type AuditAction } from "~/lib/audit-actions";
 import { APPLICATION_TZ, zonedDayEndUtc, zonedDayStartUtc } from "~/lib/timezone";
 
@@ -152,14 +153,7 @@ async function resolveUserIdsByText(
   query: string,
 ): Promise<string[]> {
   const rows = await prisma.user.findMany({
-    where: {
-      OR: [
-        { firstName: { contains: query, mode: "insensitive" } },
-        { lastName: { contains: query, mode: "insensitive" } },
-        { daliEmail: { contains: query, mode: "insensitive" } },
-        { dartmouthEmail: { contains: query, mode: "insensitive" } },
-      ],
-    },
+    where: userTextWhere(query, ["firstName", "lastName", "daliEmail", "dartmouthEmail"]),
     select: { id: true },
     take: 200,
   });
