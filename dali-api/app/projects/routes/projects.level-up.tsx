@@ -37,8 +37,6 @@ import {
   type ColumnMapping,
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
-import { deriveSlotStatus, type SlotStatus } from "../lib/slot-status.server";
-import { SlotStatusStrip } from "../components/SlotStatusStrip";
 import type { Question } from "~/types";
 import { isLevel, type Level } from "~/lib/level";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
@@ -170,13 +168,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     targetPromotion: targetPromotion.get(r.userId) ?? null,
   }));
 
-  // Per-slot guardrail status (bound / mapped / sent-to). Single-cycle view
-  // only — the all-terms aggregate has no one slot to bind, mirroring binding.
-  const slotStatus: SlotStatus | null = singleCycleId
-    ? (await deriveSlotStatus(singleCycleId)).find((s) => s.slot === SLOT) ??
-      null
-    : null;
-
   const domainOptions = await prisma.domain.findMany({
     orderBy: { displayName: "asc" },
     select: { id: true, displayName: true },
@@ -197,7 +188,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     formQuestions,
     mappingWarning,
     noFormConnected,
-    slotStatus,
   };
 }
 
@@ -527,8 +517,6 @@ function Loaded({ data }: { data: LoadedData }) {
           <span className="font-medium">Heads up:</span> {data.mappingWarning}
         </div>
       )}
-
-      {data.slotStatus && <SlotStatusStrip status={data.slotStatus} />}
 
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput
