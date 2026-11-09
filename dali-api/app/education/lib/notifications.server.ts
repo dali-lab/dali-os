@@ -113,8 +113,7 @@ export async function notifyApplicationStatus(
 
 /**
  * Tell every approved enrollee a new assignment exists, deep-linked to the
- * assignment on their surface. Members get an in-app Notification; portal
- * students (no bell) get the link by email. Best-effort per recipient.
+ * assignment on their surface. Best-effort.
  */
 export async function notifyNewAssignment(args: {
   offeringId: string;
@@ -129,81 +128,39 @@ export async function notifyNewAssignment(args: {
   if (!offering) return;
   const enrollees = await prisma.educationApplication.findMany({
     where: { offeringId: args.offeringId, status: "Approved" },
-    select: {
-      applicant: {
-        select: {
-          id: true,
-          firstName: true,
-          daliEmail: true,
-          dartmouthEmail: true,
-          personalEmail: true,
-          netId: true,
-        },
-      },
-    },
+    select: { applicant: { select: { id: true, daliEmail: true } } },
   });
   if (enrollees.length === 0) return;
 
-  const title = `New assignment in ${offering.title}: ${args.assignmentTitle}`;
   // Pinned to the lab zone: the server runs UTC on Fly, so an 11:59 PM ET
   // deadline would otherwise print the following day.
   const body = args.dueAt
     ? `Due ${args.dueAt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: APPLICATION_TZ })}. Open the course hub to submit.`
     : "Open the course hub to submit.";
 
-  // Members get a pref-aware in-app notification (education.assignment
-  // defaults email Off — matching the old in-app-only behavior); portal
-  // students have no bell, so they keep the direct email path unchanged.
-  const members = enrollees.filter((e) => e.applicant.daliEmail);
-  const portalStudents = enrollees.filter((e) => !e.applicant.daliEmail);
-
-  if (members.length > 0) {
-    try {
-      await notify({
-        eventType: "education.assignment",
-        message: {
-          copyKey: "education.assignment",
-          vars: { itemTitle: args.assignmentTitle, contextName: offering.title, itemDetail: body },
-        },
-        recipients: members.map(({ applicant }) => ({
-          userId: applicant.id,
-          link: `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`,
-        })),
-      });
-    } catch (err) {
-      console.error("assignment notification failed", {
-        assignmentId: args.assignmentId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  for (const { applicant } of portalStudents) {
-    const link = `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`;
-    try {
-      const to = recipientEmail(applicant);
-      if (!to) continue;
-      await sendEducationEmail({
-        to,
-        recipientUserId: applicant.id,
-        dedupKey: `education.assignment:${args.assignmentId}:${applicant.id.toLowerCase()}`,
-        eventType: "education.assignment",
-        subject: title,
-        firstName: applicant.firstName,
-        paragraphs: [body],
-        cta: { path: link, label: "Open the assignment" },
-      });
-    } catch (err) {
-      console.error("assignment notification failed", {
-        assignmentId: args.assignmentId,
+  try {
+    await notify({
+      eventType: "education.assignment",
+      message: {
+        copyKey: "education.assignment",
+        vars: { itemTitle: args.assignmentTitle, contextName: offering.title, itemDetail: body },
+        linkLabel: "Open the assignment",
+        dedupKey: `education.assignment:${args.assignmentId}`,
+      },
+      recipients: enrollees.map(({ applicant }) => ({
         userId: applicant.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+        link: `${educationLink(applicant, offering.id)}/assignments/${args.assignmentId}`,
+      })),
+    });
+  } catch (err) {
+    console.error("assignment notification failed", {
+      assignmentId: args.assignmentId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
-/** Tell a student their submission was graded. Member in-app / portal email. */
+/** Tell a student their submission was graded. */
 export async function notifyGraded(args: {
   studentId: string;
   offeringId: string;
@@ -212,40 +169,20 @@ export async function notifyGraded(args: {
 }): Promise<void> {
   const student = await prisma.user.findUnique({
     where: { id: args.studentId },
-    select: {
-      id: true,
-      firstName: true,
-      daliEmail: true,
-      dartmouthEmail: true,
-      personalEmail: true,
-      netId: true,
-    },
+    select: { id: true, daliEmail: true },
   });
   if (!student) return;
-  const title = `Feedback on ${args.assignmentTitle}`;
-  const body = "Your instructor graded your submission — open the assignment to see it.";
-  const link = `${educationLink(student, args.offeringId)}/assignments/${args.assignmentId}`;
   try {
-    if (student.daliEmail) {
-      await notify({
-        eventType: "education.grade",
-        message: { vars: { itemTitle: args.assignmentTitle } },
-        recipients: [{ userId: student.id, link }],
-      });
-    } else {
-      const to = recipientEmail(student);
-      if (!to) return;
-      await sendEducationEmail({
-        to,
-        recipientUserId: student.id,
-        dedupKey: `education.grade:${args.assignmentId}:${student.id.toLowerCase()}`,
-        eventType: "education.grade",
-        subject: title,
-        firstName: student.firstName,
-        paragraphs: [body],
-        cta: { path: link, label: "Open the assignment" },
-      });
-    }
+    await notify({
+      eventType: "education.grade",
+      message: { vars: { itemTitle: args.assignmentTitle }, linkLabel: "Open the assignment" },
+      recipients: [
+        {
+          userId: student.id,
+          link: `${educationLink(student, args.offeringId)}/assignments/${args.assignmentId}`,
+        },
+      ],
+    });
   } catch (err) {
     console.error("grade notification failed", {
       assignmentId: args.assignmentId,
@@ -255,10 +192,9 @@ export async function notifyGraded(args: {
 }
 
 /**
- * Remind approved enrollees that a session is starting soon. Members get a
- * pref-aware in-app notification (education.session_reminder); portal students,
- * who have no bell, get a direct email. Times are labeled ET — the shared
- * in-app body can't be per-recipient, and the hub renders each user's own zone.
+ * Remind approved enrollees that a session is starting soon. Times are labeled
+ * ET: the shared body can't be per-recipient, and the hub renders each user's
+ * own zone.
  */
 export async function notifySessionReminder(args: {
   sessionId: string;
@@ -271,18 +207,7 @@ export async function notifySessionReminder(args: {
 }): Promise<void> {
   const enrollees = await prisma.educationApplication.findMany({
     where: { offeringId: args.offeringId, status: "Approved" },
-    select: {
-      applicant: {
-        select: {
-          id: true,
-          firstName: true,
-          daliEmail: true,
-          dartmouthEmail: true,
-          personalEmail: true,
-          netId: true,
-        },
-      },
-    },
+    select: { applicant: { select: { id: true, daliEmail: true } } },
   });
   if (enrollees.length === 0) return;
 
@@ -295,61 +220,31 @@ export async function notifySessionReminder(args: {
     hour: "numeric",
     minute: "2-digit",
   });
-  const title = `Upcoming: ${label}`;
-  const body = `${args.offeringTitle} · ${when} (ET)${args.location ? ` · ${args.location}` : ""}`;
 
-  const members = enrollees.filter((e) => e.applicant.daliEmail);
-  const portalStudents = enrollees.filter((e) => !e.applicant.daliEmail);
-
-  if (members.length > 0) {
-    try {
-      await notify({
-        eventType: "education.session_reminder",
-        message: {
-          vars: {
-            itemTitle: label,
-            contextName: args.offeringTitle,
-            // Already carries its "(ET)" label; the lab zone is the right one here
-            // because a course session happens in a room in Hanover.
-            when: `${when} (ET)`,
-            itemDetail: args.location ? ` · ${args.location}` : "",
-          },
+  try {
+    await notify({
+      eventType: "education.session_reminder",
+      message: {
+        vars: {
+          itemTitle: label,
+          contextName: args.offeringTitle,
+          // A course session happens in a room in Hanover, so the lab zone is right.
+          when: `${when} (ET)`,
+          itemDetail: args.location ? ` · ${args.location}` : "",
         },
-        recipients: members.map(({ applicant }) => ({
-          userId: applicant.id,
-          link: `${educationLink(applicant, args.offeringId)}/hub`,
-        })),
-      });
-    } catch (err) {
-      console.error("session reminder notification failed", {
-        offeringId: args.offeringId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-
-  for (const { applicant } of portalStudents) {
-    const link = `${educationLink(applicant, args.offeringId)}/hub`;
-    try {
-      const to = recipientEmail(applicant);
-      if (!to) continue;
-      await sendEducationEmail({
-        to,
-        recipientUserId: applicant.id,
-        dedupKey: `education.session.reminder:${args.sessionId}:${applicant.id.toLowerCase()}`,
-        eventType: "education.session.reminder",
-        subject: title,
-        firstName: applicant.firstName,
-        paragraphs: [body],
-        cta: { path: link, label: "Open the course hub" },
-      });
-    } catch (err) {
-      console.error("session reminder email failed", {
-        offeringId: args.offeringId,
+        linkLabel: "Open the course hub",
+        dedupKey: `education.session_reminder:${args.sessionId}`,
+      },
+      recipients: enrollees.map(({ applicant }) => ({
         userId: applicant.id,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+        link: `${educationLink(applicant, args.offeringId)}/hub`,
+      })),
+    });
+  } catch (err) {
+    console.error("session reminder notification failed", {
+      offeringId: args.offeringId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 

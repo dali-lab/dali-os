@@ -22,6 +22,8 @@ const base: NotificationsSettingsData = {
   digestHourEt: null,
   isAdmin: false,
   isCore: false,
+  audience: "member",
+  action: "/settings/notifications",
 };
 
 async function mount(props: Partial<NotificationsSettingsData> = {}) {
@@ -111,5 +113,48 @@ describe("NotificationsSettingsBlock", () => {
     ]);
     expect(previews.map((p) => p.parentElement?.textContent)).toEqual(["In-app", "Desktop", "Slack DM", "Email"]);
     expect(previews.every((p) => p.getAttribute("aria-hidden") === "true")).toBe(true);
+  });
+});
+
+describe("NotificationsSettingsBlock outside the lab", () => {
+  const portal = { audience: "portal" as const, action: "/settings/notifications" };
+
+  it("shows only in-app and email columns, with no digest time or Slack note", async () => {
+    await mount({ ...portal, slackConnected: false });
+    const previews = Array.from(container.querySelectorAll("[data-channel-preview]"));
+    expect(previews.map((p) => p.getAttribute("data-channel-preview"))).toEqual(["inApp", "email"]);
+    expect(container.textContent).not.toMatch(/Digests arrive at/);
+    expect(container.textContent).not.toMatch(/Slack/);
+    expect(container.querySelector('input[aria-label$="desktop"]')).toBeNull();
+  });
+
+  it("lists only the events a portal student can receive", async () => {
+    await mount(portal);
+    const areas = Array.from(container.querySelectorAll("section > button[aria-expanded]")).map(
+      (b) => b.querySelector("[id]")?.textContent,
+    );
+    expect(areas).toEqual(["Education"]);
+    expect(box("Meeting invites in-app")).toBeNull();
+  });
+
+  it("starts outside-only email defaults at instant", async () => {
+    await mount({ ...portal });
+    const section = container.querySelector("section > button[aria-expanded]") as HTMLButtonElement;
+    if (section.getAttribute("aria-expanded") === "false") await act(async () => section.click());
+    await act(async () => box("New assignments in-app").click());
+    await act(async () => button("Save")!.click());
+    await act(async () => {});
+    const fields = saved.mock.calls[0]![0] as Record<string, string>;
+    expect(fields["education.assignment:email"]).toBe("Instant");
+    expect(fields["education.discussion:email"]).toBe("Off");
+  });
+
+  it("shows partners their comment replies", async () => {
+    await mount({ audience: "partner", action: "/settings/notifications" });
+    const areas = Array.from(container.querySelectorAll("section > button[aria-expanded]")).map(
+      (b) => b.querySelector("[id]")?.textContent,
+    );
+    expect(areas).toEqual(["Documents"]);
+    expect(box("Comment replies in-app")).not.toBeNull();
   });
 });
