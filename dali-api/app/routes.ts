@@ -198,6 +198,10 @@ export default [
     // The writing page sits outside the Resources layout: no masthead or
     // bookmark tabs, just the post and its settings.
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
+    // Resource Hub: a card per domain, each a blank page its leads lay out
+    // with the editor's "/" blocks.
+    route("resource-hub", "routes/resource-hub.tsx"),
+    route("resource-hub/:pageId", "routes/resource-hub.$pageId.tsx"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
     route("release-notes", "routes/release-notes._index.tsx"),
@@ -290,6 +294,7 @@ export default [
     // Hidden from mentees entirely; gated server-side by canViewMentorship.
     route("mentorship", "mentorship/routes/mentorship.tsx"),
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
+    route("mentorship/warnings", "mentorship/routes/mentorship.warnings.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
     // Internal processes. The area hub and JobX are retired; this path is kept

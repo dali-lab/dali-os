@@ -345,10 +345,13 @@ model User {
   galleryReports   GalleryReport[]
 
   // ─── Page documentation (per-page guides) ─────────────────────────────────
-  pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
-  blogPosts          BlogPost[]
-  pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
-  pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
+  pageDocsMaintained     PageDoc[]           @relation("PageDocMaintainer")
+  blogPosts              BlogPost[]
+  resourceHubPages       ResourceHubPage[]
+  mentorshipWarnings     MentorshipWarning[] @relation("WarningMember")
+  mentorshipWarningsMade MentorshipWarning[] @relation("WarningCreator")
+  pageDocsCreated        PageDoc[]           @relation("PageDocCreatedBy")
+  pageDocsLastEdited     PageDoc[]           @relation("PageDocLastEditedBy")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -835,6 +838,7 @@ model Domain {
 
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
+  resourceHubPages      ResourceHubPage[]
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
   delibsSessions        DelibsSession[]
@@ -2210,17 +2214,17 @@ model MeetingRecording {
 
   // Seconds recorded across finished sessions. Continue starts a new session
   // whose timeline is stamped from here, so the transcript reads as one.
-  recordedSeconds Float     @default(0)
+  recordedSeconds  Float     @default(0)
   // When the latest session went Pending → Recording. The live clock is
   // recordedSeconds + (now - this); only meaningful while status is Recording.
   sessionStartedAt DateTime?
-  error           String?
+  error            String?
   // Latest Modal progress while Processing; cleared by applyResult.
-  progress        Json?
-  insertedAt      DateTime? // notes or transcript inserted into the doc
-  finalizedAt     DateTime? // audio deleted
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  progress         Json?
+  insertedAt       DateTime? // notes or transcript inserted into the doc
+  finalizedAt      DateTime? // audio deleted
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   // Enhance (specs/meeting-notes-model.md §2): the last server-verified merge
   // plan, keyed to the editor snapshot it was computed from. A function of
@@ -3947,7 +3951,7 @@ model Project {
   neonProjectIds   String[] @default([])
   flyReadTokenEnc  String? // read-only Fly token (drives the sweep), encrypted
   flyWriteTokenEnc String? // write Fly token (gates console actions), encrypted
-  infraEnabled     Boolean @default(true) // off keeps config but skips the sweep
+  infraEnabled     Boolean  @default(true) // off keeps config but skips the sweep
 
   // Private projects are excluded from every `projects:*` form reference
   // source, so they can't be picked as an answer on a bid/preference form.
@@ -7653,6 +7657,29 @@ model BlogPost {
   @@index([authorId])
 }
 
+// A Resource Hub page: a card on /resource-hub that opens a blank canvas its
+// owners lay out with the editor's "/" blocks. Created from the hub's Add
+// button; a draft until published. Owned by the creator and, when set, the
+// leads of `domainId`. The body is the collab room `resourceHub:{id}:body`,
+// synced back to contentJson (see COLLAB_SOURCES).
+model ResourceHubPage {
+  id          String    @id @default(cuid())
+  title       String    @default("Untitled hub")
+  coverUrl    String?
+  bgColor     String?
+  publishedAt DateTime?
+  contentJson Json?
+  domainId    String?
+  domain      Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([domainId])
+  @@index([createdById])
+}
+
 enum ReleaseNoteStatus {
   Draft
   Published
@@ -7910,4 +7937,26 @@ model BannerImpression {
   createdAt  DateTime  @default(now())
 
   @@unique([bannerId, userId])
+}
+
+// A Core-entered participation concern about a member (missed mentorship
+// meeting, missed lab, other). Manual only; read and written exclusively
+// through the Core-gated /mentorship/warnings route. reason/status are
+// validated strings (see mentorship/lib/warnings.ts).
+model MentorshipWarning {
+  id          String   @id @default(cuid())
+  memberId    String
+  reason      String
+  notes       String   @default("")
+  occurredOn  DateTime @db.Date
+  status      String   @default("open")
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  member    User  @relation("WarningMember", fields: [memberId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("WarningCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@index([status, occurredOn])
 }

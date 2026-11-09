@@ -99,8 +99,8 @@ function QuickItem({
       aria-label={label}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'group relative flex shrink-0 items-center rounded-lg outline-none transition-[background-color,color,transform] duration-150 ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-os-accent/60',
-        compact ? 'h-9 w-9 justify-center' : 'h-8 px-[9px]',
+        'group relative flex items-center rounded-lg outline-none transition-[background-color,color,transform] duration-150 ease-out active:scale-95 focus-visible:ring-2 focus-visible:ring-os-accent/60',
+        compact ? 'h-9 w-9 shrink-0 justify-center' : active ? 'h-8 min-w-0 shrink px-[9px]' : 'h-8 shrink-0 px-[6px]',
         active ? 'bg-os-hover-strong text-sm font-medium text-foreground' : 'text-os-grey hover:bg-os-hover hover:text-foreground',
       )}
     >
@@ -369,7 +369,7 @@ export function Rail({
         </Tooltip>
 
         {/* No Home quick item: the wordmark is the home button. */}
-        <div className={cn('flex shrink-0 gap-1', compact && 'flex-col items-center')}>
+        <div className={cn('flex min-w-0 shrink-0 gap-0.5', compact && 'flex-col items-center')}>
           <QuickItem
             label="Calendar"
             icon={Calendar}

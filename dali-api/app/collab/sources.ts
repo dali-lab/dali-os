@@ -29,6 +29,7 @@ import {
 import { ensureBlocks } from "./legacy/pm-to-blocknote";
 import { ydocToBlocks } from "./read";
 import { deriveBlogPreview } from "~/lib/blog-preview";
+import { canEditResourceHub } from "~/lib/resource-hub.server";
 
 export interface CollabSource {
   // Initial content for a brand-new room (no CollabDocument row yet). Returns
@@ -121,6 +122,31 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
       });
       if (!post) return false;
       return post.authorId === userSub || (await isCore(userSub));
+    },
+  },
+
+  // Resource Hub page. Its creator, the domain's leads and Core edit; every lab
+  // member reads the synced contentJson.
+  resourceHub: {
+    async seed(id) {
+      const page = await prisma.resourceHubPage.findUnique({
+        where: { id },
+        select: { contentJson: true },
+      });
+      return page?.contentJson ?? null;
+    },
+    async syncBack(id, blocks) {
+      await prisma.resourceHubPage.updateMany({
+        where: { id },
+        data: { contentJson: blocks as unknown as object },
+      });
+    },
+    async authorize(userSub, id) {
+      const page = await prisma.resourceHubPage.findUnique({
+        where: { id },
+        select: { domainId: true, createdById: true },
+      });
+      return page ? canEditResourceHub(userSub, page) : false;
     },
   },
 

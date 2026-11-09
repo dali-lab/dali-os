@@ -54,7 +54,7 @@ export const COMPONENT_KINDS: KindDef[] = [
     itemLabel: "Chip",
     itemFields: [{ key: "label", label: "Text", type: "text" }, href],
     defaults: {
-      fields: { label: "Quick start" },
+      fields: { label: "Quick start", layout: "stacked" },
       items: [{ label: "New here", href: "" }, { label: "Templates", href: "" }],
     },
   },
@@ -92,7 +92,11 @@ export const COMPONENT_KINDS: KindDef[] = [
       { key: "current", label: "Current step number", type: "text", placeholder: "1" },
     ],
     itemLabel: "Step",
-    itemFields: [{ key: "label", label: "Name", type: "text" }],
+    itemFields: [
+      { key: "label", label: "Name", type: "text" },
+      tone,
+      { key: "details", label: "More details", type: "textarea" },
+    ],
     defaults: {
       fields: { title: "Term timeline", note: "", current: "2" },
       items: [{ label: "Kickoff" }, { label: "Research" }, { label: "Crit 1" }, { label: "Demo Day" }],

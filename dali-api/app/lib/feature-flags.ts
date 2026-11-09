@@ -118,6 +118,12 @@ export const FEATURE_FLAGS = [
       "The Community sidebar area: Connect, Opportunities, Gallery and Blogs. Blogs opens /resources: a front page of member blog posts (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Connect stays under Lab and the other Community pages are not reachable.",
   },
   {
+    key: "resource-hub",
+    label: "Resource Hub",
+    description:
+      "A Resource Hub entry beside Calendar, Email and Drive: one card per domain, each opening a blank page the domain's leads lay out with the editor's / blocks. Every lab member can read them. Ships off.",
+  },
+  {
     key: "ai-meeting-notes",
     label: "AI meeting notes",
     description:

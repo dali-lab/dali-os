@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Link,
   redirect,
   useLoaderData,
   useNavigate,
@@ -29,6 +30,8 @@ import { NudgeModal } from "../components/NudgeModal";
 import { MentorGrid } from "../components/MentorGrid";
 import { EmptyState } from "../components/EmptyState";
 import { Select, Tooltip } from "~/components/ui/floating";
+import { Avatar } from "~/components/ui/Avatar";
+import { reasonLabel } from "../lib/warnings";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
@@ -91,6 +94,8 @@ type LoaderData = {
   termForms: TermForms | null;
   formOptions: { id: string; name: string }[];
   isCore: boolean;
+  // Core only: members with open warnings, shown above the grid.
+  warned: { id: string; name: string; photoUrl: string | null; count: number; latestReason: string }[];
   viewerId: string;
   collabToken: string | null;
   userName: string;
@@ -237,7 +242,31 @@ export async function loader({ request }: Route.LoaderArgs) {
       ])
     : [null, []];
 
+  const warned: LoaderData["warned"] = [];
+  if (viewerIsCore) {
+    const open = await prisma.mentorshipWarning.findMany({
+      where: { status: "open" },
+      orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
+      include: { member: { select: { id: true, name: true, firstName: true, lastName: true, photoUrl: true } } },
+    });
+    const byMember = new Map<string, LoaderData["warned"][number]>();
+    for (const w of open) {
+      const cur = byMember.get(w.memberId);
+      if (cur) cur.count += 1;
+      else
+        byMember.set(w.memberId, {
+          id: w.memberId,
+          name: w.member.name?.trim() || `${w.member.firstName} ${w.member.lastName}`.trim(),
+          photoUrl: w.member.photoUrl,
+          count: 1,
+          latestReason: w.reason,
+        });
+    }
+    warned.push(...byMember.values());
+  }
+
   const data: LoaderData = {
+    warned,
     filters,
     initialFilters,
     options,
@@ -492,6 +521,35 @@ export default function MentorshipBrowse() {
           />
         </div>
       </header>
+
+      {data.isCore && data.warned.length > 0 && (
+        <section aria-label="Members with open warnings" className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Open warnings</h2>
+            <Link to="/mentorship/warnings" className="text-sm text-muted-foreground hover:underline">
+              Manage warnings
+            </Link>
+          </div>
+          <ul className="flex flex-wrap gap-2">
+            {data.warned.map((w) => (
+              <li key={w.id}>
+                <Link
+                  to="/mentorship/warnings"
+                  className="flex items-center gap-2 rounded-lg border border-border bg-card py-1.5 pl-1.5 pr-3 text-sm hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
+                >
+                  <Avatar name={w.name} photoUrl={w.photoUrl} size="xs" />
+                  <span className="font-medium">{w.name}</span>
+                  <span className="text-muted-foreground">
+                    {reasonLabel(w.latestReason)}
+                    {w.count > 1 ? ` · ${w.count}` : ""}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <hr className="mt-2 border-border" />
+        </section>
+      )}
 
       {data.isCore && (
         <TemplatesModal

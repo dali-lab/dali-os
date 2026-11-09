@@ -11,6 +11,7 @@
  *   doc:{pageId}:body                  FreeForm Page bodies (DocumentEditor)
  *   resources:{bookmarkId}:body        a Resources bookmark page
  *   blogPost:{postId}:body             a blog post body (synced to contentJson)
+ *   resourceHub:{pageId}:body          a Resource Hub domain page (synced to contentJson)
  *   presence:{pageId}                  ephemeral, no persistence
  *   signing:{documentId}:draft         SigningDocument body — prose (BlockNote)
  *   form:{formId}:draft                Form question list — structured Y.Array
@@ -75,4 +76,9 @@ export function rubricDraftName(rubricId: string): string {
  *  from the Page id (no contentDocId override). */
 export function whiteboardRoomName(pageId: string): string {
   return `whiteboard:${pageId}:canvas`;
+}
+
+/** A Resource Hub domain page body. Registry-backed (COLLAB_SOURCES.resourceHub). */
+export function resourceHubRoomName(pageId: string): string {
+  return `resourceHub:${pageId}:body`;
 }

@@ -46,13 +46,15 @@ function Heading({ title, subtitle }: { title?: string; subtitle?: string }) {
 
 function Chips({ fields, items }: ComponentData) {
   return (
-    <div className="dali-cmp-chips">
+    <div className={`dali-cmp-chips${fields.layout === "inline" ? "" : " dali-cmp-chips--stacked"}`}>
       {fields.label && <span className="dali-cmp-eyebrow">{fields.label}</span>}
-      {items.map((it, i) => (
-        <LinkOrDiv key={i} href={it.href} className="dali-cmp-chip">
-          {it.label}
-        </LinkOrDiv>
-      ))}
+      <div className="dali-cmp-chips__row">
+        {items.map((it, i) => (
+          <LinkOrDiv key={i} href={it.href} className="dali-cmp-chip">
+            {it.label}
+          </LinkOrDiv>
+        ))}
+      </div>
     </div>
   );
 }
@@ -84,9 +86,19 @@ function Timeline({ fields, items }: ComponentData) {
           const n = i + 1;
           const state = n < current ? "done" : n === current ? "current" : "next";
           return (
-            <li key={i} className={`dali-cmp-step dali-cmp-step--${state}`}>
+            <li
+              key={i}
+              className={`dali-cmp-step dali-cmp-step--${state}${it.tone ? ` dali-cmp-step--toned ${tone(it)}` : ""}`}
+            >
               <span className="dali-cmp-step__num">{n}</span>
-              <span className="dali-cmp-step__label">{it.label}</span>
+              {it.details?.trim() ? (
+                <details className="dali-cmp-step__more">
+                  <summary className="dali-cmp-step__label">{it.label}</summary>
+                  <p className="dali-cmp-sub">{it.details}</p>
+                </details>
+              ) : (
+                <span className="dali-cmp-step__label">{it.label}</span>
+              )}
             </li>
           );
         })}
