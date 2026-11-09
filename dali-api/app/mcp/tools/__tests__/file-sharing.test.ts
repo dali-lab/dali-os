@@ -187,6 +187,16 @@ describe("file sharing tools", () => {
     expect(res).toEqual({ ok: true, linkAccess: "LabMembers", linkPermission: "Comment" });
   });
 
+  it("set_file_link_access refuses a public or signed-in link", async () => {
+    for (const linkAccess of ["Public", "SignedIn", "Partners"]) {
+      await expect(
+        MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "set_file_link_access", fileId: "f1", linkAccess }),
+      ).rejects.toBeInstanceOf(McpInvalidError);
+    }
+    expect(requireFileShareManager).not.toHaveBeenCalled();
+    expect(setFileGeneralAccess).not.toHaveBeenCalled();
+  });
+
   it("set_file_link_access does not write for a non-manager", async () => {
     vi.mocked(requireFileShareManager).mockRejectedValue(new FileShareForbiddenError());
     await expect(

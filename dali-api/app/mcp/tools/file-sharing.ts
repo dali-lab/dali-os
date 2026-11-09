@@ -123,6 +123,9 @@ export async function runFileSharingAction(
         return { ok: true };
       }
       case "set_file_link_access": {
+        if (args.linkAccess !== "Restricted" && args.linkAccess !== "LabMembers") {
+          throw new McpInvalidError("linkAccess must be Restricted or LabMembers");
+        }
         await requireFileShareManager(fileId, callerId);
         const result = await setFileGeneralAccess(fileId, callerId, {
           linkAccess: args.linkAccess as LinkAccess,

@@ -302,6 +302,12 @@ describe("list_page_shares", () => {
     expect(res.folderAccess).toEqual({ scopeKind: "Private", scopeGroupId: null, scopePermission: "Edit" });
   });
 
+  it("reports a missing or archived document as not found", async () => {
+    vi.mocked(requirePageShareManager).mockRejectedValue(new PageShareNotFoundError());
+    await expect(runListPageShares("user-1", { pageId: "gone" })).rejects.toBeInstanceOf(McpNotFoundError);
+    expect(listPageShares).not.toHaveBeenCalled();
+  });
+
   it("refuses a non-manager without reading the share list", async () => {
     vi.mocked(requirePageShareManager).mockRejectedValue(new PageShareForbiddenError());
     await expect(runListPageShares("user-1", { pageId: "p1" })).rejects.toBeInstanceOf(McpForbiddenError);
