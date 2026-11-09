@@ -72,4 +72,17 @@ describe("TasksDrawer", () => {
     expect(container.textContent).toContain("Showing 50 of 120");
     expect(container.querySelector('a[href="/notifications"]')).toBeNull();
   });
+
+  it("titles a portal feed Notifications, with one list and its own empty state", () => {
+    mount({ tasks: [], singleFeed: true, title: "Notifications" });
+    expect(container.querySelector("h2")?.textContent).toBe("Notifications (0)");
+    expect(container.textContent).not.toContain("Project work");
+    expect(container.textContent).toContain("New notifications will show up here.");
+  });
+
+  it("keeps the alumni single feed's wording", () => {
+    mount({ tasks: [], singleFeed: true });
+    expect(container.querySelector("h2")?.textContent).toBe("Tasks (0)");
+    expect(container.textContent).toContain("New tasks will show up here.");
+  });
 });

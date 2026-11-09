@@ -42,6 +42,8 @@ function user(id: string, overrides: Record<string, unknown> = {}) {
     personalEmail: null,
     netId: null,
     slackUserId: null,
+    daliMember: { id: `m-${id}` },
+    partnerContact: null,
     ...overrides,
   };
 }
@@ -110,6 +112,66 @@ describe("notify", () => {
     });
     // Every instant email carries its own off-switch path.
     expect(email.bodyHtml).toContain("https://os.dali.dartmouth.edu/settings/notifications");
+  });
+
+  it("emails portal students by the outside default and links their own settings page", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("u1"),
+      user("u2", { daliEmail: null, dartmouthEmail: "u2@dartmouth.edu", daliMember: null }),
+    ]);
+    const res = await notify({
+      eventType: "education.assignment",
+      message: { title: "New assignment" },
+      recipients: [{ userId: "u1" }, { userId: "u2" }],
+    });
+    expect(res).toEqual({ inApp: 2, emailed: 1, slackDmed: 0 });
+    expect(emailCalls()).toHaveLength(1);
+    expect(emailCalls()[0].target).toBe("u2@dartmouth.edu");
+    expect(emailCalls()[0].bodyHtml).toContain(
+      "https://os.dali.dartmouth.edu/portal/settings#notifications",
+    );
+    expect(emailCalls()[0].bodyText).toContain("/portal/settings#notifications");
+  });
+
+  it("points a partner's email footer at the partner settings page", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("p1", {
+        daliEmail: null,
+        personalEmail: "p1@example.com",
+        daliMember: null,
+        partnerContact: { id: "c1" },
+      }),
+    ]);
+    await notify({
+      eventType: "collab.comment_reply",
+      message: { title: "New reply" },
+      recipients: [{ userId: "p1" }],
+    });
+    expect(emailCalls()).toHaveLength(1);
+    expect(emailCalls()[0].bodyHtml).toContain(
+      "https://os.dali.dartmouth.edu/partner/settings#notifications",
+    );
+  });
+
+  it("lets an outside user's saved preference beat the outside default", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([
+      user("u2", { daliEmail: null, dartmouthEmail: "u2@dartmouth.edu", daliMember: null }),
+    ]);
+    mockPrisma.notificationPreference.findMany.mockResolvedValue([
+      {
+        userId: "u2",
+        eventType: "education.assignment",
+        inApp: true,
+        slackDm: false,
+        digestFrequency: "Off",
+      },
+    ]);
+    const res = await notify({
+      eventType: "education.assignment",
+      message: { title: "New assignment" },
+      recipients: [{ userId: "u2" }],
+    });
+    expect(res).toEqual({ inApp: 1, emailed: 0, slackDmed: 0 });
   });
 
   it("honors explicit preference rows over defaults in a mixed fan-out", async () => {
