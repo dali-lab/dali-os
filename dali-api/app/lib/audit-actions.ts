@@ -141,6 +141,7 @@ export const AUDIT_ACTIONS = [
   "project.assignment.level",
   "project.assignment.backfill",
   "core.assignment.backfill",
+  "hiring.cycle.backfill",
   "core.milestone.create",
   "core.milestone.update",
   "core.milestone.move",
