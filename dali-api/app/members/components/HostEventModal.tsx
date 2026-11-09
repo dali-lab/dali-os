@@ -8,8 +8,8 @@ import { Toggle } from "~/components/ui/Toggle";
 import { useToast } from "~/components/ui/toast";
 import { Field, FieldPair } from "~/components/ui/modal-fields";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
-import type { ConnectEvent } from "~/members/lib/connect.server";
-import { wallClockFields } from "~/members/lib/connect-view";
+import type { CommunityEvent } from "~/members/lib/community.server";
+import { wallClockFields } from "~/members/lib/community-view";
 
 type FormState = {
   title: string;
@@ -39,7 +39,7 @@ const BLANK: FormState = {
   notifyNearby: false,
 };
 
-function fromEvent(e: ConnectEvent, tz: string): FormState {
+function fromEvent(e: CommunityEvent, tz: string): FormState {
   const start = wallClockFields(e.startsAt, tz);
   const end = wallClockFields(e.endsAt, tz);
   return {
@@ -72,7 +72,7 @@ export function HostEventModal({
   open,
   onClose,
 }: {
-  event: ConnectEvent | null;
+  event: CommunityEvent | null;
   tz: string;
   open: boolean;
   onClose: () => void;

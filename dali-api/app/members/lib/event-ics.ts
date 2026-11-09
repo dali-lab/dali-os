@@ -1,4 +1,4 @@
-// Add-to-calendar file for a Connect event. Pure and client-safe.
+// Add-to-calendar file for a Community event. Pure and client-safe.
 
 export type EventIcsInput = {
   id: string;
@@ -38,7 +38,7 @@ export function buildEventIcs(e: EventIcsInput, now: Date = new Date()): string 
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//DALI OS//Connect//EN",
+    "PRODID:-//DALI OS//Community//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",

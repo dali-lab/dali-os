@@ -1,15 +1,15 @@
 ---
-title: Connect, events, coffee chats and resume reviews
+title: Community, events, coffee chats and resume reviews
 summary: Find alumni and students on a map, go to and host alumni events, and ask for or answer anonymous coffee chat and resume review requests.
-keywords: [connect, alumni map, where alumni are, events, host an event, rsvp, add to calendar, nearby events, active today, coffee chat, resume review, open to, based in]
-paths: [/connect, /coffee-chats/:id]
+keywords: [community, connect, alumni map, where alumni are, events, host an event, rsvp, add to calendar, nearby events, active today, coffee chat, resume review, open to, based in]
+paths: [/community, /coffee-chats/:id]
 ---
 
-Connect shows where DALI alumni and current students are, and the events they are hosting, on one map. It is open to current members and alumni.
+Community shows where DALI alumni and current students are, and the events they are hosting, on one map. It is open to current members and alumni.
 
 ## Where to find it
 
-[Connect](/connect) is under **Lab** in the sidebar. If your workspace has the Community area, it is the first page there instead. For alumni, Connect is the Home page. See [Alumni](/help/articles/alumni).
+[Community](/community) is under **Lab** in the sidebar. If your workspace has the Community area, it is the first page there instead. For alumni, Community is the Home page. See [Alumni](/help/articles/alumni).
 
 ## Find people
 
@@ -76,7 +76,7 @@ When you turn on **Tell people nearby** for an event, people who live within 50 
 
 ## Coffee chats and resume reviews
 
-Alumni set what they are open to from the **I'm open to** button at the top of Connect. Both switches, **Coffee chats** and **Resume reviews**, are off until you turn them on. When a switch is on, other members and alumni see the matching **Coffee chat** or **Resume review** button on your profile.
+Alumni set what they are open to from the **I'm open to** button at the top of Community. Both switches, **Coffee chats** and **Resume reviews**, are off until you turn them on. When a switch is on, other members and alumni see the matching **Coffee chat** or **Resume review** button on your profile.
 
 Resume review requests and coffee chat invites are anonymous until the other person says yes. Members can send both.
 

@@ -1,4 +1,4 @@
-import type { Route } from "./+types/connect.events.$id.calendar";
+import type { Route } from "./+types/community.events.$id.calendar";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getEventForCalendar } from "~/members/lib/community-events.server";

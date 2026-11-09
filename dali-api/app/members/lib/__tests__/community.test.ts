@@ -13,12 +13,12 @@ import {
   minZoomToFill,
   sortPeople,
   whyLine,
-  type ConnectAlum,
-  type ConnectPerson,
-  type ConnectViewer,
-} from "../connect";
+  type CommunityAlum,
+  type CommunityPerson,
+  type CommunityViewer,
+} from "../community";
 
-const alum = (id: string, location: string, lat: number, lng: number): ConnectAlum => ({
+const alum = (id: string, location: string, lat: number, lng: number): CommunityAlum => ({
   id,
   name: id,
   photoUrl: null,
@@ -59,7 +59,7 @@ describe("minZoomToFill", () => {
   });
 });
 
-const person = (id: string, over: Partial<ConnectPerson> = {}): ConnectPerson => ({
+const person = (id: string, over: Partial<CommunityPerson> = {}): CommunityPerson => ({
   id,
   name: id,
   photoUrl: null,
@@ -196,7 +196,7 @@ describe("filterPeople", () => {
 });
 
 describe("whyLine and sortPeople", () => {
-  const viewer: ConnectViewer = { classYear: 2020, projectIds: ["p1"], lat: HANOVER.lat, lng: HANOVER.lng };
+  const viewer: CommunityViewer = { classYear: 2020, projectIds: ["p1"], lat: HANOVER.lat, lng: HANOVER.lng };
   const atlas = [{ id: "p1", name: "Atlas", term: "20F" }];
 
   it("names a shared project with its term", () => {

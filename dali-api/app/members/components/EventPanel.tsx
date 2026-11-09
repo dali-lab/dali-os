@@ -6,9 +6,9 @@ import { Button, buttonClasses } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { DateBlock } from "~/members/components/ConnectColumn";
-import type { ConnectEvent } from "~/members/lib/connect.server";
-import { eventWhenFull } from "~/members/lib/connect-view";
+import { DateBlock } from "~/members/components/CommunityColumn";
+import type { CommunityEvent } from "~/members/lib/community.server";
+import { eventWhenFull } from "~/members/lib/community-view";
 
 export function EventPanel({
   event,
@@ -16,10 +16,10 @@ export function EventPanel({
   onClose,
   onEdit,
 }: {
-  event: ConnectEvent;
+  event: CommunityEvent;
   tz: string;
   onClose: () => void;
-  onEdit: (event: ConnectEvent) => void;
+  onEdit: (event: CommunityEvent) => void;
 }) {
   const rsvp = useFetcher();
   const cancel = useFetcher();
@@ -112,7 +112,7 @@ export function EventPanel({
               <Check className="h-4 w-4" aria-hidden />
               You're going
             </span>
-            <a href={`/connect/events/${event.id}/calendar.ics`} className={buttonClasses("secondary", "sm")}>
+            <a href={`/community/events/${event.id}/calendar.ics`} className={buttonClasses("secondary", "sm")}>
               Add to calendar
             </a>
             <Button variant="ghost" size="sm" onClick={() => rsvp.submit(rsvpForm(false), { method: "post" })}>

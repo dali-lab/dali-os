@@ -5,13 +5,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub, data } from "react-router";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
-import type { ConnectPerson } from "~/members/lib/connect";
-import type { ConnectEvent } from "~/members/lib/connect.server";
+import type { CommunityPerson } from "~/members/lib/community";
+import type { CommunityEvent } from "~/members/lib/community.server";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock("~/members/components/ConnectMap", () => ({
-  ConnectMap: (props: {
+vi.mock("~/members/components/CommunityMap", () => ({
+  CommunityMap: (props: {
     places: { key: string; faded?: boolean }[];
     onSelect: (k: string | null) => void;
     onBoundsChange: (b: unknown) => void;
@@ -27,9 +27,9 @@ vi.mock("~/members/components/ConnectMap", () => ({
     ),
 }));
 
-const { ConnectView } = await import("../ConnectView");
+const { CommunityView } = await import("../CommunityView");
 
-const person = (id: string, over: Partial<ConnectPerson> = {}): ConnectPerson => ({
+const person = (id: string, over: Partial<CommunityPerson> = {}): CommunityPerson => ({
   id,
   name: `Ada ${id}`,
   photoUrl: null,
@@ -48,7 +48,7 @@ const person = (id: string, over: Partial<ConnectPerson> = {}): ConnectPerson =>
 });
 
 const inDays = (d: number, h = 0) => new Date(Date.now() + d * 86_400_000 + h * 3_600_000).toISOString();
-const event = (id: string, over: Partial<ConnectEvent> = {}): ConnectEvent => ({
+const event = (id: string, over: Partial<CommunityEvent> = {}): CommunityEvent => ({
   id,
   source: "alumni",
   title: `Event ${id}`,
@@ -118,12 +118,12 @@ async function mount(
   const payload = { ...baseData(), ...overrides };
   const Stub = createRoutesStub([
     {
-      path: "/connect",
+      path: "/community",
       Component: () =>
         createElement(
           ToastProvider,
           null,
-          createElement(DialogProvider, null, createElement(ConnectView, { data: payload as never })),
+          createElement(DialogProvider, null, createElement(CommunityView, { data: payload as never })),
         ),
       action: opts.action ?? (() => ({ ok: true })),
     },
@@ -133,7 +133,7 @@ async function mount(
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root.render(createElement(Stub, { initialEntries: [opts.entry ?? "/connect"] }));
+    root.render(createElement(Stub, { initialEntries: [opts.entry ?? "/community"] }));
   });
 }
 
@@ -237,7 +237,7 @@ describe("hosting", () => {
     expect(button("Host an event")).toBeDefined();
     await act(async () => root.unmount());
     container.remove();
-    await mount({ viewer: { ...baseData().viewer, isAlumni: false, canHost: false }, title: "Connect" });
+    await mount({ viewer: { ...baseData().viewer, isAlumni: false, canHost: false }, title: "Community" });
     expect(button("Host an event")).toBeUndefined();
     expect(button("I'm open to")).toBeUndefined();
   });
@@ -262,7 +262,7 @@ describe("editing", () => {
     const reason = "We couldn't find that place. Check the name and address.";
     await mount(
       { events: [event("ev1", { canManage: true })] },
-      { entry: "/connect?event=ev1", action: () => data({ ok: false, error: reason }, { status: 400 }) },
+      { entry: "/community?event=ev1", action: () => data({ ok: false, error: reason }, { status: 400 }) },
     );
     await click(button("Edit"));
     const dialog = document.querySelector('[role="dialog"]')!;
@@ -284,7 +284,7 @@ describe("events tab", () => {
   });
 
   it("opens the event panel from a deep link and lets the host manage it", async () => {
-    await mount({ events: [event("ev1", { canManage: true, viewerGoing: true })] }, { entry: "/connect?event=ev1" });
+    await mount({ events: [event("ev1", { canManage: true, viewerGoing: true })] }, { entry: "/community?event=ev1" });
     const panel = document.querySelector('aside[aria-label="Event"]')!;
     expect(panel.textContent).toContain("Event ev1");
     expect(panel.textContent).toContain("Come hang out");
@@ -292,14 +292,14 @@ describe("events tab", () => {
     expect(panel.textContent).toContain("4 going");
     expect(panel.textContent).toContain("Grace Going");
     expect(panel.textContent).toContain("You're going");
-    expect(panel.querySelector('a[href="/connect/events/ev1/calendar.ics"]')).not.toBeNull();
+    expect(panel.querySelector('a[href="/community/events/ev1/calendar.ics"]')).not.toBeNull();
     expect(button("Can't go")).toBeDefined();
     expect(button("Edit")).toBeDefined();
     expect(button("Cancel event")).toBeDefined();
   });
 
   it("offers Going to someone who has not RSVPed, and no manage buttons", async () => {
-    await mount({}, { entry: "/connect?event=ev1" });
+    await mount({}, { entry: "/community?event=ev1" });
     expect(button("Going")).toBeDefined();
     expect(button("Edit")).toBeUndefined();
     expect(button("Cancel event")).toBeUndefined();

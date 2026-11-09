@@ -10,17 +10,17 @@ import {
   activityBucket,
   locatePerson,
   whyLine,
-  type ConnectPerson,
-  type ConnectViewer,
+  type CommunityPerson,
+  type CommunityViewer,
   type EventAudience,
-} from "~/members/lib/connect";
+} from "~/members/lib/community";
 
 const CORE_TEAM = "Core team";
 const EVENT_WINDOW_DAYS = 90;
 const MAX_EVENTS = 100;
 const ATTENDEES_SHOWN = 5;
 
-export type ConnectViewerData = ConnectViewer & {
+export type CommunityViewerData = CommunityViewer & {
   id: string;
   name: string;
   isAlumni: boolean;
@@ -28,20 +28,20 @@ export type ConnectViewerData = ConnectViewer & {
   hasLocation: boolean;
 };
 
-export type ConnectFilterOptions = {
+export type CommunityFilterOptions = {
   classYears: { value: number; count: number }[];
   roles: { value: string; count: number }[];
   projects: { id: string; name: string; term: string; count: number }[];
 };
 
-export type ConnectEventAttendee = {
+export type CommunityEventAttendee = {
   id: string;
   name: string;
   photoUrl: string | null;
   reason: string | null;
 };
 
-export type ConnectEvent = {
+export type CommunityEvent = {
   id: string;
   source: "alumni" | "dali";
   title: string;
@@ -64,19 +64,19 @@ export type ConnectEvent = {
   knownGoingCount: number;
   viewerGoing: boolean;
   /** Up to five people going, the ones the viewer knows first. */
-  attendees: ConnectEventAttendee[];
+  attendees: CommunityEventAttendee[];
   canManage: boolean;
   /** Where a DALI event opens; null for alumni events. */
   href: string | null;
 };
 
-export type ConnectData = {
-  viewer: ConnectViewerData;
-  people: ConnectPerson[];
+export type CommunityData = {
+  viewer: CommunityViewerData;
+  people: CommunityPerson[];
   /** Alumni who have not set a location, so they have no pin. */
   unplaced: number;
-  filterOptions: ConnectFilterOptions;
-  events: ConnectEvent[];
+  filterOptions: CommunityFilterOptions;
+  events: CommunityEvent[];
 };
 
 const jobLabel = (w: { position: string; company: string } | undefined) =>
@@ -88,7 +88,7 @@ function tally<K>(keys: Iterable<K>): Map<K, number> {
   return counts;
 }
 
-export function buildFilterOptions(people: readonly ConnectPerson[]): ConnectFilterOptions {
+export function buildFilterOptions(people: readonly CommunityPerson[]): CommunityFilterOptions {
   const classYears = [...tally(people.flatMap((p) => (p.classYear == null ? [] : [p.classYear])))]
     .map(([value, count]) => ({ value, count }))
     .sort((a, b) => b.value - a.value);
@@ -104,14 +104,14 @@ export function buildFilterOptions(people: readonly ConnectPerson[]): ConnectFil
   return { classYears, roles, projects };
 }
 
-export async function loadConnectPeople(
+export async function loadCommunityPeople(
   viewerId: string,
   now: Date = new Date(),
 ): Promise<{
-  viewer: ConnectViewerData;
-  people: ConnectPerson[];
+  viewer: CommunityViewerData;
+  people: CommunityPerson[];
   unplaced: number;
-  filterOptions: ConnectFilterOptions;
+  filterOptions: CommunityFilterOptions;
   roles: Awaited<ReturnType<typeof getUserRoles>>;
 }> {
   const [users, me, roles] = await Promise.all([
@@ -164,7 +164,7 @@ export async function loadConnectPeople(
   ]);
 
   let unplaced = 0;
-  const people: ConnectPerson[] = [];
+  const people: CommunityPerson[] = [];
   await Promise.all(
     users.map(async (u) => {
       const isStudent = u.membershipStatus !== "Alumni";
@@ -214,7 +214,7 @@ export async function loadConnectPeople(
         currentLocationLng: me.currentLocationLng,
       })
     : null;
-  const viewer: ConnectViewerData = {
+  const viewer: CommunityViewerData = {
     id: viewerId,
     name: me ? fullName(me) : "",
     isAlumni: !viewerIsStudent,
@@ -228,11 +228,11 @@ export async function loadConnectPeople(
   return { viewer, people, unplaced, filterOptions: buildFilterOptions(people), roles };
 }
 
-export async function loadConnectEvents(
-  viewer: ConnectViewerData,
+export async function loadCommunityEvents(
+  viewer: CommunityViewerData,
   isAdmin: boolean,
   now: Date = new Date(),
-): Promise<ConnectEvent[]> {
+): Promise<CommunityEvent[]> {
   const [rows, meetings] = await Promise.all([
     prisma.communityEvent.findMany({
       where: {
@@ -297,7 +297,7 @@ export async function loadConnectEvents(
   ]);
 
   const alumniEvents = await Promise.all(
-    rows.map(async (r): Promise<ConnectEvent> => {
+    rows.map(async (r): Promise<CommunityEvent> => {
       const going = r.rsvps.map((rsvp) => {
         const u = rsvp.user;
         const projects = u.projectAssignments.map((a) => ({
@@ -356,7 +356,7 @@ export async function loadConnectEvents(
     }),
   );
 
-  const daliEvents: ConnectEvent[] = meetings
+  const daliEvents: CommunityEvent[] = meetings
     .filter((m) => m.source === "dali")
     .map((m) => {
       const online = !m.location && Boolean(m.meetingUrl);
@@ -390,8 +390,8 @@ export async function loadConnectEvents(
   return [...alumniEvents, ...daliEvents].sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 }
 
-export async function loadConnect(viewerId: string, now: Date = new Date()): Promise<ConnectData> {
-  const { viewer, people, unplaced, filterOptions, roles } = await loadConnectPeople(viewerId, now);
-  const events = await loadConnectEvents(viewer, roles.isAdmin, now);
+export async function loadCommunity(viewerId: string, now: Date = new Date()): Promise<CommunityData> {
+  const { viewer, people, unplaced, filterOptions, roles } = await loadCommunityPeople(viewerId, now);
+  const events = await loadCommunityEvents(viewer, roles.isAdmin, now);
   return { viewer, people, unplaced, filterOptions, events };
 }

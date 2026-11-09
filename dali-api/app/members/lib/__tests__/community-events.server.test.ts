@@ -154,7 +154,7 @@ describe("createEvent nearby alerts", () => {
     expect(call.recipients).toEqual([{ userId: "near" }]);
     expect(call.createdByUserId).toBe("u1");
     expect(call.message.dedupKey).toBe("community.event_nearby:ev1");
-    expect(call.message.link).toBe("/connect?event=ev1");
+    expect(call.message.link).toBe("/community?event=ev1");
     expect(call.message.vars.personName).toBe("Ada Lovelace");
     expect(call.message.vars.itemDetail).toContain("Alumni mixer");
     expect(call.message.vars.itemDetail).toContain("Cafe Nero");

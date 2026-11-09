@@ -4,8 +4,8 @@ import { Coffee, FileText, HeartHandshake } from "lucide-react";
 import { Popover } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import { Button } from "~/components/ui/Button";
-import { ConnectColumn, type ConnectTab, type PeopleSort } from "~/members/components/ConnectColumn";
-import { ConnectMap, type MapPlace } from "~/members/components/ConnectMap";
+import { CommunityColumn, type CommunityTab, type PeopleSort } from "~/members/components/CommunityColumn";
+import { CommunityMap, type MapPlace } from "~/members/components/CommunityMap";
 import { EventPanel } from "~/members/components/EventPanel";
 import { HostEventModal } from "~/members/components/HostEventModal";
 import {
@@ -18,11 +18,11 @@ import {
   type EventFilters,
   type MapBounds,
   type PeopleFilters,
-} from "~/members/lib/connect";
-import type { ConnectData, ConnectEvent } from "~/members/lib/connect.server";
-import { classmatesAt, eventsAtPlace, splitEventsByPlace } from "~/members/lib/connect-view";
+} from "~/members/lib/community";
+import type { CommunityData, CommunityEvent } from "~/members/lib/community.server";
+import { classmatesAt, eventsAtPlace, splitEventsByPlace } from "~/members/lib/community-view";
 
-export type ConnectViewData = ConnectData & {
+export type CommunityViewData = CommunityData & {
   title: string;
   tz: string;
   openTo: { coffeeChats: boolean; resumeReviews: boolean };
@@ -60,7 +60,7 @@ function OpenToSwitch({
   );
 }
 
-function OpenToMenu({ openTo }: { openTo: ConnectViewData["openTo"] }) {
+function OpenToMenu({ openTo }: { openTo: CommunityViewData["openTo"] }) {
   return (
     <Popover
       align="right"
@@ -80,11 +80,11 @@ function OpenToMenu({ openTo }: { openTo: ConnectViewData["openTo"] }) {
   );
 }
 
-export function ConnectView({ data }: { data: ConnectViewData }) {
+export function CommunityView({ data }: { data: CommunityViewData }) {
   const { viewer, people, events, filterOptions, unplaced, tz, title, openTo } = data;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [tab, setTab] = useState<ConnectTab>("people");
+  const [tab, setTab] = useState<CommunityTab>("people");
   const [query, setQuery] = useState("");
   const [peopleFilters, setPeopleFilters] = useState<PeopleFilters>(NO_PEOPLE_FILTERS);
   const [eventFilters, setEventFilters] = useState(DEFAULT_EVENT_FILTERS);
@@ -92,7 +92,7 @@ export function ConnectView({ data }: { data: ConnectViewData }) {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [listFollowsMap, setListFollowsMap] = useState(true);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
-  const [hosting, setHosting] = useState<{ event: ConnectEvent | null } | null>(null);
+  const [hosting, setHosting] = useState<{ event: CommunityEvent | null } | null>(null);
 
   const openEventId = params.get("event");
   const openEvent = events.find((e) => e.id === openEventId) ?? null;
@@ -140,7 +140,7 @@ export function ConnectView({ data }: { data: ConnectViewData }) {
     () => splitEventsByPlace(visibleEvents),
     [visibleEvents],
   );
-  const inView = (items: ConnectEvent[]) => (listFollowsMap ? filterByBounds(items, bounds) : items);
+  const inView = (items: CommunityEvent[]) => (listFollowsMap ? filterByBounds(items, bounds) : items);
   const eventsOnMapInView = inView(eventsOnMap);
 
   const sorted = useMemo(() => sortPeople(filteredPeople, sort, viewer), [filteredPeople, sort, viewer]);
@@ -163,10 +163,10 @@ export function ConnectView({ data }: { data: ConnectViewData }) {
   return (
     <div className="flex min-h-[480px] flex-1 flex-col lg:flex-row">
       <aside
-        aria-label="Connect"
+        aria-label="Community"
         className="flex max-h-[55%] min-h-0 shrink-0 flex-col bg-os-card lg:max-h-none lg:w-[400px]"
       >
-        <ConnectColumn
+        <CommunityColumn
           title={title}
           canHost={viewer.canHost}
           onHost={() => setHosting({ event: null })}
@@ -217,7 +217,7 @@ export function ConnectView({ data }: { data: ConnectViewData }) {
 
       <div className="relative min-h-[320px] flex-1">
         <div className="absolute inset-0 isolate">
-          <ConnectMap
+          <CommunityMap
             places={mapPlaces}
             events={eventsOnMap}
             tz={tz}

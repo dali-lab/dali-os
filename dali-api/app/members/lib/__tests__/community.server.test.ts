@@ -13,7 +13,7 @@ vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (v: string | null) 
 import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
-import { loadConnect, loadConnectEvents, loadConnectPeople, type ConnectViewerData } from "../connect.server";
+import { loadCommunity, loadCommunityEvents, loadCommunityPeople, type CommunityViewerData } from "../community.server";
 
 const db = prisma as unknown as {
   user: Record<"findMany" | "findUnique", ReturnType<typeof vi.fn>>;
@@ -67,7 +67,7 @@ beforeEach(() => {
   meetings.mockResolvedValue([]);
 });
 
-describe("loadConnectPeople", () => {
+describe("loadCommunityPeople", () => {
   it("returns alumni and students as plain data without the raw last-active time", async () => {
     db.user.findMany.mockResolvedValue([
       row("ada", {
@@ -82,7 +82,7 @@ describe("loadConnectPeople", () => {
         coreAssignments: [{ id: "c1" }],
       }),
     ]);
-    const { people } = await loadConnectPeople("viewer", NOW);
+    const { people } = await loadCommunityPeople("viewer", NOW);
     expect(people).toEqual([
       {
         id: "ada",
@@ -109,7 +109,7 @@ describe("loadConnectPeople", () => {
 
   it("hides activity for someone who turned it off", async () => {
     db.user.findMany.mockResolvedValue([row("ada", { lastActiveAt: hoursAgo(1), hideActivity: true })]);
-    expect((await loadConnectPeople("viewer", NOW)).people[0].activity).toBeNull();
+    expect((await loadCommunityPeople("viewer", NOW)).people[0].activity).toBeNull();
   });
 
   it("places students without a location in Hanover and leaves unplaced alumni off the map", async () => {
@@ -118,7 +118,7 @@ describe("loadConnectPeople", () => {
       row("lost", { currentLocation: null, currentLocationLat: null, currentLocationLng: null }),
       row("far", { membershipStatus: "Active" }),
     ]);
-    const { people, unplaced } = await loadConnectPeople("viewer", NOW);
+    const { people, unplaced } = await loadCommunityPeople("viewer", NOW);
     expect(people.map((p) => [p.id, p.isStudent, p.location])).toEqual([
       ["stu", true, "Hanover, NH"],
       ["far", true, "Austin, TX"],
@@ -128,7 +128,7 @@ describe("loadConnectPeople", () => {
 
   it("reads everyone in one query, not one per person", async () => {
     db.user.findMany.mockResolvedValue([row("a"), row("b"), row("c")]);
-    await loadConnectPeople("viewer", NOW);
+    await loadCommunityPeople("viewer", NOW);
     expect(db.user.findMany).toHaveBeenCalledTimes(1);
     expect(db.user.findUnique).toHaveBeenCalledTimes(1);
   });
@@ -139,7 +139,7 @@ describe("loadConnectPeople", () => {
       row("b", { classYear: 2020, projectAssignments: [assignment("p1", "Atlas", "20F", 200, "Design")] }),
       row("c", { classYear: 2024, coreAssignments: [{ id: "x" }] }),
     ]);
-    const { filterOptions } = await loadConnectPeople("viewer", NOW);
+    const { filterOptions } = await loadCommunityPeople("viewer", NOW);
     expect(filterOptions.classYears).toEqual([
       { value: 2024, count: 1 },
       { value: 2020, count: 2 },
@@ -153,7 +153,7 @@ describe("loadConnectPeople", () => {
 
   it("describes the viewer for matching", async () => {
     db.user.findMany.mockResolvedValue([]);
-    const { viewer } = await loadConnectPeople("viewer", NOW);
+    const { viewer } = await loadCommunityPeople("viewer", NOW);
     expect(viewer).toEqual({
       id: "viewer",
       name: "Vi Viewer",
@@ -171,12 +171,12 @@ describe("loadConnectPeople", () => {
     roles.mockResolvedValue({ isAlumni: false, isAdmin: false });
     db.user.findUnique.mockResolvedValue({ membershipStatus: "Active", projectAssignments: [], currentLocationLat: null, currentLocationLng: null });
     db.user.findMany.mockResolvedValue([]);
-    const { viewer } = await loadConnectPeople("viewer", NOW);
+    const { viewer } = await loadCommunityPeople("viewer", NOW);
     expect(viewer).toMatchObject({ isAlumni: false, canHost: false, lat: 43.7044, lng: -72.2887 });
   });
 });
 
-const viewerData = (over: Partial<ConnectViewerData> = {}): ConnectViewerData => ({
+const viewerData = (over: Partial<CommunityViewerData> = {}): CommunityViewerData => ({
   id: "viewer",
   name: "Vi",
   isAlumni: true,
@@ -214,14 +214,14 @@ const rsvp = (userId: string, over: Record<string, unknown> = {}) => ({
   user: { firstName: userId, lastName: "X", photoUrl: null, classYear: 2010, membershipStatus: "Alumni", projectAssignments: [], ...over },
 });
 
-describe("loadConnectEvents", () => {
+describe("loadCommunityEvents", () => {
   it("asks for upcoming, not-cancelled events and every audience for alumni", async () => {
-    await loadConnectEvents(viewerData(), false, NOW);
+    await loadCommunityEvents(viewerData(), false, NOW);
     expect(db.communityEvent.findMany.mock.calls[0][0].where).toEqual({ cancelledAt: null, endsAt: { gte: NOW } });
   });
 
   it("shows students only the events open to students", async () => {
-    await loadConnectEvents(viewerData({ isAlumni: false }), false, NOW);
+    await loadCommunityEvents(viewerData({ isAlumni: false }), false, NOW);
     expect(db.communityEvent.findMany.mock.calls[0][0].where).toEqual({
       cancelledAt: null,
       endsAt: { gte: NOW },
@@ -240,7 +240,7 @@ describe("loadConnectEvents", () => {
         ],
       }),
     ]);
-    const [e] = await loadConnectEvents(viewerData(), false, NOW);
+    const [e] = await loadCommunityEvents(viewerData(), false, NOW);
     expect(e.goingCount).toBe(4);
     expect(e.viewerGoing).toBe(true);
     expect(e.knownGoingCount).toBe(2);
@@ -253,16 +253,16 @@ describe("loadConnectEvents", () => {
 
   it("shows at most five attendees", async () => {
     db.communityEvent.findMany.mockResolvedValue([eventRow({ rsvps: Array.from({ length: 9 }, (_, i) => rsvp(`u${i}`)) })]);
-    const [e] = await loadConnectEvents(viewerData(), false, NOW);
+    const [e] = await loadCommunityEvents(viewerData(), false, NOW);
     expect(e.goingCount).toBe(9);
     expect(e.attendees).toHaveLength(5);
   });
 
   it("lets the host and admins manage an event, but not other members", async () => {
     db.communityEvent.findMany.mockResolvedValue([eventRow()]);
-    expect((await loadConnectEvents(viewerData({ id: "host" }), false, NOW))[0].canManage).toBe(true);
-    expect((await loadConnectEvents(viewerData(), true, NOW))[0].canManage).toBe(true);
-    expect((await loadConnectEvents(viewerData(), false, NOW))[0].canManage).toBe(false);
+    expect((await loadCommunityEvents(viewerData({ id: "host" }), false, NOW))[0].canManage).toBe(true);
+    expect((await loadCommunityEvents(viewerData(), true, NOW))[0].canManage).toBe(true);
+    expect((await loadCommunityEvents(viewerData(), false, NOW))[0].canManage).toBe(false);
   });
 
   it("pins in-person DALI events at Hanover and files link-only ones under online", async () => {
@@ -284,7 +284,7 @@ describe("loadConnectEvents", () => {
       meeting("zoom", { meetingUrl: "https://zoom.example.edu/1" }),
       meeting("iv", { source: "interview" }),
     ]);
-    const events = await loadConnectEvents(viewerData(), false, NOW);
+    const events = await loadCommunityEvents(viewerData(), false, NOW);
     expect(events.map((e) => [e.title, e.source, e.online, e.location, e.lat])).toEqual([
       ["room", "dali", false, "Studio", 43.7044],
       ["zoom", "dali", true, "Online", null],
@@ -298,16 +298,16 @@ describe("loadConnectEvents", () => {
     meetings.mockResolvedValue([
       { id: "m", title: "Early", startsAt: "2026-11-10T15:00:00.000Z", endsAt: "2026-11-10T16:00:00.000Z", location: "Studio", meetingUrl: null, attendeeCount: 2, description: null, source: "dali", occurrenceStart: "2026-11-10T15:00:00.000Z" },
     ]);
-    expect((await loadConnectEvents(viewerData(), false, NOW)).map((e) => e.title)).toEqual(["Early", "Mixer"]);
+    expect((await loadCommunityEvents(viewerData(), false, NOW)).map((e) => e.title)).toEqual(["Early", "Mixer"]);
   });
 });
 
-describe("loadConnect", () => {
+describe("loadCommunity", () => {
   it("passes admin status through so admins can manage events", async () => {
     roles.mockResolvedValue({ isAlumni: false, isAdmin: true });
     db.user.findMany.mockResolvedValue([]);
     db.communityEvent.findMany.mockResolvedValue([eventRow()]);
-    const data = await loadConnect("viewer", NOW);
+    const data = await loadCommunity("viewer", NOW);
     expect(data.events[0].canManage).toBe(true);
   });
 });

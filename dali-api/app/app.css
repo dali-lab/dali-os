@@ -2525,9 +2525,9 @@ html:root .font-heading.text-\[32px\] {
   font-weight: 700;
 }
 
-/* Connect map: event pins drawn as date blocks. Alumni events sit on the
+/* Community map: event pins drawn as date blocks. Alumni events sit on the
    yellow accent, DALI events on the pink one. */
-.connect-event-pin {
+.community-event-pin {
   display: flex;
   width: 44px;
   height: 48px;
@@ -2540,26 +2540,26 @@ html:root .font-heading.text-\[32px\] {
   box-shadow: 0 2px 8px var(--color-os-shadow);
   transition: transform 150ms ease-out;
 }
-.connect-event-pin:hover,
-.connect-event-pin.is-selected {
+.community-event-pin:hover,
+.community-event-pin.is-selected {
   transform: scale(1.12);
 }
-.connect-event-pin--alumni {
+.community-event-pin--alumni {
   background: var(--color-accent-yellow);
 }
-.connect-event-pin--dali {
+.community-event-pin--dali {
   background: var(--color-accent-pink);
 }
-.connect-event-pin.is-selected {
+.community-event-pin.is-selected {
   outline: 2px solid var(--color-os-fg);
 }
-.connect-event-pin__month {
+.community-event-pin__month {
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.04em;
 }
-.connect-event-pin__day {
+.community-event-pin__day {
   margin-top: 2px;
   font-size: 18px;
   font-weight: 700;

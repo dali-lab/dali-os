@@ -8,7 +8,7 @@ vi.mock("~/lib/auth", () => ({
   redirectNonMemberToPortal: vi.fn(async () => null),
 }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
-vi.mock("~/members/lib/connect.server", () => ({ loadConnect: vi.fn() }));
+vi.mock("~/members/lib/community.server", () => ({ loadCommunity: vi.fn() }));
 vi.mock("~/members/lib/community-events.server", () => ({
   createEvent: vi.fn(),
   updateEvent: vi.fn(),
@@ -18,15 +18,15 @@ vi.mock("~/members/lib/community-events.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { loadConnect } from "~/members/lib/connect.server";
+import { loadCommunity } from "~/members/lib/community.server";
 import { cancelEvent, createEvent, setRsvp, updateEvent } from "~/members/lib/community-events.server";
-import { action, handle, loader } from "../connect";
+import { action, handle, loader } from "../community";
 
 const db = prisma as unknown as { user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> } };
-const load = vi.mocked(loadConnect);
+const load = vi.mocked(loadCommunity);
 
 const event = (id: string, source: "alumni" | "dali") => ({ id, source });
-const connect = (isAlumni: boolean) => ({
+const community = (isAlumni: boolean) => ({
   viewer: { id: "u1", isAlumni, canHost: isAlumni },
   people: [],
   unplaced: 0,
@@ -34,12 +34,12 @@ const connect = (isAlumni: boolean) => ({
   events: [event("a1", "alumni"), event("dali:m1:1", "dali")],
 });
 
-const runLoader = () => loader({ request: new Request("http://localhost/connect"), params: {}, context: {} } as never);
+const runLoader = () => loader({ request: new Request("http://localhost/community"), params: {}, context: {} } as never);
 function runAction(body: Record<string, string>) {
   const fd = new FormData();
   for (const [k, v] of Object.entries(body)) fd.set(k, v);
   return action({
-    request: new Request("http://localhost/connect", { method: "POST", body: fd }),
+    request: new Request("http://localhost/community", { method: "POST", body: fd }),
     params: {},
     context: {},
   } as never);
@@ -82,7 +82,7 @@ describe("loader", () => {
   });
 
   it("shows alumni both kinds of event under the title Home", async () => {
-    load.mockResolvedValue(connect(true) as never);
+    load.mockResolvedValue(community(true) as never);
     const res = (await runLoader()) as { title: string; events: { id: string }[]; tz: string; openTo: unknown };
     expect(res.title).toBe("Home");
     expect(res.events.map((e) => e.id)).toEqual(["a1", "dali:m1:1"]);
@@ -91,9 +91,9 @@ describe("loader", () => {
   });
 
   it("hides DALI events from members, who are invited to every meeting", async () => {
-    load.mockResolvedValue(connect(false) as never);
+    load.mockResolvedValue(community(false) as never);
     const res = (await runLoader()) as { title: string; events: { id: string }[] };
-    expect(res.title).toBe("Connect");
+    expect(res.title).toBe("Community");
     expect(res.events.map((e) => e.id)).toEqual(["a1"]);
   });
 });

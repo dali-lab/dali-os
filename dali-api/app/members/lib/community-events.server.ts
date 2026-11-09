@@ -7,7 +7,7 @@ import { communityEventNearbyKey } from "~/lib/outbound-keys";
 import { fullName } from "~/lib/display";
 import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
-import { NEARBY_KM, haversineKm } from "~/members/lib/connect";
+import { NEARBY_KM, haversineKm } from "~/members/lib/community";
 
 export const EVENT_AUDIENCES = ["alumni", "alumni_and_students"] as const;
 
@@ -208,7 +208,7 @@ async function notifyNearbyMembers(e: {
           personName: (host && fullName(host)) || "An alum",
           itemDetail: [e.title, when, e.place].filter(Boolean).join(", "),
         },
-        link: `/connect?event=${e.eventId}`,
+        link: `/community?event=${e.eventId}`,
         dedupKey: communityEventNearbyKey(e.eventId),
       },
       recipients,
