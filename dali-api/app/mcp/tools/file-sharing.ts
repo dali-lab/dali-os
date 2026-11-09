@@ -16,23 +16,23 @@ import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "../errors"
 import type { LinkAccess, SharePermission, SharePrincipalType } from "~/generated/prisma/client";
 
 export const FILE_SHARING_PROPERTIES = {
-  principalType: { type: "string", enum: ["User", "Group"], description: "share_file: who the grant is for." },
-  principalId: { type: "string", minLength: 1, description: "share_file: User.id or Group id." },
+  principalType: { type: "string", enum: ["User", "Group"], description: "share_file / share_page: who the grant is for." },
+  principalId: { type: "string", minLength: 1, description: "share_file / share_page: User.id or Group id." },
   permission: {
     type: "string",
     enum: ["View", "Comment", "Edit", "FullAccess"],
-    description: "share_file: access level. Defaults to View. FullAccess lets them re-share.",
+    description: "share_file / share_page: access level. Defaults to View. FullAccess lets them re-share.",
   },
-  shareId: { type: "string", minLength: 1, description: "unshare_file: the share id from the list_file_shares tool." },
+  shareId: { type: "string", minLength: 1, description: "unshare_file / unshare_page: the share id from list_file_shares or list_page_shares." },
   linkAccess: {
     type: "string",
     enum: ["Restricted", "LabMembers"],
-    description: "set_file_link_access: who can open the file by link.",
+    description: "set_file_link_access / set_page_general_access: Restricted = only people you add; LabMembers = everyone in the lab.",
   },
   linkPermission: {
     type: "string",
     enum: ["View", "Comment", "Edit"],
-    description: "set_file_link_access: level for lab members. Defaults to View.",
+    description: "set_file_link_access / set_page_general_access: level for lab members. Defaults to View.",
   },
 };
 
@@ -123,6 +123,9 @@ export async function runFileSharingAction(
         return { ok: true };
       }
       case "set_file_link_access": {
+        if (args.linkAccess !== "Restricted" && args.linkAccess !== "LabMembers") {
+          throw new McpInvalidError("linkAccess must be Restricted or LabMembers");
+        }
         await requireFileShareManager(fileId, callerId);
         const result = await setFileGeneralAccess(fileId, callerId, {
           linkAccess: args.linkAccess as LinkAccess,
