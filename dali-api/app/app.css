@@ -2524,3 +2524,44 @@ html:root .font-heading.text-\[32px\] {
   line-height: var(--tw-leading, var(--text-2xl--line-height));
   font-weight: 700;
 }
+
+/* Connect map: event pins drawn as date blocks. Alumni events sit on the
+   yellow accent, DALI events on the pink one. */
+.connect-event-pin {
+  display: flex;
+  width: 44px;
+  height: 48px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--color-navy-deep);
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--color-os-shadow);
+  transition: transform 150ms ease-out;
+}
+.connect-event-pin:hover,
+.connect-event-pin.is-selected {
+  transform: scale(1.12);
+}
+.connect-event-pin--alumni {
+  background: var(--color-accent-yellow);
+}
+.connect-event-pin--dali {
+  background: var(--color-accent-pink);
+}
+.connect-event-pin.is-selected {
+  outline: 2px solid var(--color-os-fg);
+}
+.connect-event-pin__month {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+.connect-event-pin__day {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}

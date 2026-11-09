@@ -2,7 +2,18 @@ import { useEffect, useRef } from "react";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { cn } from "~/lib/cn";
-import { MAX_LAT, minZoomToFill, type ConnectPlace } from "~/members/lib/connect";
+import { MAX_LAT, minZoomToFill, type ConnectPerson, type ConnectPlace, type MapBounds } from "~/members/lib/connect";
+import { eventDateBlock } from "~/members/lib/connect-view";
+import type { ConnectEvent } from "~/members/lib/connect.server";
+
+export type MapPlace = ConnectPlace<ConnectPerson> & { faded?: boolean };
+export type MapEvent = Pick<ConnectEvent, "id" | "source" | "title" | "startsAt" | "lat" | "lng">;
+
+export function normalizeBounds(b: { south: number; west: number; north: number; east: number }): MapBounds {
+  if (b.east - b.west >= 360) return { ...b, west: -180, east: 180 };
+  const wrap = (x: number) => ((((x + 180) % 360) + 360) % 360) - 180;
+  return { ...b, west: wrap(b.west), east: wrap(b.east) };
+}
 
 // OpenStreetMap's own tile server: keyless. It only draws a light map, so the
 // dark theme inverts the tile pane (hue-rotated back so water stays blue).
@@ -24,11 +35,12 @@ function initials(name: string): string {
 // A pin is the photos of the people there (up to three, overlapping) and a
 // name label. Built as DOM nodes, not an HTML string, so a name or photo URL
 // can never be read as markup.
-function pinElement(place: ConnectPlace, selected: boolean): HTMLElement {
+function pinElement(place: MapPlace, selected: boolean): HTMLElement {
   const root = document.createElement("div");
   // Leaflet positions the marker with a transform on its own wrapper, so the
   // hover scale goes on this inner node, growing from the first photo's centre.
-  root.style.cssText = `display:flex;align-items:center;gap:6px;width:max-content;cursor:pointer;transition:transform 150ms ease-out;transform-origin:${AVATAR / 2}px 50%`;
+  root.dataset.faded = String(Boolean(place.faded));
+  root.style.cssText = `opacity:${place.faded ? 0.35 : 1};display:flex;align-items:center;gap:6px;width:max-content;cursor:pointer;transition:transform 150ms ease-out;transform-origin:${AVATAR / 2}px 50%`;
 
   const faces = document.createElement("div");
   faces.style.cssText = "display:flex";
@@ -58,18 +70,42 @@ function pinElement(place: ConnectPlace, selected: boolean): HTMLElement {
   return root;
 }
 
+function eventPinElement(e: MapEvent, tz: string, selected: boolean): HTMLElement {
+  const { month, day } = eventDateBlock(e.startsAt, tz);
+  const root = document.createElement("div");
+  root.className = `connect-event-pin connect-event-pin--${e.source}${selected ? " is-selected" : ""}`;
+  const m = document.createElement("span");
+  m.className = "connect-event-pin__month";
+  m.textContent = month;
+  const d = document.createElement("span");
+  d.className = "connect-event-pin__day";
+  d.textContent = day;
+  root.append(m, d);
+  return root;
+}
+
 const pinRoot = (marker: Marker): HTMLElement =>
   marker.getElement()!.firstElementChild as HTMLElement;
 
 export function ConnectMap({
   places,
+  events,
+  tz,
   selectedKey,
+  selectedEventId,
   onSelect,
+  onSelectEvent,
+  onBoundsChange,
   className,
 }: {
-  places: ConnectPlace[];
+  places: MapPlace[];
+  events: MapEvent[];
+  tz: string;
   selectedKey: string | null;
+  selectedEventId: string | null;
   onSelect: (key: string | null) => void;
+  onSelectEvent: (id: string) => void;
+  onBoundsChange: (bounds: MapBounds) => void;
   className?: string;
 }) {
   const el = useRef<HTMLDivElement | null>(null);
@@ -78,6 +114,10 @@ export function ConnectMap({
   const leaflet = useRef<typeof import("leaflet") | null>(null);
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const onSelectEventRef = useRef(onSelectEvent);
+  onSelectEventRef.current = onSelectEvent;
+  const onBoundsRef = useRef(onBoundsChange);
+  onBoundsRef.current = onBoundsChange;
   // The fit-to-pins only happens when the set of places changes, not on select.
   const fittedFor = useRef<string | null>(null);
 
@@ -109,7 +149,32 @@ export function ConnectMap({
         })
         .addTo(pins.current);
     }
+    for (const e of events) {
+      if (e.lat == null || e.lng == null) continue;
+      const selected = e.id === selectedEventId;
+      L.marker([e.lat, e.lng], {
+        icon: L.divIcon({
+          html: eventPinElement(e, tz, selected),
+          className: "",
+          iconSize: [44, 48],
+          iconAnchor: [22, 66],
+        }),
+        title: e.title,
+        zIndexOffset: selected ? 1500 : 500,
+      })
+        .on("click", () => onSelectEventRef.current(e.id))
+        .addTo(pins.current);
+    }
     fitIfNeeded();
+  }
+
+  function emitBounds() {
+    const b = map.current?.getBounds();
+    if (b) {
+      onBoundsRef.current(
+        normalizeBounds({ south: b.getSouth(), west: b.getWest(), north: b.getNorth(), east: b.getEast() }),
+      );
+    }
   }
 
   // Separate from draw() so the resize observer can run a pending fit without
@@ -133,6 +198,8 @@ export function ConnectMap({
   }
   const drawRef = useRef(draw);
   drawRef.current = draw;
+  const emitRef = useRef(emitBounds);
+  emitRef.current = emitBounds;
   const fitRef = useRef(fitIfNeeded);
   fitRef.current = fitIfNeeded;
 
@@ -154,10 +221,12 @@ export function ConnectMap({
       map.current.on("resize", (e) => {
         map.current?.setMinZoom(minZoomToFill(e.newSize.y));
       });
+      map.current.on("moveend", () => emitRef.current());
       L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19 }).addTo(map.current);
       if (dark) map.current.getPane("tilePane")!.style.filter = DARK_FILTER;
       pins.current = L.layerGroup().addTo(map.current);
       drawRef.current();
+      emitRef.current();
     });
     // Leaflet only re-measures itself on window resize. The map can initialize
     // at 0×0 (hidden kept tab, display:none ancestor) or get resized by layout
@@ -180,7 +249,7 @@ export function ConnectMap({
   useEffect(() => {
     draw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [places, selectedKey]);
+  }, [places, events, tz, selectedKey, selectedEventId]);
 
   // isolate: Leaflet stacks its panes at z-index 400–700, which would
   // otherwise float the map (and pins at 600+) over the app's own fixed
@@ -191,7 +260,7 @@ export function ConnectMap({
       ref={el}
       className={cn("isolate", className)}
       role="application"
-      aria-label="Map of alumni"
+      aria-label="Map of alumni and events"
     />
   );
 }

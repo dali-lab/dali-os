@@ -15,7 +15,7 @@ import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { geocodePlace } from "~/lib/geocode.server";
 import { notify } from "~/lib/notify.server";
-import { cancelEvent, createEvent, setRsvp, updateEvent } from "../community-events.server";
+import { cancelEvent, createEvent, getEventForCalendar, setRsvp, updateEvent } from "../community-events.server";
 
 const db = prisma as unknown as {
   user: Record<"findMany" | "findUnique", ReturnType<typeof vi.fn>>;

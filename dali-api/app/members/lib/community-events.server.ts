@@ -333,3 +333,49 @@ export async function setRsvp(
   });
   return { ok: true, id: eventId, going: true };
 }
+
+export async function getEventForCalendar(
+  userId: string,
+  eventId: string,
+): Promise<
+  EventResult<{
+    id: string;
+    event: {
+      id: string;
+      title: string;
+      description: string | null;
+      startsAt: Date;
+      endsAt: Date;
+      online: boolean;
+      meetingUrl: string | null;
+      placeName: string | null;
+      address: string | null;
+    };
+  }>
+> {
+  const [event, user] = await Promise.all([
+    prisma.communityEvent.findUnique({
+      where: { id: eventId },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        startsAt: true,
+        endsAt: true,
+        online: true,
+        meetingUrl: true,
+        placeName: true,
+        address: true,
+        audience: true,
+        cancelledAt: true,
+      },
+    }),
+    prisma.user.findUnique({ where: { id: userId }, select: { membershipStatus: true } }),
+  ]);
+  if (!event || event.cancelledAt) return fail(404, "Event not found.");
+  if (event.audience === "alumni" && user?.membershipStatus !== "Alumni") {
+    return fail(403, "This event is for alumni.");
+  }
+  const { audience: _audience, cancelledAt: _cancelledAt, ...rest } = event;
+  return { ok: true, id: event.id, event: rest };
+}

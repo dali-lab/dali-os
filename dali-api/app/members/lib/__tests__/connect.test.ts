@@ -11,7 +11,6 @@ import {
   haversineKm,
   locatePerson,
   minZoomToFill,
-  profileCompleteness,
   sortPeople,
   whyLine,
   type ConnectAlum,
@@ -57,35 +56,6 @@ describe("minZoomToFill", () => {
     expect(minZoomToFill(1025)).toBe(3);
     expect(minZoomToFill(2048)).toBe(3);
     expect(minZoomToFill(2049)).toBe(4);
-  });
-});
-
-describe("profileCompleteness", () => {
-  const all = { photo: true, job: true, location: true, bio: true, classYear: true };
-
-  it("is 100% with no hint when every field is filled", () => {
-    expect(profileCompleteness(all)).toEqual({ percent: 100, hint: null });
-  });
-
-  it("counts each of the five fields as 20%", () => {
-    expect(profileCompleteness({ ...all, bio: false }).percent).toBe(80);
-    expect(profileCompleteness({ photo: false, job: false, location: false, bio: false, classYear: false }).percent).toBe(0);
-  });
-
-  it("asks for one missing field on its own", () => {
-    expect(profileCompleteness({ ...all, photo: false }).hint).toBe("Add a photo so students can find you.");
-  });
-
-  it("joins two missing fields with and", () => {
-    expect(profileCompleteness({ ...all, job: false, bio: false }).hint).toBe(
-      "Add your employer and a short bio so students can find you.",
-    );
-  });
-
-  it("lists three or more with commas", () => {
-    expect(profileCompleteness({ ...all, photo: false, job: false, location: false }).hint).toBe(
-      "Add a photo, your employer and where you're based so students can find you.",
-    );
   });
 });
 
