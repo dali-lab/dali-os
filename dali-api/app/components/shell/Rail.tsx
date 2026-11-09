@@ -370,13 +370,15 @@ export function Rail({
 
         {/* No Home quick item: the wordmark is the home button. */}
         <div className={cn('flex shrink-0 gap-1', compact && 'flex-col items-center')}>
-          <QuickItem
-            label="Calendar"
-            icon={Calendar}
-            active={activeQuick === 'calendar'}
-            compact={compact}
-            tabProps={tabClickProps({ url: '/calendar', label: 'Calendar' })}
-          />
+          {!isAlumni && (
+            <QuickItem
+              label="Calendar"
+              icon={Calendar}
+              active={activeQuick === 'calendar'}
+              compact={compact}
+              tabProps={tabClickProps({ url: '/calendar', label: 'Calendar' })}
+            />
+          )}
           {!isAlumni && (
             <QuickItem
               label="Email"
@@ -417,7 +419,7 @@ export function Rail({
 
         {activeArea && (
           <>
-            <RailDivider />
+            {!isAlumni && <RailDivider />}
             <div className="flex min-h-0 flex-col gap-2">
               <div ref={areaMenuRef} className={cn('shrink-0', compact && 'flex justify-center')}>
                 {singleArea ? (
@@ -428,8 +430,7 @@ export function Rail({
                       </span>
                     </Tooltip>
                   ) : (
-                    <p className="flex h-9 items-center gap-2.5 pl-2 text-sm font-semibold text-foreground">
-                      <AreaTile areaKey={activeArea.key} size={22} icon={activeArea.icon} />
+                    <p className="flex h-9 items-center pl-[13px] text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {activeArea.label}
                     </p>
                   )

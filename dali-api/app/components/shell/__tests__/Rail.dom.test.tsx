@@ -114,7 +114,7 @@ describe("Rail", () => {
     expect(q("button[aria-label='DALI OS home']")).not.toBeNull();
   });
 
-  it("hides Email and Drive for alumni and sends Home to Connect", async () => {
+  it("hides Calendar, Email and Drive for alumni and sends Home to Connect", async () => {
     const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
     await mount({
       isAlumni: true,
@@ -123,10 +123,36 @@ describe("Rail", () => {
       path: "/connect",
       tabClickProps,
     });
+    expect(q("button[aria-label='Calendar']")).toBeNull();
     expect(q("button[aria-label='Email']")).toBeNull();
     expect(q("button[aria-label='Drive']")).toBeNull();
     // The wordmark carries the alumni home (Connect).
     expect(tabClickProps).toHaveBeenCalledWith({ url: "/connect", label: "Home" });
+  });
+
+  it("renders a lone area as a small section label, not a tab-like row", async () => {
+    const lab = { ...area("projects"), label: "Lab" };
+    await mount({
+      isAlumni: true,
+      home: homeNavItem({ isAlumni: true }),
+      pinned: pinnedNavItems({ isAlumni: true }),
+      areas: [lab],
+      activeArea: lab,
+      activeSubtabs: [{ label: "Projects", href: "/projects", icon: Settings }],
+    });
+    expect(q("button[aria-haspopup='listbox']")).toBeNull();
+    const header = [...container.querySelectorAll("p")].find((p) => p.textContent === "Lab")!;
+    expect(header.className).toContain("uppercase");
+    expect(header.className).toContain("text-muted-foreground");
+    expect(header.querySelector("svg")).toBeNull();
+    // No divider between the search box and the lone section either.
+    expect(q("[data-sidebar-scroll] > div:first-child [role='separator']")).toBeNull();
+  });
+
+  it("keeps the divider above the area section for members", async () => {
+    const core = { ...area("core"), label: "Core" };
+    await mount({ areas: [area("projects"), core], activeArea: core });
+    expect(q("[data-sidebar-scroll] > div:first-child [role='separator']")).not.toBeNull();
   });
 
   it("shows the pinned items it is given", async () => {
@@ -157,10 +183,10 @@ describe("Rail", () => {
     expect(trigger.querySelector("[data-area-tile='core']")).not.toBeNull();
   });
 
-  it("shows the tile on a lone area too", async () => {
+  it("drops the tile on a lone area; the label alone marks the section", async () => {
     const only = area("core");
     await mount({ areas: [only], activeArea: only });
-    expect(q("[data-area-tile='core']")).not.toBeNull();
+    expect(q("[data-area-tile='core']")).toBeNull();
   });
 
   it("lists areas in rail order, labels only", async () => {

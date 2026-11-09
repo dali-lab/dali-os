@@ -253,6 +253,7 @@ export default [
     route("members/:id", "members/routes/members.$id.tsx"),
     // Connect: map of where alumni are based (members + alumni).
     route("connect", "members/routes/connect.tsx"),
+    route("currently", "routes/currently.tsx"),
     // Community: Connect lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),

@@ -1,4 +1,4 @@
-import { FileText, HardDrive, Home, Calendar, Mail, type LucideIcon } from 'lucide-react'
+import { FileText, HardDrive, Home, Calendar, Mail, Sparkles, type LucideIcon } from 'lucide-react'
 import { activeSubtabHref, areaForPath, isPinnedActive } from '~/lib/nav-areas'
 
 function pathnameOf(url: string): string {
@@ -11,6 +11,7 @@ export function tabIcon(url: string): LucideIcon {
   if (p === '/') return Home
   if (p === '/calendar' || p.startsWith('/calendar/')) return Calendar
   if (p === '/email' || p.startsWith('/email/')) return Mail
+  if (p === '/currently' || p.startsWith('/currently/')) return Sparkles
   if (p.startsWith('/documents/')) return FileText
   if (isPinnedActive(url, '/drive', { community: true })) return HardDrive
   const area = areaForPath(url, { community: true })

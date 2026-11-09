@@ -161,6 +161,17 @@ export async function loadGalleryPage(viewer: GalleryViewer, query: FeedQuery) {
   };
 }
 
+/** The newest photos for a highlights surface; hidden posts stay off it for everyone. */
+export async function loadGalleryHighlights(viewer: GalleryViewer, count: number) {
+  const rows = await prisma.galleryPost.findMany({
+    where: { ...visibleTo(viewer), hiddenAt: null },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: count,
+    select: TILE_SELECT,
+  });
+  return toTiles(rows, viewer);
+}
+
 const PEOPLE_LIMIT = 5;
 
 /** People whose name matches every search word and who have a post the viewer can see. */
