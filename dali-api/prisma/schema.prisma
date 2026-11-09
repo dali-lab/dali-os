@@ -360,6 +360,8 @@ model User {
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
   blogPosts          BlogPost[]
+  blogReactions      BlogReaction[]
+  blogComments       BlogComment[]
   pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
 
@@ -7813,11 +7815,41 @@ model BlogPost {
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
+  reactions BlogReaction[]
+  comments  BlogComment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([publishedAt])
   @@index([authorId])
+}
+
+model BlogReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model BlogComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
 }
 
 enum ReleaseNoteStatus {

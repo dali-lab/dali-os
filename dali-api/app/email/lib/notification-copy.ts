@@ -395,6 +395,24 @@ export const NOTIFICATION_COPY = {
     subject: "Your story was published: {{itemTitle}}",
     body: "",
   },
+  "blog.comment": {
+    eventType: "blog.comment",
+    label: "Story comment",
+    description: "Sent to a story's author when someone comments on it.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} commented on your story",
+    body: "{{itemDetail}}",
+    linkLabel: "Open story",
+  },
+  "blog.reaction": {
+    eventType: "blog.reaction",
+    label: "Story reaction",
+    description: "Sent to a story's author when someone reacts to it.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} reacted to your story",
+    body: "{{itemDetail}}",
+    linkLabel: "Open story",
+  },
 
   // ── People ───────────────────────────────────────────────────────────────
   // Deliberately carries no personName: the invite is anonymous until accepted.
