@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
-import { Select, Tooltip } from "~/components/ui/floating";
+import { Combobox, Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
@@ -112,13 +112,13 @@ export function SlotFormPicker({
               void save();
             }}
           >
-            <Select
-              name="formId"
+            <Combobox
               value={selected}
               onChange={(v) => setSelected(v)}
               ariaLabel={`${slotLabel} form`}
+              placeholder="Search forms"
               options={[
-                { value: "", label: "— No form selected —" },
+                { value: "", label: "No form selected" },
                 ...forms.map((f) => ({
                   value: f.id,
                   label:
@@ -127,7 +127,7 @@ export function SlotFormPicker({
                     (f.boundToCycleName ? ` · on ${f.boundToCycleName}` : ""),
                 })),
               ]}
-              buttonClassName="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
+              className="flex-1 px-3 py-1.5 text-sm border border-border rounded-md bg-background text-foreground transition-colors hover:bg-muted/40"
             />
             <Button
               type="submit"
