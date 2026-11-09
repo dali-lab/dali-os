@@ -260,7 +260,7 @@ export default function BlogWritePage() {
           className="mr-auto inline-flex items-center gap-1.5 text-sm text-os-grey hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          The Scoop
+          Everything DALI
         </Link>
         <span className="text-sm text-os-grey">{SYNC_LABEL[sync]}</span>
         <BlogStatusPill status={post.status} />
