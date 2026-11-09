@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   autoUpdate,
   flip,
@@ -16,6 +16,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { usePanelClass } from "./os-styles";
 import type { SelectOption } from "./Select";
+import { matchesQuery } from "./search";
 
 // A Select you can type into: the trigger is the input, and what you type
 // narrows the list under it. Select stays the right control for a short, fixed
@@ -83,8 +84,7 @@ export function Combobox<T extends string = string>({
   // still works as a plain dropdown for anyone who never touches the keyboard.
   const filtered = useMemo(() => {
     const q = query.trim();
-    const ql = q.toLowerCase();
-    const base = ql ? options.filter((o) => o.label.toLowerCase().includes(ql)) : options;
+    const base = q ? options.filter((o) => matchesQuery(o, q)) : options;
     // Offer a typed-but-unlisted value (e.g. a custom number) as its own row so
     // Enter/click can commit it — unless it already resolves to a known option.
     if (allowCustom && q) {
@@ -145,7 +145,7 @@ export function Combobox<T extends string = string>({
     inputRef.current?.blur();
   }
 
-  const listId = `${ariaLabel ?? "combobox"}-list`;
+  const listId = useId();
 
   return (
     <>

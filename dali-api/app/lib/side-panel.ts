@@ -46,24 +46,40 @@ export function withSidePanel(url: string, panel: SidePanel | null): string {
   return parsed.pathname + parsed.search + parsed.hash;
 }
 
+/** The kept panel, and the location key it was opened on, if any. */
+export type KeptSidePanel = { panel: string; at: string | null };
+
 /**
- * The panel a location shows. The url wins; otherwise the kept panel carries
- * over, unless the location is a different tab or already is that document.
+ * The panel a location shows. A tab switch drops a document panel carried
+ * from the previous tab but keeps Ask, which belongs to the window, not a tab.
  */
 export function visibleSidePanel(
-  location: { pathname: string; search: string; state?: unknown },
-  kept: string | null,
+  location: { pathname: string; search: string; state?: unknown; key?: string },
+  kept: KeptSidePanel | null,
 ): SidePanel | null {
   const state = location.state as { tabSwitch?: boolean; keepPanel?: boolean } | null | undefined;
   const leftTab = state?.tabSwitch === true && state.keepPanel !== true;
-  const panel = parseSidePanel(new URLSearchParams(location.search).get(SIDE_PARAM)) ?? (leftTab ? null : parseSidePanel(kept));
+  const named = parseSidePanel(new URLSearchParams(location.search).get(SIDE_PARAM));
+  const carried = parseSidePanel(kept?.panel);
+  const openedHere = kept?.at != null && kept.at === location.key;
+  const panel =
+    named && !(leftTab && named.type === "ask")
+      ? named
+      : carried && (!leftTab || carried.type === "ask" || openedHere)
+        ? carried
+        : null;
   return panel && panel.type === "doc" && sidePanelForUrl(location.pathname)?.id === panel.id ? null : panel;
 }
 
-let kept: string | null = null;
+/** The url a desktop tab records: its own document panel, never Ask. */
+export function tabUrlWithSidePanel(url: string, panel: SidePanel | null): string {
+  return withSidePanel(url, panel?.type === "ask" ? null : panel);
+}
+
+let kept: KeptSidePanel | null = null;
 const keptListeners = new Set<() => void>();
 
-export function getKeptSidePanel(): string | null {
+export function getKeptSidePanel(): KeptSidePanel | null {
   return kept;
 }
 
@@ -78,10 +94,10 @@ export function subscribeKeptSidePanel(listener: () => void): () => void {
   };
 }
 
-export function setKeptSidePanel(next: SidePanel | null) {
+export function setKeptSidePanel(next: SidePanel | null, at?: string) {
   const value = next && formatSidePanel(next);
-  if (value === kept) return;
-  kept = value;
+  if (value === (kept?.panel ?? null) && (at === undefined || at === kept?.at)) return;
+  kept = value ? { panel: value, at: at ?? null } : null;
   keptListeners.forEach((l) => l());
 }
 

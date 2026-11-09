@@ -19,7 +19,8 @@ import {
   publishBlogPost,
   unpublishBlogPost,
 } from "~/lib/blog-post.server";
-import { blocksToMarkdown, markdownToBlocks } from "~/collab/blocknote-server";
+import { blocksToMarkdown } from "~/collab/blocknote-server";
+import { parseMarkdown } from "../../doc-markdown.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blogPostRoomName } from "~/collab/roomName";
 import { replaceCollabDocContent } from "~/collab/write";
@@ -40,7 +41,7 @@ const STATUS_WHERE = {
   draft: { publishedAt: null, submittedAt: null },
 } as const;
 
-async function requireViewer(callerId: string) {
+export async function requireViewer(callerId: string) {
   const access = await resourcesAccess(callerId);
   if (!access) throw new McpForbiddenError("Resources is not available to you");
   return { id: callerId, core: access.core };
@@ -78,7 +79,7 @@ function describePost(p: PostRow, callerId: string) {
 export const LIST_BLOG_POSTS_TOOL = {
   name: "list_blog_posts",
   description:
-    "List blog posts on the Resources front page: every published post, the caller's own drafts, and (for an Admin) posts waiting for approval. Returns metadata and an excerpt; use read_blog_post for the body. status is 'draft', 'review' (submitted, waiting on an Admin) or 'published'. visibility 'Public' posts also appear on the DALI website once published. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
+    "List stories (blog posts) on the Resources front page: every published post, the caller's own drafts, and (for an Admin) posts waiting for approval. Returns metadata and an excerpt; use read_blog_post for the body. status is 'draft', 'review' (submitted, waiting on an Admin) or 'published'. visibility 'Public' posts also appear on the DALI website once published. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -136,7 +137,7 @@ export async function runListBlogPosts(callerId: string, input: ListInput) {
 export const READ_BLOG_POST_TOOL = {
   name: "read_blog_post",
   description:
-    "Read one blog post: its metadata and its body as Markdown. A draft is readable only by its author and Core. Lossy for editor-only blocks, like read_page. Round-trips with manage_blog_post's markdown.",
+    "Read one story (blog post): its metadata and its body as Markdown. A draft is readable only by its author and Core. Lossy for editor-only blocks, like read_page; member mentions read as [@handle](/members/<userId>), page mentions as [Title](/documents/<pageId>) and task mentions as [Title](/projects/<projectId>?tab=progress&task=<taskId>). Round-trips with manage_blog_post's markdown.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -158,7 +159,7 @@ export async function runReadBlogPost(callerId: string, input: ReadInput) {
     ...describePost(post, callerId),
     summary: post.summary,
     canEdit,
-    markdown: await blocksToMarkdown(ensureBlocks(post.contentJson)),
+    markdown: await blocksToMarkdown(ensureBlocks(post.contentJson), { inlineRefs: true }),
   };
 }
 
@@ -167,7 +168,7 @@ export async function runReadBlogPost(callerId: string, input: ReadInput) {
 export const MANAGE_BLOG_POST_TOOL = {
   name: "manage_blog_post",
   description:
-    "Write a blog post. Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as set_page_content); read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
+    "Write a story (blog post). Actions: create (a new draft by the caller), update (title/summary/audience/body), publish, unpublish. Only the author and Core can change a post. publish by an Admin publishes it (and approves a post in review); by anyone else it submits the draft to the Admins for review. unpublish returns a published post to a draft, or withdraws one from review. markdown OVERWRITES the whole body (same Markdown as set_page_content: mention a member as [@handle](/members/<userId>), not @Name, a page as [Title](/documents/<pageId>), a task as [Title](/projects/<projectId>?tab=progress&task=<taskId>); unknown ids are written as plain text and come back in warnings); to change part of an existing post, use edit_content with target { type: 'blogPost', id } (when available), otherwise read_blog_post first to preserve content. isPublic also lists the post on the DALI website once published, and only an Admin can change it after a post leaves draft.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -215,20 +216,15 @@ function cleanTitle(title: string): string {
   return clean;
 }
 
-async function parseBody(markdown: string) {
-  try {
-    return await markdownToBlocks(markdown);
-  } catch {
-    throw new McpInvalidError("Markdown could not be parsed");
-  }
-}
 
 export async function runManageBlogPost(callerId: string, input: ManageInput) {
   requireForAction(input.action, input as Record<string, unknown>, ACTION_REQUIRED);
   const viewer = await requireViewer(callerId);
 
   // Parsed before anything is written, so bad Markdown changes nothing.
-  const blocks = input.markdown === undefined ? null : await parseBody(input.markdown);
+  const parsed = input.markdown === undefined ? null : await parseMarkdown(input.markdown);
+  const blocks = parsed?.blocks ?? null;
+  const warnings = parsed?.warnings.length ? { warnings: parsed.warnings } : {};
   const details = {
     ...(input.title !== undefined && { title: cleanTitle(input.title) }),
     ...(input.summary !== undefined && { summary: input.summary.trim() || null }),
@@ -243,7 +239,7 @@ export async function runManageBlogPost(callerId: string, input: ManageInput) {
       select: { id: true },
     });
     if (blocks) await replaceCollabDocContent(blogPostRoomName(created.id), blocks, callerId);
-    return { id: created.id, status: "draft" as const };
+    return { id: created.id, status: "draft" as const, ...warnings };
   }
 
   const found = await findBlogPost(viewer, input.postId!);
@@ -260,7 +256,7 @@ export async function runManageBlogPost(callerId: string, input: ManageInput) {
         await prisma.blogPost.update({ where: { id: post.id }, data: details });
       }
       if (blocks) await replaceCollabDocContent(blogPostRoomName(post.id), blocks, callerId);
-      return { id: post.id, status: blogStatus(post) };
+      return { id: post.id, status: blogStatus(post), ...warnings };
     }
     case "publish":
       return { id: post.id, status: await publishBlogPost(post, { id: callerId, canApprove }) };

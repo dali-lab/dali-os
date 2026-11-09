@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { getDownloadUrl, isS3Configured } from "~/lib/s3";
-import { customEmojiName, hasRoomForReaction, type ReactionSummary } from "~/lib/reactions";
+import { customEmojiName, hasRoomForReaction } from "~/lib/reactions";
 
 // Built with the constructor: the `v` flag is newer than the compile target.
 const STANDARD_EMOJI = new RegExp("^\\p{RGI_Emoji}$", "v");
@@ -30,7 +30,7 @@ export async function reactionRefusal(emoji: string, used: string[]): Promise<40
 }
 
 /** Fills in each custom reaction's image, or null when the emoji was deleted. */
-export async function withEmojiImages<T extends { reactions: ReactionSummary[] }>(
+export async function withEmojiImages<T extends { reactions: { emoji: string; imageUrl?: string | null }[] }>(
   items: T[],
 ): Promise<T[]> {
   const names = new Set(

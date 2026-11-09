@@ -35,19 +35,19 @@ Anyone who can edit the folder can create a form there. Outside a folder, any la
 - **Links and files**: GitHub link, Figma link, Drive link, File upload.
 - **Layout**: Text block (prose shown to respondents) and Page break. These aren't counted as questions and don't appear in responses.
 
-Multiple choice and Checkboxes can include an **Other** option. Skills rating takes one skill per line. Each question can be shown only when an earlier answer matches, using **Show this question**.
+Multiple choice and Checkboxes can include an **Other** option. A Dropdown or Database list with more than 8 choices lets respondents type to search it. Checkboxes with more than 12 choices show as a searchable list where respondents pick several. Skills rating takes one skill per line. Each question can be shown only when an earlier answer matches, using **Show this question**.
 
 ### Versions, preview and publish
 
-**Save** keeps your edits as a draft that respondents don't see. While you are editing, **Publish** turns the draft into a new version and makes it live at the form's link. From a saved version, **Publish** makes the latest version live. Each version keeps its own responses, so changing questions never rewrites old answers. Use the versions menu at the top to switch between versions or continue a draft. A version with no responses yet can still be edited in place or deleted. **Preview** shows the form as a respondent sees it.
+The form's name sits at the top of the page and in the breadcrumb, and the status next to the breadcrumb, such as **v3 · Published** or **Editing v4 draft · Saved**, opens the versions menu. Your edits save as a draft automatically, and the status reads **Saving…** or **Saved**. If a save fails it reads **Couldn't save · Retry**. To rename the form, click its name at the top of the page or in the breadcrumb, type a new name and press Enter. Hover over the name to add an icon, or click the icon to change or remove it. Respondents never see the draft. While you are editing, **Publish** turns the draft into a new version and makes it live at the form's link. From a saved version that isn't live yet, **Publish** makes the latest version live. On a published version the main button reads **New version**, which opens a draft. Each version keeps its own responses, so changing questions never rewrites old answers. Use the versions menu in the status to switch between versions or continue a draft. To change a version that is already live, select the pencil next to it. That opens your draft, started from that version, and nothing changes for respondents until you publish. **Discard draft**, in the three-dot menu, deletes the draft and leaves the live version as it is. A version with no responses yet can be deleted. **Preview** shows the form as a respondent sees it.
 
-Once a form is published, the **Link** button gives you the fill link, a **Copy link** button and a QR code. **Unpublish** turns the link off but keeps it, so publishing again restores the same link. Use **Share** to choose who can fill the form and who can edit it, the same way you share a document (see [Sharing and visibility](/help/articles/sharing)). On a form the roles read **Can fill**, **Can edit** and **Full access**.
+Once a form is published, **Copy form link** copies the link people use to fill it out, and **QR code** in the three-dot menu shows a code you can download. Before it is published, **Copy form link** is greyed out. **Copy link** in the three-dot menu copies the page you are on, like on any other page. **Unpublish**, also in the three-dot menu, turns the link off but keeps it, so publishing again restores the same link. Use **Share** to choose who can fill the form and who can edit it, the same way you share a document (see [Sharing and visibility](/help/articles/sharing)). On a form the roles read **Can fill**, **Can edit** and **Full access**.
 
 Forms that belong to another feature, such as a hiring cycle or an education offering, show **Managed by** that feature. That feature decides who can fill them and when, so publishing and sharing happen there.
 
 ### Settings
 
-Open **Settings** at the top of the editor.
+Open the three-dot menu at the top and choose **Form settings**.
 
 - **One response per member**, and **Let people edit their response** under it.
 - **Notify on submission** sends you a notification when someone responds.

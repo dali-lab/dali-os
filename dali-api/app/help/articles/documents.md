@@ -11,7 +11,7 @@ If you only have view access, you read the same page but can't edit. Who can ope
 
 ## Write with blocks
 
-Click the title to rename the document. Below it you can add an icon and a cover image. Core members can also add tags to project and General documents.
+Click the title to rename the document, or click its name in the breadcrumb at the top. Above the title you can add an icon and a cover image. Core members can also add tags to project and General documents.
 
 Type `/` on an empty line to open the slash menu, then keep typing to filter it. It offers headings, bullet, numbered and check lists, quotes, code, dividers, toggle lists, tables, images, files, videos, callouts, bookmarks, a page break and two or three column layouts. Press Enter to insert the one you highlighted.
 
@@ -23,7 +23,7 @@ Type `@` and start a name to mention a member, or a page title to link to it. Me
 
 ## Comments
 
-To comment on a passage, select the text and click **Add comment** in the toolbar that appears. You need comment access or higher. Comments show beside the document, or at the bottom on a narrow screen, and only once the document has some. Use **Hide comments** or **Show comments** in the document's menu (the three dots) to toggle them. You can reply to a comment and delete your own. People who can edit can delete any comment.
+To comment on a passage, select the text and click **Add comment** in the toolbar that appears. You need comment access or higher. Comments show beside the document, or at the bottom on a narrow screen, and only once the document has some. Use **Hide comments** or **Show comments** in the document's menu (the three dots) to toggle them. You can reply to a comment, react to it with any emoji (including the lab's custom ones), and edit or delete your own from the **More actions** button (the three dots) that shows when you hover it. Core can delete any comment.
 
 ## Find and replace
 

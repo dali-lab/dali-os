@@ -34,7 +34,6 @@ import {
   localEditKeepIds,
   isUndoRedoTransaction,
   type EditorOp,
-  type EnhanceActionItem,
   type EnhanceBlockChange,
   type EnhanceMarkEntry,
   type SnapshotBlock,
@@ -207,7 +206,6 @@ export type UseMeetingRecordingProps = {
     ops: EditorOp[],
     recordingId: string,
     transcript: string[],
-    actionItems: EnhanceActionItem[],
     speakerAt: (atSeconds: number) => string | null,
   ) => { ok: boolean; priorBlocks?: Record<string, unknown> };
   /** Subscribes to every document change (local or remote) once the editor is
@@ -233,15 +231,13 @@ export type UseMeetingRecordingProps = {
   onRevertBlock?: (id: string, priorBlocks: Record<string, unknown>) => void;
   onKeepAllBlocks?: () => number;
   onRevertAllBlocks?: (priorBlocks: Record<string, unknown>) => number;
-  /** The meeting note's project, when it's on one (specs/meeting-notes-model.md
-   *  §4) — tasks need a project, so Create tasks is hidden without one. */
+  /** The meeting note's project, when it's on one; otherwise each suggested
+   *  task picks its own. */
   projectId?: string | null;
-  /** Whether the viewer has task-create rights on `projectId`. Create tasks
-   *  is hidden without it, same as the board's own gate. */
-  canCreateTasks?: boolean;
-  /** Fired once per task created from the sheet, so the note can append a
-   *  link to the task on the matching checklist item. */
-  onTaskCreated?: (itemText: string, taskId: string, projectId: string) => void;
+  /** Fired once per task created from a suggestion line, so the note can swap
+   *  the line (by block id) for the task block. */
+  onRemoveBlock?: (id: string) => void;
+  onTaskCreated?: (blockId: string, task: { taskId: string; projectId: string; label: string }) => void;
   /** Rewrites the Transcript toggle's children with the current paragraphs
    *  after a successful speaker rename, once the transcript is already in
    *  the note (insertedAt or enhancedAt set) — otherwise the names baked
@@ -271,8 +267,8 @@ export function useMeetingRecording({
   onKeepAllBlocks,
   onRevertAllBlocks,
   projectId = null,
-  canCreateTasks = false,
   onTaskCreated,
+  onRemoveBlock,
   onSpeakersChanged,
 }: UseMeetingRecordingProps) {
   const dialog = useDialog();
@@ -1209,7 +1205,7 @@ export function useMeetingRecording({
 
       const { ops, skipped } = applyEnhancePlan(notes.snapshot, state.blocks, notes.plan, { untouchedTemplate });
       const paragraphs = transcriptParagraphs(lines, speakers, roster);
-      const result = onApplyEnhance(ops, recordingId, paragraphs, notes.plan.actionItems, (at) =>
+      const result = onApplyEnhance(ops, recordingId, paragraphs, (at) =>
         speakerFirstNameAt(lines, at, speakers, roster, speakerNames),
       );
       if (!result.ok) {
@@ -1308,24 +1304,28 @@ export function useMeetingRecording({
     setTimeout(() => el.classList.remove("dali-cursor-flash"), 1500);
   }
 
-  // Action items into Tasks (specs/meeting-notes-model.md §4). Dedup and the
-  // description link are the server's job; this just posts the checked rows,
-  // folds the returned taskIds back into enhanceNotes so the sheet can mark
-  // them "Task created", and tells the note to link the matching checklist
-  // item (onTaskCreated — the client-side half of the mention/link decision).
   async function createTasksFromItems(
-    items: { index: number; title: string; assigneeId?: string; dueAt?: string }[],
+    items: {
+      index: number;
+      title: string;
+      assigneeId?: string;
+      dueAt?: string;
+      status?: string;
+      projectId?: string;
+      blockId?: string;
+    }[],
   ): Promise<boolean> {
     if (!recordingId || items.length === 0) return true;
     const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "createTasks", items }),
+      body: JSON.stringify({
+        action: "createTasks",
+        items: items.map(({ blockId: _blockId, ...item }) => item),
+      }),
     }).catch(() => null);
     const json = await res?.json().catch(() => null);
-    // A failure part-way through still reports the tasks it did create; mark
-    // those so the rows read "Task created" and a retry sends only the rest.
     const created = (json?.created ?? []) as { index: number; taskId: string }[];
     const ok = Boolean(res?.ok);
     if (!ok) setEnhanceError(json?.error ?? "Couldn't create tasks.");
@@ -1338,10 +1338,11 @@ export function useMeetingRecording({
       });
       return { ...prev, plan: { ...prev.plan, actionItems } };
     });
-    if (onTaskCreated && projectId) {
-      for (const c of created) {
-        const src = items.find((it) => it.index === c.index);
-        if (src) onTaskCreated(src.title, c.taskId, projectId);
+    for (const c of created) {
+      const src = items.find((it) => it.index === c.index);
+      const taskProjectId = src?.projectId ?? projectId;
+      if (src?.blockId && taskProjectId) {
+        onTaskCreated?.(src.blockId, { taskId: c.taskId, projectId: taskProjectId, label: src.title });
       }
     }
     return ok;
@@ -1463,7 +1464,6 @@ export function useMeetingRecording({
     isCore,
     roster,
     projectId,
-    canCreateTasks,
     getNoteState,
     noteVersion,
     seededFromPageId,
@@ -1564,6 +1564,7 @@ export function useMeetingRecording({
     revertAll,
     scrollToBlock,
     createTasksFromItems,
+    removeBlock: (id: string) => onRemoveBlock?.(id),
     setSpeaker,
     jumpToTranscript,
     cancelStart,

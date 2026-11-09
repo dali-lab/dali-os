@@ -86,7 +86,7 @@ export function PageBar({
   star: PageStar
   onCopyLink: () => void
 }) {
-  const { actionsRef, presenceRef } = usePageBarTargetSetters()
+  const { statusRef, actionsRef, presenceRef } = usePageBarTargetSetters()
   const labels = starLabels(star)
   const browserDesktop = useIsBrowserDesktopCandidate()
   const openInApp = useOpenCurrentPageInDesktop()
@@ -112,6 +112,7 @@ export function PageBar({
         <DisplayedPage>
           <PageBarCrumbs />
         </DisplayedPage>
+        <div ref={statusRef} className="flex min-w-0 items-center empty:hidden" />
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         <RecordingPill />

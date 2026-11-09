@@ -38,8 +38,13 @@ describe("menuEntries", () => {
     expect(menuEntries(item("form"), { ...none })).not.toContain("share");
   });
 
-  it("does not offer Share on files or agreements", () => {
-    for (const type of ["file", "agreement", "rubric"]) {
+  it("offers Share on files, after Download, when the row can share", () => {
+    expect(menuEntries(item("file"), all)).toEqual(["open", "download", "share", "partner", "rename", "move", "delete"]);
+    expect(menuEntries(item("file"), none)).not.toContain("share");
+  });
+
+  it("does not offer Share on agreements or rubrics", () => {
+    for (const type of ["agreement", "rubric"]) {
       expect(menuEntries(item(type), all)).not.toContain("share");
     }
   });
@@ -62,7 +67,7 @@ describe("menuEntries", () => {
 
   it("keeps a file's menu in order", () => {
     expect(menuEntries(item("file"), none)).toEqual(["open", "download", "rename", "move", "delete"]);
-    expect(menuEntries(item("agreement"), none)).toEqual(["open", "rename"]);
-    expect(menuEntries(item("rubric"), none)).toEqual(["open"]);
+    expect(menuEntries(item("agreement"), none)).toEqual(["open", "rename", "move"]);
+    expect(menuEntries(item("rubric"), none)).toEqual(["open", "move"]);
   });
 });

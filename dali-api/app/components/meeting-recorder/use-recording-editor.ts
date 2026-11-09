@@ -1,7 +1,6 @@
 import { useCallback, useRef } from "react";
 import {
   appendBlocks,
-  appendTaskMentionContent,
   enhanceSnapshotBlocks,
   noteBodyText,
   findEnhanceMarks,
@@ -15,15 +14,8 @@ import {
   transcriptToggleBlock,
 } from "~/components/doc";
 import type { DocEditorInstance, DocPartialBlock } from "~/components/doc/schema/build";
-import {
-  actionItemMatchesBlock,
-  type EditorOp,
-  type EnhanceActionItem,
-  type EnhanceBlockChange,
-  type EnhanceMarkEntry,
-  ownTextWithoutCitations,
-  type SnapshotBlock,
-} from "./enhance-plan";
+import { replaceWithTaskBlock } from "~/components/doc/task/place-task-block";
+import type { EditorOp, EnhanceBlockChange, EnhanceMarkEntry, SnapshotBlock } from "./enhance-plan";
 
 type DocChangeListener = (ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBlockChange[] }) => void;
 
@@ -37,7 +29,7 @@ type DocChangeListener = (ctx: { marks: EnhanceMarkEntry[]; changes: EnhanceBloc
  * `notePath` is the page hosting the note; transcript citation chips link
  * back to it with `?transcript=`.
  */
-export function useRecordingEditor({ notePath, projectId }: { notePath: string; projectId?: string | null }) {
+export function useRecordingEditor({ notePath }: { notePath: string }) {
   // Meeting recording writes into the doc through the live editor, so
   // collaborators see the notes arrive like any other edit.
   const editorRef = useRef<DocEditorInstance | null>(null);
@@ -99,18 +91,17 @@ export function useRecordingEditor({ notePath, projectId }: { notePath: string; 
       ops: EditorOp[],
       recordingId: string,
       transcript: string[],
-      actionItems: EnhanceActionItem[],
       speakerAt: (atSeconds: number) => string | null,
     ): { ok: boolean; priorBlocks?: Record<string, unknown> } => {
       const editor = editorRef.current;
       if (!editor) return { ok: false };
-      const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath, recordingId, actionItems, projectId, speakerAt });
+      const { priorBlocks } = renderEnhanceOps(editor, ops, { notePath, recordingId, speakerAt });
       if (transcript.length && !hasTranscriptToggle(editor)) {
         appendBlocks(editor, [transcriptToggleBlock(transcript)]);
       }
       return { ok: true, priorBlocks };
     },
-    [notePath, projectId],
+    [notePath],
   );
 
   const onKeepBlock = useCallback((id: string) => {
@@ -145,26 +136,17 @@ export function useRecordingEditor({ notePath, projectId }: { notePath: string; 
     return true;
   }, []);
 
-  // Once an action item becomes a task, link it from the matching checklist
-  // item (a plain link, not a task mention chip, so no schema change; see
-  // specs/meeting-notes-model.md §4). The block's text can differ from the
-  // item's own text, so actionItemMatchesBlock finds the best match.
-  const onTaskCreated = useCallback((itemText: string, taskId: string, taskProjectId: string) => {
+  const onTaskCreated = useCallback(
+    (blockId: string, task: { taskId: string; projectId: string; label: string }) => {
+      const editor = editorRef.current;
+      if (editor) replaceWithTaskBlock(editor, blockId, task);
+    },
+    [],
+  );
+
+  const onRemoveBlock = useCallback((id: string) => {
     const editor = editorRef.current;
-    if (!editor) return;
-    const candidates = editor.document
-      .filter((b) => b.type === "checkListItem")
-      .map((b) => ({ block: b, text: ownTextWithoutCitations(b) }))
-      .filter(({ text }) => actionItemMatchesBlock(itemText, text));
-    if (candidates.length === 0) return;
-    const exact = candidates.find(({ text }) => text.trim().toLowerCase() === itemText.trim().toLowerCase());
-    const match = exact ?? candidates[0]!;
-    const content = appendTaskMentionContent(match.block.content as DocPartialBlock["content"], {
-      taskId,
-      projectId: taskProjectId,
-      label: itemText.trim(),
-    });
-    editor.updateBlock(match.block.id, { content } as unknown as DocPartialBlock);
+    if (editor?.getBlock(id)) editor.removeBlocks([id]);
   }, []);
 
   return {
@@ -181,6 +163,7 @@ export function useRecordingEditor({ notePath, projectId }: { notePath: string; 
       onRevertAllBlocks,
       onSpeakersChanged,
       onTaskCreated,
+      onRemoveBlock,
     },
   };
 }

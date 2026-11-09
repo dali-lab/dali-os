@@ -16,27 +16,49 @@ afterEach(() => {
   container.remove();
 });
 
+async function renderButton() {
+  const Stub = createRoutesStub([
+    {
+      path: "*",
+      Component: () =>
+        createElement(
+          ToastProvider,
+          null,
+          createElement(FeedbackButton, { pagePath: "/", onOpenFeed: () => {} }),
+        ),
+    },
+  ]);
+  container = document.createElement("div");
+  document.body.appendChild(container);
+  root = createRoot(container);
+  await act(async () => {
+    root.render(createElement(Stub, { initialEntries: ["/"] }));
+  });
+}
+
 describe("FeedbackButton placement", () => {
   it("sits left of the side panel on md+ screens by its published width, and flush right without one", async () => {
-    const Stub = createRoutesStub([
-      {
-        path: "*",
-        Component: () =>
-          createElement(
-            ToastProvider,
-            null,
-            createElement(FeedbackButton, { pagePath: "/", onOpenFeed: () => {} }),
-          ),
-      },
-    ]);
-    container = document.createElement("div");
-    document.body.appendChild(container);
-    root = createRoot(container);
-    await act(async () => {
-      root.render(createElement(Stub, { initialEntries: ["/"] }));
-    });
+    await renderButton();
     const host = container.querySelector(".fixed")!;
     expect(host.className).toContain("right-4");
     expect(host.className).toContain("md:right-[calc(1rem+var(--side-panel-w,0px))]");
+  });
+});
+
+describe("FeedbackButton menu", () => {
+  it("shows a tooltip on focus and opens a menu with View requests", async () => {
+    await renderButton();
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="Feedback"]')!;
+    await act(async () => {
+      button.focus();
+    });
+    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe(
+      "Send feedback or view requests",
+    );
+    await act(async () => {
+      button.click();
+    });
+    const items = [...document.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent);
+    expect(items).toEqual(["View requests", "Send feedback"]);
   });
 });

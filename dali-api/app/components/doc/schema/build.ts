@@ -4,8 +4,6 @@
 // type enabled on one side can't be forgotten on the other.
 //
 // Audio is excluded (spec decision: "audio probably never").
-// codeBlock is registered through createCodeBlockSpec + @blocknote/code-block's
-// shiki bundle, so code blocks get syntax highlighting + a language picker.
 //
 // TYPE NOTE: the returned schema is always TYPED as the full schema (every
 // spec registered) while the runtime instance omits feature-gated specs
@@ -17,16 +15,15 @@
 
 import {
   BlockNoteSchema,
-  createCodeBlockSpec,
   createHeadingBlockSpec,
   createPageBreakBlockSpec,
   defaultBlockSpecs,
   defaultInlineContentSpecs,
 } from "@blocknote/core";
-import { codeBlockOptions } from "@blocknote/code-block";
 import { withMultiColumn } from "@blocknote/xl-multi-column";
 import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
+import { codeBlockSpec } from "./code-block";
 import { ComponentSpec } from "./component";
 import { EmbedSpec } from "./embed";
 import { createMediaImageSpec, createMediaVideoSpec } from "./media";
@@ -54,7 +51,7 @@ function fullBlockSpecs() {
     bulletListItem: defaultBlockSpecs.bulletListItem,
     numberedListItem: defaultBlockSpecs.numberedListItem,
     checkListItem: defaultBlockSpecs.checkListItem,
-    codeBlock: createCodeBlockSpec(codeBlockOptions),
+    codeBlock: codeBlockSpec,
     divider: defaultBlockSpecs.divider,
     image: createMediaImageSpec({ live: true }),
     file: defaultBlockSpecs.file,
@@ -92,8 +89,8 @@ export function buildSchema(features: Features = {}) {
     delete blocks.file;
     delete blocks.video;
   }
+  if (!features.richBlocks && !features.tables) delete blocks.table;
   if (!features.richBlocks) {
-    delete blocks.table;
     delete blocks.toggleListItem;
     delete blocks.callout;
     delete blocks.embed;

@@ -251,7 +251,7 @@ describe("notifyNewAssignment", () => {
     });
   });
 
-  it("sends members one in-app notify() and portal students a direct email", async () => {
+  it("notifies members and portal students through one notify(), each on their own surface", async () => {
     mockPrisma.educationOffering.findUnique.mockResolvedValue({ id: "off-1", title: "Design Basics" });
     mockPrisma.educationApplication.findMany.mockResolvedValue([
       { applicant: member },
@@ -264,6 +264,7 @@ describe("notifyNewAssignment", () => {
     expect(n.eventType).toBe("education.assignment");
     expect(n.recipients).toEqual([
       { userId: "U-Ada", link: "/education/off-1/assignments/as-1" },
+      { userId: "U-Grace", link: "/portal/education/off-1/assignments/as-1" },
     ]);
     expect(n.message.vars).toEqual({
       itemTitle: "Wireframes",
@@ -271,17 +272,9 @@ describe("notifyNewAssignment", () => {
       // 03:59Z on Oct 15 is 11:59 PM ET on Oct 14.
       itemDetail: "Due Oct 14. Open the course hub to submit.",
     });
-
-    expect(sendEducationEmail).toHaveBeenCalledTimes(1);
-    expect(sendEducationEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "grace@example.edu",
-        recipientUserId: "U-Grace",
-        dedupKey: "education.assignment:as-1:u-grace",
-        subject: "New assignment in Design Basics: Wireframes",
-        cta: { path: "/portal/education/off-1/assignments/as-1", label: "Open the assignment" },
-      }),
-    );
+    expect(n.message.linkLabel).toBe("Open the assignment");
+    expect(n.message.dedupKey).toBe("education.assignment:as-1");
+    expect(sendEducationEmail).not.toHaveBeenCalled();
   });
 
   it("omits the due date when there is none", async () => {
@@ -291,21 +284,6 @@ describe("notifyNewAssignment", () => {
     expect((vi.mocked(notify).mock.calls[0][0] as any).message.vars.itemDetail).toBe(
       "Open the course hub to submit.",
     );
-    expect(sendEducationEmail).not.toHaveBeenCalled();
-  });
-
-  it("skips portal students with no address and keeps going after an email failure", async () => {
-    const noAddr = { ...portal, id: "U-None", dartmouthEmail: null, netId: null };
-    mockPrisma.educationOffering.findUnique.mockResolvedValue({ id: "off-1", title: "Design Basics" });
-    mockPrisma.educationApplication.findMany.mockResolvedValue([
-      { applicant: noAddr },
-      { applicant: portal },
-      { applicant: { ...portal, id: "U-Hopper", dartmouthEmail: "hopper@example.edu" } },
-    ]);
-    vi.mocked(sendEducationEmail).mockRejectedValueOnce(new Error("smtp"));
-    await notifyNewAssignment(args);
-    expect(sendEducationEmail).toHaveBeenCalledTimes(2);
-    expect(vi.mocked(sendEducationEmail).mock.calls[1][0].to).toBe("hopper@example.edu");
   });
 
   it("does not throw when the in-app dispatch fails", async () => {
@@ -326,36 +304,23 @@ describe("notifyGraded", () => {
     expect(sendEducationEmail).not.toHaveBeenCalled();
   });
 
-  it("notifies a member in-app with a deep link and no email", async () => {
+  it("notifies a member with a member-shell deep link", async () => {
     mockPrisma.user.findUnique.mockResolvedValue(member);
     await notifyGraded(args);
     expect(notify).toHaveBeenCalledWith({
       eventType: "education.grade",
-      message: { vars: { itemTitle: "Wireframes" } },
+      message: { vars: { itemTitle: "Wireframes" }, linkLabel: "Open the assignment" },
       recipients: [{ userId: "U-Ada", link: "/education/off-1/assignments/as-1" }],
     });
-    expect(sendEducationEmail).not.toHaveBeenCalled();
   });
 
-  it("emails a portal student instead of notifying in-app", async () => {
+  it("notifies a portal student through notify() with a portal deep link", async () => {
     mockPrisma.user.findUnique.mockResolvedValue(portal);
     await notifyGraded(args);
-    expect(notify).not.toHaveBeenCalled();
-    expect(sendEducationEmail).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "grace@example.edu",
-        dedupKey: "education.grade:as-1:u-grace",
-        eventType: "education.grade",
-        subject: "Feedback on Wireframes",
-        cta: { path: "/portal/education/off-1/assignments/as-1", label: "Open the assignment" },
-      }),
-    );
-  });
-
-  it("sends nothing to a portal student with no address", async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ ...portal, dartmouthEmail: null, netId: null });
-    await notifyGraded(args);
     expect(sendEducationEmail).not.toHaveBeenCalled();
+    expect((vi.mocked(notify).mock.calls[0][0] as any).recipients).toEqual([
+      { userId: "U-Grace", link: "/portal/education/off-1/assignments/as-1" },
+    ]);
   });
 
   it("swallows dispatch failures", async () => {
@@ -392,59 +357,35 @@ describe("notifySessionReminder", () => {
     });
   });
 
-  it("falls back to 'Session N', labels the time ET, and splits members from portal students", async () => {
+  it("falls back to 'Session N', labels the time ET, and reaches every enrollee on their surface", async () => {
     mockPrisma.educationApplication.findMany.mockResolvedValue([
       { applicant: member },
       { applicant: portal },
     ]);
     await notifySessionReminder(args);
 
+    expect(notify).toHaveBeenCalledTimes(1);
     const n = vi.mocked(notify).mock.calls[0][0] as any;
     expect(n.eventType).toBe("education.session_reminder");
-    expect(n.recipients).toEqual([{ userId: "U-Ada", link: "/education/off-1/hub" }]);
+    expect(n.recipients).toEqual([
+      { userId: "U-Ada", link: "/education/off-1/hub" },
+      { userId: "U-Grace", link: "/portal/education/off-1/hub" },
+    ]);
     expect(n.message.vars.itemTitle).toBe("Session 2");
     expect(n.message.vars.contextName).toBe("Design Basics");
     expect(n.message.vars.when).toBe("Wednesday, Oct 14, 2:30 PM (ET)");
     expect(n.message.vars.itemDetail).toBe("");
-
-    expect(sendEducationEmail).toHaveBeenCalledTimes(1);
-    const e = vi.mocked(sendEducationEmail).mock.calls[0][0];
-    expect(e.to).toBe("grace@example.edu");
-    expect(e.dedupKey).toBe("education.session.reminder:s-1:u-grace");
-    expect(e.subject).toBe("Upcoming: Session 2");
-    expect(e.paragraphs).toEqual(["Design Basics · Wednesday, Oct 14, 2:30 PM (ET)"]);
-    expect(e.cta).toEqual({ path: "/portal/education/off-1/hub", label: "Open the course hub" });
+    expect(n.message.linkLabel).toBe("Open the course hub");
+    expect(n.message.dedupKey).toBe("education.session_reminder:s-1");
+    expect(sendEducationEmail).not.toHaveBeenCalled();
   });
 
   it("uses the session title and appends the location", async () => {
-    mockPrisma.educationApplication.findMany.mockResolvedValue([
-      { applicant: member },
-      { applicant: portal },
-    ]);
+    mockPrisma.educationApplication.findMany.mockResolvedValue([{ applicant: member }]);
     await notifySessionReminder({ ...args, sessionTitle: "Critique", location: "Room 101" });
     const n = vi.mocked(notify).mock.calls[0][0] as any;
     expect(n.message.vars.itemTitle).toBe("Critique");
     expect(n.message.vars.itemDetail).toBe(" · Room 101");
-    expect(vi.mocked(sendEducationEmail).mock.calls[0][0].paragraphs[0]).toMatch(/ · Room 101$/);
-  });
-
-  it("does not email members and does not notify() when only portal students are enrolled", async () => {
-    mockPrisma.educationApplication.findMany.mockResolvedValue([{ applicant: portal }]);
-    await notifySessionReminder(args);
-    expect(notify).not.toHaveBeenCalled();
-    expect(sendEducationEmail).toHaveBeenCalledTimes(1);
-  });
-
-  it("continues past a failed or address-less portal recipient", async () => {
-    const noAddr = { ...portal, id: "U-None", dartmouthEmail: null, netId: null };
-    mockPrisma.educationApplication.findMany.mockResolvedValue([
-      { applicant: noAddr },
-      { applicant: portal },
-      { applicant: { ...portal, id: "U-Hopper", dartmouthEmail: "hopper@example.edu" } },
-    ]);
-    vi.mocked(sendEducationEmail).mockRejectedValueOnce(new Error("smtp"));
-    await notifySessionReminder(args);
-    expect(sendEducationEmail).toHaveBeenCalledTimes(2);
   });
 
   it("does not throw when notify() fails", async () => {

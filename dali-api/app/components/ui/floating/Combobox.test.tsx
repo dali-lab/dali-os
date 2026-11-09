@@ -124,4 +124,38 @@ describe("Combobox", () => {
     type(input(), "al");
     expect(options().map((o) => o.textContent)).toContain("Alex Kim");
   });
+
+  it("filters on an option's description as well as its label", () => {
+    const people: SelectOption[] = [
+      { value: "u1", label: "Ada Lovelace", description: "Engineering" },
+      { value: "u2", label: "Grace Hopper", description: "Design" },
+    ];
+    mount(createElement(Combobox, { value: "", options: people, onChange: () => {}, ariaLabel: "Member" }));
+    open();
+    type(input(), "design");
+    expect(options().map((o) => o.textContent)).toEqual(["Grace HopperDesign"]);
+  });
+
+  it("gives each instance its own list id when no ariaLabel is passed", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() =>
+      root.render(
+        createElement("div", null,
+          createElement(Combobox, { value: "", options: opts, onChange: () => {} }),
+          createElement(Combobox, { value: "", options: opts, onChange: () => {} }),
+        ),
+      ),
+    );
+    const inputs = Array.from(container.querySelectorAll<HTMLInputElement>("input[role='combobox']"));
+    act(() => inputs[0].dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const firstId = inputs[0].getAttribute("aria-controls");
+    act(() => inputs[0].dispatchEvent(new FocusEvent("blur")));
+    act(() => inputs[1].dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const secondId = inputs[1].getAttribute("aria-controls");
+    expect(firstId).toBeTruthy();
+    expect(secondId).toBeTruthy();
+    expect(firstId).not.toBe(secondId);
+  });
 });

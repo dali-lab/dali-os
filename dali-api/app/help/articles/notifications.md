@@ -37,6 +37,18 @@ When someone schedules a meeting with you, an invite appears in the bell and on 
 - **Task deadline reminders** arrive a day before a task you are assigned is due, and again at the end of its due day.
 - Reminders for things that no longer apply, such as a cancelled meeting, go away on their own.
 
+## Old meeting notifications clear on their own
+
+You don't have to dismiss meeting notifications that are out of date. They leave the bell, the **Open** filter in History and desktop banners by themselves:
+
+- a meeting reminder, once the meeting starts;
+- an invite you never answered, once a one-off meeting has happened (invites to a repeating meeting stay, since later meetings can still be answered);
+- **Record this meeting?**, 3 hours after it arrives;
+- a cancellation notice, after 3 days;
+- a proposed new time, after 7 days.
+
+They are still listed under **All** in History, marked **Expired**.
+
 ## Choose what reaches you
 
 Open [Settings → Notifications](/settings/notifications). Each kind of notification is a row, grouped by area such as Meetings, Tasks, Documents and Announcements. Each row has four choices:
@@ -55,6 +67,14 @@ Some details:
 - **Sent separately**: a few emails, such as education application decisions, come from their own process. They are sent whatever you choose here.
 - **Core and admin rows**: some rows, such as partner updates, only appear for Core or admins.
 - If you have never changed a row, it uses the lab's default for that kind of notification.
+
+## Students and partners
+
+Dartmouth students in the portal and partners get a simpler version. Their bell opens one **Notifications** list, with no project work or meetings tabs. They choose what reaches them in a **Notifications** section on their own settings page, [portal settings](/portal/settings) or [partner settings](/partner/settings), with just **In-app** and **Email** (**Instantly** or off).
+
+- Students see their course notifications: announcements, assignments, discussion replies, feedback requests, certificates, session reminders and grades.
+- Partners see replies to their comments on shared project documents. The link opens the document in the partner portal.
+- Since they rarely open DALI OS, new assignments, grades, session reminders, feedback requests and comment replies email them by default.
 
 ## Slack DMs
 

@@ -10,9 +10,11 @@ import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { setTermPi } from "../lib/partner-renewals.server";
 import { setTermSpots } from "../lib/planning-spots.server";
+import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PlanningTable } from "../components/PlanningTable";
 import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
+import { PlanningApplicationModal } from "../components/planning/PlanningApplicationModal";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
 import { buildPlanningGap, buildPlanningProjects, type IntentSetup } from "../lib/planning-gap";
@@ -51,6 +53,25 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
+
+  if (intent === "note") {
+    const ownerKind = String(form.get("ownerKind") ?? "");
+    const ownerId = String(form.get("ownerId") ?? "");
+    if (!ownerId || (ownerKind !== "project" && ownerKind !== "application")) {
+      return Response.json({ error: "Missing project or application." }, { status: 400 });
+    }
+    const body = String(form.get("body") ?? "");
+    if (body.trim().length > PLANNING_NOTE_MAX) {
+      return Response.json({ error: `Keep the note under ${PLANNING_NOTE_MAX} characters.` }, { status: 400 });
+    }
+    const owner = ownerKind === "project" ? { projectId: ownerId } : { applicationId: ownerId };
+    const result = await setPlanningNote(prisma, { owner, body, userId: auth.user.sub });
+    if (result === "not-found") {
+      return Response.json({ error: `That ${ownerKind} no longer exists.` }, { status: 404 });
+    }
+    return Response.json({ ok: true });
+  }
+
   const projectId = String(form.get("projectId") ?? "");
   if (!projectId) return Response.json({ error: "Missing project." }, { status: 400 });
 
@@ -123,10 +144,11 @@ export default function PartnersPlanning() {
   const [view, setView] = useSearchParamChoice("group", GROUP_BY, "project");
   const [includePotential, setIncludePotential] = useState(false);
   const [includeBacklog, setIncludeBacklog] = useState(false);
-  // The planning rows open this popup instead of navigating away so the planner
-  // keeps their filter + scroll position. Only project rows use it; application
-  // rows still jump to the Partners board where their card lives.
-  const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+  const [openRow, setOpenRow] = useState<{ kind: "project" | "application"; id: string } | null>(null);
+  const openRowClick = (kind: "project" | "application", id: string) => setOpenRow({ kind, id });
+  const openProjectId = openRow?.kind === "project" ? openRow.id : null;
+  const openApplicationId = openRow?.kind === "application" ? openRow.id : null;
+  const openApplication = openApplicationId ? data.applicationInfo[openApplicationId] ?? null : null;
   const openProject = useMemo(() => {
     if (!openProjectId) return null;
     const match = [...data.items, ...data.listOnlyItems].find(
@@ -223,7 +245,7 @@ export default function PartnersPlanning() {
         <ProjectPlanningTable
           model={projectModel}
           termCode={termCode}
-          onProjectClick={setOpenProjectId}
+          onRowClick={openRowClick}
         />
       ) : data.intentSetup.kind !== "ready" ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">
@@ -233,7 +255,7 @@ export default function PartnersPlanning() {
           </Link>
         </div>
       ) : (
-        <PlanningTable model={model} onProjectClick={setOpenProjectId} />
+        <PlanningTable model={model} onRowClick={openRowClick} />
       )}
 
       {openProject && (
@@ -244,7 +266,15 @@ export default function PartnersPlanning() {
           domains={data.spotDomains}
           currentTermId={data.termId}
           canEdit
-          onClose={() => setOpenProjectId(null)}
+          onClose={() => setOpenRow(null)}
+        />
+      )}
+      {openApplicationId && openApplication && (
+        <PlanningApplicationModal
+          applicationId={openApplicationId}
+          info={openApplication}
+          canEdit
+          onClose={() => setOpenRow(null)}
         />
       )}
     </div>

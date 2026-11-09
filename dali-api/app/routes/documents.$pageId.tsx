@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { Link, redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
 import { pageOpenHref } from "~/lib/page-href";
-import { Shapes, Trash2, UserCheck } from "lucide-react";
+import { Shapes, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
-import { Modal, ModalHeader } from "~/components/Modal";
-import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { useOsChrome } from "~/components/os-chrome";
 import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { Menu } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.$pageId";
@@ -31,9 +30,9 @@ import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { workspaceDriveScope } from "~/lib/drive-crumbs";
 import type { ItemLocation } from "~/components/drive/location";
 import { DocumentEditor } from "~/components/DocumentEditor";
-import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
+import type { AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
-import { MeetingRecorder } from "~/components/MeetingRecorder";
+import { NoteMeetingStrip } from "~/components/meeting/NoteMeetingStrip";
 import { RecordingPresencePill } from "~/components/RecordingPresencePill";
 import { RecordPromptBanner } from "~/components/RecordPromptBanner";
 import { TranscriptChipHoverLayer } from "~/components/meeting-recorder/TranscriptChipHoverLayer";
@@ -330,6 +329,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
               selectedAt: true,
               createdAt: true,
               recurrenceRule: true,
+              title: true,
+              location: true,
+              rooms: { select: { name: true }, orderBy: { name: "asc" } },
               meetingType: true,
               meetingTypeLabel: true,
               attendanceMode: true,
@@ -365,6 +367,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   let attendance:
     | {
         meetingId: string;
+        meetingTitle: string;
+        startIso: string;
+        location: string | null;
+        roomNames: string[];
         /** The occurrence this note is for — its roster is that occurrence's. */
         occurrenceStart: string;
         meetingLabel: string;
@@ -420,6 +426,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
     attendance = {
       meetingId: meeting.id,
+      meetingTitle: meeting.title,
+      startIso: occurrenceStart.toISOString(),
+      location: meeting.location,
+      roomNames: meeting.rooms.map((r) => r.name),
       occurrenceStart: occurrenceStart.toISOString(),
       meetingLabel: label,
       whiteboardPageId: meeting.whiteboardPage?.id ?? null,
@@ -475,12 +485,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     meetingNoteTemplateAction = { scope: "lab", current: page.defaultMeetingNoteFor };
   }
 
-  // Action items into Tasks (specs/meeting-notes-model.md §4): tasks need a
-  // project, and the caller needs task-create rights on it — the same gate
-  // requireProjectEditAccess applies to POST /api/projects/:id/tasks.
   const projectId = page.workspaceType === "Project" ? page.workspaceId : null;
-  const canCreateTasks =
-    projectId !== null && (roles.isCore || (await isProjectMember(auth.user.sub, projectId, request)));
 
   return {
     pageId: page.id,
@@ -524,7 +529,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     seededFromPageId: page.seededFromPageId,
     seededTemplateHash: page.seededTemplateHash,
     projectId,
-    canCreateTasks,
     latestRecording: latestRecordingRow
       ? {
           id: latestRecordingRow.id,
@@ -587,66 +591,6 @@ function TrashedNoteBanner({ pageId, canRestore }: { pageId: string; canRestore:
         </Button>
       )}
     </div>
-  );
-}
-
-// The roster keeps its own optimistic state, so closing reloads the loader's
-// copy for the next time the dialog opens.
-function AttendanceButton({
-  attendance,
-}: {
-  attendance: {
-    meetingId: string;
-    occurrenceStart: string;
-    meetingLabel: string;
-    canMark: boolean;
-    walletConfigured: boolean;
-    rows: AttendanceRow[];
-  };
-}) {
-  const { actionBtnPrimary, actionIcon } = useOsChrome();
-  const inPageBar = usePageBarSlot();
-  const revalidator = useRevalidator();
-  const [open, setOpen] = useState(false);
-  const close = () => {
-    setOpen(false);
-    revalidator.revalidate();
-  };
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Attendance"
-        className={inPageBar ? "os-edit-btn os-edit-btn--strong h-8" : actionBtnPrimary}
-      >
-        <UserCheck className={actionIcon} />
-        <span className="hidden sm:inline">Attendance</span>
-      </button>
-      <Modal
-        open={open}
-        onClose={close}
-        labelledBy="doc-attendance-title"
-        containerClassName={modalCardClass("max-w-4xl")}
-      >
-        <ModalHeader
-          titleId="doc-attendance-title"
-          title="Attendance"
-          subtitle={attendance.meetingLabel}
-          onClose={close}
-          className="mb-1"
-        />
-        <AttendanceChecklist
-          plain
-          meetingId={attendance.meetingId}
-          occurrenceStart={attendance.occurrenceStart}
-          meetingLabel={attendance.meetingLabel}
-          canEdit={attendance.canMark}
-          canScan={attendance.walletConfigured}
-          attendees={attendance.rows}
-        />
-      </Modal>
-    </>
   );
 }
 
@@ -713,7 +657,6 @@ function DocumentPage() {
     latestRecording,
     hasActiveRecording,
     projectId: meetingProjectId,
-    canCreateTasks,
   } = useLoaderData() as Extract<Awaited<ReturnType<typeof loader>>, { pageId: string }>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
@@ -748,7 +691,6 @@ function DocumentPage() {
 
   const { editorRef, onEditorReady, hookProps: recordingEditorProps } = useRecordingEditor({
     notePath: `/documents/${pageId}`,
-    projectId: meetingProjectId,
   });
 
   return (
@@ -766,7 +708,6 @@ function DocumentPage() {
       seededFromPageId={seededFromPageId}
       seededTemplateHash={seededTemplateHash}
       projectId={meetingProjectId}
-      canCreateTasks={canCreateTasks}
       {...recordingEditorProps}
     >
       {(rec) => {
@@ -822,16 +763,22 @@ function DocumentPage() {
                 : undefined
             }
             topBarActions={
-              // Record sits last so it lands at the far right of the
-              // document's action row (Share leads it on the left).
               <>
                 <RecordingPresencePill documentName={pageDocName(pageId)} collabToken={collabToken} />
                 {attendance?.whiteboardPageId && (
                   <WhiteboardLink pageId={attendance.whiteboardPageId} />
                 )}
-                {attendance && <AttendanceButton attendance={attendance} />}
-                {rec && <MeetingRecorder rec={rec} containerWide={containerWide} />}
               </>
+            }
+            meetingStrip={
+              attendance ? (
+                <NoteMeetingStrip
+                  title={attendance.meetingTitle}
+                  source={{ startIso: attendance.startIso, location: attendance.location, roomNames: attendance.roomNames }}
+                  attendance={attendance}
+                  rec={rec}
+                />
+              ) : undefined
             }
           />
         );

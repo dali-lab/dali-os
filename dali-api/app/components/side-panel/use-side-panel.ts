@@ -26,13 +26,14 @@ export function useVisibleSidePanel(): SidePanel | null {
 
 export function useSidePanel() {
   const [params, setParams] = useSearchParams();
+  const { key } = useLocation();
   const panel = useVisibleSidePanel();
   const urlNamesPanel = params.has(SIDE_PARAM);
   const open = useCallback(
     (next: SidePanel) => {
       // A router navigation would re-run the page's loaders before the panel could show.
       if (!urlNamesPanel && !panelCoversPage()) {
-        setKeptSidePanel(next);
+        setKeptSidePanel(next, key);
         const url = new URL(window.location.href);
         url.searchParams.set(SIDE_PARAM, formatSidePanel(next));
         window.history.replaceState(window.history.state, "", url);
@@ -46,7 +47,7 @@ export function useSidePanel() {
         { replace: !panelCoversPage(), preventScrollReset: true },
       );
     },
-    [setParams, urlNamesPanel],
+    [setParams, urlNamesPanel, key],
   );
   const close = useCallback(() => {
     setKeptSidePanel(null);

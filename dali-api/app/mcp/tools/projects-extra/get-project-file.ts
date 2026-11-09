@@ -42,6 +42,8 @@ export async function runGetProjectFile(callerId: string, input: Input) {
       workspaceType: true,
       workspaceId: true,
       folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       versions: {
         orderBy: { createdAt: "desc" },
         select: {

@@ -8,8 +8,8 @@ vi.mock("~/lib/auth", () => ({ requireAuth: mockRequireAuth }));
 
 import { loader } from "~/partners/routes/partner.login";
 
-async function landing() {
-  const res = (await loader({ request: new Request("http://localhost/partner/login") } as any)) as Response;
+async function landing(url = "http://localhost/partner/login") {
+  const res = (await loader({ request: new Request(url) } as any)) as Response;
   expect(res.status).toBe(302);
   return res.headers.get("Location");
 }
@@ -27,6 +27,13 @@ beforeEach(() => {
 describe("GET /partner/login", () => {
   it("sends a signed-out visitor to /login", async () => {
     expect(await landing()).toBe("/login");
+  });
+
+  it("forwards a safe next to /login and drops an unsafe one", async () => {
+    expect(await landing("http://localhost/partner/login?next=%2Fpartner%2Fapply")).toBe(
+      "/login?next=%2Fpartner%2Fapply",
+    );
+    expect(await landing("http://localhost/partner/login?next=%2F%2Fevil.com")).toBe("/login");
   });
 
   it("sends a member home and a Dartmouth account to the portal", async () => {

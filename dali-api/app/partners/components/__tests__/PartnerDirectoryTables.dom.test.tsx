@@ -96,6 +96,15 @@ describe("DirectoryTable", () => {
     expect(loadMore()).toBeUndefined();
   });
 
+  // macOS WKWebView lets the last row's stretched link spill to the bottom of the scroll box;
+  // only a Load more outside that box stays clickable in the desktop app.
+  it("renders Load more outside the table's scroll box", async () => {
+    await mount(() => createElement(DirectoryTable, { rows: make(75), sort, onSort: () => {}, resetKey: "a" }));
+    const scrollBox = container.querySelector("table")!.parentElement!;
+    expect(scrollBox.className).toContain("overflow-x-auto");
+    expect(scrollBox.contains(loadMore()!)).toBe(false);
+  });
+
   it("returns to the first slice when the search or sort changes", async () => {
     function Harness() {
       const [key, setKey] = useState("name");

@@ -60,6 +60,7 @@ import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { coreBoardPathFor } from "~/core/lib/taskboard";
 import { formatDateShort, formatDateTime, fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
@@ -291,6 +292,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: {
       id: true,
       name: true,
+      kind: true,
       description: true,
       status: true,
       aiTldr: true,
@@ -481,6 +483,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // ── End Stage 1 ──────────────────────────────────────────────────────────────
 
   if (!project) throw new Response("Not found", { status: 404 });
+  if (project.kind === "CoreBoard") return redirect(coreBoardPathFor(request.url));
 
   // After the gate, so a 404 never lands in someone's recents. Detached —
   // a failed bookkeeping write must not cost the reader their project.

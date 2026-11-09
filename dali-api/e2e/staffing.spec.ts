@@ -1,5 +1,5 @@
 import { test, expect } from './fixtures';
-import { confirmDialog } from './helpers';
+import { confirmDialog, openDialog } from './helpers';
 import {
   createStaffingFixture,
   deleteStaffingFixture,
@@ -37,7 +37,7 @@ test.describe('Staffing board and finalize', () => {
     await loginAs({ daliEmail: MANAGER });
     await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
 
-    await page.getByRole('button', { name: `View ${f.fullName}'s bid` }).click();
+    await openDialog(page, `View ${f.fullName}'s bid`);
     const dialog = page.getByRole('dialog');
     const assign = page.waitForResponse(
       (r) => r.url().includes('/api/staffing/assign') && r.request().method() === 'POST',
@@ -84,7 +84,7 @@ test.describe('Staffing board and finalize', () => {
   test('taking a confirmed member off the project removes them from the roster', async ({ page, loginAs }) => {
     await loginAs({ daliEmail: MANAGER });
     await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
-    await page.getByRole('button', { name: `Remove ${f.fullName} from project` }).click();
+    await openDialog(page, `Remove ${f.fullName} from project`);
     const assign = page.waitForResponse(
       (r) => r.url().includes('/api/staffing/assign') && r.request().method() === 'POST',
     );

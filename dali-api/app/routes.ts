@@ -124,6 +124,7 @@ export default [
     // (app/core/routes/), so there is one implementation per surface and the
     // old URL keeps working; the source loaders redirect flag-on viewers here.
     route("core", "core/routes/core.hub.tsx"),
+    route("core/milestones", "core/routes/core.milestones.tsx"),
     route("core/staffing", "core/routes/core.staffing.tsx"),
     route("core/intent-to-work", "core/routes/core.intent-to-work.tsx"),
     route("core/intent-to-work/:userId", "core/routes/core.intent-to-work.$userId.tsx"),
@@ -240,6 +241,10 @@ export default [
     ),
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("slides/:pageId", "routes/slides.$pageId.tsx"),
+    route("slides/:pageId/export.pdf", "routes/slides.$pageId.export-pdf.ts"),
+    route("slides/:pageId/html-preview/:elementId", "routes/slides.$pageId.html-preview.$elementId.ts"),
+    route("slides/:pageId/present", "routes/slides.$pageId.present.tsx"),
+    route("slides/:pageId/presenter", "routes/slides.$pageId.presenter.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)
@@ -313,6 +318,7 @@ export default [
     // deep-link editor/responses surfaces plus the action-only mutation
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
+    route("api/rubrics", "routes/api.rubrics.ts"),
     route("api/folder-receivers", "routes/api.folder-receivers.ts"),
     route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
@@ -714,6 +720,15 @@ export default [
   route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
+  route("api/slides/:pageId/live", "routes/api.slides.$pageId.live.ts"),
+  route("api/slides/:pageId/live/stream", "routes/api.slides.$pageId.live.stream.ts"),
+  route("api/slide-templates", "routes/api.slide-templates.ts"),
+  route("api/slide-templates/:id", "routes/api.slide-templates.$id.ts"),
+  route("api/slides/:pageId/from-template", "routes/api.slides.$pageId.from-template.ts"),
+  route("api/slides/:pageId/polls", "routes/api.slides.$pageId.polls.ts"),
+  route("api/slides/:pageId/polls/stream", "routes/api.slides.$pageId.polls.stream.ts"),
+  route("api/slides/:pageId/reactions", "routes/api.slides.$pageId.reactions.ts"),
+  route("api/slides/:pageId/reactions/stream", "routes/api.slides.$pageId.reactions.stream.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
@@ -754,6 +769,7 @@ export default [
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
   route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
+  route("api/files/:id/share", "routes/api.files.$id.share.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),
@@ -778,6 +794,7 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+  route("slides/:pageId/export.pptx", "routes/slides.$pageId.export-pptx.ts"),
 
   // Public read-only render for "Anyone with the link" documents — registered
   // OUTSIDE the app-shell layout so an unauthenticated visitor can read it. The

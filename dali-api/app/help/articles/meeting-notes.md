@@ -28,15 +28,15 @@ To find a note, open the meeting from [Calendar](/calendar) and click **Open mee
 You can record from any document you can edit, usually the meeting's note.
 
 1. Open the note. While a meeting is on, the organizer and Core may also see a banner on the meeting page that says **This meeting is starting. Record it?** in the browser. Click **Record** to jump to the note, or **Not now**.
-2. Click **Record** in the top bar of the note.
+2. Click **Record** in the meeting strip under the top bar of the note. The strip also shows the meeting's time and room and an **Attendance** button with how many people came out of how many were expected. On a meeting's whiteboard the same strip has **Record**, which opens the note and starts there.
 3. In **Record this meeting**, choose your **Microphone**. In a browser you can switch on **Include call audio from a browser tab** and share the tab with the call, so everyone on the call is captured. In the DALI OS desktop app the recording includes system audio and your microphone, so there is nothing to share.
 4. Click **Start recording**.
 
 Tell everyone in the meeting you are recording. A **Recording** badge with your name shows on the meeting page while it runs. Do not record meetings where protected information, such as patient or student records, will be discussed.
 
-Click **Stop** when you finish. The person who started the recording, or Core, can use the bin button (**Discard recording**) to throw it away. If your microphone is silent or no call audio is coming through, a notice appears while you record so you can fix it.
+The timer sits inside the red **Stop recording** button. Click it when you finish. On other pages, a small recording badge in the top bar shows the timer and links back to the note. The person who started the recording, or Core, can use the bin button (**Discard recording**) to throw it away. If your microphone is silent or no call audio is coming through, a notice appears while you record so you can fix it.
 
-Core or Admin can turn recording off for a project: open the project, click **Project settings** (the gear), and switch off **Allow recording this project's meetings** under **Meeting recording**. In that project's meetings there is no **Record** button, and the **This meeting is starting** banner does not appear. Once a recording has a transcript, anyone who can open the note can open it, from **Transcript** on the meeting page or the note's top bar.
+Core or Admin can turn recording off for a project: open the project, click **Project settings** (the gear), and switch off **Allow recording this project's meetings** under **Meeting recording**. In that project's meetings there is no **Record** button, and the **This meeting is starting** banner does not appear. Once a recording has a transcript, anyone who can open the note can open it, from **Transcript** in the note's meeting strip.
 
 ## Turn the recording into notes
 
@@ -48,7 +48,7 @@ When it says **Transcript ready**:
 
 Enhanced lines are shown as a preview. Edit any line to keep it, or use **Keep all** to accept everything and **Revert all** to undo it. Lines you typed yourself stay as typed. In the **More** menu, **Enhance again** rebuilds the notes from the current text and the transcript.
 
-If the meeting note is in a project's Drive and you are Core or on that project, Enhance also finds action items in the notes. A bar lists the action items so you can check owners and dates, tick the ones you want and create them as tasks on the project board, or choose **Not now**.
+Enhance also finds action items and lists them as suggested tasks under a **Tasks** heading, or under your own **Tasks** or **Action items** heading if the note has one. Once you keep the notes, each suggestion shows a status, owner and due date, plus **Add** and a dismiss button. A task that is not in Backlog needs a due date. If the note is not on a project, pick the project for each suggestion. **Add** turns the line into a task block and puts the task on the project board. **Add all** adds every suggestion that is ready, **Not now** hides the bar, and dismissing a suggestion removes its line.
 
 If transcription fails, the bar says **Transcription failed** and you can discard the recording and record again. If it says **No speech was captured**, nothing was heard.
 

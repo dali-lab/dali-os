@@ -14,7 +14,7 @@
 
 import { prisma, Prisma } from "~/lib/db.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
-import { pageDocName } from "~/collab/roomName";
+import { pageDocName, slidesRoomName } from "~/collab/roomName";
 import type { WorkspaceType, PageKind } from "~/generated/prisma/client";
 
 /**
@@ -137,8 +137,14 @@ export async function duplicatePage(
   });
 
   if (source.kind === "Slides") {
-    const deck = await prisma.slideDeck.findUnique({ where: { pageId: source.id }, select: { slides: true } });
-    if (deck) {
+    const deck = await prisma.slideDeck.findUnique({ where: { pageId: source.id }, select: { slides: true, storage: true } });
+    if (deck?.storage === "yjs") {
+      const state = await prisma.collabDocument.findUnique({ where: { name: slidesRoomName(source.id) }, select: { state: true } });
+      await prisma.slideDeck.create({
+        data: { pageId: newPage.id, slides: [], storage: state ? "yjs" : "json", lastEditedById: input.createdById },
+      });
+      if (state) await prisma.collabDocument.create({ data: { name: slidesRoomName(newPage.id), state: state.state } });
+    } else if (deck) {
       await prisma.slideDeck.create({
         data: { pageId: newPage.id, slides: deck.slides as Prisma.InputJsonValue, lastEditedById: input.createdById },
       });

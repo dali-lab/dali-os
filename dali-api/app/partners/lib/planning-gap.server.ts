@@ -3,6 +3,7 @@ import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { parseColumnMapping } from "~/projects/lib/slot-roles";
 import { listActiveCoreMembers, personName, type CoreMemberOption } from "./core-members.server";
+import { PLANNING_NOTE_SELECT, toPlanningNoteView, type PlanningNoteView } from "./planning-notes.server";
 import {
   effectivePi,
   hasSpots,
@@ -26,6 +27,15 @@ export type PlanningProjectInfo = {
   plannedTerms: { id: string; code: string; sortKey: number }[];
   pisByTerm: Record<string, { userId: string; name: string } | null>;
   spotsByTerm: Record<string, { domainId: string; name: string; slots: number }[]>;
+  note: PlanningNoteView | null;
+};
+
+export type PlanningApplicationInfo = {
+  title: string;
+  iconEmoji: string | null;
+  stage: string;
+  partnerName: string | null;
+  note: PlanningNoteView | null;
 };
 
 export type PlanningData = {
@@ -41,6 +51,7 @@ export type PlanningData = {
   hasIntentData: boolean;
   intentSetup: IntentSetup;
   projectInfo: Record<string, PlanningProjectInfo>;
+  applicationInfo: Record<string, PlanningApplicationInfo>;
   coreMembers: CoreMemberOption[];
 };
 
@@ -94,6 +105,7 @@ export async function loadPlanningData(
       hasIntentData: false,
       intentSetup: { kind: "no-form" },
       projectInfo: {},
+      applicationInfo: {},
       coreMembers: [],
     };
   }
@@ -124,6 +136,7 @@ export async function loadPlanningData(
           select: { partnerOrg: { select: { name: true } } },
         },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
+        planningNote: PLANNING_NOTE_SELECT,
         roleRequests: {
           where: { term: { sortKey: { gte: (prevTerm ?? term).sortKey } } },
           select: { termId: true, domainId: true, slots: true },
@@ -143,6 +156,8 @@ export async function loadPlanningData(
         stage: true,
         pi: { select: { firstName: true, lastName: true, daliEmail: true } },
         domains: { select: { domainId: true, expectedMembers: true } },
+        partnerOrg: { select: { name: true } },
+        planningNote: PLANNING_NOTE_SELECT,
       },
     }),
     prisma.staffingCycle.findUnique({
@@ -195,6 +210,7 @@ export async function loadPlanningData(
       plannedTerms: upcomingTerms.map((t) => ({ id: t.id, code: t.code, sortKey: t.sortKey })),
       pisByTerm,
       spotsByTerm,
+      note: toPlanningNoteView(p.planningNote),
     };
   }
   const coreMembers = request ? await listActiveCoreMembers(request) : [];
@@ -226,7 +242,15 @@ export async function loadPlanningData(
     });
     if (item) (hasSpots(item) ? items : listOnlyItems).push(item);
   }
+  const applicationInfo: Record<string, PlanningApplicationInfo> = {};
   for (const a of applications) {
+    applicationInfo[a.id] = {
+      title: a.title,
+      iconEmoji: a.iconEmoji,
+      stage: a.stage,
+      partnerName: a.partnerOrg?.name ?? null,
+      note: toPlanningNoteView(a.planningNote),
+    };
     const spotsByDomain: Record<string, number> = {};
     for (const d of a.domains) if (d.expectedMembers > 0) addSpots(spotsByDomain, d.domainId, d.expectedMembers);
     const item: PlanningItem = {
@@ -268,7 +292,7 @@ export async function loadPlanningData(
     termId: term.id,
     items,
     listOnlyItems,
-    domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
+    domains: domains.filter((d) => !d.isSystem).map((d) => ({ id: d.id, name: d.displayName })),
     spotDomains: domains.filter((d) => d.active && !d.isSystem).map((d) => ({ id: d.id, name: d.displayName })),
     returning,
     replied,
@@ -281,6 +305,7 @@ export async function loadPlanningData(
       replied,
     }),
     projectInfo,
+    applicationInfo,
     coreMembers,
   };
 }

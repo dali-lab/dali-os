@@ -51,6 +51,7 @@ import { AiBar } from "./ai/AiBar";
 import { AiCardHost } from "./ai/AiCardHost";
 import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
+import { DaliThread } from "./comments/DaliThread";
 import { CommentComposer } from "./comments/CommentComposer";
 import { CommentEditorProvider, commentEditorSchema } from "./comments/CommentEditor";
 import { BlockNoteView } from "@blocknote/shadcn";
@@ -67,10 +68,11 @@ import { createFindReplacePlugin } from "./find";
 import { docPasteHandler } from "./paste-embed";
 import { PasteAsMenu } from "./PasteAsMenu";
 import { keepCollabUndoAlive } from "./collab-undo";
+import { createAgentTouchPlugin } from "./agent-touch";
+import { resolveFragment, undoOptions } from "./collab-binding";
 import { createSelectAllPlugin } from "./select-all";
 import { createTableDragSelectPlugin } from "./table-drag-select";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
-import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { PageMentionTitleProvider, useMentionMenuItems } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
 import { TaskComposer } from "./task/TaskComposer";
@@ -163,6 +165,13 @@ function CollabDocInner(
   const toast = useToast();
   const uploadFile = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   const threadStore = useThreadStore(props.comments);
+  const hostUndo = undoOptions(props);
+  const extensions = [
+    ...(threadStore
+      ? [CommentsExtension({ schema: commentEditorSchema, threadStore, resolveUsers: makeResolveDocUsers(threadStore) })]
+      : []),
+    ...(hostUndo.extensions as never[]),
+  ];
 
   const editor = useCreateBlockNote(
     // withCollaboration injects the CollaborationExtension (ySync + yCursor +
@@ -180,19 +189,10 @@ function CollabDocInner(
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
       // Wire CommentsExtension when a threadStore is available. Extensions are
       // passed through withCollaboration unchanged (see dist/yjs.js).
-      ...(threadStore
-        ? {
-            extensions: [
-              CommentsExtension({
-                schema: commentEditorSchema,
-                threadStore,
-                resolveUsers: makeResolveDocUsers(threadStore),
-              }),
-            ],
-          }
-        : {}),
+      ...(extensions.length > 0 ? { extensions } : {}),
+      ...(hostUndo.disableExtensions ? { disableExtensions: hostUndo.disableExtensions } : {}),
       collaboration: {
-        fragment: entry.ydoc.getXmlFragment(BLOCKNOTE_FRAGMENT),
+        fragment: resolveFragment(entry.ydoc, props),
         // Awareness color must be 6-digit hex (y-prosemirror appends a hex
         // alpha suffix); extra keys like userId ride along for presence.
         user: {
@@ -212,10 +212,20 @@ function CollabDocInner(
     // threadStore is stable per (pageId, userId) via useThreadStore; adding it
     // here is safe and ensures the editor is re-created if comments config
     // changes (e.g. canEdit toggle).
-    [schema, dictionary, entry, threadStore],
+    [schema, dictionary, entry, threadStore, props.fragment, props.undoExtension],
   );
 
-  useMemo(() => keepCollabUndoAlive(editor), [editor]);
+  useMemo(() => (props.undoExtension ? undefined : keepCollabUndoAlive(editor)), [editor, props.undoExtension]);
+
+  useEffect(() => {
+    const awareness = entry.provider.awareness;
+    if (!awareness) return;
+    const key = "dali-agent-touch-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createAgentTouchPlugin(awareness)] });
+    return () => {
+      editor.unregisterExtension(key);
+    };
+  }, [editor, entry]);
 
   // One-shot seed: if the caller supplied seedContent (e.g. the latest agreement
   // version body) and the Y.Doc is empty after the server syncs, write the seed
@@ -230,7 +240,7 @@ function CollabDocInner(
 
     const tryApply = () => {
       if (seedApplied.current) return;
-      const fragment = entry.ydoc.getXmlFragment(BLOCKNOTE_FRAGMENT);
+      const fragment = resolveFragment(entry.ydoc, props);
       // Only seed when the room is truly empty — either new (no server row) or
       // the server returned an empty document.
       if (fragment.length > 0) {
@@ -277,9 +287,10 @@ function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStor
       currentUserId: comments.currentUserId,
       canComment: comments.canComment,
       canModerate: comments.canModerate,
+      scope: comments.scope,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate]);
+  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate, comments?.scope?.slideId, comments?.scope?.elementId]);
 }
 
 /**
@@ -724,6 +735,7 @@ function DocView(
             the reply box receives focus when the popover opens. */}
         {hasComments && !railVisible && (
           <FloatingThreadController
+            floatingThread={DaliThread}
             portalElement={floatingRootRef.current ?? undefined}
             floatingUIOptions={{ focusManagerProps: { disabled: false } }}
           />
@@ -902,7 +914,7 @@ function useDocSchema(features: Features) {
     () => buildSchema(features),
     // Individual flags, not the object: hosts typically pass a fresh literal
     // every render and a schema rebuild recreates the whole editor.
-    [features.mentions, features.images, features.files, features.richBlocks, features.columns, features.components, features.pageBreak, Boolean(features.signing)],
+    [features.mentions, features.images, features.files, features.richBlocks, features.tables, features.columns, features.components, features.pageBreak, Boolean(features.signing)],
   );
 }
 

@@ -102,8 +102,8 @@ describe("admin.site-users loader", () => {
 
     expect(count).toHaveBeenCalledTimes(SITE_USER_KINDS.length);
     const where = count.mock.calls[0][0]!.where as any;
-    expect(where.AND[0].OR).toContainEqual({ firstName: { contains: "ada", mode: "insensitive" } });
-    expect(where.AND[0].OR).toContainEqual({ netId: { contains: "ada", mode: "insensitive" } });
+    expect(where.AND[0].AND[0].OR).toContainEqual({ firstName: { contains: "ada", mode: "insensitive" } });
+    expect(where.AND[0].AND[0].OR).toContainEqual({ netId: { contains: "ada", mode: "insensitive" } });
     expect(where.AND[1]).toEqual(kindWhere("Member"));
 
     expect(findMany.mock.calls[0][0]!.where).toEqual(where.AND[0]);

@@ -6,6 +6,7 @@ import {
   areasFor,
   activeSubtabHref,
   hasSubnavRow,
+  iconForHref,
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
@@ -419,7 +420,7 @@ describe("Community area", () => {
     ]);
   });
 
-  it("owns its four pages, with Connect as its hub and Blogs opening Resources", () => {
+  it("owns its four pages, with Connect as its hub and Stories opening Resources", () => {
     expect(community().hubPath).toBe("/connect");
     expect(visibleSubtabs(community(), NOBODY).map((t) => t.href)).toEqual([
       "/connect",
@@ -427,7 +428,7 @@ describe("Community area", () => {
       "/community/gallery",
       "/resources",
     ]);
-    expect(community().subtabs.find((t) => t.href === "/resources")?.label).toBe("Blogs");
+    expect(community().subtabs.find((t) => t.href === "/resources")?.label).toBe("Stories");
   });
 
   it("moves Connect out of Lab", () => {
@@ -435,7 +436,7 @@ describe("Community area", () => {
     expect(areaForPath("/connect", COMMUNITY)?.key).toBe("community");
   });
 
-  it("owns and highlights its pages, including the blog post pages under Blogs", () => {
+  it("owns and highlights its pages, including the story pages under Stories", () => {
     expect(areaForPath("/community/gallery", COMMUNITY)?.key).toBe("community");
     expect(areaForPath("/resources", COMMUNITY)?.key).toBe("community");
     expect(areaForPath("/resources/blog/abc", COMMUNITY)?.key).toBe("community");
@@ -650,5 +651,44 @@ describe("shellPageIcon", () => {
   it("does not match a path that only shares a prefix", () => {
     expect(shellPageIcon("/drivers", "/")).toBeUndefined();
     expect(shellPageIcon("/emails", "/")).toBeUndefined();
+  });
+});
+
+describe("core-taskboard flag", () => {
+  const coreHrefs = (flags: object) =>
+    visibleSubtabs(visibleAreas(CORE, flags).find((a) => a.key === "core")!, CORE).map((t) => t.href);
+
+  it("puts Taskboard first in the Core area while the flag is on", () => {
+    expect(coreHrefs({ "core-taskboard": true })[0]).toBe("/core");
+  });
+
+  it("puts Milestones right after Taskboard while the flag is on", () => {
+    expect(coreHrefs({ "core-taskboard": true }).slice(0, 2)).toEqual(["/core", "/core/milestones"]);
+  });
+
+  it("hides Taskboard and Milestones while the flag is off", () => {
+    expect(coreHrefs({})).not.toContain("/core/milestones");
+    expect(coreHrefs({})).not.toContain("/core");
+    expect(coreHrefs({})[0]).toBe("/core/staffing");
+  });
+
+  it("resolves the Milestones path and icon without flag context, for favorites", () => {
+    expect(isAreaSubtabPath("/core/milestones")).toBe(true);
+    expect(iconForHref("/core/milestones")).not.toBeNull();
+  });
+});
+
+describe("LayoutOS nav flags", () => {
+  it("passes every flag the nav reads to the sidebar", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+    const navSource = read("../nav-areas.ts");
+    const layoutSource = read("../../components/LayoutOS.tsx");
+    const navFlags = layoutSource.slice(layoutSource.indexOf("const navFlags = {"));
+    const navFlagBlock = navFlags.slice(0, navFlags.indexOf("}"));
+    const readByNav = new Set([...navSource.matchAll(/flags(?:\.([a-z]+)|\["([a-z-]+)"\])/g)].map((m) => m[1] ?? m[2]));
+    expect(readByNav.size).toBeGreaterThan(0);
+    for (const key of readByNav) expect(navFlagBlock, key).toContain(`useFeatureFlag('${key}')`);
   });
 });

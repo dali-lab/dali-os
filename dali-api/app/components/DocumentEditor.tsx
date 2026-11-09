@@ -20,6 +20,8 @@ import { PresenceBar } from "./collab/PresenceBar";
 import { FIND_SHORTCUT, isFindShortcut, isVersionHistoryShortcut, VERSION_HISTORY_SHORTCUT } from "~/lib/shortcuts";
 import { VersionHistoryPanel } from "./collab/VersionHistoryPanel";
 import { TagPicker, canManageDocTags, type DocTag } from "./TagPicker";
+import { PageBarTitle } from "~/components/shell/page-bar-slot";
+import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { PageBarMenuItems, PageBarPortal, SHELL_HEADER_VAR, pageBarTextButton, usePageBarSlot } from "~/components/shell/page-bar-slot";
 import { useTaskProjects } from "~/components/doc/task/task-api";
 import { taskBlockConfig } from "~/components/doc/task/task-composer-state";
@@ -115,6 +117,7 @@ export function DocumentEditor({
   workspaceId = null,
   onEditorReady,
   topBarActions,
+  meetingStrip,
   meetingNoteTemplateAction = null,
   rail,
   belowTabs,
@@ -163,9 +166,8 @@ export function DocumentEditor({
   // Hands the live editor to the host page, for surfaces outside the editor
   // that write into the doc (meeting recording).
   onEditorReady?: (editor: DocEditorInstance) => void;
-  // Host controls for the top bar's action row (a meeting note's Attendance
-  // and Record buttons), placed ahead of Share.
   topBarActions?: ReactNode;
+  meetingStrip?: ReactNode;
   // When this page is a template page and the viewer may bind it, the ⋯ menu
   // offers the matching meeting-note-template action (specs/meeting-notes-model.md
   // §1). Null/undefined = viewer has neither right, so the action is hidden.
@@ -551,31 +553,37 @@ export function DocumentEditor({
     pendingTitleRef.current = text;
     setLocallyEdited(true);
     if (titleTimer.current) clearTimeout(titleTimer.current);
-    titleTimer.current = setTimeout(async () => {
+    titleTimer.current = setTimeout(() => {
       const trimmed = pendingTitleRef.current.trim();
-      if (!trimmed) return;
-      setSavingTitle(true);
-      try {
-        await fetch(`/api/documents/${pageId}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: trimmed }),
-        });
-        // Refresh the tab title elsewhere on the page.
-        revalidator.revalidate();
-        // Tell the page around this editor (a project hub with the doc in its
-        // side panel). At the top level window.parent is this window.
-        if (typeof window !== "undefined") {
-          window.parent.postMessage(
-            { type: "dali:documentTitleChanged", pageId, title: trimmed },
-            window.location.origin,
-          );
-        }
-      } finally {
-        setSavingTitle(false);
-      }
+      if (trimmed) void persistTitle(trimmed);
     }, 800);
+  }
+
+  async function persistTitle(trimmed: string) {
+    setSavingTitle(true);
+    try {
+      await fetch(`/api/documents/${pageId}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: trimmed }),
+      });
+      revalidator.revalidate();
+      if (typeof window !== "undefined") {
+        window.parent.postMessage(
+          { type: "dali:documentTitleChanged", pageId, title: trimmed },
+          window.location.origin,
+        );
+      }
+    } finally {
+      setSavingTitle(false);
+    }
+  }
+
+  function renameFromCrumb(name: string) {
+    pendingTitleRef.current = name;
+    if (titleRef.current) titleRef.current.textContent = name;
+    return persistTitle(name);
   }
 
   // FIX 5: Set the h1 DOM text once on mount and when pageId changes (cross-tab
@@ -693,7 +701,7 @@ export function DocumentEditor({
   const overflowRows = (
     <>
       {docked && headings.length > 0 && row("contents", <List className={smallIcon} />, "Contents", () => setTocOpen(true))}
-      {docked && hasComments && row(
+      {inPanel && hasComments && row(
         "comments",
         <MessageSquare className={smallIcon} />,
         commentsOpen ? "Hide comments" : "Show comments",
@@ -857,33 +865,54 @@ export function DocumentEditor({
     </>
   );
 
-  const shareButton = canManageAccess && (
+  const shareButton = canManageAccess && (inPageBar ? <PageBarShareButton onClick={() => setAccessOpen(true)} /> : (
     <button
       type="button"
       onClick={() => setAccessOpen(true)}
       aria-label="Share"
-      className={inPageBar ? "os-edit-btn os-edit-btn--strong h-8" : actionBtn()}
+      className={actionBtn()}
     >
       <Users className={actionIcon} />
       <span className="hidden sm:inline">Share</span>
     </button>
+  ));
+
+  const commentsToggle = hasComments && (
+    <Tooltip content={commentsOpen ? "Hide comments" : "Show comments"}>
+      <button
+        type="button"
+        onClick={() => setCommentsOpen((o) => !o)}
+        aria-pressed={commentsOpen}
+        aria-label={commentsOpen ? "Hide comments" : "Show comments"}
+        className={actionBtn(commentsOpen)}
+      >
+        <MessageSquare className={actionIcon} />
+      </button>
+    </Tooltip>
   );
 
-  // In the page-bar shell the breadcrumb row keeps only the lightweight status
-  // (sync + presence); the document's own actions (Attendance, Record, Share)
-  // render in their own row above the paper instead — see pageActionRow.
-  const topBar = docked ? (
-    <div
-      ref={topBarRef}
-      className={cn(
-        "flex items-center gap-1 text-[13px]",
-        inPanel ? "justify-end text-os-grey" : "text-os-muted",
-      )}
-    >
+  const topBar = inPageBar ? (
+    <>
+      <PageBarPortal slot="status">
+        <div className="flex items-center gap-1 text-[13px] text-os-muted">{statusNodes}</div>
+      </PageBarPortal>
+      <PageBarPortal slot="presence">
+        <PresenceBar />
+      </PageBarPortal>
+      <PageBarPortal slot="actions">
+        <div ref={topBarRef} className="flex items-center gap-1 text-[13px] text-os-muted">
+          {commentsToggle}
+          {topBarActions}
+          {shareButton}
+        </div>
+      </PageBarPortal>
+    </>
+  ) : inPanel ? (
+    <div ref={topBarRef} className="flex items-center justify-end gap-1 text-[13px] text-os-grey">
       {statusNodes}
       <PresenceBar />
-      {inPanel && topBarActions}
-      {inPanel && shareButton}
+      {topBarActions}
+      {shareButton}
     </div>
   ) : (
     <div ref={topBarRef} className={cn("doc-topbar flex items-center gap-2 py-2", bodyText)}>
@@ -892,19 +921,7 @@ export function DocumentEditor({
       <PresenceBar />
       <DocToc headings={headings} onJump={jumpToHeading} />
 
-      {hasComments && (
-        <Tooltip content={commentsOpen ? "Hide comments" : "Show comments"}>
-          <button
-            type="button"
-            onClick={() => setCommentsOpen((o) => !o)}
-            aria-pressed={commentsOpen}
-            aria-label={commentsOpen ? "Hide comments" : "Show comments"}
-            className={actionBtn(commentsOpen)}
-          >
-            <MessageSquare className={actionIcon} />
-          </button>
-        </Tooltip>
-      )}
+      {commentsToggle}
 
       {topBarActions}
 
@@ -1180,7 +1197,7 @@ export function DocumentEditor({
                   pageId,
                   currentUserId,
                   canComment,
-                  canModerate: canEdit,
+                  canModerate: isCore,
                   panelOpen: false,
                   panelTargetId: "doc-comments-dropdown",
                   railVisible,
@@ -1288,31 +1305,19 @@ export function DocumentEditor({
     </Drawer>
   );
 
-  // The document's action row, under the breadcrumb bar and above the paper,
-  // on the same column as the canvas.
-  // No horizontal padding: the inner column mirrors the canvas (same
-  // max-width, centered), so the row's last button ends flush with the
-  // paper's right edge.
-  const pageActionRow = inPageBar && (topBarActions || shareButton) && (
-    <div data-testid="doc-action-row" className="flex justify-center bg-page pt-3">
-      <div
-        className={cn(
-          "flex w-full items-center justify-end gap-1 text-[13px] text-os-muted",
-          !typo.fullWidth && "max-w-[1400px]",
-        )}
-      >
-        {shareButton}
-        {topBarActions}
-      </div>
-    </div>
-  );
-
   const body = (
     <div ref={docSurfaceRef} className="doc-surface flex flex-col min-h-screen">
-      {docked ? <PageBarPortal slot="actions">{topBar}</PageBarPortal> : topBar}
+      {inPageBar && (
+        <PageBarTitle
+          title={initialTitle}
+          onRename={canEdit ? renameFromCrumb : undefined}
+          emoji={iconEmoji}
+        />
+      )}
+      {inPageBar && meetingStrip}
+      {inPanel ? <PageBarPortal slot="actions">{topBar}</PageBarPortal> : topBar}
       {docked && <PageBarMenuItems>{overflowRows}</PageBarMenuItems>}
       {tocDialog}
-      {pageActionRow}
       {canvas}
       {inlineComments}
       {recordingDrawer}

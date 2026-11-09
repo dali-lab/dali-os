@@ -51,7 +51,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { id: true },
     });
     if (partnerContact) {
-      return redirect("/partner");
+      return redirect(next?.startsWith("/partner") ? next : "/partner");
     }
     return redirect("/portal");
   }

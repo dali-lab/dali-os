@@ -19,12 +19,12 @@ export function menuEntries(
   const entries: MenuEntry[] = ["open"];
   if (item.type === "file") entries.push("download");
   if ((isPage || item.type === "form") && caps.favorite) entries.push("favorite");
-  if ((isPage || item.type === "form") && caps.share) entries.push("share");
+  if ((isPage || item.type === "form" || item.type === "file") && caps.share) entries.push("share");
   if ((item.type === "doc" || item.type === "file") && caps.partner) entries.push("partner");
   if (!caps.readOnly && (isPage || item.type === "file" || item.type === "form" || item.type === "agreement")) {
     entries.push("rename");
   }
-  if (!caps.readOnly && item.type !== "agreement" && item.type !== "rubric") entries.push("move");
+  if (!caps.readOnly) entries.push("move");
   if (!caps.readOnly && (isPage || item.type === "file" || item.type === "form")) {
     entries.push("delete");
   }

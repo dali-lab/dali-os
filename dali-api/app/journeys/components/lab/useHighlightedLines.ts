@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { codeBlockOptions } from "@blocknote/code-block";
-
-type Highlighter = Awaited<ReturnType<typeof codeBlockOptions.createHighlighter>>;
+import type { CodeHighlighter as Highlighter } from "~/components/doc/schema/code-highlighter";
 
 export interface HighlightToken {
   content: string;
@@ -10,10 +8,8 @@ export interface HighlightToken {
 
 let highlighter: Promise<Highlighter> | null = null;
 
-// The doc editor's Shiki bundle, imported lazily so it stays out of SSR and
-// off pages without a lab. Languages load once each, on first use.
 async function loadHighlighter(lang: string): Promise<Highlighter> {
-  highlighter ??= import("@blocknote/code-block").then((m) => m.codeBlockOptions.createHighlighter());
+  highlighter ??= import("~/components/doc/schema/code-highlighter").then((m) => m.codeBlockOptions.createHighlighter());
   const h = await highlighter;
   if (!h.getLoadedLanguages().includes(lang)) await h.loadLanguage(lang as never);
   return h;

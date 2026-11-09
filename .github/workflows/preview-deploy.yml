@@ -2,11 +2,13 @@ name: PR Preview Deploy
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled]
     branches: [staging]
 
+# Previews are opt-in: add the `preview` label to a PR. Adding any other label
+# gets its own group so it can't cancel a preview mid-deploy.
 concurrency:
-  group: preview-pr-${{ github.event.pull_request.number }}
+  group: preview-pr-${{ github.event.pull_request.number }}${{ github.event.action == 'labeled' && github.event.label.name != 'preview' && format('-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 env:
@@ -18,7 +20,10 @@ env:
 jobs:
   prep-neon-db:
     name: Prepare Neon branch (preview-pr-${{ github.event.pull_request.number }})
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'preview')
     runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       branch_id: ${{ steps.connect.outputs.branch_id }}

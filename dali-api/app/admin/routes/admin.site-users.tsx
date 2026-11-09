@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { userTextWhere } from "~/lib/person-search";
 import { Form, redirect, useLoaderData, useSearchParams, useSubmit } from "react-router";
 import type { Route } from "./+types/admin.site-users";
 import type { Prisma } from "~/generated/prisma/client";
@@ -71,19 +72,16 @@ export function kindWhere(kind: SiteUserKind): Prisma.UserWhereInput {
 
 function searchWhere(q: string): Prisma.UserWhereInput {
   if (!q) return {};
-  const contains = { contains: q, mode: "insensitive" as const };
-  return {
-    OR: [
-      { firstName: contains },
-      { lastName: contains },
-      { name: contains },
-      { daliEmail: contains },
-      { dartmouthEmail: contains },
-      { personalEmail: contains },
-      { email: contains },
-      { netId: contains },
-    ],
-  };
+  return userTextWhere(q, [
+    "firstName",
+    "lastName",
+    "name",
+    "daliEmail",
+    "dartmouthEmail",
+    "personalEmail",
+    "email",
+    "netId",
+  ]);
 }
 
 function parseKind(raw: string | null): SiteUserKind | null {

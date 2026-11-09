@@ -7,7 +7,12 @@ import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { isBirthdayToday } from "~/members/lib/warmth";
 import { timed } from "~/lib/server-timing";
+import { prisma } from "~/lib/db.server";
+import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { fullName } from "~/lib/display";
 import MilestoneHero from "~/components/home/MilestoneHero";
+import { BirthdayBounce, type BirthdayPerson } from "~/components/home/BirthdayBounce";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import {
   isLandingBackgroundId,
@@ -40,9 +45,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Home shows the first few of the viewer's tasks; the full list, with its
   // actions and unread notifications, lives on My Tasks and in the bell panel.
-  const [tasks, week] = await Promise.all([
+  const [tasks, week, birthdays] = await Promise.all([
     timed(request, 'home.tasks', () => loadHomeTasks(auth.user.sub, request)),
     loadCurrentWeek(tz, request),
+    timed(request, 'home.birthdays', () => loadBirthdaysToday()),
   ]);
 
   const __loaderTotal = performance.now() - __loaderStart;
@@ -74,7 +80,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     week,
     user: auth.user,
     tasks,
+    birthdays,
   };
+}
+
+async function loadBirthdaysToday(): Promise<BirthdayPerson[]> {
+  const members = await prisma.user.findMany({
+    where: { ...ACTIVE_LAB_MEMBER_WHERE, birthday: { not: null } },
+    select: { id: true, firstName: true, lastName: true, photoUrl: true, birthday: true },
+  });
+  const now = new Date();
+  return Promise.all(
+    members
+      .filter((m) => isBirthdayToday(m.birthday, now))
+      .map(async (m) => ({
+        id: m.id,
+        name: fullName(m),
+        photoUrl: await resolvePhotoUrl(m.photoUrl),
+      })),
+  );
 }
 
 type HomeTask = { id: string; title: string; detail: string | null; href: string; project: boolean };
@@ -141,7 +165,8 @@ const HOME_TASK_LIMIT = 6;
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, milestoneTitle, background, tasks } = useLoaderData<typeof loader>();
+  const { user, greeting, week, milestoneTitle, background, tasks, birthdays } =
+    useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -162,6 +187,7 @@ export default function Home() {
           media: <TaskCardMedia task={task} />,
         }))}
       />
+      <BirthdayBounce people={birthdays} />
     </div>
   );
 }

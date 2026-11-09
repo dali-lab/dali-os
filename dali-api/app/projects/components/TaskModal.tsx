@@ -42,8 +42,10 @@ import {
   PropRow,
   PROP_CONTROL,
 } from "~/components/ui/modal-fields";
+import { resolveTaskModalFeatures, type TaskModalFeatures } from "./task-modal-features";
 
 const COMMENT_MAX = 10_000;
+
 
 type Patch = Partial<TaskCardModel>;
 
@@ -98,7 +100,9 @@ export function TaskModal({
   defaultStatus,
   onArtifactsChanged,
   onCommentCountChange,
+  features: featureOverrides,
 }: {
+  features?: Partial<TaskModalFeatures>;
   // Present in edit mode; omitted (create mode) opens an empty form.
   task?: TaskCardModel;
   projectId: string;
@@ -134,6 +138,7 @@ export function TaskModal({
   onCommentCountChange?: (count: number) => void;
 }) {
   const dialog = useDialog();
+  const features = resolveTaskModalFeatures(featureOverrides);
   const isCreate = !task;
   // The design opens a detail modal as a record — labels over plain values,
   // no footer — and the pencil turns it into a form. Creating is always a
@@ -1059,6 +1064,7 @@ export function TaskModal({
             <h3 className="os-section-header">Links</h3>
           </>
 
+          {features.epics && (
           <FieldPair>
           <PropRow label="Epic">
             <Select
@@ -1074,7 +1080,9 @@ export function TaskModal({
             />
           </PropRow>
           </FieldPair>
+          )}
 
+          {features.stories && (
           <PropRow label="User story" hint={storyHint}>
             <Tooltip
               variant="rich"
@@ -1101,6 +1109,7 @@ export function TaskModal({
               </span>
             </Tooltip>
           </PropRow>
+          )}
 
           <PropRow label="Blocked by">
             <MultiSelect

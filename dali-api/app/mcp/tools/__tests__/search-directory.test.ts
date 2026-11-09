@@ -81,6 +81,29 @@ describe("search_directory", () => {
     expect(call.where.AND[0].OR).toBeDefined();
   });
 
+  it("matches each word against names, emails, domains, and role titles", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([]);
+    await runSearchDirectory({ query: "Ada Design" });
+    const search = mockPrisma.user.findMany.mock.calls[0][0].where.AND[1];
+    expect(search.AND).toHaveLength(2);
+    expect(search.AND[0].OR).toContainEqual({ firstName: { contains: "ada", mode: "insensitive" } });
+    expect(search.AND[1].OR).toContainEqual({
+      coreAssignments: { some: { leadTitle: { contains: "design", mode: "insensitive" } } },
+    });
+    expect(search.AND[1].OR).toContainEqual({
+      domainEligibilities: {
+        some: {
+          domain: {
+            OR: [
+              { displayName: { contains: "design", mode: "insensitive" } },
+              { code: { contains: "design", mode: "insensitive" } },
+            ],
+          },
+        },
+      },
+    });
+  });
+
   it("drops the current-term filter when includeInactive is set", async () => {
     mockPrisma.user.findMany.mockResolvedValue([]);
     await runSearchDirectory({ query: "x", includeInactive: true });

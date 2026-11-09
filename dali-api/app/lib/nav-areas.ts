@@ -28,6 +28,8 @@ import {
   Images,
   Map as MapIcon,
   Lightbulb,
+  ListTodo,
+  Flag,
   Mail,
   MapPinned,
   Newspaper,
@@ -219,6 +221,8 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 // they'll see it every day; everyone else finds it in the Lab area.
 const ONBOARDING_NAV_ITEM: SubTab = { label: "Journeys", href: "/journeys", icon: MapIcon };
 const REFER_NAV_ITEM: SubTab = { label: "Refer a partner", href: "/refer", icon: Handshake };
+const CORE_TASKBOARD_NAV_ITEM: SubTab = { label: "Taskboard", href: "/core", icon: ListTodo };
+const CORE_MILESTONES_NAV_ITEM: SubTab = { label: "Milestones", href: "/core/milestones", icon: Flag };
 
 const REGROUPED_AREAS: NavArea[] = [
   {
@@ -250,7 +254,7 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Connect", href: "/connect", icon: MapPinned },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Blogs", href: "/resources", icon: Newspaper },
+      { label: "Stories", href: "/resources", icon: Newspaper },
     ],
   },
   {
@@ -273,6 +277,8 @@ const REGROUPED_AREAS: NavArea[] = [
     description: "Staffing, payroll, processes",
     gate: (r) => r.isCore,
     subtabs: [
+      CORE_TASKBOARD_NAV_ITEM,
+      CORE_MILESTONES_NAV_ITEM,
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Partners", href: "/core/partners", icon: Handshake },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
@@ -368,8 +374,12 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   if (flags.community) hidden.add("/connect");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
+  if (!flags["core-taskboard"]) {
+    hidden.add(CORE_TASKBOARD_NAV_ITEM.href);
+    hidden.add(CORE_MILESTONES_NAV_ITEM.href);
+  }
   return REGROUPED_AREAS.filter((a) => flags.community || a.key !== "community").map((a) =>
-    a.key === "projects" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
+    a.key === "projects" || a.key === "core" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
   );
 }
 
@@ -403,7 +413,7 @@ const ALUMNI_AREAS: NavArea[] = [
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Blogs", href: "/resources", icon: Newspaper },
+      { label: "Stories", href: "/resources", icon: Newspaper },
       REFER_NAV_ITEM,
     ],
   },
@@ -441,7 +451,7 @@ export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/ro
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor({ community: true, "onboarding-journeys": true, "refer-a-partner": true }),
+  ...areasFor({ community: true, "onboarding-journeys": true, "refer-a-partner": true, "core-taskboard": true }),
 ];
 
 // These matchers are handed a live URL, not a bare pathname: the sidebar

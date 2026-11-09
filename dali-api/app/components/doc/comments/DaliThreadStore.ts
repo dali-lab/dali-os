@@ -31,7 +31,10 @@ import {
   type CommentBody,
   type CommentReactionData,
 } from "@blocknote/core/comments";
+import type { CommentMeta, CommentReactionInfo } from "./comment-reactions";
 import type { BodySegment } from "~/lib/comment-body";
+import { anchorElementId, anchorSlideId, type SlideScope } from "~/lib/slide-comments";
+import { subscribeCommentNudges } from "./comment-nudges";
 
 // Marker stored in DocComment.anchor to distinguish inline BlockNote threads
 // from legacy Yjs-position anchors and doc-level threads.
@@ -43,6 +46,8 @@ interface ApiReaction {
   userId: string;
   emoji: string;
   createdAt: string;
+  name?: string;
+  imageUrl?: string | null;
 }
 
 interface ApiComment {
@@ -52,7 +57,7 @@ interface ApiComment {
   authorId: string;
   authorPhotoUrl?: string | null;
   body: string; // JSON-stringified CommentBody OR plain text for legacy rows
-  anchor: { kind?: string; from?: string; to?: string } | null;
+  anchor: { kind?: string; from?: string; to?: string; slideId?: string; elementId?: string } | null;
   createdAt: string;
   reactions?: ApiReaction[];
 }
@@ -201,6 +206,16 @@ export function groupReactions(rows: ApiReaction[]): CommentReactionData[] {
   }));
 }
 
+function reactionInfo(rows: ApiReaction[]): Record<string, CommentReactionInfo> {
+  const info: Record<string, CommentReactionInfo> = {};
+  for (const r of rows) {
+    const entry = (info[r.emoji] ??= { names: {} });
+    if (r.name) entry.names[r.userId] = r.name;
+    if (r.imageUrl !== undefined) entry.imageUrl = r.imageUrl;
+  }
+  return info;
+}
+
 function toCommentData(c: ApiComment): CommentData {
   return {
     type: "comment",
@@ -209,7 +224,11 @@ function toCommentData(c: ApiComment): CommentData {
     createdAt: new Date(c.createdAt),
     updatedAt: new Date(c.createdAt), // DocComment has no updatedAt; createdAt is the best proxy
     reactions: groupReactions(c.reactions ?? []),
-    metadata: { author: c.author, authorPhotoUrl: c.authorPhotoUrl ?? null },
+    metadata: {
+      author: c.author,
+      authorPhotoUrl: c.authorPhotoUrl ?? null,
+      reactionInfo: reactionInfo(c.reactions ?? []),
+    } satisfies CommentMeta,
     body: deserializeBody(c.body),
   };
 }
@@ -219,11 +238,14 @@ function toCommentData(c: ApiComment): CommentData {
  * doc-level and legacy Yjs-anchor threads stay in the CommentsRail. */
 export function apiCommentsToThreadMap(
   comments: ApiComment[],
+  scope?: SlideScope,
 ): Map<string, ThreadData> {
   const roots = comments.filter(
     (c) =>
       c.parentId === null &&
-      (c.anchor as { kind?: string } | null)?.kind === "blocknote",
+      (c.anchor as { kind?: string } | null)?.kind === "blocknote" &&
+      anchorSlideId(c.anchor) === (scope?.slideId ?? null) &&
+      anchorElementId(c.anchor) === (scope?.elementId ?? null),
   );
   const repliesByRoot = new Map<string, ApiComment[]>();
   for (const c of comments) {
@@ -264,10 +286,15 @@ export function apiCommentsToThreadMap(
 
 export class DaliThreadStoreAuth extends ThreadStoreAuth {
   constructor(
-    private readonly userId: string,
-    private readonly role: "comment" | "editor",
+    private userId: string,
+    private role: "comment" | "editor",
   ) {
     super();
+  }
+
+  setViewer(userId: string, role: "comment" | "editor") {
+    this.userId = userId;
+    this.role = role;
   }
 
   canCreateThread(): boolean { return true; }
@@ -305,6 +332,8 @@ export interface DaliThreadStoreConfig {
   currentUserId: string;
   /** Polling interval in ms. 0 = off. Default: off when EventSource exists, 30 000 otherwise. */
   pollIntervalMs?: number;
+  /** A slide text box: the store lists and writes only threads anchored to it. */
+  scope?: SlideScope;
 }
 
 const FALLBACK_POLL_MS = 30_000;
@@ -313,6 +342,8 @@ const REOPEN_MAX_MS = 300_000;
 
 export class DaliThreadStore extends ThreadStore {
   private readonly pageId: string;
+  private readonly scope: SlideScope | undefined;
+  private unsubscribeNudges: (() => void) | null = null;
   private readonly pollIntervalMs: number | undefined;
   private threads: Map<string, ThreadData> = new Map();
   private listeners: Set<(threads: Map<string, ThreadData>) => void> = new Set();
@@ -328,15 +359,22 @@ export class DaliThreadStore extends ThreadStore {
   // a single refetch 300ms after the last nudge.
   private nudgeTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private readonly viewer: DaliThreadStoreAuth;
+  viewerId: string;
+
   constructor(config: DaliThreadStoreConfig) {
-    super(
-      new DaliThreadStoreAuth(
-        config.currentUserId,
-        config.canModerate ? "editor" : "comment",
-      ),
-    );
+    const viewer = new DaliThreadStoreAuth(config.currentUserId, config.canModerate ? "editor" : "comment");
+    super(viewer);
+    this.viewer = viewer;
+    this.viewerId = config.currentUserId;
     this.pageId = config.pageId;
+    this.scope = config.scope;
     this.pollIntervalMs = config.pollIntervalMs;
+  }
+
+  setViewer(currentUserId: string, canModerate: boolean) {
+    this.viewerId = currentUserId;
+    this.viewer.setViewer(currentUserId, canModerate ? "editor" : "comment");
   }
 
   // ── Read interface ──────────────────────────────────────────────────────
@@ -397,6 +435,16 @@ export class DaliThreadStore extends ThreadStore {
     // Browser-only: EventSource is not available in SSR / server-side Prisma
     // import paths. The full-stack SSR app may import this module server-side.
     if (typeof EventSource === "undefined") return;
+    if (this.scope) {
+      this.unsubscribeNudges = subscribeCommentNudges(this.pageId, () => {
+        if (this.nudgeTimer !== null) clearTimeout(this.nudgeTimer);
+        this.nudgeTimer = setTimeout(() => {
+          this.nudgeTimer = null;
+          void this.refetch();
+        }, 300);
+      });
+      return;
+    }
     const url = `/api/comments/${encodeURIComponent(this.pageId)}/stream`;
     const es = new EventSource(url, { withCredentials: true });
     this.eventSource = es;
@@ -440,6 +488,8 @@ export class DaliThreadStore extends ThreadStore {
   }
 
   private closeStream(): void {
+    this.unsubscribeNudges?.();
+    this.unsubscribeNudges = null;
     if (this.reopenTimer !== null) {
       clearTimeout(this.reopenTimer);
       this.reopenTimer = null;
@@ -453,6 +503,10 @@ export class DaliThreadStore extends ThreadStore {
   /** Last fetch error, mapped to user-friendly language. Null if none. */
   getError(): string | null {
     return this.fetchError;
+  }
+
+  private threadAnchor(): object {
+    return this.scope ? { ...BLOCKNOTE_ANCHOR, slideId: this.scope.slideId, elementId: this.scope.elementId } : BLOCKNOTE_ANCHOR;
   }
 
   // ── Write interface ─────────────────────────────────────────────────────
@@ -497,7 +551,7 @@ export class DaliThreadStore extends ThreadStore {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: "set-anchor", anchor: BLOCKNOTE_ANCHOR }),
+      body: JSON.stringify({ intent: "set-anchor", anchor: this.threadAnchor() }),
     });
     await this.refetch();
   }
@@ -518,8 +572,9 @@ export class DaliThreadStore extends ThreadStore {
         body: bodyText,
         bodyJson,
         parentId: null,
-        // anchor is set by addThreadToDocument after the mark is placed
-        anchor: null,
+        // Unscoped: set by addThreadToDocument after the mark is placed.
+        // Scoped: sent now so the first notification already knows its slide.
+        anchor: this.scope ? this.threadAnchor() : null,
       }),
     });
     if (!res.ok) throw new Error(`createThread failed: ${res.status}`);
@@ -698,7 +753,7 @@ export class DaliThreadStore extends ThreadStore {
       }
       this.fetchError = null;
       const { comments } = (await res.json()) as { comments: ApiComment[] };
-      this.threads = apiCommentsToThreadMap(comments);
+      this.threads = apiCommentsToThreadMap(comments, this.scope);
       for (const cb of this.listeners) {
         cb(this.threads);
       }
@@ -722,25 +777,25 @@ export class DaliThreadStore extends ThreadStore {
 
 const _storeRegistry = new Map<string, DaliThreadStore>();
 
-/**
- * Return the shared DaliThreadStore for `pageId`, creating it with the given
- * config on first call.  Subsequent calls for the same pageId return the cached
- * instance regardless of the config argument (the first caller wins).
- */
+/** The shared DaliThreadStore for `pageId`; a call with a config sets the viewer on it. */
 export function getOrCreateStore(
   pageId: string,
   config?: Omit<DaliThreadStoreConfig, "pageId">,
 ): DaliThreadStore {
-  let store = _storeRegistry.get(pageId);
+  const key = config?.scope ? `${pageId}#${config.scope.slideId}#${config.scope.elementId}` : pageId;
+  let store = _storeRegistry.get(key);
   if (!store) {
     store = new DaliThreadStore({
       pageId,
+      scope: config?.scope,
       currentUserId: config?.currentUserId ?? "",
       canComment: config?.canComment ?? false,
       canModerate: config?.canModerate ?? false,
       pollIntervalMs: config?.pollIntervalMs,
     });
-    _storeRegistry.set(pageId, store);
+    _storeRegistry.set(key, store);
+  } else if (config) {
+    store.setViewer(config.currentUserId, config.canModerate);
   }
   return store;
 }

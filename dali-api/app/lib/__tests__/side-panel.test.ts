@@ -5,6 +5,7 @@ import {
   resolvePanelLoad,
   sidePanelForUrl,
   sidePanelHref,
+  tabUrlWithSidePanel,
   visibleSidePanel,
   withSidePanel,
 } from "~/lib/side-panel";
@@ -94,6 +95,16 @@ describe("resolvePanelLoad", () => {
   });
 });
 
+describe("tabUrlWithSidePanel", () => {
+  it("records a tab's document panel", () => {
+    expect(tabUrlWithSidePanel("/projects/1", { type: "doc", id: "abc" })).toBe("/projects/1?side=doc%3Aabc");
+  });
+
+  it("never records Ask, which follows the window", () => {
+    expect(tabUrlWithSidePanel("/projects/1", { type: "ask", id: "dali" })).toBe("/projects/1");
+  });
+});
+
 describe("withSidePanel", () => {
   const panel = { type: "doc", id: "abc" } as const;
 
@@ -109,13 +120,14 @@ describe("withSidePanel", () => {
 
 describe("visibleSidePanel", () => {
   const page = (over = {}) => ({ pathname: "/projects/1", search: "", ...over });
+  const kept = (panel: string, at: string | null = null) => ({ panel, at });
 
   it("shows the panel the url names over the kept one", () => {
-    expect(visibleSidePanel(page({ search: "?side=doc:url" }), "doc:kept")?.id).toBe("url");
+    expect(visibleSidePanel(page({ search: "?side=doc:url" }), kept("doc:kept"))?.id).toBe("url");
   });
 
   it("carries the kept panel to a url that doesn't name one", () => {
-    expect(visibleSidePanel(page(), "doc:kept")?.id).toBe("kept");
+    expect(visibleSidePanel(page(), kept("doc:kept"))?.id).toBe("kept");
   });
 
   it("shows nothing with neither", () => {
@@ -123,19 +135,33 @@ describe("visibleSidePanel", () => {
   });
 
   it("drops the kept panel on a move to another tab", () => {
-    expect(visibleSidePanel(page({ state: { tabSwitch: true } }), "doc:kept")).toBeNull();
+    expect(visibleSidePanel(page({ state: { tabSwitch: true } }), kept("doc:kept"))).toBeNull();
+  });
+
+  it("shows a panel opened after arriving on another tab", () => {
+    const arrived = page({ key: "b", state: { tabSwitch: true } });
+    expect(visibleSidePanel(arrived, kept("doc:new", "b"))?.id).toBe("new");
+    expect(visibleSidePanel(arrived, kept("doc:old", "a"))).toBeNull();
+  });
+
+  it("keeps Ask open on a move to another tab", () => {
+    expect(visibleSidePanel(page({ state: { tabSwitch: true } }), kept("ask:dali"))?.type).toBe("ask");
+  });
+
+  it("doesn't reopen Ask from a tab's own url after it was closed", () => {
+    expect(visibleSidePanel(page({ search: "?side=ask:dali", state: { tabSwitch: true } }), null)).toBeNull();
   });
 
   it("keeps it when stepping back inside the same tab", () => {
-    expect(visibleSidePanel(page({ state: { tabSwitch: true, keepPanel: true } }), "doc:kept")?.id).toBe("kept");
+    expect(visibleSidePanel(page({ state: { tabSwitch: true, keepPanel: true } }), kept("doc:kept"))?.id).toBe("kept");
   });
 
   it("still shows the panel a tab's own url names after a tab move", () => {
-    expect(visibleSidePanel(page({ search: "?side=doc:tab", state: { tabSwitch: true } }), "doc:kept")?.id).toBe("tab");
+    expect(visibleSidePanel(page({ search: "?side=doc:tab", state: { tabSwitch: true } }), kept("doc:kept"))?.id).toBe("tab");
   });
 
   it("hides the panel when the page itself is that document", () => {
-    expect(visibleSidePanel(page({ pathname: "/documents/kept" }), "doc:kept")).toBeNull();
+    expect(visibleSidePanel(page({ pathname: "/documents/kept" }), kept("doc:kept"))).toBeNull();
     expect(visibleSidePanel(page({ pathname: "/documents/abc", search: "?side=doc:abc" }), null)).toBeNull();
   });
 });

@@ -336,6 +336,58 @@ describe("authorizeCollabDoc", () => {
     });
   });
 
+  describe("slide decks (slides:{pageId}:deck)", () => {
+    const row = (storage: string | null, over: Record<string, unknown> = {}) => ({
+      id: "d1",
+      kind: "Slides",
+      parentPageId: null,
+      scopeKind: null,
+      archivedAt: null,
+      slideDeck: storage ? { storage } : null,
+      ...over,
+    });
+
+    it("lets an editor of a live deck connect read-write", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(row("yjs"));
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
+      expect(await authorizeCollabDoc("user1", "slides:d1:deck")).toEqual({ allowed: true, readOnly: false });
+      expect(mockPrisma.page.findUnique).toHaveBeenCalledWith({
+        where: { id: "d1" },
+        select: expect.objectContaining({ ...PAGE_ACCESS_SELECT, slideDeck: { select: { storage: true } } }),
+      });
+    });
+
+    it("connects a viewer read-only", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(row("yjs"));
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true });
+      expect(await authorizeCollabDoc("user1", "slides:d1:deck")).toEqual({ allowed: true, readOnly: true });
+    });
+
+    it("denies someone with no page access", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(row("yjs"));
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: false, canEdit: false, canComment: false });
+      expect(await authorizeCollabDoc("user1", "slides:d1:deck")).toEqual(denied());
+    });
+
+    it("denies a deck that still uses JSON storage, even for an editor", async () => {
+      mockPrisma.page.findUnique.mockResolvedValue(row("json"));
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
+      expect(await authorizeCollabDoc("user1", "slides:d1:deck")).toEqual(denied());
+    });
+
+    it("denies a page with no deck row, a non-deck page, a trashed deck and a missing page", async () => {
+      vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
+      for (const page of [row(null), row("yjs", { kind: "FreeForm" }), row("yjs", { archivedAt: new Date() }), null]) {
+        mockPrisma.page.findUnique.mockResolvedValue(page);
+        expect(await authorizeCollabDoc("user1", "slides:d1:deck")).toEqual(denied());
+      }
+    });
+
+    it("denies other fields of the slides entity", async () => {
+      expect(await authorizeCollabDoc("user1", "slides:d1:body")).toEqual(denied());
+    });
+  });
+
   describe("partner SOW docs (partnersow:{applicationId}:body)", () => {
     it("rejects when the application is missing", async () => {
       mockPrisma.partnerApplication.findUnique.mockResolvedValue(null);

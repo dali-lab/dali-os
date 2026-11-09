@@ -11,6 +11,7 @@ export interface FormPreviewModalProps {
   description?: unknown;
   confirmationMessage?: unknown;
   questions: Question[];
+  prefill?: Record<string, string>;
   onClose: () => void;
 }
 
@@ -21,6 +22,7 @@ export function FormPreviewModal({
   description,
   confirmationMessage,
   questions,
+  prefill,
   onClose,
 }: FormPreviewModalProps) {
   const headingId = "form-preview-heading";
@@ -61,6 +63,7 @@ export function FormPreviewModal({
                 description,
                 confirmationMessage,
                 questions,
+                prefill,
                 versionId: "",
                 versionUpdatedAt: "",
                 token: "",

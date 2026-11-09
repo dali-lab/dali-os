@@ -11,6 +11,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 // can't stand in for — its own behavior is covered in doc-search.test.ts.
 vi.mock("~/lib/doc-search.server", () => ({ searchPageContent: vi.fn() }));
 vi.mock("~/help/library.server", () => ({ visibleHelpArticles: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/fileAccess.server", () => ({ filterViewableFiles: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   PAGE_ACCESS_SELECT: { id: true, accessMarker: true },
   getPageAccessBulk: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { searchPageContent } from "~/lib/doc-search.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
+import { filterViewableFiles } from "~/lib/fileAccess.server";
 import { visibleHelpArticles } from "~/help/library.server";
 import { parseHelpArticle } from "~/help/article-format";
 import { CATEGORY_RAW_TAKE, runCategorySearch, runSearch, runSearchWithOverflow } from "~/lib/search.server";
@@ -58,6 +60,7 @@ beforeEach(() => {
   mockPageContent.mockResolvedValue([]);
   mockPrisma.task.findMany.mockResolvedValue([]);
   mockPrisma.projectFile.findMany.mockResolvedValue([]);
+  vi.mocked(filterViewableFiles).mockImplementation(async (_u, files) => files);
   mockPrisma.pageDoc.findMany.mockResolvedValue([]);
 });
 
@@ -118,6 +121,20 @@ describe("runSearchWithOverflow", () => {
       results: [],
       categoriesWithMore: [],
     });
+  });
+});
+
+describe("people search", () => {
+  it("finds a member by full name in either order", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([{ ...people(1)[0], lastName: "Lovelace" }]);
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "Lovelace Ada" });
+
+    const where = mockPrisma.user.findMany.mock.calls[0][0].where;
+    expect(where.AND).toHaveLength(2);
+    expect(where.AND[0].OR).toContainEqual({ firstName: { contains: "lovelace", mode: "insensitive" } });
+    expect(where.AND[1].OR).toContainEqual({ lastName: { contains: "ada", mode: "insensitive" } });
+    expect(results.filter((r) => r.type === "person").map((r) => r.title)).toEqual(["Ada Lovelace"]);
   });
 });
 
@@ -287,6 +304,25 @@ describe("runSearch — project files", () => {
       subtitle: "Atlas",
       url: "/documents/file/f1",
       fileCategory: "pdf",
+    });
+  });
+
+  it("drops files the viewer can't open and checks access as the searcher", async () => {
+    mockPrisma.projectFile.findMany.mockResolvedValue([
+      { id: "mine", title: "Query mine", currentVersion: null, project: null },
+      { id: "theirs", title: "Query theirs", currentVersion: null, project: null },
+    ]);
+    vi.mocked(filterViewableFiles).mockImplementation(async (_u, files) =>
+      files.filter((f) => f.id === "mine"),
+    );
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
+
+    expect(filterViewableFiles).toHaveBeenCalledWith("u1", expect.any(Array), undefined);
+    expect(results.filter((r) => r.type === "document").map((r) => r.id)).toEqual(["mine"]);
+    expect(mockPrisma.projectFile.findMany.mock.calls[0][0].select).toMatchObject({
+      linkAccess: true,
+      folderPageId: true,
     });
   });
 

@@ -73,7 +73,7 @@ import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip, isInFloatingLayer } from "~/components/ui/floating";
 import { useSidePanel } from "~/components/side-panel/use-side-panel";
 import { sidePanelForUrl } from "~/lib/side-panel";
-import { ShareDialog } from "~/components/sharing/ShareDialog";
+import { ShareDialog, type ShareTarget } from "~/components/sharing/ShareDialog";
 import { relativeTime } from "~/lib/relative-time";
 import { useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
@@ -103,7 +103,7 @@ import { CORAL_FOLDER, glyphLabel, pickGlyph, type ItemGlyph } from "~/component
 import { droppedFiles } from "~/components/drive/dropped-files";
 import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
-import { EmptyFolder } from "~/components/drive/EmptyFolder";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
 
 function useDriveText() {
@@ -773,7 +773,7 @@ export function DriveBrowser({
   );
 
   // Share dialog state — the item currently targeted for in-place sharing.
-  const [shareTarget, setShareTarget] = useState<{ id: string; title: string; workspaceType: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<ShareTarget | null>(null);
   const sharingChangedRef = useRef(false);
   const revalidator = useRevalidator();
   const toast = useToast();
@@ -837,6 +837,11 @@ export function DriveBrowser({
           }
         : {}),
       onShare: (item: DriveItem) => {
+        if (item.type === "file") {
+          setShareTarget({ kind: "file", id: item.id, title: item.title || "Untitled" });
+          onShareItem?.(item);
+          return;
+        }
         if (item.type !== "doc" && item.type !== "folder" && item.type !== "form") return;
         // workspaceType is not on DriveItem directly; infer from the scope id
         // so the ShareDialog can show the correct audience label (Lab/Project/Member).
@@ -852,7 +857,7 @@ export function DriveBrowser({
               : scope.id === "education"
                 ? "EducationOffering"
                 : "Project";
-        setShareTarget({ id: item.id, title: item.title || "Untitled", workspaceType: wt });
+        setShareTarget({ kind: "page", id: item.id, title: item.title || "Untitled", workspaceType: wt });
         onShareItem?.(item);
       },
     };
@@ -1898,7 +1903,7 @@ export function DriveBrowser({
                           ? "Documents shared with you by name appear here."
                           : sId === FAVORITES_SPACE_KEY
                             ? "Items you favorite appear here."
-                            : <EmptyFolder className="py-6">This folder is empty.</EmptyFolder>
+                            : <EmptyState className="py-6">This folder is empty.</EmptyState>
                       }
                       marquee={marqueeFor(levelIdx)}
                     >
@@ -2065,7 +2070,7 @@ export function DriveBrowser({
     {shareTarget && (
       <ShareDialog
         key={shareTarget.id}
-        page={shareTarget}
+        target={shareTarget}
         open={true}
         onChanged={() => {
           sharingChangedRef.current = true;
@@ -2342,11 +2347,10 @@ function ColumnItemRow({
   onContextMenu?: (e: ReactMouseEvent) => void;
 }) {
   const t = useDriveText();
-  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `col::${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged || !scopeId,
+    disabled: !scopeId,
   });
   // Folders in a column accept drops, the same way the list/grid rows do —
   // dragging into a folder is the gesture this view is shaped around, and
@@ -2803,7 +2807,7 @@ export function ScopeContents({
     return isSharedSpace ? (
       <EmptyLine>Documents shared with you by name appear here.</EmptyLine>
     ) : (
-      <EmptyFolder>This folder is empty. Drop files here to upload.</EmptyFolder>
+      <EmptyState>This folder is empty. Drop files here to upload.</EmptyState>
     );
   }
 
@@ -2955,11 +2959,9 @@ function ListRow({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   const t = useDriveText();
-  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged,
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,
@@ -3022,7 +3024,7 @@ function ListRow({
       </span>
       {scopeId === SHARED_SPACE_KEY && (
         <span className={`${t.meta} text-muted-foreground truncate`}>
-          {item.type === "doc" ? (item.sharedBy?.name ?? "Unknown") : ""}
+          {item.type === "doc" || item.type === "file" ? (item.sharedBy?.name ?? "Unknown") : ""}
         </span>
       )}
       <span className={`${t.meta} text-muted-foreground tabular-nums truncate`}>{relativeTime(item.updatedAt as unknown as string)}</span>
@@ -3070,11 +3072,9 @@ function GridTile({
   onTogglePartnerVisible?: (item: DriveItem, next: boolean) => void;
 }) {
   const t = useDriveText();
-  const isManaged = item.type === "agreement" || item.type === "rubric";
   const drag = useDraggable({
     id: `${scopeId}::${item.id}`,
     data: { item, scopeId },
-    disabled: isManaged,
   });
   const drop = useDroppable({
     id: `${scopeId}::drop::${item.id}`,

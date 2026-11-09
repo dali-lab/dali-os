@@ -2,11 +2,20 @@ name: Test dali-api
 
 on:
   push:
-    branches: [staging, prod]
+    branches: [prod]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    uses: ./.github/workflows/changed-paths.yml
+
   test-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
@@ -34,6 +43,8 @@ jobs:
           retention-days: 7
 
   integration-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
@@ -68,6 +79,8 @@ jobs:
         run: npm run test:integration
 
   e2e-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
@@ -119,6 +132,8 @@ jobs:
           retention-days: 7
 
   test-asr:
+    needs: changes
+    if: needs.changes.outputs.asr == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:

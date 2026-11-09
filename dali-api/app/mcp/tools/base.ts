@@ -26,24 +26,16 @@ import { LIST_TERMS_TOOL, runListTerms } from "./list-terms";
 import { GET_PROJECT_OVERVIEW_TOOL, runGetProjectOverview } from "./get-project-overview";
 import { LIST_MY_TASKS_TOOL, runListMyTasks } from "./list-my-tasks";
 import { GET_TASK_TOOL, runGetTask } from "./get-task";
-import { UPDATE_TASK_STATUS_TOOL, runUpdateTaskStatus } from "./update-task-status";
 import { CREATE_PROJECT_TOOL, runCreateProject } from "./create-project";
-import { CREATE_TASK_TOOL, runCreateTask } from "./create-task";
-import { UPDATE_TASK_TOOL, runUpdateTask } from "./update-task";
-import { DELETE_TASK_TOOL, runDeleteTask } from "./delete-task";
 import { ADD_TASK_COMMENT_TOOL, runAddTaskComment } from "./add-task-comment";
-import { SET_TASK_CHECKLIST_TOOL, runSetTaskChecklist } from "./set-task-checklist";
 import { LIST_SPRINTS_TOOL, runListSprints } from "./list-sprints";
 import { LIST_EPICS_TOOL, runListEpics } from "./list-epics";
 import { LIST_PROJECT_PAGES_TOOL, runListProjectPages } from "./list-project-pages";
 import { READ_PAGE_TOOL, runReadPage } from "./read-page";
 import { CREATE_PAGE_TOOL, runCreatePage } from "./create-page";
 import { SET_PAGE_CONTENT_TOOL, runSetPageContent } from "./set-page-content";
-import { UPDATE_PAGE_TOOL, runUpdatePage } from "./update-page";
 import { LIST_PROJECT_FILES_TOOL, runListProjectFiles } from "./list-project-files";
 import { UPLOAD_PROJECT_FILE_TOOL, runUploadProjectFile } from "./upload-project-file";
-import { LINK_TASK_TO_GITHUB_TOOL, runLinkTaskToGithub } from "./link-task-to-github";
-import { UNLINK_TASK_FROM_GITHUB_TOOL, runUnlinkTaskFromGithub } from "./unlink-task-from-github";
 import {
   LIST_MY_ROLES_TOOL,
   runListMyRoles,
@@ -66,6 +58,7 @@ import {
   runSetDomainEligibility,
 } from "./staffing";
 import { LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing } from "./document-curation";
+import { LIST_FILE_SHARES_TOOL, runListFileShares } from "./file-sharing";
 
 type CallerTool = (callerId: string, args: never) => Promise<unknown>;
 
@@ -106,24 +99,16 @@ export const BASE_TOOLS: McpTool[] = [
   },
   asCaller(LIST_MY_TASKS_TOOL, runListMyTasks),
   asCaller(GET_TASK_TOOL, runGetTask),
-  asCaller(UPDATE_TASK_STATUS_TOOL, runUpdateTaskStatus),
   asCaller(CREATE_PROJECT_TOOL, runCreateProject),
-  asCaller(CREATE_TASK_TOOL, runCreateTask),
-  asCaller(UPDATE_TASK_TOOL, runUpdateTask),
-  asCaller(DELETE_TASK_TOOL, runDeleteTask),
   asCaller(ADD_TASK_COMMENT_TOOL, runAddTaskComment),
-  asCaller(SET_TASK_CHECKLIST_TOOL, runSetTaskChecklist),
   asCaller(LIST_SPRINTS_TOOL, runListSprints),
   asCaller(LIST_EPICS_TOOL, runListEpics),
   asCaller(LIST_PROJECT_PAGES_TOOL, runListProjectPages),
   asCaller(READ_PAGE_TOOL, runReadPage),
   asCaller(CREATE_PAGE_TOOL, runCreatePage),
   asCaller(SET_PAGE_CONTENT_TOOL, runSetPageContent),
-  asCaller(UPDATE_PAGE_TOOL, runUpdatePage),
   asCaller(LIST_PROJECT_FILES_TOOL, runListProjectFiles),
   asCaller(UPLOAD_PROJECT_FILE_TOOL, runUploadProjectFile),
-  asCaller(LINK_TASK_TO_GITHUB_TOOL, runLinkTaskToGithub),
-  asCaller(UNLINK_TASK_FROM_GITHUB_TOOL, runUnlinkTaskFromGithub),
   asCaller(LIST_MY_ROLES_TOOL, runListMyRoles),
   asCaller(LIST_MY_TIME_ENTRIES_TOOL, runListMyTimeEntries),
   asCaller(GET_PROJECT_SETTINGS_TOOL, runGetProjectSettings),
@@ -133,4 +118,5 @@ export const BASE_TOOLS: McpTool[] = [
   asCaller(SET_STAFFING_ASSIGNMENT_TOOL, runSetStaffingAssignment),
   asCaller(SET_DOMAIN_ELIGIBILITY_TOOL, runSetDomainEligibility),
   asCaller(LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing),
+  asCaller(LIST_FILE_SHARES_TOOL, runListFileShares),
 ];

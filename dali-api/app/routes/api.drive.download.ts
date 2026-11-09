@@ -3,7 +3,7 @@ import type { Route } from "./+types/api.drive.download";
 import { requireMemberSession } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { canViewFile } from "~/lib/fileAccess.server";
+import { filterViewableFiles } from "~/lib/fileAccess.server";
 import { downloadFileName } from "~/lib/file-download-name";
 import { buildDriveZip, MAX_ZIP_BYTES, MAX_ZIP_FILES } from "~/lib/drive-download.server";
 import { checkRateLimit } from "~/lib/rate-limit";
@@ -50,24 +50,17 @@ export async function action({ request }: Route.ActionArgs) {
       workspaceType: true,
       workspaceId: true,
       folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       currentVersion: {
         select: { id: true, fileName: true, s3Key: true, sizeBytes: true, createdAt: true },
       },
     },
   });
 
-  // Viewing depends on the workspace and folder alone, so files sharing both get one lookup.
-  const accessByPlace = new Map<string, Promise<boolean>>();
-  const allowed = await Promise.all(
-    rows.map((file) => {
-      const place = [file.workspaceType, file.workspaceId, file.folderPageId, file.projectId].join(":");
-      const access = accessByPlace.get(place) ?? canViewFile(userId, file, request);
-      accessByPlace.set(place, access);
-      return access;
-    }),
-  );
-  const files = rows.flatMap((file, i) =>
-    allowed[i] && file.currentVersion ? [{ ...file, version: file.currentVersion }] : [],
+  const viewable = await filterViewableFiles(userId, rows, request);
+  const files = viewable.flatMap((file) =>
+    file.currentVersion ? [{ ...file, version: file.currentVersion }] : [],
   );
   if (files.length === 0) return error("No files to download", 404);
 

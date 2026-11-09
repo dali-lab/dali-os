@@ -39,6 +39,8 @@ import {
   storedLines,
 } from "~/lib/meeting-recording.server";
 import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
+import { canEditProject } from "~/mcp/tools/access";
+import { isTaskStatus, type TaskStatus } from "~/projects/lib/task-board";
 import { actionItemMatchesBlock, type StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";
 import { formatClock } from "~/components/meeting-recorder/transcript";
 
@@ -57,7 +59,14 @@ const MAX_PRIOR_BLOCKS_BYTES = 512 * 1024;
 const PriorBlocksSchema = z.record(z.string(), z.unknown());
 
 // POST {action:"createTasks"} body (specs/meeting-notes-model.md §4).
-type CreateTasksItem = { index: number; title: string; assigneeId?: string; dueAt?: string };
+type CreateTasksItem = {
+  index: number;
+  title: string;
+  assigneeId?: string;
+  dueAt?: string;
+  status?: TaskStatus;
+  projectId?: string;
+};
 
 function parseCreateTasksItems(raw: unknown): CreateTasksItem[] | null {
   if (!Array.isArray(raw)) return null;
@@ -69,11 +78,15 @@ function parseCreateTasksItems(raw: unknown): CreateTasksItem[] | null {
     if (typeof e.title !== "string" || !e.title.trim()) return null;
     if (e.assigneeId !== undefined && typeof e.assigneeId !== "string") return null;
     if (e.dueAt !== undefined && typeof e.dueAt !== "string") return null;
+    if (e.status !== undefined && !isTaskStatus(e.status)) return null;
+    if (e.projectId !== undefined && typeof e.projectId !== "string") return null;
     items.push({
       index: e.index,
       title: e.title.trim(),
       assigneeId: typeof e.assigneeId === "string" && e.assigneeId ? e.assigneeId : undefined,
       dueAt: typeof e.dueAt === "string" && e.dueAt ? e.dueAt : undefined,
+      status: e.status as TaskStatus | undefined,
+      projectId: typeof e.projectId === "string" && e.projectId ? e.projectId : undefined,
     });
   }
   return items;
@@ -199,15 +212,34 @@ export async function action({ request, params }: Route.ActionArgs) {
       const items = parseCreateTasksItems(body.items);
       if (!items) return Response.json({ error: "Invalid items" }, { status: 400 });
 
-      const projectId = await projectForRecording(rec.documentName);
-      if (!projectId) {
-        return Response.json({ error: "This meeting has no project." }, { status: 400 });
+      const noteProjectId = await projectForRecording(rec.documentName);
+      const projectIds = new Map<number, string>();
+      for (const item of items) {
+        if (item.status && item.status !== "Backlog" && !item.dueAt) {
+          return Response.json({ error: "Give the task a deadline, or create it in Backlog." }, { status: 400 });
+        }
+        if (noteProjectId) {
+          if (item.projectId && item.projectId !== noteProjectId) {
+            return Response.json({ error: "That project doesn't match this meeting." }, { status: 400 });
+          }
+          projectIds.set(item.index, noteProjectId);
+        } else {
+          if (!item.projectId) return Response.json({ error: "Pick a project." }, { status: 400 });
+          projectIds.set(item.index, item.projectId);
+        }
+      }
+      if (!noteProjectId) {
+        for (const id of new Set(projectIds.values())) {
+          if (!(await canEditProject(auth.user.sub, id))) {
+            return Response.json({ error: "Forbidden" }, { status: 403 });
+          }
+        }
       }
 
       const [entity, pageId] = rec.documentName.split(":");
       const notes = (rec.notes ?? null) as StoredEnhanceNotes | null;
       const actionItems = notes ? [...notes.plan.actionItems] : [];
-      const created: { index: number; taskId: string }[] = [];
+      const created: { index: number; taskId: string; projectId: string }[] = [];
       // Persist task ids as soon as any exist, including on a mid-loop
       // failure, so a retry can't create the same task twice.
       const saveTaskIds = async () => {
@@ -225,7 +257,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       // model.md §5), not just by index.
       const existingTasks = await prisma.task.findMany({
         where: { sourceRecordingId: rec.id },
-        select: { id: true, title: true },
+        select: { id: true, title: true, projectId: true },
       });
       const noteTitle = (entity === "doc" && pageId ? await documentTitle(rec.documentName) : null) || "Untitled";
       const origin = new URL(request.url).origin;
@@ -237,7 +269,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         const dupe = existingTasks.find((t) => actionItemMatchesBlock(item.title, t.title));
         if (dupe) {
           actionItems[item.index] = { ...existing, taskId: dupe.id };
-          created.push({ index: item.index, taskId: dupe.id });
+          created.push({ index: item.index, taskId: dupe.id, projectId: dupe.projectId });
           continue;
         }
 
@@ -250,11 +282,12 @@ export async function action({ request, params }: Route.ActionArgs) {
         let task: { id: string };
         try {
           task = await runCreateTask(auth.user.sub, {
-            projectId,
+            projectId: projectIds.get(item.index)!,
             title: item.title,
             description,
             assigneeUserIds: item.assigneeId ? [item.assigneeId] : undefined,
             dueAt: item.dueAt,
+            status: item.status,
             sourceRecordingId: rec.id,
           });
         } catch (err) {
@@ -266,7 +299,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         }
 
         actionItems[item.index] = { ...existing, taskId: task.id };
-        created.push({ index: item.index, taskId: task.id });
+        created.push({ index: item.index, taskId: task.id, projectId: projectIds.get(item.index)! });
       }
 
       await saveTaskIds();

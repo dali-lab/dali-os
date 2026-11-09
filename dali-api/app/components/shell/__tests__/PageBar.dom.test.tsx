@@ -186,6 +186,35 @@ describe("PageBar overflow", () => {
   });
 });
 
+describe("PageBar status slot", () => {
+  it("renders the status slot right after the crumbs, on the left side", async () => {
+    await mount({
+      page: createElement(PageBarPortal, { slot: "status", children: createElement("span", { "data-testid": "status" }, "Saved") }),
+    });
+    const left = bar().firstElementChild!;
+    expect(left.lastElementChild?.textContent).toBe("Saved");
+    expect(bar().lastElementChild!.textContent).not.toContain("Saved");
+  });
+
+  it("keeps the right side in order: actions, presence, then the fixed tail", async () => {
+    await mount({
+      page: createElement(
+        "div",
+        null,
+        createElement(PageBarPortal, { slot: "actions", children: createElement("button", { "aria-label": "Share" }) }),
+        createElement(PageBarPortal, { slot: "presence", children: createElement("button", { "aria-label": "Presence" }) }),
+      ),
+    });
+    expect(barButtons()).toEqual([
+      "Share",
+      "Presence",
+      "Open this page's guide",
+      "Add this page to favorites",
+      "More actions",
+    ]);
+  });
+});
+
 describe("PageBar top spacing", () => {
   it("grows taller, with centered content, when the tab strip is hidden", async () => {
     await mount({ tabs: false });
