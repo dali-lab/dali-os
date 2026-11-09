@@ -33,6 +33,8 @@ export type EmailLayoutArgs = {
   preheader?: string | null;
   cta?: { href: string; label: string } | null;
   footer?: EmailFooter;
+  // Where the footer's settings link points. Defaults to the member page.
+  settingsPath?: string;
   // Absolute base URL of the app, for footer links.
   baseUrl: string;
   // Non-prod warning rendered inside <body>, after the opening tag. Never
@@ -76,7 +78,7 @@ function button(cta: { href: string; label: string }): string {
 </td></tr></table>`;
 }
 
-function footerHtml(kind: EmailFooter, baseUrl: string): string {
+function footerHtml(kind: EmailFooter, baseUrl: string, settingsPath = "/settings/notifications"): string {
   if (kind === "none") return "";
   const base = escapeAttr(baseUrl.replace(/\/$/, ""));
   const link = (href: string, label: string) =>
@@ -86,7 +88,7 @@ function footerHtml(kind: EmailFooter, baseUrl: string): string {
   // link implies they can.
   const inner =
     kind === "notifications"
-      ? `DALI OS &middot; ${link(`${base}/settings/notifications`, "notification settings")}`
+      ? `DALI OS &middot; ${link(`${base}${escapeAttr(settingsPath)}`, "notification settings")}`
       : `DALI OS &middot; DALI Lab at Dartmouth College`;
   return `<tr><td style="padding:0 32px 32px;font-family:${FONT};font-size:12px;line-height:18px;color:${COLORS.muted};">
 <div style="border-top:1px solid ${COLORS.border};padding-top:16px;">${inner}</div>
@@ -146,7 +148,7 @@ ${cta}
 </td></tr>
 <tr><td class="dali-pad dali-muted" style="padding:0;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" class="dali-muted">
-${footerHtml(footer, args.baseUrl)}
+${footerHtml(footer, args.baseUrl, args.settingsPath)}
 </table>
 </td></tr>
 </table>

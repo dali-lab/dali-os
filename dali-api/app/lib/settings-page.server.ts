@@ -238,6 +238,8 @@ export async function loadSettingsPageData(request: Request) {
       digestHourEt: user?.digestHourEt ?? null,
       isAdmin: viewerIsAdmin,
       isCore: viewerIsCore,
+      audience: "member" as const,
+      action: "/settings/notifications",
     },
     wallet: {
       apple: walletAppleConfigured(),

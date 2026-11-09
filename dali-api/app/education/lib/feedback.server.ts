@@ -3,8 +3,6 @@ import type { Prisma } from "~/generated/prisma/client";
 import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { recipientEmail } from "./notifications.server";
-import { sendEducationEmail } from "./portal-email.server";
 
 // Session feedback + instructor exit surveys, built on the shared Forms
 // system via EducationFormBinding (mirrors StaffingCycleFormBinding). Slots:
@@ -139,8 +137,7 @@ async function boundPublishedForm(offeringId: string, slot: string) {
 /**
  * Ask everyone marked Present at a session for feedback. Called after each
  * attendance save; deduped per (user, form, session link) so later-marked
- * attendees still get asked without double-notifying earlier ones. Members
- * get an in-app form todo; portal students get the link by email.
+ * attendees still get asked without double-notifying earlier ones.
  */
 export async function requestSessionFeedback(args: {
   offeringId: string;
@@ -162,21 +159,13 @@ export async function requestSessionFeedback(args: {
     }),
     prisma.user.findMany({
       where: { id: { in: args.presentUserIds } },
-      select: {
-        id: true,
-        firstName: true,
-        daliEmail: true,
-        dartmouthEmail: true,
-        personalEmail: true,
-        netId: true,
-      },
+      select: { id: true },
     }),
   ]);
   if (!offering || !session) return;
 
   const linkQuery = `?session=${args.sessionId}`;
   const link = `/forms/fill/${form.publicToken}${linkQuery}`;
-  const title = `Session feedback — ${offering.title}, session ${session.sequence}`;
 
   for (const user of users) {
     try {
@@ -202,40 +191,18 @@ export async function requestSessionFeedback(args: {
       ]);
       if (existingTodo || existingSubmission) continue;
 
-      if (user.daliEmail) {
-        await notify({
-          eventType: "education.feedback_request",
-          message: {
-            isTodo: true,
-            formId: form.id,
-            copyKey: "education.feedback_request.session",
-            vars: { contextName: offering.title, count: String(session.sequence) },
-            link,
-          },
-          recipients: [{ userId: user.id }],
-        });
-      } else {
-        // Portal students don't see the member notification bell — email the
-        // fill link directly (via the outbox; keyed so a re-sweep can't
-        // double-ask the same student for the same session).
-        const to = recipientEmail(user);
-        if (to) {
-          // Was the one email whose CTA was a bare URL pasted into a text blob,
-          // relying on the client to autolink it.
-          await sendEducationEmail({
-            to,
-            recipientUserId: user.id,
-            dedupKey: `education.session.feedback:${args.sessionId}:${user.id}`,
-            eventType: "education.feedback_request",
-            subject: title,
-            firstName: user.firstName,
-            paragraphs: [
-              `Thanks for coming to ${offering.title}. Could you take two minutes to share feedback on session ${session.sequence}?`,
-            ],
-            cta: { path: link, label: "Share your feedback" },
-          });
-        }
-      }
+      await notify({
+        eventType: "education.feedback_request",
+        message: {
+          isTodo: true,
+          formId: form.id,
+          copyKey: "education.feedback_request.session",
+          vars: { contextName: offering.title, count: String(session.sequence) },
+          link,
+          linkLabel: "Share your feedback",
+        },
+        recipients: [{ userId: user.id }],
+      });
     } catch (err) {
       console.error("session feedback request failed", {
         userId: user.id,

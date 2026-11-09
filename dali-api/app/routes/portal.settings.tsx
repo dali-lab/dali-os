@@ -1,7 +1,7 @@
 import { Form, useLoaderData, useNavigation } from "react-router";
 import type { Route } from "./+types/portal.settings";
 import { prisma } from "~/lib/db.server";
-import { requireAuth } from "~/lib/auth";
+import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isValidTimezone } from "~/lib/timezone";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -9,6 +9,12 @@ import { buttonClasses } from "~/components/ui/Button";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
+import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
+import {
+  loadOutsideNotificationSettings,
+  notificationAudience,
+  saveNotificationSettings,
+} from "~/lib/notification-settings.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 
@@ -32,10 +38,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
   if (!me) return redirectToLogin(request);
+  const audience = await notificationAudience(auth, request);
   return {
     me,
     userId: auth.user.sub,
     photoPreviewUrl: await resolvePhotoUrl(me.photoUrl),
+    notifications:
+      audience === "portal"
+        ? await loadOutsideNotificationSettings(auth.user.sub, audience, "/portal/settings")
+        : null,
   };
 }
 
@@ -44,6 +55,14 @@ export async function action({ request }: Route.ActionArgs) {
   if (!auth.ok) return redirectToLogin(request);
 
   const form = await request.formData();
+  if (form.get("intent") === "notifications") {
+    if ((await notificationAudience(auth, request)) !== "portal") return forbidden(request);
+    return saveNotificationSettings(auth.user.sub, form, {
+      audience: "portal",
+      isAdmin: false,
+      isCore: false,
+    });
+  }
   const firstName = (form.get("firstName") as string | null)?.trim() ?? "";
   const lastName = (form.get("lastName") as string | null)?.trim() ?? "";
   if (!firstName || !lastName) {
@@ -73,7 +92,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PortalSettings({ actionData }: Route.ComponentProps) {
-  const { me, userId, photoPreviewUrl } = useLoaderData<typeof loader>();
+  const { me, userId, photoPreviewUrl, notifications } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const error = actionData && "error" in actionData ? actionData.error : null;
@@ -215,6 +234,13 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
       </section>
+
+      {notifications && (
+        <section id="notifications" className="flex scroll-mt-6 flex-col gap-4">
+          <h2 className="font-heading text-[19px] font-semibold text-foreground">Notifications</h2>
+          <NotificationsSettingsBlock {...notifications} />
+        </section>
+      )}
 
       <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Passkeys</h2>

@@ -46,6 +46,7 @@ import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { notify } from "~/lib/notify.server";
 import { action, loader } from "~/routes/api.comments";
 
 const FILE_ID = "file-1";
@@ -294,5 +295,62 @@ describe("GET /api/comments reactions", () => {
       expect.objectContaining({ userId: "reactor-1", emoji: ":party:", name: "Grace Hopper", imageUrl: "/party.png" }),
       expect.objectContaining({ userId: "reactor-2", emoji: "👍", name: "Unknown" }),
     ]);
+  });
+});
+
+describe("reply notifications on partner-visible pages", () => {
+  async function replyAndWait() {
+    mockPrisma.docComment.findUnique.mockResolvedValue({
+      targetType: "doc",
+      targetId: PAGE_ID,
+      parentId: null,
+    });
+    mockPrisma.docComment.findMany.mockResolvedValue([
+      { authorId: "partner-1" },
+      { authorId: "member-2" },
+    ]);
+    await post(docComment({ parentId: "root-1" }));
+    await vi.waitFor(() => expect(notify).toHaveBeenCalled());
+    return vi.mocked(notify).mock.calls[0][0];
+  }
+
+  beforeEach(() => {
+    (prisma as any).partnerContact.findMany.mockResolvedValue([{ userId: "partner-1" }]);
+  });
+
+  it("sends the partner to their portal copy of the page and members to /documents", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({
+      archivedAt: null,
+      title: "Kickoff notes",
+      kind: "FreeForm",
+      partnerVisible: true,
+      workspaceType: "Project",
+      workspaceId: "proj-1",
+    });
+    const call = await replyAndWait();
+    expect(call.eventType).toBe("collab.comment_reply");
+    expect(call.message.link).toBe(`/documents/${PAGE_ID}`);
+    expect(call.recipients).toEqual([
+      { userId: "partner-1", link: `/partner/projects/proj-1/pages/${PAGE_ID}` },
+      { userId: "member-2" },
+    ]);
+    expect((prisma as any).partnerContact.findMany.mock.calls[0][0].where).toEqual({
+      userId: { in: ["partner-1", "member-2"] },
+      user: { daliMember: { is: null } },
+    });
+  });
+
+  it("skips the partner lookup on a page partners can't see", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({
+      archivedAt: null,
+      title: "Internal",
+      kind: "FreeForm",
+      partnerVisible: false,
+      workspaceType: "Project",
+      workspaceId: "proj-1",
+    });
+    const call = await replyAndWait();
+    expect(call.recipients).toEqual([{ userId: "partner-1" }, { userId: "member-2" }]);
+    expect((prisma as any).partnerContact.findMany).not.toHaveBeenCalled();
   });
 });

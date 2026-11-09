@@ -41,6 +41,7 @@ const APP_AT = "2020-01-20T00:00:00.000Z";
 const SUBMIT_AT = "2020-01-25T00:00:00.000Z";
 const INVITE_AT = "2020-02-01T00:00:00.000Z";
 const DECIDED_AT = "2020-02-15T00:00:00.000Z";
+const WAITLIST_AT = "2020-02-08T00:00:00.000Z";
 const iso = (s: string) => new Date(s);
 
 const ids = (...v: string[]) => v.map((id) => ({ id }));
@@ -226,6 +227,26 @@ describe("backfill_hiring_cycle", () => {
         ],
       });
       await expect(runBackfillHiringCycle(ctx, bad)).rejects.toMatchObject({ name: "McpInvalidError" });
+    });
+
+    it.each([
+      ["a waitlisting that is not before the decision", { waitlistedAt: DECIDED_AT, decidedAt: WAITLIST_AT }],
+      [
+        "an invite that is not before the waitlisting",
+        { invitedToInterviewAt: WAITLIST_AT, waitlistedAt: INVITE_AT, decidedAt: DECIDED_AT },
+      ],
+    ])("rejects %s", async (_, times) => {
+      const bad = input({
+        applications: [
+          {
+            applicant: { netId: "f001" },
+            createdAt: APP_AT,
+            domainApplications: [{ domainId: "d1", submittedAt: SUBMIT_AT, outcome: { type: "Rejected", ...times } }],
+          },
+        ],
+      });
+      await expect(runBackfillHiringCycle(ctx, bad)).rejects.toMatchObject({ name: "McpInvalidError" });
+      nothingWritten();
     });
 
     it("rejects a timestamp without an offset", async () => {
@@ -680,6 +701,29 @@ describe("backfill_hiring_cycle", () => {
       });
       expect(invite.createdAt.getTime()).toBeLessThan(outcome.createdAt.getTime());
       expect(out).toMatchObject({ decisionsWritten: 2 });
+    });
+
+    it("writes invite, Waitlisted, then the final outcome in order, so the waitlisting is never the latest", async () => {
+      const out = await runBackfillHiringCycle(
+        ctx,
+        withOutcome({ type: "Rejected", decidedAt: DECIDED_AT, invitedToInterviewAt: INVITE_AT, waitlistedAt: WAITLIST_AT }),
+      );
+      const rows = db.decision.create.mock.calls.map((c) => c[0].data);
+      expect(rows.map((r) => [r.type, r.stage, r.createdAt])).toEqual([
+        ["InvitedToInterview", "Released", iso(INVITE_AT)],
+        ["Waitlisted", "Released", iso(WAITLIST_AT)],
+        ["Rejected", "Released", iso(DECIDED_AT)],
+      ]);
+      expect(rows[1].waitlistRank).toBeUndefined();
+      expect(out).toMatchObject({ decisionsWritten: 3 });
+    });
+
+    it("closes siblings when someone was hired off the waitlist", async () => {
+      await runBackfillHiringCycle(ctx, withOutcome({ type: "Accepted", decidedAt: DECIDED_AT, waitlistedAt: WAITLIST_AT }));
+      expect(db.decision.create.mock.calls.map((c) => c[0].data.type)).toEqual(["Waitlisted", "Accepted"]);
+      expect(db.domainApplication.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { closureReason: "AcceptedElsewhere", closedAt: iso(DECIDED_AT) } }),
+      );
     });
 
     it("writes only the outcome when there was no invite", async () => {

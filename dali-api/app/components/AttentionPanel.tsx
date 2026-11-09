@@ -272,6 +272,7 @@ export function TasksDrawer({
   singleFeed = false,
   total,
   allTasksLink = true,
+  title = "Tasks",
 }: {
   open: boolean;
   onClose: () => void;
@@ -285,6 +286,7 @@ export function TasksDrawer({
   total?: number;
   // False where /notifications is not reachable (the partner portal).
   allTasksLink?: boolean;
+  title?: string;
 }) {
   const [tab, setTab] = useState<FeedTab>("work");
   const feed = splitFeed(tasks, notifications, projectTasks);
@@ -292,7 +294,7 @@ export function TasksDrawer({
   const count = Math.max(shown, total ?? shown);
 
   return (
-    <Drawer open={open} onClose={onClose} title={`Tasks (${count})`} headerActions={seeAll} width={480}>
+    <Drawer open={open} onClose={onClose} title={`${title} (${count})`} headerActions={seeAll} width={480}>
       {!singleFeed && (
         <div className="px-5 pb-3.5">
           <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
@@ -303,6 +305,7 @@ export function TasksDrawer({
           cards={singleFeed ? mergedFeed(feed) : feed[tab]}
           tab={singleFeed ? undefined : tab}
           onOpen={onOpen}
+          emptyText={singleFeed ? `New ${title.toLowerCase()} will show up here.` : undefined}
         />
         {count > shown && (
           <p className="text-center text-xs text-os-muted">
@@ -363,6 +366,7 @@ export function TaskFeed({
   grid = false,
   pager,
   onCleared,
+  emptyText,
 }: {
   cards: FeedCard[];
   tab?: FeedTab;
@@ -370,6 +374,7 @@ export function TaskFeed({
   grid?: boolean;
   pager?: LoadMoreProps;
   onCleared?: OnCleared;
+  emptyText?: string;
 }) {
   if (cards.length === 0 && !pager?.hasMore) {
     return (
@@ -377,11 +382,12 @@ export function TaskFeed({
         <CheckCircle2 strokeWidth={1.5} className="h-5 w-5" aria-hidden />
         <strong className="text-base text-foreground">You&apos;re all caught up</strong>
         <span className="text-sm">
-          {tab === "work"
-            ? "New project tasks will show up here."
-            : tab === "admin"
-              ? "New invites and events will show up here."
-              : "New tasks will show up here."}
+          {emptyText ??
+            (tab === "work"
+              ? "New project tasks will show up here."
+              : tab === "admin"
+                ? "New invites and events will show up here."
+                : "New tasks will show up here.")}
         </span>
       </div>
     );

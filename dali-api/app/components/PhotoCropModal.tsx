@@ -4,25 +4,21 @@ import Cropper, { type Area } from "react-easy-crop";
 import { Modal, ModalHeader } from "./Modal";
 import { modalCardClass } from "~/components/os-chrome";
 
-// Short side of the output. The long side follows `aspect`, so a square avatar
-// and a wide banner come out at comparable resolution.
-const OUTPUT_SHORT_SIDE = 512;
+const DEFAULT_OUTPUT_SHORT_SIDE = 512;
 
-// Draw the selected region of `imageSrc` onto a fixed-size canvas and return it
-// as a normalized image blob. `area` is in natural-image pixels, as
-// react-easy-crop reports it. WebP keeps the file small; PNG is the fallback for
-// the rare browser whose canvas can't encode WebP.
-async function getCroppedBlob(
+// Short side is the output's short edge; the long side follows `aspect`.
+export async function getCroppedBlob(
   imageSrc: string,
   area: Area,
   aspect: number,
+  shortSide = DEFAULT_OUTPUT_SHORT_SIDE,
 ): Promise<Blob> {
   const image = await loadImage(imageSrc);
   const canvas = document.createElement("canvas");
   const width =
-    aspect >= 1 ? Math.round(OUTPUT_SHORT_SIDE * aspect) : OUTPUT_SHORT_SIDE;
+    aspect >= 1 ? Math.round(shortSide * aspect) : shortSide;
   const height =
-    aspect >= 1 ? OUTPUT_SHORT_SIDE : Math.round(OUTPUT_SHORT_SIDE / aspect);
+    aspect >= 1 ? shortSide : Math.round(shortSide / aspect);
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
@@ -70,6 +66,8 @@ export function PhotoCropModal({
   onConfirm,
   aspect = 1,
   cropShape = "round",
+  title = "Adjust photo",
+  outputShortSide = DEFAULT_OUTPUT_SHORT_SIDE,
 }: {
   open: boolean;
   imageSrc: string | null;
@@ -78,6 +76,9 @@ export function PhotoCropModal({
   /** Crop box width:height. Defaults to the square avatar crop. */
   aspect?: number;
   cropShape?: "round" | "rect";
+  title?: string;
+  /** Short edge of the saved image in pixels. */
+  outputShortSide?: number;
 }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -94,7 +95,7 @@ export function PhotoCropModal({
     setError(null);
     setProcessing(true);
     try {
-      const blob = await getCroppedBlob(imageSrc, area, aspect);
+      const blob = await getCroppedBlob(imageSrc, area, aspect, outputShortSide);
       onConfirm(blob);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not process image");
@@ -115,7 +116,7 @@ export function PhotoCropModal({
     >
       <ModalHeader
         titleId="photo-crop-title"
-        title="Adjust photo"
+        title={title}
         onClose={onCancel}
         hideClose={processing}
         className="mb-3"

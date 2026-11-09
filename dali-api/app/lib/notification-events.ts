@@ -76,7 +76,25 @@ export type EventDef = {
   // row — it is a sub-preference of inApp (no row, no banner), resolved at
   // feed-read time so a preference change applies to unseen rows too.
   defaults: { inApp: boolean; desktop: boolean; slackDm: boolean; email: EmailDefault };
+  // Who can receive this event; omitted means lab members only.
+  audiences?: readonly Audience[];
+  // Email default for portal students and partners, who rarely open the app.
+  outsideEmail?: EmailDefault;
 };
+
+// member: has a DALIMember row. partner: a partner contact's account.
+// portal: everyone else who signs in (non-member Dartmouth students).
+export type Audience = "member" | "portal" | "partner";
+
+export function reachesAudience(def: EventDef, audience: Audience): boolean {
+  return (def.audiences ?? ["member"]).includes(audience);
+}
+
+export function defaultEmailFor(def: EventDef, audience: Audience): EmailDefault {
+  return audience === "member" ? def.defaults.email : (def.outsideEmail ?? def.defaults.email);
+}
+
+const STUDENTS = ["member", "portal"] as const;
 
 export const EVENT_TYPES = {
   "meeting.invite": {
@@ -205,6 +223,8 @@ export const EVENT_TYPES = {
     coalesceWindowMs: 30 * 60_000, // one ping per thread per half hour
     coalesceNoun: "reply",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: ["member", "partner"],
+    outsideEmail: "Instant",
   },
   "file.comment": {
     kind: "General",
@@ -461,6 +481,7 @@ export const EVENT_TYPES = {
     label: "Course announcements",
     description: "Announcements from instructors of your offerings.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+    audiences: STUDENTS,
   },
   "education.decision": {
     kind: "Education",
@@ -469,6 +490,7 @@ export const EVENT_TYPES = {
     description: "Decisions on your education applications.",
     externalEmail: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
   },
   "education.assignment": {
     kind: "Education",
@@ -476,6 +498,8 @@ export const EVENT_TYPES = {
     label: "New assignments",
     description: "When an instructor posts an assignment.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.discussion": {
     kind: "Education",
@@ -485,6 +509,7 @@ export const EVENT_TYPES = {
     coalesceWindowMs: 30 * 60_000,
     coalesceNoun: "reply",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
   },
   "education.feedback_request": {
     kind: "SystemAnnouncement",
@@ -493,6 +518,8 @@ export const EVENT_TYPES = {
     description: "Session feedback and exit-survey forms to fill.",
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.certificate": {
     kind: "Education",
@@ -500,6 +527,7 @@ export const EVENT_TYPES = {
     label: "Certificates",
     description: "When you're issued a certificate of completion.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+    audiences: STUDENTS,
   },
   "education.session_reminder": {
     kind: "Education",
@@ -508,6 +536,8 @@ export const EVENT_TYPES = {
     description: "A reminder before each session of a course you're enrolled in.",
     timeSensitive: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.grade": {
     kind: "Education",
@@ -515,6 +545,8 @@ export const EVENT_TYPES = {
     label: "Grades & feedback",
     description: "When an instructor grades or leaves feedback on your submission.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.ce_reminder": {
     kind: "Education",
