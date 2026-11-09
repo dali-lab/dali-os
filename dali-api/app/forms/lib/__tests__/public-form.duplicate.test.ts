@@ -217,6 +217,56 @@ describe("submitMemberForm one-response gate", () => {
     expect(mockPrisma.formSubmission.create).not.toHaveBeenCalled();
   });
 
+  it("lets a member fill a new version's round after filling an old round", async () => {
+    // 26F holds v1 of the form, 27W holds v2 (the latest). A member who
+    // filled the 26F round owes the 27W round: the fill must record to 27W
+    // and the one-and-done gate must not count the 26F cycle.
+    mockPrisma.form.findUnique.mockResolvedValue(
+      formRow({
+        versions: [{ id: "ver-2", questions: QUESTIONS }],
+        cycleBindings: [
+          { ...LEVEL_UP_BINDING, formVersionId: "ver-1" },
+          {
+            ...LEVEL_UP_BINDING,
+            formVersionId: "ver-2",
+            updatedAt: new Date("2026-05-01"),
+            staffingCycle: {
+              id: "cyc-2",
+              termId: "term-2",
+              maxPreferencesPerMember: 3,
+              term: { code: "27W" },
+            },
+          },
+        ],
+      }),
+    );
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
+
+    const result = await submitMemberForm({
+      token: "tok",
+      versionId: "ver-2",
+      userId: "user-1",
+      answers: { q1: "hi" },
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.formSubmission.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          staffingCycleId: { in: ["cyc-2"] },
+        }),
+      }),
+    );
+    expect(mockPrisma.formSubmission.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          staffingCycleId: "cyc-2",
+          formVersionId: "ver-2",
+        }),
+      }),
+    );
+  });
+
   it("409s the loser of a submit race instead of surfacing the index error", async () => {
     // Both requests pass the read gate, then @@unique rejects the second with
     // P2002. The row is refused either way — the member should read the
@@ -304,6 +354,7 @@ describe("ordinaryFillBlock", () => {
   it("returns null when the toggle is off", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({
       oneResponsePerMember: false,
+      versions: [{ id: "ver-1" }],
       cycleBindings: [],
     });
     expect(await ordinaryFillBlock("form-1", "user-1")).toBeNull();
@@ -315,6 +366,7 @@ describe("ordinaryFillBlock", () => {
     mockPrisma.form.findUnique.mockResolvedValue({
       // Independent of oneResponsePerMember — bound forms are one-and-done.
       oneResponsePerMember: false,
+      versions: [{ id: "ver-1" }],
       cycleBindings: [
         {
           slot: "project-bids",
@@ -342,6 +394,7 @@ describe("ordinaryFillBlock", () => {
   it("returns null for a slot-bound form the member hasn't submitted", async () => {
     mockPrisma.form.findUnique.mockResolvedValue({
       oneResponsePerMember: false,
+      versions: [{ id: "ver-1" }],
       cycleBindings: [
         {
           slot: "project-bids",
@@ -358,6 +411,7 @@ describe("ordinaryFillBlock", () => {
     const at = new Date("2026-07-01T12:00:00Z");
     mockPrisma.form.findUnique.mockResolvedValue({
       oneResponsePerMember: true,
+      versions: [{ id: "ver-1" }],
       cycleBindings: [],
     });
     mockPrisma.formSubmission.findFirst.mockResolvedValue({
