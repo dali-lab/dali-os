@@ -48,6 +48,10 @@ import {
   BACKFILL_CORE_ASSIGNMENTS_TOOL,
   runBackfillCoreAssignments,
 } from "./backfill-core-assignments";
+import {
+  BACKFILL_HIRING_CYCLE_TOOL,
+  runBackfillHiringCycle,
+} from "./backfill-hiring-cycle";
 import { BACKFILL_TERMS_TOOL, runBackfillTerms } from "./backfill-terms";
 import { GET_BACKFILL_STATE_TOOL, runGetBackfillState } from "./get-backfill-state";
 
@@ -161,6 +165,10 @@ export const ADMIN_TOOLS: McpTool[] = [
     def: BACKFILL_CORE_ASSIGNMENTS_TOOL,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     run: (ctx, args) => runBackfillCoreAssignments(ctx, args as any),
+  },
+  {
+    def: BACKFILL_HIRING_CYCLE_TOOL,
+    run: (ctx, args) => runBackfillHiringCycle(ctx, args),
   },
   {
     def: BACKFILL_TERMS_TOOL,
