@@ -11,7 +11,7 @@ export type EventIcsInput = {
 };
 
 const escapeText = (t: string) =>
-  t.replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  t.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
 
 const stamp = (d: Date | string) =>
   new Date(d).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");

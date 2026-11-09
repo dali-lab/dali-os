@@ -25,7 +25,7 @@ describe("buildEventIcs", () => {
 
   it("escapes commas, semicolons and newlines in text", () => {
     const ics = buildEventIcs({ ...base, title: "A, B; C", description: "Line one\nLine two", location: "Cafe, Boston" }, NOW);
-    expect(ics).toContain("SUMMARY:A\\, B\; C");
+    expect(ics).toContain("SUMMARY:A\\, B\\; C");
     expect(ics).toContain("DESCRIPTION:Line one\\nLine two");
     expect(ics).toContain("LOCATION:Cafe\\, Boston");
   });
