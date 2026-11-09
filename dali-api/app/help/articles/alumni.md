@@ -1,20 +1,20 @@
 ---
 title: What alumni see
-summary: How DALI OS looks for alumni, including the Connect home page, events, and what they can still open.
+summary: How DALI OS looks for alumni, including the Community home page, events, and what they can still open.
 keywords: [alumni, alum, graduate, home, connect, events, profile, open to]
-paths: [/connect, /members]
+paths: [/community, /members]
 ---
 
 Once a member's status is Alumni, DALI OS switches to a smaller view built around staying in touch. This article describes what an alum sees.
 
-## Home is Connect
+## Home is Community
 
-An alum's **Home** is [Connect](/connect), a full-page map of where alumni and current students are, with a list on the left. Opening the main page sends them there.
+An alum's **Home** is [Community](/community), a full-page map of where alumni and current students are, with a list on the left. Opening the main page sends them there.
 
 - **People**: find people by name, company or city, filter by class, role, project and what they are open to, and click a place on the map to see who is there.
 - **Events**: upcoming alumni events and the DALI events you are invited to or attending, with **RSVP**, **Add to calendar** and **Host an event**.
 
-See [Connect](/help/articles/connect) for filters, hosting an event and nearby alerts.
+See [Community](/help/articles/community-map) for filters, hosting an event and nearby alerts.
 
 ### Open to coffee chats and resume reviews
 

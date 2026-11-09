@@ -1,11 +1,11 @@
-// Connect map: people who share a place share a pin. Client-safe.
+// Community map: people who share a place share a pin. Client-safe.
 
 export const HANOVER = { label: "Hanover, NH", lat: 43.7044, lng: -72.2887 } as const;
 export const NEARBY_KM = 50;
 
 export type Activity = "today" | "week" | null;
 
-export type ConnectPerson = {
+export type CommunityPerson = {
   id: string;
   name: string;
   photoUrl: string | null;
@@ -24,15 +24,15 @@ export type ConnectPerson = {
   projects: { id: string; name: string; term: string }[];
 };
 
-export type ConnectAlum = Pick<
-  ConnectPerson,
+export type CommunityAlum = Pick<
+  CommunityPerson,
   "id" | "name" | "photoUrl" | "classYear" | "location" | "lat" | "lng" | "currentJob"
 > &
-  Partial<ConnectPerson>;
+  Partial<CommunityPerson>;
 
 type Located = { id: string; location: string; lat: number; lng: number; isStudent?: boolean };
 
-export type ConnectPlace<T extends Located = ConnectAlum> = {
+export type CommunityPlace<T extends Located = CommunityAlum> = {
   key: string;
   label: string;
   lat: number;
@@ -133,7 +133,7 @@ export function hasPeopleFilters(f: PeopleFilters): boolean {
   );
 }
 
-export function filterPeople(people: readonly ConnectPerson[], f: PeopleFilters): ConnectPerson[] {
+export function filterPeople(people: readonly CommunityPerson[], f: PeopleFilters): CommunityPerson[] {
   const q = f.query.trim().toLowerCase();
   return people.filter((p) => {
     if (q && ![p.name, p.currentJob ?? "", p.location].join(" ").toLowerCase().includes(q)) {
@@ -162,7 +162,7 @@ export function filterPeople(people: readonly ConnectPerson[], f: PeopleFilters)
 
 export type EventAudience = "alumni" | "alumni_and_students";
 
-export type ConnectViewer = {
+export type CommunityViewer = {
   classYear: number | null;
   projectIds: string[];
   lat: number | null;
@@ -171,8 +171,8 @@ export type ConnectViewer = {
 
 /** The one teal line under a row: what you share with them. */
 export function whyLine(
-  p: Pick<ConnectPerson, "projects" | "isStudent" | "classYear">,
-  viewer: ConnectViewer,
+  p: Pick<CommunityPerson, "projects" | "isStudent" | "classYear">,
+  viewer: CommunityViewer,
 ): string | null {
   const shared = p.projects.find((pr) => viewer.projectIds.includes(pr.id));
   if (shared) {
@@ -182,12 +182,12 @@ export function whyLine(
   return null;
 }
 
-export function isNearViewer(p: { lat: number; lng: number }, viewer: ConnectViewer): boolean {
+export function isNearViewer(p: { lat: number; lng: number }, viewer: CommunityViewer): boolean {
   if (viewer.lat == null || viewer.lng == null) return false;
   return haversineKm(p, { lat: viewer.lat, lng: viewer.lng }) <= NEARBY_KM;
 }
 
-function matchScore(p: ConnectPerson, viewer: ConnectViewer): number {
+function matchScore(p: CommunityPerson, viewer: CommunityViewer): number {
   let score = 0;
   if (p.projects.some((pr) => viewer.projectIds.includes(pr.id))) score += 4;
   if (p.classYear != null && p.classYear === viewer.classYear) score += 2;
@@ -196,11 +196,11 @@ function matchScore(p: ConnectPerson, viewer: ConnectViewer): number {
 }
 
 export function sortPeople(
-  people: readonly ConnectPerson[],
+  people: readonly CommunityPerson[],
   by: "match" | "name",
-  viewer: ConnectViewer,
-): ConnectPerson[] {
-  const byName = (a: ConnectPerson, b: ConnectPerson) => a.name.localeCompare(b.name);
+  viewer: CommunityViewer,
+): CommunityPerson[] {
+  const byName = (a: CommunityPerson, b: CommunityPerson) => a.name.localeCompare(b.name);
   return [...people].sort(
     by === "name" ? byName : (a, b) => matchScore(b, viewer) - matchScore(a, viewer) || byName(a, b),
   );
@@ -248,8 +248,8 @@ export function placeKey(a: { lat: number; lng: number }): string {
 }
 
 /** One place per pin, biggest first; labelled by its most common spelling. */
-export function groupByPlace<T extends Located>(people: readonly T[]): ConnectPlace<T>[] {
-  const places = new Map<string, ConnectPlace<T>>();
+export function groupByPlace<T extends Located>(people: readonly T[]): CommunityPlace<T>[] {
+  const places = new Map<string, CommunityPlace<T>>();
   for (const a of people) {
     const key = placeKey(a);
     const place = places.get(key) ?? {

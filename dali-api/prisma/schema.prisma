@@ -136,7 +136,7 @@ model User {
   hometown            String?
   // Where the person lives now ("Based in" on the profile). Free text; the
   // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
-  // place the person on the Connect map. Null coordinates = no pin.
+  // place the person on the Community map. Null coordinates = no pin.
   currentLocation     String?
   currentLocationLat  Float?
   currentLocationLng  Float?
@@ -8202,7 +8202,7 @@ model PlanningNote {
   updatedBy   User?               @relation(fields: [updatedById], references: [id], onDelete: SetNull)
 }
 
-// An alumni-hosted event on the Connect map. Posts immediately; the host or an
+// An alumni-hosted event on the Community map. Posts immediately; the host or an
 // admin can cancel it. audience is "alumni" or "alumni_and_students".
 model CommunityEvent {
   id           String    @id @default(cuid())

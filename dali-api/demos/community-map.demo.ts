@@ -1,8 +1,8 @@
 import { expect, test } from './lib/demo';
 
-test('connect: browse the map, filter people, and start hosting an event', async ({ page, stage, loginAs }) => {
+test('community map: browse the map, filter people, and start hosting an event', async ({ page, stage, loginAs }) => {
   await loginAs({ daliEmail: 'priya.raman@dali.dartmouth.edu' });
-  await page.goto('/connect');
+  await page.goto('/community');
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await stage.pause(1500);
 

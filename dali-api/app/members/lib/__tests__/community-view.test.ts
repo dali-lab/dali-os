@@ -11,7 +11,7 @@ import {
   shortYear,
   splitEventsByPlace,
   wallClockFields,
-} from "../connect-view";
+} from "../community-view";
 
 const NY = "America/New_York";
 // 6:00 PM to 7:30 PM Eastern on Thu Nov 12 2026

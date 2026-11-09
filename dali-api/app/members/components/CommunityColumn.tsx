@@ -13,21 +13,21 @@ import { cn } from "~/lib/cn";
 import {
   hasPeopleFilters,
   whyLine,
-  type ConnectPerson,
-  type ConnectViewer,
+  type CommunityPerson,
+  type CommunityViewer,
   type EventFilters,
   type PeopleFilters,
-} from "~/members/lib/connect";
-import type { ConnectEvent, ConnectFilterOptions } from "~/members/lib/connect.server";
+} from "~/members/lib/community";
+import type { CommunityEvent, CommunityFilterOptions } from "~/members/lib/community.server";
 import {
   eventDateBlock,
   eventWhenShort,
   goingText,
   plural,
   shortYear,
-} from "~/members/lib/connect-view";
+} from "~/members/lib/community-view";
 
-export type ConnectTab = "people" | "events";
+export type CommunityTab = "people" | "events";
 export type PeopleSort = "match" | "name";
 export type PlaceHead = { label: string; peopleCount: number; classmates: number };
 
@@ -88,7 +88,7 @@ function PeopleFilterChips({
 }: {
   filters: PeopleFilters;
   onChange: (next: PeopleFilters) => void;
-  options: ConnectFilterOptions;
+  options: CommunityFilterOptions;
   onClear: () => void;
 }) {
   const set = (patch: Partial<PeopleFilters>) => onChange({ ...filters, ...patch });
@@ -199,7 +199,7 @@ function EventFilterChips({
   );
 }
 
-function ActivityMarker({ activity }: { activity: ConnectPerson["activity"] }) {
+function ActivityMarker({ activity }: { activity: CommunityPerson["activity"] }) {
   if (!activity) return null;
   const today = activity === "today";
   return (
@@ -214,7 +214,7 @@ function ActivityMarker({ activity }: { activity: ConnectPerson["activity"] }) {
   );
 }
 
-export function PersonRow({ person, viewer }: { person: ConnectPerson; viewer: ConnectViewer }) {
+export function PersonRow({ person, viewer }: { person: CommunityPerson; viewer: CommunityViewer }) {
   const why = whyLine(person, viewer);
   const sub = [person.currentJob, person.location].filter(Boolean).join(" · ");
   const year = shortYear(person.classYear);
@@ -247,7 +247,7 @@ export function PersonRow({ person, viewer }: { person: ConnectPerson; viewer: C
   );
 }
 
-function DateBlock({ startsAt, tz, source }: { startsAt: string; tz: string; source: ConnectEvent["source"] }) {
+function DateBlock({ startsAt, tz, source }: { startsAt: string; tz: string; source: CommunityEvent["source"] }) {
   const { month, day } = eventDateBlock(startsAt, tz);
   return (
     <span
@@ -264,7 +264,7 @@ function DateBlock({ startsAt, tz, source }: { startsAt: string; tz: string; sou
 
 export { DateBlock };
 
-function RsvpButton({ event }: { event: ConnectEvent }) {
+function RsvpButton({ event }: { event: CommunityEvent }) {
   const fetcher = useFetcher();
   const pending = fetcher.formData?.get("going");
   const going = pending != null ? pending === "true" : event.viewerGoing;
@@ -285,7 +285,7 @@ export function EventRow({
   tz,
   onOpen,
 }: {
-  event: ConnectEvent;
+  event: CommunityEvent;
   tz: string;
   onOpen: (id: string) => void;
 }) {
@@ -322,20 +322,20 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-export type ConnectColumnProps = {
+export type CommunityColumnProps = {
   title: string;
   canHost: boolean;
   onHost: () => void;
   headerExtra?: ReactNode;
-  tab: ConnectTab;
-  onTab: (tab: ConnectTab) => void;
+  tab: CommunityTab;
+  onTab: (tab: CommunityTab) => void;
   peopleCount: number;
   eventsCount: number;
   query: string;
   onQuery: (q: string) => void;
-  viewer: ConnectViewer;
+  viewer: CommunityViewer;
   tz: string;
-  filterOptions: ConnectFilterOptions;
+  filterOptions: CommunityFilterOptions;
   peopleFilters: PeopleFilters;
   onPeopleFilters: (f: PeopleFilters) => void;
   onClearPeopleFilters: () => void;
@@ -345,20 +345,20 @@ export type ConnectColumnProps = {
   onSort: (s: PeopleSort) => void;
   listFollowsMap: boolean;
   onListFollowsMap: (on: boolean) => void;
-  people: ConnectPerson[];
+  people: CommunityPerson[];
   placeHead: PlaceHead | null;
   onClearPlace: () => void;
-  placeEvents: ConnectEvent[];
-  nextEvent: ConnectEvent | null;
-  eventsOnMap: ConnectEvent[];
-  eventsOnline: ConnectEvent[];
+  placeEvents: CommunityEvent[];
+  nextEvent: CommunityEvent | null;
+  eventsOnMap: CommunityEvent[];
+  eventsOnline: CommunityEvent[];
   onOpenEvent: (id: string) => void;
   unplaced: number;
   hasLocation: boolean;
   toggle: ReactNode;
 };
 
-export function ConnectColumn(p: ConnectColumnProps) {
+export function CommunityColumn(p: CommunityColumnProps) {
   const { visible, pager } = useClientSlice(p.people, {
     resetKey: JSON.stringify([p.query, p.peopleFilters, p.sort, p.placeHead?.label ?? null, p.listFollowsMap]),
   });

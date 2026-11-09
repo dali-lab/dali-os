@@ -6,10 +6,10 @@ vi.mock("~/members/lib/community-events.server", () => ({ getEventForCalendar: v
 
 import { requireAuth } from "~/lib/auth";
 import { getEventForCalendar } from "~/members/lib/community-events.server";
-import { loader } from "../connect.events.$id.calendar";
+import { loader } from "../community.events.$id.calendar";
 
 const call = () =>
-  loader({ request: new Request("http://localhost/connect/events/ev1/calendar.ics"), params: { id: "ev1" }, context: {} } as never);
+  loader({ request: new Request("http://localhost/community/events/ev1/calendar.ics"), params: { id: "ev1" }, context: {} } as never);
 
 const event = (over: Record<string, unknown> = {}) => ({
   id: "ev1",

@@ -1,5 +1,5 @@
 import { getZonedParts, formatInTimeZone, zonedDateTimeLocalToUtc } from "~/lib/timezone";
-import { placeKey, type ConnectPlace } from "~/members/lib/connect";
+import { placeKey, type CommunityPlace } from "~/members/lib/community";
 
 type Timed = { startsAt: string; endsAt: string };
 type Placed = { online: boolean; lat: number | null; lng: number | null; location: string };
@@ -40,7 +40,7 @@ export function splitEventsByPlace<T extends Placed>(events: readonly T[]): { on
   };
 }
 
-export function eventsAtPlace<T extends Placed>(events: readonly T[], place: Pick<ConnectPlace, "key">): T[] {
+export function eventsAtPlace<T extends Placed>(events: readonly T[], place: Pick<CommunityPlace, "key">): T[] {
   return events.filter(
     (e) => !e.online && e.lat != null && e.lng != null && placeKey({ lat: e.lat, lng: e.lng }) === place.key,
   );

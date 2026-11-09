@@ -1,18 +1,18 @@
 import { data, useLoaderData } from "react-router";
-import type { Route } from "./+types/connect";
+import type { Route } from "./+types/community";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { resolveUserTimeZone } from "~/lib/timezone";
-import { ConnectView } from "~/members/components/ConnectView";
-import { loadConnect } from "~/members/lib/connect.server";
+import { CommunityView } from "~/members/components/CommunityView";
+import { loadCommunity } from "~/members/lib/community.server";
 import { cancelEvent, createEvent, setRsvp, updateEvent } from "~/members/lib/community-events.server";
-import { eventInputFromForm } from "~/members/lib/connect-view";
+import { eventInputFromForm } from "~/members/lib/community-view";
 
-export const meta: Route.MetaFunction = ({ data }) => [{ title: `${data?.title ?? "Connect"} · DALI OS` }];
+export const meta: Route.MetaFunction = ({ data }) => [{ title: `${data?.title ?? "Community"} · DALI OS` }];
 
 export const handle = {
-  breadcrumb: (data: unknown) => (data as { title?: string } | undefined)?.title ?? "Connect",
+  breadcrumb: (data: unknown) => (data as { title?: string } | undefined)?.title ?? "Community",
   fitViewport: true,
   bleedPane: true,
 };
@@ -23,18 +23,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
-  const [connect, me] = await Promise.all([
-    loadConnect(auth.user.sub),
+  const [community, me] = await Promise.all([
+    loadCommunity(auth.user.sub),
     prisma.user.findUnique({
       where: { id: auth.user.sub },
       select: { timeZone: true, openToCoffeeChats: true, openToResumeReviews: true },
     }),
   ]);
-  const { viewer } = connect;
+  const { viewer } = community;
   return {
-    ...connect,
-    events: viewer.isAlumni ? connect.events : connect.events.filter((e) => e.source !== "dali"),
-    title: viewer.isAlumni ? "Home" : "Connect",
+    ...community,
+    events: viewer.isAlumni ? community.events : community.events.filter((e) => e.source !== "dali"),
+    title: viewer.isAlumni ? "Home" : "Community",
     tz: resolveUserTimeZone(me),
     openTo: { coffeeChats: me?.openToCoffeeChats ?? false, resumeReviews: me?.openToResumeReviews ?? false },
   };
@@ -85,6 +85,6 @@ export async function action({ request }: Route.ActionArgs) {
   }
 }
 
-export default function Connect() {
-  return <ConnectView data={useLoaderData<typeof loader>()} />;
+export default function Community() {
+  return <CommunityView data={useLoaderData<typeof loader>()} />;
 }

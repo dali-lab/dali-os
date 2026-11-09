@@ -2,12 +2,12 @@ import { useEffect, useRef } from "react";
 import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { cn } from "~/lib/cn";
-import { MAX_LAT, minZoomToFill, type ConnectPerson, type ConnectPlace, type MapBounds } from "~/members/lib/connect";
-import { eventDateBlock } from "~/members/lib/connect-view";
-import type { ConnectEvent } from "~/members/lib/connect.server";
+import { MAX_LAT, minZoomToFill, type CommunityPerson, type CommunityPlace, type MapBounds } from "~/members/lib/community";
+import { eventDateBlock } from "~/members/lib/community-view";
+import type { CommunityEvent } from "~/members/lib/community.server";
 
-export type MapPlace = ConnectPlace<ConnectPerson> & { faded?: boolean };
-export type MapEvent = Pick<ConnectEvent, "id" | "source" | "title" | "startsAt" | "lat" | "lng">;
+export type MapPlace = CommunityPlace<CommunityPerson> & { faded?: boolean };
+export type MapEvent = Pick<CommunityEvent, "id" | "source" | "title" | "startsAt" | "lat" | "lng">;
 
 export function normalizeBounds(b: { south: number; west: number; north: number; east: number }): MapBounds {
   if (b.east - b.west >= 360) return { ...b, west: -180, east: 180 };
@@ -73,12 +73,12 @@ function pinElement(place: MapPlace, selected: boolean): HTMLElement {
 function eventPinElement(e: MapEvent, tz: string, selected: boolean): HTMLElement {
   const { month, day } = eventDateBlock(e.startsAt, tz);
   const root = document.createElement("div");
-  root.className = `connect-event-pin connect-event-pin--${e.source}${selected ? " is-selected" : ""}`;
+  root.className = `community-event-pin community-event-pin--${e.source}${selected ? " is-selected" : ""}`;
   const m = document.createElement("span");
-  m.className = "connect-event-pin__month";
+  m.className = "community-event-pin__month";
   m.textContent = month;
   const d = document.createElement("span");
-  d.className = "connect-event-pin__day";
+  d.className = "community-event-pin__day";
   d.textContent = day;
   root.append(m, d);
   return root;
@@ -87,7 +87,7 @@ function eventPinElement(e: MapEvent, tz: string, selected: boolean): HTMLElemen
 const pinRoot = (marker: Marker): HTMLElement =>
   marker.getElement()!.firstElementChild as HTMLElement;
 
-export function ConnectMap({
+export function CommunityMap({
   places,
   events,
   tz,

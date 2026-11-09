@@ -6,7 +6,7 @@ paths: [/community/gallery, /community/gallery/:postId, /community/opportunities
 keywords: [community, gallery, photos, post, story, stories, blog, resources, write, comments, reactions, publish, opportunities, report]
 ---
 
-The Community area groups the places where members and alumni share things: Connect, Opportunities, Gallery and Stories. It is available when the Community feature is turned on for you.
+The Community area groups the places where members and alumni share things: Community, Opportunities, Gallery and Stories. It is available when the Community feature is turned on for you.
 
 ## Gallery
 

@@ -251,10 +251,11 @@ export default [
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
-    // Connect: map of where alumni are based (members + alumni).
-    route("connect", "members/routes/connect.tsx"),
-    route("connect/events/:id/calendar.ics", "members/routes/connect.events.$id.calendar.ts"),
-    // Community: Connect lives here in the sidebar, alongside these.
+    // Community: map of where alumni are based (members + alumni).
+    route("community", "members/routes/community.tsx"),
+    route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
+    route("connect/*", "members/routes/connect-redirect.ts"),
+    // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
