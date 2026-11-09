@@ -1,3 +1,4 @@
+import { matchesAllWords } from "~/lib/person-search";
 import { createSearchCache, searchWithCache } from "~/lib/search-cache";
 
 export type MentionUser = {
@@ -41,7 +42,7 @@ async function fetchMentionablePages(q: string): Promise<MentionPage[] | null> {
 
 export const mentionUserCache = createSearchCache<MentionUser>({
   fetch: fetchMentionableUsers,
-  matches: (user, q) => `${user.name} ${user.handle}`.toLowerCase().includes(q),
+  matches: (user, q) => matchesAllWords(`${user.name} ${user.handle}`, q),
 });
 
 export const mentionPageCache = createSearchCache<MentionPage>({
