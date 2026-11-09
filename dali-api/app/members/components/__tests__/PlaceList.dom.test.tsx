@@ -23,7 +23,9 @@ const place = (key: string, count: number): ConnectPlace => ({
   label: key,
   lat: 0,
   lng: 0,
-  alumni: Array.from({ length: count }, (_, i) => alum(key, i)),
+  people: Array.from({ length: count }, (_, i) => alum(key, i)),
+  alumniCount: count,
+  studentCount: 0,
 });
 
 let container: HTMLDivElement;

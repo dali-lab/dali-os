@@ -24,7 +24,7 @@ export function PlaceList({
   hasAlumni: boolean;
 }) {
   const shown = selected ? [selected] : places;
-  const rows = shown.flatMap((p) => p.alumni.map((a) => ({ place: p, alum: a })));
+  const rows = shown.flatMap((p) => p.people.map((a) => ({ place: p, alum: a })));
   const { visible, pager } = useClientSlice(rows, {
     resetKey: JSON.stringify([query, selected?.key ?? null]),
   });
@@ -34,7 +34,7 @@ export function PlaceList({
     else acc.push({ place: row.place, alumni: [row.alum] });
     return acc;
   }, []);
-  const count = places.reduce((n, p) => n + p.alumni.length, 0);
+  const count = places.reduce((n, p) => n + p.people.length, 0);
   return (
     <>
       <SearchInput
@@ -72,7 +72,7 @@ export function PlaceList({
                 >
                   <MapPin className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{p.label}</span>
-                  <span className="ml-auto text-os-muted">{p.alumni.length}</span>
+                  <span className="ml-auto text-os-muted">{p.people.length}</span>
                 </button>
               )}
               {alumni.map((a) => (

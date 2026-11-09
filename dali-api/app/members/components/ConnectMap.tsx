@@ -32,7 +32,7 @@ function pinElement(place: ConnectPlace, selected: boolean): HTMLElement {
 
   const faces = document.createElement("div");
   faces.style.cssText = "display:flex";
-  place.alumni.slice(0, 3).forEach((a, i) => {
+  place.people.slice(0, 3).forEach((a, i) => {
     const ring = `box-shadow:0 0 0 2px ${selected ? "var(--color-os-accent)" : "var(--color-os-card)"}`;
     const base = `width:${AVATAR}px;height:${AVATAR}px;border-radius:9999px;flex:none;${ring};margin-left:${i === 0 ? 0 : -10}px`;
     if (a.photoUrl) {
@@ -50,8 +50,8 @@ function pinElement(place: ConnectPlace, selected: boolean): HTMLElement {
   });
 
   const label = document.createElement("span");
-  const extra = place.alumni.length - 1;
-  label.textContent = extra > 0 ? `${place.alumni[0].name} +${extra}` : place.alumni[0].name;
+  const extra = place.people.length - 1;
+  label.textContent = extra > 0 ? `${place.people[0].name} +${extra}` : place.people[0].name;
   label.style.cssText = `padding:2px 8px;border-radius:9999px;background:var(--color-os-card);color:var(--color-foreground);font-size:12px;font-weight:600;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35)${selected ? ",0 0 0 2px var(--color-os-accent)" : ""}`;
 
   root.append(faces, label);
