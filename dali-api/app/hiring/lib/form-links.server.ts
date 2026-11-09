@@ -108,6 +108,9 @@ export async function loadFormHiringLinks(
  */
 export async function unlinkHiringForm(
   input: {
+    // The form whose editor requested the unlink. The link must belong to it:
+    // the caller's access gate is on this form, not on the hiring cycle.
+    formId: string;
     linkType: "application" | "challenge";
     cycleId?: string;
     cycleDomainFormId?: string;
@@ -117,6 +120,14 @@ export async function unlinkHiringForm(
   if (input.linkType === "application") {
     const cycleId = input.cycleId;
     if (!cycleId) return { error: "cycleId is required for application unlink" };
+
+    const cycle = await prisma.applicationCycle.findUnique({
+      where: { id: cycleId },
+      select: { applicationFormId: true },
+    });
+    if (!cycle || cycle.applicationFormId !== input.formId) {
+      return { error: "This cycle isn't linked to this form" };
+    }
 
     // Re-check status server-side before mutating.
     const latestUpdate =
@@ -144,7 +155,8 @@ export async function unlinkHiringForm(
   const cdf = await prisma.cycleDomainForm.findUnique({
     where: { id: cdfId },
   });
-  if (!cdf) return { error: "Challenge form link not found" };
+  if (!cdf || cdf.formId !== input.formId)
+    return { error: "Challenge form link not found" };
 
   // Re-check cycle status.
   const latestUpdate =
