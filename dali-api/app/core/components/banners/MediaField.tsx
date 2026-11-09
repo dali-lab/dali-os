@@ -92,6 +92,7 @@ export function MediaField({
           cropShape="rect"
           title="Crop to fit"
           outputShortSide={CROP_OUTPUT_SHORT_SIDE}
+          fit
           onCancel={() => setCrop(null)}
           onConfirm={onCropped}
         />

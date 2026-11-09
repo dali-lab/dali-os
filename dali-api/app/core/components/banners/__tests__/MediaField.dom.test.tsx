@@ -15,6 +15,7 @@ type CropProps = {
   imageSrc: string | null;
   aspect: number;
   outputShortSide: number;
+  fit: boolean;
   onCancel: () => void;
   onConfirm: (b: Blob) => void;
 };
@@ -70,6 +71,7 @@ describe("MediaField crop", () => {
     expect(cropProps?.imageSrc).toBe("blob:local");
     expect(cropProps?.aspect).toBe(3 / 4);
     expect(cropProps?.outputShortSide).toBe(1080);
+    expect(cropProps?.fit).toBe(true);
     expect(uploadFileToS3).not.toHaveBeenCalled();
   });
 
