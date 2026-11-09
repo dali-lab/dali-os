@@ -8,6 +8,11 @@ import { isValidTimezone } from "~/lib/timezone";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
+import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
+import {
+  loadOutsideNotificationSettings,
+  saveNotificationSettings,
+} from "~/lib/notification-settings.server";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
@@ -33,7 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { photoUrl: true, pronouns: true, timeZone: true },
   });
 
-  const [members, pendingInvites] = await Promise.all([
+  const [members, pendingInvites, notifications] = await Promise.all([
     org
       ? prisma.partnerMembership.findMany({
           where: { orgId: org.id, endedAt: null },
@@ -48,6 +53,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         })
       : Promise.resolve([]),
     org ? listPendingInvites(org.id) : Promise.resolve([]),
+    loadOutsideNotificationSettings(ctx.auth.user.sub, "partner", "/partner/settings"),
   ]);
 
   return {
@@ -67,6 +73,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     members,
     pendingInvites,
     hasOrg: !!org,
+    notifications,
   };
 }
 
@@ -77,6 +84,14 @@ export async function action({ request }: Route.ActionArgs) {
 
   const form = await request.formData();
   const intent = form.get("intent") as string;
+
+  if (intent === "notifications") {
+    return saveNotificationSettings(ctx.auth.user.sub, form, {
+      audience: "partner",
+      isAdmin: false,
+      isCore: false,
+    });
+  }
 
   if (intent === "profile") {
     const firstName = (form.get("firstName") as string | null)?.trim() ?? "";
@@ -225,8 +240,16 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function PartnerSettings({ actionData }: Route.ComponentProps) {
-  const { me, org, logoPreviewUrl, photoPreviewUrl, members, pendingInvites, hasOrg } =
-    useLoaderData<typeof loader>();
+  const {
+    me,
+    org,
+    logoPreviewUrl,
+    photoPreviewUrl,
+    members,
+    pendingInvites,
+    hasOrg,
+    notifications,
+  } = useLoaderData<typeof loader>();
   const navigation = useNavigation();
   const submitting = navigation.state === "submitting";
   const confirmSubmit = useConfirmSubmit();
@@ -307,6 +330,11 @@ export default function PartnerSettings({ actionData }: Route.ComponentProps) {
       <section className="rounded-os-card bg-os-card p-5">
         <h2 className="font-heading text-[19px] font-semibold text-foreground mb-4">Appearance</h2>
         <AppearanceSettingsBlock />
+      </section>
+
+      <section id="notifications" className="flex scroll-mt-6 flex-col gap-4">
+        <h2 className="font-heading text-[19px] font-semibold text-foreground">Notifications</h2>
+        <NotificationsSettingsBlock {...notifications} />
       </section>
 
       <section className="rounded-os-card bg-os-card p-5">

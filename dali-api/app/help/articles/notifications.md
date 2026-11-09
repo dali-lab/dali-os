@@ -68,6 +68,14 @@ Some details:
 - **Core and admin rows**: some rows, such as partner updates, only appear for Core or admins.
 - If you have never changed a row, it uses the lab's default for that kind of notification.
 
+## Students and partners
+
+Dartmouth students in the portal and partners get a simpler version. Their bell opens one **Notifications** list, with no project work or meetings tabs. They choose what reaches them in a **Notifications** section on their own settings page, [portal settings](/portal/settings) or [partner settings](/partner/settings), with just **In-app** and **Email** (**Instantly** or off).
+
+- Students see their course notifications: announcements, assignments, discussion replies, feedback requests, certificates, session reminders and grades.
+- Partners see replies to their comments on shared project documents. The link opens the document in the partner portal.
+- Since they rarely open DALI OS, new assignments, grades, session reminders, feedback requests and comment replies email them by default.
+
 ## Slack DMs
 
 Slack DM boxes stay switched off until you connect Slack. Go to [Settings → Connections](/settings/connections), find **Slack**, and click **Connect Slack**. DALI OS looks you up by the emails on your account, so your Slack account must use one of them. See [Profile and settings](/help/articles/profile-and-settings).
