@@ -58,6 +58,7 @@ function formRow(over: Record<string, unknown> = {}) {
     oneResponsePerMember: true,
     allowResponseEdit: true,
     page: { iconEmoji: null },
+    versions: [{ id: "v1" }],
     cycleBindings: [],
     ...over,
   };

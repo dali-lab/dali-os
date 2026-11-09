@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+vi.mock("~/lib/page-share-access.server", () => ({
+  canManageSharing: vi.fn().mockResolvedValue(true),
+}));
 vi.mock("~/forms/lib/form-page.server", () => ({
   createForm: vi.fn(),
   renameForm: vi.fn(),
@@ -13,12 +16,14 @@ vi.mock("~/forms/lib/form-page.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { runFormsAction } from "~/forms/lib/forms-data";
 import { setFormAudience } from "~/forms/lib/form-page.server";
+import { canManageSharing } from "~/lib/page-share-access.server";
 
 const mockPrisma = prisma as unknown as {
   form: {
     findUnique: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
+  page: { findUnique: ReturnType<typeof vi.fn> };
   groupDefinition: { findMany: ReturnType<typeof vi.fn> };
   term: { findMany: ReturnType<typeof vi.fn> };
 };
@@ -29,9 +34,17 @@ function fd(entries: Record<string, string>): FormData {
   return f;
 }
 
+const PAGE = {
+  id: "form-1",
+  workspaceType: "Lab",
+  workspaceId: null,
+  createdById: "user-1",
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mockPrisma.form.findUnique.mockResolvedValue({ id: "form-1" });
+  vi.mocked(canManageSharing).mockResolvedValue(true);
+  mockPrisma.page.findUnique.mockResolvedValue(PAGE);
   mockPrisma.term.findMany.mockResolvedValue([]);
 });
 
@@ -134,8 +147,21 @@ describe("runFormsAction update-form-audience", () => {
     expect(badEnum).toEqual({ error: "Invalid input", status: 400 });
   });
 
+  it("403s someone who can't manage the form's sharing", async () => {
+    // Edit access on the questions isn't enough: the audience rewrites the
+    // page's general access and group shares, the Share dialog's power.
+    vi.mocked(canManageSharing).mockResolvedValue(false);
+    const res = await runFormsAction(
+      fd({ intent: "update-form-audience", id: "form-1", audience: "Public" }),
+      "user-1",
+    );
+    expect(res).toMatchObject({ status: 403 });
+    expect(setFormAudience).not.toHaveBeenCalled();
+    expect(canManageSharing).toHaveBeenCalledWith(PAGE, "user-1");
+  });
+
   it("404s an unknown form", async () => {
-    mockPrisma.form.findUnique.mockResolvedValue(null);
+    mockPrisma.page.findUnique.mockResolvedValue(null);
     const res = await runFormsAction(
       fd({ intent: "update-form-audience", id: "ghost", audience: "Public" }),
       "user-1",

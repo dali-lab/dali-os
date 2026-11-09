@@ -5345,6 +5345,8 @@ model FormVersion {
   hiringDomainApplicationsAsChallenge DomainApplication[] @relation("DomainApplicationChallengeForm")
   hiringDomainApplicationsAsContinued DomainApplication[] @relation("DomainApplicationContinuedInterestForm")
 
+  staffingCycleBindings StaffingCycleFormBinding[] @relation("StaffingBindingVersion")
+
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])
 }
@@ -5428,6 +5430,12 @@ model StaffingCycleFormBinding {
   staffingCycleId String
   slot            String
   formId          String
+  // The form version this binding collects, pinned to the form's latest
+  // version at bind time. Two cycles may hold the same form when their pinned
+  // versions differ (only the one pinning the latest version receives fills).
+  // Null (version deleted, or a pre-pinning row the backfill missed) is
+  // treated as the latest version.
+  formVersionId   String?
   updatedAt       DateTime @updatedAt
   updatedById     String
 
@@ -5449,10 +5457,12 @@ model StaffingCycleFormBinding {
 
   staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
   form          Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion   FormVersion?  @relation("StaffingBindingVersion", fields: [formVersionId], references: [id], onDelete: SetNull)
   updatedBy     User          @relation(fields: [updatedById], references: [id])
 
   @@unique([staffingCycleId, slot])
   @@index([formId])
+  @@index([formVersionId])
 }
 
 model EssentialityForm {

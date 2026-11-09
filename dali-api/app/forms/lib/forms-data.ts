@@ -836,11 +836,27 @@ export async function runFormsAction(
       return { ok: true };
     }
     case "update-form-audience": {
-      const exists = await prisma.form.findUnique({
-        where: { id: input.id },
-        select: { id: true },
+      const page = await prisma.page.findUnique({
+        where: { id: input.id, kind: "Form" },
+        select: {
+          id: true,
+          workspaceType: true,
+          workspaceId: true,
+          createdById: true,
+        },
       });
-      if (!exists) return { error: "Not found", status: 404 };
+      if (!page) return { error: "Not found", status: 404 };
+
+      // The audience rewrites the page's general access and its group shares,
+      // which is the Share dialog's power — edit access on the questions
+      // isn't enough.
+      const { canManageSharing } = await import("~/lib/page-share-access.server");
+      if (!(await canManageSharing(page, userId))) {
+        return {
+          error: "Only someone who manages this form's sharing can change its audience.",
+          status: 403,
+        };
+      }
 
       let ids: string[] = [];
       if (input.audience === "Groups") {

@@ -41,9 +41,14 @@ export function isSlot(value: string): value is Slot {
 // per-cycle (one binding per cycle+slot), so the binding names the cycle — we
 // pick from the form's own bindings rather than re-deriving the cycle from the
 // calendar's current term, which would silently drop submissions for any term
-// that isn't "live" today. Normally a form drives one staffing slot for one
-// cycle; if it's bound to several, the most recently bound one wins, so the
-// choice follows the manager's last action and is always deterministic.
+// that isn't "live" today.
+//
+// Fills always serve the form's latest version, so when `servedVersionId` is
+// given, bindings pinned to that version (or to none) win over bindings still
+// pinned to an older one — those belong to a past round and keep their
+// submissions without collecting new ones. Among candidates the most recently
+// bound one wins, so the choice follows the manager's last action and is
+// always deterministic.
 //
 // Deliberately NOT "the live term's binding wins": intent-to-work for the
 // next term is collected during this one, so preferring the current term sent
@@ -52,31 +57,52 @@ export function pickStaffingBinding<
   B extends {
     slot: string;
     updatedAt: Date;
+    formVersionId?: string | null;
   },
->(bindings: B[]): B | undefined {
-  return bindings
-    .filter(
-      (b) =>
-        b.slot === "project-bids" ||
-        b.slot === "intent-to-work" ||
-        b.slot === "level-up",
-    )
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
+>(bindings: B[], servedVersionId?: string | null): B | undefined {
+  const staffing = bindings.filter(
+    (b) =>
+      b.slot === "project-bids" ||
+      b.slot === "intent-to-work" ||
+      b.slot === "level-up",
+  );
+  const current = servedVersionId
+    ? staffing.filter(
+        (b) => b.formVersionId == null || b.formVersionId === servedVersionId,
+      )
+    : staffing;
+  return (current.length > 0 ? current : staffing).sort(
+    (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
+  )[0];
 }
 
-// Every cycle this form is bound to for one slot. The one-and-done gate spans
-// all of them: which cycle a fill records against is decided per-fill by
-// pickStaffingBinding, so keying the gate on a single cycle lets a re-bind
-// reopen a form the member already filled under another cycle.
+// Every cycle this form is bound to for one slot WITH its current (latest)
+// version. The one-and-done gate spans all of them: which cycle a fill records
+// against is decided per-fill by pickStaffingBinding, so keying the gate on a
+// single cycle lets a re-bind reopen a form the member already filled under
+// another cycle. Bindings pinned to an older version are a different round —
+// a member who filled that round still owes the new one.
 export async function boundSlotCycleIds(
   formId: string,
   slot: string,
 ): Promise<string[]> {
-  const rows = await prisma.staffingCycleFormBinding.findMany({
-    where: { formId, slot },
-    select: { staffingCycleId: true },
-  });
-  return rows.map((r) => r.staffingCycleId);
+  const [latest, rows] = await Promise.all([
+    prisma.formVersion.findFirst({
+      where: { formId },
+      orderBy: { versionNumber: "desc" },
+      select: { id: true },
+    }),
+    prisma.staffingCycleFormBinding.findMany({
+      where: { formId, slot },
+      select: { staffingCycleId: true, formVersionId: true },
+    }),
+  ]);
+  return rows
+    .filter(
+      (r) =>
+        r.formVersionId == null || !latest || r.formVersionId === latest.id,
+    )
+    .map((r) => r.staffingCycleId);
 }
 
 // The form bound to a slot for a cycle, with just enough of its latest
@@ -172,20 +198,35 @@ export async function setSlotBinding(
 
   const form = await prisma.form.findUnique({
     where: { id: formId },
-    select: { id: true },
+    select: {
+      id: true,
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { id: true },
+      },
+    },
   });
   if (!form) return { ok: false, error: "That form no longer exists." };
+  const versionId = form.versions[0]?.id ?? null;
 
-  // ONE staffing binding per form, across every slot — not one per slot.
-  // pickStaffingBinding chooses among all of a form's slot bindings, so a form
-  // on 26F Project Bids and 27W Intent to Work is just as ambiguous as one on
-  // two cycles of the same slot: a fill is addressed by the form's token and
-  // carries neither cycle nor slot. Binding here MOVES the form.
+  // ONE staffing binding per form VERSION, across every slot — not one per
+  // slot. pickStaffingBinding chooses among a form's slot bindings on the
+  // version being served, so a form on 26F Project Bids and 27W Intent to Work
+  // with the SAME version is ambiguous: a fill is addressed by the form's
+  // token and carries neither cycle nor slot. Binding the same version here
+  // MOVES the form. A binding holding an older version isn't collecting
+  // anymore (fills serve the latest version), so it stays put and keeps its
+  // cycle's submissions.
   const held = await prisma.staffingCycleFormBinding.findFirst({
     where: {
       formId,
       slot: { in: Object.keys(SLOTS) },
       NOT: { staffingCycleId, slot },
+      OR: [
+        { formVersionId: null },
+        ...(versionId ? [{ formVersionId: versionId }] : []),
+      ],
     },
     select: {
       id: true,
@@ -228,8 +269,20 @@ export async function setSlotBinding(
       await tx.staffingCycleFormBinding.delete({ where: { id: held.id } });
     await tx.staffingCycleFormBinding.upsert({
       where: { staffingCycleId_slot: { staffingCycleId, slot } },
-      create: { staffingCycleId, slot, formId, updatedById: userId, ...carried },
-      update: { formId, updatedById: userId, ...carried },
+      create: {
+        staffingCycleId,
+        slot,
+        formId,
+        formVersionId: versionId,
+        updatedById: userId,
+        ...carried,
+      },
+      update: {
+        formId,
+        formVersionId: versionId,
+        updatedById: userId,
+        ...carried,
+      },
     });
   });
   return heldLabel ? { ok: true, movedFrom: heldLabel } : { ok: true };
@@ -308,12 +361,26 @@ export async function listSelectableForms(opts?: {
   slot: Slot;
   exceptCycleId: string;
 }): Promise<SelectableForm[]> {
-  const forms = await prisma.form.findMany({
+  const rows = await prisma.form.findMany({
     where: { versions: { some: {} } },
     orderBy: { name: "asc" },
-    select: { id: true, name: true, published: true },
+    select: {
+      id: true,
+      name: true,
+      published: true,
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { id: true },
+      },
+    },
   });
-  if (!opts) return forms;
+  const forms = rows.map(({ versions, ...f }) => ({
+    ...f,
+    latestVersionId: versions[0]?.id ?? null,
+  }));
+  if (!opts)
+    return forms.map(({ latestVersionId: _latestVersionId, ...f }) => f);
 
   const held = await prisma.staffingCycleFormBinding.findMany({
     where: {
@@ -322,21 +389,34 @@ export async function listSelectableForms(opts?: {
     },
     select: {
       formId: true,
+      formVersionId: true,
       slot: true,
       staffingCycle: { select: { name: true } },
     },
   });
+  const latestByForm = new Map(forms.map((f) => [f.id, f.latestVersionId]));
+  // Only a binding holding the form's CURRENT version blocks picking it here —
+  // binding would re-pin to the latest version, so only that one would move.
   const heldBy = new Map(
-    held.map((b) => [
-      b.formId,
-      `${b.staffingCycle.name}${
-        b.slot === opts.slot
-          ? ""
-          : ` (${isSlot(b.slot) ? SLOTS[b.slot] : b.slot})`
-      }`,
-    ]),
+    held
+      .filter((b) => {
+        const latest = latestByForm.get(b.formId);
+        return (
+          b.formVersionId == null ||
+          latest == null ||
+          b.formVersionId === latest
+        );
+      })
+      .map((b) => [
+        b.formId,
+        `${b.staffingCycle.name}${
+          b.slot === opts.slot
+            ? ""
+            : ` (${isSlot(b.slot) ? SLOTS[b.slot] : b.slot})`
+        }`,
+      ]),
   );
-  return forms.map((f) => {
+  return forms.map(({ latestVersionId: _latestVersionId, ...f }) => {
     const cycleName = heldBy.get(f.id);
     return cycleName ? { ...f, boundToCycleName: cycleName } : f;
   });

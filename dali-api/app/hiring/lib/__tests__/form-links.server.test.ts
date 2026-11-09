@@ -9,7 +9,7 @@ const db = prisma as any;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  db.applicationCycle = { findMany: vi.fn().mockResolvedValue([]), update: vi.fn() };
+  db.applicationCycle = { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn().mockResolvedValue({ applicationFormId: "f1" }), update: vi.fn() };
   db.cycleDomainForm = { findMany: vi.fn().mockResolvedValue([]), findUnique: vi.fn(), delete: vi.fn() };
   db.applicationCycleStatusUpdate = { findFirst: vi.fn().mockResolvedValue(null) };
   db.domainApplication = { count: vi.fn().mockResolvedValue(0) };
@@ -74,15 +74,33 @@ describe("loadFormHiringLinks", () => {
 
 describe("unlinkHiringForm, application form", () => {
   it("clears the cycle's application form while the cycle is a draft", async () => {
-    const res = await unlinkHiringForm({ linkType: "application", cycleId: "c1" }, "u1");
+    const res = await unlinkHiringForm({ formId: "f1", linkType: "application", cycleId: "c1" }, "u1");
 
     expect(res).toEqual({ ok: true });
     expect(db.applicationCycle.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { applicationFormId: null } });
   });
 
   it("requires a cycle id", async () => {
-    expect(await unlinkHiringForm({ linkType: "application" }, "u1")).toEqual({
+    expect(await unlinkHiringForm({ formId: "f1", linkType: "application" }, "u1")).toEqual({
       error: "cycleId is required for application unlink",
+    });
+    expect(db.applicationCycle.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the cycle's application form is a different form", async () => {
+    db.applicationCycle.findUnique.mockResolvedValue({ applicationFormId: "f-other" });
+
+    expect(await unlinkHiringForm({ formId: "f1", linkType: "application", cycleId: "c1" }, "u1")).toEqual({
+      error: "This cycle isn't linked to this form",
+    });
+    expect(db.applicationCycle.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the cycle doesn't exist", async () => {
+    db.applicationCycle.findUnique.mockResolvedValue(null);
+
+    expect(await unlinkHiringForm({ formId: "f1", linkType: "application", cycleId: "c1" }, "u1")).toEqual({
+      error: "This cycle isn't linked to this form",
     });
     expect(db.applicationCycle.update).not.toHaveBeenCalled();
   });
@@ -90,7 +108,7 @@ describe("unlinkHiringForm, application form", () => {
   it("refuses once the latest status is past Draft", async () => {
     db.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "Open" });
 
-    expect(await unlinkHiringForm({ linkType: "application", cycleId: "c1" }, "u1")).toEqual({
+    expect(await unlinkHiringForm({ formId: "f1", linkType: "application", cycleId: "c1" }, "u1")).toEqual({
       error: "Cannot unlink — cycle is no longer a draft",
     });
     expect(db.applicationCycle.update).not.toHaveBeenCalled();
@@ -103,14 +121,14 @@ describe("unlinkHiringForm, challenge form", () => {
   });
 
   it("deletes the link when the cycle is a draft and nobody answered it", async () => {
-    const res = await unlinkHiringForm({ linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1");
+    const res = await unlinkHiringForm({ formId: "f1", linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1");
 
     expect(res).toEqual({ ok: true });
     expect(db.cycleDomainForm.delete).toHaveBeenCalledWith({ where: { id: "cdf1" } });
   });
 
   it("requires a link id", async () => {
-    expect(await unlinkHiringForm({ linkType: "challenge" }, "u1")).toEqual({
+    expect(await unlinkHiringForm({ formId: "f1", linkType: "challenge" }, "u1")).toEqual({
       error: "cycleDomainFormId is required for challenge unlink",
     });
   });
@@ -118,15 +136,24 @@ describe("unlinkHiringForm, challenge form", () => {
   it("reports a missing link", async () => {
     db.cycleDomainForm.findUnique.mockResolvedValue(null);
 
-    expect(await unlinkHiringForm({ linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1")).toEqual({
+    expect(await unlinkHiringForm({ formId: "f1", linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1")).toEqual({
       error: "Challenge form link not found",
     });
+  });
+
+  it("refuses when the link belongs to a different form", async () => {
+    db.cycleDomainForm.findUnique.mockResolvedValue({ id: "cdf1", formId: "f-other", applicationCycleId: "c1" });
+
+    expect(await unlinkHiringForm({ formId: "f1", linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1")).toEqual({
+      error: "Challenge form link not found",
+    });
+    expect(db.cycleDomainForm.delete).not.toHaveBeenCalled();
   });
 
   it("refuses once the cycle is past Draft", async () => {
     db.applicationCycleStatusUpdate.findFirst.mockResolvedValue({ newStatus: "UnderReview" });
 
-    const res = await unlinkHiringForm({ linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1");
+    const res = await unlinkHiringForm({ formId: "f1", linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1");
 
     expect(res).toEqual({ error: "Cannot unlink — cycle is no longer a draft" });
     expect(db.cycleDomainForm.delete).not.toHaveBeenCalled();
@@ -135,7 +162,7 @@ describe("unlinkHiringForm, challenge form", () => {
   it("refuses when an applicant in that cycle already answered a version of the form", async () => {
     db.domainApplication.count.mockResolvedValue(2);
 
-    const res = await unlinkHiringForm({ linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1");
+    const res = await unlinkHiringForm({ formId: "f1", linkType: "challenge", cycleDomainFormId: "cdf1" }, "u1");
 
     expect(res).toEqual({ error: "Cannot unlink — this challenge form has already been answered by applicants" });
     expect(db.domainApplication.count).toHaveBeenCalledWith({

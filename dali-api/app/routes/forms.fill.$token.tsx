@@ -45,24 +45,31 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // Validated server-side; carried into the submit body so the submission
   // records its education scope.
   const url = new URL(request.url);
-  const educationSessionId = url.searchParams.get("session");
-  const educationOfferingId = url.searchParams.get("offering");
+  let educationSessionId = url.searchParams.get("session");
+  let educationOfferingId = url.searchParams.get("offering");
 
   if (educationSessionId || educationOfferingId) {
     // Education-context fills bypass the audience gate: enrollment (or an
     // instructor assignment) is their authorization, and a session is
-    // required so the submission is attributable.
+    // required so the submission is attributable. The context is validated
+    // for EVERYONE — a bogus ?session= must not show a member a form the
+    // audience gate would deny them.
     if (!userId) return redirectToLogin(request);
-    if (!(await requireMember(userId))) {
-      const admitted = await canFillEducationForm({
-        token: params.token!,
-        userId,
-        sessionId: educationSessionId,
-        offeringId: educationOfferingId,
-      });
-      if (!admitted) return redirect("/");
+    const admitted = await canFillEducationForm({
+      token: params.token!,
+      userId,
+      sessionId: educationSessionId,
+      offeringId: educationOfferingId,
+    });
+    if (!admitted) {
+      if (!(await requireMember(userId))) return redirect("/");
+      // A member with a stale education link falls back to the ordinary
+      // gate below, as a plain fill (submit would 403 the dead context).
+      educationSessionId = null;
+      educationOfferingId = null;
     }
-  } else {
+  }
+  if (!educationSessionId && !educationOfferingId) {
     // A hiring/partner application form is filled on its feature's applicant
     // route, which runs its own gate. Send a stray token link there rather
     // than through the audience gate the applicant is bound to fail.
