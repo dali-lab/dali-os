@@ -50,6 +50,10 @@ describe("file sharing tools", () => {
       "share_file",
       "unshare_file",
       "set_file_link_access",
+      "share_page",
+      "unshare_page",
+      "set_page_general_access",
+      "set_folder_access",
     ]);
     for (const existing of ["pageId", "partnerVisible", "publicVisible", "pinned", "fileId"]) {
       expect(props[existing]).toBeDefined();

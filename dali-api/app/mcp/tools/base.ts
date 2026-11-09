@@ -59,6 +59,7 @@ import {
 } from "./staffing";
 import { LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing } from "./document-curation";
 import { LIST_FILE_SHARES_TOOL, runListFileShares } from "./file-sharing";
+import { LIST_PAGE_SHARES_TOOL, runListPageShares } from "./page-sharing";
 
 type CallerTool = (callerId: string, args: never) => Promise<unknown>;
 
@@ -119,4 +120,5 @@ export const BASE_TOOLS: McpTool[] = [
   asCaller(SET_DOMAIN_ELIGIBILITY_TOOL, runSetDomainEligibility),
   asCaller(LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing),
   asCaller(LIST_FILE_SHARES_TOOL, runListFileShares),
+  asCaller(LIST_PAGE_SHARES_TOOL, runListPageShares),
 ];

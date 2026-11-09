@@ -138,6 +138,10 @@ vi.mock("../file-sharing", () => ({
   LIST_FILE_SHARES_TOOL: h.def("list_file_shares"),
   runListFileShares: h.run("runListFileShares"),
 }));
+vi.mock("../page-sharing", () => ({
+  LIST_PAGE_SHARES_TOOL: h.def("list_page_shares"),
+  runListPageShares: h.run("runListPageShares"),
+}));
 
 import { BASE_TOOLS } from "../base";
 import type { McpCtx } from "../../registry";
@@ -199,6 +203,7 @@ const EXPECTED: [string, string, Shape][] = [
   ["set_domain_eligibility", "runSetDomainEligibility", "caller"],
   ["list_document_sharing", "runListDocumentSharing", "caller"],
   ["list_file_shares", "runListFileShares", "caller"],
+  ["list_page_shares", "runListPageShares", "caller"],
 ];
 
 const EXPECTED_CALL: Record<Shape, unknown[]> = {
