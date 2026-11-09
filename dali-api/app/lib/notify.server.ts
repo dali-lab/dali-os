@@ -16,7 +16,14 @@ import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
 import { renderMemberEmail } from "~/email/lib/layout.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
-import { EVENT_TYPES, type EventDef, type EventType } from "~/lib/notification-events";
+import {
+  EVENT_TYPES,
+  defaultEmailFor,
+  type Audience,
+  type EventDef,
+  type EventType,
+} from "~/lib/notification-events";
+import { notificationSettingsPath } from "~/lib/notification-audience";
 import {
   isNotificationCopyKey,
   type NotificationCopyKey,
@@ -79,6 +86,14 @@ export type NotifyResult = { inApp: number; emailed: number; slackDmed: number }
 // on every deploy, so real members' Slack ids live there and a staging job
 // would DM real people. (Email needs no gate here — sendEmail() itself skips
 // on dev and redirects on staging.)
+function audienceOf(user: {
+  daliMember: { id: string } | null;
+  partnerContact: { id: string } | null;
+}): Audience {
+  if (user.daliMember) return "member";
+  return user.partnerContact ? "partner" : "portal";
+}
+
 export function slackDmAllowed(): boolean {
   return getAppEnv() === "prod" || process.env.NOTIFY_SLACK_DM_OVERRIDE === "1";
 }
@@ -129,6 +144,8 @@ export async function notify(args: {
         personalEmail: true,
         netId: true,
         slackUserId: true,
+        daliMember: { select: { id: true } },
+        partnerContact: { select: { id: true } },
       },
     }),
   ]);
@@ -138,6 +155,7 @@ export async function notify(args: {
   type Resolved = {
     recipient: NotifyRecipient;
     user: (typeof users)[number];
+    audience: Audience;
     inApp: boolean;
     instantEmail: boolean;
     slackDm: boolean;
@@ -147,7 +165,10 @@ export async function notify(args: {
     const user = userById.get(userId);
     if (!user) continue; // stale id — nothing sensible to deliver
     const pref = prefByUser.get(userId);
-    const email = def.externalEmail ? "Off" : (pref?.digestFrequency ?? def.defaults.email);
+    const audience = audienceOf(user);
+    const email = def.externalEmail
+      ? "Off"
+      : (pref?.digestFrequency ?? defaultEmailFor(def, audience));
     // A digest subscription implies the in-app row: digests are built from
     // unread Notification rows, so "in-app off + daily digest" would
     // otherwise deliver nothing at all.
@@ -155,6 +176,7 @@ export async function notify(args: {
     resolved.push({
       recipient,
       user,
+      audience,
       inApp:
         def.lockedInApp || digestSelected ? true : (pref?.inApp ?? def.defaults.inApp),
       instantEmail: email === "Instant",
@@ -360,6 +382,7 @@ export async function notify(args: {
       link: absoluteLink(m.link),
       linkLabel: linkLabelFor(r.recipient),
       titleInBody: !(isAnnouncement && (bodyHtml || m.body)),
+      settingsPath: notificationSettingsPath(r.audience),
     });
     const enq = await enqueueOutbound({
       channel: "email",

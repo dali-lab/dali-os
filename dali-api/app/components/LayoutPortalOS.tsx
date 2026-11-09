@@ -307,6 +307,8 @@ export function LayoutPortalOS({
         projectTasks={projectTasks}
         total={taskCount}
         allTasksLink={false}
+        singleFeed
+        title="Notifications"
         onOpen={(url, label) => {
           closeBellPanel()
           openInWorkspace({ url, label })

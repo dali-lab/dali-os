@@ -365,10 +365,14 @@ async function notifyThreadReply(args: {
 
   let title: string | null | undefined;
   let link: string;
+  let partnerLink: string | null = null;
+  let partnerIds = new Set<string>();
   if (args.targetType === "doc") {
     const context = await docCommentContext(args.targetId, args.rootId, args.rootId);
     title = context.title;
     link = context.replyLink;
+    partnerLink = context.partnerReplyLink;
+    if (partnerLink) partnerIds = await partnerAccountIds(recipients);
   } else if (args.targetType === "pagedoc") {
     title = (
       await prisma.pageDoc.findUnique({
@@ -395,6 +399,16 @@ async function notifyThreadReply(args: {
       vars: { itemTitle: title ?? "a document", itemDetail: preview },
       link,
     },
-    recipients: recipients.map((userId) => ({ userId })),
+    recipients: recipients.map((userId) =>
+      partnerLink && partnerIds.has(userId) ? { userId, link: partnerLink } : { userId },
+    ),
   });
+}
+
+async function partnerAccountIds(userIds: string[]): Promise<Set<string>> {
+  const contacts = await prisma.partnerContact.findMany({
+    where: { userId: { in: userIds }, user: { daliMember: { is: null } } },
+    select: { userId: true },
+  });
+  return new Set(contacts.flatMap((c) => (c.userId ? [c.userId] : [])));
 }
