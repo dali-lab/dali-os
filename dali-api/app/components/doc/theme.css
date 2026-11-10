@@ -1782,3 +1782,74 @@ svg.lucide-plus.dali-cmp-ico { width: 11px !important; height: 11px !important; 
 .dali-cmp-links-edit .dali-cmp-head { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
 /* Panels round their corners at 14px, so the shade sits concentric with them: same shape as the dotted frame. */
 .dali-cmp[data-component="timeline"]:hover::before, .dali-cmp[data-component="links"]:hover::before, .dali-cmp[data-component="bars"]:hover::before { border-radius: 26px; }
+
+/* Panels (timeline, resource list, bar chart) sit on the page with no fill. */
+.dali-cmp-panel, .dali-cmp-timeline-edit, .dali-cmp-links-edit { background: transparent; }
+
+/* Round 17: panels have no fill, so their content aligns to the same left/right edges as every other component. */
+.dali-cmp-panel, .dali-cmp-timeline-edit, .dali-cmp-links-edit { padding-left: 0; padding-right: 0; }
+.dali-cmp-panel--flush .dali-cmp-head { padding: 14px 0 0; }
+.dali-cmp-row { padding-left: 0; padding-right: 0; }
+.dali-cmp-row--edit, .dali-cmp-row--add { padding-left: 8px; padding-right: 8px; margin-inline: -8px; width: calc(100% + 16px); border-radius: 8px; }
+.dali-cmp-row--edit.dali-cmp-row--selected { border-radius: 8px; }
+.dali-cmp-row__tools { right: 8px; }
+.dali-cmp-row__grip { position: static; transform: none; opacity: 1; pointer-events: auto; }
+.dali-cmp-link-pop { right: 8px; }
+/* Timeline: left-aligned steps. */
+.dali-cmp-step { align-items: flex-start; text-align: left; padding: 4px 12px 0 0; }
+.dali-cmp-step::before { left: 11px; }
+.dali-cmp-step__more { align-items: flex-start; }
+.dali-cmp-steps--edit .dali-cmp-step { padding: 4px 12px 0 0; align-items: stretch; }
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details { text-align: left; padding-inline: 0; }
+.dali-cmp-steps--edit .dali-cmp-step__input { padding-right: 18px; }
+.dali-cmp-step__numwrap { justify-content: flex-start; align-self: flex-start; }
+.dali-cmp-steps--edit .dali-cmp-step--add { align-items: flex-start; padding-inline: 0; }
+.dali-cmp-step__addbtn { align-items: flex-start; }
+.dali-cmp-fan { left: 0; transform: none; }
+@keyframes dali-fan-in2 { from { opacity: 0; transform: translateY(3px); } }
+
+/* Round 18: every component sits 12px inside its shade/frame on all four sides; Edit and Cancel/Done sit in that margin's top-right corner. */
+.dali-cmp-panel, .dali-cmp-timeline-edit, .dali-cmp-links-edit { padding-top: 0; padding-bottom: 0; }
+.dali-cmp-panel--flush .dali-cmp-head { padding-top: 0; }
+.dali-cmp-steps--edit { padding-bottom: 0; }
+.dali-cmp .dali-cmp-edit, .dali-cmp[data-component] .dali-cmp-edit, .dali-cmp[data-component] .dali-cmp-foot, .dali-cmp[data-component="timeline"] .dali-cmp-foot { top: -2px !important; right: -4px !important; }
+/* Components with no title row keep a little top room so the controls never sit on content. */
+.dali-cmp-panel:not(.dali-cmp-panel--flush):not(:has(.dali-cmp-head)) { padding-top: 32px; }
+.dali-cmp-stats-edit { padding-top: 32px; }
+
+/* Round 19: timeline centered again (first step flush with the margin), connectors drawn per half-step. */
+.dali-cmp-step { align-items: center; text-align: center; padding: 4px 6px 0; }
+.dali-cmp-step:first-child { flex: 0 0 auto; padding-left: 0; }
+.dali-cmp-step::before { left: 50%; width: 50%; }
+.dali-cmp-step::after { content: ""; position: absolute; top: 15px; right: 50%; width: 50%; height: 1px; transform: translateY(-50%); background: var(--cmp-border); }
+.dali-cmp-step:first-child::after, .dali-cmp-step:last-child::before { display: none; }
+.dali-cmp-step--done::before, .dali-cmp-step--done::after, .dali-cmp-step--current::after { background: #7cc8b8; }
+.dali-cmp-step__detail { margin-top: 2px; max-width: 20ch; font-size: 0.85em; }
+.dali-cmp-steps--edit .dali-cmp-step { flex: 1 0 140px; min-width: 140px; padding: 4px 6px 0; align-items: stretch; }
+.dali-cmp-steps--edit .dali-cmp-step:first-child { flex: 0 0 auto; min-width: 120px; padding-left: 0; }
+.dali-cmp-steps--edit .dali-cmp-step--add { flex: 0 0 96px; min-width: 96px; align-items: center; padding-inline: 6px; }
+.dali-cmp-step__numwrap { justify-content: center; align-self: center; }
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details { text-align: center; padding: 4px 18px; border-radius: 6px; }
+.dali-cmp-step__addbtn { align-items: center; }
+.dali-cmp-fan { left: 50%; transform: translateX(-50%); }
+@keyframes dali-fan-in2 { from { opacity: 0; transform: translateX(-50%) translateY(3px); } }
+.dali-cmp-step--dragging { opacity: 0.45; }
+.dali-cmp-mini--flush { align-self: flex-start; padding-left: 0; margin-left: 0; font-size: 0.875em; font-weight: 400; opacity: 0.7; }
+.dali-cmp-mini--flush:hover { background: none; opacity: 1; }
+
+/* Pinned cards: tag keeps its tint while editing; empty tags show a tag-shaped outline; link, color and delete live in the card. */
+.dali-cmp-tag.dali-cmp-card__field--tag { background: color-mix(in srgb, var(--cmp-tone) 42%, transparent); }
+.dali-cmp-tag.dali-cmp-card__field--tag:placeholder-shown { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 28%, transparent); }
+.dali-cmp-card--edit { position: relative; }
+.dali-cmp-card__link { font-size: 0.78em; }
+.dali-cmp-card__colors { display: flex; gap: 6px; margin-top: 4px; }
+.dali-cmp-card__del { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--color-os-grey, #6b7280); cursor: pointer; transition: color 0.15s ease-out, background-color 0.15s ease-out; }
+.dali-cmp-card__del:hover { color: #d6455d; background: color-mix(in srgb, currentColor 10%, transparent); }
+
+/* Resource list: link sits under the description; the drag grip is always visible. */
+.dali-cmp-row__link { font-size: 0.78em; opacity: 0.8; }
+.dali-cmp-row__tools { opacity: 1; pointer-events: auto; }
+.dali-cmp-row__grip { opacity: 0.4; }
+.dali-cmp-row--edit:hover .dali-cmp-row__grip, .dali-cmp-row--selected .dali-cmp-row__grip { opacity: 0.9; }
+.dali-cmp-row__tool--del { opacity: 0; transition: opacity 0.16s ease-out, color 0.15s ease-out; }
+.dali-cmp-row--edit:hover .dali-cmp-row__tool--del, .dali-cmp-row--selected .dali-cmp-row__tool--del, .dali-cmp-row--edit:focus-within .dali-cmp-row__tool--del { opacity: 1; }

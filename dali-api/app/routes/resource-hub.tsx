@@ -1,4 +1,4 @@
-import { CoverPattern, isPatternCover } from "~/components/resource-hub/CoverPattern";
+import { CoverPattern, coverGround, isPatternCover } from "~/components/resource-hub/CoverPattern";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub";
@@ -86,7 +86,9 @@ export default function ResourceHubIndex() {
                 className="group flex h-full flex-col overflow-hidden rounded-os-card border border-os-container bg-os-card outline-none transition-[border-color,transform] duration-150 ease-out hover:border-os-container-hi active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-os-accent/60"
               >
                 {isPatternCover(card.coverUrl) ? (
-                  <CoverPattern url={card.coverUrl} className="block aspect-[16/10] w-full" />
+                  <div className="grid aspect-[16/10] place-items-center" style={{ background: coverGround(card.coverUrl) }}>
+                    <CoverPattern url={card.coverUrl} title={card.title} />
+                  </div>
                 ) : (
                   <div
                     className="aspect-[16/10] bg-os-hover bg-cover bg-center"

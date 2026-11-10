@@ -7,6 +7,7 @@ import { createReactBlockSpec } from "@blocknote/react";
 import { ArrowDown, ArrowUp, Check, Columns2, Flag, GripVertical, ImagePlus, Link2, Rows2, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
 import {
   TONES,
   kindDef,
@@ -110,15 +111,46 @@ function TimelineEditor({
   onClose: () => void;
 }) {
   const [fanOpen, setFanOpen] = useState<number | null>(null);
+  const [fanPin, setFanPin] = useState<number | null>(null);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragReady, setDragReady] = useState<number | null>(null);
   const [noteOpen, setNoteOpen] = useState(!!draft.fields.note);
   const nameRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusLast, setFocusLast] = useState(false);
 
+  const dialog = useDialog();
   const setField = (key: string, value: string) =>
     setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
   const setItem = (i: number, patch: Record<string, string>) =>
     setDraft((d) => ({ ...d, items: d.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
   const current = Number.parseInt(draft.fields.current ?? "", 10);
+
+  useEffect(() => {
+    if (fanPin === null) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element).closest?.(".dali-cmp-step__numwrap, [class*=\"devstudio\"]")) {
+        setFanPin(null);
+        setFanOpen(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [fanPin]);
+
+  const closeFan = () => {
+    setFanPin(null);
+    setFanOpen(null);
+  };
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= draft.items.length || from === to) return;
+    setDraft((d) => {
+      const items = [...d.items];
+      const [it] = items.splice(from, 1);
+      items.splice(to, 0, it!);
+      return { ...d, items };
+    });
+    closeFan();
+  };
 
   useEffect(() => {
     if (!focusLast) return;
@@ -140,14 +172,14 @@ function TimelineEditor({
           <input
             aria-label="Note"
             value={draft.fields.note ?? ""}
-            placeholder="Add a note"
+            placeholder="Subtitle"
             autoFocus={!draft.fields.note}
             onChange={(e) => setField("note", e.target.value)}
             className="dali-cmp-sub dali-cmp-bare"
           />
         ) : (
-          <button type="button" className="dali-cmp-mini self-start" onClick={() => setNoteOpen(true)}>
-            Add a note
+          <button type="button" className="dali-cmp-mini dali-cmp-mini--flush" onClick={() => setNoteOpen(true)}>
+            Add subtitle
           </button>
         )}
       </div>
@@ -159,12 +191,42 @@ function TimelineEditor({
           return (
             <li
               key={i}
-              className={`dali-cmp-step dali-cmp-step--${state}${it.tone ? ` dali-cmp-step--toned dali-cmp-tone--${it.tone}` : ""}`}
+              draggable={dragReady === i}
+              className={`dali-cmp-step dali-cmp-step--${state}${it.tone ? ` dali-cmp-step--toned dali-cmp-tone--${it.tone}` : ""}${dragFrom === i ? " dali-cmp-step--dragging" : ""}`}
+              onKeyDown={(e) => {
+                if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+                  e.preventDefault();
+                  const to = i + (e.key === "ArrowLeft" ? -1 : 1);
+                  move(i, to);
+                  requestAnimationFrame(() => nameRefs.current[to]?.focus());
+                }
+              }}
+              onDragStart={(e) => {
+                e.dataTransfer.setData("text/plain", String(i));
+                setDragFrom(i);
+              }}
+              onDragOver={(e) => {
+                if (dragFrom === null) return;
+                e.preventDefault();
+                if (dragFrom !== i) {
+                  move(dragFrom, i);
+                  setDragFrom(i);
+                }
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragFrom(null);
+                setDragReady(null);
+              }}
+              onDragEnd={() => {
+                setDragFrom(null);
+                setDragReady(null);
+              }}
             >
               <div
                 className="dali-cmp-step__numwrap"
                 onMouseEnter={() => setFanOpen(i)}
-                onMouseLeave={() => setFanOpen((o) => (o === i ? null : o))}
+                onMouseLeave={() => setFanOpen((o) => (o === i && fanPin !== i ? null : o))}
               >
                 <button
                   type="button"
@@ -172,7 +234,13 @@ function TimelineEditor({
                   title="Color and current step"
                   aria-label={`Step ${n} options`}
                   aria-expanded={fanOpen === i}
-                  onClick={() => setFanOpen(fanOpen === i ? null : i)}
+                  onMouseDown={() => setDragReady(i)}
+                  onMouseUp={() => setDragReady(null)}
+                  onClick={() => {
+                    if (fanPin === i) return closeFan();
+                    setFanPin(i);
+                    setFanOpen(i);
+                  }}
                 >
                   {n}
                 </button>
@@ -188,7 +256,7 @@ function TimelineEditor({
                         className={`dali-cmp-swatch dali-cmp-tone--${t}`}
                         onClick={() => {
                           setItem(i, { tone: it.tone === t ? "" : t });
-                          setFanOpen(null);
+                          closeFan();
                         }}
                       />
                     ))}
@@ -199,7 +267,7 @@ function TimelineEditor({
                       title="Make current step"
                       onClick={() => {
                         setField("current", String(n));
-                        setFanOpen(null);
+                        closeFan();
                       }}
                     >
                       <Flag size={10} strokeWidth={1.75} aria-hidden />
@@ -223,9 +291,15 @@ function TimelineEditor({
                   className="dali-cmp-step__del"
                   aria-label={`Delete step ${n}`}
                   title="Delete step"
-                  onClick={() => {
+                  onClick={async () => {
                     setFanOpen(null);
-                    setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                    const ok = await dialog.confirm({
+                      title: "Delete this step?",
+                      description: it.label ? `Step ${n}, “${it.label}”, will be removed.` : `Step ${n} will be removed.`,
+                      confirmLabel: "Delete",
+                      tone: "destructive",
+                    });
+                    if (ok) setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
                   }}
                 >
                   <Trash2 className="dali-cmp-ico" size={12} strokeWidth={1.5} aria-hidden />
@@ -266,7 +340,7 @@ function TimelineEditor({
         <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave(draft)}>
+        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave({ ...draft, items: draft.items.filter((it) => (it.label ?? "").trim() || (it.details ?? "").trim()) })}>
           Done
         </button>
       </div>
@@ -528,25 +602,11 @@ function CardsEditor({
   const [removed, setRemoved] = useState<{ item: ComponentData["items"][number]; index: number } | null>(null);
   const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusTitle, setFocusTitle] = useState(false);
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [popPos, setPopPos] = useState<{ left: number; top: number } | null>(null);
-
-  useEffect(() => {
-    if (sel === null) return setPopPos(null);
-    const grid = gridRef.current;
-    const card = grid?.children[sel] as HTMLElement | undefined;
-    if (!grid || !card) return;
-    const width = Math.min(320, grid.clientWidth);
-    setPopPos({
-      left: Math.max(0, Math.min(card.offsetLeft, grid.clientWidth - width)),
-      top: card.offsetTop + card.offsetHeight + 8,
-    });
-  }, [sel, draft.items.length]);
 
   useEffect(() => {
     if (sel === null) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-card--edit, .dali-cmp-cards-edit__panel, [class*=\"devstudio\"]")) setSel(null);
+      if (!(e.target as Element).closest?.(".dali-cmp-card--edit, [class*=\"devstudio\"]")) setSel(null);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -572,8 +632,6 @@ function CardsEditor({
     setSel((c) => (c === from ? to : c));
   };
 
-  const item = sel !== null ? draft.items[sel] : undefined;
-
   return (
     <div className="dali-cmp-cards-edit">
       <input
@@ -583,7 +641,7 @@ function CardsEditor({
         onChange={(e) => setDraft((d) => ({ ...d, fields: { ...d.fields, title: e.target.value } }))}
         className="dali-cmp-title dali-cmp-bare"
       />
-      <div ref={gridRef} className="dali-cmp-grid dali-cmp-grid--edit" onDragLeave={() => setDragOver(null)}>
+      <div className="dali-cmp-grid dali-cmp-grid--edit" onDragLeave={() => setDragOver(null)}>
         {draft.items.map((it, i) => (
           <div
             key={i}
@@ -648,6 +706,50 @@ function CardsEditor({
               onChange={(e) => setItem(i, { meta: e.target.value })}
               className="dali-cmp-meta dali-cmp-card__field"
             />
+            {sel === i && (
+              <>
+                <input
+                  aria-label={`Card ${i + 1} link`}
+                  value={it.href ?? ""}
+                  placeholder="Add link"
+                  inputMode="url"
+                  onChange={(e) => setItem(i, { href: e.target.value })}
+                  className="dali-cmp-meta dali-cmp-card__field dali-cmp-card__link"
+                />
+                <div className="dali-cmp-card__colors" role="radiogroup" aria-label="Color">
+                  {TONES.map((tn) => {
+                    const on = (it.tone || "neutral") === tn;
+                    return (
+                      <button
+                        key={tn}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        aria-label={tn}
+                        title={tn}
+                        onClick={() => setItem(i, { tone: tn })}
+                        className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
+                      >
+                        {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  className="dali-cmp-card__del"
+                  aria-label={`Delete card ${i + 1}`}
+                  title="Delete card"
+                  onClick={() => {
+                    setRemoved({ item: it, index: i });
+                    setSel(null);
+                    setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                  }}
+                >
+                  <Trash2 size={12} strokeWidth={1.5} aria-hidden />
+                </button>
+              </>
+            )}
           </div>
         ))}
         <button
@@ -662,55 +764,6 @@ function CardsEditor({
           <Plus className="dali-cmp-ico" size={9} strokeWidth={1.5} aria-hidden />
           Add card
         </button>
-        {item && sel !== null && (
-        <div className="dali-cmp-cards-edit__panel" role="group" aria-label="Edit card" style={popPos ? { left: popPos.left, top: popPos.top } : { visibility: "hidden" }}>
-          <div className="dali-cmp-cards-edit__head">
-            <span>Card options</span>
-          </div>
-          <div className="dali-cmp-cards-edit__fields dali-cmp-cards-edit__fields--stack">
-            <label className="dali-cmp-pop-field">
-              <span>Link</span>
-              <input value={item.href ?? ""} placeholder="Optional · https://" inputMode="url" onChange={(e) => setItem(sel, { href: e.target.value })} />
-            </label>
-          </div>
-          <div className="dali-cmp-cards-edit__tools">
-            <div className="dali-cmp-cards-edit__colors">
-              <span>Color</span>
-              <div className="flex gap-2" role="radiogroup" aria-label="Color">
-                {TONES.map((t) => {
-                  const on = (item.tone || "neutral") === t;
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      role="radio"
-                      aria-checked={on}
-                      aria-label={t}
-                      title={t}
-                      onClick={() => setItem(sel, { tone: t })}
-                      className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${t}`}
-                    >
-                      {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <button
-              type="button"
-              className="dali-cmp-pop-delete"
-              onClick={() => {
-                setRemoved({ item, index: sel });
-                setSel(null);
-                setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== sel) }));
-              }}
-            >
-              <Trash2 className="dali-cmp-ico" size={7} strokeWidth={1.5} aria-hidden />
-              Delete card
-            </button>
-          </div>
-        </div>
-      )}
       </div>
 
       <div className="dali-cmp-foot" aria-live="polite">
@@ -936,7 +989,6 @@ function LinksEditor({
   onClose: () => void;
 }) {
   const [sel, setSel] = useState<number | null>(null);
-  const [urlOpen, setUrlOpen] = useState<number | null>(null);
   const [subOpen, setSubOpen] = useState(!!draft.fields.subtitle);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragReady, setDragReady] = useState<number | null>(null);
@@ -949,15 +1001,6 @@ function LinksEditor({
     titleRefs.current[draft.items.length - 1]?.focus();
     setFocusNew(false);
   }, [focusNew, draft.items.length]);
-
-  useEffect(() => {
-    if (urlOpen === null) return;
-    const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-link-pop, .dali-cmp-row__tool--link, [class*=\"devstudio\"]")) setUrlOpen(null);
-    };
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [urlOpen]);
 
   const setField = (key: string, value: string) =>
     setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
@@ -972,7 +1015,6 @@ function LinksEditor({
       return { ...d, items };
     });
     setSel((c) => (c === from ? to : c));
-    setUrlOpen(null);
   };
 
   return (
@@ -1038,22 +1080,6 @@ function LinksEditor({
             setDragReady(null);
           }}
         >
-          <button
-            type="button"
-            className="dali-cmp-row__tool dali-cmp-row__grip"
-            aria-label={`Reorder resource ${i + 1}. Drag, or use Alt plus the up and down arrow keys.`}
-            onMouseDown={() => setDragReady(i)}
-            onMouseUp={() => setDragReady(null)}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                e.preventDefault();
-                e.stopPropagation();
-                move(i, i + (e.key === "ArrowUp" ? -1 : 1));
-              }
-            }}
-          >
-            <GripVertical size={12} strokeWidth={1.5} aria-hidden />
-          </button>
           <span className="dali-cmp-row__main">
             <input
               ref={(el) => {
@@ -1072,17 +1098,31 @@ function LinksEditor({
               onChange={(e) => setItem(i, { description: e.target.value })}
               className="dali-cmp-sub dali-cmp-row__field"
             />
+            <input
+              aria-label={`Resource ${i + 1} link`}
+              value={it.href ?? ""}
+              placeholder="Add link"
+              inputMode="url"
+              onChange={(e) => setItem(i, { href: e.target.value })}
+              className="dali-cmp-row__field dali-cmp-row__link"
+            />
           </span>
           <div className="dali-cmp-row__tools">
             <button
               type="button"
-              className={`dali-cmp-row__tool dali-cmp-row__tool--link${it.href ? " dali-cmp-row__tool--on" : ""}`}
-              aria-label={`Edit link for resource ${i + 1}`}
-              aria-expanded={urlOpen === i}
-              title="Link"
-              onClick={() => setUrlOpen(urlOpen === i ? null : i)}
+              className="dali-cmp-row__tool dali-cmp-row__grip"
+              aria-label={`Reorder resource ${i + 1}. Drag, or use Alt plus the up and down arrow keys.`}
+              onMouseDown={() => setDragReady(i)}
+              onMouseUp={() => setDragReady(null)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  move(i, i + (e.key === "ArrowUp" ? -1 : 1));
+                }
+              }}
             >
-              <Link2 size={12} strokeWidth={1.5} aria-hidden />
+              <GripVertical size={12} strokeWidth={1.5} aria-hidden />
             </button>
             <button
               type="button"
@@ -1092,35 +1132,12 @@ function LinksEditor({
               onClick={() => {
                 setRemoved({ item: it, index: i });
                 setSel(null);
-                setUrlOpen(null);
                 setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
               }}
             >
               <Trash2 size={12} strokeWidth={1.5} aria-hidden />
             </button>
           </div>
-          {urlOpen === i && (
-            <div
-              className="dali-cmp-link-pop"
-              role="dialog"
-              aria-label="Link"
-              onKeyDown={(e) => {
-                if (e.key === "Escape" || e.key === "Enter") {
-                  e.stopPropagation();
-                  setUrlOpen(null);
-                }
-              }}
-            >
-              <span>Link</span>
-              <input
-                autoFocus
-                value={it.href ?? ""}
-                placeholder="https://"
-                inputMode="url"
-                onChange={(e) => setItem(i, { href: e.target.value })}
-              />
-            </div>
-          )}
         </div>
       ))}
 

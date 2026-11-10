@@ -91,14 +91,8 @@ function Timeline({ fields, items }: ComponentData) {
               className={`dali-cmp-step dali-cmp-step--${state}${it.tone ? ` dali-cmp-step--toned ${tone(it)}` : ""}`}
             >
               <span className="dali-cmp-step__num">{n}</span>
-              {it.details?.trim() ? (
-                <details className="dali-cmp-step__more">
-                  <summary className="dali-cmp-step__label">{it.label}</summary>
-                  <p className="dali-cmp-sub">{it.details}</p>
-                </details>
-              ) : (
-                <span className="dali-cmp-step__label">{it.label}</span>
-              )}
+              <span className="dali-cmp-step__label">{it.label}</span>
+              {it.details?.trim() && <span className="dali-cmp-sub dali-cmp-step__detail">{it.details}</span>}
             </li>
           );
         })}
@@ -117,7 +111,6 @@ function Links({ fields, items }: ComponentData) {
             <span className="dali-cmp-row__title">{it.title}</span>
             {it.description && <span className="dali-cmp-sub">{it.description}</span>}
           </span>
-          {it.meta && <span className="dali-cmp-meta">{it.meta}</span>}
         </LinkOrDiv>
       ))}
     </div>

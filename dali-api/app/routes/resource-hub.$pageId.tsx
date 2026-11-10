@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { ArrowLeft, ImagePlus, Palette, Trash2 } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId";
@@ -15,7 +15,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { canEditResourceHub, requireResourceHubViewer } from "~/lib/resource-hub.server";
 import { IconButton } from "~/components/ui/IconButton";
-import { COVER_PATTERNS, CoverPattern, isPatternCover, patternCoverUrl } from "~/components/resource-hub/CoverPattern";
+import { COVER_DECOR, COVER_PATTERNS, CoverPattern, buildCoverUrl, isPatternCover, parseCover } from "~/components/resource-hub/CoverPattern";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 
@@ -133,6 +133,24 @@ export default function ResourceHubPage() {
   const [colorsOpen, setColorsOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [coverMenu, setCoverMenu] = useState(false);
+  const coverMenuRef = useRef<HTMLDivElement>(null);
+  const [titleDraft, setTitleDraft] = useState(page.title);
+  const cover = parseCover(page.coverUrl);
+
+  useEffect(() => setTitleDraft(page.title), [page.title]);
+  useEffect(() => {
+    if (!coverMenu) return;
+    const onDown = (e: MouseEvent) => {
+      if (!coverMenuRef.current?.contains(e.target as Node)) setCoverMenu(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setCoverMenu(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [coverMenu]);
 
   const submit = (data: Record<string, string>) => fetcher.submit(data, { method: "post" });
   const live = canEdit && !!collabToken;
@@ -221,56 +239,90 @@ export default function ResourceHubPage() {
       </div>
 
       {(page.coverUrl || editing) && (
-        <div className="group relative mb-6 -mx-6 overflow-hidden sm:-mx-10">
-          {isPatternCover(page.coverUrl) ? (
-            <CoverPattern url={page.coverUrl} className="block aspect-[16/5] w-full" />
-          ) : page.coverUrl ? (
-            <img src={page.coverUrl} alt="" className="aspect-[16/5] w-full object-cover" />
-          ) : (
-            <div className="flex aspect-[16/5] w-full items-center justify-center bg-black/[0.04]" />
-          )}
+        <div className="relative mb-6 -mx-6 sm:-mx-10">
+          <div className="overflow-hidden">
+            {isPatternCover(page.coverUrl) ? (
+              <CoverPattern url={page.coverUrl} title={titleDraft} />
+            ) : page.coverUrl ? (
+              <img src={page.coverUrl} alt="" className="aspect-[16/5] w-full object-cover" />
+            ) : (
+              <div className="flex aspect-[16/5] w-full items-center justify-center bg-black/[0.04]" />
+            )}
+          </div>
           {editing && (
-            <div className="absolute bottom-3 right-3 flex items-center gap-1">
+            <div ref={coverMenuRef} className="absolute bottom-3 right-3 flex items-center gap-1">
               {coverMenu && (
                 <div
-                  role="menu"
-                  aria-label="Choose a cover"
-                  className="absolute bottom-full right-0 z-10 mb-2 w-[300px] max-w-[calc(100vw-48px)] rounded-os-card border border-os-container bg-os-card p-3 shadow-lg"
+                  role="dialog"
+                  aria-label="Cover style"
+                  className="absolute right-0 top-full z-30 mt-2 w-[380px] max-w-[calc(100vw-48px)] rounded-os-card border border-os-container bg-os-card p-4 shadow-lg"
                 >
-                  <p className="mb-2 text-xs font-medium text-os-grey">Patterns</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {COVER_PATTERNS.map((pt) => (
-                      <button
-                        key={pt.id}
-                        type="button"
-                        role="menuitem"
-                        title={pt.name}
-                        aria-label={pt.name}
-                        onClick={() => {
-                          submit({ intent: "cover", url: patternCoverUrl(pt.id) });
-                          setCoverMenu(false);
-                        }}
-                        className={`overflow-hidden rounded-lg border bg-card transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60 ${page.coverUrl === patternCoverUrl(pt.id) ? "border-os-accent" : "border-os-container"}`}
-                      >
-                        <CoverPattern url={patternCoverUrl(pt.id)} className="block aspect-[16/7] w-full" />
-                      </button>
-                    ))}
+                  <p className="mb-2 text-sm font-semibold text-foreground">Cover style</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {COVER_PATTERNS.map((pt) => {
+                      const selected = cover?.id === pt.id;
+                      return (
+                        <button
+                          key={pt.id}
+                          type="button"
+                          aria-pressed={selected}
+                          onClick={() => submit({ intent: "cover", url: buildCoverUrl(pt.id, cover?.decor ?? []) })}
+                          className="group/thumb flex flex-col gap-1 text-left focus-visible:outline-none"
+                        >
+                          <span
+                            className={`block overflow-hidden rounded-lg border transition-shadow group-hover/thumb:shadow-md group-focus-visible/thumb:ring-2 group-focus-visible/thumb:ring-os-accent/60 ${selected ? "border-os-accent ring-1 ring-os-accent" : "border-os-container"}`}
+                          >
+                            <CoverPattern url={buildCoverUrl(pt.id, cover?.decor ?? [])} title={titleDraft} />
+                          </span>
+                          <span className="text-xs text-os-grey">{pt.name}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={uploading}
-                    onClick={() => {
-                      setCoverMenu(false);
-                      fileRef.current?.click();
-                    }}
-                    className="mt-3 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-os-hover"
-                  >
-                    <ImagePlus className="h-4 w-4 text-os-grey" aria-hidden />
-                    Upload an image
-                  </button>
-                  {page.coverUrl && (
-                    <div className="mt-2 flex justify-end">
+
+                  <p className="mb-2 mt-4 text-sm font-semibold text-foreground">Decor</p>
+                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Decor">
+                    {COVER_DECOR.map((d) => {
+                      const on = !!cover?.decor.includes(d.id);
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          aria-pressed={on}
+                          disabled={!cover}
+                          title={cover ? undefined : "Pick a cover style first"}
+                          onClick={() =>
+                            cover &&
+                            submit({
+                              intent: "cover",
+                              url: buildCoverUrl(cover.id, on ? cover.decor.filter((x) => x !== d.id) : [...cover.decor, d.id]),
+                            })
+                          }
+                          className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60 disabled:cursor-not-allowed disabled:opacity-50 ${on ? "border-os-accent bg-os-accent/10 text-foreground" : "border-os-container text-os-grey hover:bg-os-hover hover:text-foreground"}`}
+                        >
+                          {d.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {page.coverUrl && !cover && (
+                    <p className="mt-2 text-xs text-os-grey">Decor and the title work with cover styles, not uploaded images.</p>
+                  )}
+
+                  <div className="mt-4 flex items-center justify-between border-t border-os-container pt-3">
+                    <button
+                      type="button"
+                      disabled={uploading}
+                      onClick={() => {
+                        setCoverMenu(false);
+                        fileRef.current?.click();
+                      }}
+                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-os-hover"
+                    >
+                      <ImagePlus className="h-4 w-4 text-os-grey" aria-hidden />
+                      Upload an image
+                    </button>
+                    {page.coverUrl && (
                       <button
                         type="button"
                         onClick={() => {
@@ -281,8 +333,8 @@ export default function ResourceHubPage() {
                       >
                         Remove
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
               <IconButton
@@ -312,6 +364,7 @@ export default function ResourceHubPage() {
             aria-label="Title"
             defaultValue={page.title}
             placeholder="Title"
+            onChange={(e) => setTitleDraft(e.target.value || page.title)}
             onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
             onBlur={(e) => {
               const next = e.target.value.replace(/\s+/g, " ").trim();
