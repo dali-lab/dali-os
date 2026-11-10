@@ -17,6 +17,7 @@ import { TermView } from "./TermView";
 import { WeekView } from "./WeekView";
 import { YearView } from "./YearView";
 import type { Dialog, Submit, SubmitResult, TaskboardData, Zoom } from "./types";
+import "./taskboard.css";
 
 const ZOOMS: Zoom[] = ["year", "term", "week"];
 

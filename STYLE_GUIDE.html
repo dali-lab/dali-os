@@ -629,8 +629,16 @@
             <div class="item-row"><span class="sp">Jordan Lee</span><span class="chip" style="background:var(--role-amber-fill);color:var(--role-amber-ink)">PM</span></div>
           </div>
         </div>
+        <div class="os-card" style="padding:24px 16px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center">
+          <div aria-hidden style="position:relative;display:flex;flex-direction:column;gap:6px;width:96px;height:56px;padding:8px;border:2px dashed var(--container-hi);border-radius:8px;box-sizing:border-box">
+            <div style="display:flex;align-items:center;gap:6px;opacity:.6"><div style="width:8px;height:10px;border-radius:2px;background:var(--container-hi)"></div><div style="width:40px;height:4px;border-radius:999px;background:var(--container)"></div></div>
+            <div style="display:flex;align-items:center;gap:6px;opacity:.4"><div style="width:8px;height:10px;border-radius:2px;background:var(--container-hi)"></div><div style="width:32px;height:4px;border-radius:999px;background:var(--container)"></div></div>
+            <div style="position:absolute;bottom:-8px;left:50%;transform:translateX(-50%);width:16px;height:16px;border-radius:999px;background:var(--accent)"></div>
+          </div>
+          <span style="font-size:14px;color:var(--muted)">No Core tasks yet.</span>
+        </div>
       </div>
-      <p class="note">A detail card is an eyebrow over 17px-icon rows. A list card is item rows on the well fill with an 8px corner. Hovered cards wash toward the accent, not toward grey.</p>
+      <p class="note">A detail card is an eyebrow over 17px-icon rows. A list card is item rows on the well fill with an 8px corner. Hovered cards wash toward the accent, not toward grey. An empty folder, board or list uses <code>EmptyState</code>: a dashed card drawn in CSS over one muted line, with optional actions below.</p>
     </section>
 
     <section class="c6 l4">
@@ -750,10 +758,6 @@
     ['os-accent-ink', '#2f5fb5', '#8fb6f2', 'Ink: text, borders, focus, thin washes'],
     ['os-green', '#0f7a4d', '#9fe0a8', 'Success, active'],
     ['os-amber', '#8f5400', '#f2b84b', 'Warning, in progress'],
-    ['os-accent-tint', 'accent at 14%', 'accent at 16%', 'Selected rows, drop targets, quiet accent buttons'],
-    ['os-amber-tint', '#fbefdc', 'rgba(242,184,75,.16)', 'Rollover banner and badge fill'],
-    ['os-milestone', '#6b4ac2', '#c9b2f5', 'Milestone marks and progress'],
-    ['os-milestone-tint', '#ece6f8', 'rgba(201,178,245,.16)', 'Milestone bars and chips'],
     ['danger-ink', '#c0362f', '#ff6b6b', 'Errors, required marks, destructive']
   ];
   var wash = [

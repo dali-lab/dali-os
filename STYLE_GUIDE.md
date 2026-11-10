@@ -77,10 +77,6 @@ and a card is a quiet cool step **darker** than it.
 | `os-green` | `#0f7a4d` | `#9fe0a8` | Success, active |
 | `os-amber` | `#8f5400` | `#f2b84b` | Warning, in progress |
 | `--os-danger-ink` | `#c0362f` | `#ff6b6b` | Errors, required marks, destructive |
-| `os-accent-tint` | accent at 14% | accent at 16% | Selected rows, drop targets, quiet accent buttons |
-| `os-amber-tint` | `#fbefdc` | `rgba(242,184,75,.16)` | Rollover banner and badge fill |
-| `os-milestone` | `#6b4ac2` | `#c9b2f5` | Milestone marks and progress |
-| `os-milestone-tint` | `#ece6f8` | `rgba(201,178,245,.16)` | Milestone bars and chips |
 
 **The accent has two halves**, both keyed on the page's section. `LayoutOS`
 sets `--mode-accent` (the area's tint) and `--mode-accent-ink` (its ink) from
@@ -375,6 +371,9 @@ in-progress work, and clearing a configured binding.
   segments and the container fill on the active one.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
+- Empty states: `EmptyState` (`ui/EmptyState.tsx`), a small dashed card drawn
+  in CSS above one muted line, with optional actions below. Use it for an
+  empty folder, board, list or filter result instead of a bare line of text.
 
 ### 6.7 Rail
 

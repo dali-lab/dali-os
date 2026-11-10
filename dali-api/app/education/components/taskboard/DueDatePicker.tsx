@@ -141,7 +141,7 @@ function Calendar({
                     isSelected
                       ? "bg-os-accent font-bold text-os-bg"
                       : inValueWeek
-                        ? "bg-os-accent-tint text-os-fg hover:bg-os-card-hover"
+                        ? "bg-(--tb-accent-tint) text-os-fg hover:bg-os-card-hover"
                         : "text-os-fg hover:bg-os-hover",
                     !ref && "cursor-not-allowed text-os-muted opacity-50 hover:bg-transparent",
                   )}

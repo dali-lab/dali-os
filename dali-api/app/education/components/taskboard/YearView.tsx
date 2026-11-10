@@ -43,7 +43,7 @@ export function YearView({
               <span className="text-sm text-os-grey">{dateRange(p.startDate, periodEnd(p))}</span>
               <span className="flex flex-wrap gap-1.5">
                 {ms.slice(0, 3).map((m) => (
-                  <span key={m.id} className="rounded-full bg-os-milestone-tint px-2 py-0.5 text-xs font-semibold text-os-milestone">
+                  <span key={m.id} className="rounded-full bg-(--tb-milestone-tint) px-2 py-0.5 text-xs font-semibold text-(--tb-milestone)">
                     {m.name}
                   </span>
                 ))}

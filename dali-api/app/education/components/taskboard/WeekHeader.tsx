@@ -46,7 +46,7 @@ export function WeekHeader({
         <span
           className={cn(
             "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-            onCurrent ? "bg-os-accent-tint text-os-fg" : "bg-os-well text-os-grey",
+            onCurrent ? "bg-(--tb-accent-tint) text-os-fg" : "bg-os-well text-os-grey",
           )}
         >
           {relationLabel(relation, weeksBetween(periods, current, viewed))}

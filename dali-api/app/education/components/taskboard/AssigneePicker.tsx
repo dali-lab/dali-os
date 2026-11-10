@@ -24,7 +24,7 @@ function Pill({
       onClick={onClick}
       className={cn(
         "inline-flex h-[42px] items-center gap-2 rounded-full border px-4 text-sm font-semibold transition-colors",
-        selected ? "border-os-accent bg-os-accent-tint text-os-fg" : "border-os-container text-os-grey hover:bg-os-hover",
+        selected ? "border-os-accent bg-(--tb-accent-tint) text-os-fg" : "border-os-container text-os-grey hover:bg-os-hover",
       )}
     >
       {children}

@@ -187,10 +187,6 @@
   --color-os-green:        #9fe0a8;  /* "Active" status */
   --color-os-amber:        #f2b84b;
   --color-os-red:          #ff6b6b;  /* status red — same read as --os-danger-ink */
-  --color-os-accent-tint:  color-mix(in srgb, var(--color-os-accent) 16%, transparent);
-  --color-os-amber-tint:   rgba(242, 184, 75, 0.16);
-  --color-os-milestone:    #c9b2f5;
-  --color-os-milestone-tint: rgba(201, 178, 245, 0.16);
 
   /* Inks & shadow that flip in light mode — see the `.light .os-shell` block.
      Defaults are the design's dark values, so dark mode is unchanged. */
@@ -605,6 +601,12 @@ html:has([data-tab-workspace]) {
   scrollbar-gutter: auto;
 }
 
+@media (min-width: 48rem) {
+  html:has([data-side-panel-page]) {
+    scrollbar-gutter: auto;
+  }
+}
+
 /* The sidebar shell is dark navy in both color modes. Force a dark scrollbar
    for its scroll area so the (light-mode) browser scrollbar track doesn't paint
    a pale strip against the dark nav. `color-scheme: dark` covers WebKit/Blink;
@@ -765,6 +767,36 @@ select:not(:disabled) {
   }
   70%, 100% {
     transform: rotate(180deg);
+  }
+}
+
+@keyframes slide-reaction-float {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-60vh);
+  }
+}
+
+@keyframes slide-reaction-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.slide-reaction {
+  animation: slide-reaction-float 3s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-reaction {
+    animation: slide-reaction-fade 3s ease-out forwards;
   }
 }
 
@@ -1388,10 +1420,6 @@ html.light .os-shell,
   --color-os-green:        #0f7a4d;  /* "Active" status */
   --color-os-amber:        #8f5400;
   --color-os-red:          #c0362f;  /* status red — same read as --os-danger-ink */
-  --color-os-accent-tint:  color-mix(in srgb, var(--color-os-accent) 14%, transparent);
-  --color-os-amber-tint:   #fbefdc;
-  --color-os-milestone:    #6b4ac2;
-  --color-os-milestone-tint: #ece6f8;
   --color-os-fg:           #13293a;  /* primary ink = the brand's deep navy */
   --color-os-shadow:       rgba(19, 41, 58, 0.16);
   --color-os-add-bg:       #d9e2ec;  /* the add-pill fill — a step under the page */
@@ -2495,21 +2523,4 @@ html:root .font-heading.text-\[32px\] {
   font-size: var(--text-2xl);
   line-height: var(--tw-leading, var(--text-2xl--line-height));
   font-weight: 700;
-}
-
-@keyframes taskboard-panel-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-.taskboard-panel-content {
-  animation: taskboard-panel-fade 220ms ease-out;
-}
-@media (prefers-reduced-motion: reduce) {
-  .taskboard-panel-content {
-    animation: none;
-  }
 }

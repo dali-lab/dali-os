@@ -1,5 +1,4 @@
 import { useId } from "react";
-import { Diamond } from "lucide-react";
 import { assigneeNames } from "~/education/lib/taskboard/assignees";
 import { PanelFrame } from "./PanelFrame";
 import { Button } from "~/components/ui/Button";
@@ -41,7 +40,6 @@ export function MilestoneDetail({
         <div className="min-w-0">
           <p className="text-xs font-bold uppercase tracking-wide text-os-grey">Milestone</p>
           <h2 id={titleId} className="mt-1 flex items-center gap-2 text-[22px] font-medium text-os-fg">
-            <Diamond className="h-4 w-4 shrink-0 fill-current text-os-milestone" aria-hidden />
             <span className="truncate">{milestone.name}</span>
           </h2>
         </div>
@@ -55,7 +53,7 @@ export function MilestoneDetail({
         </span>
       </div>
       <div className="mb-3 flex flex-wrap gap-2">
-        <span className="rounded-full bg-os-milestone-tint px-3 py-1 text-xs font-semibold text-os-milestone">
+        <span className="rounded-full bg-(--tb-milestone-tint) px-3 py-1 text-xs font-semibold text-(--tb-milestone)">
           {short} · Wk {milestone.startWeek} to {milestone.endWeek}
         </span>
         <span className="rounded-full bg-os-card px-3 py-1 text-xs font-semibold text-os-fg">
@@ -64,7 +62,7 @@ export function MilestoneDetail({
       </div>
       {milestone.description && <p className="mb-4 text-os-grey">{milestone.description}</p>}
       <div className="mb-5 h-2 overflow-hidden rounded-full bg-os-well" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-        <div className="h-full bg-os-milestone" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-(--tb-milestone)" style={{ width: `${pct}%` }} />
       </div>
       <div className="flex flex-col gap-4">
         {weeks.map((w) => (

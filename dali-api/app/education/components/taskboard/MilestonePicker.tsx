@@ -118,7 +118,7 @@ function Panel({
             type="button"
             aria-pressed={m.id === value}
             onClick={() => onPick(m.id)}
-            className={cn(row, m.id === value && "bg-os-accent-tint")}
+            className={cn(row, m.id === value && "bg-(--tb-accent-tint)")}
           >
             <span className="min-w-0 truncate font-semibold text-os-fg">{m.name}</span>
             <span className="shrink-0 text-xs text-os-grey">
@@ -129,7 +129,7 @@ function Panel({
         ))}
         {searching && result.items.length === 0 && <p className="px-3 py-2 text-sm text-os-grey">{noMatchLabel(query)}</p>}
         {!searching && (
-          <button type="button" onClick={() => onPick("")} className={cn(row, value === "" && "bg-os-accent-tint")}>
+          <button type="button" onClick={() => onPick("")} className={cn(row, value === "" && "bg-(--tb-accent-tint)")}>
             <span className="font-semibold text-os-fg">No milestone</span>
             <span className="text-xs text-os-grey">Loose task</span>
           </button>

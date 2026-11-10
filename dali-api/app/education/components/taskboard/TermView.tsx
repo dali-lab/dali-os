@@ -1,4 +1,4 @@
-import { Diamond, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 import { dateRange, shortDate, weeksLabel } from "~/education/lib/taskboard/labels";
@@ -53,7 +53,7 @@ export function TermView({
                   onClick={() => openWeek({ periodId: period.id, week: w })}
                   className={cn(
                     "flex flex-col items-start rounded-os-item px-3 py-2 text-left transition-colors hover:bg-os-card-hover",
-                    isNow ? "bg-os-accent-tint" : "bg-os-card",
+                    isNow ? "bg-(--tb-accent-tint)" : "bg-os-card",
                   )}
                 >
                   <span className="text-sm font-semibold text-os-fg">Wk {w}</span>
@@ -74,9 +74,8 @@ export function TermView({
                   type="button"
                   onClick={() => openDialog({ kind: "milestone-detail", milestoneId: m.id })}
                   style={{ gridColumn: `${m.startWeek} / ${m.endWeek + 1}` }}
-                  className="flex items-center gap-2 rounded-os-item bg-os-milestone-tint px-3 py-2 text-left text-sm font-semibold text-os-fg hover:bg-os-card-hover"
+                  className="flex items-center gap-2 rounded-os-item bg-(--tb-milestone-tint) px-3 py-2 text-left text-sm font-semibold text-os-fg hover:bg-os-card-hover"
                 >
-                  <Diamond className="h-3.5 w-3.5 shrink-0 text-os-milestone" aria-hidden />
                   <span className="truncate">{m.name}</span>
                   <span className="ml-auto shrink-0 text-xs font-medium text-os-grey">
                     {done}/{total}

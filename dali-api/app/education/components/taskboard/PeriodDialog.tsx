@@ -126,7 +126,7 @@ export function PeriodDialog({
                 className={cn(
                   "flex min-w-[56px] flex-col justify-end rounded-os-item p-3",
                   p.isNew
-                    ? "border-2 border-dashed border-os-accent bg-os-accent-tint"
+                    ? "border-2 border-dashed border-os-accent bg-(--tb-accent-tint)"
                     : p.kind === "Term"
                       ? "bg-os-card"
                       : "border border-dashed border-os-container-hi bg-os-well",

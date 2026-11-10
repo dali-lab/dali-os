@@ -128,7 +128,7 @@ export function MilestoneDialog({
                     onClick={() => setPick((s) => pickWeek(s, w))}
                     className={cn(
                       "flex h-14 flex-col items-center justify-center rounded-os-item border text-sm",
-                      inSpan ? "border-os-milestone bg-os-milestone-tint" : "border-os-container hover:bg-os-hover",
+                      inSpan ? "border-(--tb-milestone) bg-(--tb-milestone-tint)" : "border-os-container hover:bg-os-hover",
                     )}
                   >
                     <span className="font-bold text-os-fg">{w}</span>
@@ -141,7 +141,7 @@ export function MilestoneDialog({
                   key={m.id}
                   title={m.name}
                   style={{ gridColumn: `${m.startWeek} / span ${m.endWeek - m.startWeek + 1}` }}
-                  className="mt-1 h-[26px] truncate rounded-full bg-os-milestone-tint px-3 text-xs font-semibold leading-[26px] text-os-milestone"
+                  className="mt-1 h-[26px] truncate rounded-full bg-(--tb-milestone-tint) px-3 text-xs font-semibold leading-[26px] text-(--tb-milestone)"
                 >
                   {m.name}
                 </div>
@@ -189,11 +189,11 @@ export function MilestoneDialog({
             className="w-full"
           />
           {returnToTask && (
-            <p className="rounded-os-item bg-os-milestone-tint px-4 py-3 text-sm text-os-fg">
+            <p className="rounded-os-item bg-(--tb-milestone-tint) px-4 py-3 text-sm text-os-fg">
               Creating this from your task. After you save, you go back to the task with this milestone picked.{" "}
               <button
                 type="button"
-                className="font-bold text-os-milestone underline"
+                className="font-bold text-(--tb-milestone) underline"
                 onClick={() => openDialog({ kind: "task", taskId: returnToTask.taskId, draft: returnToTask.draft })}
               >
                 Back to task

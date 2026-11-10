@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from "react";
-import { AlignLeft, CalendarDays, Diamond, Flag, Users, X } from "lucide-react";
+import { AlignLeft, CalendarDays, Flag, Milestone, Users, X } from "lucide-react";
 import { ModalFooter, ModalHeader } from "~/components/Modal";
 import { PanelFrame } from "./PanelFrame";
 import { Button } from "~/components/ui/Button";
@@ -153,7 +153,7 @@ export function TaskDialog({
               className="w-full"
             />
           </Row>
-          <Row icon={<Diamond className="h-5 w-5 fill-current text-os-milestone" aria-hidden />} label="Milestone">
+          <Row icon={<Milestone className="h-5 w-5" aria-hidden />} label="Milestone">
             <MilestonePicker
               value={draft.milestoneId}
               milestones={milestones}
@@ -196,7 +196,7 @@ export function TaskDialog({
                     onClick={() => patch({ status: s.value })}
                     className={cn(
                       "inline-flex h-9 items-center gap-2 rounded-full border px-3.5 text-sm font-semibold",
-                      draft.status === s.value ? "border-os-accent bg-os-accent-tint text-os-fg" : "border-os-container text-os-grey hover:bg-os-hover",
+                      draft.status === s.value ? "border-os-accent bg-(--tb-accent-tint) text-os-fg" : "border-os-container text-os-grey hover:bg-os-hover",
                     )}
                   >
                     <span className={cn("h-2 w-2 rounded-full", s.dot)} aria-hidden />

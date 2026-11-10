@@ -7,7 +7,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CornerUpLeft,
-  Diamond,
   ExternalLink,
   Maximize2,
   Minimize2,
@@ -69,7 +68,7 @@ const SCOPES = [
 ];
 
 const PILL =
-  "inline-flex h-7 items-center gap-1 rounded-full bg-os-accent-tint px-2.5 text-xs font-semibold text-os-fg hover:bg-os-card-hover";
+  "inline-flex h-7 items-center gap-1 rounded-full bg-(--tb-accent-tint) px-2.5 text-xs font-semibold text-os-fg hover:bg-os-card-hover";
 const RAIL = "flex w-14 shrink-0 flex-col items-center rounded-os-card bg-os-card";
 const LIST = "flex min-h-[320px] max-h-[68vh] flex-col gap-2 overflow-y-auto pr-1";
 const COLUMN = "flex min-w-[260px] flex-1 flex-col rounded-os-card bg-os-card p-4";
@@ -371,7 +370,7 @@ export function WeekView({
     if (item.kind === "group") {
       const { group, open } = item;
       return (
-        <div className={cn("flex items-center rounded-os-item", group.milestone ? "bg-os-milestone-tint" : "bg-os-bg")}>
+        <div className={cn("flex items-center rounded-os-item", group.milestone ? "bg-(--tb-milestone-tint)" : "bg-os-bg")}>
           <button
             type="button"
             aria-expanded={open}
@@ -379,7 +378,6 @@ export function WeekView({
             className="flex h-[38px] min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm"
           >
             {open ? <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden /> : <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden />}
-            {group.milestone && <Diamond className="h-2.5 w-2.5 shrink-0 fill-current text-os-milestone" aria-hidden />}
             <span className="truncate font-bold text-os-fg">{group.name}</span>
             <span className="ml-auto shrink-0 text-xs text-os-grey">{groupMeta(group)}</span>
           </button>
@@ -430,7 +428,7 @@ export function WeekView({
     if (task.status === "Backlog") {
       const nested = task.milestoneId !== null && msName.has(task.milestoneId);
       return (
-        <div className={cn(nested && "ml-4 border-l-2 border-os-milestone pl-2")}>
+        <div className={cn(nested && "ml-4 border-l-2 border-(--tb-milestone) pl-2")}>
           <div
             {...opts.dragHandleProps}
             onClick={(e) => opensTask(e) && openDialog({ kind: "task", taskId: task.id })}
@@ -492,12 +490,12 @@ export function WeekView({
         {title()}
         <div className="flex flex-wrap items-center gap-1.5">
           {task.milestoneId && msName.has(task.milestoneId) && (
-            <span className="rounded-full bg-os-milestone-tint px-2 py-0.5 text-xs font-semibold text-os-milestone">
+            <span className="rounded-full bg-(--tb-milestone-tint) px-2 py-0.5 text-xs font-semibold text-(--tb-milestone)">
               {msName.get(task.milestoneId)}
             </span>
           )}
           {task.rolledFrom && (
-            <span className="rounded-full bg-os-amber-tint px-2 py-0.5 text-xs font-semibold text-os-amber">
+            <span className="rounded-full bg-(--tb-amber-tint) px-2 py-0.5 text-xs font-semibold text-os-amber">
               {rolledFromLabel(task.rolledFrom, periods, viewed.periodId)}
             </span>
           )}
@@ -547,7 +545,7 @@ export function WeekView({
       <WeekHeader periods={periods} viewed={viewed} current={current} goTo={goTo} />
       <div className="min-h-[52px]">
         {banner && (
-          <p className="flex min-h-[52px] items-center gap-2 rounded-os-item bg-os-amber-tint px-4 py-2.5 text-sm text-os-amber" role="status">
+          <p className="flex min-h-[52px] items-center gap-2 rounded-os-item bg-(--tb-amber-tint) px-4 py-2.5 text-sm text-os-amber" role="status">
             <RotateCcw className="h-4 w-4 shrink-0" aria-hidden />
             <span className="flex-1">{banner}</span>
             <button type="button" onClick={dismissBanner} aria-label="Dismiss rollover notice" className="os-icon-btn text-os-amber">
