@@ -155,6 +155,10 @@ export async function applyContinue(
   const roles = normalizeRoles(input.roles);
   const writes = continueStatusWrites(input.decisionTermId, input.chosenTermId);
   await db.$transaction(async (tx) => {
+    const staleReturn = await skipReturnTerm(tx, input.projectId, input.decisionTermId);
+    if (staleReturn && staleReturn !== input.chosenTermId) {
+      await releaseTerm(tx, input.projectId, staleReturn);
+    }
     for (const w of writes) {
       const isChosen = w.isContinuing;
       const data = {
@@ -211,10 +215,14 @@ export async function applyNotContinuing(
     setBy: input.userId,
     setAt: new Date(),
   };
-  await db.projectTermStatus.upsert({
-    where: { projectId_termId: { projectId: input.projectId, termId: input.decisionTermId } },
-    create: { projectId: input.projectId, termId: input.decisionTermId, ...data },
-    update: data,
+  await db.$transaction(async (tx) => {
+    const staleReturn = await skipReturnTerm(tx, input.projectId, input.decisionTermId);
+    if (staleReturn) await releaseTerm(tx, input.projectId, staleReturn);
+    await tx.projectTermStatus.upsert({
+      where: { projectId_termId: { projectId: input.projectId, termId: input.decisionTermId } },
+      create: { projectId: input.projectId, termId: input.decisionTermId, ...data },
+      update: data,
+    });
   });
 }
 
@@ -272,14 +280,39 @@ export async function applyUndecided(
       } else {
         await tx.projectTermStatus.deleteMany({ where: { projectId: input.projectId, termId } });
       }
-      if (status?.isContinuing) {
-        const assigned = await tx.projectAssignment.count({
-          where: { projectId: input.projectId, termId },
-        });
-        if (assigned === 0) {
-          await tx.projectRoleRequest.deleteMany({ where: { projectId: input.projectId, termId } });
-        }
-      }
+      if (status?.isContinuing) await releaseStaffing(tx, input.projectId, termId);
     }
   });
+}
+
+type Tx = Parameters<Parameters<Db["$transaction"]>[0]>[0];
+
+// The later term an earlier "continue from a later term" decision pointed at:
+// set only when the decision term is marked not continuing.
+async function skipReturnTerm(tx: Tx, projectId: string, decisionTermId: string): Promise<string | null> {
+  const decision = await tx.projectTermStatus.findUnique({
+    where: { projectId_termId: { projectId, termId: decisionTermId } },
+    select: { isContinuing: true, term: { select: { sortKey: true } } },
+  });
+  if (decision?.isContinuing !== false) return null;
+  const later = await tx.projectTermStatus.findFirst({
+    where: { projectId, isContinuing: true, term: { sortKey: { gt: decision.term.sortKey } } },
+    orderBy: { term: { sortKey: "asc" } },
+    select: { termId: true },
+  });
+  return later?.termId ?? null;
+}
+
+async function releaseTerm(tx: Tx, projectId: string, termId: string): Promise<void> {
+  await tx.projectTermStatus.deleteMany({ where: { projectId, termId } });
+  await releaseStaffing(tx, projectId, termId);
+}
+
+// Undoes a renewal-planned term unless people are already staffed on it; the
+// term itself stays when Core gave it a PI.
+async function releaseStaffing(tx: Tx, projectId: string, termId: string): Promise<void> {
+  const assigned = await tx.projectAssignment.count({ where: { projectId, termId } });
+  if (assigned > 0) return;
+  await tx.projectRoleRequest.deleteMany({ where: { projectId, termId } });
+  await tx.projectTerm.deleteMany({ where: { projectId, termId, piUserId: null } });
 }

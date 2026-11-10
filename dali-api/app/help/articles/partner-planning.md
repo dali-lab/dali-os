@@ -16,6 +16,8 @@ Cards sit in three columns: **Undecided**, **Continuing** and **Not continuing**
 
 - Click **Continue** or **Not continuing** on a card to record the decision.
 - When you continue a project, set the **Term**, the **Spots per domain** (use the fewer and more buttons), the **Fee**, and a next step. When you choose Not continuing, a **Reason** is required.
+- To skip terms, continue the project and pick a later **Term**. The card shows "Continuing from" that term, the terms in between count as not continuing, and the project is planned again from the term you picked.
+- You can change a decision later. Picking a different term, choosing Not continuing, or moving the card back to Undecided removes the term you picked before, along with its spots, unless members are already staffed on it. If that term has a PI, the term stays on the project but its spots are removed.
 - Each card also has a **PI** picker and a next step with a date. An overdue next step is highlighted.
 - Search by project or partner name.
 
