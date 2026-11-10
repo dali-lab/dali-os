@@ -177,6 +177,7 @@ export async function editOwnResponse(args: {
   const questions = questionsAsServed(
     (loaded.version.questions as unknown as Question[]) ?? [],
     loaded.form.cycleBindings,
+    loaded.version.id,
   );
   const editable = new Set(
     questions

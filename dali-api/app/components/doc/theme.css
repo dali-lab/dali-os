@@ -255,19 +255,8 @@
 }
 
 /* ── 4. Inline comment marks ──────────────────────────────────────────────── */
-/*
- * .bn-thread-mark       — text span produced by BlockNote's CommentMark
- * .bn-thread-mark-selected — added as a ProseMirror decoration when the thread
- *                            is the selectedThreadId in CommentsExtension state
- * [data-orphan="true"]  — set on the mark when its thread is deleted;
- *                          CommentsExtension manages this automatically on store
- *                          subscription updates.
- *
- * Colours use color-mix so they adapt to the app's semantic tokens without
- * requiring a separate dark-mode rule — the underlying accent tokens already
- * flip under html.dark (see app.css).
- */
-.dali-doc .bn-thread-mark {
+/* An orphan mark's thread was deleted; it renders as plain text. */
+.dali-doc .bn-thread-mark:not([data-orphan="true"]) {
   background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 28%, transparent);
   border-radius: 2px;
   padding-block: 1px;
@@ -276,29 +265,17 @@
 }
 
 .dali-doc .bn-thread-mark-selected,
-.dali-doc .bn-thread-mark:hover {
+.dali-doc .bn-thread-mark:not([data-orphan="true"]):hover {
   background-color: color-mix(in srgb, var(--color-accent-yellow, #eab308) 55%, transparent);
 }
 
-/* Orphaned marks: thread deleted and mark not yet removed.
- * Subtle gray-blue distinguishes "stale" from "active" without being alarming. */
-.dali-doc .bn-thread-mark[data-orphan="true"] {
-  background-color: color-mix(in srgb, var(--color-muted-foreground, #94a3b8) 18%, transparent);
-  cursor: default;
-}
-
-/* Dark-mode variant: yellow with less opacity to avoid eye-strain on dark bg. */
-html.dark .dali-doc .bn-thread-mark {
+html.dark .dali-doc .bn-thread-mark:not([data-orphan="true"]) {
   background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 22%, transparent);
 }
 
 html.dark .dali-doc .bn-thread-mark-selected,
-html.dark .dali-doc .bn-thread-mark:hover {
+html.dark .dali-doc .bn-thread-mark:not([data-orphan="true"]):hover {
   background-color: color-mix(in srgb, var(--color-accent-yellow, #ca8a04) 42%, transparent);
-}
-
-html.dark .dali-doc .bn-thread-mark[data-orphan="true"] {
-  background-color: color-mix(in srgb, var(--color-muted-foreground, #64748b) 20%, transparent);
 }
 
 /* Floating portal root: zero-size overlay inside .dali-doc so the floating
@@ -575,26 +552,6 @@ html:root .doc-canvas--small .doc-title {
  * which is why this is a rule rather than a prop. */
 .bn-root .bn-thread > .italic:first-child {
   display: none;
-}
-
-/* One "add reaction" control per comment. BlockNote draws two once a comment
- * has any reaction: the emoji button in the hover toolbar beside the body, and
- * the "+" badge at the end of the reaction row. Keep the badge — it sits with
- * the reactions it adds to — and drop the toolbar's copy. A comment with no
- * reactions has no badge, so there the toolbar button stays and remains the
- * only way to add the first one. It is the toolbar's first child: our
- * ThreadStoreAuth allows reactions for everyone, and resolve is gone. */
-.bn-root .bn-thread-comment:has(.bn-comment-reactions) .bn-comment-actions > :first-child {
-  /* !important because the popover trigger carries an inline display:flex. */
-  display: none !important;
-}
-
-/* ...and the toolbar itself when that trigger was the only thing in it, so
- * hiding the button doesn't leave an empty bordered box over the comment. */
-.bn-root
-  .bn-thread-comment:has(.bn-comment-reactions)
-  .bn-comment-actions:has(> :only-child) {
-  display: none !important;
 }
 
 /* Mark flash: temporary bright highlight when navigating to a mark from a
@@ -1195,4 +1152,45 @@ body[data-modal-open] .bn-side-menu {
   @keyframes enhance-tint-out-b { from { opacity: 1; } to { opacity: 0; } }
   @keyframes enhance-edge-out-a { from { opacity: 1; } to { opacity: 0; } }
   @keyframes enhance-edge-out-b { from { opacity: 1; } to { opacity: 0; } }
+}
+
+/* ── Agent touch ───────────────────────────────────────────────────────────
+ * Blocks an MCP agent just changed (agent-touch.ts). The colour and fade length
+ * come inline from awareness; -a/-b alternate per batch so a re-touched block
+ * restarts its fade. */
+.dali-doc .bn-block-outer.dali-agent-touched > .bn-block {
+  border-radius: var(--radius-os-item);
+  background-color: color-mix(in srgb, var(--dali-agent) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dali-agent) 70%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .dali-doc .bn-block-outer.dali-agent-touched-a > .bn-block {
+    animation: dali-agent-touch-a var(--dali-agent-fade, 5s) ease-out forwards;
+  }
+  .dali-doc .bn-block-outer.dali-agent-touched-b > .bn-block {
+    animation: dali-agent-touch-b var(--dali-agent-fade, 5s) ease-out forwards;
+  }
+}
+
+@keyframes dali-agent-touch-a {
+  0%, 40% {
+    background-color: color-mix(in srgb, var(--dali-agent) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dali-agent) 70%, transparent);
+  }
+  to { background-color: transparent; box-shadow: inset 0 0 0 1px transparent; }
+}
+@keyframes dali-agent-touch-b {
+  0%, 40% {
+    background-color: color-mix(in srgb, var(--dali-agent) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--dali-agent) 70%, transparent);
+  }
+  to { background-color: transparent; box-shadow: inset 0 0 0 1px transparent; }
+}
+
+@media print {
+  .dali-doc .bn-block-outer.dali-agent-touched > .bn-block {
+    background-color: transparent;
+    box-shadow: none;
+  }
 }

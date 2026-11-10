@@ -49,6 +49,10 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { referenceSourceChoices, referenceSourceNeedsTerm } from '~/forms/lib/reference-sources.shared'
+import { isPrefillFieldKey, prefillFieldFits, type FillerKind } from '~/forms/lib/prefill-fields'
+import { useFeatureFlag } from '~/components/FeatureFlags'
+import { PrefillPicker } from './PrefillPicker'
+import { QuestionSourceNote } from './QuestionSourceNote'
 import { Checkbox } from '~/components/ui/Checkbox'
 import { Segmented } from '~/components/ui/Segmented'
 import {
@@ -183,6 +187,7 @@ export interface BuildQuestionInput {
   maxWordsValue?: number | string
   referenceSource?: string
   referenceTermId?: string
+  prefill?: string
   body?: unknown
   showIf?: ShowIf
 }
@@ -213,6 +218,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     maxWordsValue,
     referenceSource,
     referenceTermId,
+    prefill,
     body,
     showIf,
   } = input
@@ -227,7 +233,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     }
   }
 
-  return {
+  const question: Question = {
     key,
     type,
     required,
@@ -251,10 +257,14 @@ export function buildQuestion(input: BuildQuestionInput): Question {
         type === 'reference' && referenceSourceNeedsTerm(referenceSource)
           ? referenceTermId || undefined
           : undefined,
+      prefill: undefined,
       body: type === 'info' ? body : undefined,
       showIf,
     },
   }
+  question.data.prefill =
+    isPrefillFieldKey(prefill) && prefillFieldFits(prefill, question) ? prefill : undefined
+  return question
 }
 
 // Legacy `info` rows stored a plain string; the editor needs blocks.
@@ -298,6 +308,9 @@ interface FormBuilderTabProps {
   // Question key -> the staffing feature that reads its answer. Those
   // questions are always shown, so they can't take a condition.
   mappedQuestions?: Record<string, string>
+  // Who the form's sharing lets fill it, for the "Fill from" picker. Omitted
+  // where the builder isn't a shared form (hiring challenges): no picker.
+  fillers?: FillerKind[]
 }
 // A draft can hold malformed entries from earlier collab bugs: empty objects
 // and repeated keys (dropped; answers are keyed by question, so a repeat is
@@ -329,6 +342,7 @@ export function FormBuilderTab({
   collabToken,
   termBinding = null,
   mappedQuestions = {},
+  fillers,
 }: FormBuilderTabProps) {
   const [initialQuestions] = useState(() => repairQuestions(rawInitialQuestions))
   // Local state used when the collab room is unavailable (hiring challenge
@@ -400,6 +414,7 @@ export function FormBuilderTab({
     type !== 'checkbox' || allowCheckbox || editForm.type === 'checkbox'
   const [description, setDescription] = useState<unknown>(initialDescription ?? null)
   const { formTrigger } = useOsChrome()
+  const prefillEnabled = useFeatureFlag('form-prefill')
   if (snapshotRef) snapshotRef.current = () => ({ questions, description })
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
@@ -556,6 +571,7 @@ export function FormBuilderTab({
       maxWordsValue,
       referenceSource: editForm.data?.referenceSource,
       referenceTermId: editForm.data?.referenceTermId,
+      prefill: editForm.data?.prefill,
       body: editForm.data?.body,
       showIf: editForm.data?.showIf,
     })
@@ -978,6 +994,14 @@ export function FormBuilderTab({
           )}
         </div>
 
+        {prefillEnabled && fillers && editForm.type !== undefined && editForm.data && (
+          <PrefillPicker
+            question={{ type: editForm.type, data: editForm.data }}
+            fillers={fillers}
+            onChange={(prefill) => setEditForm({ ...editForm, data: { ...editForm.data!, prefill } })}
+          />
+        )}
+
         {editForm.type !== undefined && (() => {
           const own = questions.findIndex((q) => q.key === editForm.key)
           const sources = questions.slice(0, Math.max(own, 0)).filter(canBeSource)
@@ -1262,6 +1286,7 @@ export function FormBuilderTab({
                                 Shown when {showIfSentence(q.data.showIf, numbers)}
                               </p>
                             )}
+                            <QuestionSourceNote question={q} />
                             {problemByKey.get(q.key) && (
                               <p className="text-sm text-os-amber mb-2">{problemByKey.get(q.key)}</p>
                             )}

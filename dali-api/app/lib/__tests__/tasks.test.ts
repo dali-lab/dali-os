@@ -17,6 +17,7 @@ import {
   listNotificationHistory,
   type NotifLiveness,
 } from "~/lib/tasks";
+import { NOT_CANCELLED_MEETING, liveMeetingPingClauses } from "~/lib/notifications";
 
 const mockPrisma = prisma as unknown as {
   notification: {
@@ -32,6 +33,9 @@ const mockPrisma = prisma as unknown as {
 // Minimal liveness row; override per-case.
 function liveness(over: Partial<NotifLiveness> = {}): NotifLiveness {
   return {
+    kind: "General",
+    eventType: "general",
+    createdAt: new Date("2026-06-01T11:00:00Z"),
     readAt: null,
     dueAt: null,
     formId: null,
@@ -129,6 +133,15 @@ function expectedWhere(userId: string) {
           { interviewAssignmentId: null },
           { interviewAssignment: { status: "Active", interview: { status: "Scheduled" } } },
         ],
+      },
+      {
+        NOT: {
+          OR: [
+            { eventType: "meeting.cancelled", createdAt: { lte: expect.any(Date) } },
+            { eventType: "meeting.time_proposed", createdAt: { lte: expect.any(Date) } },
+            { eventType: "meeting.record_prompt", createdAt: { lte: expect.any(Date) } },
+          ],
+        },
       },
     ],
   };
@@ -263,7 +276,7 @@ describe("resolveNotificationState", () => {
       resolveNotificationState(
         liveness({
           scheduledMeetingId: "m1",
-          scheduledMeeting: { status: "Cancelled" },
+          scheduledMeeting: { status: "Cancelled", selectedAt: null, recurrenceRule: null },
         }),
         now,
       ),
@@ -293,13 +306,97 @@ describe("resolveNotificationState", () => {
     ).toBe("Expired");
   });
 
+  it("unread reminder with no dueAt whose meeting has started → Expired", () => {
+    expect(
+      resolveNotificationState(
+        liveness({
+          kind: "MeetingReminder",
+          scheduledMeetingId: "m1",
+          scheduledMeeting: { status: "Scheduled", selectedAt: new Date("2026-06-01T11:30:00Z"), recurrenceRule: null },
+        }),
+        now,
+      ),
+    ).toBe("Expired");
+  });
+
+  it("unread invite to a one-off that already happened → Expired", () => {
+    expect(
+      resolveNotificationState(
+        liveness({
+          kind: "MeetingInvite",
+          scheduledMeetingId: "m1",
+          scheduledMeeting: { status: "Scheduled", selectedAt: new Date("2026-05-30T15:00:00Z"), recurrenceRule: null },
+        }),
+        now,
+      ),
+    ).toBe("Expired");
+  });
+
+  it("unread invite to a recurring series stays Open after its first occurrence", () => {
+    expect(
+      resolveNotificationState(
+        liveness({
+          kind: "MeetingInvite",
+          scheduledMeetingId: "m1",
+          scheduledMeeting: {
+            status: "Scheduled",
+            selectedAt: new Date("2026-05-30T15:00:00Z"),
+            recurrenceRule: "FREQ=WEEKLY",
+          },
+        }),
+        now,
+      ),
+    ).toBe("Open");
+  });
+
+  it("unread invite to an upcoming one-off stays Open", () => {
+    expect(
+      resolveNotificationState(
+        liveness({
+          kind: "MeetingInvite",
+          scheduledMeetingId: "m1",
+          scheduledMeeting: { status: "Scheduled", selectedAt: new Date("2026-06-02T15:00:00Z"), recurrenceRule: null },
+        }),
+        now,
+      ),
+    ).toBe("Open");
+  });
+
+  it.each([
+    ["meeting.cancelled", 3 * 24],
+    ["meeting.time_proposed", 7 * 24],
+    ["meeting.record_prompt", 3],
+  ])("unread %s goes Expired once it is %i hours old", (eventType, hours) => {
+    const at = (h: number) => new Date(now.getTime() - h * 3_600_000);
+    expect(resolveNotificationState(liveness({ eventType, createdAt: at(hours - 0.1) }), now)).toBe("Open");
+    expect(resolveNotificationState(liveness({ eventType, createdAt: at(hours) }), now)).toBe("Expired");
+  });
+
+  it("an aged-out event type that was read stays Cleared", () => {
+    expect(
+      resolveNotificationState(
+        liveness({ eventType: "meeting.cancelled", createdAt: new Date("2026-01-01T00:00:00Z"), readAt: now }),
+        now,
+      ),
+    ).toBe("Cleared");
+  });
+
+  it("an event type with no age limit stays Open however old it is", () => {
+    expect(
+      resolveNotificationState(
+        liveness({ eventType: "task.assigned", createdAt: new Date("2025-01-01T00:00:00Z") }),
+        now,
+      ),
+    ).toBe("Open");
+  });
+
   it("Cancelled wins over a set readAt", () => {
     expect(
       resolveNotificationState(
         liveness({
           readAt: now,
           scheduledMeetingId: "m1",
-          scheduledMeeting: { status: "Cancelled" },
+          scheduledMeeting: { status: "Cancelled", selectedAt: null, recurrenceRule: null },
         }),
         now,
       ),
@@ -312,6 +409,7 @@ describe("listNotificationHistory", () => {
     return {
       id: "n1",
       kind: "General",
+      eventType: "general",
       title: "Hello",
       body: "World",
       link: "/somewhere",
@@ -344,6 +442,47 @@ describe("listNotificationHistory", () => {
       canRsvp: false,
     });
     expect(res.nextCursor).toBeNull();
+  });
+
+  it("status=open and the open count apply the live-surface hides", async () => {
+    const fixedNow = new Date("2026-06-01T12:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedNow);
+    mockPrisma.notification.findMany.mockResolvedValue([]);
+    await listNotificationHistory("user-1", { status: "open" });
+    vi.useRealTimers();
+    const openWhere = {
+      readAt: null,
+      AND: [NOT_CANCELLED_MEETING, ...liveMeetingPingClauses(fixedNow)],
+    };
+    const call = mockPrisma.notification.findMany.mock.calls[0][0];
+    expect(call.where.AND[1]).toEqual(openWhere);
+    expect(mockPrisma.notification.count.mock.calls[0][0].where.AND[1]).toEqual(openWhere);
+  });
+
+  it("status=all still returns stale rows, marked Expired with no RSVP", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([
+      row({
+        id: "old-invite",
+        kind: "MeetingInvite",
+        scheduledMeetingId: "m1",
+        scheduledMeeting: { status: "Scheduled", selectedAt: new Date("2020-01-01T00:00:00Z"), recurrenceRule: null },
+      }),
+      row({
+        id: "future-invite",
+        kind: "MeetingInvite",
+        scheduledMeetingId: "m2",
+        scheduledMeeting: { status: "Scheduled", selectedAt: new Date("2099-01-01T00:00:00Z"), recurrenceRule: null },
+      }),
+      row({ id: "old-cancel", eventType: "meeting.cancelled", createdAt: new Date("2020-01-01T00:00:00Z") }),
+    ]);
+    const res = await listNotificationHistory("user-1");
+    expect(res.items.map((i) => [i.id, i.state, i.canRsvp])).toEqual([
+      ["old-invite", "Expired", false],
+      ["future-invite", "Open", true],
+      ["old-cancel", "Expired", false],
+    ]);
+    expect(mockPrisma.notification.findMany.mock.calls[0][0].where.AND[1]).toEqual({});
   });
 
   it("status=cleared filters on readAt not null", async () => {

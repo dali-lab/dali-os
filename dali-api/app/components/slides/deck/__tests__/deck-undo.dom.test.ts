@@ -201,22 +201,30 @@ describe("deleting a slide is a tombstone that undo reverses", () => {
   });
 });
 
-describe("creating a slide is not undoable", () => {
-  it("undo after adding or duplicating leaves the slide, and a peer's typing in it survives", () => {
+describe("creating a slide is undoable without removing it", () => {
+  it("undo tombstones an added or duplicated slide, redo restores it, and a peer's typing survives both", () => {
     const { ydoc, manager, ids } = setup();
     manager.clear();
-    const added = addSlide(ydoc, "content", ids[2]);
-    const copy = duplicateSlide(ydoc, ids[0])!;
-    expect(manager.canUndo()).toBe(false);
+    let added = "";
+    deckUndoStep(manager, () => (added = addSlide(ydoc, "content", ids[2])));
+    let copy = "";
+    deckUndoStep(manager, () => (copy = duplicateSlide(ydoc, ids[0])!));
+    expect(manager.undoStack).toHaveLength(2);
     const peer = new Y.Doc();
     Y.applyUpdate(peer, Y.encodeStateAsUpdate(ydoc));
     blocksToFragment([{ type: "paragraph", content: "peer text" }] as never, slideFragment(peer, added, "title")!);
     Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(peer), "remote");
     manager.undo();
+    manager.undo();
+    expect(visibleSlideIds(ydoc)).not.toContain(added);
+    expect(visibleSlideIds(ydoc)).not.toContain(copy);
+    expect(slidesMap(ydoc).has(added)).toBe(true);
+    expect(slidesMap(ydoc).get(added)!.get("deleted")).toBe(true);
+    manager.redo();
+    manager.redo();
     expect(visibleSlideIds(ydoc)).toContain(added);
     expect(visibleSlideIds(ydoc)).toContain(copy);
     expect(readDeck(ydoc).slides.find((x) => x.id === added)!.elements.find((e) => e.slot === "title")!.text).toBe("peer text");
-    expect(slidesMap(ydoc).has(added)).toBe(true);
   });
 
   it("later edits to the new slide can still be undone", () => {
@@ -229,3 +237,9 @@ describe("creating a slide is not undoable", () => {
     expect(slidesMap(ydoc).has(added)).toBe(true);
   });
 });
+
+function deckUndoStep(manager: Y.UndoManager, fn: () => void) {
+  manager.stopCapturing();
+  fn();
+  manager.stopCapturing();
+}

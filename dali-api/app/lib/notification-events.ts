@@ -70,11 +70,31 @@ export type EventDef = {
   // Only read when coalesceWindowMs is set; omit to keep the latest preview
   // without a count prefix.
   coalesceNoun?: string;
+  // Unread rows older than this drop off live surfaces on their own.
+  staleAfterMs?: number;
   // `desktop` gates the native banner the desktop app raises for an in-app
   // row — it is a sub-preference of inApp (no row, no banner), resolved at
   // feed-read time so a preference change applies to unseen rows too.
   defaults: { inApp: boolean; desktop: boolean; slackDm: boolean; email: EmailDefault };
+  // Who can receive this event; omitted means lab members only.
+  audiences?: readonly Audience[];
+  // Email default for portal students and partners, who rarely open the app.
+  outsideEmail?: EmailDefault;
 };
+
+// member: has a DALIMember row. partner: a partner contact's account.
+// portal: everyone else who signs in (non-member Dartmouth students).
+export type Audience = "member" | "portal" | "partner";
+
+export function reachesAudience(def: EventDef, audience: Audience): boolean {
+  return (def.audiences ?? ["member"]).includes(audience);
+}
+
+export function defaultEmailFor(def: EventDef, audience: Audience): EmailDefault {
+  return audience === "member" ? def.defaults.email : (def.outsideEmail ?? def.defaults.email);
+}
+
+const STUDENTS = ["member", "portal"] as const;
 
 export const EVENT_TYPES = {
   "meeting.invite": {
@@ -98,6 +118,7 @@ export const EVENT_TYPES = {
     area: "Meetings",
     label: "Meeting cancellations",
     description: "When a meeting you were invited to is cancelled.",
+    staleAfterMs: 3 * 24 * 3_600_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.time_proposed": {
@@ -105,6 +126,7 @@ export const EVENT_TYPES = {
     area: "Meetings",
     label: "Proposed time changes",
     description: "When an invitee proposes a new time for a meeting you organized.",
+    staleAfterMs: 7 * 24 * 3_600_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.record_prompt": {
@@ -113,6 +135,7 @@ export const EVENT_TYPES = {
     label: "Record this meeting?",
     description: "One minute before a meeting you organize starts, when it can be recorded.",
     timeSensitive: true,
+    staleAfterMs: 3 * 3_600_000,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
   "meeting.transcript_ready": {
@@ -200,6 +223,8 @@ export const EVENT_TYPES = {
     coalesceWindowMs: 30 * 60_000, // one ping per thread per half hour
     coalesceNoun: "reply",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: ["member", "partner"],
+    outsideEmail: "Instant",
   },
   "file.comment": {
     kind: "General",
@@ -456,6 +481,7 @@ export const EVENT_TYPES = {
     label: "Course announcements",
     description: "Announcements from instructors of your offerings.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+    audiences: STUDENTS,
   },
   "education.decision": {
     kind: "Education",
@@ -464,6 +490,7 @@ export const EVENT_TYPES = {
     description: "Decisions on your education applications.",
     externalEmail: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
   },
   "education.assignment": {
     kind: "Education",
@@ -471,6 +498,8 @@ export const EVENT_TYPES = {
     label: "New assignments",
     description: "When an instructor posts an assignment.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.discussion": {
     kind: "Education",
@@ -480,6 +509,7 @@ export const EVENT_TYPES = {
     coalesceWindowMs: 30 * 60_000,
     coalesceNoun: "reply",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
   },
   "education.feedback_request": {
     kind: "SystemAnnouncement",
@@ -488,6 +518,8 @@ export const EVENT_TYPES = {
     description: "Session feedback and exit-survey forms to fill.",
     lockedInApp: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.certificate": {
     kind: "Education",
@@ -495,6 +527,7 @@ export const EVENT_TYPES = {
     label: "Certificates",
     description: "When you're issued a certificate of completion.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Instant" },
+    audiences: STUDENTS,
   },
   "education.session_reminder": {
     kind: "Education",
@@ -503,6 +536,8 @@ export const EVENT_TYPES = {
     description: "A reminder before each session of a course you're enrolled in.",
     timeSensitive: true,
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.grade": {
     kind: "Education",
@@ -510,6 +545,8 @@ export const EVENT_TYPES = {
     label: "Grades & feedback",
     description: "When an instructor grades or leaves feedback on your submission.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+    audiences: STUDENTS,
+    outsideEmail: "Instant",
   },
   "education.ce_reminder": {
     kind: "Education",
@@ -541,6 +578,24 @@ export const EVENT_TYPES = {
     label: "Story approvals",
     description: "When a story you submitted is approved and published.",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "blog.comment": {
+    kind: "General",
+    area: "Documents",
+    label: "Story comments",
+    description: "New comments on stories you wrote.",
+    coalesceWindowMs: 60 * 60_000,
+    coalesceNoun: "comment",
+    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
+  },
+  "blog.reaction": {
+    kind: "General",
+    area: "Documents",
+    label: "Story reactions",
+    description: "When someone reacts to a story you wrote.",
+    coalesceWindowMs: 60 * 60_000,
+    coalesceNoun: "reaction",
+    defaults: { inApp: true, desktop: false, slackDm: false, email: "Off" },
   },
   "coffee_chat.invite": {
     kind: "General",
@@ -589,6 +644,13 @@ export const EVENT_TYPES = {
     coalesceWindowMs: 60 * 60_000,
     coalesceNoun: "reaction",
     defaults: { inApp: true, desktop: false, slackDm: false, email: "Off" },
+  },
+  "community.event_nearby": {
+    kind: "General",
+    area: "Community",
+    label: "Alumni events near you",
+    description: "When an alum hosts an event within 50 km of where you're based.",
+    defaults: { inApp: false, desktop: false, slackDm: false, email: "Off" },
   },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.

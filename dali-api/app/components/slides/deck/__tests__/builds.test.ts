@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
-import { buildOf, buildSteps, isVisibleAt, movePosition, visibleBlocks, type DeckPosition } from "../builds";
+import { autoDelayAt, buildOf, buildSteps, cleanBuildFields, effectOf, enteringAt, isVisibleAt, movePosition, startOf, visibleBlocks, type DeckPosition } from "../builds";
 import { addSlide, setBuild, setBuildBullets } from "../deck-ops";
 import { elementsOf, initDeck, slidesMap } from "../model";
 import { snapshotDeck, type RenderElement, type RenderSlide } from "../snapshot";
@@ -36,9 +36,9 @@ describe("buildSteps", () => {
     expect(buildSteps(slide([el("title"), el("body", { build: 1 }), el("image", { build: 3 })]))).toBe(3);
   });
 
-  it("counts one step per top-level block after the slot's own step", () => {
+  it("counts one step per top-level block, the first with the box", () => {
     expect(buildSteps(slide([el("body", { buildBullets: true, blocks: blocks(3) })]))).toBe(3);
-    expect(buildSteps(slide([el("body", { buildBullets: true, build: 2, blocks: blocks(3) })]))).toBe(5);
+    expect(buildSteps(slide([el("body", { buildBullets: true, build: 2, blocks: blocks(3) })]))).toBe(4);
   });
 
   it("ignores bullets on an empty slot and the flag when it is off", () => {
@@ -55,9 +55,9 @@ describe("what shows at a step", () => {
   });
 
   it("reveals bullets one at a time after the slot's step", () => {
-    const e = el("body", { buildBullets: true, build: 1 });
+    const e = el("body", { buildBullets: true, build: 1, blocks: blocks(3) });
     const all = ["a", "b", "c"];
-    expect([0, 1, 2, 3, 4, 9].map((s) => visibleBlocks(e, all, s))).toEqual([[], [], ["a"], ["a", "b"], ["a", "b", "c"], ["a", "b", "c"]]);
+    expect([0, 1, 2, 3, 4, 9].map((s) => visibleBlocks(e, all, s))).toEqual([[], ["a"], ["a", "b"], ["a", "b", "c"], ["a", "b", "c"], ["a", "b", "c"]]);
   });
 
   it("shows every block of a slot that is not set to build bullets", () => {
@@ -140,5 +140,67 @@ describe("builds in the deck doc", () => {
   it("leaves a deck with no builds snapshotting as before", () => {
     const { doc } = setup();
     for (const e of snapshotDeck(doc).slides[0].elements) expect(Object.keys(e).sort()).toEqual(["alt", "blocks", "id", "kind", "slot", "src", "textStyle", "z"]);
+  });
+});
+
+describe("bullets with the box", () => {
+  it("takes one press per bullet, box included", () => {
+    expect(buildSteps(slide([el("body", { buildBullets: true, blocks: blocks(3) })]))).toBe(3);
+    expect(buildSteps(slide([el("body", { buildBullets: true, build: 2, blocks: blocks(3) })]))).toBe(4);
+  });
+
+  it("hides a with-slide bullets box until step 1", () => {
+    const e = el("body", { buildBullets: true, blocks: blocks(2) });
+    expect(startOf(e)).toBe(1);
+    expect(isVisibleAt(e, 0)).toBe(false);
+    expect(isVisibleAt(e, 1)).toBe(true);
+  });
+});
+
+describe("after previous", () => {
+  const s = slide([el("a", { build: 1 }), el("b", { build: 2, buildAfter: true, buildDelay: 1500 }), el("c", { build: 3 }), el("d", { build: 3 })]);
+
+  it("reports the delay of a step that plays by itself and null for the rest", () => {
+    expect([0, 1, 2, 3, 4].map((n) => autoDelayAt(s, n))).toEqual([null, null, 1500, null, null]);
+  });
+
+  it("ignores the flag on an element that does not build", () => {
+    expect(autoDelayAt(slide([el("a", { buildAfter: true })]), 1)).toBeNull();
+  });
+
+  it("goes back past automatic steps to where the presenter last waited", () => {
+    const auto = (_i: number, step: number) => autoDelayAt(s, step) !== null;
+    const prev = (step: number) => movePosition("prev", { index: 0, step }, 1, () => 3, auto).step;
+    expect(prev(3)).toBe(2);
+    expect(prev(2)).toBe(0);
+    expect(prev(1)).toBe(0);
+  });
+
+  it("keeps stepping forward one at a time, so a key press skips the wait", () => {
+    expect(movePosition("next", { index: 0, step: 1 }, 1, () => 3, () => true).step).toBe(2);
+  });
+});
+
+describe("effects and entering items", () => {
+  it("defaults to fade", () => {
+    expect(effectOf(el("a"))).toBe("fade");
+    expect(effectOf(el("a", { buildEffect: "scale" }))).toBe("scale");
+  });
+
+  it("lists what a step reveals, with bullets after the first marked as bullets", () => {
+    const s = slide([el("a", { build: 1 }), el("b", { build: 1, buildBullets: true, blocks: blocks(3) })]);
+    expect(enteringAt(s, 1).map((e) => [e.id, e.bullet])).toEqual([["a", false], ["b", false]]);
+    expect(enteringAt(s, 2).map((e) => [e.id, e.bullet])).toEqual([["b", true]]);
+    expect(enteringAt(s, 4)).toEqual([]);
+  });
+});
+
+describe("cleanBuildFields", () => {
+  it("keeps valid fields and drops the rest", () => {
+    const read = (o: Record<string, unknown>) => cleanBuildFields((k) => o[k]);
+    expect(read({ build: 2, buildEffect: "rise", buildAfter: true, buildDelay: 900, buildBullets: true })).toEqual({ build: 2, buildEffect: "rise", buildAfter: true, buildDelay: 900, buildBullets: true });
+    expect(read({ buildEffect: "spin", buildDelay: 900, build: "2" })).toEqual({});
+    expect(read({ buildAfter: true, buildDelay: 99999 })).toEqual({ buildAfter: true, buildDelay: 5000 });
+    expect(read({ buildAfter: true, buildDelay: -3 })).toEqual({ buildAfter: true });
   });
 });

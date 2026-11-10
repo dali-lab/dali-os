@@ -9,14 +9,19 @@ import {
   deckVersionOf,
   elementsOf,
   isDeleted,
+  isRemovedSlot,
   notesOf,
   slidesMap,
   textOf,
 } from "~/components/slides/deck/model";
-import { buildOf } from "~/components/slides/deck/builds";
+import { cleanBuildFields, type BuildEffect } from "~/components/slides/deck/builds";
+import { slideMetaFields } from "~/components/slides/deck/slide-meta";
+import { contentFields, type ChartSpec, type PollSpec } from "~/components/slides/deck/content";
 import type { Slide, SlideLayout } from "~/components/slides/types";
 import { layoutById } from "~/components/slides/deck/layouts";
-import type { RenderSlide } from "~/components/slides/deck/snapshot";
+import { extraFields, geometryFields, linkGroups, shapeFields, withFill, type RenderSlide } from "~/components/slides/deck/snapshot";
+import type { FillId, ShapeKind } from "~/components/slides/deck/model";
+import type { Crop } from "~/components/slides/deck/crop";
 import { TEXT_STYLE_IDS, type TextStyleId } from "~/components/slides/deck/themes";
 
 export interface DeckReadElement {
@@ -31,13 +36,38 @@ export interface DeckReadElement {
   text: string;
   build?: number;
   buildBullets?: boolean;
+  buildEffect?: BuildEffect;
+  buildAfter?: boolean;
+  buildDelay?: number;
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+  rot?: number;
+  shape?: ShapeKind;
+  fill?: FillId;
+  children?: string[];
+  chart?: ChartSpec;
+  icon?: string;
+  videoUrl?: string;
+  poll?: PollSpec;
+  html?: string;
+  htmlFill?: true;
+  crop?: Crop;
+  locked?: boolean;
+  hFixed?: boolean;
 }
 
 export interface DeckReadSlide {
   id: string;
   pos: number;
   layoutId: string;
+  skipped?: boolean;
+  background?: RenderSlide["background"];
+  transition?: RenderSlide["transition"];
+  section?: string;
   elements: DeckReadElement[];
+  removedSlots?: string[];
   notes: { blocks: DocBlock[]; text: string };
 }
 
@@ -60,11 +90,13 @@ export function readDeck(live: Y.Doc): DeckRead {
       if (isDeleted(slide)) return;
       const fragments = textOf(slide);
       const elements: DeckReadElement[] = [];
+      const removedSlots: string[] = [];
       elementsOf(slide).forEach((el, elId) => {
+        if (isRemovedSlot(el)) removedSlots.push(elId);
         if (isDeleted(el)) return;
         const frag = fragments.get(elId);
         const blocks = frag ? fragmentToBlocks(frag) : [];
-        elements.push({
+        elements.push(withFill({
           id: elId,
           kind: String(el.get("kind")),
           slot: str(el.get("slot")),
@@ -74,9 +106,12 @@ export function readDeck(live: Y.Doc): DeckRead {
           textStyle: str(el.get("textStyle")),
           blocks,
           text: blocksToPlainText(blocks as never),
-          ...(buildOf(el.get("build")) ? { build: buildOf(el.get("build")) } : {}),
-          ...(el.get("buildBullets") === true ? { buildBullets: true } : {}),
-        });
+          ...cleanBuildFields((k) => el.get(k)),
+          ...geometryFields((k) => el.get(k)),
+          ...shapeFields((k) => el.get(k)),
+          ...contentFields((k) => el.get(k)),
+          ...extraFields((k) => el.get(k)),
+        }));
       });
       elements.sort(compareZ);
       const notesBlocks = fragmentToBlocks(notesOf(slide));
@@ -84,7 +119,10 @@ export function readDeck(live: Y.Doc): DeckRead {
         id,
         pos: Number(slide.get("pos")),
         layoutId: String(slide.get("layoutId")),
+        ...(slide.get("skipped") === true ? { skipped: true } : {}),
+        ...slideMetaFields((k) => slide.get(k)),
         elements,
+        ...(removedSlots.length > 0 ? { removedSlots } : {}),
         notes: { blocks: notesBlocks, text: blocksToPlainText(notesBlocks as never) },
       });
     });
@@ -127,6 +165,11 @@ export function projectLegacySlides(read: DeckRead): Slide[] {
   });
 }
 
+function withParents(elements: RenderSlide["elements"]): RenderSlide["elements"] {
+  linkGroups(elements);
+  return elements;
+}
+
 /** A deck read as the plain data SlideRender draws, for people who view without connecting to the room. */
 export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderSlide[] } {
   return {
@@ -135,7 +178,9 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
       id: s.id,
       pos: s.pos,
       layoutId: s.layoutId,
-      elements: s.elements.map((e) => ({
+      ...(s.skipped ? { skipped: true } : {}),
+      ...slideMetaFields((k) => (s as unknown as Record<string, unknown>)[k]),
+      elements: withParents(s.elements.map((e) => withFill({
         id: e.id,
         kind: e.kind,
         slot: e.slot,
@@ -144,16 +189,21 @@ export function toRenderDeck(read: DeckRead): { themeId: string; slides: RenderS
         src: e.src,
         alt: e.alt,
         textStyle: TEXT_STYLE_IDS.includes(e.textStyle as TextStyleId) ? (e.textStyle as TextStyleId) : null,
-        ...(e.build ? { build: e.build } : {}),
-        ...(e.buildBullets ? { buildBullets: true } : {}),
-      })),
+        ...cleanBuildFields((k) => (e as unknown as Record<string, unknown>)[k]),
+        ...geometryFields((k) => (e as unknown as Record<string, unknown>)[k]),
+        ...shapeFields((k) => (e as unknown as Record<string, unknown>)[k]),
+        ...contentFields((k) => (e as unknown as Record<string, unknown>)[k]),
+        ...extraFields((k) => (e as unknown as Record<string, unknown>)[k]),
+      }))),
     })),
   };
 }
 
-/** Whether any live slide lacks an element for a slot its layout draws. */
+/** Whether any live slide lacks an element for a slot its layout draws and nobody removed. */
 export function deckMissingSlots(read: DeckRead): boolean {
-  return read.slides.some((s) => layoutById(s.layoutId).slots.some((slot) => !s.elements.some((e) => e.slot === slot.slot)));
+  return read.slides.some((s) =>
+    layoutById(s.layoutId).slots.some((slot) => !s.removedSlots?.includes(slot.slot) && !s.elements.some((e) => e.slot === slot.slot)),
+  );
 }
 
 export function notesBySlide(read: DeckRead): Record<string, string> {

@@ -219,7 +219,7 @@ export function LayoutOS({
     isAlumni,
     isNewMember,
   }
-  // The `community` flag adds the Community area and moves Connect into it, so
+  // The `community` flag adds the Community area and moves Community into it, so
   // every nav matcher below has to be handed the same map.
   const navFlags = {
     community: useFeatureFlag('community'),

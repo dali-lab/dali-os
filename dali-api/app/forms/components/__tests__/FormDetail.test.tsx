@@ -419,7 +419,7 @@ describe("FormDetail", () => {
 
     it("viewing a published version: Preview, Copy link, Share, then a filled New version", async () => {
       await mount(published());
-      expect(actionLabels()).toEqual(["Preview", "Copy link", "Share", "New version"]);
+      expect(actionLabels()).toEqual(["Preview", "Copy form link", "Share", "New version"]);
       expect(actions().querySelector("button:last-child")!.className).toContain("bg-accent-coral");
     });
 
@@ -427,17 +427,17 @@ describe("FormDetail", () => {
       const data = published();
       data.form.draft = { questions: [question], description: null } as never;
       await mount(data);
-      expect(actionLabels()).toEqual(["Preview", "Copy link", "Share", "Publish"]);
+      expect(actionLabels()).toEqual(["Preview", "Copy form link", "Share", "Publish"]);
     });
 
     it("viewing an unpublished version: the primary is Publish", async () => {
       await mount(loaderData());
-      expect(actionLabels()).toEqual(["Preview", "Copy link", "Share", "Publish"]);
+      expect(actionLabels()).toEqual(["Preview", "Copy form link", "Share", "Publish"]);
     });
 
-    it("disables Copy link until the form is published", async () => {
+    it("disables Copy form link until the form is published", async () => {
       await mount(loaderData());
-      const copy = [...actions().querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy link")!;
+      const copy = [...actions().querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy form link")!;
       expect(copy.hasAttribute("disabled")).toBe(true);
     });
 
@@ -445,7 +445,7 @@ describe("FormDetail", () => {
       const writeText = vi.fn(async () => {});
       Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
       await mount(published());
-      const copy = [...actions().querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy link")!;
+      const copy = [...actions().querySelectorAll("button")].find((b) => b.textContent?.trim() === "Copy form link")!;
       await click(copy);
       expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/forms/fill/tok`);
     });
@@ -481,9 +481,27 @@ describe("FormDetail", () => {
       expect(submitted).toContainEqual({ intent: "rename-form", id: "f1", name: "Renamed form" });
     });
 
-    it("sets the form icon from the crumb glyph with set-form-icon", async () => {
+    it("keeps the crumb glyph static, with no icon picker in the bar", async () => {
       await mount(loaderData());
-      await click(container.querySelector("[data-testid=glyph]")!.closest("button"));
+      expect(container.querySelector("[data-testid=glyph]")!.closest("button")).toBeNull();
+    });
+
+    it("renames from the page title with the existing rename action", async () => {
+      await mount(loaderData());
+      const input = container.querySelector<HTMLInputElement>("input[aria-label='Title']")!;
+      expect(input.value).toBe("My form");
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Renamed form");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => void input.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+      await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
+      expect(submitted).toContainEqual({ intent: "rename-form", id: "f1", name: "Renamed form" });
+    });
+
+    it("sets the form icon from the page title with set-form-icon", async () => {
+      await mount(loaderData());
+      await click([...container.querySelectorAll("button")].find((b) => b.textContent === "Add icon"));
       await click([...document.body.querySelectorAll("button")].find((b) => b.textContent === "🚀"));
       await act(async () => void (await new Promise((r) => setTimeout(r, 50))));
       expect(submitted).toContainEqual({ intent: "set-form-icon", id: "f1", iconEmoji: "🚀" });
@@ -494,7 +512,7 @@ describe("FormDetail", () => {
       expect(await overflow()).not.toContain("Rename");
     });
 
-    it("hides Copy link and Share for a managed form and offers Publish only while drafting", async () => {
+    it("hides Copy form link and Share for a managed form and offers Publish only while drafting", async () => {
       const data = loaderData({ managing: { label: "Fall hiring" } });
       await mount(data);
       expect(actionLabels()).toEqual(["Preview"]);

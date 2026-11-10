@@ -241,6 +241,8 @@ export default [
     ),
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("slides/:pageId", "routes/slides.$pageId.tsx"),
+    route("slides/:pageId/export.pdf", "routes/slides.$pageId.export-pdf.ts"),
+    route("slides/:pageId/html-preview/:elementId", "routes/slides.$pageId.html-preview.$elementId.ts"),
     route("slides/:pageId/present", "routes/slides.$pageId.present.tsx"),
     route("slides/:pageId/presenter", "routes/slides.$pageId.presenter.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
@@ -249,9 +251,11 @@ export default [
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
-    // Connect: map of where alumni are based (members + alumni).
-    route("connect", "members/routes/connect.tsx"),
-    // Community: Connect lives here in the sidebar, alongside these.
+    // Community: map of where alumni are based (members + alumni).
+    route("community", "members/routes/community.tsx"),
+    route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
+    route("connect/*", "members/routes/connect-redirect.ts"),
+    // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
@@ -316,6 +320,7 @@ export default [
     // deep-link editor/responses surfaces plus the action-only mutation
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
+    route("api/rubrics", "routes/api.rubrics.ts"),
     route("api/folder-receivers", "routes/api.folder-receivers.ts"),
     route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
@@ -719,6 +724,13 @@ export default [
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
   route("api/slides/:pageId/live", "routes/api.slides.$pageId.live.ts"),
   route("api/slides/:pageId/live/stream", "routes/api.slides.$pageId.live.stream.ts"),
+  route("api/slide-templates", "routes/api.slide-templates.ts"),
+  route("api/slide-templates/:id", "routes/api.slide-templates.$id.ts"),
+  route("api/slides/:pageId/from-template", "routes/api.slides.$pageId.from-template.ts"),
+  route("api/slides/:pageId/polls", "routes/api.slides.$pageId.polls.ts"),
+  route("api/slides/:pageId/polls/stream", "routes/api.slides.$pageId.polls.stream.ts"),
+  route("api/slides/:pageId/reactions", "routes/api.slides.$pageId.reactions.ts"),
+  route("api/slides/:pageId/reactions/stream", "routes/api.slides.$pageId.reactions.stream.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
@@ -784,6 +796,7 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+  route("slides/:pageId/export.pptx", "routes/slides.$pageId.export-pptx.ts"),
 
   // Public read-only render for "Anyone with the link" documents — registered
   // OUTSIDE the app-shell layout so an unauthenticated visitor can read it. The

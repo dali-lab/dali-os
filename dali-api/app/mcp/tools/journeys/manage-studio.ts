@@ -1,8 +1,7 @@
-// MCP: set_journey_studio_lab and manage_journey_reviews. Whiteboard and
-// document labs on journey modules, and mentor review of learners' work on
-// them. Document bodies are Markdown. Scope: write.
+// Whiteboard and document labs on journey modules, and mentor review of
+// learners' work on them. Document bodies are Markdown.
 
-import { McpInvalidError, McpNotFoundError, requireForAction } from "../../errors";
+import { McpInvalidError, McpNotFoundError } from "../../errors";
 import type { McpCtx, McpTool } from "../../registry";
 import { createId } from "~/lib/short-id";
 import { markdownToRichDoc, richDocToMarkdown } from "~/components/slides/slide-markdown.server";
@@ -15,7 +14,7 @@ import { findModule, inputSchema, journeyViewer, replaceModule, saveEdit, unwrap
 
 const REVIEW_PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
-const RULE_HELP =
+export const RULE_HELP =
   "Automatic rules: item-count {itemType: sticky|text|shape|image|pin|any, color?, min} counts the learner's own board items; hotspots {min} counts hidden problem areas the learner pinned; contains-text {text}; word-count {min}; section {heading, minWords} counts words between a heading containing that text and the next heading; list-items {heading, min} counts list items in that section.";
 
 type StudioInput = {
@@ -79,69 +78,68 @@ export const SET_JOURNEY_STUDIO_LAB: McpTool = {
     const studio = args.lab ? await toStudio(args.lab) : undefined;
     return saveEdit(viewer, args.journeyId, (d) => {
       const m = findModule(d, args.moduleId);
-      if (studio && m.lab) throw new McpInvalidError("This module has a code lab. Remove it with set_journey_lab first.");
+      if (studio && m.lab) throw new McpInvalidError("This module has a code lab. Remove it with set_journey_activity (activity code_lab, remove: true) first.");
       return replaceModule(d, { ...m, studio: args.remove ? undefined : studio });
     });
   },
 };
 
-type ReviewArgs = PageArgs & {
-  action: "list" | "get" | "review";
-  status?: "waiting" | "reviewed";
-  submissionId?: string;
-  decision?: "approved" | "changes-requested";
-  note?: string;
-  mentorChecks?: Record<string, boolean>;
-};
+type ReviewListArgs = PageArgs & { status?: "waiting" | "reviewed" };
 
-export const MANAGE_JOURNEY_REVIEWS: McpTool = {
+export const LIST_JOURNEY_REVIEWS: McpTool = {
   def: {
-    name: "manage_journey_reviews",
+    name: "list_journey_reviews",
     description:
-      "Review learners' whiteboard and document lab work on onboarding journeys you own or edit. Actions: list (status waiting, the default, or reviewed; newest first, page with page.nextCursor as cursor until page.hasMore is false), get (submissionId: the work as text, with every check's result and which hidden problem areas were found), review (submissionId, decision approved or changes-requested, note, mentorChecks {criterionId: true}; approving needs every mentor criterion ticked, requesting changes needs a note). The learner is notified.",
+      "List learners' whiteboard and document lab submissions on onboarding journeys you own or edit, newest first. status is waiting (the default) or reviewed. Page with page.nextCursor as cursor until page.hasMore is false. Read one with get_journey_review.",
     inputSchema: inputSchema({
       type: "object",
       properties: {
-        action: { type: "string", enum: ["list", "get", "review"] },
         status: { type: "string", enum: ["waiting", "reviewed"] },
-        submissionId: { type: "string" },
-        decision: { type: "string", enum: ["approved", "changes-requested"] },
-        note: { type: "string", maxLength: 10_000 },
-        mentorChecks: { type: "object" },
         ...pageProps(REVIEW_PAGE_LIMITS),
       },
-      required: ["action"],
       additionalProperties: false,
     }),
-    requiredScope: "mcp:write",
+    requiredScope: "mcp:read",
   },
   run: async (ctx: McpCtx, raw) => {
-    const args = raw as ReviewArgs;
-    requireForAction(args.action, args, { list: [], get: ["submissionId"], review: ["submissionId", "decision"] });
+    const args = raw as ReviewListArgs;
     const viewer = await journeyViewer(ctx);
-    if (args.action === "review") {
-      unwrap(await reviewSubmission(viewer, args.submissionId!, { mentorChecks: args.mentorChecks ?? {}, note: args.note ?? "", decision: args.decision! }));
-      return { ok: true, submissionId: args.submissionId, decision: args.decision };
-    }
-    if (args.action === "list") {
-      const ids = await listReviewIds(viewer, args.status ?? "waiting");
-      const { rows, page } = pageArray(ids, args, REVIEW_PAGE_LIMITS);
-      const entries = await loadReviewEntries(viewer, rows);
-      return {
-        submissions: entries.map((e) => ({
-          submissionId: e.submission.id,
-          learner: e.learner.name,
-          lab: e.studio.title,
-          kind: e.studio.kind,
-          module: e.moduleTitle,
-          journey: e.journeyTitle,
-          status: e.submission.status,
-          submittedAt: e.submission.submittedAt,
-        })),
-        page,
-      };
-    }
-    const [entry] = await loadReviewEntries(viewer, [args.submissionId!]);
+    const ids = await listReviewIds(viewer, args.status ?? "waiting");
+    const { rows, page } = pageArray(ids, args, REVIEW_PAGE_LIMITS);
+    const entries = await loadReviewEntries(viewer, rows);
+    return {
+      submissions: entries.map((e) => ({
+        submissionId: e.submission.id,
+        learner: e.learner.name,
+        lab: e.studio.title,
+        kind: e.studio.kind,
+        module: e.moduleTitle,
+        journey: e.journeyTitle,
+        status: e.submission.status,
+        submittedAt: e.submission.submittedAt,
+      })),
+      page,
+    };
+  },
+};
+
+export const GET_JOURNEY_REVIEW: McpTool = {
+  def: {
+    name: "get_journey_review",
+    description:
+      "Read one learner's whiteboard or document lab submission on a journey you own or edit: the work as text, every check's result, and which hidden problem areas they found.",
+    inputSchema: inputSchema({
+      type: "object",
+      properties: { submissionId: { type: "string", minLength: 1 } },
+      required: ["submissionId"],
+      additionalProperties: false,
+    }),
+    requiredScope: "mcp:read",
+  },
+  run: async (ctx: McpCtx, raw) => {
+    const args = raw as { submissionId: string };
+    const viewer = await journeyViewer(ctx);
+    const [entry] = await loadReviewEntries(viewer, [args.submissionId]);
     if (!entry) throw new McpNotFoundError("Submission not found.");
     const { submission: s, studio } = entry;
     const results = evaluateCriteria(studio, s.work, s.selfChecks, s.mentorChecks, s.status);
@@ -161,5 +159,38 @@ export const MANAGE_JOURNEY_REVIEWS: McpTool = {
       mentorNote: s.mentorNote,
       reviewer: s.reviewerName,
     };
+  },
+};
+
+type ReviewArgs = {
+  submissionId: string;
+  decision: "approved" | "changes-requested";
+  note?: string;
+  mentorChecks?: Record<string, boolean>;
+};
+
+export const REVIEW_JOURNEY_SUBMISSION: McpTool = {
+  def: {
+    name: "review_journey_submission",
+    description:
+      "Approve a learner's whiteboard or document lab submission, or send it back. decision is approved or changes-requested. mentorChecks ticks mentor criteria by id ({criterionId: true}); approving needs every mentor criterion ticked, requesting changes needs a note. The learner is notified.",
+    inputSchema: inputSchema({
+      type: "object",
+      properties: {
+        submissionId: { type: "string", minLength: 1 },
+        decision: { type: "string", enum: ["approved", "changes-requested"] },
+        note: { type: "string", maxLength: 10_000 },
+        mentorChecks: { type: "object" },
+      },
+      required: ["submissionId", "decision"],
+      additionalProperties: false,
+    }),
+    requiredScope: "mcp:write",
+  },
+  run: async (ctx: McpCtx, raw) => {
+    const args = raw as ReviewArgs;
+    const viewer = await journeyViewer(ctx);
+    unwrap(await reviewSubmission(viewer, args.submissionId, { mentorChecks: args.mentorChecks ?? {}, note: args.note ?? "", decision: args.decision }));
+    return { ok: true, submissionId: args.submissionId, decision: args.decision };
   },
 };

@@ -28,13 +28,10 @@ export type PageBarTitleValue = {
   title: string
   onRename?: (name: string) => void | Promise<void>
   emoji?: string | null
-  onEmojiChange?: (emoji: string | null) => void
 }
 
 const TitleContext = createContext<PageBarTitleValue | null>(null)
 const TitleRegistryContext = createContext<((id: string, value: PageBarTitleValue | null) => void) | null>(null)
-const CopyLinkHiddenContext = createContext(false)
-const CopyLinkOptOutContext = createContext<((id: string, hidden: boolean) => void) | null>(null)
 
 export function PageBarSlotProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<HTMLElement | null>(null)
@@ -50,16 +47,6 @@ export function PageBarSlotProvider({ children }: { children: ReactNode }) {
     setTitleEntry((prev) => {
       if (value) return { id, value }
       return prev?.id === id ? null : prev
-    })
-  }, [])
-  const [optOuts, setOptOuts] = useState<ReadonlySet<string>>(() => new Set())
-  const setOptOut = useCallback((id: string, hidden: boolean) => {
-    setOptOuts((prev) => {
-      if (prev.has(id) === hidden) return prev
-      const next = new Set(prev)
-      if (hidden) next.add(id)
-      else next.delete(id)
-      return next
     })
   }, [])
   const [menuItems, setMenuItems] = useState<ReadonlyMap<string, ReactNode>>(() => new Map())
@@ -85,13 +72,9 @@ export function PageBarSlotProvider({ children }: { children: ReactNode }) {
     <PageBarContext.Provider value={value}>
       <MenuItemsRegistryContext.Provider value={registry}>
         <MenuItemsContext.Provider value={ordered}>
-          <CopyLinkOptOutContext.Provider value={setOptOut}>
-            <TitleRegistryContext.Provider value={registerTitle}>
-              <TitleContext.Provider value={titleEntry?.value ?? null}>
-                <CopyLinkHiddenContext.Provider value={optOuts.size > 0}>{children}</CopyLinkHiddenContext.Provider>
-              </TitleContext.Provider>
-            </TitleRegistryContext.Provider>
-          </CopyLinkOptOutContext.Provider>
+          <TitleRegistryContext.Provider value={registerTitle}>
+            <TitleContext.Provider value={titleEntry?.value ?? null}>{children}</TitleContext.Provider>
+          </TitleRegistryContext.Provider>
         </MenuItemsContext.Provider>
       </MenuItemsRegistryContext.Provider>
     </PageBarContext.Provider>
@@ -102,9 +85,7 @@ export function NoPageBar({ children }: { children: ReactNode }) {
   return (
     <PageBarContext.Provider value={null}>
       <MenuItemsRegistryContext.Provider value={null}>
-        <CopyLinkOptOutContext.Provider value={null}>
-          <TitleRegistryContext.Provider value={null}>{children}</TitleRegistryContext.Provider>
-        </CopyLinkOptOutContext.Provider>
+        <TitleRegistryContext.Provider value={null}>{children}</TitleRegistryContext.Provider>
       </MenuItemsRegistryContext.Provider>
     </PageBarContext.Provider>
   )
@@ -114,14 +95,11 @@ export function NoPageBar({ children }: { children: ReactNode }) {
 export function PageBarVisibility({ hidden, children }: { hidden: boolean; children: ReactNode }) {
   const bar = useContext(PageBarContext)
   const registry = useContext(MenuItemsRegistryContext)
-  const optOut = useContext(CopyLinkOptOutContext)
   const titleRegistry = useContext(TitleRegistryContext)
   return (
     <PageBarContext.Provider value={hidden ? null : bar}>
       <MenuItemsRegistryContext.Provider value={hidden ? null : registry}>
-        <CopyLinkOptOutContext.Provider value={hidden ? null : optOut}>
-          <TitleRegistryContext.Provider value={hidden ? null : titleRegistry}>{children}</TitleRegistryContext.Provider>
-        </CopyLinkOptOutContext.Provider>
+        <TitleRegistryContext.Provider value={hidden ? null : titleRegistry}>{children}</TitleRegistryContext.Provider>
       </MenuItemsRegistryContext.Provider>
     </PageBarContext.Provider>
   )
@@ -142,18 +120,7 @@ export function PageBarMenuItems({ children }: { children: ReactNode }) {
   return null
 }
 
-/** Hides the shell's own "Copy link" overflow row for a page that supplies its own link action. */
-export function PageBarHideCopyLink() {
-  const setOptOut = useContext(CopyLinkOptOutContext)
-  const id = useId()
-  useEffect(() => {
-    setOptOut?.(id, true)
-    return () => setOptOut?.(id, false)
-  }, [setOptOut, id])
-  return null
-}
-
-/** Makes the page bar's last crumb the page's title: editable when `onRename` is given, with an icon picker when `onEmojiChange` is. */
+/** Makes the page bar's last crumb the page's title: editable when `onRename` is given. */
 export function PageBarTitle(value: PageBarTitleValue) {
   const registry = useContext(TitleRegistryContext)
   const id = useId()
@@ -166,10 +133,6 @@ export function PageBarTitle(value: PageBarTitleValue) {
 
 export function usePageBarTitle(): PageBarTitleValue | null {
   return useContext(TitleContext)
-}
-
-export function usePageBarCopyLinkHidden(): boolean {
-  return useContext(CopyLinkHiddenContext)
 }
 
 /** The page's registered overflow-menu entries, in registration order. */

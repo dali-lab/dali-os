@@ -17,6 +17,7 @@ const m = vi.hoisted(() => ({
   canManage: vi.fn(),
   transact: vi.fn(),
   slidesLive: vi.fn(),
+  isCore: vi.fn(),
 }));
 
 vi.mock("~/lib/auth", () => ({ requireAuth: m.requireAuth, isNonMember: m.isNonMember, redirectPartnerToPortal: m.redirectPartnerToPortal }));
@@ -32,6 +33,7 @@ vi.mock("~/lib/slide-decks.server", () => ({
 vi.mock("~/lib/drive-page-trail.server", () => ({ loadDrivePageAncestry: vi.fn(async () => ({ title: "Deck", iconEmoji: null, workspaceType: "Lab" })) }));
 vi.mock("~/lib/slide-live.server", () => ({ slidesLiveEnabled: m.slidesLive }));
 vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck, transactDeck: m.transact }));
+vi.mock("~/lib/roles", () => ({ isCore: m.isCore }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: m.token }));
 vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => ({ name: "Ada Lovelace", photoUrl: null })) }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: m.canManage }));
@@ -49,6 +51,9 @@ vi.mock("~/components/slides/collab/ReadOnlyDeck", () => ({
     createElement("div", { "data-testid": "read-only" }, `${p.slides.length} slides${p.notice ? ` | ${p.notice}` : ""}`),
 }));
 vi.mock("~/components/shell/page-bar-slot", () => ({ PageBarTitle: () => null }));
+vi.mock("~/components/slides/pptx/DeckDownloadItems", () => ({
+  DeckDownloadItems: (p: { pageId: string }) => createElement("a", { "data-testid": "download-pptx", href: `/slides/${p.pageId}/export.pptx` }),
+}));
 vi.mock("~/components/slides/SlideViewer", () => ({ SlideViewer: () => createElement("div", { "data-testid": "legacy-viewer" }) }));
 vi.mock("~/components/slides/editor/SlideEditorWorkspace", () => ({ SlideEditorWorkspace: () => createElement("div", { "data-testid": "legacy-editor" }) }));
 vi.mock("~/components/slides/useDeckAutosave", () => ({
@@ -87,7 +92,8 @@ beforeEach(() => {
   m.redirectPartnerToPortal.mockResolvedValue(null);
   m.pageFind.mockResolvedValue({ kind: "Slides" });
   m.pageFindOrThrow.mockResolvedValue({ title: "Deck", iconEmoji: null, workspaceType: "Lab", workspaceId: null, parentPageId: null, createdById: "u1" });
-  m.deckAccess.mockResolvedValue({ ok: true, canEdit: true, page: {} });
+  m.deckAccess.mockResolvedValue({ ok: true, canEdit: true, canComment: true, page: {} });
+  m.isCore.mockResolvedValue(false);
   m.loadDeck.mockResolvedValue({ slides: [{ id: "s", layout: "title", title: "T" }], version: "v1", storage: "json" });
   m.migrate.mockResolvedValue("yjs");
   m.readLiveDeck.mockResolvedValue(live());
@@ -102,6 +108,19 @@ describe("loader", () => {
     expect(out).toMatchObject({ mode: "live", canEdit: true, canManageAccess: true, unknownVersion: false, deck: null });
     expect(out.collab).toEqual({ token: "tok", userId: "u1", userName: "Ada Lovelace", photoUrl: null });
     expect(m.loadDeck).not.toHaveBeenCalled();
+  });
+
+  it("tells the editor whether the viewer can comment and moderate comments", async () => {
+    expect(await run()).toMatchObject({ canComment: true, canModerateComments: false });
+    m.deckAccess.mockResolvedValue({ ok: true, canEdit: false, canComment: false, page: {} });
+    m.isCore.mockResolvedValue(true);
+    expect(await run()).toMatchObject({ canComment: false, canModerateComments: true });
+  });
+
+  it("passes the slide and thread a comment link names", async () => {
+    const linked = new Request("https://dali.test/slides/p1?slide=s9&thread=t3");
+    expect((await run({ request: linked })).link).toEqual({ slideId: "s9", threadId: "t3" });
+    expect((await run()).link).toEqual({ slideId: null, threadId: null });
   });
 
   it("a JSON deck is moved to live storage on open, then opens the same way", async () => {
@@ -210,6 +229,7 @@ describe("page", () => {
     const el = render({ ...base, canEdit: false, mode: "live", canManageAccess: false, workspaceType: "Lab", unknownVersion: false, collab: null, deck: { themeId: "dali-dark", slides: [{}, {}] } });
     expect(el.querySelector("[data-testid=live-editor]")).toBeNull();
     expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("2 slides");
+    expect(el.querySelector("[data-testid=download-pptx]")!.getAttribute("href")).toBe("/slides/p1/export.pptx");
   });
 
   it("adds the Present button and the follow layer only when slides-live is on", () => {

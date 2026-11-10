@@ -33,7 +33,7 @@ Use the **Search Drive** box in the toolbar to search across every drive you can
 Open a drive or folder, then click **New**.
 
 - **New document**, **New folder**, **New whiteboard**, **New notebook** and **New form** ask for a name, then create the item in the folder you are viewing.
-- **New agreement** appears in Core, for people who manage agreements.
+- **New agreement** appears in Core and **New rubric** appears in Hiring, for Core members. Both ask for a name, then create the item in the folder you are viewing and open it.
 - **From template…** starts a document from a template (not offered in My Drive).
 - **Upload files** picks files from your computer. You can also drag files into the folder.
 
@@ -41,13 +41,13 @@ Open a drive or folder, then click **New**.
 
 ## Whiteboards
 
-**New whiteboard** creates a freeform canvas you can pan and zoom, with shapes, text and images. Several people can draw on it at once. It is shared and moved like a document. **Full screen** and **Share** are in the top bar. Click the board's name in the breadcrumb to rename it, or the icon beside it to change its emoji.
+**New whiteboard** creates a freeform canvas you can pan and zoom, with shapes, text and images. Several people can draw on it at once. It is shared and moved like a document. **Full screen** and **Share** are in the top bar. Click the board's name at the top of the page or in the breadcrumb to rename it. Hover over the name to add an icon, or click the icon to change it.
 
 ## Move and rename
 
 Right-click an item, or use its menu, for **Open**, **Download** (files only), **Rename**, **Move to…** and **Delete**. Documents, folders, forms and files also offer **Share…**. To share a file, see [Sharing and visibility](/help/articles/sharing). You can drag an item onto a folder to move it, and select several items to move or delete them together.
 
-Moving an item into another drive changes who can see it, because it takes on that drive's audience. The move dialog tells you who that will be.
+Moving an item into another drive changes who can see it, because it takes on that drive's audience. The move dialog tells you who that will be. Agreements and rubrics are the exception: only Core can move them, and they stay visible to Core only wherever they go.
 
 Core, Hiring and other process folders at the top of a drive can't be deleted.
 

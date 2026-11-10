@@ -3,7 +3,21 @@ import * as Y from "yjs";
 export const DECK_VERSION = 1;
 export const DEFAULT_THEME_ID = "dali-dark";
 
-export type ElementKind = "text" | "image" | "shape" | "embed";
+export type ElementKind = "text" | "image" | "shape" | "embed" | "group" | "chart" | "icon" | "video" | "poll" | "html";
+
+export const SHAPE_KINDS = ["rect", "rounded", "ellipse", "line", "arrow"] as const;
+export type ShapeKind = (typeof SHAPE_KINDS)[number];
+export const SHAPE_LABELS: Record<ShapeKind, string> = {
+  rect: "Rectangle",
+  rounded: "Rounded rectangle",
+  ellipse: "Ellipse",
+  line: "Line",
+  arrow: "Arrow",
+};
+
+export const FILL_IDS = ["accent", "fg", "muted", "surface", "rule"] as const;
+export type FillId = (typeof FILL_IDS)[number];
+export const FILL_LABELS: Record<FillId, string> = { accent: "Accent", fg: "Text", muted: "Muted", surface: "Surface", rule: "Rule" };
 
 export type ElementMap = Y.Map<unknown>;
 export type SlideMap = Y.Map<unknown>;
@@ -83,6 +97,20 @@ export function tombstoneSlide(slide: SlideMap): void {
 
 export function tombstoneElement(el: ElementMap): void {
   el.set("deleted", true);
+}
+
+export function isRemovedSlot(el: ElementMap): boolean {
+  return isDeleted(el) && el.get("slotRemoved") === true;
+}
+
+export function tombstoneSlot(el: ElementMap): void {
+  el.set("deleted", true);
+  el.set("slotRemoved", true);
+}
+
+export function reviveSlot(el: ElementMap): void {
+  el.set("deleted", false);
+  if (el.has("slotRemoved")) el.delete("slotRemoved");
 }
 
 export function restoreSlide(slide: SlideMap): void {

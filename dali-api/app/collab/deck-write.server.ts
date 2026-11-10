@@ -8,6 +8,7 @@ import {
   elementsOf,
   initDeck,
   isDeleted,
+  reviveSlot,
   newElementMap,
   newSlideMap,
   notesOf,
@@ -64,7 +65,7 @@ function writeTextSlot(slide: SlideMap, slot: string, z: number, blocks: DocBloc
     textOf(slide).set(slot, frag);
   }
   if (!existing) elements.set(slot, newElementMap(slot, "text", z, { slot }));
-  else if (isDeleted(existing)) existing.set("deleted", false);
+  else if (isDeleted(existing)) reviveSlot(existing);
   blocksToFragment(blocks, frag);
 }
 
@@ -82,7 +83,7 @@ function writeImageSlot(slide: SlideMap, image: Slide["image"]): void {
     elements.set("image", newElementMap("image", "image", IMAGE_Z, { slot: "image", src: image.src, alt: image.alt }));
     return;
   }
-  existing.set("deleted", false);
+  reviveSlot(existing);
   existing.set("src", image.src);
   existing.set("alt", image.alt);
 }

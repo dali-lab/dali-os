@@ -24,7 +24,7 @@ export function menuEntries(
   if (!caps.readOnly && (isPage || item.type === "file" || item.type === "form" || item.type === "agreement")) {
     entries.push("rename");
   }
-  if (!caps.readOnly && item.type !== "agreement" && item.type !== "rubric") entries.push("move");
+  if (!caps.readOnly) entries.push("move");
   if (!caps.readOnly && (isPage || item.type === "file" || item.type === "form")) {
     entries.push("delete");
   }

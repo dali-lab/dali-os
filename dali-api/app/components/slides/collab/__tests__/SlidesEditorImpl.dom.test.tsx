@@ -4,38 +4,60 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { DeckSnapshot } from "~/components/slides/deck/snapshot";
 
-const h = vi.hoisted(() => ({ snap: null as unknown, presenceProps: null as unknown }));
+const h = vi.hoisted(() => ({ snap: null as unknown, presenceProps: null as unknown, titleHeader: null as null | { canEdit: boolean; onRename: (n: string) => Promise<void>; onIconChange: (e: string | null) => void } }));
 
 vi.mock("@blocknote/shadcn/style.css", () => ({}));
 vi.mock("~/components/doc/theme.css", () => ({}));
 vi.mock("../slide-editor.css", () => ({}));
 vi.mock("react-router", () => ({ useRevalidator: () => ({ revalidate: vi.fn() }) }));
 vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ info: vi.fn(), error: vi.fn() }) }));
+vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn(async () => true) }) }));
+vi.mock("../PdfMenuItems", () => ({
+  DeckPdfMenuItems: (p: { pageId: string; canExportNotes: boolean }) => createElement("i", { "data-pdf-menu": `${p.pageId}|${p.canExportNotes}` }),
+}));
 vi.mock("~/components/shell/page-bar-slot", () => ({
+  pageBarTextButton: () => "",
   PageBarTitle: () => null,
+  PageBarMenuItems: ({ children }: { children: React.ReactNode }) => createElement("div", { "data-menu-items": "" }, children),
   PageBarPortal: ({ slot, children }: { slot: string; children: React.ReactNode }) => createElement("div", { "data-slot-name": slot }, children),
 }));
+vi.mock("~/components/ui/floating", () => ({
+  Menu: {
+    Item: (p: { children: React.ReactNode; onSelect: () => void; disabled?: boolean }) =>
+      createElement("button", { type: "button", disabled: p.disabled, onClick: p.onSelect }, p.children),
+  },
+}));
+vi.mock("~/components/doc-chrome/PageTitleHeader", () => ({ PageTitleHeader: (p: NonNullable<typeof h.titleHeader>) => ((h.titleHeader = p), null) }));
 vi.mock("~/components/shell/PageBarShareButton", () => ({ PageBarShareButton: () => null }));
 vi.mock("~/components/sharing/ShareDialog", () => ({ ShareDialog: () => null }));
 vi.mock("~/components/collab/PresenceProvider", () => ({
   PresenceProvider: (p: { pageId: string; children: React.ReactNode }) => ((h.presenceProps = p), createElement("div", null, p.children)),
 }));
 vi.mock("~/components/collab/PresenceBar", () => ({ PresenceBar: () => createElement("span", { "data-testid": "presence-bar" }) }));
-vi.mock("~/components/doc/upload", () => ({ uploadEditorImage: vi.fn(), withUploadErrorToast: (f: unknown) => f, IMAGE_UPLOAD_ACCEPT: "image/*" }));
-vi.mock("../Filmstrip", () => ({ Filmstrip: () => createElement("div", { "data-testid": "filmstrip" }) }));
+vi.mock("~/components/doc/upload", () => ({ uploadEditorImage: vi.fn(), uploadErrorMessage: () => "Upload failed", withUploadErrorToast: (f: unknown) => f, IMAGE_UPLOAD_ACCEPT: "image/*" }));
+vi.mock("../Filmstrip", () => ({
+  Filmstrip: (p: { currentId: string | null; selectedIds: string[] }) =>
+    createElement("div", { "data-testid": "filmstrip", "data-current": p.currentId ?? "", "data-selected": p.selectedIds.join(",") }, createElement("button", { type: "button", "data-thumb": "" })),
+}));
 vi.mock("../SlideStage", () => ({ SlideStage: () => createElement("div", { "data-testid": "stage" }), DeletedSlideNotice: () => null, stageKey: (e: number, s: string) => `${e}:${s}` }));
 vi.mock("../NotesPane", () => ({ NotesPane: () => null }));
 vi.mock("../Inspector", () => ({ Inspector: () => null }));
 vi.mock("../EditorToolbar", () => ({ EditorToolbar: () => createElement("div", { "data-testid": "toolbar" }) }));
 vi.mock("../ReadOnlyDeck", () => ({
-  ReadOnlyDeck: (p: { slides: unknown[]; notice?: string }) => createElement("div", { "data-testid": "read-only" }, `${p.slides.length}|${p.notice ?? ""}`),
+  ReadOnlyDeck: (p: { slides: unknown[]; notice?: string; currentId?: string | null }) =>
+    createElement("div", { "data-testid": "read-only", "data-current": p.currentId ?? "" }, `${p.slides.length}|${p.notice ?? ""}`),
+}));
+vi.mock("../useSlideComments", () => ({ useSlideComments: () => ({ comments: [], error: null, post: vi.fn(), remove: vi.fn() }) }));
+vi.mock("../SlideCommentsPanel", () => ({
+  SlideCommentsPanel: (p: { focusThreadId: string | null }) => createElement("aside", { "data-testid": "comments-panel", "data-focus": p.focusThreadId ?? "" }),
 }));
 vi.mock("../useDeckDoc", () => ({
-  useDeckDoc: () => ({ doc: {}, entry: {}, store: {}, undo: { manager: {}, setCurrentSlide: vi.fn(), setNavigator: vi.fn() } }),
+  useDeckDoc: () => ({ doc: {}, entry: { provider: {} }, store: {}, undo: { manager: {}, setCurrentSlide: vi.fn(), setNavigator: vi.fn() } }),
   useDeckSnapshot: () => h.snap,
   useDeckSync: () => ({ state: "saved", synced: true }),
   useUndoState: () => ({ canUndo: false, canRedo: false }),
   useSlidePresence: () => new Map(),
+  useSlideDrags: () => ({ peers: new Map(), publish: vi.fn() }),
 }));
 vi.mock("~/components/slides/deck/deck-undo", () => ({ deckUndoExtension: () => ({}) }));
 vi.mock("~/components/slides/deck/deck-ops", async (orig) => ({ ...(await orig<object>()), notesFragment: () => null }));
@@ -48,15 +70,21 @@ const snap = (v: unknown): DeckSnapshot => ({
   v,
   themeId: "dali-dark",
   epoch: 0,
-  slides: [{ id: "a", pos: 1, layoutId: "content", elements: [] }],
+  slides: [
+    { id: "a", pos: 1, layoutId: "content", elements: [] },
+    { id: "b", pos: 2, layoutId: "content", elements: [] },
+  ],
   deletedIds: [],
   deletedBy: {},
 });
-const props = (canEdit: boolean) => ({
+const props = (canEdit: boolean, extra: Record<string, unknown> = {}) => ({
   pageId: "p1",
   title: "Deck",
   iconEmoji: null,
   canEdit,
+  canComment: false,
+  canModerateComments: false,
+  ...extra,
   canManageAccess: false,
   workspaceType: "Lab",
   collab: { token: "t", userId: "u1", userName: "Ada", photoUrl: null },
@@ -73,8 +101,8 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
 });
-const render = (canEdit: boolean) => {
-  act(() => root.render(createElement(SlidesEditorImpl, props(canEdit))));
+const render = (canEdit: boolean, extra: Record<string, unknown> = {}) => {
+  act(() => root.render(createElement(SlidesEditorImpl, props(canEdit, extra) as never)));
   return container;
 };
 
@@ -86,11 +114,50 @@ describe("SlidesEditorImpl", () => {
     expect(el.querySelector("[data-testid=read-only]")).toBeNull();
   });
 
+  it("shows the deck title on the page, editable only by an editor", () => {
+    h.snap = snap(1);
+    render(true);
+    expect(h.titleHeader!.canEdit).toBe(true);
+    act(() => root.unmount());
+    root = createRoot(container);
+    render(false);
+    expect(h.titleHeader!.canEdit).toBe(false);
+  });
+
+  it("saves a rename and an icon from the page title through /api/documents/:id", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    h.snap = snap(1);
+    render(true);
+    await act(async () => {
+      await h.titleHeader!.onRename("Q3 review");
+      h.titleHeader!.onIconChange("🚀");
+    });
+    const bodies = fetchMock.mock.calls.filter(([, init]) => init.body).map(([, init]) => JSON.parse(init.body as string));
+    expect(bodies).toEqual([{ title: "Q3 review" }, { iconEmoji: "🚀" }]);
+    vi.unstubAllGlobals();
+  });
+
+  it("offers PowerPoint download to everyone and import only to editors", () => {
+    h.snap = snap(1);
+    const menu = (el: HTMLElement) => [...el.querySelectorAll("[data-menu-items] button")].map((b) => b.textContent);
+    expect(menu(render(true))).toEqual(["Download PowerPoint", "Import slides", "Save as template", "Find and replace", "Keyboard shortcuts"]);
+    act(() => root.unmount());
+    root = createRoot(container);
+    expect(menu(render(false))).toEqual(["Download PowerPoint"]);
+  });
+
   it("gives a viewer the live deck read-only, without an unknown-version notice", () => {
     h.snap = snap(1);
     const el = render(false);
     expect(el.querySelector("[data-testid=toolbar]")).toBeNull();
-    expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("1|");
+    expect(el.querySelector("[data-testid=read-only]")!.textContent).toBe("2|");
+  });
+
+  it("adds the PDF download to the page bar menu, with notes only for editors", () => {
+    h.snap = snap(1);
+    expect(render(true).querySelector("[data-pdf-menu]")!.getAttribute("data-pdf-menu")).toBe("p1|true");
+    expect(render(false).querySelector("[data-pdf-menu]")!.getAttribute("data-pdf-menu")).toBe("p1|false");
   });
 
   it("explains an unknown version to everyone", () => {
@@ -103,5 +170,138 @@ describe("SlidesEditorImpl", () => {
     const el = render(true);
     expect(el.querySelector("[data-slot-name=presence] [data-testid=presence-bar]")).not.toBeNull();
     expect((h.presenceProps as { pageId: string }).pageId).toBe("doc:p1");
+  });
+});
+
+describe("SlidesEditorImpl comments", () => {
+  const button = () => container.querySelector("[data-slot-name=actions] button[aria-pressed]") as HTMLButtonElement | null;
+
+  it("offers no Comments button to someone who cannot comment", () => {
+    h.snap = snap(1);
+    render(true);
+    expect(button()).toBeNull();
+    expect(container.querySelector("[data-testid=comments-panel]")).toBeNull();
+  });
+
+  it("puts a Comments button in the page bar's actions that toggles the panel", () => {
+    h.snap = snap(1);
+    render(true, { canComment: true });
+    expect(button()!.textContent).toContain("Comments");
+    expect(container.querySelector("[data-testid=comments-panel]")).toBeNull();
+    act(() => button()!.click());
+    expect(container.querySelector("[data-testid=comments-panel]")).not.toBeNull();
+    act(() => button()!.click());
+    expect(container.querySelector("[data-testid=comments-panel]")).toBeNull();
+  });
+
+  it("gives a viewer who can comment the button and panel beside the read-only deck", () => {
+    h.snap = snap(1);
+    render(false, { canComment: true });
+    act(() => button()!.click());
+    expect(container.querySelector("[data-testid=read-only]")).not.toBeNull();
+    expect(container.querySelector("[data-testid=comments-panel]")).not.toBeNull();
+  });
+
+  it("opens the slide and thread a comment link names", () => {
+    h.snap = snap(1);
+    render(false, { canComment: true, link: { slideId: "b", threadId: "t9" } });
+    expect(container.querySelector("[data-testid=read-only]")!.getAttribute("data-current")).toBe("b");
+    expect(container.querySelector("[data-testid=comments-panel]")!.getAttribute("data-focus")).toBe("t9");
+  });
+
+  it("falls back to the first slide when the linked slide no longer exists", () => {
+    h.snap = snap(1);
+    render(false, { canComment: true, link: { slideId: "nope", threadId: null } });
+    expect(container.querySelector("[data-testid=read-only]")!.getAttribute("data-current")).toBe("a");
+  });
+});
+
+describe("SlidesEditorImpl arrow keys between slides", () => {
+  const three = (): DeckSnapshot => ({ ...snap(1), slides: ["a", "b", "c"].map((id, i) => ({ id, pos: i + 1, layoutId: "content", elements: [] })) });
+  const strip = () => container.querySelector<HTMLElement>("[data-testid=filmstrip]")!;
+  const current = () => strip().dataset.current;
+  const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = document.body) => {
+    const e = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+    act(() => void target.dispatchEvent(e));
+    return e;
+  };
+
+  it("moves forward and back with the arrow keys and stays put at either end", () => {
+    h.snap = three();
+    render(true);
+    expect(current()).toBe("a");
+    press("ArrowUp");
+    expect(current()).toBe("a");
+    press("ArrowDown");
+    expect(current()).toBe("b");
+    press("ArrowRight");
+    expect(current()).toBe("c");
+    press("ArrowDown");
+    expect(current()).toBe("c");
+    press("ArrowLeft");
+    expect(current()).toBe("b");
+    press("ArrowUp");
+    expect(current()).toBe("a");
+  });
+
+  it("also takes Page Up, Page Down, Home and End, and keeps the page from scrolling", () => {
+    h.snap = three();
+    render(true);
+    expect(press("PageDown").defaultPrevented).toBe(true);
+    expect(current()).toBe("b");
+    press("End");
+    expect(current()).toBe("c");
+    press("PageUp");
+    expect(current()).toBe("b");
+    press("Home");
+    expect(current()).toBe("a");
+  });
+
+  it("selects the slide it moves to, and extends the selection with Shift", () => {
+    h.snap = three();
+    render(true);
+    press("ArrowDown");
+    expect(strip().dataset.selected).toBe("b");
+    press("ArrowDown", { shiftKey: true });
+    expect(strip().dataset.selected).toBe("b,c");
+    expect(current()).toBe("c");
+    press("ArrowUp");
+    expect(strip().dataset.selected).toBe("b");
+  });
+
+  it("works with focus on a filmstrip thumbnail", () => {
+    h.snap = three();
+    render(true);
+    press("ArrowDown", {}, container.querySelector("[data-thumb]")!);
+    expect(current()).toBe("b");
+  });
+
+  it("leaves arrows alone while typing, in menus, with a modifier, or when something else handled them", () => {
+    h.snap = three();
+    render(true);
+    for (const html of ['<input />', '<textarea></textarea>', '<div contenteditable="true"></div>', '<div role="menu"><button></button></div>', '<div role="radiogroup"><button></button></div>']) {
+      const host = document.createElement("div");
+      host.innerHTML = html;
+      container.appendChild(host);
+      const target = host.querySelector("button") ?? host.firstElementChild!;
+      expect(press("ArrowDown", {}, target).defaultPrevented).toBe(false);
+      host.remove();
+    }
+    press("ArrowDown", { metaKey: true });
+    press("ArrowDown", { altKey: true });
+    press("ArrowDown", { ctrlKey: true });
+    const handled = new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true });
+    handled.preventDefault();
+    act(() => void document.body.dispatchEvent(handled));
+    expect(current()).toBe("a");
+  });
+
+  it("lets a viewer page through a read-only deck", () => {
+    h.snap = three();
+    render(false);
+    const shown = () => container.querySelector<HTMLElement>("[data-testid=read-only]")!.dataset.current;
+    expect(shown()).toBe("a");
+    press("ArrowRight");
+    expect(shown()).toBe("b");
   });
 });

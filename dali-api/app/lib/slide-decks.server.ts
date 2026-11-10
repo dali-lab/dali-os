@@ -9,8 +9,10 @@ import type { Slide } from "~/components/slides/types";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles } from "~/lib/roles";
 import { convertDeckToYjs } from "~/collab/deck-convert.server";
+import * as Y from "yjs";
 import { readLiveDeck } from "~/collab/deck-live.server";
-import { projectLegacySlides } from "~/collab/read-deck.server";
+import { projectLegacySlides, readDeck, type DeckRead } from "~/collab/read-deck.server";
+import { seedDeckDoc } from "~/collab/deck-write.server";
 
 export type DeckResult<T extends object = object> =
   | ({ ok: true } & T)
@@ -26,6 +28,7 @@ const asJson = (slides: Slide[]) => JSON.parse(JSON.stringify(slides)) as Prisma
 export interface DeckAccess {
   page: { id: string; title: string; iconEmoji: string | null };
   canEdit: boolean;
+  canComment: boolean;
 }
 
 /** The deck page if the user may see it, or a failure for missing/non-deck/forbidden pages. */
@@ -37,7 +40,7 @@ export async function deckAccess(userId: string, pageId: string, request?: Reque
   if (!page || page.archivedAt !== null || page.kind !== "Slides") return fail(404, "Slide deck not found.");
   const access = await getPageAccess(userId, page, request);
   if (!access.canView) return fail(404, "Slide deck not found.");
-  return { ok: true, page: { id: page.id, title: page.title, iconEmoji: page.iconEmoji }, canEdit: access.canEdit };
+  return { ok: true, page: { id: page.id, title: page.title, iconEmoji: page.iconEmoji }, canEdit: access.canEdit, canComment: access.canComment };
 }
 
 /** The deck's slides and save version. The row is created on first read, so a page made by any path opens. */
@@ -57,6 +60,19 @@ export async function loadDeck(pageId: string): Promise<{ slides: Slide[]; versi
     };
   }
   return { slides: parseSlides(row.slides) ?? [], version: version(row.updatedAt), storage: "json" };
+}
+
+/** The deck in the live model, whichever storage it uses. A JSON deck is read through a scratch doc and left as it is. */
+export async function readDeckModel(pageId: string): Promise<DeckRead> {
+  const loaded = await loadDeck(pageId);
+  if (loaded.storage === "yjs") return (await readLiveDeck(pageId)).read;
+  const scratch = new Y.Doc();
+  try {
+    seedDeckDoc(scratch, loaded.slides);
+    return readDeck(scratch);
+  } finally {
+    scratch.destroy();
+  }
 }
 
 export async function deckStorage(pageId: string): Promise<"json" | "yjs"> {

@@ -14,6 +14,7 @@ import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Trash2, Maximize2, Minimize2, Workflow, Frame, Wand2, FolderSearch } from "lucide-react";
 import { PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
+import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { Tooltip } from "~/components/ui/floating";
 import { MeetingStrip } from "~/components/meeting/MeetingStrip";
@@ -33,7 +34,6 @@ const TOP_BTN_CLASS =
   "flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]";
 
 export default function WhiteboardImpl(props: WhiteboardEditorProps) {
-  // title/iconEmoji come through props but the shell breadcrumb renders them now.
   const { pageId, title, canEdit, collabToken, userName, photoUrl, meeting, canManageAccess, workspaceType } = props;
   const navigate = useNavigate();
   const revalidator = useRevalidator();
@@ -143,8 +143,17 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         title={title}
         onRename={canEdit ? (name) => savePage({ title: name }) : undefined}
         emoji={emoji}
-        onEmojiChange={canEdit ? (next) => savePage({ iconEmoji: next }) : undefined}
       />
+      {!isFullscreen && (
+        <PageTitleHeader
+          className="px-4 pt-4 pb-3"
+          title={title}
+          iconEmoji={emoji ?? null}
+          canEdit={canEdit}
+          onRename={(name) => savePage({ title: name })}
+          onIconChange={(next) => void savePage({ iconEmoji: next })}
+        />
+      )}
       <PageBarPortal slot="actions">
         <Tooltip content={isFullscreen ? "Exit full screen" : "Full screen"}>
           <button

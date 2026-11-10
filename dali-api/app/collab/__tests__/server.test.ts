@@ -13,6 +13,7 @@ const m = vi.hoisted(() => ({
   notifyCollabDocMentions: vi.fn(),
   reconcilePageLinks: vi.fn(),
   attachAgentPresence: vi.fn(),
+  republishAgents: vi.fn(),
 }));
 
 vi.mock("@hocuspocus/server", () => ({
@@ -47,7 +48,10 @@ vi.mock("../persistence", () => ({
 vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: m.authorizeCollabDoc }));
 vi.mock("../mentions.server", () => ({ notifyCollabDocMentions: m.notifyCollabDocMentions }));
 vi.mock("../page-links.server", () => ({ reconcilePageLinks: m.reconcilePageLinks }));
-vi.mock("../agent-presence.server", () => ({ attachAgentPresence: m.attachAgentPresence }));
+vi.mock("../agent-presence.server", () => ({
+  attachAgentPresence: m.attachAgentPresence,
+  republishAgents: m.republishAgents,
+}));
 
 type Hooks = Record<string, (arg: any) => Promise<any>>;
 
@@ -129,6 +133,12 @@ describe("startCollabServer", () => {
     await boot();
     expect(m.attachAgentPresence).toHaveBeenCalledWith({ id: "hp" });
     expect(m.listen).toHaveBeenCalledOnce();
+  });
+
+  it("re-sends the agents in a room to a client the moment it connects", async () => {
+    const { config } = await boot();
+    await config.connected({ documentName: "doc:p1:body" });
+    expect(m.republishAgents).toHaveBeenCalledWith("doc:p1:body");
   });
 
   it("treats EADDRINUSE as benign and logs other listen failures", async () => {
@@ -245,6 +255,17 @@ describe("onDisconnect connection accounting", () => {
     await config.onDisconnect({ documentName: "d", document: {}, context: undefined });
     await config.onDisconnect({ documentName: "d", document: {}, context: undefined });
     for (let i = 0; i < 20; i++) await auth(config).p;
+  });
+});
+
+describe("direct-connection authors", () => {
+  it.each([
+    ["onStoreDocument", (c: Hooks) => c.onStoreDocument({ documentName: "doc:p1:body", document: {}, context: { authorId: "agent-owner" } })],
+    ["onDisconnect", (c: Hooks) => c.onDisconnect({ documentName: "doc:p1:body", document: {}, context: { authorId: "agent-owner" } })],
+  ])("%s snapshots with the author a direct connection names", async (_name, run) => {
+    const { config } = await boot();
+    await run(config);
+    expect(m.maybeSnapshot).toHaveBeenCalledWith("doc:p1:body", expect.anything(), ["agent-owner"]);
   });
 });
 

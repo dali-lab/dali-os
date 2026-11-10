@@ -1,6 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { userTextWhere } from "~/lib/person-search";
 import { resolvePhotoUrl } from "~/lib/photo";
 import type { UserRoles } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
@@ -56,7 +57,7 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
   const roles = opts.roles;
   const like: Like = { contains: q, mode: "insensitive" };
   return [
-    { type: "person", enabled: true, run: (b) => searchPeople(q, like, b) },
+    { type: "person", enabled: true, run: (b) => searchPeople(q, b) },
     { type: "project", enabled: true, run: (b) => searchProjects(q, like, b) },
     { type: "task", enabled: true, run: (b) => searchTasks(q, like, b) },
     { type: "education", enabled: true, run: (b) => searchOfferings(q, like, b) },
@@ -165,11 +166,11 @@ function simpleResults(
   );
 }
 
-async function searchPeople(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchPeople(q: string, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.user.findMany({
     where: {
       ...LAB_MEMBER_WHERE,
-      OR: [{ firstName: like }, { lastName: like }, { daliEmail: like }, { dartmouthEmail: like }],
+      ...userTextWhere(q, ["firstName", "lastName", "daliEmail", "dartmouthEmail"]),
     },
     select: {
       id: true,

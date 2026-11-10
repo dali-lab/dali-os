@@ -6,6 +6,7 @@ vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { isLabMember } from "~/lib/roles";
 import { canBuildForm, canSeeForm, fillAccessByPage } from "~/forms/lib/form-access.server";
 import { formFillAccess } from "~/forms/lib/public-form";
 
@@ -50,6 +51,43 @@ describe("the form's page decides", () => {
     expect(await fillAccessByPage("f1", "u1")).toBe("denied");
     vi.mocked(getPageAccess).mockResolvedValue(access({ canView: true }));
     expect(await fillAccessByPage("f1", "u1")).toBe("ok");
+  });
+
+  it("a staffing-bound form admits any lab member whatever its sharing", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(access({ canView: false }));
+    (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue({ id: "b1" });
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await fillAccessByPage("f1", "u1")).toBe("ok");
+    expect((prisma as any).staffingCycleFormBinding.findFirst).toHaveBeenCalledWith({
+      where: { formId: "f1" },
+      select: { id: true },
+    });
+  });
+
+  it("a staffing-bound form still refuses someone outside the lab", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(access({ canView: false }));
+    (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue({ id: "b1" });
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    expect(await fillAccessByPage("f1", "u1")).toBe("denied");
+  });
+
+  it("a staffing-bound form still sends a sessionless visitor to login", async () => {
+    (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue({ id: "b1" });
+    expect(await fillAccessByPage("f1", null)).toBe("login");
+  });
+
+  it("an unbound form does not fall back to lab membership", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(access({ canView: false }));
+    (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue(null);
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await fillAccessByPage("f1", "u1")).toBe("denied");
+  });
+
+  it("a trashed staffing-bound form cannot be filled", async () => {
+    (prisma as any).page.findUnique.mockResolvedValue({ ...page, archivedAt: new Date() });
+    (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue({ id: "b1" });
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    expect(await fillAccessByPage("f1", "u1")).toBe("denied");
   });
 
   it("a trashed form cannot be filled", async () => {

@@ -1,4 +1,4 @@
-// MCP `set_page_visibility` — toggle a project page's partner or public
+// manage_page `set_visibility`: toggle a project page's partner or public
 // visibility flag.
 //
 // Mirrors POST /api/pages/:id/partner-visible and POST /api/pages/:id/public-visible

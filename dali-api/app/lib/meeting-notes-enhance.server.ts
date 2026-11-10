@@ -95,7 +95,7 @@ Writing style: short, concrete, scannable. Lead with the fact, not "The team dis
 Rules, all mandatory:
 - Every existing block appears exactly once, in order, as a keep or expand.
 - Inserts are {"op":"insert","after":"<id or null>" or "under":"<id>","type":"heading"|"paragraph"|"bulletListItem","text","cites":[seconds,...],"added":true}. "after" names the existing block id it follows; "under" nests it as the last child of that block.
-- Never insert an "Action items" heading or checklist items: the action items section is built from "actionItems" below.
+- Never insert an "Action items" or "Tasks" heading or checklist items: "actionItems" below become suggested tasks the author reviews, and the note's Tasks section is built from them.
 - If there is no "Decisions" heading among the given blocks and the meeting made decisions, insert one (type "heading") with a bullet per decision.
 - A heading the transcript doesn't support (most often "Agenda" on an unused template) gets no inserts under it and stays "keep". Never invent content to fill it.
 - Never invent names, dates, numbers, or facts the transcript doesn't support. Every word you add must come from the transcript.

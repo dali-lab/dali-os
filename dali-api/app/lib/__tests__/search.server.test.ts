@@ -124,6 +124,20 @@ describe("runSearchWithOverflow", () => {
   });
 });
 
+describe("people search", () => {
+  it("finds a member by full name in either order", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([{ ...people(1)[0], lastName: "Lovelace" }]);
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "Lovelace Ada" });
+
+    const where = mockPrisma.user.findMany.mock.calls[0][0].where;
+    expect(where.AND).toHaveLength(2);
+    expect(where.AND[0].OR).toContainEqual({ firstName: { contains: "lovelace", mode: "insensitive" } });
+    expect(where.AND[1].OR).toContainEqual({ lastName: { contains: "ada", mode: "insensitive" } });
+    expect(results.filter((r) => r.type === "person").map((r) => r.title)).toEqual(["Ada Lovelace"]);
+  });
+});
+
 describe("runCategorySearch", () => {
   it("queries only that category, in id order, with the larger candidate bound", async () => {
     mockPrisma.user.findMany.mockResolvedValue(people(3));

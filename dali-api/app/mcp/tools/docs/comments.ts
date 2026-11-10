@@ -38,6 +38,11 @@ export const LIST_COMMENTS_TOOL = {
           "The kind of target: 'doc' (Page), 'file' (ProjectFile), or 'pagedoc' (page-doc FAQ).",
       },
       targetId: { type: "string", minLength: 1, description: "ID of the target." },
+      slideId: {
+        type: "string",
+        minLength: 1,
+        description: "Slide decks only: return only the threads anchored to this slide (slide, element and text comments).",
+      },
       ...pageProps(PAGE_LIMITS),
     },
     required: ["targetType", "targetId"],
@@ -48,7 +53,7 @@ export const LIST_COMMENTS_TOOL = {
 
 type CommentTarget = "doc" | "file" | "pagedoc";
 
-type Input = PageArgs & { targetType: CommentTarget; targetId: string };
+type Input = PageArgs & { targetType: CommentTarget; targetId: string; slideId?: string };
 
 export class ListCommentsError extends Error {
   constructor(message: string, public status: number) {
@@ -81,7 +86,12 @@ export async function runListComments(callerId: string, input: Input) {
     throw new ListCommentsError("Forbidden", 403);
   }
 
-  const rootWhere = { targetType: input.targetType, targetId: input.targetId, parentId: null };
+  const rootWhere = {
+    targetType: input.targetType,
+    targetId: input.targetId,
+    parentId: null,
+    ...(input.slideId ? { anchor: { path: ["slideId"], equals: input.slideId } } : {}),
+  };
   const window = keysetWindow(input, PAGE_LIMITS, [{ field: "createdAt", direction: "asc", type: "date" }], "asc");
   const [fetchedRoots, total] = await Promise.all([
     prisma.docComment.findMany({
@@ -119,7 +129,7 @@ export async function runListComments(callerId: string, input: Input) {
     authorId: r.authorId,
     authorPhotoUrl: photoById.get(r.authorId) ?? null,
     body: r.body,
-    anchor: r.anchor as { from: string; to: string } | null,
+    anchor: r.anchor as Record<string, unknown> | null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,

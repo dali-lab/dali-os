@@ -7,11 +7,14 @@ import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
+import { withEmojiImages } from "~/lib/reactions.server";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import type { BodySegment } from "~/lib/comment-body";
+import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
+import { docCommentContext } from "~/lib/comment-links.server";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
@@ -28,10 +31,7 @@ import type { BodySegment } from "~/lib/comment-body";
 //   file target  — read/create/reply: Core or project member of owning project
 //   pagedoc      — read/create/reply: any lab member (open FAQ threads)
 
-const AnchorSchema = z
-  .object({ from: z.string(), to: z.string() })
-  .nullable()
-  .optional();
+const AnchorSchema = commentAnchorSchema;
 
 // bodyJson segment schema — mirrors the BodySegment union from MentionTextInput.
 // We accept the raw JSON from the client and store it as-is; validation here
@@ -157,7 +157,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   if (!allowed) return forbidden(request);
 
-  const authors = await hydrateAuthors([...new Set(rows.map((r) => r.authorId))]);
+  const authors = await hydrateAuthors([
+    ...new Set(rows.flatMap((r) => [r.authorId, ...r.reactions.map((x) => x.userId)])),
+  ]);
   const nameById = new Map(authors.map((a) => [a.id, a.name]));
   const photoById = new Map(authors.map((a) => [a.id, a.photoUrl]));
 
@@ -173,10 +175,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,
-    reactions: r.reactions,
+    reactions: r.reactions.map((x) => ({ ...x, name: nameById.get(x.userId) ?? "Unknown" })),
   }));
 
-  return withCors(request, Response.json({ comments }));
+  return withCors(request, Response.json({ comments: await withEmojiImages(comments) }));
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -217,6 +219,12 @@ export async function action({ request }: Route.ActionArgs) {
   }
   // Anchors only make sense on documents.
   const anchor = body.targetType === "doc" ? (body.anchor ?? null) : null;
+  if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
+    const page = await prisma.page.findUnique({ where: { id: body.targetId }, select: { kind: true } });
+    if (page?.kind !== "Slides") {
+      return withCors(request, Response.json({ error: "Slide anchors only apply to slide decks" }, { status: 400 }));
+    }
+  }
 
   // File comments are pinned to a version so feedback reads against the
   // right iteration: the one the commenter was viewing (sent by the file
@@ -315,15 +323,13 @@ export async function action({ request }: Route.ActionArgs) {
 
     if (allIds.size === 0) return;
 
-    const base =
-      body.targetType === "pagedoc"
-        ? pageDocLink(body.path)
-        : body.targetType === "doc"
-          ? `/documents/${body.targetId}`
-          : `/documents/file/${body.targetId}`;
-    // ?comment=<id> tells the comments rail on that surface to scroll to and
-    // flash the exact comment.
-    const link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
+    let link: string;
+    if (body.targetType === "doc") {
+      link = (await docCommentContext(body.targetId, body.parentId ?? created.id, created.id, body.parentId ? undefined : anchor)).link;
+    } else {
+      const base = body.targetType === "pagedoc" ? pageDocLink(body.path) : `/documents/file/${body.targetId}`;
+      link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
+    }
     await notifyMentions({
       recipientUserIds: [...allIds],
       actorId: auth.user.sub,
@@ -359,14 +365,14 @@ async function notifyThreadReply(args: {
 
   let title: string | null | undefined;
   let link: string;
+  let partnerLink: string | null = null;
+  let partnerIds = new Set<string>();
   if (args.targetType === "doc") {
-    title = (
-      await prisma.page.findUnique({
-        where: { id: args.targetId },
-        select: { title: true },
-      })
-    )?.title;
-    link = `/documents/${args.targetId}`;
+    const context = await docCommentContext(args.targetId, args.rootId, args.rootId);
+    title = context.title;
+    link = context.replyLink;
+    partnerLink = context.partnerReplyLink;
+    if (partnerLink) partnerIds = await partnerAccountIds(recipients);
   } else if (args.targetType === "pagedoc") {
     title = (
       await prisma.pageDoc.findUnique({
@@ -393,6 +399,16 @@ async function notifyThreadReply(args: {
       vars: { itemTitle: title ?? "a document", itemDetail: preview },
       link,
     },
-    recipients: recipients.map((userId) => ({ userId })),
+    recipients: recipients.map((userId) =>
+      partnerLink && partnerIds.has(userId) ? { userId, link: partnerLink } : { userId },
+    ),
   });
+}
+
+async function partnerAccountIds(userIds: string[]): Promise<Set<string>> {
+  const contacts = await prisma.partnerContact.findMany({
+    where: { userId: { in: userIds }, user: { daliMember: { is: null } } },
+    select: { userId: true },
+  });
+  return new Set(contacts.flatMap((c) => (c.userId ? [c.userId] : [])));
 }

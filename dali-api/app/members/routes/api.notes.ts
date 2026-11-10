@@ -1,4 +1,5 @@
 import type { Route } from "./+types/api.notes";
+import { userTextWhere } from "~/lib/person-search";
 import { requireAuth, isImpersonating, forbiddenWhileImpersonating } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isCore, isLabMember } from "~/lib/roles";
@@ -95,10 +96,7 @@ export async function action({ request }: Route.ActionArgs) {
                 where: {
                   id: { not: me },
                   daliMember: { isNot: null },
-                  OR: [
-                    { firstName: { contains: q, mode: "insensitive" } },
-                    { lastName: { contains: q, mode: "insensitive" } },
-                  ],
+                  ...userTextWhere(q, ["firstName", "lastName"]),
                 },
                 orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
                 take: 8,

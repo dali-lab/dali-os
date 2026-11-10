@@ -48,7 +48,7 @@ When it says **Transcript ready**:
 
 Enhanced lines are shown as a preview. Edit any line to keep it, or use **Keep all** to accept everything and **Revert all** to undo it. Lines you typed yourself stay as typed. In the **More** menu, **Enhance again** rebuilds the notes from the current text and the transcript.
 
-If the meeting note is in a project's Drive and you are Core or on that project, Enhance also finds action items in the notes. A bar lists the action items so you can check owners and dates, tick the ones you want and create them as tasks on the project board, or choose **Not now**.
+Enhance also finds action items and lists them as suggested tasks under a **Tasks** heading, or under your own **Tasks** or **Action items** heading if the note has one. Once you keep the notes, each suggestion shows a status, owner and due date, plus **Add** and a dismiss button. A task that is not in Backlog needs a due date. If the note is not on a project, pick the project for each suggestion. **Add** turns the line into a task block and puts the task on the project board. **Add all** adds every suggestion that is ready, **Not now** hides the bar, and dismissing a suggestion removes its line.
 
 If transcription fails, the bar says **Transcription failed** and you can discard the recording and record again. If it says **No speech was captured**, nothing was heard.
 

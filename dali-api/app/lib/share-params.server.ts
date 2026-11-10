@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db.server";
+import { userTextWhere } from "~/lib/person-search";
 import { listVisibleGroupsForUser } from "~/lib/groups";
 import type { SharePermission, LinkAccess } from "~/generated/prisma/client";
 
@@ -7,7 +8,7 @@ export function parsePermission(v: string | undefined, fallback: SharePermission
   return v && PERMISSIONS.includes(v) ? (v as SharePermission) : fallback;
 }
 
-const LINK_ACCESSES: readonly string[] = ["Restricted", "LabMembers", "SignedIn", "Public"];
+const LINK_ACCESSES: readonly string[] = ["Restricted", "LabMembers", "SignedIn", "Partners", "Public"];
 export function parseLinkAccess(v: string | undefined): LinkAccess {
   return v && LINK_ACCESSES.includes(v) ? (v as LinkAccess) : "Restricted";
 }
@@ -21,10 +22,7 @@ export async function loadShareOptions(me: string, q: string) {
           where: {
             id: { not: me },
             daliMember: { isNot: null },
-            OR: [
-              { firstName: { contains: q, mode: "insensitive" } },
-              { lastName: { contains: q, mode: "insensitive" } },
-            ],
+            ...userTextWhere(q, ["firstName", "lastName"]),
           },
           orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
           take: 8,

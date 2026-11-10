@@ -83,7 +83,7 @@ export const FEATURE_FLAGS = [
     key: "community",
     label: "Community",
     description:
-      "The Community sidebar area: Connect, Opportunities, Gallery and Stories. Stories opens /resources: a front page of member stories (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Connect stays under Lab and the other Community pages are not reachable.",
+      "The Community sidebar area: Community, Opportunities, Gallery and Stories. Stories opens /resources: a front page of member stories (Internal, or Public to also appear on dali.website) plus bookmark tabs, reference pages that Core/Admin create, edit and delete and every lab member reads. Ships off; without it Community stays under Lab and the other Community pages are not reachable.",
   },
   {
     key: "email-personal",
@@ -139,7 +139,19 @@ export const FEATURE_FLAGS = [
     key: "slides-live",
     label: "Slides: live presenting",
     description:
-      "Present a deck with a presenter view, and let anyone with the deck open follow along on their own screen, with a way to browse on their own. Ships off.",
+      "Present a deck with a presenter view, and let anyone with the deck open follow along on their own screen, with a way to browse on their own. Also polls and emoji reactions while presenting. Ships off.",
+  },
+  {
+    key: "mcp-block-edits",
+    label: "AI assistant block edits",
+    description:
+      "AI assistants connected over MCP can edit part of a page or blog post (a phrase, a block, a table row) instead of rewriting the whole body, and can point at text in a document people have open. Their edits light up the changed blocks for anyone watching. Ships off.",
+  },
+  {
+    key: "form-prefill",
+    label: "Forms: fill in from records",
+    description:
+      "Form questions can start filled in from what DALI OS already knows about the person filling them (their name and email, and for partners their organization and project). The answer stays editable. Also adds a \"Partners\" option to a form's sharing. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

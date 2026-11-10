@@ -18,7 +18,7 @@ import { prisma } from "~/lib/db.server";
 import { getCollabServer } from "./server";
 import { formDraftName } from "./roomName";
 import { agentAnnouncer, bodyTexts, changedTextRange } from "./agent-presence.server";
-import { maybeSnapshot, storeDocument } from "./persistence";
+import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import {
   BLOCKNOTE_FRAGMENT,
   blocksToFragment,
@@ -38,39 +38,69 @@ export async function replaceCollabDocContent(
   authorId: string,
 ): Promise<void> {
   const blocks = ensureBlocks(content);
+  const announcer = agentAnnouncer();
+  await transactCollabDoc(
+    name,
+    authorId,
+    (live) => {
+      const before = bodyTexts(live).map((t) => t.toString());
+      blocksToFragment(blocks, live.getXmlFragment(BLOCKNOTE_FRAGMENT));
+      return changedTextRange(before, live);
+    },
+    {
+      afterLiveChange: (range) =>
+        void announcer.then((announce) => announce({ action: "editing", docRoom: name, range })),
+    },
+  );
+}
 
+export async function loadPersistedDoc(name: string, doc: Y.Doc): Promise<void> {
+  const row = await prisma.collabDocument.findUnique({
+    where: { name },
+    select: { state: true },
+  });
+  if (row) Y.applyUpdate(doc, new Uint8Array(row.state));
+  else await loadDocument(name, doc);
+}
+
+export async function transactCollabDoc<T>(
+  name: string,
+  authorId: string,
+  mutate: (doc: Y.Doc) => T,
+  options: {
+    afterLiveChange?: (result: T) => void;
+    prepare?: (doc: Y.Doc) => Promise<void>;
+  } = {},
+): Promise<T> {
   const server = getCollabServer();
   if (server) {
-    const announcer = agentAnnouncer();
-    const conn = await server.hocuspocus.openDirectConnection(name);
+    const conn = await server.hocuspocus.openDirectConnection(name, { authorId });
     try {
-      // transact applies the change synchronously, then awaits the store.
-      let range: ReturnType<typeof changedTextRange> = null;
+      if (options.prepare && conn.document) await options.prepare(conn.document);
+      let outcome: { value: T } | undefined;
       const stored = conn.transact((live) => {
-        const before = bodyTexts(live).map((t) => t.toString());
-        blocksToFragment(blocks, live.getXmlFragment(BLOCKNOTE_FRAGMENT));
-        range = changedTextRange(before, live);
+        outcome = { value: mutate(live) };
       });
-      void announcer.then((announce) => announce({ action: "editing", docRoom: name, range }));
+      const applied = outcome as { value: T } | undefined;
+      if (applied) options.afterLiveChange?.(applied.value);
       await stored;
+      return applied!.value;
     } finally {
       await conn.disconnect();
     }
-    return;
   }
 
   const live = new Y.Doc();
   try {
-    const row = await prisma.collabDocument.findUnique({
-      where: { name },
-      select: { state: true },
-    });
-    if (row) Y.applyUpdate(live, new Uint8Array(row.state));
+    await loadPersistedDoc(name, live);
+    await options.prepare?.(live);
+    let result!: T;
     live.transact(() => {
-      blocksToFragment(blocks, live.getXmlFragment(BLOCKNOTE_FRAGMENT));
+      result = mutate(live);
     });
     const stored = await storeDocument(name, live);
     if (stored) await maybeSnapshot(name, stored, [authorId]);
+    return result;
   } finally {
     live.destroy();
   }

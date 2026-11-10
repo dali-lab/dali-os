@@ -770,6 +770,36 @@ select:not(:disabled) {
   }
 }
 
+@keyframes slide-reaction-float {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-60vh);
+  }
+}
+
+@keyframes slide-reaction-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.slide-reaction {
+  animation: slide-reaction-float 3s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-reaction {
+    animation: slide-reaction-fade 3s ease-out forwards;
+  }
+}
+
 @keyframes auth-rise {
   from {
     opacity: 0;
@@ -2493,4 +2523,45 @@ html:root .font-heading.text-\[32px\] {
   font-size: var(--text-2xl);
   line-height: var(--tw-leading, var(--text-2xl--line-height));
   font-weight: 700;
+}
+
+/* Community map: event pins drawn as date blocks. Alumni events sit on the
+   yellow accent, DALI events on the pink one. */
+.community-event-pin {
+  display: flex;
+  width: 44px;
+  height: 48px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  color: var(--color-navy-deep);
+  cursor: pointer;
+  box-shadow: 0 2px 8px var(--color-os-shadow);
+  transition: transform 150ms ease-out;
+}
+.community-event-pin:hover,
+.community-event-pin.is-selected {
+  transform: scale(1.12);
+}
+.community-event-pin--alumni {
+  background: var(--color-accent-yellow);
+}
+.community-event-pin--dali {
+  background: var(--color-accent-pink);
+}
+.community-event-pin.is-selected {
+  outline: 2px solid var(--color-os-fg);
+}
+.community-event-pin__month {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+.community-event-pin__day {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
 }

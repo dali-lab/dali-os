@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from "react";
+import { HtmlPreviewContext } from "~/components/slides/deck/html-preview";
 
 export interface SlidesEditorProps {
   pageId: string;
@@ -6,9 +7,15 @@ export interface SlidesEditorProps {
   iconEmoji: string | null;
   /** False for viewers: they connect read-only and watch edits arrive. */
   canEdit: boolean;
+  /** Whether the viewer may read and write comments on the deck. */
+  canComment: boolean;
+  /** Whether the viewer may delete other people's comments. */
+  canModerateComments: boolean;
   canManageAccess: boolean;
   workspaceType: string;
   collab: { token: string; userId: string; userName: string; photoUrl: string | null };
+  /** The slide and thread a comment link names, to open on arrival. */
+  link?: { slideId: string | null; threadId: string | null };
   /** Buttons that sit after Share in the page bar, such as Present. */
   actionsSlot?: ReactNode | ((ctx: { currentSlideId: string | null }) => ReactNode);
 }
@@ -23,10 +30,13 @@ function Loading() {
 export function SlidesEditor(props: SlidesEditorProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  const preview = useMemo(() => ({ pageId: props.pageId }), [props.pageId]);
   if (!mounted) return <Loading />;
   return (
-    <Suspense fallback={<Loading />}>
-      <SlidesEditorImpl {...props} />
-    </Suspense>
+    <HtmlPreviewContext.Provider value={preview}>
+      <Suspense fallback={<Loading />}>
+        <SlidesEditorImpl {...props} />
+      </Suspense>
+    </HtmlPreviewContext.Provider>
   );
 }

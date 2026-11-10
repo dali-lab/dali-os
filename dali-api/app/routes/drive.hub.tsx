@@ -62,11 +62,16 @@ import { useDialog } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useOpenBeside } from "~/components/side-panel/use-side-panel";
 import { useToast } from "~/components/ui/toast";
+import { uploadEditorImage, uploadErrorMessage } from "~/components/doc/upload";
+import { stashImport } from "~/components/slides/pptx/pending-import";
+import { parsePptxFile, PPTX_ACCEPT, PptxImportError, uploadImages, validatePptxFile } from "~/components/slides/pptx/import-client";
 import { driveNoticeMessage } from "~/lib/drive-notices";
 import { Menu, Select } from "~/components/ui/floating";
 import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { Modal } from "~/components/Modal";
+import { NewDeckFromTemplate } from "~/components/slides/templates/NewDeckFromTemplate";
+import { applyTemplateToDeck, type TemplateRow as SlideTemplateRow } from "~/components/slides/templates/templates-client";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { cn } from "~/lib/cn";
@@ -499,7 +504,7 @@ type ScopeActions = {
   createDoc: () => Promise<void>;
   createFolder: () => Promise<void>;
   createWhiteboard: () => Promise<void>;
-  createSlides: () => Promise<void>;
+  createSlides: (presetName?: string) => Promise<string | null>;
   rename: (item: DriveItem) => Promise<void>;
   remove: (item: DriveItem) => Promise<void>;
   /** Delete request without the confirm/toast — used by bulk delete. */
@@ -688,18 +693,24 @@ export function makeScopeActions({
     else toast.error(created.error ?? "Couldn't create the whiteboard");
   }
 
-  async function createSlides() {
-    const name = await dialog.prompt({
-      title: "New slide deck",
-      label: "Name",
-      defaultValue: "Untitled deck",
-      confirmLabel: "Create",
-      validate: (v) => (v.trim() ? null : "Enter a name"),
-    });
-    if (name === null) return;
+  async function createSlides(presetName?: string): Promise<string | null> {
+    const name =
+      presetName ??
+      (await dialog.prompt({
+        title: "New slide deck",
+        label: "Name",
+        defaultValue: "Untitled deck",
+        confirmLabel: "Create",
+        validate: (v) => (v.trim() ? null : "Enter a name"),
+      }));
+    if (name === null) return null;
     const created = await createPage("Slides", name.trim(), createParent);
-    if ("id" in created) onCreated(created.id);
-    else toast.error(created.error ?? "Couldn't create the slide deck");
+    if ("id" in created) {
+      if (presetName === undefined) onCreated(created.id);
+      return created.id;
+    }
+    toast.error(created.error ?? "Couldn't create the slide deck");
+    return null;
   }
 
   async function rename(item: DriveItem) {
@@ -935,6 +946,46 @@ export function NewMenu({
   const folderBlock = isEducation ? educationCreateBlock(scope.items, currentFolderId, "Folder") : null;
   const notebook = notebookPlacement(scope, currentFolderId);
   const slidesEnabled = useFeatureFlag("drive-slides");
+  const slidesCollabEnabled = useFeatureFlag("slides-collab");
+  const pptxInput = useRef<HTMLInputElement>(null);
+  const [deckTemplatesOpen, setDeckTemplatesOpen] = useState(false);
+  const templateProjectId = notebook.kind === "ready" && notebook.workspaceType === "Project" ? notebook.workspaceId : null;
+
+  async function createSlidesFromTemplate(row: SlideTemplateRow) {
+    setDeckTemplatesOpen(false);
+    const id = await actions.createSlides(row.title);
+    if (!id) return;
+    const applied = await applyTemplateToDeck(id, row.id);
+    if (!applied.ok) toast.error(applied.error);
+    onCreated(id);
+  }
+
+  async function createSlidesFromPowerPoint(file: File) {
+    const invalid = validatePptxFile(file);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
+    const toastId = "slides-import";
+    toast.info("Reading the PowerPoint file…", { id: toastId, duration: 0 });
+    try {
+      const plan = await parsePptxFile(file);
+      const uploaded = await uploadImages(plan, (image) => uploadEditorImage(image), (done, total) =>
+        toast.info(`Uploading images, ${done} of ${total}…`, { id: toastId, duration: 0 }),
+      );
+      const id = await actions.createSlides(file.name.replace(/\.pptx$/i, "").trim() || "Imported deck");
+      if (!id) {
+        toast.error("Couldn't create the slide deck.", { id: toastId });
+        return;
+      }
+      if (!stashImport(id, { slides: uploaded.slides, skipped: uploaded.skipped })) {
+        toast.error("The deck was created, but its slides were too large to carry over. Open it and choose Import slides.", { id: toastId });
+      }
+      onCreated(id);
+    } catch (err) {
+      toast.error(err instanceof PptxImportError ? err.message : uploadErrorMessage(err), { id: toastId });
+    }
+  }
 
   async function createNotebook() {
     if (notebook.kind !== "ready") return;
@@ -983,10 +1034,6 @@ export function NewMenu({
     }
   }
 
-  // Create an agreement from the Core New menu. Prompts for a name (like New
-  // document), then follows the admin create action's redirect, rewriting the
-  // admin path to the Drive-namespaced one. The create action files it into
-  // Core ▸ Agreements ▸ {kind} so its breadcrumb resolves.
   async function createAgreement() {
     const name = await dialog.prompt({
       title: "New agreement",
@@ -1003,6 +1050,8 @@ export function NewMenu({
     formData.set("gateScope", "None");
     formData.set("audience", "Manual");
     formData.set("cadence", "Once");
+    const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
+    if (folderPageId) formData.set("folderPageId", folderPageId);
     const res = await fetch("/core/agreements", { method: "POST", body: formData, credentials: "include" });
     if (res.ok || res.redirected) {
       const driveUrl = res.url.replace(/\/core\/agreements\/([^/]+)$/, "/documents/agreement/$1");
@@ -1010,7 +1059,40 @@ export function NewMenu({
     }
   }
 
+  async function createRubric() {
+    const name = await dialog.prompt({
+      title: "New rubric",
+      label: "Name",
+      defaultValue: "Untitled rubric",
+      confirmLabel: "Create",
+      validate: (v) => (v.trim() ? null : "Enter a name"),
+    });
+    if (name === null) return;
+    const formData = new FormData();
+    formData.set("name", name.trim());
+    const folderPageId = currentFolderId ?? scope.rootFolderId ?? null;
+    if (folderPageId) formData.set("folderPageId", folderPageId);
+    const res = await fetch("/api/rubrics", { method: "POST", body: formData, credentials: "include" });
+    const json = (await res.json().catch(() => ({}))) as { rubricId?: string };
+    if (res.ok && json.rubricId) window.location.assign(`/hiring/rubrics/${json.rubricId}`);
+    else toast.error("Couldn't create the rubric");
+  }
+
   return (
+    <>
+    <input
+      ref={pptxInput}
+      type="file"
+      accept={PPTX_ACCEPT}
+      hidden
+      aria-label="Choose a PowerPoint file"
+      onChange={(e) => {
+        const file = e.target.files?.[0];
+        e.target.value = "";
+        if (file) void createSlidesFromPowerPoint(file);
+      }}
+    />
+    <NewDeckFromTemplate open={deckTemplatesOpen} projectId={templateProjectId} onPick={(row) => void createSlidesFromTemplate(row)} onClose={() => setDeckTemplatesOpen(false)} />
     <Menu
       align="right"
       ariaLabel={`New in ${label}`}
@@ -1063,6 +1145,28 @@ export function NewMenu({
           </CreateLabel>
         </Menu.Item>
       )}
+      {slidesEnabled && slidesCollabEnabled && (
+        <Menu.Item
+          icon={<Presentation className="w-3.5 h-3.5" />}
+          disabled={docBlock !== null}
+          onSelect={() => pptxInput.current?.click()}
+        >
+          <CreateLabel testId={`drive-new-slides-pptx-${scope.id}`} blockedReason={docBlock}>
+            New deck from PowerPoint
+          </CreateLabel>
+        </Menu.Item>
+      )}
+      {slidesEnabled && slidesCollabEnabled && (
+        <Menu.Item
+          icon={<Presentation className="w-3.5 h-3.5" />}
+          disabled={docBlock !== null}
+          onSelect={() => setDeckTemplatesOpen(true)}
+        >
+          <CreateLabel testId={`drive-new-slides-template-${scope.id}`} blockedReason={docBlock}>
+            New deck from template
+          </CreateLabel>
+        </Menu.Item>
+      )}
       {notebook.kind !== "unavailable" && (
         <Menu.Item
           icon={<NotebookPen className="w-3.5 h-3.5" />}
@@ -1085,6 +1189,11 @@ export function NewMenu({
           <span data-testid="drive-new-agreement">New agreement</span>
         </Menu.Item>
       )}
+      {scope.id === "hiring" && canManageAgreements && (
+        <Menu.Item icon={<ClipboardList className="w-3.5 h-3.5" />} onSelect={() => void createRubric()}>
+          <span data-testid="drive-new-rubric">New rubric</span>
+        </Menu.Item>
+      )}
       {scope.id !== "mine" && (
         <>
           <Menu.Separator />
@@ -1098,6 +1207,7 @@ export function NewMenu({
         <span data-testid={`drive-new-upload-${scope.id}`}>{uploading ? "Uploading…" : "Upload files"}</span>
       </Menu.Item>
     </Menu>
+    </>
   );
 }
 
@@ -1312,20 +1422,11 @@ export default function DriveHub() {
     [scopeActionsMap, driveScopes, toast, history, revalidate, pendingHidden],
   );
 
-  // ── Cross-drive move: relocate an item to another drive (Lab/Core/a
-  // project), optionally into one of its folders. The page-move endpoint
-  // re-scopes visibility automatically (e.g. into Core → Restricted), so we warn
-  // first. Managed types (agreement/rubric/emailTemplate) are filed
-  // automatically and excluded. Files/forms use folderPageId and stay within the
-  // Lab-workspace drives; docs/folders can also cross into projects.
-  // Every artifact now lives in an ordinary (binding) folder, so nothing is
-  // placement-locked — agreements/rubrics/email-templates move like any file.
-  const NON_MOVABLE = new Set<DriveItem["type"]>();
   const moveDestinationsFor = useCallback(
     (item: DriveItem): DriveTreeScope[] => {
       const home = driveScopes.find((s) => s.items.some((i) => i.id === item.id));
       return driveScopes.filter((s) => {
-        if (s.id === "mine" || isVirtualSpace(s.id) || NON_MOVABLE.has(item.type)) return false;
+        if (s.id === "mine" || isVirtualSpace(s.id)) return false;
         // Items under a typed root stay in that root's drive.
         if (home?.rootFolderId && s.id !== home.id) return false;
         const kind = scopeKindOf(s.id);
@@ -1548,14 +1649,13 @@ export default function DriveHub() {
   // Bulk move: pick a destination once, move everything there, report once.
   const onBulkMove = useCallback(
     async (items: DriveItem[]) => {
-      const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
-      if (movable.length === 0 || !effectiveScopeId) return;
+      if (items.length === 0 || !effectiveScopeId) return;
       if (isVirtualSpace(effectiveScopeId)) {
         toast.error("Open the document to change where it lives");
         return;
       }
-      const dest = await pickMoveDestination(movable[0], effectiveScopeId, `Move ${itemCount(movable.length)}`);
-      if (dest) await moveBatchToScope(movable, effectiveScopeId, dest.scopeId, dest.folderId);
+      const dest = await pickMoveDestination(items[0], effectiveScopeId, `Move ${itemCount(items.length)}`);
+      if (dest) await moveBatchToScope(items, effectiveScopeId, dest.scopeId, dest.folderId);
     },
     [pickMoveDestination, moveBatchToScope, effectiveScopeId, toast],
   );
@@ -1564,9 +1664,8 @@ export default function DriveHub() {
   // scope column) moves it to that drive's top level, confirming the re-scope.
   const onMoveToScope = useCallback(
     (sourceScopeId: string, destScopeId: string, items: DriveItem[]) => {
-      const movable = items.filter((i) => !NON_MOVABLE.has(i.type));
-      if (movable.length === 0) return;
-      void moveBatchToScope(movable, sourceScopeId, destScopeId, null);
+      if (items.length === 0) return;
+      void moveBatchToScope(items, sourceScopeId, destScopeId, null);
     },
     [moveBatchToScope],
   );

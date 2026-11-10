@@ -51,11 +51,11 @@ You can edit your own profile. Admins can edit anyone's.
 2. Change the fields and click **Save**, or **Cancel** to discard.
 3. To add a job, click **Add** on **Work experience**. Use **Edit** or **Remove** on an existing job.
 
-The photo is changed by clicking it on a profile you can edit. "Based in" feeds the Connect map for alumni, so keep it current. See [Connect](/help/articles/connect).
+The photo is changed by clicking it on a profile you can edit. "Based in" feeds the Community map for alumni, so keep it current. See [Community](/help/articles/community-map).
 
 ## Ask for a resume review
 
-When a member has turned on resume reviews, a **Resume review** button shows on their profile. Click it and confirm with **Send request**. They get a notification and see your name only if they accept. See [Connect](/help/articles/connect).
+When a member has turned on resume reviews, a **Resume review** button shows on their profile. Click it and confirm with **Send request**. They get a notification and see your name only if they accept. See [Community](/help/articles/community-map).
 
 ## Add a new member
 

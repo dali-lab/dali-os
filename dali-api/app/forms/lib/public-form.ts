@@ -39,6 +39,7 @@ import {
 import { clearOnboardingTask } from "~/members/lib/welcome.server";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";
 import { notifyFormSubmission, sendFormReceipt } from "./submission-notify.server";
+import { resolvePrefill } from "./prefill.server";
 
 export type PublicForm = {
   formId: string;
@@ -57,6 +58,8 @@ export type PublicForm = {
   // UI renders them disabled. Required file questions are reported so we can
   // surface "this form can't be completed publicly" rather than silently drop.
   questions: Question[];
+  // Starting answers from the filler's own records, keyed by question key.
+  prefill: Record<string, string>;
 };
 
 // Substitute the shared {{token}} merge variables into the text a member
@@ -88,17 +91,22 @@ function applyFormVariables(
 export const TERM_BINDING_SELECT = {
   slot: true,
   updatedAt: true,
+  formVersionId: true,
   staffingCycle: { select: { term: { select: { code: true } } } },
 } as const;
 
 // The questions as a filler sees them. Submit validation must check this same
 // text: an option written "Off in {{term}}" reaches the server as "Off in 27S".
-export function questionsAsServed<B extends { slot: string; updatedAt: Date; staffingCycle: { term: { code: string } } }>(
+// `servedVersionId` is the version being rendered, so {{term}} resolves from
+// the binding that version collects for.
+export function questionsAsServed<B extends { slot: string; updatedAt: Date; formVersionId?: string | null; staffingCycle: { term: { code: string } } }>(
   questions: Question[],
   cycleBindings: B[] | undefined,
+  servedVersionId?: string | null,
 ): Question[] {
   const termCode =
-    pickStaffingBinding(cycleBindings ?? [])?.staffingCycle.term.code ?? null;
+    pickStaffingBinding(cycleBindings ?? [], servedVersionId)?.staffingCycle
+      .term.code ?? null;
   return applyFormVariables(questions, termCode);
 }
 
@@ -184,7 +192,8 @@ export async function buildPublicForm(
     confirmationMessage: form.confirmationMessage
       ? ensureBlocks(safeParseJsonString(form.confirmationMessage))
       : null,
-    questions: questionsAsServed(normalizeQuestionBodies(resolved), form.cycleBindings),
+    questions: questionsAsServed(normalizeQuestionBodies(resolved), form.cycleBindings, version.id),
+    prefill: await resolvePrefill(resolved, userId ?? null),
   };
 }
 
@@ -272,7 +281,15 @@ export async function validateAnswers(
       v === "" ||
       (Array.isArray(v) && v.length === 0) ||
       (typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length === 0);
-    if (empty) return { error: `"${q.data.label}" is required.`, status: 400 };
+    if (!empty) continue;
+    if (q.type === "reference") {
+      const options = await resolveReferenceOptions(q.data.referenceSource, {
+        userId,
+        termId: q.data.referenceTermId,
+      });
+      if (options.length === 0) continue;
+    }
+    return { error: `"${q.data.label}" is required.`, status: 400 };
   }
 
   // Re-resolve `reference` questions server-side and reject any answer that
@@ -343,14 +360,29 @@ async function recordBoundSubmission(
   return { ok: true };
 }
 
-// The cycles a form is bound to for one slot, read off bindings already in
-// hand (both callers select them to pick the binding), so the gate costs no
-// extra query. boundSlotCycleIds is the same set from a formId.
+// The cycles a form is bound to for one slot with the version being served,
+// read off bindings already in hand (both callers select them to pick the
+// binding), so the gate costs no extra query. boundSlotCycleIds is the same
+// set from a formId. A binding pinned to a different version is another
+// round's — a submission under it doesn't block filling this one.
 function cycleIdsForSlot(
-  bindings: { slot: string; staffingCycle: { id: string } }[],
+  bindings: {
+    slot: string;
+    formVersionId?: string | null;
+    staffingCycle: { id: string };
+  }[],
   slot: string,
+  servedVersionId?: string | null,
 ): string[] {
-  return bindings.filter((b) => b.slot === slot).map((b) => b.staffingCycle.id);
+  return bindings
+    .filter((b) => b.slot === slot)
+    .filter(
+      (b) =>
+        !servedVersionId ||
+        b.formVersionId == null ||
+        b.formVersionId === servedVersionId,
+    )
+    .map((b) => b.staffingCycle.id);
 }
 
 // The member's earliest submission for a bound staffing slot (intent-to-work /
@@ -388,21 +420,33 @@ export async function ordinaryFillBlock(
     where: { id: formId },
     select: {
       oneResponsePerMember: true,
+      versions: {
+        orderBy: { versionNumber: "desc" },
+        take: 1,
+        select: { id: true },
+      },
       cycleBindings: {
         select: {
           slot: true,
           updatedAt: true,
+          formVersionId: true,
           staffingCycle: { select: { id: true, termId: true } },
         },
       },
     },
   });
   if (!form) return null;
-  const bound = pickStaffingBinding(form.cycleBindings);
+  const servedVersionId = form.versions[0]?.id ?? null;
+  const bound = pickStaffingBinding(form.cycleBindings, servedVersionId);
   if (bound) {
     const existing = await existingBoundSubmission(
       userId,
-      cycleIdsForSlot(form.cycleBindings, bound.slot),
+      [
+        ...new Set([
+          ...cycleIdsForSlot(form.cycleBindings, bound.slot, servedVersionId),
+          bound.staffingCycle.id,
+        ]),
+      ],
       bound.slot,
     );
     return existing ? { at: existing.createdAt } : null;
@@ -578,7 +622,7 @@ export async function submitAnonymousForm(args: {
 
   const questions = (version.questions as unknown as Question[]) ?? [];
   const bad = await validateAnswers(
-    questionsAsServed(questions, form.cycleBindings),
+    questionsAsServed(questions, form.cycleBindings, version.id),
     args.answers,
     null,
   );
@@ -640,6 +684,7 @@ export async function submitMemberForm(args: {
           slot: true,
           columnMapping: true,
           updatedAt: true,
+          formVersionId: true,
           staffingCycle: {
             select: {
               id: true,
@@ -670,7 +715,7 @@ export async function submitMemberForm(args: {
 
   const questions = (version.questions as unknown as Question[]) ?? [];
   const bad = await validateAnswers(
-    questionsAsServed(questions, form.cycleBindings),
+    questionsAsServed(questions, form.cycleBindings, version.id),
     args.answers,
     args.userId,
   );
@@ -736,9 +781,9 @@ export async function submitMemberForm(args: {
 
   // Which staffing cycle (if any) this submission feeds is decided by the
   // form's own bindings, not the calendar's current term — see
-  // pickStaffingBinding, which breaks a multi-cycle tie on the most recent
-  // binding.
-  const staffingBinding = pickStaffingBinding(form.cycleBindings);
+  // pickStaffingBinding, which prefers bindings pinned to the version being
+  // submitted and breaks a multi-cycle tie on the most recent binding.
+  const staffingBinding = pickStaffingBinding(form.cycleBindings, version.id);
 
   if (!staffingBinding) {
     // One-response gate (ordinary fills only — the branches above/below keep
@@ -823,7 +868,12 @@ export async function submitMemberForm(args: {
   if (
     await existingBoundSubmission(
       args.userId,
-      cycleIdsForSlot(form.cycleBindings, slot),
+      [
+        ...new Set([
+          ...cycleIdsForSlot(form.cycleBindings, slot, version.id),
+          cycle.id,
+        ]),
+      ],
       slot,
     )
   ) {

@@ -42,8 +42,7 @@ export interface DocCommentsConfig {
   currentUserId: string;
   /** Whether the viewer may post new comments / replies. */
   canComment: boolean;
-  /** Whether the viewer may delete other people's comments and whole threads
-   * (the editor role: canEdit || Core). Comments have no resolved state. */
+  /** Whether the viewer may delete other people's comments and whole threads (Core). */
   canModerate: boolean;
   /** Whether the comments panel is currently open (W2 uses for sidebar sync). */
   panelOpen?: boolean;
@@ -58,6 +57,8 @@ export interface DocCommentsConfig {
   editorContentRef?: React.RefObject<HTMLElement | null>;
   /** Deep-linked comment id (?comment=) for the rail to select once loaded. */
   focusCommentId?: string;
+  /** A slide text box: threads made here belong to this slide and element, and only those show. */
+  scope?: { slideId: string; elementId: string };
 }
 
 export interface DocEditorProps {

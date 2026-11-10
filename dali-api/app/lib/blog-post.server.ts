@@ -211,7 +211,7 @@ export const UNTOUCHED_DRAFT = {
 } as const;
 
 // ─── Pinning ─────────────────────────────────────────────────────────────────
-// Pinned posts (frontPageRank set) lead The Scoop, lowest rank first; the rest
+// Pinned posts (frontPageRank set) lead the front page, lowest rank first; the rest
 // follow newest first. Only a published post holds a pin. Every change is
 // worked out here from the stored order, never from what a browser last saw.
 

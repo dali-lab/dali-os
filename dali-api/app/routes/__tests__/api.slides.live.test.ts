@@ -24,7 +24,7 @@ import { applyLive, readLive, slidesLiveEnabled } from "~/lib/slide-live.server"
 import { action, loader } from "../api.slides.$pageId.live";
 import { loader as streamLoader } from "../api.slides.$pageId.live.stream";
 
-const live = { active: true, slideId: "s1", build: 0, presenter: { id: "u1", name: "Ada" }, startedAt: "x" };
+const live = { active: true, slideId: "s1", build: 0, presenter: { id: "u1", name: "Ada" }, startedAt: "x", reactionsOff: false };
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -83,7 +83,7 @@ describe("POST /api/slides/:pageId/live", () => {
 
 describe("GET /api/slides/:pageId/live/stream", () => {
   it("opens a busEventStream on the deck topic", async () => {
-    vi.mocked(deckAccess).mockResolvedValue({ ok: true, page: { id: "p1", title: "T", iconEmoji: null }, canEdit: false });
+    vi.mocked(deckAccess).mockResolvedValue({ ok: true, page: { id: "p1", title: "T", iconEmoji: null }, canEdit: false, canComment: true });
     await streamLoader(args());
     expect(busEventStream).toHaveBeenCalledWith(expect.any(Request), ["slide-live:p1"], expect.any(Object));
   });

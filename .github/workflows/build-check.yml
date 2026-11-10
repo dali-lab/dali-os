@@ -3,9 +3,19 @@ name: Build Check
 on:
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    uses: ./.github/workflows/changed-paths.yml
+
   build-api:
     name: Build API
+    needs: changes
+    # A preview deploy builds the same image, so skip the duplicate build.
+    if: needs.changes.outputs.api == 'true' && !contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: blacksmith-2vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4

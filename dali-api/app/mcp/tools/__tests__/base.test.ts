@@ -78,24 +78,13 @@ vi.mock("../list-my-tasks", () => ({
   runListMyTasks: h.run("runListMyTasks"),
 }));
 vi.mock("../get-task", () => ({ GET_TASK_TOOL: h.def("get_task"), runGetTask: h.run("runGetTask") }));
-vi.mock("../update-task-status", () => ({
-  UPDATE_TASK_STATUS_TOOL: h.def("update_task_status"),
-  runUpdateTaskStatus: h.run("runUpdateTaskStatus"),
-}));
 vi.mock("../create-project", () => ({
   CREATE_PROJECT_TOOL: h.def("create_project"),
   runCreateProject: h.run("runCreateProject"),
 }));
-vi.mock("../create-task", () => ({ CREATE_TASK_TOOL: h.def("create_task"), runCreateTask: h.run("runCreateTask") }));
-vi.mock("../update-task", () => ({ UPDATE_TASK_TOOL: h.def("update_task"), runUpdateTask: h.run("runUpdateTask") }));
-vi.mock("../delete-task", () => ({ DELETE_TASK_TOOL: h.def("delete_task"), runDeleteTask: h.run("runDeleteTask") }));
 vi.mock("../add-task-comment", () => ({
   ADD_TASK_COMMENT_TOOL: h.def("add_task_comment"),
   runAddTaskComment: h.run("runAddTaskComment"),
-}));
-vi.mock("../set-task-checklist", () => ({
-  SET_TASK_CHECKLIST_TOOL: h.def("set_task_checklist"),
-  runSetTaskChecklist: h.run("runSetTaskChecklist"),
 }));
 vi.mock("../list-sprints", () => ({ LIST_SPRINTS_TOOL: h.def("list_sprints"), runListSprints: h.run("runListSprints") }));
 vi.mock("../list-epics", () => ({ LIST_EPICS_TOOL: h.def("list_epics"), runListEpics: h.run("runListEpics") }));
@@ -109,7 +98,6 @@ vi.mock("../set-page-content", () => ({
   SET_PAGE_CONTENT_TOOL: h.def("set_page_content"),
   runSetPageContent: h.run("runSetPageContent"),
 }));
-vi.mock("../update-page", () => ({ UPDATE_PAGE_TOOL: h.def("update_page"), runUpdatePage: h.run("runUpdatePage") }));
 vi.mock("../list-project-files", () => ({
   LIST_PROJECT_FILES_TOOL: h.def("list_project_files"),
   runListProjectFiles: h.run("runListProjectFiles"),
@@ -117,14 +105,6 @@ vi.mock("../list-project-files", () => ({
 vi.mock("../upload-project-file", () => ({
   UPLOAD_PROJECT_FILE_TOOL: h.def("upload_project_file"),
   runUploadProjectFile: h.run("runUploadProjectFile"),
-}));
-vi.mock("../link-task-to-github", () => ({
-  LINK_TASK_TO_GITHUB_TOOL: h.def("link_task_to_github"),
-  runLinkTaskToGithub: h.run("runLinkTaskToGithub"),
-}));
-vi.mock("../unlink-task-from-github", () => ({
-  UNLINK_TASK_FROM_GITHUB_TOOL: h.def("unlink_task_from_github"),
-  runUnlinkTaskFromGithub: h.run("runUnlinkTaskFromGithub"),
 }));
 vi.mock("../time-entries", () => ({
   LIST_MY_ROLES_TOOL: h.def("list_my_roles"),
@@ -153,6 +133,14 @@ vi.mock("../staffing", () => ({
 vi.mock("../document-curation", () => ({
   LIST_DOCUMENT_SHARING_TOOL: h.def("list_document_sharing"),
   runListDocumentSharing: h.run("runListDocumentSharing"),
+}));
+vi.mock("../file-sharing", () => ({
+  LIST_FILE_SHARES_TOOL: h.def("list_file_shares"),
+  runListFileShares: h.run("runListFileShares"),
+}));
+vi.mock("../page-sharing", () => ({
+  LIST_PAGE_SHARES_TOOL: h.def("list_page_shares"),
+  runListPageShares: h.run("runListPageShares"),
 }));
 
 import { BASE_TOOLS } from "../base";
@@ -195,24 +183,16 @@ const EXPECTED: [string, string, Shape][] = [
   ["get_project_overview", "runGetProjectOverview", "args"],
   ["list_my_tasks", "runListMyTasks", "caller"],
   ["get_task", "runGetTask", "caller"],
-  ["update_task_status", "runUpdateTaskStatus", "caller"],
   ["create_project", "runCreateProject", "caller"],
-  ["create_task", "runCreateTask", "caller"],
-  ["update_task", "runUpdateTask", "caller"],
-  ["delete_task", "runDeleteTask", "caller"],
   ["add_task_comment", "runAddTaskComment", "caller"],
-  ["set_task_checklist", "runSetTaskChecklist", "caller"],
   ["list_sprints", "runListSprints", "caller"],
   ["list_epics", "runListEpics", "caller"],
   ["list_project_pages", "runListProjectPages", "caller"],
   ["read_page", "runReadPage", "caller"],
   ["create_page", "runCreatePage", "caller"],
   ["set_page_content", "runSetPageContent", "caller"],
-  ["update_page", "runUpdatePage", "caller"],
   ["list_project_files", "runListProjectFiles", "caller"],
   ["upload_project_file", "runUploadProjectFile", "caller"],
-  ["link_task_to_github", "runLinkTaskToGithub", "caller"],
-  ["unlink_task_from_github", "runUnlinkTaskFromGithub", "caller"],
   ["list_my_roles", "runListMyRoles", "caller"],
   ["list_my_time_entries", "runListMyTimeEntries", "caller"],
   ["get_project_settings", "runGetProjectSettings", "caller"],
@@ -222,6 +202,8 @@ const EXPECTED: [string, string, Shape][] = [
   ["set_staffing_assignment", "runSetStaffingAssignment", "caller"],
   ["set_domain_eligibility", "runSetDomainEligibility", "caller"],
   ["list_document_sharing", "runListDocumentSharing", "caller"],
+  ["list_file_shares", "runListFileShares", "caller"],
+  ["list_page_shares", "runListPageShares", "caller"],
 ];
 
 const EXPECTED_CALL: Record<Shape, unknown[]> = {

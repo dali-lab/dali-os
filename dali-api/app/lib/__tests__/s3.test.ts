@@ -23,8 +23,10 @@ import {
   attachmentDisposition,
   getDownloadUrl,
   getObjectStream,
+  getObjectWithMetadata,
   getUploadPost,
   headObject,
+  putObject,
   putObjectStream,
 } from "~/lib/s3";
 import { MAX_FILE_STORE_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
@@ -198,6 +200,35 @@ describe("getObjectStream", () => {
   it("rethrows other storage errors", async () => {
     vi.spyOn(S3Client.prototype, "send").mockRejectedValue(new Error("boom") as never);
     await expect(getObjectStream("uploads/a")).rejects.toThrow("boom");
+  });
+});
+
+describe("getObjectWithMetadata", () => {
+  it("returns the bytes and the stored metadata", async () => {
+    vi.spyOn(S3Client.prototype, "send").mockResolvedValue({
+      Body: { transformToByteArray: async () => new Uint8Array([7, 8]) },
+      Metadata: { v: "abc" },
+    } as never);
+    expect(await getObjectWithMetadata("slides/a.png")).toEqual({ body: Buffer.from([7, 8]), metadata: { v: "abc" } });
+  });
+
+  it("returns null for a missing key and rethrows other errors", async () => {
+    const send = vi.spyOn(S3Client.prototype, "send");
+    send.mockRejectedValueOnce(new NoSuchKey({ message: "gone", $metadata: {} }) as never);
+    expect(await getObjectWithMetadata("slides/a.png")).toBeNull();
+    send.mockRejectedValueOnce(new Error("boom") as never);
+    await expect(getObjectWithMetadata("slides/a.png")).rejects.toThrow("boom");
+  });
+});
+
+describe("putObject", () => {
+  it("sends metadata only when given", async () => {
+    const send = vi.spyOn(S3Client.prototype, "send").mockResolvedValue({} as never);
+    await putObject("slides/a.png", new Uint8Array([1]), "image/png", { v: "abc" });
+    await putObject("uploads/b.pdf", new Uint8Array([1]), "application/pdf");
+    const inputs = send.mock.calls.map((c) => (c[0] as { input: Record<string, unknown> }).input);
+    expect(inputs[0]).toMatchObject({ Key: "slides/a.png", ContentType: "image/png", Metadata: { v: "abc" } });
+    expect(inputs[1]).not.toHaveProperty("Metadata");
   });
 });
 

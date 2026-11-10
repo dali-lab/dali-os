@@ -1,42 +1,41 @@
 ---
 title: What alumni see
-summary: How DALI OS looks for alumni, including the Connect home page, events, leaderboard, and what they can still open.
-keywords: [alumni, alum, graduate, home, connect, events, leaderboard, profile, open to]
-paths: [/connect, /members]
+summary: How DALI OS looks for alumni, including the Community home page, events, and what they can still open.
+keywords: [alumni, alum, graduate, home, connect, events, profile, open to]
+paths: [/community, /members]
 ---
 
 Once a member's status is Alumni, DALI OS switches to a smaller view built around staying in touch. This article describes what an alum sees.
 
-## Home is Connect
+## Home is Community
 
-An alum's **Home** is [Connect](/connect), a full-page map of where alumni are based. Opening the main page sends them there. A panel on the right has four tabs.
+An alum's **Home** is [Community](/community), a full-page map of where alumni and current students are, with a list on the left. Opening the main page sends them there.
 
-- **Search**: find alumni by name, place or company, and click a place on the map to see who is there.
-- **Events**: upcoming DALI events you are invited to or attending in the next 60 days, up to 20. Each shows the date, time, location and how many are going. Click one to open it. It says **No upcoming events.** when there are none.
-- **Leaderboard**: **Most engaged alumni**, ranked by points since graduating. See [Connect](/help/articles/connect) for the scoring.
-- **Profile**: your photo, name, class year, current job and location, plus two things below.
+- **People**: find people by name, company or city, filter by class, role, project and what they are open to, and click a place on the map to see who is there.
+- **Events**: upcoming alumni events and the DALI events you are invited to or attending, with **RSVP**, **Add to calendar** and **Host an event**.
+
+See [Community](/help/articles/community-map) for filters, hosting an event and nearby alerts.
 
 ### Open to coffee chats and resume reviews
 
-On the **Profile** tab, under **I'm open to**, turn on **Coffee chats**, **Resume reviews**, or both. They are off by default. When a switch is on, other members and alumni see a **Coffee chat** or **Resume review** button on your profile, and you see their name only if you accept. When it is off, nobody can send you that kind of request.
+Click **I'm open to** at the top of Home and turn on **Coffee chats**, **Resume reviews**, or both. They are off by default. When a switch is on, other members and alumni see a **Coffee chat** or **Resume review** button on your profile, and you see their name only if you accept. When it is off, nobody can send you that kind of request.
 
-### Profile completeness
+### Where you appear on the map
 
-A bar shows how complete your profile is, based on photo, current job, location, bio and class year, with a hint about what is missing. Click **Update profile** to open your profile and fill it in. Set **Based in** to appear on the map.
+Set **Based in** on your profile to appear on the map. Others see **Active today** or **This week** next to your name when you have signed in recently. To hide that, turn on **Appear away** under **Presence** in [General settings](/settings/general).
 
 ## What's in the sidebar
 
 Alumni get one section, **Lab**, with:
 
 - **Projects**
-- **People**: the directory. Use **Alumni** to see other alumni. See [People directory and profiles](/help/articles/people).
 - **Refer a partner**: see [Refer a partner](/help/articles/refer-a-partner).
 
 Alumni don't see Mentorship, Attendance, Education or Drive in the sidebar.
 
 ## What alumni can do
 
-- Read the directory and any member's or alum's profile, and edit their own.
+- Open any member's or alum's profile, and edit their own.
 - Invite someone to a coffee chat or request a resume review when they have it turned on, and answer requests sent to them.
 - Refer a partner to Core.
 - With Community on: post and browse gallery photos, read stories, and write a story for an Admin to approve.

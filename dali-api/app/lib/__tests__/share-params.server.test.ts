@@ -21,6 +21,7 @@ describe("parsePermission and parseLinkAccess", () => {
     expect(parsePermission("Owner")).toBe("View");
     expect(parsePermission(undefined, "Comment")).toBe("Comment");
     expect(parseLinkAccess("LabMembers")).toBe("LabMembers");
+    expect(parseLinkAccess("Partners")).toBe("Partners");
     expect(parseLinkAccess("Everyone")).toBe("Restricted");
   });
 });
@@ -38,6 +39,20 @@ describe("loadShareOptions", () => {
       members: [{ id: "u2", label: "Ada Lovelace" }],
       groups: [{ id: "g1", label: "Studio" }],
     });
+  });
+
+  it("matches a full name word by word", async () => {
+    await loadShareOptions("me", "Ada Lovelace");
+    const where = m.user.findMany.mock.calls[0][0].where;
+    expect(where.AND).toEqual([
+      { OR: [{ firstName: { contains: "ada", mode: "insensitive" } }, { lastName: { contains: "ada", mode: "insensitive" } }] },
+      {
+        OR: [
+          { firstName: { contains: "lovelace", mode: "insensitive" } },
+          { lastName: { contains: "lovelace", mode: "insensitive" } },
+        ],
+      },
+    ]);
   });
 
   it("does not list members for a query under two characters", async () => {

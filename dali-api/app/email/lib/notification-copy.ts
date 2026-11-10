@@ -395,6 +395,24 @@ export const NOTIFICATION_COPY = {
     subject: "Your story was published: {{itemTitle}}",
     body: "",
   },
+  "blog.comment": {
+    eventType: "blog.comment",
+    label: "Story comment",
+    description: "Sent to a story's author when someone comments on it.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} commented on your story",
+    body: "{{itemDetail}}",
+    linkLabel: "Open story",
+  },
+  "blog.reaction": {
+    eventType: "blog.reaction",
+    label: "Story reaction",
+    description: "Sent to a story's author when someone reacts to it.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} reacted to your story",
+    body: "{{itemDetail}}",
+    linkLabel: "Open story",
+  },
 
   // ── People ───────────────────────────────────────────────────────────────
   // Deliberately carries no personName: the invite is anonymous until accepted.
@@ -470,6 +488,15 @@ export const NOTIFICATION_COPY = {
     subject: "{{personName}} reacted to your photo",
     body: "{{itemDetail}}",
     linkLabel: "Open photo",
+  },
+  "community.event_nearby": {
+    eventType: "community.event_nearby",
+    label: "Alumni event nearby",
+    description: "Sent to opted-in members when an alum posts an event within 50 km of them.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} is hosting an event near you",
+    body: "{{itemDetail}}",
+    linkLabel: "See event",
   },
 
   // ── Onboarding ───────────────────────────────────────────────────────────

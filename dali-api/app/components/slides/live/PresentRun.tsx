@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Link } from "react-router";
 import { useDesktopVersion } from "~/lib/desktop";
 import { Button } from "~/components/ui/Button";
@@ -11,6 +11,17 @@ import type { PresentDeck } from "./deck-source";
 import { usePresenterSession } from "./usePresenterSession";
 import { useFollowDeck } from "./useFollowDeck";
 import { positionFor, useDeckRender } from "./useDeckRender";
+import { PollLayer } from "./PollLayer";
+import { PresenterPolls, pollsOnSlide } from "./PresenterPolls";
+import { ReactionOverlay } from "./ReactionOverlay";
+import { JoinCard } from "./JoinCard";
+import { useAutoBuilds } from "./useBuildMotion";
+import { slideHasHtml } from "~/components/slides/deck/html-element";
+import { HtmlPreviewContext } from "~/components/slides/deck/html-preview";
+import { PauseCustomCodeButton } from "./PauseCustomCodeButton";
+import { useJoinHidden } from "./useJoinHidden";
+import { usePolls } from "./usePolls";
+import { useReactions } from "./useReactions";
 
 export interface DriverProps {
   pageId: string;
@@ -25,7 +36,11 @@ export interface DriverProps {
 /** Runs the presentation: starts it on open, posts every move, and ends it on Esc or End. */
 export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, view, onLeave }: DriverProps) {
   const { live, ready, start, go, end } = usePresenterSession(pageId);
-  const { slideIds, stepsOf, renderSlide } = useDeckRender(deck);
+  const polls = usePolls(pageId);
+  const reactions = useReactions(pageId, !live.reactionsOff);
+  const { slideIds, stepsOf, autoDelayOf, isAuto, renderSlide } = useDeckRender(deck);
+  const [joinHidden, setJoinHidden] = useJoinHidden(pageId, live.startedAt);
+  const previewCtx = useMemo(() => ({ pageId }), [pageId]);
   const desktop = useDesktopVersion() != null;
   const started = useRef(false);
   const wasActive = useRef(false);
@@ -55,42 +70,85 @@ export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, vie
   const finish = useCallback(() => void end(), [end]);
   const ignore = useCallback(() => {}, []);
 
+  useAutoBuilds({ index: pos.index, step: pos.step, enabled: mineLive, autoDelayOf, advance: move });
+
+  const currentId = slideIds[pos.index];
+  const slidePolls = pollsOnSlide(deck.slides.find((x) => x.id === currentId)?.elements);
+  const shareUrl = typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`;
+  const hasCustomCode = slideHasHtml(deck.slides);
+  const joinCard = shareUrl && slidePolls.length > 0 && !joinHidden ? <JoinCard url={shareUrl} onHide={() => setJoinHidden(true)} /> : null;
+
   if (view === "presenter") {
     return (
-      <PresenterView
-        title={title}
-        slideIds={slideIds}
-        notes={deck.notes}
-        index={pos.index}
-        step={pos.step}
-        stepsOf={stepsOf}
-        onIndexChange={ignore}
-        onPositionChange={move}
-        renderSlide={renderSlide}
-        onEnd={finish}
-        shareUrl={typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`}
-        startedAt={live.startedAt}
-        actions={
-          desktop ? (
-            <Link to={presentUrl(pageId, slideIds[pos.index])} className="text-xs text-os-accent underline">
-              Open slide show
-            </Link>
-          ) : undefined
-        }
-      />
+      <HtmlPreviewContext.Provider value={previewCtx}>
+      <PollLayer state={polls.state}>
+        <PresenterView
+          title={title}
+          slideIds={slideIds}
+          notes={deck.notes}
+          index={pos.index}
+          step={pos.step}
+          stepsOf={stepsOf}
+          isAuto={isAuto}
+          onIndexChange={ignore}
+          onPositionChange={move}
+          renderSlide={renderSlide}
+          onEnd={finish}
+          shareUrl={shareUrl}
+          startedAt={live.startedAt}
+          overlay={
+            <>
+              <ReactionOverlay items={reactions} />
+              {joinCard}
+            </>
+          }
+          extras={
+            <PresenterPolls
+              polls={slidePolls}
+              state={polls.state}
+              reactionsOff={live.reactionsOff}
+              joinHidden={joinHidden}
+              onJoinHidden={setJoinHidden}
+              onClose={polls.close}
+              onOpen={polls.open}
+              onReset={polls.reset}
+              onReactionsOff={polls.setReactionsOff}
+            />
+          }
+          actions={
+            <>
+              {hasCustomCode && <PauseCustomCodeButton />}
+              {desktop && (
+                <Link to={presentUrl(pageId, slideIds[pos.index])} className="text-xs text-os-accent underline">
+                  Open slide show
+                </Link>
+              )}
+            </>
+          }
+        />
+      </PollLayer>
+      </HtmlPreviewContext.Provider>
     );
   }
   return (
-    <PresentStage
-      slideIds={slideIds}
-      index={pos.index}
-      step={pos.step}
-      stepsOf={stepsOf}
-      onIndexChange={ignore}
-      onPositionChange={move}
-      renderSlide={renderSlide}
-      onExit={finish}
-    />
+    <PollLayer state={polls.state}>
+      <PresentStage
+        slideIds={slideIds}
+        index={pos.index}
+        step={pos.step}
+        stepsOf={stepsOf}
+        isAuto={isAuto}
+        onIndexChange={ignore}
+        onPositionChange={move}
+        renderSlide={renderSlide}
+        transitions={{ slides: deck.slides, themeId: deck.themeId }}
+        onExit={finish}
+        hasCustomCode={hasCustomCode}
+      >
+        <ReactionOverlay items={reactions} />
+        {joinCard}
+      </PresentStage>
+    </PollLayer>
   );
 }
 
@@ -109,5 +167,15 @@ export function PresentFollower({ pageId, deck, onLeave }: { pageId: string; dec
       </div>
     );
   }
-  return <FollowStage deck={deck} presenterName={follow.presenter.name} slideId={follow.slideId} build={follow.build} onBrowse={onLeave} />;
+  return (
+    <FollowStage
+      pageId={pageId}
+      deck={deck}
+      presenterName={follow.presenter.name}
+      slideId={follow.slideId}
+      build={follow.build}
+      reactionsOff={follow.reactionsOff}
+      onBrowse={onLeave}
+    />
+  );
 }

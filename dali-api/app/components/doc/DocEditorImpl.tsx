@@ -51,6 +51,7 @@ import { AiBar } from "./ai/AiBar";
 import { AiCardHost } from "./ai/AiCardHost";
 import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
+import { DaliThread } from "./comments/DaliThread";
 import { CommentComposer } from "./comments/CommentComposer";
 import { CommentEditorProvider, commentEditorSchema } from "./comments/CommentEditor";
 import { BlockNoteView } from "@blocknote/shadcn";
@@ -67,6 +68,7 @@ import { createFindReplacePlugin } from "./find";
 import { docPasteHandler } from "./paste-embed";
 import { PasteAsMenu } from "./PasteAsMenu";
 import { keepCollabUndoAlive } from "./collab-undo";
+import { createAgentTouchPlugin } from "./agent-touch";
 import { resolveFragment, undoOptions } from "./collab-binding";
 import { createSelectAllPlugin } from "./select-all";
 import { createTableDragSelectPlugin } from "./table-drag-select";
@@ -215,6 +217,16 @@ function CollabDocInner(
 
   useMemo(() => (props.undoExtension ? undefined : keepCollabUndoAlive(editor)), [editor, props.undoExtension]);
 
+  useEffect(() => {
+    const awareness = entry.provider.awareness;
+    if (!awareness) return;
+    const key = "dali-agent-touch-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createAgentTouchPlugin(awareness)] });
+    return () => {
+      editor.unregisterExtension(key);
+    };
+  }, [editor, entry]);
+
   // One-shot seed: if the caller supplied seedContent (e.g. the latest agreement
   // version body) and the Y.Doc is empty after the server syncs, write the seed
   // blocks into the editor so the working draft starts populated rather than
@@ -275,9 +287,10 @@ function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStor
       currentUserId: comments.currentUserId,
       canComment: comments.canComment,
       canModerate: comments.canModerate,
+      scope: comments.scope,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate]);
+  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate, comments?.scope?.slideId, comments?.scope?.elementId]);
 }
 
 /**
@@ -722,6 +735,7 @@ function DocView(
             the reply box receives focus when the popover opens. */}
         {hasComments && !railVisible && (
           <FloatingThreadController
+            floatingThread={DaliThread}
             portalElement={floatingRootRef.current ?? undefined}
             floatingUIOptions={{ focusManagerProps: { disabled: false } }}
           />
@@ -900,7 +914,7 @@ function useDocSchema(features: Features) {
     () => buildSchema(features),
     // Individual flags, not the object: hosts typically pass a fresh literal
     // every render and a schema rebuild recreates the whole editor.
-    [features.mentions, features.images, features.files, features.richBlocks, features.columns, features.components, features.pageBreak, Boolean(features.signing)],
+    [features.mentions, features.images, features.files, features.richBlocks, features.tables, features.columns, features.components, features.pageBreak, Boolean(features.signing)],
   );
 }
 

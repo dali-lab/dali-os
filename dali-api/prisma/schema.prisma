@@ -22,6 +22,10 @@ model User {
   // unique identifier
   id String @id @default(cuid())
   slidePresentations SlidePresentation[]
+  hostedCommunityEvents CommunityEvent[]     @relation("CommunityEventHost")
+  communityEventRsvps   CommunityEventRsvp[]
+  slidePollVotes     SlidePollVote[]
+  slideTemplates     SlideTemplate[]
 
   // Term-by-term PI assignments, and applications this person is PI of.
   piProjectTerms        ProjectTerm[]        @relation("ProjectTermPi")
@@ -132,7 +136,7 @@ model User {
   hometown            String?
   // Where the person lives now ("Based in" on the profile). Free text; the
   // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
-  // place the person on the Connect map. Null coordinates = no pin.
+  // place the person on the Community map. Null coordinates = no pin.
   currentLocation     String?
   currentLocationLat  Float?
   currentLocationLng  Float?
@@ -358,6 +362,8 @@ model User {
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
   blogPosts          BlogPost[]
+  blogReactions      BlogReaction[]
+  blogComments       BlogComment[]
   pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
 
@@ -5342,6 +5348,8 @@ model FormVersion {
   hiringDomainApplicationsAsChallenge DomainApplication[] @relation("DomainApplicationChallengeForm")
   hiringDomainApplicationsAsContinued DomainApplication[] @relation("DomainApplicationContinuedInterestForm")
 
+  staffingCycleBindings StaffingCycleFormBinding[] @relation("StaffingBindingVersion")
+
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])
 }
@@ -5425,6 +5433,12 @@ model StaffingCycleFormBinding {
   staffingCycleId String
   slot            String
   formId          String
+  // The form version this binding collects, pinned to the form's latest
+  // version at bind time. Two cycles may hold the same form when their pinned
+  // versions differ (only the one pinning the latest version receives fills).
+  // Null (version deleted, or a pre-pinning row the backfill missed) is
+  // treated as the latest version.
+  formVersionId   String?
   updatedAt       DateTime @updatedAt
   updatedById     String
 
@@ -5446,10 +5460,12 @@ model StaffingCycleFormBinding {
 
   staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
   form          Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion   FormVersion?  @relation("StaffingBindingVersion", fields: [formVersionId], references: [id], onDelete: SetNull)
   updatedBy     User          @relation(fields: [updatedById], references: [id])
 
   @@unique([staffingCycleId, slot])
   @@index([formId])
+  @@index([formVersionId])
 }
 
 model EssentialityForm {
@@ -5950,6 +5966,8 @@ enum LinkAccess {
   // Any authenticated account, including partner, applicant, and non-member
   // Dartmouth users. Added for forms (the old "SignedIn" fill audience).
   SignedIn
+  // Any signed-in partner account with a current org membership.
+  Partners
   Public
 }
 
@@ -7815,11 +7833,41 @@ model BlogPost {
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
+  reactions BlogReaction[]
+  comments  BlogComment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([publishedAt])
   @@index([authorId])
+}
+
+model BlogReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model BlogComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
 }
 
 enum ReleaseNoteStatus {
@@ -7941,6 +7989,52 @@ model SlidePresentation {
   startedAt   DateTime  @default(now())
   endedAt     DateTime?
   updatedAt   DateTime  @updatedAt
+  // Poll element ids the presenter closed this session, and whether followers may react.
+  closedPolls  String[]  @default([])
+  reactionsOff Boolean   @default(false)
+  pollVotes    SlidePollVote[]
+}
+
+// A follower's vote on a poll element during one presentation. choices holds
+// option indexes. Votes are cleared when a new presentation starts.
+model SlidePollVote {
+  id             String            @id @default(cuid())
+  presentationId String
+  presentation   SlidePresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  pollElementId  String
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  choices        Int[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([presentationId, pollElementId, userId])
+  @@index([presentationId, pollElementId])
+}
+
+enum SlideTemplateKind {
+  Deck
+  Slide
+}
+
+// A saved deck (theme and slides) or single slide, reusable across decks.
+// payload is the sanitized slide clipboard JSON. Scoped like page templates:
+// the lab, or one project.
+model SlideTemplate {
+  id            String            @id @default(cuid())
+  kind          SlideTemplateKind
+  workspaceType WorkspaceType
+  workspaceId   String?
+  title         String
+  themeId       String
+  slideCount    Int
+  payload       Json
+  createdById   String
+  createdBy     User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([workspaceType, workspaceId, kind])
 }
 
 enum OnboardingLabSubmissionStatus {
@@ -8112,4 +8206,45 @@ model PlanningNote {
   project     Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   application PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   updatedBy   User?               @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// An alumni-hosted event on the Community map. Posts immediately; the host or an
+// admin can cancel it. audience is "alumni" or "alumni_and_students".
+model CommunityEvent {
+  id           String    @id @default(cuid())
+  hostId       String
+  title        String
+  description  String?
+  startsAt     DateTime
+  endsAt       DateTime
+  online       Boolean   @default(false)
+  meetingUrl   String?
+  placeName    String?
+  address      String?
+  lat          Float?
+  lng          Float?
+  audience     String    @default("alumni_and_students")
+  notifyNearby Boolean   @default(false)
+  cancelledAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  host  User                 @relation("CommunityEventHost", fields: [hostId], references: [id], onDelete: Cascade)
+  rsvps CommunityEventRsvp[]
+
+  @@index([startsAt])
+  @@index([hostId])
+}
+
+// Going = a row exists.
+model CommunityEventRsvp {
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  event CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId])
 }

@@ -114,19 +114,19 @@ describe("Rail", () => {
     expect(q("button[aria-label='DALI OS home']")).not.toBeNull();
   });
 
-  it("hides Email and Drive for alumni and sends Home to Connect", async () => {
+  it("hides Email and Drive for alumni and sends Home to Community", async () => {
     const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
     await mount({
       isAlumni: true,
       home: homeNavItem({ isAlumni: true }),
       pinned: pinnedNavItems({ isAlumni: true }),
-      path: "/connect",
+      path: "/community",
       tabClickProps,
     });
     expect(q("button[aria-label='Email']")).toBeNull();
     expect(q("button[aria-label='Drive']")).toBeNull();
-    // The wordmark carries the alumni home (Connect).
-    expect(tabClickProps).toHaveBeenCalledWith({ url: "/connect", label: "Home" });
+    // The wordmark carries the alumni home (Community).
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/community", label: "Home" });
   });
 
   it("shows the pinned items it is given", async () => {

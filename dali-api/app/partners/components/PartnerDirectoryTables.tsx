@@ -91,68 +91,70 @@ export function DirectoryTable({
   const { visible, pager } = useClientSlice(rows, { resetKey });
   const dash = <span aria-hidden>—</span>;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] text-sm">
-        <thead>
-          <tr>
-            <SortableTh label="Name" sortKey="name" sort={sort} onSort={onSort} />
-            <th className={TH}>Kind</th>
-            <th className={TH}>Organization</th>
-            <th className={TH}>Status</th>
-            <th className={TH}>Active projects</th>
-            <SortableTh label="Last activity" sortKey="activity" sort={sort} onSort={onSort} />
-            <th className={cn(TH, "w-10")} aria-label="Open" />
-          </tr>
-        </thead>
-        <tbody>
-          {visible.map((r) => {
-            const subtitle = rowSubtitle(r);
-            return (
-              <tr key={`${r.kind}-${r.id}`} className={DIRECTORY_ROW_CLASS}>
-                <td className={TD}>
-                  <RowLink to={directoryRowHref(r)}>
-                    {r.kind === "person" ? (
-                      <ContactAvatar contact={r} />
-                    ) : (
-                      <OrgAvatar org={{ name: r.name, logoUrl: r.logoUrl }} />
-                    )}
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-foreground">{r.name}</span>
-                      {subtitle && (
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {subtitle}
-                        </span>
+    <>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[760px] text-sm">
+          <thead>
+            <tr>
+              <SortableTh label="Name" sortKey="name" sort={sort} onSort={onSort} />
+              <th className={TH}>Kind</th>
+              <th className={TH}>Organization</th>
+              <th className={TH}>Status</th>
+              <th className={TH}>Active projects</th>
+              <SortableTh label="Last activity" sortKey="activity" sort={sort} onSort={onSort} />
+              <th className={cn(TH, "w-10")} aria-label="Open" />
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((r) => {
+              const subtitle = rowSubtitle(r);
+              return (
+                <tr key={`${r.kind}-${r.id}`} className={DIRECTORY_ROW_CLASS}>
+                  <td className={TD}>
+                    <RowLink to={directoryRowHref(r)}>
+                      {r.kind === "person" ? (
+                        <ContactAvatar contact={r} />
+                      ) : (
+                        <OrgAvatar org={{ name: r.name, logoUrl: r.logoUrl }} />
                       )}
-                    </span>
-                  </RowLink>
-                </td>
-                <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
-                  {r.kind === "org" && r.type
-                    ? PARTNER_ORG_TYPE_LABELS[r.type]
-                    : DIRECTORY_KIND_LABELS[r.kind]}
-                </td>
-                <td className={cn(TD, "max-w-[220px] truncate text-muted-foreground")}>
-                  {r.orgNames.length > 0 ? r.orgNames.join(", ") : dash}
-                </td>
-                <td className={TD}>{r.status ? <OrgStatusPill status={r.status} /> : dash}</td>
-                <td className={cn(TD, "tabular-nums text-muted-foreground")}>
-                  {r.activeProjectCount ?? dash}
-                </td>
-                <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
-                  {r.lastActivityAt ? relativeTime(r.lastActivityAt) : dash}
-                </td>
-                <td className={cn(TD, "w-10 text-right text-muted-foreground")}>
-                  <ChevronRight
-                    className="ml-auto h-4 w-4 opacity-60 group-hover:opacity-100"
-                    aria-hidden
-                  />
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium text-foreground">{r.name}</span>
+                        {subtitle && (
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {subtitle}
+                          </span>
+                        )}
+                      </span>
+                    </RowLink>
+                  </td>
+                  <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
+                    {r.kind === "org" && r.type
+                      ? PARTNER_ORG_TYPE_LABELS[r.type]
+                      : DIRECTORY_KIND_LABELS[r.kind]}
+                  </td>
+                  <td className={cn(TD, "max-w-[220px] truncate text-muted-foreground")}>
+                    {r.orgNames.length > 0 ? r.orgNames.join(", ") : dash}
+                  </td>
+                  <td className={TD}>{r.status ? <OrgStatusPill status={r.status} /> : dash}</td>
+                  <td className={cn(TD, "tabular-nums text-muted-foreground")}>
+                    {r.activeProjectCount ?? dash}
+                  </td>
+                  <td className={cn(TD, "whitespace-nowrap text-muted-foreground")}>
+                    {r.lastActivityAt ? relativeTime(r.lastActivityAt) : dash}
+                  </td>
+                  <td className={cn(TD, "w-10 text-right text-muted-foreground")}>
+                    <ChevronRight
+                      className="ml-auto h-4 w-4 opacity-60 group-hover:opacity-100"
+                      aria-hidden
+                    />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       <LoadMore {...pager} />
-    </div>
+    </>
   );
 }

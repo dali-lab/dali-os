@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { QuestionSourceNote } from "~/components/form-builder/QuestionSourceNote";
 import { Link, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import {
   Plus,
@@ -21,8 +22,9 @@ import {
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Segmented } from "~/components/ui/Segmented";
-import { PageBarHideCopyLink, PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
+import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
 import { FormQrDialog } from "~/forms/components/FormQrDialog";
 import type { HiringFormLink } from "~/hiring/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
@@ -87,7 +89,7 @@ function nestingStyle(questions: Question[], q: Question) {
 // published fills always serve the latest frozen version, never the draft.
 // Publish freezes the draft into an immutable version (save-version).
 export function FormDetail() {
-  const { form, terms, mappedQuestions, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, summary, tracker, page } = useLoaderData<typeof loader>();
+  const { form, terms, mappedQuestions, fillers, usages, managing, hiringLinks: rawHiringLinks, collabToken, results, summary, tracker, page } = useLoaderData<typeof loader>();
   // The staffing slot binding, if any: {{term}} in this form's questions
   // resolves from it (see FormBuilderTab's termBinding).
   const staffingBinding = usages.find((u) => u.kind === "staffing") ?? null;
@@ -211,9 +213,10 @@ export function FormDetail() {
   const [previewData, setPreviewData] = useState<{
     questions: Question[];
     description: unknown;
+    prefill?: Record<string, string>;
   } | null>(null);
   const previewFetcher = useFetcher<
-    { ok: true; questions: Question[] } | { error: string }
+    { ok: true; questions: Question[]; prefill?: Record<string, string> } | { error: string }
   >();
   const previewPendingDescription = useRef<unknown>(null);
   function requestPreview(payload: { questions: Question[]; description: unknown }) {
@@ -229,6 +232,7 @@ export function FormDetail() {
       setPreviewData({
         questions: data.questions,
         description: previewPendingDescription.current,
+        prefill: data.prefill,
       });
     }
   }, [previewFetcher.data]);
@@ -363,6 +367,7 @@ export function FormDetail() {
   }
 
   const [icon, setIcon] = useState(form.iconEmoji ?? null);
+  const rename = (name: string) => renameFetcher.submit({ intent: "rename-form", id: form.id, name }, { method: "post" });
   useEffect(() => setIcon(form.iconEmoji ?? null), [form.iconEmoji]);
   const iconFetcher = useFetcher();
 
@@ -393,12 +398,13 @@ export function FormDetail() {
 
   return (
     <div className="space-y-6">
-      <PageBarHideCopyLink />
-      <PageBarTitle
+      <PageBarTitle title={form.name} onRename={rename} emoji={icon} />
+      <PageTitleHeader
         title={form.name}
-        onRename={(name) => renameFetcher.submit({ intent: "rename-form", id: form.id, name }, { method: "post" })}
-        emoji={icon}
-        onEmojiChange={(next) => {
+        iconEmoji={icon}
+        canEdit
+        onRename={rename}
+        onIconChange={(next) => {
           setIcon(next);
           iconFetcher.submit({ intent: "set-form-icon", id: form.id, iconEmoji: next ?? "" }, { method: "post" });
         }}
@@ -439,14 +445,14 @@ export function FormDetail() {
             {fillUrl ? (
               <button type="button" onClick={() => void copyFillLink()} className={pageBarTextButton()}>
                 <Copy className="h-4 w-4" />
-                Copy link
+                Copy form link
               </button>
             ) : (
               <Tooltip content="Publish to get a link">
                 <span>
                   <button type="button" disabled className={cn(pageBarTextButton(), "opacity-40")}>
                     <Copy className="h-4 w-4" />
-                    Copy link
+                    Copy form link
                   </button>
                 </span>
               </Tooltip>
@@ -542,6 +548,7 @@ export function FormDetail() {
           initialDescription={seed.description}
           terms={terms}
           mappedQuestions={mappedQuestions}
+          fillers={fillers}
           allowCheckbox
           onChange={autosave.schedule}
           snapshotRef={builderSnapshot}
@@ -659,6 +666,7 @@ export function FormDetail() {
                         Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions))}
                       </p>
                     )}
+                    <QuestionSourceNote question={q} />
                     {(q.type === "select" ||
                       q.type === "radio" ||
                       q.type === "skills_rating" ||
@@ -720,6 +728,7 @@ export function FormDetail() {
           description={previewData.description}
           confirmationMessage={form.confirmationMessage}
           questions={previewData.questions}
+          prefill={previewData.prefill}
           onClose={() => setPreviewData(null)}
         />
       )}
