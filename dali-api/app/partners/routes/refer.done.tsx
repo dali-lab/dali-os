@@ -5,6 +5,7 @@ import { Check } from "lucide-react";
 import type { Route } from "./+types/refer.done";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
+import { requireReferralsEnabled } from "~/partners/lib/referrals.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Referral submitted · DALI OS" },
@@ -15,6 +16,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const redirectResp = await redirectNonMemberToPortal(auth, request);
   if (redirectResp) return redirectResp;
+  await requireReferralsEnabled(auth.user.sub, request);
   return {};
 }
 

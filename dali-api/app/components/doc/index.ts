@@ -38,9 +38,9 @@ export {
 export {
   renderEnhanceOps,
   citationHref,
-  appendTaskMentionContent,
   transcriptToggleBlock,
   enhanceSnapshotBlocks,
+  noteBodyText,
   findTranscriptToggle,
   hasTranscriptToggle,
   findEnhanceMarks,

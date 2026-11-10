@@ -6,8 +6,11 @@ import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { reactionRefusal } from "~/lib/reactions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { notifyMentions } from "~/lib/mentions";
+import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
+import { docCommentContext } from "~/lib/comment-links.server";
 import type { BodySegment } from "~/lib/comment-body";
 
 // POST   /api/comments/:id  { intent: "edit" | "set-anchor" | "react" | "unreact" }
@@ -141,7 +144,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       if (freshMentionIds.length > 0) {
         const link =
           comment.targetType === "doc"
-            ? `/documents/${comment.targetId}?comment=${comment.id}`
+            ? (await docCommentContext(comment.targetId, comment.parentId ?? comment.id, comment.id)).link
             : `/documents/file/${comment.targetId}?comment=${comment.id}`;
         void notifyMentions({
           recipientUserIds: freshMentionIds,
@@ -168,7 +171,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!isAuthor) {
       return forbidden(request);
     }
-    const anchor = body?.anchor ?? null;
+    const parsed = commentAnchorSchema.safeParse(body?.anchor ?? null);
+    if (!parsed.success) {
+      return withCors(request, Response.json({ error: "Invalid anchor" }, { status: 400 }));
+    }
+    const anchor = parsed.data ?? null;
+    if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
+      const page = await prisma.page.findUnique({ where: { id: comment.targetId }, select: { kind: true } });
+      if (page?.kind !== "Slides") {
+        return withCors(request, Response.json({ error: "Slide anchors only apply to slide decks" }, { status: 400 }));
+      }
+    }
     await prisma.docComment.update({
       where: { id: comment.id },
       data: { anchor: anchor === null ? undefined : (anchor as object) },
@@ -199,6 +212,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     // already implies access; no additional check needed.
 
     if (intent === "react") {
+      const used = await prisma.docCommentReaction.findMany({
+        where: { commentId: comment.id },
+        select: { emoji: true },
+        distinct: ["emoji"],
+      });
+      const refused = await reactionRefusal(emoji, used.map((r) => r.emoji));
+      if (refused) {
+        return withCors(request, Response.json({ error: "Reaction not allowed" }, { status: refused }));
+      }
       await prisma.docCommentReaction.upsert({
         where: {
           commentId_userId_emoji: {

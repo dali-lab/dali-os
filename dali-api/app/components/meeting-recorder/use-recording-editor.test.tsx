@@ -7,42 +7,60 @@ import { useRecordingEditor } from "./use-recording-editor";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const text = (t: string) => ({ type: "text", text: t, styles: {} });
-const chip = (at: number, label: string) => ({ type: "link", href: `/documents/p1?transcript=r1&at=${at}`, content: [text(label)] });
-const checklist = (id: string, ...content: unknown[]) => ({ id, type: "checkListItem", props: {}, content, children: [] });
-
 function mountWith(document: unknown[]) {
-  const updateBlock = vi.fn();
-  const editor = { document, onChange: () => {}, updateBlock } as unknown as DocEditorInstance;
+  const removeBlocks = vi.fn();
+  const replaceBlocks = vi.fn();
+  const editor = {
+    document,
+    onChange: () => {},
+    getBlock: (id: string) => (document as { id: string }[]).find((b) => b.id === id),
+    removeBlocks,
+    replaceBlocks,
+  } as unknown as DocEditorInstance;
   let hook: ReturnType<typeof useRecordingEditor> | null = null;
   function Harness() {
-    hook = useRecordingEditor({ notePath: "/documents/p1", projectId: "proj" });
+    hook = useRecordingEditor({ notePath: "/documents/p1" });
     return null;
   }
   const root = createRoot(window.document.createElement("div"));
   act(() => root.render(createElement(Harness)));
   hook!.onEditorReady(editor);
-  return { hook: hook!, updateBlock, unmount: () => act(() => root.unmount()) };
+  return { hook: hook!, removeBlocks, replaceBlocks, unmount: () => act(() => root.unmount()) };
 }
 
+const line = (id: string) => ({ id, type: "paragraph", props: {}, content: [], children: [] });
+
 describe("onTaskCreated", () => {
-  it("links a short task to its line even though the line carries citation chips", () => {
-    const { hook, updateBlock, unmount } = mountWith([checklist("a", text("Buy plates"), text(" "), chip(560, "Kaili · 9:20"))]);
-    hook.hookProps.onTaskCreated("Buy plates", "t1", "proj");
-    expect(updateBlock).toHaveBeenCalledTimes(1);
-    expect(updateBlock.mock.calls[0]![0]).toBe("a");
-    const content = updateBlock.mock.calls[0]![1].content as { type: string; props?: { label: string } }[];
-    expect(content.at(-1)).toEqual({ type: "taskMention", props: { taskId: "t1", projectId: "proj", label: "Buy plates" } });
+  it("replaces the suggestion line with a task block", () => {
+    const { hook, replaceBlocks, unmount } = mountWith([line("a")]);
+    hook.hookProps.onTaskCreated("a", { taskId: "t1", projectId: "proj", label: "Buy plates" });
+    expect(replaceBlocks).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: "a" })],
+      [{ type: "task", props: { taskId: "t1", projectId: "proj", label: "Buy plates" } }],
+    );
     unmount();
   });
 
-  it("prefers the line that reads exactly like the task over a longer one containing it", () => {
-    const { hook, updateBlock, unmount } = mountWith([
-      checklist("long", text("Invite Pape to the team social and the demo"), text(" "), chip(1180, "Cole · 19:40")),
-      checklist("exact", text("Invite Pape to the team social"), text(" "), chip(1180, "Cole · 19:40")),
-    ]);
-    hook.hookProps.onTaskCreated("Invite Pape to the team social", "t2", "proj");
-    expect(updateBlock.mock.calls[0]![0]).toBe("exact");
+  it("does nothing when the line is already gone", () => {
+    const { hook, replaceBlocks, unmount } = mountWith([line("a")]);
+    hook.hookProps.onTaskCreated("gone", { taskId: "t1", projectId: "proj", label: "Buy plates" });
+    expect(replaceBlocks).not.toHaveBeenCalled();
+    unmount();
+  });
+});
+
+describe("onRemoveBlock", () => {
+  it("removes a suggestion line", () => {
+    const { hook, removeBlocks, unmount } = mountWith([line("a")]);
+    hook.hookProps.onRemoveBlock("a");
+    expect(removeBlocks).toHaveBeenCalledWith(["a"]);
+    unmount();
+  });
+
+  it("ignores a line that is already gone", () => {
+    const { hook, removeBlocks, unmount } = mountWith([line("a")]);
+    hook.hookProps.onRemoveBlock("gone");
+    expect(removeBlocks).not.toHaveBeenCalled();
     unmount();
   });
 });

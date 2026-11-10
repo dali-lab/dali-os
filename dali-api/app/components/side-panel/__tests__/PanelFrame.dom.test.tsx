@@ -93,7 +93,7 @@ describe("PanelFrame sizing", () => {
 
 describe("PanelFrame header", () => {
   it("is one header row: close, open full page, then the overflow menu", () => {
-    mount();
+    mount(null, true);
     expect(container.textContent).not.toContain("Side view");
     expect(container.textContent).not.toContain("Esc");
     const header = container.querySelector("aside > div:nth-of-type(2)")!;
@@ -113,6 +113,19 @@ describe("PanelFrame header", () => {
     root = createRoot(container);
     mount("📓");
     expect(container.querySelector("aside")!.textContent).toContain("📓");
+  });
+
+  it("leaves out the overflow menu when nothing has added to it", () => {
+    mount();
+    expect(container.querySelector("[aria-label='More actions']")).toBeNull();
+  });
+
+  it("fits under the sticky shell header instead of running past the window", () => {
+    mount();
+    const cls = container.querySelector("aside")!.className;
+    expect(cls).toContain("md:top-[var(--os-shell-header-h,0px)]");
+    expect(cls).toContain("md:h-[calc(100dvh-var(--os-shell-header-h,0px))]");
+    expect(cls).not.toContain("md:h-dvh");
   });
 
   it("is a raised white layer over the page", () => {
@@ -203,5 +216,36 @@ describe("PanelFrame header", () => {
     act(() => item.focus());
     escape(item);
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("PanelFrame footer", () => {
+  it("pins a footer below the scrolling body", () => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() =>
+      root.render(
+        <MemoryRouter>
+          <PanelFrame panel={{ type: "ask", id: "dali" }} title="Ask DALI" onClose={onClose} footer={<p>Footer</p>}>
+            <p>Body</p>
+          </PanelFrame>
+        </MemoryRouter>,
+      ),
+    );
+    const aside = container.querySelector("aside")!;
+    const body = [...aside.children].find((el) => el.className.includes("overflow-y-auto"))!;
+    const footer = aside.lastElementChild!;
+    expect(body.textContent).toBe("Body");
+    expect(footer.textContent).toBe("Footer");
+    expect(footer.className).toContain("shrink-0");
+    expect(body.contains(footer)).toBe(false);
+    expect(container.querySelector("a[aria-label='Open full page']")).toBeNull();
+  });
+
+  it("renders no footer area without one", () => {
+    mount();
+    const aside = container.querySelector("aside")!;
+    expect(aside.lastElementChild!.className).toContain("overflow-y-auto");
   });
 });

@@ -50,6 +50,10 @@ vi.mock("~/mcp/registry", async () => {
       def: { name: "read_tool", description: "r", requiredScope: "mcp:read", inputSchema: { type: "object" } },
       run: h.readRun,
     },
+    admin_tool: {
+      def: { name: "admin_tool", description: "a", requiredScope: "mcp:admin", inputSchema: { type: "object" } },
+      run: vi.fn(),
+    },
   };
   return {
     findRegistryTool: (n: string) => tools[n],
@@ -125,7 +129,11 @@ describe("mcp transport gate", () => {
     const json = await (await loader()).json();
     expect(json).toMatchObject({
       protocolVersion: "2024-11-05",
-      serverInfo: { name: "dali-os" },
+      serverInfo: {
+        name: "dali-os",
+        title: "DALI OS",
+        icons: [expect.objectContaining({ src: expect.stringMatching(/\/icon-blue\.png$/) })],
+      },
       capabilities: { tools: { listChanged: false } },
     });
   });
@@ -208,16 +216,35 @@ describe("tools/list", () => {
       expect(Object.keys(t).sort()).toEqual(["description", "inputSchema", "name"]);
     }
   });
+
+  it("lists only the tools a read-only caller can call", async () => {
+    h.authenticate.mockResolvedValue({ ...AUTH, scopes: ["mcp:read"] });
+    const { result } = await (await rpc("tools/list")).json();
+    expect(result.tools.map((t: { name: string }) => t.name)).toEqual(["read_tool"]);
+  });
+
+  it("lists admin tools only with the admin scope", async () => {
+    h.authenticate.mockResolvedValue({ ...AUTH, scopes: ["mcp:read", "mcp:write", "mcp:admin"] });
+    const { result } = await (await rpc("tools/list")).json();
+    expect(result.tools.map((t: { name: string }) => t.name)).toEqual(["reg_tool", "read_tool", "admin_tool"]);
+  });
+
+  it("lists nothing for a caller with no MCP scopes", async () => {
+    h.authenticate.mockResolvedValue({ ...AUTH, scopes: [] });
+    const { result } = await (await rpc("tools/list")).json();
+    expect(result.tools).toEqual([]);
+  });
 });
 
 describe("tools/call", () => {
-  it("enters the agent context with the caller's identity", async () => {
+  it("enters the agent context with the caller's identity, keyed to its grant", async () => {
     h.readRun.mockResolvedValue({});
     await rpc("tools/call", { name: "read_tool" });
     expect(h.enterAgentContext).toHaveBeenCalledWith({
       clientName: "Test Client",
       userId: "u1",
       ownerName: "Ada Lovelace",
+      session: "g1",
     });
   });
 

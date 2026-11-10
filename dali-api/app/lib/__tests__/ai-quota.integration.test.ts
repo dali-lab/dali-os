@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "../../../integration/db";
-import { AI_DAILY_MAX, claimAiQuota } from "../ai-quota.server";
+import { AI_DAILY_MAX, ASK_DAILY_MAX, claimAiQuota, claimAskQuota, releaseAskQuota } from "../ai-quota.server";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -35,13 +35,48 @@ describe("claimAiQuota against the database", () => {
     await Promise.all(Array.from({ length: AI_DAILY_MAX + 1 }, () => claimAiQuota("u1")));
     expect(await claimAiQuota("u1")).toMatchObject({ ok: false });
     vi.setSystemTime(new Date("2026-11-05T00:00:00Z"));
-    expect(await claimAiQuota("u1")).toEqual({ ok: true, day: "2026-11-05" });
+    expect(await claimAiQuota("u1")).toEqual({ ok: true, day: "2026-11-05", used: 1 });
     expect(await count("u1", "2026-11-05")).toBe(1);
   });
 
   it("counts each user separately", async () => {
     await Promise.all(Array.from({ length: AI_DAILY_MAX + 1 }, () => claimAiQuota("u1")));
-    expect(await claimAiQuota("u2")).toEqual({ ok: true, day: "2026-11-04" });
+    expect(await claimAiQuota("u2")).toEqual({ ok: true, day: "2026-11-04", used: 1 });
     expect(await count("u2", "2026-11-04")).toBe(1);
+  });
+});
+
+describe("claimAskQuota against the database", () => {
+  const row = (userId: string) =>
+    prisma.aiUsage.findUnique({ where: { userId_day: { userId, day: "2026-11-04" } } });
+
+  it("lets exactly 50 questions through a concurrent burst", async () => {
+    const results = await Promise.all(Array.from({ length: ASK_DAILY_MAX + 5 }, () => claimAskQuota("u1")));
+    expect(results.filter((r) => r.ok)).toHaveLength(ASK_DAILY_MAX);
+    expect((await row("u1"))?.askCount).toBe(ASK_DAILY_MAX + 5);
+  });
+
+  it("shares the day's row with the assistant without touching its count", async () => {
+    await claimAiQuota("u1");
+    await claimAskQuota("u1");
+    await claimAskQuota("u1");
+    expect(await row("u1")).toMatchObject({ count: 1, askCount: 2 });
+  });
+
+  it("keeps working after the assistant's limit is reached", async () => {
+    await Promise.all(Array.from({ length: AI_DAILY_MAX + 1 }, () => claimAiQuota("u1")));
+    expect(await claimAskQuota("u1")).toEqual({ ok: true, day: "2026-11-04", used: 1 });
+  });
+
+  it("refunds a question, and a refund with nothing claimed stays at zero", async () => {
+    await claimAskQuota("u1");
+    await claimAskQuota("u1");
+    await releaseAskQuota("u1", "2026-11-04");
+    expect((await row("u1"))?.askCount).toBe(1);
+    await releaseAskQuota("u1", "2026-11-04");
+    await releaseAskQuota("u1", "2026-11-04");
+    expect((await row("u1"))?.askCount).toBe(0);
+    await releaseAskQuota("u2", "2026-11-04");
+    expect(await row("u2")).toBeNull();
   });
 });

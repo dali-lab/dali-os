@@ -54,8 +54,8 @@ describe("EventRsvpControl", () => {
     await mount();
 
     expect(button("Going").disabled).toBe(false);
-    expect(button("Can't go").disabled).toBe(false);
-    await act(async () => button("Can't go").click());
+    expect(button("Can't make it").disabled).toBe(false);
+    await act(async () => button("Can't make it").click());
     expect(submit).toHaveBeenCalledWith(expect.objectContaining({ intent: "event-rsvp", response: "declined" }), { method: "post" });
   });
 

@@ -3,6 +3,8 @@
 
 import type { McpTool, McpCtx } from "../../registry";
 
+import { DOC_CONTENT_TOOLS } from "./doc-content";
+
 import { SEARCH_TOOL, runMcpSearch } from "./search";
 import { LIST_COMMENTS_TOOL, runListComments } from "./comments";
 import {
@@ -42,7 +44,8 @@ import {
 import { MANAGE_COMMENT_TOOL_DEF, runManageComment } from "./manage-comment";
 import { MANAGE_NOTEBOOK_TOOL_DEF, runManageNotebook } from "./manage-notebook";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "./manage-page";
-import { MANAGE_SLIDE_DECK_TOOL_DEF, runManageSlideDeck } from "./manage-slide-deck";
+import { GET_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_DECK_TOOL_DEF, MANAGE_SLIDE_ELEMENTS_TOOL_DEF, runGetSlideDeck, runManageSlideDeck } from "./manage-slide-deck";
+import { CREATE_SLIDE_DECK_TOOL_DEF, runCreateSlideDeck } from "./create-slide-deck";
 import { LIST_PAGE_TEMPLATES_TOOL, runListPageTemplates } from "./list-page-templates";
 import { LIST_DRIVE_TRASH_TOOL, runListDriveTrash } from "./list-drive-trash";
 import { MANAGE_DRIVE_TRASH_TOOL_DEF, runManageDriveTrash } from "./manage-drive-trash";
@@ -144,7 +147,21 @@ export const DOCS_TOOLS: McpTool[] = [
       runManagePage(ctx.user.id, args as Parameters<typeof runManagePage>[1]),
   },
   {
+    def: CREATE_SLIDE_DECK_TOOL_DEF,
+    run: (ctx: McpCtx, args) =>
+      runCreateSlideDeck(ctx.user.id, args as Parameters<typeof runCreateSlideDeck>[1]),
+  },
+  {
+    def: GET_SLIDE_DECK_TOOL_DEF,
+    run: (ctx: McpCtx, args) => runGetSlideDeck(ctx.user.id, args as Parameters<typeof runGetSlideDeck>[1]),
+  },
+  {
     def: MANAGE_SLIDE_DECK_TOOL_DEF,
+    run: (ctx: McpCtx, args) =>
+      runManageSlideDeck(ctx.user.id, args as Parameters<typeof runManageSlideDeck>[1]),
+  },
+  {
+    def: MANAGE_SLIDE_ELEMENTS_TOOL_DEF,
     run: (ctx: McpCtx, args) =>
       runManageSlideDeck(ctx.user.id, args as Parameters<typeof runManageSlideDeck>[1]),
   },
@@ -192,4 +209,5 @@ export const DOCS_TOOLS: McpTool[] = [
     run: (ctx: McpCtx, args) =>
       runManageBlogPost(ctx.user.id, args as Parameters<typeof runManageBlogPost>[1]),
   },
+  ...DOC_CONTENT_TOOLS,
 ];

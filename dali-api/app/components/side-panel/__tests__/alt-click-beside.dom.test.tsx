@@ -2,8 +2,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter, useLocation } from "react-router";
-import { useAltClickOpensBeside } from "~/components/side-panel/use-side-panel";
+import { MemoryRouter } from "react-router";
+import { useAltClickOpensBeside, useVisibleSidePanel } from "~/components/side-panel/use-side-panel";
+import { formatSidePanel, setKeptSidePanel } from "~/lib/side-panel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,10 +13,10 @@ let root: Root;
 
 function Probe() {
   useAltClickOpensBeside();
-  const { search } = useLocation();
+  const panel = useVisibleSidePanel();
   return (
     <>
-      <output data-testid="search">{search}</output>
+      <output data-testid="panel">{panel ? formatSidePanel(panel) : ""}</output>
       <a href="/documents/abc">doc</a>
       <a href="/documents/abc"><span id="inner">inner</span></a>
       <a href="/projects/abc">project</a>
@@ -45,26 +46,28 @@ function click(el: Element, init: MouseEventInit = {}) {
   return event;
 }
 
-const search = () => container.querySelector("[data-testid=search]")!.textContent;
+const shown = () => container.querySelector("[data-testid=panel]")!.textContent;
 const docLink = () => container.querySelector<HTMLAnchorElement>("a[href='/documents/abc']")!;
 
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  act(() => setKeptSidePanel(null));
+  window.history.replaceState(null, "", "/");
 });
 
 describe("option-click on a document link", () => {
   it("opens the document beside and cancels the navigation", () => {
     mount();
     const event = click(docLink(), { altKey: true });
-    expect(search()).toBe("?side=doc%3Aabc");
+    expect(shown()).toBe("doc:abc");
     expect(event.defaultPrevented).toBe(true);
   });
 
   it("works from an element inside the link", () => {
     mount();
     click(container.querySelector("#inner")!, { altKey: true });
-    expect(search()).toBe("?side=doc%3Aabc");
+    expect(shown()).toBe("doc:abc");
   });
 
   it.each([
@@ -75,7 +78,7 @@ describe("option-click on a document link", () => {
   ])("leaves a %s click alone", (_name, init) => {
     mount();
     const event = click(docLink(), init);
-    expect(search()).toBe("");
+    expect(shown()).toBe("");
     expect(event.defaultPrevented).toBe(false);
   });
 
@@ -83,7 +86,7 @@ describe("option-click on a document link", () => {
     mount();
     const project = click(container.querySelector("a[href='/projects/abc']")!, { altKey: true });
     const external = click(container.querySelector("a[href^='https://example.com']")!, { altKey: true });
-    expect(search()).toBe("");
+    expect(shown()).toBe("");
     expect(project.defaultPrevented).toBe(false);
     expect(external.defaultPrevented).toBe(false);
   });

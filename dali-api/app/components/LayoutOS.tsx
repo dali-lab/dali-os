@@ -46,6 +46,7 @@ import {
   type NavArea,
   type RoleFlags,
 } from '~/lib/nav-areas'
+import { useOpenAsk } from '~/ask/components/use-ask'
 import { useFeatureFlag } from '~/components/FeatureFlags'
 import { useAdminAttention } from '~/admin/useAdminAttention'
 import { useEmailUnread } from '~/email/lib/use-email-unread'
@@ -218,14 +219,18 @@ export function LayoutOS({
     isAlumni,
     isNewMember,
   }
-  // The `community` flag adds the Community area and moves Connect into it, so
+  // The `community` flag adds the Community area and moves Community into it, so
   // every nav matcher below has to be handed the same map.
   const navFlags = {
     community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
     'education-taskboard': useFeatureFlag('education-taskboard'),
+    'refer-a-partner': useFeatureFlag('refer-a-partner'),
+    'core-taskboard': useFeatureFlag('core-taskboard'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
+  const askEnabled = useFeatureFlag('ask-dali')
+  const { openAsk } = useOpenAsk()
   const emailUnread = useEmailUnread(path)
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags, roleFlags)
@@ -558,6 +563,7 @@ export function LayoutOS({
         flags={navFlags}
         onOpen={openFromPalette}
         onOpenInDesktop={browserDesktop ? openCurrentPageInDesktop : undefined}
+        onAsk={askEnabled ? openAsk : undefined}
       />
       <OpenInDesktopRedirect />
     </div>

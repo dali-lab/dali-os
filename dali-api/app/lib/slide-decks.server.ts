@@ -6,6 +6,13 @@ import { prisma, Prisma } from "~/lib/db.server";
 import { getPageAccess, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { parseSlides } from "~/components/slides/slide-schema";
 import type { Slide } from "~/components/slides/types";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getUserRoles } from "~/lib/roles";
+import { convertDeckToYjs } from "~/collab/deck-convert.server";
+import * as Y from "yjs";
+import { readLiveDeck } from "~/collab/deck-live.server";
+import { projectLegacySlides, readDeck, type DeckRead } from "~/collab/read-deck.server";
+import { seedDeckDoc } from "~/collab/deck-write.server";
 
 export type DeckResult<T extends object = object> =
   | ({ ok: true } & T)
@@ -21,6 +28,7 @@ const asJson = (slides: Slide[]) => JSON.parse(JSON.stringify(slides)) as Prisma
 export interface DeckAccess {
   page: { id: string; title: string; iconEmoji: string | null };
   canEdit: boolean;
+  canComment: boolean;
 }
 
 /** The deck page if the user may see it, or a failure for missing/non-deck/forbidden pages. */
@@ -32,18 +40,56 @@ export async function deckAccess(userId: string, pageId: string, request?: Reque
   if (!page || page.archivedAt !== null || page.kind !== "Slides") return fail(404, "Slide deck not found.");
   const access = await getPageAccess(userId, page, request);
   if (!access.canView) return fail(404, "Slide deck not found.");
-  return { ok: true, page: { id: page.id, title: page.title, iconEmoji: page.iconEmoji }, canEdit: access.canEdit };
+  return { ok: true, page: { id: page.id, title: page.title, iconEmoji: page.iconEmoji }, canEdit: access.canEdit, canComment: access.canComment };
 }
 
 /** The deck's slides and save version. The row is created on first read, so a page made by any path opens. */
-export async function loadDeck(pageId: string): Promise<{ slides: Slide[]; version: string }> {
+export async function loadDeck(pageId: string): Promise<{ slides: Slide[]; version: string; storage: "json" | "yjs" }> {
   const row = await prisma.slideDeck.upsert({
     where: { pageId },
     create: { pageId },
     update: {},
-    select: { slides: true, updatedAt: true },
+    select: { slides: true, updatedAt: true, storage: true },
   });
-  return { slides: parseSlides(row.slides) ?? [], version: version(row.updatedAt) };
+  if (row.storage === "yjs") {
+    const live = await readLiveDeck(pageId);
+    return {
+      slides: projectLegacySlides(live.read),
+      version: version(live.updatedAt ?? row.updatedAt),
+      storage: "yjs",
+    };
+  }
+  return { slides: parseSlides(row.slides) ?? [], version: version(row.updatedAt), storage: "json" };
+}
+
+/** The deck in the live model, whichever storage it uses. A JSON deck is read through a scratch doc and left as it is. */
+export async function readDeckModel(pageId: string): Promise<DeckRead> {
+  const loaded = await loadDeck(pageId);
+  if (loaded.storage === "yjs") return (await readLiveDeck(pageId)).read;
+  const scratch = new Y.Doc();
+  try {
+    seedDeckDoc(scratch, loaded.slides);
+    return readDeck(scratch);
+  } finally {
+    scratch.destroy();
+  }
+}
+
+export async function deckStorage(pageId: string): Promise<"json" | "yjs"> {
+  const row = await prisma.slideDeck.findUnique({ where: { pageId }, select: { storage: true } });
+  return row?.storage === "yjs" ? "yjs" : "json";
+}
+
+/**
+ * Moves a JSON deck to live storage when `slides-collab` is on for this user. The flag only decides whether
+ * to move; a deck already moved stays live whatever the flag says. Returns the storage the deck now uses.
+ */
+export async function migrateDeckOnOpen(userId: string, pageId: string, request?: Request): Promise<"json" | "yjs"> {
+  if ((await deckStorage(pageId)) === "yjs") return "yjs";
+  const roles = await getUserRoles(userId, request);
+  if (!(await isFeatureEnabled("slides-collab", userId, roles, request))) return "json";
+  await convertDeckToYjs(pageId);
+  return "yjs";
 }
 
 async function writeIfUnchanged(
@@ -55,7 +101,7 @@ async function writeIfUnchanged(
   const base = new Date(baseVersion);
   if (Number.isNaN(base.getTime())) return fail(400, "Missing version.");
   const { count } = await prisma.slideDeck.updateMany({
-    where: { pageId, updatedAt: base },
+    where: { pageId, updatedAt: base, storage: "json" },
     data: { slides: asJson(slides), lastEditedById: userId },
   });
   if (count === 0) return fail(409, DECK_CONFLICT);

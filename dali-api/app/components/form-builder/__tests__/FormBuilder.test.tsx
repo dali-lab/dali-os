@@ -222,3 +222,24 @@ describe('repairQuestions', () => {
     expect(out[1].key).toBe('a')
   })
 })
+
+describe('buildQuestion prefill', () => {
+  const base = { key: 'q1', required: false, label: 'Org' }
+
+  it('keeps a prefill that fits the question', () => {
+    expect(buildQuestion({ ...base, type: 'text', prefill: 'partnerOrg.name' }).data.prefill).toBe('partnerOrg.name')
+  })
+
+  it('drops a prefill when the question type changes to one it does not fit', () => {
+    expect(buildQuestion({ ...base, type: 'radio', optionsText: 'A\nB', prefill: 'partnerOrg.name' }).data.prefill).toBeUndefined()
+  })
+
+  it('drops the project prefill when the reference source changes', () => {
+    const q = buildQuestion({ ...base, type: 'reference', referenceSource: 'projects:active', prefill: 'partnerOrg.project' })
+    expect(q.data.prefill).toBeUndefined()
+  })
+
+  it('drops a key that is not in the registry', () => {
+    expect(buildQuestion({ ...base, type: 'text', prefill: 'me.password' }).data.prefill).toBeUndefined()
+  })
+})

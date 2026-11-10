@@ -136,6 +136,7 @@ describe("writing tasks", () => {
     await post({ task: "rephrase", text: "hi", surface: "post" });
     await post({ task: "rephrase", text: "hi", surface: "bogus" });
     expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(4000);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].task).toBe("email");
     expect(vi.mocked(generateShortText).mock.calls[1]![0].maxTokens).toBe(1500);
   });
 

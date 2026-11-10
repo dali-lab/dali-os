@@ -66,7 +66,7 @@ export function useNow(intervalMs = 60_000): Date | null {
 const RSVP_CHOICES = [
   { response: "accepted", status: "Accepted", label: "Going", icon: Check },
   { response: "tentative", status: "Tentative", label: "Maybe", icon: HelpCircle },
-  { response: "declined", status: "Declined", label: "Can't go", icon: X },
+  { response: "declined", status: "Declined", label: "Can't make it", icon: X },
 ] as const satisfies readonly {
   response: RsvpResponse;
   status: RsvpStatus;
@@ -148,7 +148,7 @@ export function EventGuestList({ attendees }: { attendees: EventAttendeeDTO[] })
 }
 
 /**
- * Going / Maybe / Can't go. Both routes end at Google: a Google event is
+ * Going / Maybe / Can't make it. Both routes end at Google: a Google event is
  * patched on the viewer's own copy through the calendar action, and a DALI
  * meeting goes through its invite endpoint, which pushes the answer on with
  * the organizer's link. Either way the next read shows what Google holds.

@@ -84,8 +84,8 @@ beforeEach(() => {
   vi.mocked(prisma.user.update).mockResolvedValue({} as never);
   vi.mocked(isAiEnabled).mockReturnValue(true);
   vi.mocked(resolveAiProvider).mockReturnValue({
+    name: "anthropic",
     client: { messages: { create } },
-    sonnetModel: "sonnet-test",
   } as never);
   create.mockResolvedValue({
     content: [{ type: "text", text: MODEL_JSON }],

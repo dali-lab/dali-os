@@ -10,6 +10,7 @@
 // get_member_profile for a single member's netId.
 
 import { prisma } from "~/lib/db.server";
+import { userTextWhere } from "~/lib/person-search";
 import { currentTerm, currentTermMemberWhere, isAdminViaEnv } from "~/lib/roles";
 import { offsetPage, offsetWindow, pageProps, type PageArgs, type PageInfo } from "~/mcp/pagination";
 
@@ -72,31 +73,21 @@ export async function runSearchDirectory(input: Input): Promise<{ results: Direc
     where: {
       AND: [
         memberWhere,
-        {
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" } },
-            { lastName: { contains: q, mode: "insensitive" } },
-            { daliEmail: { contains: q, mode: "insensitive" } },
-            { netId: { contains: q, mode: "insensitive" } },
-            {
-              domainEligibilities: {
-                some: {
-                  domain: {
-                    OR: [
-                      { displayName: { contains: q, mode: "insensitive" } },
-                      { code: { contains: q, mode: "insensitive" } },
-                    ],
-                  },
+        userTextWhere(q, ["firstName", "lastName", "daliEmail", "netId"], (word) => [
+          {
+            domainEligibilities: {
+              some: {
+                domain: {
+                  OR: [
+                    { displayName: { contains: word, mode: "insensitive" } },
+                    { code: { contains: word, mode: "insensitive" } },
+                  ],
                 },
               },
             },
-            {
-              coreAssignments: {
-                some: { leadTitle: { contains: q, mode: "insensitive" } },
-              },
-            },
-          ],
-        },
+          },
+          { coreAssignments: { some: { leadTitle: { contains: word, mode: "insensitive" } } } },
+        ]),
       ],
     },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],

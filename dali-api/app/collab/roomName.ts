@@ -15,6 +15,7 @@
  *   signing:{documentId}:draft         SigningDocument body — prose (BlockNote)
  *   form:{formId}:draft                Form question list — structured Y.Array
  *   rubric:{rubricId}:draft            Rubric criteria list — structured Y.Array
+ *   slides:{pageId}:deck               Slide deck — structured Y.Map
  */
 
 export const PRESENCE_ROOM_PREFIX = "presence:";
@@ -75,4 +76,10 @@ export function rubricDraftName(rubricId: string): string {
  *  from the Page id (no contentDocId override). */
 export function whiteboardRoomName(pageId: string): string {
   return `whiteboard:${pageId}:canvas`;
+}
+
+/** Collaborative deck room for a Slides Page. A Y.Doc of keyed maps (see
+ *  components/slides/deck/model.ts), not a BlockNote fragment. */
+export function slidesRoomName(pageId: string): string {
+  return `slides:${pageId}:deck`;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { useLocation, useSearchParams } from "react-router";
 import {
   SIDE_PARAM,
@@ -26,18 +26,28 @@ export function useVisibleSidePanel(): SidePanel | null {
 
 export function useSidePanel() {
   const [params, setParams] = useSearchParams();
+  const { key } = useLocation();
   const panel = useVisibleSidePanel();
   const urlNamesPanel = params.has(SIDE_PARAM);
   const open = useCallback(
-    (next: SidePanel) =>
+    (next: SidePanel) => {
+      // A router navigation would re-run the page's loaders before the panel could show.
+      if (!urlNamesPanel && !panelCoversPage()) {
+        setKeptSidePanel(next, key);
+        const url = new URL(window.location.href);
+        url.searchParams.set(SIDE_PARAM, formatSidePanel(next));
+        window.history.replaceState(window.history.state, "", url);
+        return;
+      }
       setParams(
         (prev) => {
           prev.set(SIDE_PARAM, formatSidePanel(next));
           return prev;
         },
         { replace: !panelCoversPage(), preventScrollReset: true },
-      ),
-    [setParams],
+      );
+    },
+    [setParams, urlNamesPanel, key],
   );
   const close = useCallback(() => {
     setKeptSidePanel(null);
@@ -108,4 +118,42 @@ export function useAltClickOpensBeside() {
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);
   }, []);
+}
+
+export function useCarryPageScroll(open: boolean) {
+  const pageRef = useRef<HTMLDivElement>(null);
+  const windowY = useRef(0);
+  const pageY = useRef(0);
+  const { pathname } = useLocation();
+  const last = useRef({ open: false, pathname });
+
+  useEffect(() => {
+    if (open) return;
+    const record = () => {
+      windowY.current = window.scrollY;
+    };
+    record();
+    window.addEventListener("scroll", record, { passive: true });
+    return () => window.removeEventListener("scroll", record);
+  }, [open]);
+
+  useLayoutEffect(() => {
+    const page = pageRef.current;
+    // A tab switch or navigation that also opens or closes the panel restores its own scroll.
+    const toggledInPlace = last.current.open !== open && last.current.pathname === pathname;
+    last.current = { open, pathname };
+    if (!page || panelCoversPage()) return;
+    if (open) {
+      if (toggledInPlace) page.scrollTop = windowY.current;
+      const record = () => {
+        pageY.current = page.scrollTop;
+      };
+      record();
+      page.addEventListener("scroll", record, { passive: true });
+      return () => page.removeEventListener("scroll", record);
+    }
+    if (toggledInPlace) window.scrollTo(0, pageY.current);
+  }, [open, pathname]);
+
+  return pageRef;
 }

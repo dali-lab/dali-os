@@ -13,7 +13,7 @@ test('community: switch to the Community section and browse its pages', async ({
   await stage.pause(800);
 
   await stage.click(page.getByRole('option', { name: 'Community' }));
-  await expect(page.getByRole('heading', { name: 'Connect' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Community' })).toBeVisible();
   await stage.pause(1500);
 
   for (const name of ['Opportunities', 'Gallery']) {
@@ -22,7 +22,7 @@ test('community: switch to the Community section and browse its pages', async ({
     await stage.pause(1000);
   }
 
-  await stage.click(page.getByRole('button', { name: 'Blogs', exact: true }));
+  await stage.click(page.getByRole('button', { name: 'Stories', exact: true }));
   await expect(page.getByRole('heading', { name: 'Everything DALI' })).toBeVisible();
   await stage.pause(1800);
 });

@@ -152,6 +152,6 @@ describe("manage_page move: receiver lifecycle", () => {
 describe("manage_page actions", () => {
   it("does not offer shortcut actions", () => {
     const actions = (MANAGE_PAGE_TOOL_DEF.inputSchema.properties.action as { enum: string[] }).enum;
-    expect(actions).toEqual(["pin", "move", "duplicate", "favorite", "set_template", "typography"]);
+    expect(actions).toEqual(["update", "set_visibility", "pin", "move", "duplicate", "favorite", "set_template", "typography"]);
   });
 });

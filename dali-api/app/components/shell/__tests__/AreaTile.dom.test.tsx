@@ -46,7 +46,7 @@ describe("AreaTile", () => {
     }
   });
 
-  it("keeps Lab and Connect visually distinct", () => {
+  it("keeps Lab and Community visually distinct", () => {
     expect(AREA_TONES.projects.tint).not.toBe(AREA_TONES.community.tint);
   });
 

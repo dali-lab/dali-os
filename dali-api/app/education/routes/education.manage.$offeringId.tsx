@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { approveAllConfirm } from "~/education/lib/approve-all-copy";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
@@ -1763,12 +1764,7 @@ export default function ManageOffering() {
                   <Form
                     method="post"
                     className="ml-auto"
-                    onSubmit={confirmSubmit({
-                      title: `Approve all ${appCounts["Submitted"]} pending applicants?`,
-                      description:
-                        "Approves up to capacity and emails each approved applicant. Applicants beyond the seat limit are waitlisted instead.",
-                      confirmLabel: "Approve all",
-                    })}
+                    onSubmit={confirmSubmit(approveAllConfirm(appCounts["Submitted"] ?? 0))}
                   >
                     <input type="hidden" name="intent" value="approve-all-pending" />
                     <Button type="submit">

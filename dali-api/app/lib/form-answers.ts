@@ -23,6 +23,12 @@ export function isAnswered(value: string | undefined, question?: Question): bool
 // (`info`, `pageBreak`) are always excluded (never a real answer). `file` is
 // optionally excluded for fill surfaces that can't upload (e.g. the member
 // form-fill view).
+// A Database list whose choices resolved to nothing can never be answered, so
+// it never blocks submitting. Unresolved lists (no referenceOptions) still count.
+export function hasNothingToPick(q: Question): boolean {
+  return q.type === "reference" && Array.isArray(q.data.referenceOptions) && q.data.referenceOptions.length === 0;
+}
+
 export function findMissingRequired(
   questions: Question[],
   getValue: (q: Question) => string | undefined,
@@ -32,6 +38,7 @@ export function findMissingRequired(
     (q) =>
       !isLayoutOnly(q.type) &&
       q.required &&
+      !hasNothingToPick(q) &&
       !(opts?.excludeFileType && q.type === "file") &&
       !isAnswered(getValue(q), q),
   );

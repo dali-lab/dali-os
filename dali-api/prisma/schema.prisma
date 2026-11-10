@@ -21,6 +21,11 @@ enum MembershipStatus {
 model User {
   // unique identifier
   id String @id @default(cuid())
+  slidePresentations SlidePresentation[]
+  hostedCommunityEvents CommunityEvent[]     @relation("CommunityEventHost")
+  communityEventRsvps   CommunityEventRsvp[]
+  slidePollVotes     SlidePollVote[]
+  slideTemplates     SlideTemplate[]
 
   // Term-by-term PI assignments, and applications this person is PI of.
   piProjectTerms        ProjectTerm[]        @relation("ProjectTermPi")
@@ -131,7 +136,7 @@ model User {
   hometown            String?
   // Where the person lives now ("Based in" on the profile). Free text; the
   // coordinates are geocoded from it on save (app/lib/geocode.server.ts) and
-  // place the person on the Connect map. Null coordinates = no pin.
+  // place the person on the Community map. Null coordinates = no pin.
   currentLocation     String?
   currentLocationLat  Float?
   currentLocationLng  Float?
@@ -358,6 +363,8 @@ model User {
   // ─── Page documentation (per-page guides) ─────────────────────────────────
   pageDocsMaintained PageDoc[]  @relation("PageDocMaintainer")
   blogPosts          BlogPost[]
+  blogReactions      BlogReaction[]
+  blogComments       BlogComment[]
   pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
 
@@ -379,6 +386,7 @@ model User {
   journeyProgress       OnboardingJourneyProgress[]
   labSubmissions        OnboardingLabSubmission[]       @relation("LabSubmissionLearner")
   labReviews            OnboardingLabSubmission[]       @relation("LabSubmissionReviewer")
+  planningNotesEdited   PlanningNote[]
 }
 
 // A DALI lab member. userId is optional because a member may be known (e.g. via daliEmail)
@@ -871,7 +879,6 @@ model Domain {
   partnerApplicationDomains PartnerApplicationDomain[]
   projects                  ProjectDomain[]
   projectScopes             ProjectDomainScope[]
-  coreMilestones            CoreMilestoneDomain[]
   onboardingJourneys        OnboardingJourney[]
 }
 
@@ -1486,6 +1493,14 @@ model ProjectFile {
   tags      ProjectFileTag[]
   comments  DocComment[]
   taskLinks TaskFileLink[]
+
+  // Per-file sharing, mirroring Page: named grants plus a General access row.
+  // Both are additive on top of the access the file inherits from its folder,
+  // project or Lab, never a downgrade. Link access never grants FullAccess and
+  // is never Public (files have no signed-out download path).
+  linkAccess     LinkAccess      @default(Restricted)
+  linkPermission SharePermission @default(View)
+  shares         FileShare[]
 
   @@index([projectId, archivedAt])
   @@index([folderPageId])
@@ -2155,6 +2170,7 @@ model AiUsage {
   userId       String
   day          String // UTC date "YYYY-MM-DD"
   count        Int    @default(0)
+  askCount     Int    @default(0)
   inputTokens  Int    @default(0)
   outputTokens Int    @default(0)
 
@@ -3481,6 +3497,7 @@ model Term {
   courseOfferings       CourseOffering[]
   projectChartStrings   ProjectChartString[]
   mentorshipForms       MentorshipTermForm[]
+  coreMilestones        CoreMilestone[]
 
   @@index([sortKey])
 }
@@ -3752,27 +3769,30 @@ model CoreAssignment {
 
 // ─── Core milestones (/core/milestones) ──────────────────────────────────────
 
-// Core's playbook for running a term: what has to happen in which week. Keyed
-// by season rather than by Term because the playbook repeats every year, and
-// some of it only exists in certain terms (hiring runs in Fall and Spring).
+enum CoreMilestoneKind {
+  Milestone
+  Plan
+}
+
+// Core's term plan: milestones (lab-wide goals) and plan items (things to do)
+// per week of one term. Week 0 is the lead-up before the term starts.
 model CoreMilestone {
-  id        String   @id @default(cuid())
-  season    Season
-  // 1-10 are the weeks of the term; 0 is the lead-up before it starts.
+  id        String            @id @default(cuid())
+  termId    String
   week      Int
+  kind      CoreMilestoneKind @default(Milestone)
   title     String
-  detail    String?
-  // Order within its week's column; ties fall back to createdAt.
-  position  Int      @default(0)
-  pinned    Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  notes     String?
+  // Order within its week and kind; ties fall back to createdAt.
+  position  Int               @default(0)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
 
-  owners  CoreMilestoneOwner[]
-  // No rows means the milestone is for the whole lab.
-  domains CoreMilestoneDomain[]
+  term Term @relation(fields: [termId], references: [id], onDelete: Cascade)
+  // No owners means the item is for the whole lab.
+  owners CoreMilestoneOwner[]
 
-  @@index([season, week])
+  @@index([termId, week, kind])
 }
 
 model CoreMilestoneOwner {
@@ -3784,17 +3804,6 @@ model CoreMilestoneOwner {
 
   @@id([milestoneId, userId])
   @@index([userId])
-}
-
-model CoreMilestoneDomain {
-  milestoneId String
-  domainId    String
-
-  milestone CoreMilestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
-  domain    Domain        @relation(fields: [domainId], references: [id], onDelete: Cascade)
-
-  @@id([milestoneId, domainId])
-  @@index([domainId])
 }
 
 // Authority to teach a specific education offering in a specific term.
@@ -3908,6 +3917,7 @@ model Project {
   // earliest term in `projectTerms` (by Term.sortKey), not stored.
   termCount      Int           @default(1)
   status         ProjectStatus @default(Active)
+  kind           ProjectKind   @default(Standard)
 
   // Core-only opt-out: hides the Record button and all three "Record this
   // meeting?" prompts for this project's meetings.
@@ -4018,6 +4028,7 @@ model Project {
   assignments       ProjectAssignment[]
   mailAccounts      MailAccount[]
   roleRequests      ProjectRoleRequest[]
+  planningNote      PlanningNote?
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
   epics             Epic[]
@@ -4200,6 +4211,11 @@ model ProjectDomainScope {
   @@index([projectId])
   @@index([domainId])
   @@index([termId])
+}
+
+enum ProjectKind {
+  Standard
+  CoreBoard
 }
 
 enum ProjectStatus {
@@ -5333,6 +5349,8 @@ model FormVersion {
   hiringDomainApplicationsAsChallenge DomainApplication[] @relation("DomainApplicationChallengeForm")
   hiringDomainApplicationsAsContinued DomainApplication[] @relation("DomainApplicationContinuedInterestForm")
 
+  staffingCycleBindings StaffingCycleFormBinding[] @relation("StaffingBindingVersion")
+
   @@unique([formId, versionNumber])
   @@index([formId, versionNumber])
 }
@@ -5416,6 +5434,12 @@ model StaffingCycleFormBinding {
   staffingCycleId String
   slot            String
   formId          String
+  // The form version this binding collects, pinned to the form's latest
+  // version at bind time. Two cycles may hold the same form when their pinned
+  // versions differ (only the one pinning the latest version receives fills).
+  // Null (version deleted, or a pre-pinning row the backfill missed) is
+  // treated as the latest version.
+  formVersionId   String?
   updatedAt       DateTime @updatedAt
   updatedById     String
 
@@ -5437,10 +5461,12 @@ model StaffingCycleFormBinding {
 
   staffingCycle StaffingCycle @relation(fields: [staffingCycleId], references: [id], onDelete: Cascade)
   form          Form          @relation(fields: [formId], references: [id], onDelete: Cascade)
+  formVersion   FormVersion?  @relation("StaffingBindingVersion", fields: [formVersionId], references: [id], onDelete: SetNull)
   updatedBy     User          @relation(fields: [updatedById], references: [id])
 
   @@unique([staffingCycleId, slot])
   @@index([formId])
+  @@index([formVersionId])
 }
 
 model EssentialityForm {
@@ -5659,6 +5685,7 @@ model Page {
   form      Form?      @relation("FormPage")
   // Set only when kind == Slides: the deck body sharing this page's id.
   slideDeck SlideDeck?
+  slidePresentation SlidePresentation?
 
   // Pinned to the top of the project's Documents block. Timestamp so pins can
   // be ordered most-recent-first. Null = not pinned. (Distinct from the
@@ -5845,6 +5872,23 @@ model PageShare {
   @@index([principalType, principalId])
 }
 
+// A named grant on one uploaded file: the file counterpart of PageShare.
+model FileShare {
+  id            String             @id @default(cuid())
+  fileId        String
+  principalType SharePrincipalType
+  // User.id or GroupDefinition.id, dispatched by principalType.
+  principalId   String
+  permission    SharePermission    @default(View)
+  createdById   String
+  createdAt     DateTime           @default(now())
+
+  file ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([fileId, principalType, principalId])
+  @@index([principalType, principalId])
+}
+
 // One person's relationship to one page: whether they favourited it, and when
 // they last opened it. Both feed the home Favourites panel (pins first, then
 // recents), and both are per-user — distinct from Page.pinnedAt, which is a
@@ -5923,6 +5967,8 @@ enum LinkAccess {
   // Any authenticated account, including partner, applicant, and non-member
   // Dartmouth users. Added for forms (the old "SignedIn" fill audience).
   SignedIn
+  // Any signed-in partner account with a current org membership.
+  Partners
   Public
 }
 
@@ -6966,6 +7012,7 @@ model PartnerApplication {
   activities       PartnerActivity[]
   meetingRequests  PartnerMeetingRequest[]
   invoices         PartnerInvoice[]
+  planningNote     PlanningNote?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -7782,11 +7829,41 @@ model BlogPost {
   authorId String
   author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
 
+  reactions BlogReaction[]
+  comments  BlogComment[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([publishedAt])
   @@index([authorId])
+}
+
+model BlogReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String   @db.VarChar(64)
+  createdAt DateTime @default(now())
+
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId, emoji])
+  @@index([postId])
+}
+
+model BlogComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  post   BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId, createdAt])
 }
 
 enum ReleaseNoteStatus {
@@ -7889,8 +7966,71 @@ model SlideDeck {
   page           Page     @relation(fields: [pageId], references: [id], onDelete: Cascade)
   // Slide[] (app/components/slides/types.ts).
   slides         Json     @default("[]")
+  // "json" reads `slides`; "yjs" reads the slides:{pageId}:deck room. Flips json to yjs once, never back.
+  storage        String   @default("json")
   updatedAt      DateTime @updatedAt
   lastEditedById String?
+}
+
+// Who is presenting a slide deck right now and where they are. One row per
+// deck, reused across presentations; endedAt is null while it is live.
+model SlidePresentation {
+  id          String    @id @default(cuid())
+  pageId      String    @unique
+  page        Page      @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  presenterId String
+  presenter   User      @relation(fields: [presenterId], references: [id], onDelete: Cascade)
+  slideId     String
+  build       Int       @default(0)
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  updatedAt   DateTime  @updatedAt
+  // Poll element ids the presenter closed this session, and whether followers may react.
+  closedPolls  String[]  @default([])
+  reactionsOff Boolean   @default(false)
+  pollVotes    SlidePollVote[]
+}
+
+// A follower's vote on a poll element during one presentation. choices holds
+// option indexes. Votes are cleared when a new presentation starts.
+model SlidePollVote {
+  id             String            @id @default(cuid())
+  presentationId String
+  presentation   SlidePresentation @relation(fields: [presentationId], references: [id], onDelete: Cascade)
+  pollElementId  String
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  choices        Int[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([presentationId, pollElementId, userId])
+  @@index([presentationId, pollElementId])
+}
+
+enum SlideTemplateKind {
+  Deck
+  Slide
+}
+
+// A saved deck (theme and slides) or single slide, reusable across decks.
+// payload is the sanitized slide clipboard JSON. Scoped like page templates:
+// the lab, or one project.
+model SlideTemplate {
+  id            String            @id @default(cuid())
+  kind          SlideTemplateKind
+  workspaceType WorkspaceType
+  workspaceId   String?
+  title         String
+  themeId       String
+  slideCount    Int
+  payload       Json
+  createdById   String
+  createdBy     User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([workspaceType, workspaceId, kind])
 }
 
 enum OnboardingLabSubmissionStatus {
@@ -8122,4 +8262,61 @@ model EducationTaskboardSettings {
   id        String   @id @default("default")
   termWeeks Int      @default(10)
   updatedAt DateTime @updatedAt
+}
+
+// Core's free-text status note for a project or partner application, shown
+// only in the Partners > Planning popup. Exactly one owner per row.
+model PlanningNote {
+  id            String   @id @default(cuid())
+  projectId     String?  @unique
+  applicationId String?  @unique
+  body          String
+  updatedById   String?
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  project     Project?            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  application PartnerApplication? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  updatedBy   User?               @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+// An alumni-hosted event on the Community map. Posts immediately; the host or an
+// admin can cancel it. audience is "alumni" or "alumni_and_students".
+model CommunityEvent {
+  id           String    @id @default(cuid())
+  hostId       String
+  title        String
+  description  String?
+  startsAt     DateTime
+  endsAt       DateTime
+  online       Boolean   @default(false)
+  meetingUrl   String?
+  placeName    String?
+  address      String?
+  lat          Float?
+  lng          Float?
+  audience     String    @default("alumni_and_students")
+  notifyNearby Boolean   @default(false)
+  cancelledAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  host  User                 @relation("CommunityEventHost", fields: [hostId], references: [id], onDelete: Cascade)
+  rsvps CommunityEventRsvp[]
+
+  @@index([startsAt])
+  @@index([hostId])
+}
+
+// Going = a row exists.
+model CommunityEventRsvp {
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  event CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId])
 }

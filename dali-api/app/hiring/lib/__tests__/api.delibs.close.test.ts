@@ -110,6 +110,21 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
     });
   });
 
+  it("gives cards left in No Decision on the final round no draft, and keeps moved cards", async () => {
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      roundId: "final",
+      applicationCycle: { timeline: null },
+      columnOrder: { "No Decision": ["da-idle"], Accept: ["da-accept-1"], Reject: ["da-reject-1"] },
+    });
+
+    const res = await action({ request: makeCloseRequest(), params: { id: SESSION_ID }, context: {} } as any);
+
+    expect(res.status).toBe(200);
+    const calls = mockTx.decision.create.mock.calls.map((c: any[]) => c[0].data);
+    expect(calls.map((d: any) => d.domainApplicationId).sort()).toEqual(["da-accept-1", "da-reject-1"]);
+  });
+
   it("sets waitlistRank to null on Accept and Reject decisions", async () => {
     mockPrisma.delibsSession.findUnique.mockResolvedValue({
       id: SESSION_ID,

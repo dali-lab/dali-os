@@ -13,10 +13,10 @@ import {
   type RefObject,
 } from "react";
 import { useSearchParams } from "react-router";
-import { Check, ChevronDown, ChevronRight, ListFilter, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ListFilter, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "~/components/ui/Button";
-import { SearchInput } from "~/components/ui/SearchInput";
+import { MultiSelect, MultiSelectList, toggledValue, type MultiSelectOption } from "~/components/ui/floating";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
 import {
@@ -122,7 +122,6 @@ export function ColumnFilters({
 }) {
   const [addOpen, setAddOpen] = useState(false);
   const [addStage, setAddStage] = useState<FilterColumn | null>(null);
-  const [openPill, setOpenPill] = useState<string | null>(null);
   const addRef = useRef<HTMLDivElement>(null);
 
   const closeAdd = useCallback(() => {
@@ -157,7 +156,7 @@ export function ColumnFilters({
           // button inert rather than opening an empty menu.
           disabled={columns.length === 0}
           title={columns.length === 0 ? "No columns to filter yet" : undefined}
-          onClick={() => (addOpen ? closeAdd() : (setOpenPill(null), setAddOpen(true)))}
+          onClick={() => (addOpen ? closeAdd() : setAddOpen(true))}
           aria-haspopup="menu"
           aria-expanded={addOpen}
           className={cn("h-8", addOpen && "border-os-container-hi bg-os-hover")}
@@ -216,17 +215,9 @@ export function ColumnFilters({
           column={col}
           selected={filterValues(filters, col.key)}
           options={columnResponses(rows, col.key, col.order)}
-          open={openPill === col.key}
-          onOpenChange={(open) => {
-            if (open) closeAdd();
-            setOpenPill(open ? col.key : null);
-          }}
           countFor={countFor}
           onToggle={(v) => onChange(toggleFilterValue(filters, col.key, v))}
-          onClear={() => {
-            onChange(clearFilterColumn(filters, col.key));
-            setOpenPill(null);
-          }}
+          onClear={() => onChange(clearFilterColumn(filters, col.key))}
         />
       ))}
       {activeColumns.length > 0 && (
@@ -243,12 +234,25 @@ export function ColumnFilters({
   );
 }
 
+function valueOptions(
+  column: FilterColumn,
+  options: string[],
+  countFor: (key: string, option: string) => number,
+): MultiSelectOption[] {
+  const labelOf = column.optionLabel ?? ((v: string) => v);
+  return options.map((opt) => ({
+    value: opt,
+    label: labelOf(opt),
+    trailing: (
+      <span className="ml-auto pl-2 text-xs tabular-nums text-os-muted">{countFor(column.key, opt)}</span>
+    ),
+  }));
+}
+
 function FilterPill({
   column,
   selected,
   options,
-  open,
-  onOpenChange,
   countFor,
   onToggle,
   onClear,
@@ -256,63 +260,52 @@ function FilterPill({
   column: FilterColumn;
   selected: string[];
   options: string[];
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   countFor: (key: string, option: string) => number;
   onToggle: (value: string) => void;
   onClear: () => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(ref, open, () => onOpenChange(false));
   const labels = selected.map(column.optionLabel ?? ((v) => v));
   const summary =
     labels.length <= 2 ? labels.join(", ") : `${labels[0]} +${labels.length - 1}`;
 
   return (
-    <div ref={ref} className="relative">
-      <div
-        className={cn(
-          "flex h-8 items-center overflow-hidden rounded-lg border bg-os-card text-sm transition-colors",
-          open ? "border-os-container-hi" : "border-os-container",
+    <div className="flex h-8 items-center overflow-hidden rounded-lg border border-os-container bg-os-card text-sm transition-colors">
+      <span className="flex h-full items-center gap-1.5 pl-2.5 pr-2 text-os-grey">
+        {column.icon && <column.icon className="h-3.5 w-3.5" aria-hidden />}
+        {column.label}
+      </span>
+      <MultiSelect
+        values={selected}
+        onChange={(next) => {
+          if (next.length === 0) return onClear();
+          const changed = toggledValue(selected, next);
+          if (changed) onToggle(changed);
+        }}
+        options={valueOptions(column, options, countFor)}
+        searchable
+        chips={false}
+        ariaLabel={`${column.label}: ${labels.join(", ")}. Edit`}
+        searchPlaceholder={`Search ${column.label.toLowerCase()}`}
+        clearLabel={`Clear ${column.label.toLowerCase()}`}
+        buttonClassName="flex h-8 max-w-[220px] items-center gap-1 border-l border-os-container px-2 font-semibold text-foreground transition-colors hover:bg-os-hover focus-visible:bg-os-hover focus-visible:outline-none"
+        renderTrigger={({ open }) => (
+          <>
+            <span className="truncate">{summary}</span>
+            <ChevronDown
+              className={cn("h-3.5 w-3.5 shrink-0 text-os-muted transition-transform", open && "rotate-180")}
+              aria-hidden
+            />
+          </>
         )}
+      />
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label={`Remove ${column.label} filter`}
+        className="flex h-full w-7 items-center justify-center border-l border-os-container text-os-muted transition-colors hover:bg-os-hover hover:text-foreground focus-visible:bg-os-hover focus-visible:outline-none"
       >
-        <span className="flex h-full items-center gap-1.5 pl-2.5 pr-2 text-os-grey">
-          {column.icon && <column.icon className="h-3.5 w-3.5" aria-hidden />}
-          {column.label}
-        </span>
-        <button
-          type="button"
-          onClick={() => onOpenChange(!open)}
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-label={`${column.label}: ${labels.join(", ")}. Edit`}
-          className="flex h-full max-w-[220px] items-center gap-1 border-l border-os-container px-2 font-semibold text-foreground transition-colors hover:bg-os-hover focus-visible:bg-os-hover focus-visible:outline-none"
-        >
-          <span className="truncate">{summary}</span>
-          <ChevronDown
-            className={cn("h-3.5 w-3.5 shrink-0 text-os-muted transition-transform", open && "rotate-180")}
-            aria-hidden
-          />
-        </button>
-        <button
-          type="button"
-          onClick={onClear}
-          aria-label={`Remove ${column.label} filter`}
-          className="flex h-full w-7 items-center justify-center border-l border-os-container text-os-muted transition-colors hover:bg-os-hover hover:text-foreground focus-visible:bg-os-hover focus-visible:outline-none"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {open && (
-        <FilterValuePicker
-          column={column}
-          selected={selected}
-          options={options}
-          countFor={countFor}
-          onToggle={onToggle}
-          onClear={onClear}
-        />
-      )}
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }
@@ -332,90 +325,33 @@ function FilterValuePicker({
   countFor: (key: string, option: string) => number;
   onToggle: (value: string) => void;
   onClear: () => void;
-  onBack?: () => void;
+  onBack: () => void;
 }) {
-  const [search, setSearch] = useState("");
-  const labelOf = column.optionLabel ?? ((v: string) => v);
-  const shown = options.filter((o) =>
-    labelOf(o).toLowerCase().includes(search.trim().toLowerCase()),
-  );
-
   return (
     <div className={cn(MENU_CLASS, "w-64")}>
       <div className="flex items-center justify-between px-3 pb-1 pt-2.5">
         <span className="text-xs font-semibold text-os-muted">
-          {onBack && (
-            <button type="button" onClick={onBack} className="mr-1 text-os-grey hover:text-foreground">
-              Filters /
-            </button>
-          )}
+          <button type="button" onClick={onBack} className="mr-1 text-os-grey hover:text-foreground">
+            Filters /
+          </button>
           {column.label}
         </span>
         {selected.length > 0 && (
           <span className="text-xs font-semibold text-os-accent">{selected.length} selected</span>
         )}
       </div>
-
-      <div className="px-1.5 pb-1">
-        <SearchInput
-          size="sm"
+      <div className="max-h-72 overflow-y-auto px-1.5 pb-1.5">
+        <MultiSelectList
+          values={selected}
+          options={valueOptions(column, options, countFor)}
+          onToggle={onToggle}
+          onClear={onClear}
+          clearLabel={`Clear ${column.label.toLowerCase()}`}
+          ariaLabel={column.label}
+          searchPlaceholder={`Search ${column.label.toLowerCase()}`}
           autoFocus
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={`Search ${column.label.toLowerCase()}`}
-          aria-label={`Search ${column.label.toLowerCase()}`}
         />
       </div>
-
-      <div
-        role="listbox"
-        aria-multiselectable
-        aria-label={column.label}
-        className="max-h-60 overflow-y-auto px-1.5 pb-1.5"
-      >
-        {shown.length === 0 && <p className="px-2.5 py-3 text-sm text-os-muted">No matches</p>}
-        {shown.map((opt) => {
-          const checked = selected.includes(opt);
-          const count = countFor(column.key, opt);
-          return (
-            <button
-              key={opt}
-              type="button"
-              role="option"
-              aria-selected={checked}
-              onClick={() => onToggle(opt)}
-              className={cn(
-                "flex h-8 w-full items-center gap-2.5 rounded-lg px-2 text-left text-sm transition-colors hover:bg-os-hover focus-visible:bg-os-hover focus-visible:outline-none",
-                count === 0 && !checked ? "text-os-muted" : "text-foreground",
-              )}
-            >
-              <span
-                className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-[5px] border transition-colors",
-                  checked ? "border-os-accent bg-os-accent text-os-bg" : "border-os-container-hi",
-                )}
-                aria-hidden
-              >
-                {checked && <Check className="h-3 w-3" strokeWidth={3} />}
-              </span>
-              <span className={cn("truncate", checked && "font-semibold")}>{labelOf(opt)}</span>
-              <span className="ml-auto text-xs tabular-nums text-os-muted">{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {selected.length > 0 && (
-        <div className="border-t border-os-container px-1.5 py-1.5">
-          <button
-            type="button"
-            onClick={onClear}
-            className="flex h-8 w-full items-center justify-center rounded-lg text-sm font-semibold text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
-          >
-            Clear {column.label.toLowerCase()}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

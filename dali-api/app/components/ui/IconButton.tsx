@@ -16,6 +16,7 @@ type IconButtonProps = {
   iconClassName?: string;
   /** Prefer `top` in table headers where a bottom tip would be clipped. */
   tooltipSide?: "top" | "bottom";
+  shortcut?: string;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label" | "children">;
 
 // Icon-only button with a built-in tooltip + accessible name. The go-to for
@@ -30,12 +31,13 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
       iconClassName,
       type = "button",
       tooltipSide = "bottom",
+      shortcut,
       ...rest
     },
     ref,
   ) {
     return (
-      <Tooltip content={label} placement={tooltipSide}>
+      <Tooltip content={shortcut ? `${label} (${shortcut})` : label} placement={tooltipSide}>
         <button
           ref={ref}
           type={type}

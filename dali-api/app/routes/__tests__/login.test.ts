@@ -182,6 +182,17 @@ describe("GET /login loader routing", () => {
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/calendar/check-in/m1");
   });
+
+  it("sends a signed-in partner to a /partner next, and to /partner otherwise", async () => {
+    authedAs("partner-1");
+    mockMemberFind.mockResolvedValue(null);
+    vi.mocked(prisma.partnerContact.findUnique).mockResolvedValue({ id: "pc1" } as any);
+    const landing = async (url: string) =>
+      ((await loader({ request: new Request(url) } as any)) as Response).headers.get("Location");
+    expect(await landing("http://localhost/login?next=%2Fpartner%2Fapply")).toBe("/partner/apply");
+    expect(await landing("http://localhost/login?next=%2Fcalendar")).toBe("/partner");
+    expect(await landing("http://localhost/login")).toBe("/partner");
+  });
 });
 
 describe("POST /login next cookie", () => {

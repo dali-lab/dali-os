@@ -3,7 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("~/lib/db.server");
 
 import { prisma } from "~/lib/db.server";
-import { AI_DAILY_MAX, aiQuotaResponse, claimAiQuota, secondsToUtcMidnight } from "../ai-quota.server";
+import {
+  AI_DAILY_MAX,
+  ASK_DAILY_MAX,
+  aiQuotaResponse,
+  claimAiQuota,
+  claimAskQuota,
+  releaseAskQuota,
+  secondsToUtcMidnight,
+} from "../ai-quota.server";
 
 const MESSAGE = "You've reached today's AI limit (200 requests). It resets at midnight UTC.";
 
@@ -55,7 +63,7 @@ describe("claimAiQuota", () => {
 
   it("allows up to the daily max", async () => {
     vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: AI_DAILY_MAX } as never);
-    expect(await claimAiQuota("u1")).toEqual({ ok: true, day: "2026-11-04" });
+    expect(await claimAiQuota("u1")).toEqual({ ok: true, day: "2026-11-04", used: AI_DAILY_MAX });
   });
 
   it("refuses past the max with the message and seconds to midnight", async () => {
@@ -65,6 +73,52 @@ describe("claimAiQuota", () => {
 
   it("caps at 200", () => {
     expect(AI_DAILY_MAX).toBe(200);
+  });
+});
+
+describe("claimAskQuota", () => {
+  it("counts on its own column, leaving the assistant's count alone", async () => {
+    await claimAskQuota("u1");
+    expect(prisma.aiUsage.upsert).toHaveBeenCalledWith({
+      where: { userId_day: { userId: "u1", day: "2026-11-04" } },
+      create: { userId: "u1", day: "2026-11-04", askCount: 1 },
+      update: { askCount: { increment: 1 } },
+    });
+  });
+
+  it("allows up to 50 questions a day", async () => {
+    expect(ASK_DAILY_MAX).toBe(50);
+    vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 0, askCount: 50 } as never);
+    expect(await claimAskQuota("u1")).toEqual({ ok: true, day: "2026-11-04", used: 50 });
+  });
+
+  it("refuses the 51st question even when the assistant count is low", async () => {
+    vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 0, askCount: 51 } as never);
+    expect(await claimAskQuota("u1")).toEqual({
+      ok: false,
+      error: "You've used today's questions. They reset at midnight UTC.",
+      retryAfterSeconds: 12 * 3600,
+    });
+  });
+
+  it("is not limited by the assistant's count", async () => {
+    vi.mocked(prisma.aiUsage.upsert).mockResolvedValue({ count: 500, askCount: 1 } as never);
+    expect((await claimAskQuota("u1")).ok).toBe(true);
+  });
+});
+
+describe("releaseAskQuota", () => {
+  it("gives one question back on that day's row, never below zero", async () => {
+    await releaseAskQuota("u1", "2026-11-04");
+    expect(prisma.aiUsage.updateMany).toHaveBeenCalledWith({
+      where: { userId: "u1", day: "2026-11-04", askCount: { gt: 0 } },
+      data: { askCount: { decrement: 1 } },
+    });
+  });
+
+  it("never throws", async () => {
+    vi.mocked(prisma.aiUsage.updateMany).mockRejectedValue(new Error("db down"));
+    await expect(releaseAskQuota("u1", "2026-11-04")).resolves.toBeUndefined();
   });
 });
 

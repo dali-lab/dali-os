@@ -26,12 +26,13 @@ import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
 import { buildPageLink, writePageLink } from '~/lib/page-link'
 import { modKey, tabCycleShortcut } from '~/lib/shortcuts'
 import { cn } from '~/lib/cn'
+import { scrollPageTo } from '~/lib/page-scroll'
 import { stripAppTitle } from '~/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
 import { useVisibleSidePanel } from '~/components/side-panel/use-side-panel'
-import { sidePanelForUrl, withSidePanel } from '~/lib/side-panel'
+import { sidePanelForUrl, tabUrlWithSidePanel } from '~/lib/side-panel'
 import { useLiveSession } from '~/components/meeting-recorder/live-session'
 
 /** Fired by the desktop app's File menu (desktop/src-tauri/src/menu.rs), which
@@ -72,7 +73,7 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
   const navigateRef = useRef(navigate)
   navigateRef.current = navigate
   const sidePanel = useVisibleSidePanel()
-  const url = withSidePanel(location.pathname + location.search, sidePanel)
+  const url = tabUrlWithSidePanel(location.pathname + location.search, sidePanel)
   const recordedKey = useRef(location.key)
   const arrivalRef = useRef(url)
   arrivalRef.current = url
@@ -90,7 +91,7 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
     const restoreY = tabActions.record(url, recordedKey.current === location.key ? 'REPLACE' : navigationType)
     recordedKey.current = location.key
     let raf = 0
-    if (restoreY !== null) raf = window.requestAnimationFrame(() => window.scrollTo(0, restoreY))
+    if (restoreY !== null) raf = window.requestAnimationFrame(() => scrollPageTo(restoreY))
     const labelTimer = window.setTimeout(() => tabActions.label(url, pageTitle() || fallbackPageLabel(url)), 50)
     return () => {
       window.cancelAnimationFrame(raf)

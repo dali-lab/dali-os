@@ -4,6 +4,8 @@ vi.mock("~/lib/db.server", () => ({
   prisma: {
     projectFile: { findUnique: vi.fn(), update: vi.fn() },
     form: { findUnique: vi.fn(), update: vi.fn() },
+    signingDocument: { findUnique: vi.fn(), update: vi.fn() },
+    rubric: { findUnique: vi.fn(), update: vi.fn() },
     page: { findUnique: vi.fn() },
   },
 }));
@@ -13,10 +15,8 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/roles", () => ({
-  isCore: vi.fn(),
-  isProjectMember: vi.fn(),
-}));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
+vi.mock("~/lib/fileAccess.server", () => ({ canEditFile: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
@@ -24,7 +24,8 @@ vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
 import { moveForm } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isProjectMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
+import { canEditFile } from "~/lib/fileAccess.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
 import { loadAncestorChain } from "~/lib/page-ancestry.server";
@@ -45,15 +46,19 @@ const call = async (body: unknown) => {
 
 const FILE_MOVE = { itemType: "file", itemId: "f1", destFolderPageId: "folder" };
 const FORM_MOVE = { itemType: "form", itemId: "fm1", destFolderPageId: "folder" };
+const AGREEMENT_MOVE = { itemType: "agreement", itemId: "a1", destFolderPageId: "folder" };
+const RUBRIC_MOVE = { itemType: "rubric", itemId: "r1", destFolderPageId: "folder" };
 
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
   vi.mocked(isCore).mockResolvedValue(false);
-  vi.mocked(isProjectMember).mockResolvedValue(true);
+  vi.mocked(canEditFile).mockResolvedValue(true);
   vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true } as never);
   m.projectFile.findUnique.mockResolvedValue({ projectId: "proj", archivedAt: null });
   m.form.findUnique.mockResolvedValue({ id: "fm1" });
+  m.signingDocument.findUnique.mockResolvedValue({ folderPageId: "src", archivedAt: null });
+  m.rubric.findUnique.mockResolvedValue({ folderPageId: "src" });
   m.page.findUnique.mockResolvedValue({ id: "folder", kind: "Folder", archivedAt: null });
   vi.mocked(loadAncestorChain).mockResolvedValue([]);
 });
@@ -100,12 +105,6 @@ describe("POST /api/drive/move", () => {
     expect(m.projectFile.update).toHaveBeenCalledWith({ where: { id: "f1" }, data: { folderPageId: null } });
   });
 
-  it("refuses agreements and rubrics before reading anything", async () => {
-    expect((await call({ ...FILE_MOVE, itemType: "agreement" })).status).toBe(400);
-    expect(m.projectFile.findUnique).not.toHaveBeenCalled();
-    expect(m.page.findUnique).not.toHaveBeenCalled();
-  });
-
   describe("source refusals", () => {
     it("404s a missing or archived file", async () => {
       m.projectFile.findUnique.mockResolvedValue({ projectId: "proj", archivedAt: new Date() });
@@ -113,22 +112,19 @@ describe("POST /api/drive/move", () => {
       expect(m.projectFile.update).not.toHaveBeenCalled();
     });
 
-    it("403s a viewer who is neither Core nor on the file's project", async () => {
-      vi.mocked(isProjectMember).mockResolvedValue(false);
+    it("checks file edit access against the stored file and refuses without it", async () => {
+      const file = { id: "f1", projectId: null, workspaceType: "Lab", workspaceId: null, folderPageId: "src", archivedAt: null };
+      m.projectFile.findUnique.mockResolvedValue(file);
+      vi.mocked(canEditFile).mockResolvedValue(false);
       expect(await call(FILE_MOVE)).toEqual({ status: 403, json: { error: "You can't move this file" } });
+      expect(canEditFile).toHaveBeenCalledWith("u1", file, expect.any(Request));
       expect(m.projectFile.update).not.toHaveBeenCalled();
     });
 
-    it("lets Core move a lab file with no project", async () => {
-      vi.mocked(isCore).mockResolvedValue(true);
-      m.projectFile.findUnique.mockResolvedValue({ projectId: null, archivedAt: null });
+    it("lets a non-Core member move a lab file they can edit", async () => {
+      m.projectFile.findUnique.mockResolvedValue({ id: "f1", projectId: null, archivedAt: null });
       expect((await call(FILE_MOVE)).status).toBe(200);
-      expect(isProjectMember).not.toHaveBeenCalled();
-    });
-
-    it("403s a lab file for anyone but Core", async () => {
-      m.projectFile.findUnique.mockResolvedValue({ projectId: null, archivedAt: null });
-      expect((await call(FILE_MOVE)).status).toBe(403);
+      expect(isCore).not.toHaveBeenCalled();
     });
 
     it("404s a missing form", async () => {
@@ -161,7 +157,7 @@ describe("POST /api/drive/move", () => {
 
   describe("precedence when both sides refuse", () => {
     it("reports the source first", async () => {
-      vi.mocked(isProjectMember).mockResolvedValue(false);
+      vi.mocked(canEditFile).mockResolvedValue(false);
       m.page.findUnique.mockResolvedValue(null);
       expect(await call(FILE_MOVE)).toEqual({ status: 403, json: { error: "You can't move this file" } });
     });
@@ -200,5 +196,64 @@ describe("POST /api/drive/move (forms)", () => {
     formEdit(false);
     expect(await call(FORM_MOVE)).toEqual({ status: 403, json: { error: "You can't move this form" } });
     expect(moveForm).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/drive/move (agreements and rubrics)", () => {
+  beforeEach(() => vi.mocked(isCore).mockResolvedValue(true));
+
+  it("lets Core move an agreement into a folder they can edit, then audits", async () => {
+    expect(await call(AGREEMENT_MOVE)).toEqual({ status: 200, json: { ok: true } });
+    expect(m.signingDocument.update).toHaveBeenCalledWith({ where: { id: "a1" }, data: { folderPageId: "folder" } });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "drive.item.move", targetId: "a1", metadata: { itemType: "agreement", destFolderPageId: "folder" } }),
+    );
+  });
+
+  it("lets Core move a rubric", async () => {
+    expect((await call(RUBRIC_MOVE)).status).toBe(200);
+    expect(m.rubric.update).toHaveBeenCalledWith({ where: { id: "r1" }, data: { folderPageId: "folder" } });
+  });
+
+  it("403s anyone but Core, and writes nothing", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    expect(await call(AGREEMENT_MOVE)).toEqual({ status: 403, json: { error: "You can't move this agreement" } });
+    expect(await call(RUBRIC_MOVE)).toEqual({ status: 403, json: { error: "You can't move this rubric" } });
+    expect(m.signingDocument.update).not.toHaveBeenCalled();
+    expect(m.rubric.update).not.toHaveBeenCalled();
+  });
+
+  it("404s a missing or archived agreement and a missing rubric", async () => {
+    m.signingDocument.findUnique.mockResolvedValue({ folderPageId: "src", archivedAt: new Date() });
+    expect(await call(AGREEMENT_MOVE)).toEqual({ status: 404, json: { error: "Agreement not found" } });
+    m.signingDocument.findUnique.mockResolvedValue(null);
+    expect((await call(AGREEMENT_MOVE)).status).toBe(404);
+    m.rubric.findUnique.mockResolvedValue(null);
+    expect(await call(RUBRIC_MOVE)).toEqual({ status: 404, json: { error: "Rubric not found" } });
+  });
+
+  it("refuses unplacing, which would hide the item from Drive, before reading anything", async () => {
+    for (const body of [AGREEMENT_MOVE, RUBRIC_MOVE]) {
+      expect(await call({ ...body, destFolderPageId: null })).toEqual({
+        status: 400,
+        json: { error: "Pick a folder to move this into" },
+      });
+    }
+    expect(m.signingDocument.findUnique).not.toHaveBeenCalled();
+    expect(m.rubric.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("refuses a folder Core can't edit", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: true } as never);
+    expect((await call(AGREEMENT_MOVE)).status).toBe(403);
+    expect(m.signingDocument.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps an agreement inside its root", async () => {
+    vi.mocked(loadAncestorChain).mockImplementation(async (id: string) =>
+      (id === "src" ? [{ id: "core", title: "Core", folderType: "Root" }] : []) as never,
+    );
+    expect((await call(AGREEMENT_MOVE)).status).toBe(400);
+    expect(m.signingDocument.update).not.toHaveBeenCalled();
   });
 });

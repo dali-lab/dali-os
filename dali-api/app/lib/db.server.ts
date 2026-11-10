@@ -3,6 +3,7 @@ import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { deferHooksInTransactions, runOrDeferDbOperationHooks } from "~/lib/db-transaction-hooks";
 import { poolConfig, watchPoolWaits } from "~/lib/db-pool";
+import { isProjectListOperation, withStandardProjectsOnly } from "~/lib/project-kind-filter";
 
 // Re-export the Prisma namespace through this module so callers can reach
 // runtime values like `Prisma.DbNull` without a direct value-import of the
@@ -23,7 +24,9 @@ function createPrismaClient(): PrismaClient {
     query: {
       $allModels: {
         async $allOperations({ model, operation, args, query }) {
-          const result = await query(args);
+          let scoped: unknown = args;
+          if (isProjectListOperation(model, operation)) scoped = withStandardProjectsOnly(args as never);
+          const result = await query(scoped as never);
           runOrDeferDbOperationHooks(model, operation);
           return result;
         },

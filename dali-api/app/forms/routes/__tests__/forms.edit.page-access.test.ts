@@ -9,6 +9,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({
   canBuildForm: vi.fn(),
+  canCreateForm: vi.fn(),
   canSeeForm: vi.fn(),
 }));
 vi.mock("~/forms/lib/forms-data", () => ({ loadFormForEdit: vi.fn(), runFormsAction: vi.fn() }));
@@ -18,6 +19,7 @@ vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(),
 vi.mock("~/forms/lib/mapped-questions.server", () => ({
   mappedQuestionFeatures: async () => new Map(),
 }));
+vi.mock("~/forms/lib/prefill.server", () => ({ formFillers: async (id: string) => (id === "f1" ? ["partner"] : []) }));
 vi.mock("~/forms/lib/version-responses.server", () => ({ loadVersionResponses: vi.fn() }));
 vi.mock("~/forms/lib/version-summary.server", () => ({ loadVersionSummary: vi.fn() }));
 vi.mock("~/forms/lib/form-response.server", () => ({ deleteFormResponse: vi.fn() }));
@@ -32,11 +34,11 @@ vi.mock("~/components/PageIcon", () => ({ PageIcon: () => null }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
+import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
-import { loadFormHiringLinks } from "~/hiring/lib/form-links.server";
+import { loadFormHiringLinks, unlinkHiringForm } from "~/hiring/lib/form-links.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
@@ -137,6 +139,11 @@ describe("forms.edit loader", () => {
     const data = await run();
     expect(data.page).toEqual({ workspaceType: "Project" });
   });
+
+  it("returns who the form's sharing lets fill it, for the prefill picker", async () => {
+    const data = await run();
+    expect(data.fillers).toEqual(["partner"]);
+  });
 });
 
 describe("forms.edit breadcrumb trail", () => {
@@ -187,6 +194,45 @@ describe("forms.edit action", () => {
     await post({ intent: "rename-form", id: "f1", name: "x" });
     expect(canBuildForm).toHaveBeenCalledWith("u1", "f1", expect.any(Request));
     expect(runFormsAction).toHaveBeenCalled();
+  });
+
+  it("refuses a second id value smuggled behind this route's", async () => {
+    // get() reads the first value but the action parser keeps the last, so
+    // every value must be this form's id.
+    vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
+    const body = new FormData();
+    body.set("intent", "delete-form");
+    body.append("id", "f1");
+    body.append("id", "someone-elses");
+    const res = (await action({
+      request: new Request("http://os.test/forms/edit/f1", { method: "POST", body }),
+      params: { formId: "f1" },
+    } as never)) as Response;
+    expect(res.status).toBe(403);
+    expect(runFormsAction).not.toHaveBeenCalled();
+  });
+
+  it("gates create-form on the destination folder, not this form", async () => {
+    vi.mocked(canCreateForm).mockResolvedValue(false);
+    expect(
+      (await post({ intent: "create-form", name: "x", folderPageId: "folder-1" })).status,
+    ).toBe(403);
+    expect(canCreateForm).toHaveBeenCalledWith("u1", "folder-1", expect.any(Request));
+    expect(runFormsAction).not.toHaveBeenCalled();
+
+    vi.mocked(canCreateForm).mockResolvedValue(true);
+    vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
+    await post({ intent: "create-form", name: "x", folderPageId: "folder-1" });
+    expect(runFormsAction).toHaveBeenCalled();
+  });
+
+  it("scopes unlink-hiring-form to this route's form", async () => {
+    vi.mocked(unlinkHiringForm).mockResolvedValue({ ok: true } as never);
+    await post({ intent: "unlink-hiring-form", linkType: "application", cycleId: "c1" });
+    expect(unlinkHiringForm).toHaveBeenCalledWith(
+      { formId: "f1", linkType: "application", cycleId: "c1" },
+      "u1",
+    );
   });
 });
 

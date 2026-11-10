@@ -11,6 +11,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { setApplicationStage } from "~/partners/lib/partner-activity.server";
+import { movePlanningNoteToProject } from "~/partners/lib/planning-notes.server";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
 
 export const PROMOTE_PARTNER_APPLICATION_TOOL = {
@@ -142,6 +143,7 @@ export async function runPromotePartnerApplication(
       data: { resultingProjectId: created.id, partnerOrgId: orgId },
       meta: { projectId: created.id },
     });
+    await movePlanningNoteToProject(tx, { applicationId: app.id, projectId: created.id });
     return created;
   });
 

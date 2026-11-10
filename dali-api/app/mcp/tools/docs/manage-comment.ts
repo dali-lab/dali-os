@@ -7,6 +7,7 @@ import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { requireForAction } from "~/mcp/registry";
+import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
 export const MANAGE_COMMENT_TOOL_DEF = {
@@ -31,8 +32,17 @@ export const MANAGE_COMMENT_TOOL_DEF = {
       parentId: { type: "string", description: "For 'create': reply to an existing comment." },
       anchor: {
         type: "object",
-        properties: { from: { type: "string" }, to: { type: "string" } },
-        description: "For 'create' on doc targets: Yjs anchor range.",
+        properties: {
+          from: { type: "string" },
+          to: { type: "string" },
+          kind: { type: "string", enum: ["slide", "blocknote"] },
+          slideId: { type: "string" },
+          elementId: { type: "string" },
+          x: { type: "number", minimum: 0, maximum: 1 },
+          y: { type: "number", minimum: 0, maximum: 1 },
+        },
+        description:
+          "For 'create' on doc targets: a Yjs anchor range ({from, to}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide).",
       },
       versionId: { type: "string", description: "For 'create' on file targets: pin to a file version." },
       // For edit/react/unreact/delete
@@ -68,7 +78,7 @@ type ManageCommentInput = {
   targetId?: string;
   body?: string;
   parentId?: string;
-  anchor?: { from: string; to: string };
+  anchor?: Record<string, unknown>;
   versionId?: string;
   commentId?: string;
   emoji?: string;
@@ -135,7 +145,13 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
       }
     }
 
-    const anchor = targetType === "doc" ? (input.anchor ?? null) : null;
+    const parsedAnchor = commentAnchorSchema.safeParse(targetType === "doc" ? (input.anchor ?? null) : null);
+    if (!parsedAnchor.success) throw new ManageCommentError("Invalid anchor", 400);
+    const anchor = parsedAnchor.data ?? null;
+    if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
+      const page = await prisma.page.findUnique({ where: { id: targetId }, select: { kind: true } });
+      if (page?.kind !== "Slides") throw new ManageCommentError("Slide anchors only apply to slide decks", 400);
+    }
 
     // For file comments, resolve versionId
     let versionId: string | null = null;

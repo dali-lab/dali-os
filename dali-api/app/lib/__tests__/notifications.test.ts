@@ -9,6 +9,7 @@ import {
   liveMeetingPingClauses,
   NOT_CANCELLED_MEETING,
   annotateRecordPromptFeed,
+  STALE_AFTER_EVENTS,
 } from "~/lib/notifications";
 
 const mockPrisma = prisma as unknown as {
@@ -91,6 +92,29 @@ describe("liveMeetingPingClauses", () => {
   });
 });
 
+describe("liveMeetingPingClauses age limits", () => {
+  const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
+
+  it("hides cancellations after 3 days, proposed times after 7, record prompts after 3 hours", () => {
+    const [, , , aged] = liveMeetingPingClauses(NOW);
+    expect(aged).toEqual({
+      NOT: {
+        OR: [
+          { eventType: "meeting.cancelled", createdAt: { lte: hoursAgo(72) } },
+          { eventType: "meeting.time_proposed", createdAt: { lte: hoursAgo(168) } },
+          { eventType: "meeting.record_prompt", createdAt: { lte: hoursAgo(3) } },
+        ],
+      },
+    });
+  });
+
+  it("only covers event types that set staleAfterMs", () => {
+    expect(STALE_AFTER_EVENTS.map(([t]) => t).sort()).toEqual(
+      ["meeting.cancelled", "meeting.record_prompt", "meeting.time_proposed"],
+    );
+  });
+});
+
 describe("listMyNotifications", () => {
   it("excludes cancelled-meeting invites and stale pings from the default feed", async () => {
     await listMyNotifications("user-1");
@@ -159,7 +183,11 @@ describe("listRetiredMeetingPingIds", () => {
     expect(candidates[0].where).toEqual({
       recipientUserId: "user-1",
       readAt: null,
-      OR: [{ scheduledMeetingId: { not: null } }, { interviewAssignmentId: { not: null } }],
+      OR: [
+        { scheduledMeetingId: { not: null } },
+        { interviewAssignmentId: { not: null } },
+        { eventType: { in: ["meeting.cancelled", "meeting.time_proposed", "meeting.record_prompt"] } },
+      ],
       createdAt: { gte: new Date(NOW.getTime() - 30 * 24 * 3_600_000) },
     });
     expect(live[0].where).toEqual({

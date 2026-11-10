@@ -18,7 +18,7 @@ import { prisma } from "~/lib/db.server";
 import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { generateShortText } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
-import { action } from "~/routes/api.ai.meeting-notes";
+import { action, TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
 
 const DOC = "doc:p1:body";
 
@@ -52,6 +52,22 @@ beforeEach(() => {
 });
 
 describe("POST /api/ai/meeting-notes", () => {
+  it("sends a five-hour transcript whole", async () => {
+    const transcript = "[00:00] You: start " + "x".repeat(250_000) + " end";
+    await run({ documentName: DOC, transcript });
+    const { prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(prompt).toContain("[00:00] You: start");
+    expect(prompt).toContain(" end");
+  });
+
+  it("keeps the most recent part of a transcript past the cap", async () => {
+    const transcript = "OPENING" + "x".repeat(TRANSCRIPT_MAX) + "CLOSING";
+    await run({ documentName: DOC, transcript });
+    const { prompt } = vi.mocked(generateShortText).mock.calls[0]![0];
+    expect(prompt).not.toContain("OPENING");
+    expect(prompt).toContain("CLOSING");
+  });
+
   it("returns the model's notes, titled after the document", async () => {
     const res = await run({ documentName: DOC, transcript: "[00:01] You: we shipped it" });
     expect(res.status).toBe(200);
@@ -65,6 +81,8 @@ describe("POST /api/ai/meeting-notes", () => {
     const res = await run({ documentName: "interview:i1:notes", transcript: "x" });
     expect(res.status).toBe(200);
     expect(vi.mocked(generateShortText).mock.calls[0]![0].prompt).toMatch(/^Transcript:/);
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].task).toBe("meetingNotes");
+    expect(vi.mocked(generateShortText).mock.calls[0]![0].maxTokens).toBe(4000);
   });
 
   it("rejects an empty transcript before calling the model", async () => {

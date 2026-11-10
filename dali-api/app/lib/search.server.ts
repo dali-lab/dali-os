@@ -1,6 +1,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { userTextWhere } from "~/lib/person-search";
 import { resolvePhotoUrl } from "~/lib/photo";
 import type { UserRoles } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
@@ -23,7 +24,9 @@ import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
+import { visibleHelpArticles } from "~/help/library.server";
 import { categorize } from "~/lib/file-type";
+import { filterViewableFiles } from "~/lib/fileAccess.server";
 
 // Server side of the command-palette search: permission-scoped Prisma queries
 // that feed the pure ranking in lib/search.ts. Each category is a small helper
@@ -54,16 +57,14 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
   const roles = opts.roles;
   const like: Like = { contains: q, mode: "insensitive" };
   return [
-    { type: "person", enabled: true, run: (b) => searchPeople(q, like, b) },
+    { type: "person", enabled: true, run: (b) => searchPeople(q, b) },
     { type: "project", enabled: true, run: (b) => searchProjects(q, like, b) },
     { type: "task", enabled: true, run: (b) => searchTasks(q, like, b) },
     { type: "education", enabled: true, run: (b) => searchOfferings(q, like, b) },
     { type: "document", enabled: true, run: (b) => searchDocuments(opts.userId, q, like, b, opts.request) },
-    // Page guides ("Docs") and /help articles — both readable by every lab
-    // member, so ungated like docs.
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
-    { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(q, b) },
-    { type: "document", enabled: true, run: (b) => searchProjectFiles(q, like, b) },
+    { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(opts, q, b) },
+    { type: "document", enabled: true, run: (b) => searchProjectFiles(opts.userId, q, like, b, opts.request) },
     { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
     { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b, opts.request) },
@@ -165,11 +166,11 @@ function simpleResults(
   );
 }
 
-async function searchPeople(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchPeople(q: string, b: SearchBudget): Promise<SearchResult[]> {
   const rows = await prisma.user.findMany({
     where: {
       ...LAB_MEMBER_WHERE,
-      OR: [{ firstName: like }, { lastName: like }, { daliEmail: like }, { dartmouthEmail: like }],
+      ...userTextWhere(q, ["firstName", "lastName", "daliEmail", "dartmouthEmail"]),
     },
     select: {
       id: true,
@@ -265,7 +266,13 @@ async function searchTasks(q: string, like: Like, b: SearchBudget): Promise<Sear
   );
 }
 
-async function searchProjectFiles(q: string, like: Like, b: SearchBudget): Promise<SearchResult[]> {
+async function searchProjectFiles(
+  userId: string,
+  q: string,
+  like: Like,
+  b: SearchBudget,
+  request?: Request,
+): Promise<SearchResult[]> {
   // Uploaded project files; archived ones are out, mirroring pages. Matches
   // the display title or the current version's original filename (a file is
   // often remembered by what it was uploaded as). Reuses the "document" result
@@ -278,14 +285,21 @@ async function searchProjectFiles(q: string, like: Like, b: SearchBudget): Promi
     select: {
       id: true,
       title: true,
+      projectId: true,
+      workspaceType: true,
+      workspaceId: true,
+      folderPageId: true,
+      linkAccess: true,
+      linkPermission: true,
       currentVersion: { select: { fileName: true } },
       project: { select: { name: true } },
     },
     take: b.rawTake,
     orderBy: order(b),
   });
+  const viewable = await filterViewableFiles(userId, rows, request);
   return rankResults(
-    rows.map((f) => ({
+    viewable.map((f) => ({
       result: {
         type: "document" as const,
         id: f.id,
@@ -452,17 +466,18 @@ async function searchGuides(q: string, b: SearchBudget): Promise<SearchResult[]>
   );
 }
 
-// Help-center articles (/help/*). A fully static set (HELP_ARTICLES), so there's
-// no query — just rank its title/summary/keywords in memory.
-async function searchHelpArticles(q: string, b: SearchBudget): Promise<SearchResult[]> {
+async function searchHelpArticles(opts: SearchOpts, q: string, b: SearchBudget): Promise<SearchResult[]> {
+  const articles = await visibleHelpArticles({ userId: opts.userId, roles: opts.roles, request: opts.request });
+  const covered = new Set(articles.map((a) => a.slug));
+  const pages = HELP_ARTICLES.filter((c) => !covered.has(c.slug));
   return rankResults(
-    HELP_ARTICLES.map((a) => ({
+    [...articles, ...pages].map((a) => ({
       result: {
         type: "helpArticle" as const,
         id: a.slug,
         title: a.title,
         subtitle: "Help",
-        url: buildUrl.helpArticle(a.slug),
+        url: "url" in a ? a.url : a.href,
       },
       text: [a.title, a.summary, ...(a.keywords ?? [])],
     })),

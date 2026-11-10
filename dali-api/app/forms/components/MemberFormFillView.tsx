@@ -42,6 +42,7 @@ export type MemberFormData = {
   versionUpdatedAt: string;
   questions: Question[];
   token: string;
+  prefill?: Record<string, string>;
 };
 
 const SETTLE_EASE = "cubic-bezier(.23,1,.32,1)";
@@ -84,7 +85,9 @@ export function MemberFormFillView({
   progressUserId?: string | null;
 }) {
   const navigate = useNavigate();
-  const [answers, setAnswers] = useState<Record<string, string>>(editing?.answers ?? {});
+  const [answers, setAnswers] = useState<Record<string, string>>(
+    editing?.answers ?? data.prefill ?? {},
+  );
   const [state, setState] = useState<"idle" | "submitting" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const questions = data.questions;
@@ -107,7 +110,7 @@ export function MemberFormFillView({
 
   function startOver() {
     progress.clear();
-    setAnswers({});
+    setAnswers(data.prefill ?? {});
     setError(null);
     pager.reset();
   }

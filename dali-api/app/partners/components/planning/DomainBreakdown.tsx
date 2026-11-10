@@ -1,4 +1,3 @@
-import { Link } from "react-router";
 import { cn } from "~/lib/cn";
 import { planningStateLabel, type PlanningBreakdownRow } from "../../lib/planning-gap";
 
@@ -10,19 +9,16 @@ export const PLANNING_GRID =
 // Lines project names up under their domain's: the chevron (14px) + its gap (8px).
 const INDENT = "pl-[22px]";
 
-// Applications still jump to the Partners board (where their card lives);
-// projects open the planning info popup inline, so this helper only resolves
-// application links. Project rows hand off to `onProjectClick` instead.
 export function applicationHref(refId: string): string {
   return `/core/partners?application=${refId}`;
 }
 
 export function DomainBreakdown({
   items,
-  onProjectClick,
+  onRowClick,
 }: {
   items: PlanningBreakdownRow[];
-  onProjectClick: (projectId: string) => void;
+  onRowClick: (kind: "project" | "application", refId: string) => void;
 }) {
   const renewals = items.filter((i) => i.source === "renewing");
   const fresh = items.filter((i) => i.source === "new");
@@ -40,22 +36,16 @@ export function DomainBreakdown({
             <p className={cn(PLANNING_GRID, "pb-0.5 pt-1.5 text-xs font-medium text-muted-foreground")}>
               <span className={INDENT}>{gi === 0 ? "Renewing" : "New"}</span>
             </p>
-            {group.map((row) =>
-              row.kind === "application" ? (
-                <Link key={row.key} to={applicationHref(row.refId)} className={rowClass(row.counted)}>
-                  <BreakdownCells row={row} />
-                </Link>
-              ) : (
-                <button
-                  key={row.key}
-                  type="button"
-                  onClick={() => onProjectClick(row.refId)}
-                  className={cn(rowClass(row.counted), "w-full")}
-                >
-                  <BreakdownCells row={row} />
-                </button>
-              ),
-            )}
+            {group.map((row) => (
+              <button
+                key={row.key}
+                type="button"
+                onClick={() => onRowClick(row.kind, row.refId)}
+                className={cn(rowClass(row.counted), "w-full")}
+              >
+                <BreakdownCells row={row} />
+              </button>
+            ))}
           </div>
         ),
       )}

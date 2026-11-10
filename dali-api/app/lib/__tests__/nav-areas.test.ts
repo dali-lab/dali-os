@@ -6,6 +6,7 @@ import {
   areasFor,
   activeSubtabHref,
   hasSubnavRow,
+  iconForHref,
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
@@ -127,8 +128,9 @@ const CORE: RoleFlags = { ...NOBODY, isCore: true, canViewForms: true, canViewSt
 // nav-regroup was retired — the role-grouped set is the only nav, and areasFor
 // ignores flags. An empty map documents that at the call sites.
 const REGROUP = {};
-// The `community` flag: the Community area appears and Connect moves into it.
+// The `community` flag: the Community area appears and the alumni map moves into it.
 const COMMUNITY = { community: true };
+const REFER = { "refer-a-partner": true };
 
 describe("area sets", () => {
   it("collapses to five areas", () => {
@@ -210,7 +212,7 @@ describe("Core area", () => {
     const alum = hrefs({ ...CORE, isLabMentor: true, isAlumni: true });
     expect(alum).not.toContain("/mentorship");
     expect(alum).not.toContain("/attendance");
-    expect(alum).toEqual(expect.arrayContaining(["/projects", "/members", "/connect"]));
+    expect(alum).toEqual(expect.arrayContaining(["/projects", "/members", "/community"]));
   });
 
   it("never offers Forms as a Core sub-tab — forms live in the Drive", () => {
@@ -402,11 +404,10 @@ describe("Community area", () => {
   const community = () => areasFor(COMMUNITY).find((a) => a.key === "community")!;
   const lab = (flags = {}) => areasFor(flags).find((a) => a.key === "projects")!;
 
-  it("is hidden without the flag, and Connect stays in Lab", () => {
+  it("is hidden without the flag, and the alumni map stays in Lab", () => {
     expect(areasFor(REGROUP).map((a) => a.key)).not.toContain("community");
-    expect(lab().subtabs.map((t) => t.href)).toContain("/connect");
-    expect(areaForPath("/connect")?.key).toBe("projects");
-    expect(areaForPath("/community/gallery")).toBeUndefined();
+    expect(lab().subtabs.map((t) => t.href)).toContain("/community");
+    expect(areaForPath("/community")?.key).toBe("projects");
     expect(areaForPath("/resources")).toBeUndefined();
   });
 
@@ -418,23 +419,23 @@ describe("Community area", () => {
     ]);
   });
 
-  it("owns its four pages, with Connect as its hub and Blogs opening Resources", () => {
-    expect(community().hubPath).toBe("/connect");
+  it("owns its four pages, with Connect as its hub and Stories opening Resources", () => {
+    expect(community().hubPath).toBe("/community");
     expect(visibleSubtabs(community(), NOBODY).map((t) => t.href)).toEqual([
-      "/connect",
+      "/community",
       "/community/opportunities",
       "/community/gallery",
       "/resources",
     ]);
-    expect(community().subtabs.find((t) => t.href === "/resources")?.label).toBe("Blogs");
+    expect(community().subtabs.find((t) => t.href === "/resources")?.label).toBe("Stories");
   });
 
-  it("moves Connect out of Lab", () => {
-    expect(lab(COMMUNITY).subtabs.map((t) => t.href)).not.toContain("/connect");
-    expect(areaForPath("/connect", COMMUNITY)?.key).toBe("community");
+  it("moves the alumni map out of Lab", () => {
+    expect(lab(COMMUNITY).subtabs.map((t) => t.href)).not.toContain("/community");
+    expect(areaForPath("/community", COMMUNITY)?.key).toBe("community");
   });
 
-  it("owns and highlights its pages, including the blog post pages under Blogs", () => {
+  it("owns and highlights its pages, including the story pages under Stories", () => {
     expect(areaForPath("/community/gallery", COMMUNITY)?.key).toBe("community");
     expect(areaForPath("/resources", COMMUNITY)?.key).toBe("community");
     expect(areaForPath("/resources/blog/abc", COMMUNITY)?.key).toBe("community");
@@ -455,6 +456,41 @@ describe("Community area", () => {
   });
 });
 
+describe("refer-a-partner flag", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+  const labHrefs = (r: RoleFlags, flags: object) =>
+    visibleSubtabs(visibleAreas(r, flags).find((a) => a.key === "projects")!, r).map((t) => t.href);
+
+  it("shows Refer a partner under Lab for members and alumni while the flag is on", () => {
+    for (const flags of [REFER, { ...COMMUNITY, ...REFER }]) {
+      expect(labHrefs(NOBODY, flags)).toContain("/refer");
+      expect(labHrefs(ALUM, flags)).toContain("/refer");
+    }
+  });
+
+  it("hides Refer a partner from members and alumni while the flag is off", () => {
+    for (const flags of [REGROUP, COMMUNITY]) {
+      expect(labHrefs(NOBODY, flags)).not.toContain("/refer");
+      expect(labHrefs(ALUM, flags)).not.toContain("/refer");
+      expect(areaForPath("/refer", flags, NOBODY)).toBeUndefined();
+      expect(areaForPath("/refer", flags, ALUM)).toBeUndefined();
+    }
+  });
+
+  it("keeps the alumni community pages filtered independently of the refer flag", () => {
+    expect(labHrefs(ALUM, COMMUNITY)).toEqual([
+      "/projects",
+      "/community/opportunities",
+      "/community/gallery",
+      "/resources",
+    ]);
+  });
+
+  it("still resolves the Refer a partner icon for favorites with no flag context", () => {
+    expect(isAreaSubtabPath("/refer")).toBe(true);
+  });
+});
+
 describe("alumni nav", () => {
   const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
 
@@ -464,11 +500,10 @@ describe("alumni nav", () => {
     }
   });
 
-  it("gives alumni Projects, People and the community pages, but not Connect", () => {
-    const lab = visibleAreas(ALUM, COMMUNITY)[0];
+  it("gives alumni Projects and the community pages, with Community replacing People", () => {
+    const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
-      "/members",
       "/community/opportunities",
       "/community/gallery",
       "/resources",
@@ -477,10 +512,9 @@ describe("alumni nav", () => {
   });
 
   it("drops the community pages from the alumni Lab while the community flag is off", () => {
-    const lab = visibleAreas(ALUM, REGROUP)[0];
+    const lab = visibleAreas(ALUM, REFER)[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
-      "/members",
       "/refer",
     ]);
     expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();
@@ -491,8 +525,8 @@ describe("alumni nav", () => {
       expect(areaForPath(path, COMMUNITY, ALUM)?.key).toBe("projects");
       expect(areaForPath(path, COMMUNITY, NOBODY)?.key).toBe("community");
     }
-    expect(areaForPath("/community/gallery", REGROUP, NOBODY)).toBeUndefined();
-    expect(areaForPath("/connect", COMMUNITY, ALUM)).toBeUndefined();
+    expect(areaForPath("/resources", REGROUP, NOBODY)).toBeUndefined();
+    expect(areaForPath("/community", COMMUNITY, ALUM)).toBeUndefined();
   });
 
   it("hides Education from alumni only", () => {
@@ -507,7 +541,7 @@ describe("alumni nav", () => {
   });
 
   it("labels Connect as Home for alumni and keeps Home at / for everyone else", () => {
-    expect(homeNavItem(ALUM)).toMatchObject({ label: "Home", href: "/connect" });
+    expect(homeNavItem(ALUM)).toMatchObject({ label: "Home", href: "/community" });
     expect(homeNavItem(NOBODY)).toMatchObject({ label: "Home", href: "/" });
   });
 });
@@ -564,7 +598,7 @@ describe("onboarding placement", () => {
 
   it("works with the Community flag too", () => {
     expect(labHrefs(NOBODY, { ...ON, ...COMMUNITY })).toContain("/journeys");
-    expect(labHrefs(NOBODY, { ...ON, ...COMMUNITY })).not.toContain("/connect");
+    expect(labHrefs(NOBODY, { ...ON, ...COMMUNITY })).not.toContain("/community");
   });
 
   it("leaves alumni without it", () => {
@@ -606,7 +640,7 @@ describe("shellPageIcon", () => {
   });
 
   it("matches Home only on the exact home path", () => {
-    expect(shellPageIcon("/connect", "/connect")).toBe(Home);
+    expect(shellPageIcon("/community", "/community")).toBe(Home);
     expect(shellPageIcon("/projects", "/")).toBeUndefined();
   });
 
@@ -634,5 +668,44 @@ describe("education taskboard tab", () => {
 
   it("leaves the existing education tabs alone", () => {
     expect(tabsFor({}, CORE)).toEqual(["/education", "/education/offerings", "/education/compliance"]);
+  });
+});
+
+describe("core-taskboard flag", () => {
+  const coreHrefs = (flags: object) =>
+    visibleSubtabs(visibleAreas(CORE, flags).find((a) => a.key === "core")!, CORE).map((t) => t.href);
+
+  it("puts Taskboard first in the Core area while the flag is on", () => {
+    expect(coreHrefs({ "core-taskboard": true })[0]).toBe("/core");
+  });
+
+  it("puts Milestones right after Taskboard while the flag is on", () => {
+    expect(coreHrefs({ "core-taskboard": true }).slice(0, 2)).toEqual(["/core", "/core/milestones"]);
+  });
+
+  it("hides Taskboard and Milestones while the flag is off", () => {
+    expect(coreHrefs({})).not.toContain("/core/milestones");
+    expect(coreHrefs({})).not.toContain("/core");
+    expect(coreHrefs({})[0]).toBe("/core/staffing");
+  });
+
+  it("resolves the Milestones path and icon without flag context, for favorites", () => {
+    expect(isAreaSubtabPath("/core/milestones")).toBe(true);
+    expect(iconForHref("/core/milestones")).not.toBeNull();
+  });
+});
+
+describe("LayoutOS nav flags", () => {
+  it("passes every flag the nav reads to the sidebar", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+    const navSource = read("../nav-areas.ts");
+    const layoutSource = read("../../components/LayoutOS.tsx");
+    const navFlags = layoutSource.slice(layoutSource.indexOf("const navFlags = {"));
+    const navFlagBlock = navFlags.slice(0, navFlags.indexOf("}"));
+    const readByNav = new Set([...navSource.matchAll(/flags(?:\.([a-z]+)|\["([a-z-]+)"\])/g)].map((m) => m[1] ?? m[2]));
+    expect(readByNav.size).toBeGreaterThan(0);
+    for (const key of readByNav) expect(navFlagBlock, key).toContain(`useFeatureFlag('${key}')`);
   });
 });

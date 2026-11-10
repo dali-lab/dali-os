@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isLabMember } from "~/lib/roles";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { userTextWhere } from "~/lib/person-search";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 // GET /api/mentions/search?q=...
@@ -26,15 +27,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: {
       ...LAB_MEMBER_WHERE,
       handle: { not: null },
-      ...(q
-        ? {
-            OR: [
-              { handle: { contains: q.toLowerCase() } },
-              { firstName: { contains: q, mode: "insensitive" } },
-              { lastName: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
+      ...userTextWhere(q, ["handle", "firstName", "lastName"]),
     },
     select: { id: true, firstName: true, lastName: true, handle: true, photoUrl: true },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],

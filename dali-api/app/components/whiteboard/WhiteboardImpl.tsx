@@ -1,7 +1,7 @@
 import "@excalidraw/excalidraw/index.css";
 import "./whiteboard.css";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
+import { useNavigate, useRevalidator } from "react-router";
 import {
   Excalidraw,
   MainMenu,
@@ -11,7 +11,14 @@ import {
   CaptureUpdateAction,
 } from "@excalidraw/excalidraw";
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
-import { Trash2, Maximize2, Minimize2, Workflow, Frame, Wand2, FileText, Users, FolderSearch } from "lucide-react";
+import { Trash2, Maximize2, Minimize2, Workflow, Frame, Wand2, FolderSearch } from "lucide-react";
+import { PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
+import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
+import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
+import { ShareDialog } from "~/components/sharing/ShareDialog";
+import { Tooltip } from "~/components/ui/floating";
+import { MeetingStrip } from "~/components/meeting/MeetingStrip";
+import { meetingPlaceLabel, meetingSubtitle } from "~/components/meeting/meeting-strip-model";
 import { useDialog } from "~/components/ui/dialog";
 import { revealInDriveHref } from "~/lib/drive-crumbs";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
@@ -26,13 +33,22 @@ import type { WhiteboardEditorProps } from "./WhiteboardEditor";
 const TOP_BTN_CLASS =
   "flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]";
 
-// Buttons in the meeting-context bar above the canvas (a meeting whiteboard).
-const BAR_BTN_CLASS =
-  "inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground transition-colors hover:bg-muted";
-
 export default function WhiteboardImpl(props: WhiteboardEditorProps) {
-  // title/iconEmoji come through props but the shell breadcrumb renders them now.
-  const { pageId, canEdit, collabToken, userName, photoUrl, meeting } = props;
+  const { pageId, title, canEdit, collabToken, userName, photoUrl, meeting, canManageAccess, workspaceType } = props;
+  const navigate = useNavigate();
+  const revalidator = useRevalidator();
+  const [shareOpen, setShareOpen] = useState(false);
+  const [emoji, setEmoji] = useState(props.iconEmoji);
+  async function savePage(patch: { title?: string; iconEmoji?: string | null }) {
+    if (patch.iconEmoji !== undefined) setEmoji(patch.iconEmoji);
+    await fetch(`/api/documents/${pageId}`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    revalidator.revalidate();
+  }
   const dialog = useDialog();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const bindingRef = useRef<WhiteboardBinding | null>(null);
@@ -123,25 +139,62 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
           : "dali-whiteboard relative flex min-h-0 flex-1 flex-col bg-page"
       }
     >
-      {meeting && (
-        // Context bar for a meeting's whiteboard: the meeting title plus links
-        // across to its note and to the meeting page (its attendance surface).
-        // A slim bar rather than a panel over the full-bleed canvas.
-        <div className="flex items-center gap-3 border-b border-border bg-card px-4 py-2">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-            {meeting.title}
-          </span>
-          <div className="flex items-center gap-2">
-            {meeting.notePageId && (
-              <Link to={`/documents/${meeting.notePageId}`} className={BAR_BTN_CLASS}>
-                <FileText className="h-4 w-4 text-muted-foreground" /> Meeting note
-              </Link>
-            )}
-            <Link to={`/calendar/meeting/${meeting.id}`} className={BAR_BTN_CLASS}>
-              <Users className="h-4 w-4 text-muted-foreground" /> Attendance
-            </Link>
-          </div>
-        </div>
+      <PageBarTitle
+        title={title}
+        onRename={canEdit ? (name) => savePage({ title: name }) : undefined}
+        emoji={emoji}
+      />
+      {!isFullscreen && (
+        <PageTitleHeader
+          className="px-4 pt-4 pb-3"
+          title={title}
+          iconEmoji={emoji ?? null}
+          canEdit={canEdit}
+          onRename={(name) => savePage({ title: name })}
+          onIconChange={(next) => void savePage({ iconEmoji: next })}
+        />
+      )}
+      <PageBarPortal slot="actions">
+        <Tooltip content={isFullscreen ? "Exit full screen" : "Full screen"}>
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((v) => !v)}
+            aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+            className={pageBarTextButton(isFullscreen)}
+          >
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            <span className="hidden sm:inline">Full screen</span>
+          </button>
+        </Tooltip>
+        {canManageAccess && <PageBarShareButton onClick={() => setShareOpen(true)} />}
+      </PageBarPortal>
+      {canManageAccess && (
+        <ShareDialog
+          page={{ id: pageId, title, workspaceType }}
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          onChanged={() => revalidator.revalidate()}
+        />
+      )}
+      {meeting?.startIso && (
+        <MeetingStrip
+          title={meeting.title}
+          subtitle={meetingSubtitle({
+            startIso: meeting.startIso,
+            place: meetingPlaceLabel(meeting),
+            recordedMinutes: null,
+          })}
+          noteHref={meeting.notePageId ? `/documents/${meeting.notePageId}` : null}
+          attendance={{
+            label: meeting.attendance ? `${meeting.attendance.attended} of ${meeting.attendance.expected}` : "",
+            to: `/calendar/meeting/${meeting.id}`,
+          }}
+          recorder={
+            canEdit && meeting.notePageId
+              ? { phase: "before", onRecord: () => navigate(`/documents/${meeting.notePageId}?record=1`) }
+              : null
+          }
+        />
       )}
       <div className="relative min-h-0 flex-1">
       <Excalidraw
@@ -150,17 +203,19 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
         viewModeEnabled={!canEdit}
         theme={theme}
         isCollaborating
-        renderTopRightUI={() => (
-          <button
-            type="button"
-            onClick={() => setIsFullscreen((v) => !v)}
-            title={isFullscreen ? "Exit full screen" : "Full screen"}
-            aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
-            className={TOP_BTN_CLASS}
-          >
-            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
-        )}
+        renderTopRightUI={() =>
+          isFullscreen ? (
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(false)}
+              title="Exit full screen"
+              aria-label="Exit full screen"
+              className={TOP_BTN_CLASS}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </button>
+          ) : null
+        }
         onChange={(elements, appState, files) =>
           bindingRef.current?.onChange(elements, appState, files)
         }

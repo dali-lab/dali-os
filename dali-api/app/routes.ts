@@ -124,6 +124,7 @@ export default [
     // (app/core/routes/), so there is one implementation per surface and the
     // old URL keeps working; the source loaders redirect flag-on viewers here.
     route("core", "core/routes/core.hub.tsx"),
+    route("core/milestones", "core/routes/core.milestones.tsx"),
     route("core/staffing", "core/routes/core.staffing.tsx"),
     route("core/intent-to-work", "core/routes/core.intent-to-work.tsx"),
     route("core/intent-to-work/:userId", "core/routes/core.intent-to-work.$userId.tsx"),
@@ -240,15 +241,21 @@ export default [
     ),
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("slides/:pageId", "routes/slides.$pageId.tsx"),
+    route("slides/:pageId/export.pdf", "routes/slides.$pageId.export-pdf.ts"),
+    route("slides/:pageId/html-preview/:elementId", "routes/slides.$pageId.html-preview.$elementId.ts"),
+    route("slides/:pageId/present", "routes/slides.$pageId.present.tsx"),
+    route("slides/:pageId/presenter", "routes/slides.$pageId.presenter.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
-    // Connect: map of where alumni are based (members + alumni).
-    route("connect", "members/routes/connect.tsx"),
-    // Community: Connect lives here in the sidebar, alongside these.
+    // Community: map of where alumni are based (members + alumni).
+    route("community", "members/routes/community.tsx"),
+    route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
+    route("connect/*", "members/routes/connect-redirect.ts"),
+    // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
@@ -314,6 +321,7 @@ export default [
     // deep-link editor/responses surfaces plus the action-only mutation
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
+    route("api/rubrics", "routes/api.rubrics.ts"),
     route("api/folder-receivers", "routes/api.folder-receivers.ts"),
     route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
@@ -353,12 +361,11 @@ export default [
 
     // Help pages (same convention as Settings).
     route("help", "routes/help._index.tsx"),
-    route("help/getting-started", "routes/help.getting-started.tsx"),
     route("help/shortcuts", "routes/help.shortcuts.tsx"),
-    route("help/calendar", "routes/help.calendar.tsx"),
-    route("help/staffing", "routes/help.staffing.tsx"),
-    route("help/notifications", "routes/help.notifications.tsx"),
     route("help/mcp", "routes/help.mcp.tsx"),
+    route("help/articles", "routes/help.articles._index.tsx"),
+    route("help/articles/:slug", "routes/help.articles.$slug.tsx"),
+    route("help/:slug", "routes/help.$slug.tsx"),
   ]),
 
   // Applicant portal (lightweight layout). /portal is the non-member home
@@ -716,6 +723,15 @@ export default [
   route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
+  route("api/slides/:pageId/live", "routes/api.slides.$pageId.live.ts"),
+  route("api/slides/:pageId/live/stream", "routes/api.slides.$pageId.live.stream.ts"),
+  route("api/slide-templates", "routes/api.slide-templates.ts"),
+  route("api/slide-templates/:id", "routes/api.slide-templates.$id.ts"),
+  route("api/slides/:pageId/from-template", "routes/api.slides.$pageId.from-template.ts"),
+  route("api/slides/:pageId/polls", "routes/api.slides.$pageId.polls.ts"),
+  route("api/slides/:pageId/polls/stream", "routes/api.slides.$pageId.polls.stream.ts"),
+  route("api/slides/:pageId/reactions", "routes/api.slides.$pageId.reactions.ts"),
+  route("api/slides/:pageId/reactions/stream", "routes/api.slides.$pageId.reactions.stream.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
@@ -756,6 +772,7 @@ export default [
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
   route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
+  route("api/files/:id/share", "routes/api.files.$id.share.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),
@@ -780,6 +797,7 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+  route("slides/:pageId/export.pptx", "routes/slides.$pageId.export-pptx.ts"),
 
   // Public read-only render for "Anyone with the link" documents — registered
   // OUTSIDE the app-shell layout so an unauthenticated visitor can read it. The
@@ -938,6 +956,7 @@ export default [
   // AI document-writing assistant — requires an AI provider key to be active
   // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).
   route("api/ai/doc", "routes/api.ai.doc.ts"),
+  route("api/ask", "routes/api.ask.ts"),
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),

@@ -1,16 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/partners/lib/partner-notify.server", () => ({
   notifyPartners: vi.fn().mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 }),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getUserRoles } from "~/lib/roles";
 import {
   createPartnerReferral,
   hasPassedReferralQuiz,
   recordReferralQuizPass,
+  requireReferralsEnabled,
   setReferralReachedOut,
 } from "../referrals.server";
 
@@ -29,6 +34,27 @@ beforeEach(() => {
   db.user = {
     findUnique: vi.fn().mockResolvedValue({ firstName: "Pat", lastName: "Doe" }),
   };
+});
+
+describe("requireReferralsEnabled", () => {
+  const request = new Request("http://localhost/refer");
+  const roles = { isLabMember: true, isAlumni: false };
+
+  beforeEach(() => {
+    (getUserRoles as any).mockResolvedValue(roles);
+  });
+
+  it("checks the refer-a-partner flag against the viewer's roles", async () => {
+    (isFeatureEnabled as any).mockResolvedValue(true);
+    await expect(requireReferralsEnabled("u1", request)).resolves.toBeUndefined();
+    expect(getUserRoles).toHaveBeenCalledWith("u1", request);
+    expect(isFeatureEnabled).toHaveBeenCalledWith("refer-a-partner", "u1", roles, request);
+  });
+
+  it("throws a 404 when the flag is off for the viewer", async () => {
+    (isFeatureEnabled as any).mockResolvedValue(false);
+    await expect(requireReferralsEnabled("u1", request)).rejects.toMatchObject({ status: 404 });
+  });
 });
 
 describe("hasPassedReferralQuiz", () => {

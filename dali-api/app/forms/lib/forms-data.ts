@@ -14,6 +14,7 @@ import { createForm, deleteForm, moveForm, renameForm, setFormAudience, setFormI
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
+import { isPrefillFieldKey, prefillFieldFits } from "./prefill-fields";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
 import { newPublicToken, setFormPublished } from "./form-publish.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
@@ -22,6 +23,11 @@ import { isLayoutOnly } from "~/lib/form-answers";
 import { showIfProblems } from "~/lib/form-logic";
 import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
+
+function prefillFits(q: Question): boolean {
+  const key = q.data.prefill;
+  return key === undefined || (isPrefillFieldKey(key) && prefillFieldFits(key, q));
+}
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
@@ -138,6 +144,11 @@ export function validateVersionQuestions(
     )
       return {
         error: `"${q.data.label}" needs a term selected for its data source.`,
+        status: 400,
+      };
+    if (!prefillFits(q))
+      return {
+        error: `"${q.data.label}" can't fill in from that record.`,
         status: 400,
       };
   }
@@ -396,6 +407,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     questions: z.string(), // JSON-encoded Question[]
     description: z.string().optional(), // JSON-encoded ProseMirror doc
   }),
+  z.object({ intent: z.literal("discard-draft"), id: z.string().min(1) }),
   z.object({
     // "Publish" — freeze the working copy into a new version and publish the
     // form in one step (publishing is skipped for managed forms, whose
@@ -623,6 +635,20 @@ export async function runFormsAction(
       });
       return { ok: true };
     }
+    case "discard-draft": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await prisma.form.update({
+        where: { id: input.id },
+        data: { draftQuestions: Prisma.DbNull, draftIntro: null },
+      });
+      const { clearFormDraftRoom } = await import("~/collab/write");
+      await clearFormDraftRoom(input.id);
+      return { ok: true };
+    }
     case "save-version": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
@@ -810,11 +836,27 @@ export async function runFormsAction(
       return { ok: true };
     }
     case "update-form-audience": {
-      const exists = await prisma.form.findUnique({
-        where: { id: input.id },
-        select: { id: true },
+      const page = await prisma.page.findUnique({
+        where: { id: input.id, kind: "Form" },
+        select: {
+          id: true,
+          workspaceType: true,
+          workspaceId: true,
+          createdById: true,
+        },
       });
-      if (!exists) return { error: "Not found", status: 404 };
+      if (!page) return { error: "Not found", status: 404 };
+
+      // The audience rewrites the page's general access and its group shares,
+      // which is the Share dialog's power — edit access on the questions
+      // isn't enough.
+      const { canManageSharing } = await import("~/lib/page-share-access.server");
+      if (!(await canManageSharing(page, userId))) {
+        return {
+          error: "Only someone who manages this form's sharing can change its audience.",
+          status: 403,
+        };
+      }
 
       let ids: string[] = [];
       if (input.audience === "Groups") {

@@ -4,7 +4,7 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { MemoryRouter, useLocation, useNavigate } from "react-router";
 import { useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
-import { setKeptSidePanel } from "~/lib/side-panel";
+import { ASK_PANEL, setKeptSidePanel } from "~/lib/side-panel";
 
 vi.mock("~/components/FeatureFlags", () => ({ useFeatureFlag: () => true }));
 
@@ -16,6 +16,7 @@ let panelMounts = 0;
 let api: {
   navigate: ReturnType<typeof useNavigate>;
   open: (id: string) => void;
+  openAsk: () => void;
   close: () => void;
 };
 
@@ -31,7 +32,7 @@ function Harness() {
   const navigate = useNavigate();
   const location = useLocation();
   useKeepSidePanel();
-  api = { navigate, open: (id) => open({ type: "doc", id }), close };
+  api = { navigate, open: (id) => open({ type: "doc", id }), openAsk: () => open(ASK_PANEL), close };
   return (
     <>
       <span data-testid="at">{location.pathname + location.search}</span>
@@ -53,6 +54,10 @@ function mount(entry = "/one") {
   );
 }
 
+const switchTab = (url: string) =>
+  act(() => {
+    void api.navigate(url, { replace: true, state: { tabSwitch: true } });
+  });
 const shown = () => container.querySelector("[data-testid=panel]")?.textContent ?? null;
 const at = () => container.querySelector("[data-testid=at]")!.textContent;
 
@@ -63,6 +68,39 @@ afterEach(() => {
   panelMounts = 0;
   window.history.replaceState(null, "", "/");
   vi.unstubAllGlobals();
+});
+
+describe("opening the side panel", () => {
+  it("shows at once without a router navigation, so the page's loaders don't re-run", () => {
+    mount("/one?tab=drive");
+    act(() => api.open("abc"));
+    expect(shown()).toBe("abc");
+    expect(at()).toBe("/one?tab=drive");
+    expect(new URL(window.location.href).searchParams.get("side")).toBe("doc:abc");
+  });
+
+  it("closes after an instant open", () => {
+    mount();
+    act(() => api.open("abc"));
+    act(() => api.close());
+    expect(shown()).toBeNull();
+    expect(new URL(window.location.href).searchParams.get("side")).toBeNull();
+  });
+
+  it("switches panels through the router when the address already names one", () => {
+    mount("/one?side=doc:xyz");
+    expect(shown()).toBe("xyz");
+    act(() => api.open("abc"));
+    expect(shown()).toBe("abc");
+    expect(at()).toBe("/one?side=doc%3Aabc");
+  });
+
+  it("navigates below md, so Back can close the panel", () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: true }));
+    mount("/one");
+    act(() => api.open("abc"));
+    expect(at()).toBe("/one?side=doc%3Aabc");
+  });
 });
 
 describe("keeping the side panel across navigation", () => {
@@ -129,6 +167,38 @@ describe("keeping the side panel across navigation", () => {
     act(() => {
       void api.navigate("/tab-b", { replace: true, state: { tabSwitch: true } });
     });
+    expect(shown()).toBeNull();
+  });
+
+  it("opens a document on a tab moved to", () => {
+    mount();
+    act(() => api.open("abc"));
+    switchTab("/tab-b");
+    act(() => api.open("xyz"));
+    expect(shown()).toBe("xyz");
+  });
+
+  it("opens Ask on a tab moved to", () => {
+    mount();
+    switchTab("/tab-b");
+    act(() => api.openAsk());
+    expect(shown()).toBe("dali");
+  });
+
+  it("keeps Ask open on a move to another tab", () => {
+    mount();
+    act(() => api.openAsk());
+    switchTab("/tab-b");
+    expect(shown()).toBe("dali");
+    expect(panelMounts).toBe(1);
+  });
+
+  it("keeps Ask closed on a tab whose url still names it", () => {
+    mount();
+    act(() => api.openAsk());
+    switchTab("/tab-b");
+    act(() => api.close());
+    switchTab("/tab-a?side=ask:dali");
     expect(shown()).toBeNull();
   });
 

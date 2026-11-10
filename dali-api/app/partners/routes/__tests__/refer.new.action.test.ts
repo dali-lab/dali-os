@@ -13,12 +13,14 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/partners/lib/referrals.server", () => ({
   hasPassedReferralQuiz: vi.fn(),
   createPartnerReferral: vi.fn(),
+  requireReferralsEnabled: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
 import {
   createPartnerReferral,
   hasPassedReferralQuiz,
+  requireReferralsEnabled,
 } from "~/partners/lib/referrals.server";
 import { action } from "~/partners/routes/refer.new";
 
@@ -41,9 +43,18 @@ beforeEach(() => {
   });
   (hasPassedReferralQuiz as any).mockResolvedValue(true);
   (createPartnerReferral as any).mockResolvedValue({ id: "r1" });
+  (requireReferralsEnabled as any).mockResolvedValue(undefined);
 });
 
 describe("refer.new action", () => {
+  it("404s without creating a referral when the refer-a-partner flag is off", async () => {
+    (requireReferralsEnabled as any).mockRejectedValue(new Response("Not found", { status: 404 }));
+    await expect(post({ tier: "Cold", partnerName: "Someone", context: "A lead" })).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(createPartnerReferral).not.toHaveBeenCalled();
+  });
+
   it("bounces back to /refer when the quiz hasn't been passed — even if someone POSTs straight to the form", async () => {
     (hasPassedReferralQuiz as any).mockResolvedValue(false);
     const res = (await post({

@@ -8,6 +8,8 @@ import { OS_MENU_ITEM_CLASS } from "~/components/ui/floating/styles";
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'
 import { stripAppTitle } from '~/lib/page-title'
+import { usePageBarTitle } from '~/components/shell/page-bar-slot'
+import { RenameCrumb, TitleCrumbIcon } from '~/components/shell/PageBarTitleCrumb'
 
 export type Crumb = {
   label: string
@@ -136,7 +138,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   forms: 'Forms',
   calendar: 'Calendar',
   mentorship: 'Mentorship',
-  connect: 'Connect',
+  community: 'Community',
   profile: 'Profile',
   settings: 'Settings',
   help: 'Help',
@@ -438,6 +440,7 @@ export function usePageTrail(): ResolvedTrail | null {
 }
 
 export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {
+  const title = usePageBarTitle()
   if (crumbs.length === 0) return null
   return (
     <nav
@@ -462,8 +465,10 @@ export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {
         return (
           <span key={i} className={cn('flex items-center gap-1.5', leaf ? 'min-w-0' : 'shrink-0')}>
             {separator}
-            {c.icon}
-            {c.siblings ? (
+            {leaf && title ? <TitleCrumbIcon title={title} fallback={c.icon} /> : c.icon}
+            {leaf && title?.onRename && !c.to ? (
+              <RenameCrumb title={title.title || c.label} onRename={title.onRename} />
+            ) : c.siblings ? (
               <CrumbSwitcher label={c.label} siblings={c.siblings} />
             ) : c.to ? (
               <Link to={c.to} className="transition-colors hover:text-foreground">

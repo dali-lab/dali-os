@@ -123,8 +123,10 @@ test.describe('groups', () => {
 
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Name').fill(groupName);
-    await dialog.getByPlaceholder('Search by name or email…').fill('Mira');
-    await dialog.getByRole('button', { name: /Mira Chen/ }).click();
+    await dialog.getByRole('button', { name: 'Members', exact: true }).click();
+    await page.getByPlaceholder('Search by name or email').fill('Mira');
+    await page.getByRole('option', { name: /Mira Chen/ }).click();
+    await dialog.getByLabel('Name').click();
     const created = page.waitForResponse(
       (r) => r.request().method() === 'POST' && r.url().includes('/members/groups'),
     );

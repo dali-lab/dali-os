@@ -3,7 +3,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
-// Same audience as Connect: current members and alumni, behind the `community` flag.
+// Same audience as Community: current members and alumni, behind the `community` flag.
 export async function requireCommunityViewer(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) throw redirectToLogin(request);

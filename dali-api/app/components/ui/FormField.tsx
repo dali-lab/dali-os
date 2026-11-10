@@ -4,6 +4,7 @@ import { useOsChrome } from "~/components/os-chrome";
 /** A labelled text input or textarea. Sits inside an `.os-form` container, which dresses the control. */
 export function FormField({
   label,
+  labelHidden = false,
   value,
   onChange,
   placeholder,
@@ -11,8 +12,10 @@ export function FormField({
   multiline = false,
   rows = 3,
   mono = false,
+  onKeyDown,
 }: {
   label: string;
+  labelHidden?: boolean;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -20,12 +23,13 @@ export function FormField({
   multiline?: boolean;
   rows?: number;
   mono?: boolean;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 }) {
   const { fieldLabel } = useOsChrome();
   const control = cn("w-full", mono && "font-mono text-[13px]", multiline && "resize-y leading-6");
   return (
     <label className={fieldLabel}>
-      <span>{label}</span>
+      <span className={labelHidden ? "sr-only" : undefined}>{label}</span>
       {multiline ? (
         <textarea
           rows={rows}
@@ -33,6 +37,7 @@ export function FormField({
           placeholder={placeholder}
           spellCheck={!mono}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
           className={control}
         />
       ) : (

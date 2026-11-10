@@ -324,6 +324,82 @@ describe("pages + files tools", () => {
     expect(out).toMatchObject({ id: "pg1", blockCount: 2 });
   });
 
+  it("set_page_content keeps a lab member mention and warns about an unknown page", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", kind: "FreeForm", workspaceType: "Project", workspaceId: "p1", contentDocId: null, archivedAt: null,
+    });
+    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
+    vi.mocked(prisma.user.findMany).mockResolvedValue([{ id: "u2", handle: "ana" }] as never);
+    mockPrisma.page.findMany.mockResolvedValue([]);
+    const out = await runSetPageContent("u1", {
+      pageId: "pg1",
+      markdown: "Ask [@Ana Ruiz](/members/u2) about [Old plan](/documents/gone)",
+    });
+    expect(out.warnings).toEqual(['No page with id gone: "Old plan" was written as plain text']);
+    const [, blocks] = vi.mocked(replaceCollabDocContent).mock.calls[0]!;
+    expect((blocks as any[])[0].content).toEqual([
+      { type: "text", text: "Ask ", styles: {} },
+      { type: "mention", props: { id: "u2", label: "ana" } },
+      { type: "text", text: " about ", styles: {} },
+      { type: "text", text: "Old plan", styles: {} },
+    ]);
+  });
+
+  it("set_page_content leaves warnings out when every reference checks out", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", kind: "FreeForm", workspaceType: "Project", workspaceId: "p1", contentDocId: null, archivedAt: null,
+    });
+    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
+    const out = await runSetPageContent("u1", { pageId: "pg1", markdown: "plain" });
+    expect(out).not.toHaveProperty("warnings");
+  });
+
+  it("create_page returns warnings for references it wrote as plain text", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findFirst.mockResolvedValue(null);
+    mockPrisma.page.create.mockResolvedValue({ id: "pg-new" });
+    vi.mocked(prisma.user.findMany).mockResolvedValue([] as never);
+    const out = await runCreatePage("u1", { projectId: "p1", title: "Imported", content: "cc [@Partner](/members/x9)" });
+    expect((out as { warnings?: string[] }).warnings).toEqual(['No member with id x9: "Partner" was written as plain text']);
+    const [, blocks] = vi.mocked(replaceCollabDocContent).mock.calls[0]!;
+    expect((blocks as any[])[0].content.map((c: any) => c.type)).toEqual(["text", "text"]);
+  });
+
+  it("create_page without content checks nothing and has no warnings", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findFirst.mockResolvedValue(null);
+    mockPrisma.page.create.mockResolvedValue({ id: "pg-new" });
+    const out = await runCreatePage("u1", { projectId: "p1", title: "Empty" });
+    expect(out).not.toHaveProperty("warnings");
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it("read_page writes mentions as links that set_page_content reads back", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", title: "T", kind: "FreeForm", workspaceType: "Lab", workspaceId: null, contentDocId: null, iconEmoji: null,
+    });
+    vi.mocked(readDocAsBlocks).mockResolvedValue([
+      {
+        id: "b",
+        type: "paragraph",
+        props: {},
+        content: [
+          { type: "mention", props: { id: "u2", label: "ana" } },
+          { type: "text", text: " ", styles: {} },
+          { type: "pageMention", props: { pageId: "pg9", label: "Plan" } },
+        ],
+        children: [],
+      },
+    ] as never);
+    const out = await runReadPage("u1", { pageId: "pg1" });
+    expect(out.markdown.trim()).toBe("[@ana](/members/u2) [Plan](/documents/pg9)");
+  });
+
   it("set_page_content denies callers who are neither Core nor staffed", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(false);

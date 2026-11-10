@@ -10,12 +10,14 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/partners/lib/referrals.server", () => ({
   hasPassedReferralQuiz: vi.fn(),
   recordReferralQuizPass: vi.fn(),
+  requireReferralsEnabled: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
 import {
   hasPassedReferralQuiz,
   recordReferralQuizPass,
+  requireReferralsEnabled,
 } from "~/partners/lib/referrals.server";
 import { action } from "~/partners/routes/refer";
 import { REFERRAL_QUIZ } from "~/partners/lib/referral-quiz";
@@ -44,9 +46,17 @@ beforeEach(() => {
     sessionId: "s1",
   });
   (hasPassedReferralQuiz as any).mockResolvedValue(false);
+  (requireReferralsEnabled as any).mockResolvedValue(undefined);
 });
 
 describe("refer action — quiz submission", () => {
+  it("404s without recording a pass when the refer-a-partner flag is off", async () => {
+    (requireReferralsEnabled as any).mockRejectedValue(new Response("Not found", { status: 404 }));
+    await expect(post(allCorrectAnswers())).rejects.toMatchObject({ status: 404 });
+    expect(requireReferralsEnabled).toHaveBeenCalledWith("u1", expect.any(Request));
+    expect(recordReferralQuizPass).not.toHaveBeenCalled();
+  });
+
   it("records a pass and redirects to /refer when every answer is right", async () => {
     const res = (await post(allCorrectAnswers())) as Response;
     expect(recordReferralQuizPass).toHaveBeenCalledWith(

@@ -1,4 +1,5 @@
-import { Fragment, useState, useRef, useCallback, useEffect } from 'react'
+import { Fragment, useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { autoUpdate, flip, FloatingPortal, offset, shift, useFloating } from '@floating-ui/react'
 import { cn } from '~/lib/cn'
 import { X } from 'lucide-react'
 import type { Question } from '~/types'
@@ -36,20 +37,15 @@ interface Annotation {
   color: HighlightColor
 }
 
+// The anchor's box relative to the field, so the popover follows it on scroll.
 interface Popover {
-  // Coordinates are relative to the AnnotatableField container so the popover
-  // scrolls with the annotated content rather than sticking to the viewport.
-  x: number
-  y: number
-  anchorTop: number
+  anchor: { left: number; top: number; width: number; height: number }
   start: number
   end: number
   fieldKey: string
   annotationId?: string
 }
 
-const POPOVER_WIDTH = 256
-const POPOVER_ESTIMATED_HEIGHT = 220
 const VIEWPORT_MARGIN = 8
 
 // Hover tooltip for existing annotations. Positioned with fixed viewport
@@ -57,28 +53,9 @@ const VIEWPORT_MARGIN = 8
 const TOOLTIP_MAX_WIDTH = 288
 const TOOLTIP_ESTIMATED_HEIGHT = 80
 
-function clampPopoverPosition(
-  x: number,
-  y: number,
-  anchorTop: number,
-  container: HTMLElement | null,
-) {
-  // Translate the viewport-edge clamp into container-relative coordinates so
-  // the popover stays on-screen at the moment of opening but then moves with
-  // the page as the user scrolls.
-  const containerRect = container?.getBoundingClientRect()
-  const offsetX = containerRect?.left ?? 0
-  const offsetY = containerRect?.top ?? 0
-  const vw = window.innerWidth
-  const vh = window.innerHeight
-  const minLeft = VIEWPORT_MARGIN - offsetX
-  const maxLeft = vw - POPOVER_WIDTH - VIEWPORT_MARGIN - offsetX
-  const left = Math.max(minLeft, Math.min(x - POPOVER_WIDTH / 2, maxLeft))
-  const flipsAbove = y + offsetY + POPOVER_ESTIMATED_HEIGHT + VIEWPORT_MARGIN > vh
-  const top = flipsAbove
-    ? Math.max(VIEWPORT_MARGIN - offsetY, anchorTop - POPOVER_ESTIMATED_HEIGHT - VIEWPORT_MARGIN)
-    : y
-  return { left, top }
+function relativeBox(rect: DOMRect, container: HTMLElement): Popover['anchor'] {
+  const c = container.getBoundingClientRect()
+  return { left: rect.left - c.left, top: rect.top - c.top, width: rect.width, height: rect.height }
 }
 
 const COLOR_CLASSES: Record<HighlightColor, string> = {
@@ -104,7 +81,7 @@ function AnnotationMark({
 }: {
   ann: Annotation
   highlighted: string
-  onAnnotationClick: (annotationId: string, x: number, y: number) => void
+  onAnnotationClick: (annotationId: string, rect: DOMRect) => void
 }) {
   const [tooltip, setTooltip] = useState<TooltipPosition | null>(null)
   const ref = useRef<HTMLElement>(null)
@@ -138,12 +115,13 @@ function AnnotationMark({
         onMouseLeave={() => setTooltip(null)}
         onClick={(e) => {
           e.stopPropagation()
-          onAnnotationClick(ann.id, e.clientX, e.clientY)
+          onAnnotationClick(ann.id, e.currentTarget.getBoundingClientRect())
         }}
       >
         {highlighted}
       </mark>
       {tooltip && (
+        <FloatingPortal>
         <span
           className="fixed z-50 pointer-events-none -translate-x-1/2"
           style={{ left: tooltip.left, top: tooltip.top, bottom: tooltip.bottom, maxWidth: TOOLTIP_MAX_WIDTH }}
@@ -154,6 +132,7 @@ function AnnotationMark({
           </span>
           {!tooltip.below && <span className="block w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />}
         </span>
+        </FloatingPortal>
       )}
     </span>
   )
@@ -163,7 +142,7 @@ function renderAnnotatedText(
   text: string,
   fieldKey: string,
   annotations: Annotation[],
-  onAnnotationClick: (annotationId: string, x: number, y: number) => void,
+  onAnnotationClick: (annotationId: string, rect: DOMRect) => void,
   pendingRange?: { start: number; end: number; color: HighlightColor },
 ) {
   const pending: Annotation[] = pendingRange
@@ -241,12 +220,8 @@ function AnnotatableField({
     const start = preRange.toString().length
     const end = start + range.toString().length
     if (start === end) return
-    const rect = range.getBoundingClientRect()
-    const containerRect = container.getBoundingClientRect()
     setPopover({
-      x: rect.left + rect.width / 2 - containerRect.left,
-      y: rect.bottom + 8 - containerRect.top,
-      anchorTop: rect.top - containerRect.top,
+      anchor: relativeBox(range.getBoundingClientRect(), container),
       start,
       end,
       fieldKey,
@@ -257,16 +232,11 @@ function AnnotatableField({
   }, [fieldKey, readOnly])
 
   const handleAnnotationClick = useCallback(
-    (annotationId: string, x: number, y: number) => {
+    (annotationId: string, rect: DOMRect) => {
       const ann = annotations.find((a) => a.id === annotationId)
-      if (!ann) return
-      const containerRect = containerRef.current?.getBoundingClientRect()
-      const offsetX = containerRect?.left ?? 0
-      const offsetY = containerRect?.top ?? 0
+      if (!ann || !containerRef.current) return
       setPopover({
-        x: x - offsetX,
-        y: y + 8 - offsetY,
-        anchorTop: y - offsetY,
+        anchor: relativeBox(rect, containerRef.current),
         start: ann.start,
         end: ann.end,
         fieldKey,
@@ -277,6 +247,26 @@ function AnnotatableField({
     },
     [annotations, fieldKey],
   )
+
+  const anchor = popover?.anchor
+  const reference = useMemo(
+    () =>
+      anchor && {
+        contextElement: containerRef.current ?? undefined,
+        getBoundingClientRect: () => {
+          const c = containerRef.current?.getBoundingClientRect()
+          return new DOMRect((c?.left ?? 0) + anchor.left, (c?.top ?? 0) + anchor.top, anchor.width, anchor.height)
+        },
+      },
+    [anchor],
+  )
+  const { refs, floatingStyles } = useFloating({
+    open: !!popover,
+    placement: 'bottom',
+    whileElementsMounted: autoUpdate,
+    middleware: [offset(8), flip({ padding: VIEWPORT_MARGIN }), shift({ padding: VIEWPORT_MARGIN })],
+  })
+  useEffect(() => refs.setPositionReference(reference || null), [refs, reference])
 
   const handleSave = () => {
     if (!popover) return
@@ -311,11 +301,14 @@ function AnnotatableField({
       </div>
 
       {popover && (
-        <>
+        <FloatingPortal>
           <div className="fixed inset-0 z-40" onClick={() => setPopover(null)} />
           <div
-            className="absolute z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64 max-w-[calc(100vw-2rem)]"
-            style={clampPopoverPosition(popover.x, popover.y, popover.anchorTop, containerRef.current)}
+            ref={refs.setFloating}
+            role="dialog"
+            aria-label={readOnly ? 'Annotation' : popover.annotationId ? 'Edit annotation' : 'Add annotation'}
+            className="z-50 bg-card rounded-xl shadow-xl border border-border p-3 w-64 max-w-[calc(100vw-2rem)]"
+            style={floatingStyles}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-2">
@@ -358,7 +351,7 @@ function AnnotatableField({
               </>
             )}
           </div>
-        </>
+        </FloatingPortal>
       )}
     </div>
   )

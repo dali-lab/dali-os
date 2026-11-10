@@ -60,6 +60,8 @@ const click = async (el: Element | null) => {
 };
 const byText = (sel: string, text: string) =>
   all(sel).find((el) => el.textContent?.trim().startsWith(text)) ?? null;
+const PILL = "button[aria-label$='. Edit']";
+const inPage = (sel: string) => [...document.querySelectorAll<HTMLElement>(sel)];
 
 describe("ColumnFilters", () => {
   it("opens the field menu, then the value picker, and applies a value", async () => {
@@ -80,11 +82,12 @@ describe("ColumnFilters", () => {
 
   it("shows per-option counts honoring the other columns' filters", async () => {
     await mount([{ columnKey: "role", values: ["Developer"] }]);
-    await click(q("button[aria-haspopup='listbox']"));
-    const design = byText("[role='option']", "Design");
-    const engineering = byText("[role='option']", "Engineering");
+    await click(q(PILL));
+    const roleOptions = inPage("[role='option']").map((o) => o.textContent);
     // Role pill is open: its own filter must not constrain its counts...
-    expect(q("[aria-label='Role']")).not.toBeNull();
+    expect(document.querySelector("[role='listbox'][aria-label^='Role']")).not.toBeNull();
+    expect(roleOptions.some((t) => t?.startsWith("Designer"))).toBe(true);
+    expect(roleOptions.some((t) => t?.startsWith("Developer"))).toBe(true);
     // ...so open Domain through the add menu instead for cross-column counts.
     await click(q("button[aria-haspopup='menu']"));
     await click(byText("[role='menuitem']", "Domain"));
@@ -94,7 +97,6 @@ describe("ColumnFilters", () => {
         ?.textContent;
     expect(count("Design")).toBe("1");
     expect(count("Engineering")).toBe("1");
-    expect(design ?? engineering).not.toBeNull();
   });
 
   it("filters picker options by search", async () => {
@@ -120,7 +122,7 @@ describe("ColumnFilters", () => {
     expect(container.textContent).toContain("Design, Engineering");
 
     await click(q("button[aria-label='Remove Domain filter']"));
-    expect(q("button[aria-haspopup='listbox']")).toBeNull();
+    expect(q(PILL)).toBeNull();
     expect(container.textContent).toContain("3 members");
   });
 
@@ -129,9 +131,9 @@ describe("ColumnFilters", () => {
       { columnKey: "domain", values: ["Design"] },
       { columnKey: "role", values: ["Developer"] },
     ]);
-    expect(all("button[aria-haspopup='listbox']")).toHaveLength(2);
+    expect(all(PILL)).toHaveLength(2);
     await click(byText("button", "Clear all"));
-    expect(all("button[aria-haspopup='listbox']")).toHaveLength(0);
+    expect(all(PILL)).toHaveLength(0);
   });
 
   it("lists a column's options in its given order with display labels", async () => {
@@ -161,13 +163,38 @@ describe("ColumnFilters", () => {
     });
 
     expect(q("button[aria-label='Term: 26F (current). Edit']")).not.toBeNull();
-    await click(q("button[aria-haspopup='listbox']"));
-    const options = all("[role='option']").map((o) => o.querySelector(".truncate")?.textContent);
+    await click(q(PILL));
+    const options = inPage("[role='option']").map((o) => o.querySelector(".truncate")?.textContent);
     expect(options).toEqual(["26F (current)", "25W", "24X", "24F"]);
   });
 
   it("badges the Filter button with the number of picked values", async () => {
     await mount([{ columnKey: "domain", values: ["Design", "Engineering"] }]);
     expect(q("button[aria-haspopup='menu']")!.textContent).toContain("2");
+  });
+
+  it("toggles a value from a pill and keeps its panel open", async () => {
+    await mount([{ columnKey: "domain", values: ["Design"] }]);
+    await click(q(PILL));
+    const engineering = inPage("[role='option']").find((o) => o.textContent?.startsWith("Engineering"))!;
+    await click(engineering);
+    expect(container.textContent).toContain("Design, Engineering");
+    expect(document.querySelector("input[type='search']")).not.toBeNull();
+  });
+
+  it("removes the pill when its last value is unticked", async () => {
+    await mount([{ columnKey: "domain", values: ["Design"] }]);
+    await click(q(PILL));
+    const design = inPage("[role='option']").find((o) => o.textContent?.startsWith("Design"))!;
+    await click(design);
+    expect(q(PILL)).toBeNull();
+  });
+
+  it("clears a column from the add menu's value list", async () => {
+    await mount([{ columnKey: "domain", values: ["Design"] }]);
+    await click(q("button[aria-haspopup='menu']"));
+    await click(byText("[role='menuitem']", "Domain"));
+    await click(byText("button", "Clear domain"));
+    expect(q(PILL)).toBeNull();
   });
 });

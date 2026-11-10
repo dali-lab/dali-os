@@ -8,7 +8,23 @@ import { redirectToLogin } from "~/lib/login-next";
 import { parseJson } from "~/lib/validate";
 import { cn } from "~/lib/cn";
 import { recordPageVisit } from "~/lib/user-pages.server";
-import { deckAccess, loadDeck, saveDeck } from "~/lib/slide-decks.server";
+import { deckAccess, loadDeck, migrateDeckOnOpen, saveDeck } from "~/lib/slide-decks.server";
+import { slidesLiveEnabled } from "~/lib/slide-live.server";
+import { readLiveDeck, transactDeck } from "~/collab/deck-live.server";
+import { deckMissingSlots, toRenderDeck } from "~/collab/read-deck.server";
+import { repairDeckSlots } from "~/components/slides/deck/deck-ops";
+import { getCollabToken } from "~/lib/collab-token.server";
+import { getPresenceUser } from "~/lib/presence-user";
+import { parseSlideLink } from "~/lib/slide-comments";
+import { isCore } from "~/lib/roles";
+import { canManageSharing } from "~/lib/page-share-access.server";
+import { deckAccessMode } from "~/components/slides/deck/model";
+import { SlidesEditor } from "~/components/slides/collab/SlidesEditor";
+import { DeckFollowLayer } from "~/components/slides/live/DeckFollowLayer";
+import { PresentMenu } from "~/components/slides/live/PresentMenu";
+import { ReadOnlyDeck } from "~/components/slides/collab/ReadOnlyDeck";
+import { PageBarTitle } from "~/components/shell/page-bar-slot";
+import { DeckDownloadItems } from "~/components/slides/pptx/DeckDownloadItems";
 import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
 import { loadDrivePageAncestry } from "~/lib/drive-page-trail.server";
 import { prisma } from "~/lib/db.server";
@@ -48,11 +64,12 @@ async function requireMember(request: Request) {
   if (await isNonMember(auth, request)) throw redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) throw partnerRedirect;
-  return auth.user.sub;
+  return auth.user;
 }
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const userId = await requireMember(request);
+  const user = await requireMember(request);
+  const userId = user.sub;
   const page = await prisma.page.findUnique({ where: { id: params.pageId }, select: { kind: true } });
   // A page of another kind reached via this URL opens on its own surface.
   if (page && page.kind !== "Slides") throw redirect(`/documents/${params.pageId}`);
@@ -60,11 +77,50 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   if (!access.ok) throw new Response("Not found", { status: 404 });
   const full = await prisma.page.findUniqueOrThrow({
     where: { id: params.pageId },
-    select: { title: true, iconEmoji: true, workspaceType: true, workspaceId: true, parentPageId: true },
+    select: { title: true, iconEmoji: true, workspaceType: true, workspaceId: true, parentPageId: true, createdById: true },
   });
-  const [deck, ancestry] = await Promise.all([loadDeck(params.pageId), loadDrivePageAncestry(full, userId, request)]);
+  const ancestry = await loadDrivePageAncestry(full, userId, request);
   recordPageVisit(userId, params.pageId, request);
-  return { pageId: params.pageId, canEdit: access.canEdit, ...ancestry, ...deck };
+
+  const storage = await migrateDeckOnOpen(userId, params.pageId, request);
+  if (storage === "json") {
+    const deck = await loadDeck(params.pageId);
+    return { mode: "legacy" as const, pageId: params.pageId, canEdit: access.canEdit, ...ancestry, ...deck };
+  }
+
+  const live = await readLiveDeck(params.pageId);
+  const known = deckAccessMode(live.read.v) === "edit";
+  if (access.canEdit && known && deckMissingSlots(live.read)) await transactDeck(params.pageId, userId, repairDeckSlots);
+  const canManageAccess = await canManageSharing(
+    { id: params.pageId, workspaceType: full.workspaceType, workspaceId: full.workspaceId, createdById: full.createdById },
+    userId,
+  );
+  let collab: { token: string; userId: string; userName: string; photoUrl: string | null } | null = null;
+  if (known) {
+    const token = await getCollabToken(request);
+    if (token) {
+      const fallback = [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email;
+      const presence = await getPresenceUser(userId, fallback);
+      collab = { token, userId, userName: presence?.name ?? fallback, photoUrl: presence?.photoUrl ?? null };
+    }
+  }
+  const slidesLive = await slidesLiveEnabled(userId, request);
+  return {
+    ...ancestry,
+    mode: "live" as const,
+    slidesLive,
+    viewerId: userId,
+    pageId: params.pageId,
+    canEdit: access.canEdit,
+    canComment: access.canComment,
+    link: parseSlideLink(new URL(request.url).searchParams),
+    canModerateComments: await isCore(userId, request),
+    canManageAccess,
+    workspaceType: full.workspaceType,
+    unknownVersion: !known,
+    collab,
+    deck: collab && !slidesLive ? null : toRenderDeck(live.read),
+  };
 }
 
 // A deck carries whole slide bodies, so it can outgrow the 1 MB default.
@@ -72,7 +128,7 @@ const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const bodySchema = z.object({ intent: z.literal("save"), slides: slidesSchema, version: z.string() });
 
 export async function action({ request, params }: Route.ActionArgs) {
-  const userId = await requireMember(request);
+  const { sub: userId } = await requireMember(request);
   const body = await parseJson(request, bodySchema, MAX_BODY_BYTES);
   if (body instanceof Response) return body;
   const slides = parseSlides(body.slides);
@@ -87,6 +143,42 @@ export function shouldRevalidate({ formMethod, defaultShouldRevalidate }: { form
 }
 
 export default function SlideDeckPage({ loaderData }: Route.ComponentProps) {
+  if (loaderData.mode === "live") {
+    const { collab, deck, title, iconEmoji, pageId, canManageAccess, workspaceType, unknownVersion, slidesLive, viewerId, canEdit, canComment, canModerateComments, link } = loaderData;
+    const page = collab ? (
+      <SlidesEditor
+        pageId={pageId}
+        title={title}
+        iconEmoji={iconEmoji ?? null}
+        canEdit={canEdit}
+        canComment={canComment}
+        canModerateComments={canModerateComments}
+        canManageAccess={canManageAccess}
+        workspaceType={workspaceType}
+        collab={collab}
+        link={link}
+        actionsSlot={
+          slidesLive && canEdit ? ({ currentSlideId }) => <PresentMenu pageId={pageId} currentSlideId={currentSlideId} /> : undefined
+        }
+      />
+    ) : (
+      <>
+        <PageBarTitle title={title} emoji={iconEmoji ?? null} />
+        <DeckDownloadItems pageId={pageId} />
+        <ReadOnlyDeck
+          slides={deck?.slides ?? []}
+          themeId={deck?.themeId ?? "dali-dark"}
+          notice={unknownVersion ? "This deck was made with a newer version of Slides, so you can view it but not edit it." : undefined}
+        />
+      </>
+    );
+    if (!slidesLive || !deck) return page;
+    return (
+      <DeckFollowLayer pageId={pageId} viewerId={viewerId} canEdit={canEdit} token={collab?.token ?? null} deck={{ ...deck, notes: {} }}>
+        {page}
+      </DeckFollowLayer>
+    );
+  }
   const { title, canEdit, slides, version } = loaderData;
   if (!canEdit) return <DeckViewer title={title} slides={slides} />;
   // Keyed by version: Reload after a conflict brings a newer one, which

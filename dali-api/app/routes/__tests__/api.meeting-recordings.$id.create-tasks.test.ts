@@ -33,7 +33,10 @@ vi.mock("~/mcp/tools/create-task", () => {
   return { runCreateTask: vi.fn(), CreateTaskError };
 });
 
+vi.mock("~/mcp/tools/access", () => ({ canEditProject: vi.fn() }));
+
 import { requireAuth } from "~/lib/auth";
+import { canEditProject } from "~/mcp/tools/access";
 import { prisma } from "~/lib/db.server";
 import { canRecordInto } from "~/lib/meeting-recording.server";
 import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
@@ -87,7 +90,11 @@ beforeEach(() => {
   } as never);
   vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
   vi.mocked(runCreateTask).mockResolvedValue({ id: "task1", status: "Todo", position: 0 });
+  vi.mocked(canEditProject).mockResolvedValue(true);
 });
+
+const noProject = () =>
+  vi.mocked(prisma.page.findUnique).mockResolvedValue({ workspaceType: "Lab", workspaceId: null } as never);
 
 describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
   it("requires edit access to the note", async () => {
@@ -97,11 +104,78 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     expect(runCreateTask).not.toHaveBeenCalled();
   });
 
-  it("requires the note to belong to a project", async () => {
-    vi.mocked(prisma.page.findUnique).mockResolvedValue({ workspaceType: "Lab", workspaceId: null } as never);
+  it("requires a project on the item when the note has none", async () => {
+    noProject();
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
     expect(res.status).toBe(400);
     expect(runCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("files the task on the item's project when the note has none", async () => {
+    noProject();
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", projectId: "proj9" }] });
+    expect(res.status).toBe(200);
+    expect(canEditProject).toHaveBeenCalledWith("u2", "proj9");
+    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ projectId: "proj9" }));
+    expect((await res.json()).created).toEqual([{ index: 0, taskId: "task1", projectId: "proj9" }]);
+  });
+
+  it("refuses an item's project the caller cannot add tasks to, creating nothing", async () => {
+    noProject();
+    vi.mocked(canEditProject).mockResolvedValue(false);
+    const res = await run({
+      action: "createTasks",
+      items: [
+        { index: 0, title: "Send the revised scope", projectId: "proj9" },
+        { index: 1, title: "Follow up with partner", projectId: "proj9" },
+      ],
+    });
+    expect(res.status).toBe(403);
+    expect(runCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("accepts an item project equal to the note's project", async () => {
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", projectId: "proj1" }] });
+    expect(res.status).toBe(200);
+    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ projectId: "proj1" }));
+  });
+
+  it("rejects an item project that differs from the note's project", async () => {
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", projectId: "proj9" }] });
+    expect(res.status).toBe(400);
+    expect(runCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("passes the status through to the task", async () => {
+    const res = await run({
+      action: "createTasks",
+      items: [{ index: 0, title: "Send the revised scope", status: "InProgress", dueAt: "2026-10-17T00:00:00.000Z" }],
+    });
+    expect(res.status).toBe(200);
+    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ status: "InProgress" }));
+  });
+
+  it("allows Backlog without a due date", async () => {
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", status: "Backlog" }] });
+    expect(res.status).toBe(200);
+    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ status: "Backlog" }));
+  });
+
+  it("requires a due date outside Backlog, creating nothing", async () => {
+    const res = await run({
+      action: "createTasks",
+      items: [
+        { index: 1, title: "Follow up with partner", status: "Backlog" },
+        { index: 0, title: "Send the revised scope", status: "Todo" },
+      ],
+    });
+    expect(res.status).toBe(400);
+    expect(runCreateTask).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown status", async () => {
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", status: "Nope" }] });
+    expect(res.status).toBe(400);
   });
 
   it("creates a task for each checked item, with a description linking the cited transcript moment", async () => {
@@ -111,7 +185,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.created).toEqual([{ index: 0, taskId: "task1" }]);
+    expect(json.created).toEqual([{ index: 0, taskId: "task1", projectId: "proj1" }]);
     expect(runCreateTask).toHaveBeenCalledWith("u2", {
       projectId: "proj1",
       title: "Send the revised scope",
@@ -159,11 +233,11 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
   });
 
   it("dedups against an existing task from this recording whose title matches, even at a different index (a re-run renumbered items)", async () => {
-    vi.mocked(prisma.task.findMany).mockResolvedValue([{ id: "task-old", title: "Send the revised scope" }] as never);
+    vi.mocked(prisma.task.findMany).mockResolvedValue([{ id: "task-old", title: "Send the revised scope", projectId: "proj1" }] as never);
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(json.created).toEqual([{ index: 0, taskId: "task-old" }]);
+    expect(json.created).toEqual([{ index: 0, taskId: "task-old", projectId: "proj1" }]);
     expect(runCreateTask).not.toHaveBeenCalled();
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
       where: { id: "rec1" },
@@ -198,7 +272,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
       ],
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Invalid dueAt", created: [{ index: 0, taskId: "task1" }] });
+    expect(await res.json()).toEqual({ error: "Invalid dueAt", created: [{ index: 0, taskId: "task1", projectId: "proj1" }] });
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
       where: { id: "rec1" },
       data: {

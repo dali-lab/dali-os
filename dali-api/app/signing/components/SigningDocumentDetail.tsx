@@ -12,6 +12,7 @@ import {
   Circle,
   Zap,
   Archive,
+  Eye,
   PenLine,
   Trash2,
   Send,
@@ -25,6 +26,7 @@ import {
   type DocEditorInstance,
 } from "~/components/doc";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
+import { pageBarTextButton } from "~/components/shell/page-bar-slot";
 import {
   ManagedEditorShell,
   RestoreVersionButton,
@@ -473,6 +475,11 @@ export function SigningDocumentDetail() {
     submit({ intent: "update", [field]: value }, { method: "post" });
   }
 
+  function changeKind(value: string) {
+    if (value === (document.kind === "PartnerContract" ? "PartnerContract" : "General")) return;
+    submit({ intent: "update", kind: value }, { method: "post" });
+  }
+
   // Toggle the mentee-countersign opt-in. Same live-agreement confirm as
   // changeConfig (turning it on obliges the current signers' mentees).
   async function changeCountersign(value: string) {
@@ -520,6 +527,19 @@ export function SigningDocumentDetail() {
         options={CADENCE_OPTIONS}
         onSelect={(v) => changeConfig("cadence", v)}
       />
+      <span className="inline-flex items-center gap-1">
+        <ConfigPill
+          label="Type"
+          value={document.kind === "PartnerContract" ? "Partner contract template" : "General"}
+          selected={document.kind === "PartnerContract" ? "PartnerContract" : "General"}
+          options={[
+            { value: "General", label: "General" },
+            { value: "PartnerContract", label: "Partner contract template" },
+          ]}
+          onSelect={changeKind}
+        />
+        <InfoTip content="Partner contract templates can be picked when you send a contract from a partner application." />
+      </span>
       {/* Mentee countersignature — only meaningful on a mentor-audience
           agreement, so it's surfaced there. Requires a "mentee" signature field
           in the body to take effect. */}
@@ -535,52 +555,54 @@ export function SigningDocumentDetail() {
             ]}
             onSelect={(v) => changeCountersign(v)}
           />
-          <InfoTip content="When on, a mentee must countersign this agreement after their mentor signs it. Add a Mentee signature field to the body (Insert row). Needs the mentee-countersign feature flag on." />
+          <InfoTip content="When on, a mentee must countersign this agreement after their mentor signs it. Add a Mentee signature field to the body (Insert row)." />
         </span>
       )}
       <span className="rounded bg-muted px-2 py-0.5">slug: {document.slug}</span>
     </>
   );
 
-  // Header actions
+  const shownVersion = selectedVersion ?? document.versions[0] ?? null;
+  const status = isCreating
+    ? "Editing draft"
+    : shownVersion
+      ? `v${shownVersion.versionNumber} · ${
+          inForceVersionIds.has(shownVersion.id) ? "In force" : shownVersion.publishedAt ? "Published" : "Draft"
+        }`
+      : undefined;
+
+  async function archiveAgreement() {
+    const ok = await dialog.confirm({
+      title: "Archive this agreement?",
+      description:
+        "It moves out of the active list and stops accepting signatures. There's no unarchive. Signatures already collected are kept.",
+      tone: "destructive",
+      confirmLabel: "Archive",
+    });
+    if (ok) submit({ intent: "archive" }, { method: "post" });
+  }
+
   const headerActions = (
     <>
-      {!isCreating && (
-        <button
-          type="button"
-          onClick={startCreate}
-          className={buttonClasses("primary", "md")}
-        >
-          {tailDraftEditable ? (
-            <PenLine className="w-4 h-4 mr-2" />
-          ) : (
-            <Plus className="w-4 h-4 mr-2" />
-          )}
-          {tailDraftEditable ? "Edit draft" : "New Version"}
+      {isCreating && (
+        <button type="button" onClick={() => setPreviewing((p) => !p)} className={pageBarTextButton(previewing)}>
+          <Eye className="h-4 w-4" />
+          {previewing ? "Back to editing" : "Preview as signer"}
         </button>
       )}
-      <Form
-        method="post"
-        onSubmit={confirmSubmit({
-          title: "Archive this agreement?",
-          description:
-            "It moves out of the active list and stops accepting signatures. There's no unarchive — signatures already collected are kept.",
-          tone: "destructive",
-          confirmLabel: "Archive",
-        })}
-      >
-        <input type="hidden" name="intent" value="archive" />
-        <Tooltip content="Archive">
-          <button
-            type="submit"
-            aria-label="Archive"
-            className="inline-flex items-center px-3 py-2 text-sm font-medium rounded-lg text-foreground/70 bg-card border border-border hover:bg-muted/50"
-          >
-            <Archive className="w-4 h-4" />
-          </button>
-        </Tooltip>
-      </Form>
+      {!isCreating && (
+        <button type="button" onClick={startCreate} className={buttonClasses("primary", "sm")}>
+          {tailDraftEditable ? <PenLine className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {tailDraftEditable ? "Edit draft" : "New version"}
+        </button>
+      )}
     </>
+  );
+
+  const menuItems = (
+    <Menu.Item icon={<Archive className="h-3.5 w-3.5" />} onSelect={() => void archiveAgreement()}>
+      Archive
+    </Menu.Item>
   );
 
   return (
@@ -593,7 +615,9 @@ export function SigningDocumentDetail() {
         onRename: setDraftName,
       }}
       metaBadges={metaBadges}
+      status={status}
       headerActions={headerActions}
+      menuItems={menuItems}
       versionSidebar={versionSidebar}
       isDrafting={isCreating}
       footer={<BindingsPanel />}
@@ -626,13 +650,6 @@ export function SigningDocumentDetail() {
                       onSelect={setPreviewTermCode}
                     />
                   )}
-                  <button
-                    type="button"
-                    onClick={() => setPreviewing((p) => !p)}
-                    className="font-medium text-os-accent hover:underline"
-                  >
-                    {previewing ? "← Back to editing" : "Preview as signer"}
-                  </button>
                 </div>
               </div>
               {previewing ? (

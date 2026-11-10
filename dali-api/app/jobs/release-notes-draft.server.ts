@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { getAppEnv } from "~/lib/app-env";
 import { getFeatureFlagRows } from "~/lib/feature-flags.server";
 import { githubAppClient, parseRepo } from "~/lib/github";
-import { generateShortText, resolveAiProvider } from "~/lib/ai.server";
+import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { listObjectKeys } from "~/lib/s3";
 import type { JobResult } from "~/jobs/registry";
@@ -128,11 +128,13 @@ async function captureKeysByPr(prNumbers: number[]): Promise<Map<number, string[
 }
 
 async function draftChunk(prs: PullForPrompt[]): Promise<number> {
+  const prNumbers = new Set(prs.map((p) => p.number));
   const result = await generateShortText({
+    task: "releaseNotes",
     system: DRAFT_SYSTEM_PROMPT,
     prompt: buildDraftPrompt(prs),
     maxTokens: MAX_OUTPUT_TOKENS,
-    model: resolveAiProvider()?.sonnetModel,
+    accept: (r) => parseDraftEntries(r.text, prNumbers) !== null,
   });
   if (!result) throw new Error("No AI provider is configured");
 
@@ -144,7 +146,7 @@ async function draftChunk(prs: PullForPrompt[]): Promise<number> {
   });
   await recordTokenUsage(AI_USER_ID, day, result.inputTokens, result.outputTokens);
 
-  const entries = parseDraftEntries(result.text, new Set(prs.map((p) => p.number)));
+  const entries = parseDraftEntries(result.text, prNumbers);
   if (!entries) throw new Error("The model did not return a JSON array");
   const keysByPr = await captureKeysByPr([...new Set(entries.flatMap((e) => e.prNumbers))]);
   for (const entry of entries) {

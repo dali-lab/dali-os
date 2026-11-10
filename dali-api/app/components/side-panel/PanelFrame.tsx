@@ -52,6 +52,7 @@ export function PanelFrame(props: {
   icon?: string | null;
   onClose: () => void;
   children: ReactNode;
+  footer?: ReactNode;
 }) {
   return (
     <PageBarSlotProvider>
@@ -66,14 +67,17 @@ function PanelFrameInner({
   icon = null,
   onClose,
   children,
+  footer,
 }: {
   panel: SidePanel;
   title: string;
   icon?: string | null;
   onClose: () => void;
   children: ReactNode;
+  footer?: ReactNode;
 }) {
   const { actionsRef } = usePageBarTargetSetters();
+  const fullPage = sidePanelHref(panel);
   const [width, setWidth] = useState(PRE_MEASURE_WIDTH);
   const asideRef = useRef<HTMLElement>(null);
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
@@ -138,7 +142,7 @@ function PanelFrameInner({
       style={{ "--side-panel-w": `${width}px` } as React.CSSProperties}
       className={cn(
         "fixed inset-0 z-40 flex flex-col bg-os-bg",
-        "md:sticky md:inset-auto md:top-0 md:z-auto md:h-dvh md:w-[var(--side-panel-w)] md:shrink-0 md:border-l md:border-border md:shadow-[-8px_0_24px_var(--color-os-hover)]",
+        "md:sticky md:inset-auto md:top-[var(--os-shell-header-h,0px)] md:z-auto md:h-[calc(100dvh-var(--os-shell-header-h,0px))] md:w-[var(--side-panel-w)] md:shrink-0 md:border-l md:border-border md:shadow-[-8px_0_24px_var(--color-os-hover)]",
       )}
     >
       <div
@@ -162,11 +166,13 @@ function PanelFrameInner({
             <ChevronsRight className="h-[18px] w-[18px]" aria-hidden />
           </button>
         </Tooltip>
-        <Tooltip content="Open full page">
-          <Link to={sidePanelHref(panel)} aria-label="Open full page" className={HEADER_BUTTON}>
-            <Maximize2 className="h-4 w-4" aria-hidden />
-          </Link>
-        </Tooltip>
+        {fullPage && (
+          <Tooltip content="Open full page">
+            <Link to={fullPage} aria-label="Open full page" className={HEADER_BUTTON}>
+              <Maximize2 className="h-4 w-4" aria-hidden />
+            </Link>
+          </Tooltip>
+        )}
         {(icon || title) && (
           <span className="ml-1 flex min-w-0 items-center gap-1.5 text-[13px] text-os-grey">
             {icon && <span aria-hidden className="shrink-0">{icon}</span>}
@@ -177,7 +183,8 @@ function PanelFrameInner({
         <div ref={actionsRef} className="flex items-center gap-1 empty:hidden" />
         <OverflowMenu />
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-4">{children}</div>
+      {footer && <div className="shrink-0 px-4">{footer}</div>}
     </aside>
   );
 }

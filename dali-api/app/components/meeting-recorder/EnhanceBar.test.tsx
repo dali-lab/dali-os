@@ -450,12 +450,51 @@ describe("EnhanceBar after Enhance is undone", () => {
     unmount();
   });
 
-  it("stays quiet while Enhance's action item is still a line in the note", () => {
+  it("stays quiet while Enhance's action item is still a suggestion line in the note", () => {
     const rec = enhanced({
-      getNoteState: () => ({ blocks: [{ id: "c", type: "checkListItem", text: "Send the catering quote" }], bodyText: "" }),
+      getNoteState: () => ({
+        blocks: [
+          { id: "h", type: "heading", text: "Tasks" },
+          { id: "c", type: "paragraph", text: "Send the catering quote" },
+        ],
+        bodyText: "",
+      }),
     });
     const { container, unmount } = mountBar(rec);
     expect(container.textContent).not.toContain("Transcript ready");
+    unmount();
+  });
+
+  it("stays quiet while an old checklist line is still under an Action items heading", () => {
+    const rec = enhanced({
+      getNoteState: () => ({
+        blocks: [
+          { id: "h", type: "heading", text: "Action items" },
+          { id: "c", type: "checkListItem", text: "Send the catering quote" },
+        ],
+        bodyText: "",
+      }),
+    });
+    const { container, unmount } = mountBar(rec);
+    expect(container.textContent).not.toContain("Transcript ready");
+    unmount();
+  });
+
+  it("stays quiet while the item is a task block in the note", () => {
+    const rec = enhanced({
+      getNoteState: () => ({ blocks: [{ id: "t", type: "task", text: "Send the catering quote" }], bodyText: "" }),
+    });
+    const { container, unmount } = mountBar(rec);
+    expect(container.textContent).not.toContain("Transcript ready");
+    unmount();
+  });
+
+  it("offers Enhance again when the only matching line sits outside the Tasks section", () => {
+    const rec = enhanced({
+      getNoteState: () => ({ blocks: [{ id: "c", type: "paragraph", text: "Send the catering quote" }], bodyText: "" }),
+    });
+    const { container, unmount } = mountBar(rec);
+    expect(container.textContent).toContain("Transcript ready");
     unmount();
   });
 

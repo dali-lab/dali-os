@@ -11,6 +11,7 @@ import { TablessHistoryNav } from '~/components/TablessHistoryNav'
 import { usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
 import { pageBarCrumbs } from '~/components/shell/page-bar-model'
 import { useFeatureFlag } from '~/components/FeatureFlags'
+import { AskButton } from '~/ask/components/AskButton'
 import { UNSAFE_DataRouterStateContext, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation } from 'react-router'
 import { useDisplayedTab } from '~/components/shell/displayed-tab'
 import { useIsBrowserDesktopCandidate } from '~/lib/desktop-candidate'
@@ -85,7 +86,7 @@ export function PageBar({
   star: PageStar
   onCopyLink: () => void
 }) {
-  const { actionsRef, presenceRef } = usePageBarTargetSetters()
+  const { statusRef, actionsRef, presenceRef } = usePageBarTargetSetters()
   const labels = starLabels(star)
   const browserDesktop = useIsBrowserDesktopCandidate()
   const openInApp = useOpenCurrentPageInDesktop()
@@ -111,6 +112,7 @@ export function PageBar({
         <DisplayedPage>
           <PageBarCrumbs />
         </DisplayedPage>
+        <div ref={statusRef} className="flex min-w-0 items-center empty:hidden" />
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
         <RecordingPill />
@@ -119,6 +121,7 @@ export function PageBar({
         <DisplayedPage>
           <PageBarTrailAction />
         </DisplayedPage>
+        <AskButton />
         <PageDocButton variant="pagebar" />
         <Tooltip content={`${labels.tooltip} · ${FAVORITE_SHORTCUT}`}>
           <button

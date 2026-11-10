@@ -1,20 +1,39 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { PanelFrame } from "~/components/side-panel/PanelFrame";
-import { useAltClickOpensBeside, useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
+import { useAltClickOpensBeside, useCarryPageScroll, useKeepSidePanel, useSidePanel } from "~/components/side-panel/use-side-panel";
+import { cn } from "~/lib/cn";
 import { formatSidePanel } from "~/lib/side-panel";
+import { loadAskPanel } from "~/ask/components/load-ask-panel";
+import { PAGE_SCROLLER_ATTR } from "~/lib/page-scroll";
 
 // The editor is heavy and most pages never open a panel, so it loads on demand.
 const DocumentPanel = lazy(() => import("~/components/side-panel/DocumentPanel"));
+const AskPanel = lazy(loadAskPanel);
 
 /** The routed page with the side panel beside it, when the url names one. */
 export function SidePanelHost({ children }: { children: ReactNode }) {
   const { panel, close } = useSidePanel();
   useAltClickOpensBeside();
   useKeepSidePanel();
+  const pageRef = useCarryPageScroll(panel !== null);
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 items-start">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col self-stretch">{children}</div>
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-1 items-start",
+        panel && "md:h-[calc(100dvh-var(--os-shell-header-h,0px))]",
+      )}
+    >
+      <div
+        ref={pageRef}
+        {...(panel ? { [PAGE_SCROLLER_ATTR]: "" } : {})}
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col self-stretch",
+          panel && "md:overflow-y-auto md:[--os-shell-header-h:0px]",
+        )}
+      >
+        {children}
+      </div>
       {panel && (
                 <Suspense
           fallback={
@@ -25,7 +44,11 @@ export function SidePanelHost({ children }: { children: ReactNode }) {
             </PanelFrame>
           }
         >
-          <DocumentPanel key={formatSidePanel(panel)} panel={panel} onClose={close} />
+          {panel.type === "ask" ? (
+            <AskPanel panel={panel} onClose={close} />
+          ) : (
+            <DocumentPanel key={formatSidePanel(panel)} panel={panel} onClose={close} />
+          )}
         </Suspense>
               )}
     </div>

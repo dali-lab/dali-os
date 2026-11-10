@@ -175,6 +175,22 @@ describe("sharedSpaceItems", () => {
     expect(sharedSpaceItems(items).map((i) => i.id)).toEqual(["received", "both"]);
   });
 
+  it("keeps uploaded files shared with the viewer", () => {
+    const file = (id: string, sharedWithMe?: boolean): DriveItem => ({
+      type: "file",
+      id,
+      title: id,
+      parentFolderId: null,
+      iconEmoji: null,
+      updatedAt: new Date(0),
+      href: `/documents/file/${id}`,
+      sharedWithMe,
+    });
+    expect(sharedSpaceItems([file("received", true), file("mine-only", undefined)]).map((i) => i.id)).toEqual([
+      "received",
+    ]);
+  });
+
   it("drops anything that is not a flagged doc", () => {
     const folder: DriveItem = { ...doc("f", {}), type: "folder" } as DriveItem;
     expect(sharedSpaceItems([folder, doc("plain", {})])).toEqual([]);

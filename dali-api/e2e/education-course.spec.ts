@@ -1,5 +1,5 @@
-import type { Page } from '@playwright/test';
 import { test, expect } from './fixtures';
+import { openDialog } from './helpers';
 import {
   ADMIN_EMAIL,
   OUTSIDER,
@@ -13,15 +13,6 @@ import {
 } from './education.helpers';
 
 test.setTimeout(120_000);
-
-// A click before React hydrates is dropped, so retry until the dialog opens.
-async function openDialog(page: Page, buttonName: string) {
-  const dialog = page.getByRole('dialog');
-  await expect(async () => {
-    if (!(await dialog.isVisible())) await page.getByRole('button', { name: buttonName }).click();
-    await expect(dialog).toBeVisible({ timeout: 3000 });
-  }).toPass({ timeout: 60_000 });
-}
 
 const RUN = uid();
 const OFFERING_ID = `e2e-course-${RUN}`;

@@ -95,7 +95,7 @@ Writing style: short, concrete, scannable. Lead with the fact, not "The team dis
 Rules, all mandatory:
 - Every existing block appears exactly once, in order, as a keep or expand.
 - Inserts are {"op":"insert","after":"<id or null>" or "under":"<id>","type":"heading"|"paragraph"|"bulletListItem","text","cites":[seconds,...],"added":true}. "after" names the existing block id it follows; "under" nests it as the last child of that block.
-- Never insert an "Action items" heading or checklist items: the action items section is built from "actionItems" below.
+- Never insert an "Action items" or "Tasks" heading or checklist items: "actionItems" below become suggested tasks the author reviews, and the note's Tasks section is built from them.
 - If there is no "Decisions" heading among the given blocks and the meeting made decisions, insert one (type "heading") with a bullet per decision.
 - A heading the transcript doesn't support (most often "Agenda" on an unused template) gets no inserts under it and stays "keep". Never invent content to fill it.
 - Never invent names, dates, numbers, or facts the transcript doesn't support. Every word you add must come from the transcript.
@@ -345,16 +345,16 @@ export async function generateAndVerifyEnhancePlan(params: {
   if (!quota.ok) return { status: 429, ...quota };
   const { day } = quota;
 
-  const provider = resolveAiProvider();
-  if (!provider) return { ok: false, aiEnabled: false };
+  if (!resolveAiProvider()) return { ok: false, aiEnabled: false };
 
-  let raw: { text: string; inputTokens: number; outputTokens: number } | null;
+  let raw: Awaited<ReturnType<typeof generateShortText>>;
   try {
     raw = await generateShortText({
+      task: "enhance",
       system,
       prompt,
       maxTokens: ENHANCE_MAX_TOKENS,
-      model: provider.sonnetModel,
+      accept: (r) => parseEnhancePlan(r.text) !== null,
     });
   } catch (err) {
     if (err instanceof Anthropic.APIError) {
@@ -368,17 +368,9 @@ export async function generateAndVerifyEnhancePlan(params: {
     return { ok: false, status: 422, error: "This meeting is too long to enhance in one pass." };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripJsonFences(raw.text));
-  } catch {
-    return { ok: false, status: 502, error: "AI response could not be parsed" };
-  }
-  const result = EnhancePlanSchema.safeParse(parsed);
-  if (!result.success) {
-    return { ok: false, status: 502, error: "AI response could not be parsed" };
-  }
-  const modelPlan: EnhancePlan = interviewId ? { ...result.data, actionItems: [] } : result.data;
+  const parsedPlan = parseEnhancePlan(raw.text);
+  if (!parsedPlan) return { ok: false, status: 502, error: "AI response could not be parsed" };
+  const modelPlan: EnhancePlan = interviewId ? { ...parsedPlan, actionItems: [] } : parsedPlan;
 
   const { plan, verified } = verifyEnhancePlan(modelPlan, lines, roster, rec.userId, blocks);
   const actionItems = await carryOverTaskIds(plan.actionItems, rec);
@@ -394,6 +386,15 @@ export async function generateAndVerifyEnhancePlan(params: {
   await prisma.meetingRecording.update({ where: { id: rec.id }, data: { notes: notes as Prisma.InputJsonValue } });
 
   return { ok: true, notes };
+}
+
+function parseEnhancePlan(text: string): EnhancePlan | null {
+  try {
+    const result = EnhancePlanSchema.safeParse(JSON.parse(stripJsonFences(text)));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

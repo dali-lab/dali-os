@@ -32,6 +32,7 @@ import {
 import {
   hasPassedReferralQuiz,
   recordReferralQuizPass,
+  requireReferralsEnabled,
 } from "~/partners/lib/referrals.server";
 import { cn } from "~/lib/cn";
 
@@ -42,6 +43,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!auth.ok) return redirectToLogin(request);
   const redirectResp = await redirectNonMemberToPortal(auth, request);
   if (redirectResp) return redirectResp;
+  await requireReferralsEnabled(auth.user.sub, request);
   const quizPassed = await hasPassedReferralQuiz(auth.user.sub);
   return { quizPassed };
 }
@@ -54,6 +56,7 @@ type ActionData =
 export async function action({ request }: Route.ActionArgs): Promise<Response | ActionData> {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
+  await requireReferralsEnabled(auth.user.sub, request);
   const form = await request.formData();
   if (form.get("intent") !== "submit-quiz") {
     return { ok: false, error: "Unknown intent." };

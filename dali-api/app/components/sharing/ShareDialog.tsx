@@ -6,16 +6,18 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { modalCardClass } from "~/components/os-chrome";
 import { audienceLine, type Audience, type InheritedScope } from "~/lib/page-audience";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
-// personal notes. Google Docs' shape: add people, a "People with access" list
-// with a per-row role, then a single "General access" row. All requests go to
-// /api/pages/:id/share; the link people copy is just the doc URL.
+// personal notes — and for uploaded Drive files. Google Docs' shape: add people,
+// a "People with access" list with a per-row role, then a single "General
+// access" row. Requests go to /api/pages/:id/share or /api/files/:id/share; the
+// link people copy is just the item's URL.
 
 type Permission = "View" | "Comment" | "Edit" | "FullAccess";
-type LinkAccess = "Restricted" | "LabMembers" | "SignedIn" | "Public";
+type LinkAccess = "Restricted" | "LabMembers" | "SignedIn" | "Partners" | "Public";
 type Option = { id: string; label: string };
 type Share = {
   id: string;
@@ -28,7 +30,12 @@ type Share = {
   viaMeeting?: { meetingTitle: string } | null;
 };
 type ScopeKind = "Private" | "Lab" | "Group";
+type FileInherited = { kind: "folder" | "project" | "lab"; name: string };
+export type ShareTarget =
+  | { kind: "page"; id: string; title: string; workspaceType: string }
+  | { kind: "file"; id: string; title: string };
 type Context = {
+  fileInherited: FileInherited | null;
   linkAccess: LinkAccess;
   linkPermission: Permission;
   workspaceType: string;
@@ -56,6 +63,17 @@ const FORM_PERMISSION_OPTIONS: SelectOption<Permission>[] = [
   { value: "FullAccess", label: "Full access", description: "Edit and manage sharing" },
 ];
 const LINK_PERMISSION_OPTIONS = PERMISSION_OPTIONS.filter((p) => p.value !== "FullAccess");
+const FILE_PERMISSION_OPTIONS: SelectOption<Permission>[] = [
+  { value: "View", label: "Can view", description: "Open and download" },
+  { value: "Comment", label: "Can comment", description: "Open, download and comment" },
+  { value: "Edit", label: "Can edit", description: "Upload new versions, rename and delete" },
+  { value: "FullAccess", label: "Full access", description: "Edit and manage sharing" },
+];
+// Files have no signed-out download path, so there is no public option.
+const FILE_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
+  { value: "Restricted", label: "Only people you add", description: "Only the people and groups above, and anyone who already has access." },
+  { value: "LabMembers", label: "Everyone in the lab", description: "Any lab member can open it." },
+];
 
 const AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Restricted", label: "Restricted", description: "Only the people and groups above." },
@@ -78,6 +96,7 @@ export const FORM_AUDIENCE_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: "Restricted", label: "Only people you add", description: "Only you and the people and groups above." },
   { value: "LabMembers", label: "Everyone in the lab", description: "Any lab member can fill it." },
   { value: "SignedIn", label: "Anyone signed in", description: "Any account, including applicants and partners." },
+  { value: "Partners", label: "Partners", description: "Partner accounts that belong to a partner organization." },
   { value: "Public", label: "Anyone with the link", description: "No account needed." },
 ];
 
@@ -100,7 +119,23 @@ function inheritedSummary(i: InheritedScope): string {
 
 // Map the raw share-route context payload into the dialog's Context shape.
 function toContext(c: any, fallbackWorkspaceType: string): Context {
+  if (c.file) {
+    return {
+      linkAccess: c.linkAccess,
+      linkPermission: c.linkPermission,
+      workspaceType: c.file.workspaceType ?? "Lab",
+      kind: "File",
+      scopeKind: null,
+      scopeGroupId: null,
+      scopePermission: null,
+      owner: c.owner ?? null,
+      partnerVisible: false,
+      hasActivePartner: false,
+      fileInherited: c.inheritedAccess ?? null,
+    };
+  }
   return {
+    fileInherited: null,
     linkAccess: c.linkAccess,
     linkPermission: c.linkPermission,
     workspaceType: c.page?.workspaceType ?? fallbackWorkspaceType,
@@ -115,19 +150,31 @@ function toContext(c: any, fallbackWorkspaceType: string): Context {
 }
 
 export function ShareDialog({
-  page,
+  page: pageProp,
+  target: targetProp,
   open,
   onClose,
   onChanged,
   fillUrl,
 }: {
-  page: { id: string; title: string; workspaceType: string };
+  /** A page to share. Same as passing `target` with kind "page". */
+  page?: { id: string; title: string; workspaceType: string };
+  target?: ShareTarget;
   open: boolean;
   onClose: () => void;
   onChanged?: () => void;
   /** A form's fill link (null or absent while unpublished); "Copy link" copies it instead of the page URL. */
   fillUrl?: string | null;
 }) {
+  const target: ShareTarget = targetProp ?? { kind: "page", ...pageProp! };
+  const isFile = target.kind === "file";
+  const page = {
+    id: target.id,
+    title: target.title,
+    workspaceType: target.kind === "page" ? target.workspaceType : "Lab",
+  };
+  const shareUrl = isFile ? `/api/files/${page.id}/share` : `/api/pages/${page.id}/share`;
+  const partnersAudience = useFeatureFlag("form-prefill");
   const [ctx, setCtx] = useState<Context | null>(null);
   const [shares, setShares] = useState<Share[]>([]);
   const [audience, setAudience] = useState<Audience | null>(null);
@@ -144,7 +191,7 @@ export function ShareDialog({
   async function post(body: Record<string, string>): Promise<any> {
     const form = new FormData();
     for (const [k, v] of Object.entries(body)) form.append(k, v);
-    const res = await fetch(`/api/pages/${page.id}/share`, {
+    const res = await fetch(shareUrl, {
       method: "POST",
       body: form,
       credentials: "include",
@@ -171,7 +218,7 @@ export function ShareDialog({
     });
     void post({ intent: "share-options", q: "" }).then((d) => setGroups(d.groups ?? []));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, page.id]);
+  }, [open, page.id, isFile]);
 
   useEffect(() => {
     if (!open) return;
@@ -235,7 +282,7 @@ export function ShareDialog({
   async function copyLink() {
     const url = isForm
       ? new URL(fillUrl!, window.location.origin).toString()
-      : `${window.location.origin}/documents/${page.id}`;
+      : `${window.location.origin}${isFile ? "/documents/file/" : "/documents/"}${page.id}`;
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
@@ -250,9 +297,17 @@ export function ShareDialog({
   // Lab docs get plain-language audience labels ("Everyone in the lab" / "Only
   // people you add"); every other workspace keeps the link-centric wording.
   const isForm = ctx?.kind === "Form";
-  const audienceOptions = isForm ? FORM_AUDIENCE_OPTIONS : isLab ? LAB_AUDIENCE_OPTIONS : AUDIENCE_OPTIONS;
-  const personOptions = isForm ? FORM_PERMISSION_OPTIONS : PERMISSION_OPTIONS;
-  const noun = isForm ? "form" : "document";
+  const audienceOptions = isFile
+    ? FILE_AUDIENCE_OPTIONS
+    : isForm
+      ? FORM_AUDIENCE_OPTIONS.filter(
+          (o) => o.value !== "Partners" || partnersAudience || ctx?.linkAccess === "Partners",
+        )
+      : isLab
+        ? LAB_AUDIENCE_OPTIONS
+        : AUDIENCE_OPTIONS;
+  const personOptions = isFile ? FILE_PERMISSION_OPTIONS : isForm ? FORM_PERMISSION_OPTIONS : PERMISSION_OPTIONS;
+  const noun = isFile ? "file" : isForm ? "form" : "document";
 
   return (
     <Modal
@@ -341,7 +396,26 @@ export function ShareDialog({
           People with access
           <InfoTip content="Individual people or groups who can access this document. View = read-only; Comment = read and add comments; Edit = make changes; Full access = edit and manage sharing." />
         </h3>
-        <p className="text-xs text-muted-foreground -mt-1.5">{audience ? audienceLine(audience) : "…"}</p>
+        {!isFile && (
+          <p className="text-xs text-muted-foreground -mt-1.5">{audience ? audienceLine(audience) : "…"}</p>
+        )}
+        {isFile && ctx?.fileInherited && (
+          <div
+            data-testid="share-file-inherited"
+            className="flex items-start gap-2.5 rounded-md border border-border px-3 py-2.5 text-sm"
+          >
+            <Folder className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-foreground">
+                People with access to {ctx.fileInherited.kind === "folder" ? "folder " : ""}
+                {ctx.fileInherited.name}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                They can already open this file. Sharing here adds people and never removes access.
+              </span>
+            </span>
+          </div>
+        )}
         {inherited && (
           <div
             data-testid="share-inherited"
@@ -441,7 +515,7 @@ export function ShareDialog({
       <div className="flex flex-col gap-2.5 mb-6 border-t border-border pt-5">
         <h3 className="text-xs font-semibold text-muted-foreground inline-flex items-center gap-1">
           General access
-          <InfoTip content={isForm ? "Controls who can fill out this form. People you add above can fill it, or edit it and see responses." : isLab ? "Controls who can open this document by default. 'Everyone in the lab' makes it accessible to any lab member. 'Only people you add' restricts it to explicit shares above." : "Controls who can open this document via the link. 'Anyone in the lab' means any lab member with the link; 'Anyone with the link' is public read-only."} />
+          <InfoTip content={isFile ? "Controls who can open this file by default. People who already have access through the folder or project keep it." : isForm ? "Controls who can fill out this form. People you add above can fill it, or edit it and see responses." : isLab ? "Controls who can open this document by default. 'Everyone in the lab' makes it accessible to any lab member. 'Only people you add' restricts it to explicit shares above." : "Controls who can open this document via the link. 'Anyone in the lab' means any lab member with the link; 'Anyone with the link' is public read-only."} />
         </h3>
         <div className="flex items-start gap-3 rounded-md border border-border px-3 py-3">
           <Link2 className="w-4 h-4 mt-1 shrink-0 text-muted-foreground" />
@@ -467,6 +541,7 @@ export function ShareDialog({
                   if (!ok) return;
                 } else if (
                   linkAccess === "LabMembers" &&
+                  !isFile &&
                   (ctx?.workspaceType === "Member" || ctx?.workspaceType === "Project")
                 ) {
                   const label = isLab ? "Everyone in the lab" : "Anyone in the lab";
@@ -488,7 +563,9 @@ export function ShareDialog({
                 const linkPermission =
                   linkAccess === "Public" || isForm
                     ? "View"
-                    : linkAccess === "LabMembers" && isLab
+                    : isFile
+                      ? (ctx?.linkPermission ?? "View")
+                      : linkAccess === "LabMembers" && isLab
                       ? "Edit"
                       : (ctx?.linkPermission ?? "View");
                 void run({ intent: "general-access", linkAccess, linkPermission }, refresh);

@@ -45,7 +45,7 @@ import { McpError, McpForbiddenError, McpInvalidError, McpNotFoundError } from "
 export const ENHANCE_MEETING_NOTES_DEF = {
   name: "enhance_meeting_notes",
   description:
-    "Preview or apply Enhance for a finished meeting recording (specs/meeting-notes-model.md §2): merges the transcript into the note's typed blocks, citing the moments it drew from, and files Decisions/Action items the author missed. Preview (apply omitted/false) regenerates the plan and returns it, verified against the real transcript — call this first. Apply (apply: true) merges the most recently previewed plan into the live note and marks it enhanced; it fails with a 409-equivalent error if someone else re-previewed after you did, meaning you should preview again before retrying. Requires edit access to the note, same as the Enhance button.",
+    "Preview or apply Enhance for a finished meeting recording (specs/meeting-notes-model.md §2): merges the transcript into the note's typed blocks, citing the moments it drew from, and files Decisions the author missed, and lists action items as suggested tasks under a Tasks heading. Preview (apply omitted/false) regenerates the plan and returns it, verified against the real transcript — call this first. Apply (apply: true) merges the most recently previewed plan into the live note and marks it enhanced; it fails with a 409-equivalent error if someone else re-previewed after you did, meaning you should preview again before retrying. Requires edit access to the note, same as the Enhance button.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -67,21 +67,19 @@ async function resolvePageSeed(documentName: string): Promise<{
   pageId: string | null;
   seededFromPageId: string | null;
   seededTemplateHash: string | null;
-  projectId: string | null;
 }> {
   const [entity, pageId] = documentName.split(":");
   if (entity !== "doc" || !pageId) {
-    return { pageId: null, seededFromPageId: null, seededTemplateHash: null, projectId: null };
+    return { pageId: null, seededFromPageId: null, seededTemplateHash: null };
   }
   const page = await prisma.page.findUnique({
     where: { id: pageId },
-    select: { seededFromPageId: true, seededTemplateHash: true, workspaceType: true, workspaceId: true },
+    select: { seededFromPageId: true, seededTemplateHash: true },
   });
   return {
     pageId,
     seededFromPageId: page?.seededFromPageId ?? null,
     seededTemplateHash: page?.seededTemplateHash ?? null,
-    projectId: page?.workspaceType === "Project" ? page.workspaceId : null,
   };
 }
 
@@ -102,7 +100,7 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
     throw new McpError("Too many requests. Try again shortly.", 429);
   }
 
-  const { pageId, seededFromPageId, seededTemplateHash, projectId } = await resolvePageSeed(rec.documentName);
+  const { pageId, seededFromPageId, seededTemplateHash } = await resolvePageSeed(rec.documentName);
 
   if (!input.apply) {
     const liveBlocks = await readDocAsBlocks(rec.documentName);
@@ -163,8 +161,6 @@ export async function runEnhanceMeetingNotes(ctx: McpCtx, input: Input) {
   const merged = applyEnhanceOpsToDocBlocks(ops, liveBlocks, {
     pageId,
     recordingId: rec.id,
-    actionItems: stored.plan.actionItems,
-    projectId,
     speakerAt: (at) => speakerFirstNameAt(lines, at, speakers, roster as RosterUser[], speakerNames),
   });
 

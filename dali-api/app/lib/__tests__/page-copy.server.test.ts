@@ -66,6 +66,24 @@ describe("duplicatePage", () => {
     expect(mockPrisma.collabDocument.findUnique).not.toHaveBeenCalled();
   });
 
+  it("byte-copies a live deck's room state under the new page and marks the copy live", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ ...SOURCE_PAGE, kind: "Slides" });
+    mockPrisma.slideDeck.findUnique.mockResolvedValue({ slides: [], storage: "yjs" });
+    const state = Buffer.from([1, 2, 3]);
+    mockPrisma.collabDocument.findUnique.mockResolvedValue({ state });
+    await duplicatePage({ sourcePageId: SOURCE_PAGE.id, createdById: "user-1" });
+    expect(mockPrisma.collabDocument.findUnique).toHaveBeenCalledWith({
+      where: { name: `slides:${SOURCE_PAGE.id}:deck` },
+      select: { state: true },
+    });
+    expect(mockPrisma.slideDeck.create).toHaveBeenCalledWith({
+      data: { pageId: NEW_PAGE_ID, slides: [], storage: "yjs", lastEditedById: "user-1" },
+    });
+    expect(mockPrisma.collabDocument.create).toHaveBeenCalledWith({
+      data: { name: `slides:${NEW_PAGE_ID}:deck`, state },
+    });
+  });
+
   it("leaves a never-opened deck's copy to start empty", async () => {
     mockPrisma.page.findUnique.mockResolvedValue({ ...SOURCE_PAGE, kind: "Slides" });
     mockPrisma.slideDeck.findUnique.mockResolvedValue(null);
