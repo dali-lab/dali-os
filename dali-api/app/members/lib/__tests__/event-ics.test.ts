@@ -14,7 +14,7 @@ describe("buildEventIcs", () => {
     const ics = buildEventIcs(base, NOW);
     expect(ics.startsWith("BEGIN:VCALENDAR\r\n")).toBe(true);
     expect(ics.endsWith("END:VCALENDAR\r\n")).toBe(true);
-    expect(ics).toContain("UID:ev1@connect.dali-os\r\n");
+    expect(ics).toContain("UID:ev1@community.dali-os\r\n");
     expect(ics).toContain("DTSTAMP:20261109T120000Z\r\n");
     expect(ics).toContain("DTSTART:20261204T230000Z\r\n");
     expect(ics).toContain("DTEND:20261205T010000Z\r\n");

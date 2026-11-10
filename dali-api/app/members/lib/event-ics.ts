@@ -42,7 +42,7 @@ export function buildEventIcs(e: EventIcsInput, now: Date = new Date()): string 
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "BEGIN:VEVENT",
-    `UID:${e.id}@connect.dali-os`,
+    `UID:${e.id}@community.dali-os`,
     `DTSTAMP:${stamp(now)}`,
     `DTSTART:${stamp(e.startsAt)}`,
     `DTEND:${stamp(e.endsAt)}`,
