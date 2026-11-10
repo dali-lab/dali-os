@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.timezone.update";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, unauthorized } from "~/lib/auth";
 import { isValidTimezone } from "~/lib/timezone";
 import { dismissedTimeZoneCookie } from "~/lib/tz-prompt";

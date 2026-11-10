@@ -28,13 +28,15 @@ import {
   type OpenTabRequest,
 } from "~/lib/desktop-tabs";
 import { writeTabsSnapshotCookie } from "~/lib/desktop-tabs-pref";
+import { pageScrollY } from "~/lib/page-scroll";
 
 export const TABS_STORAGE_KEY = "dali:desktop-tabs:v1";
 export const LEGACY_WORKSPACE_KEY = "dali:tabworkspace:v4";
 
-type Navigator = (url: string, opts?: { tabSwitch: true }) => void;
+type Navigator = (url: string, opts?: { tabSwitch: true; keepPanel?: true }) => void;
 
 const TAB_SWITCH = { tabSwitch: true } as const;
+const TAB_STEP = { tabSwitch: true, keepPanel: true } as const;
 
 let state: DesktopTabsState = emptyTabsState();
 let navigator: Navigator | null = null;
@@ -74,15 +76,11 @@ function emit() {
   for (const l of listeners) l();
 }
 
-function currentScrollY(): number {
-  return typeof window === "undefined" ? 0 : Math.round(window.scrollY);
-}
-
 // Leave the active tab: remember where it was scrolled, then apply `next` and
 // show whatever tab it made active.
 function moveTo(next: DesktopTabsState) {
   const leaving = activeTab(state);
-  const withScroll = leaving ? saveScroll(next, leaving.id, currentScrollY()) : next;
+  const withScroll = leaving ? saveScroll(next, leaving.id, pageScrollY()) : next;
   const target = activeTab(withScroll);
   set(withScroll);
   if (!target || target.id === leaving?.id) return;
@@ -192,7 +190,7 @@ export const tabActions = {
     const result = stepTabHistory(state, direction, steps);
     if (!result) return;
     set(result.state);
-    navigator?.(result.target, TAB_SWITCH);
+    navigator?.(result.target, TAB_STEP);
   },
   togglePin(id: string) {
     set(togglePin(state, id));

@@ -3,11 +3,14 @@ import {
   buildInlineContent,
   enhanceSnapshotBlocks,
   findTranscriptToggle,
+  noteBodyText,
   formatChipLabel,
   transcriptToggleBlock,
 } from "./enhance-render";
 import type { DocBlock } from "./schema/build";
 import { isCitationHref } from "~/components/meeting-recorder/enhance-plan";
+import { blocksToPlainText } from "./schema/configs";
+import { hashTemplateText, isUntouchedTemplate, normalizeTemplateText } from "~/lib/meeting-note-template";
 
 function heading(id: string, text: string, isToggleable = false): DocBlock {
   return {
@@ -32,6 +35,17 @@ describe("enhanceSnapshotBlocks", () => {
       { id: "h1", type: "heading", text: "Agenda" },
       { id: "p1", type: "paragraph", text: "Ship it" },
     ]);
+  });
+
+  it("an inserted transcript leaves an untouched template note untouched", () => {
+    const template = [heading("h1", "Agenda"), heading("h2", "Action items")];
+    const page = { seededFromPageId: "tpl", seededTemplateHash: hashTemplateText(normalizeTemplateText(blocksToPlainText(template))) };
+    const toggle = { ...transcriptToggleBlock(["Ada: hi"]), id: "t" } as unknown as DocBlock;
+    const withTranscript = [...template, toggle];
+
+    expect(isUntouchedTemplate(page, blocksToPlainText(withTranscript))).toBe(false);
+    expect(isUntouchedTemplate(page, noteBodyText(withTranscript))).toBe(true);
+    expect(isUntouchedTemplate(page, noteBodyText([...withTranscript, paragraph("p1", "Ship it")]))).toBe(false);
   });
 
   it("keeps a plain Transcript heading that is not a toggle", () => {

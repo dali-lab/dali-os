@@ -36,7 +36,6 @@ beforeEach(async () => {
         occurrenceStart: "2026-10-20T14:00:00.000Z",
         windowEndIso: "2026-10-20T15:00:00.000Z",
         canEdit: true,
-        recordingEnabled: true,
         recordPromptEnabled: true,
         hasActiveRecording: false,
         canDontSuggest: true,

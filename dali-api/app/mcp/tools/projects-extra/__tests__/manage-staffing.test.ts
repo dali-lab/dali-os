@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     staffingCycle: { findUnique: vi.fn() },
     staffingMentorRole: { upsert: vi.fn() },
@@ -27,7 +27,7 @@ vi.mock("~/projects/lib/staffing-events.server", () => ({
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { runManageStaffing, MANAGE_STAFFING_TOOL } from "~/mcp/tools/projects-extra/manage-staffing";

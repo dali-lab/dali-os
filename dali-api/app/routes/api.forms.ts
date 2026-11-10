@@ -15,8 +15,16 @@ export async function action({ request }: Route.ActionArgs) {
     const folder = (formData.get("folderPageId") as string | null) || null;
     if (!(await canCreateForm(auth.user.sub, folder, request))) return forbidden(request);
   } else {
-    const id = formData.get("id");
-    if (typeof id !== "string" || !id || !(await canBuildForm(auth.user.sub, id, request)))
+    // All `id` values, not get(): the gate must cover the id the action will
+    // use (fromEntries keeps the LAST value; get() returns the first).
+    const ids = formData.getAll("id");
+    const id = ids[0];
+    if (
+      ids.length !== 1 ||
+      typeof id !== "string" ||
+      !id ||
+      !(await canBuildForm(auth.user.sub, id, request))
+    )
       return forbidden(request);
   }
 

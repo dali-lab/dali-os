@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/announcements.server", () => ({ sendAnnouncement: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { sendAnnouncement } from "~/lib/announcements.server";
 import { runScheduledAnnouncements } from "~/jobs/scheduled-announcements.server";
 

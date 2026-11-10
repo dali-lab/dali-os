@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 // Only reached by the hiring-application category, which these tests keep
 // empty (no reviewer rows, not Core) — stubbed so the module loads without
 // the real hiring stack.
@@ -10,15 +10,20 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 // Page-body search is raw SQL against tsvector/pg_trgm, which the Prisma mock
 // can't stand in for — its own behavior is covered in doc-search.test.ts.
 vi.mock("~/lib/doc-search.server", () => ({ searchPageContent: vi.fn() }));
+vi.mock("~/help/library.server", () => ({ visibleHelpArticles: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/fileAccess.server", () => ({ filterViewableFiles: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   PAGE_ACCESS_SELECT: { id: true, accessMarker: true },
   getPageAccessBulk: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { searchPageContent } from "~/lib/doc-search.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
-import { runSearch } from "~/lib/search.server";
+import { filterViewableFiles } from "~/lib/fileAccess.server";
+import { visibleHelpArticles } from "~/help/library.server";
+import { parseHelpArticle } from "~/help/article-format";
+import { CATEGORY_RAW_TAKE, runCategorySearch, runSearch, runSearchWithOverflow } from "~/lib/search.server";
 import type { UserRoles } from "~/lib/roles";
 
 const mockPageContent = searchPageContent as unknown as ReturnType<typeof vi.fn>;
@@ -55,6 +60,7 @@ beforeEach(() => {
   mockPageContent.mockResolvedValue([]);
   mockPrisma.task.findMany.mockResolvedValue([]);
   mockPrisma.projectFile.findMany.mockResolvedValue([]);
+  vi.mocked(filterViewableFiles).mockImplementation(async (_u, files) => files);
   mockPrisma.pageDoc.findMany.mockResolvedValue([]);
 });
 
@@ -67,6 +73,140 @@ describe("runSearch gating", () => {
     });
     expect(results).toEqual([]);
     expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+  });
+});
+
+const people = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    id: `u${i}`,
+    firstName: "Ada",
+    lastName: String.fromCharCode(65 + i),
+    daliEmail: null,
+    dartmouthEmail: null,
+    photoUrl: null,
+  }));
+const projectRows = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `Atlas ${String.fromCharCode(65 + i)}`, description: null }));
+
+describe("runSearch default path", () => {
+  it("keeps the 40-row candidate fetch with no orderBy and ranks at most 5 per category", async () => {
+    mockPrisma.project.findMany.mockResolvedValue(projectRows(7));
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "atlas" });
+
+    const args = mockPrisma.project.findMany.mock.calls[0][0];
+    expect(args.take).toBe(40);
+    expect(args.orderBy).toBeUndefined();
+    expect(results.filter((r) => r.type === "project")).toHaveLength(5);
+  });
+});
+
+describe("runSearchWithOverflow", () => {
+  it("reports a category that had more than 5 and still returns 5 of it", async () => {
+    mockPrisma.project.findMany.mockResolvedValue(projectRows(7));
+    const found = await runSearchWithOverflow({ userId: "u1", roles: MEMBER, q: "atlas" });
+    expect(found.results.filter((r) => r.type === "project")).toHaveLength(5);
+    expect(found.categoriesWithMore).toEqual(["project"]);
+    expect(mockPrisma.project.findMany.mock.calls.at(-1)?.[0].take).toBe(40);
+  });
+
+  it("does not flag a category with exactly 5", async () => {
+    mockPrisma.project.findMany.mockResolvedValue(projectRows(5));
+    const found = await runSearchWithOverflow({ userId: "u1", roles: MEMBER, q: "atlas" });
+    expect(found.categoriesWithMore).toEqual([]);
+  });
+
+  it("returns nothing for a non-member", async () => {
+    expect(await runSearchWithOverflow({ userId: "u1", roles: { ...MEMBER, isLabMember: false }, q: "atlas" })).toEqual({
+      results: [],
+      categoriesWithMore: [],
+    });
+  });
+});
+
+describe("people search", () => {
+  it("finds a member by full name in either order", async () => {
+    mockPrisma.user.findMany.mockResolvedValue([{ ...people(1)[0], lastName: "Lovelace" }]);
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "Lovelace Ada" });
+
+    const where = mockPrisma.user.findMany.mock.calls[0][0].where;
+    expect(where.AND).toHaveLength(2);
+    expect(where.AND[0].OR).toContainEqual({ firstName: { contains: "lovelace", mode: "insensitive" } });
+    expect(where.AND[1].OR).toContainEqual({ lastName: { contains: "ada", mode: "insensitive" } });
+    expect(results.filter((r) => r.type === "person").map((r) => r.title)).toEqual(["Ada Lovelace"]);
+  });
+});
+
+describe("runCategorySearch", () => {
+  it("queries only that category, in id order, with the larger candidate bound", async () => {
+    mockPrisma.user.findMany.mockResolvedValue(people(3));
+
+    await runCategorySearch({ userId: "u1", roles: MEMBER, q: "ada", category: "person", skip: 0, limit: 5 });
+
+    expect(mockPrisma.user.findMany.mock.calls[0][0]).toMatchObject({ take: CATEGORY_RAW_TAKE, orderBy: { id: "asc" } });
+    expect(mockPrisma.project.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.task.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns the window plus one extra row so the caller can tell there is more", async () => {
+    mockPrisma.user.findMany.mockResolvedValue(people(7));
+
+    const first = await runCategorySearch({ userId: "u1", roles: MEMBER, q: "ada", category: "person", skip: 0, limit: 5 });
+    expect(first.map((r) => r.title)).toEqual(["Ada A", "Ada B", "Ada C", "Ada D", "Ada E", "Ada F"]);
+
+    const second = await runCategorySearch({ userId: "u1", roles: MEMBER, q: "ada", category: "person", skip: 5, limit: 5 });
+    expect(second.map((r) => r.title)).toEqual(["Ada F", "Ada G"]);
+  });
+
+  it("passes the request to page access lookups for documents and forms", async () => {
+    const request = new Request("http://localhost/api/search?q=atlas");
+    mockPrisma.page.findMany.mockResolvedValue([{ id: "d1", title: "Atlas", iconEmoji: null, kind: "FreeForm" }]);
+    vi.mocked(getPageAccessBulk).mockResolvedValue(new Map() as never);
+    vi.mocked(getPageAccessBulk).mockClear();
+    await runCategorySearch({ userId: "u1", roles: MEMBER, q: "atlas", category: "document", skip: 0, limit: 5, request });
+    await runCategorySearch({ userId: "u1", roles: MEMBER, q: "atlas", category: "form", skip: 0, limit: 5, request });
+    const calls = vi.mocked(getPageAccessBulk).mock.calls;
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call[2]).toBe(request);
+  });
+
+  it("returns an empty window past the end", async () => {
+    mockPrisma.user.findMany.mockResolvedValue(people(2));
+    expect(await runCategorySearch({ userId: "u1", roles: MEMBER, q: "ada", category: "person", skip: 10, limit: 5 })).toEqual([]);
+  });
+
+  it("covers both document sources and keeps titles first across pages", async () => {
+    mockPrisma.page.findMany.mockResolvedValue([{ id: "d1", title: "Atlas notes", iconEmoji: null, kind: "FreeForm" }]);
+    vi.mocked(getPageAccessBulk).mockResolvedValue(new Map([["d1", { canView: true }]]) as never);
+    mockPrisma.projectFile.findMany.mockResolvedValue([
+      { id: "f1", title: "Atlas plan", currentVersion: { fileName: "plan.pdf" }, project: { name: "Atlas" } },
+    ]);
+
+    const rows = await runCategorySearch({ userId: "u1", roles: MEMBER, q: "atlas", category: "document", skip: 0, limit: 5 });
+
+    expect(rows.map((r) => r.id)).toEqual(["d1", "f1"]);
+    expect(mockPrisma.projectFile.findMany.mock.calls[0][0]).toMatchObject({ take: CATEGORY_RAW_TAKE, orderBy: { id: "asc" } });
+    expect(mockPageContent).toHaveBeenCalledWith("atlas", 18);
+  });
+
+  it("does not run a category the caller's roles gate out", async () => {
+    const rows = await runCategorySearch({ userId: "u1", roles: MEMBER, q: "ada", category: "partner", skip: 0, limit: 5 });
+    expect(rows).toEqual([]);
+    expect(mockPrisma.partnerOrg.findMany).not.toHaveBeenCalled();
+  });
+
+  it("returns nothing for a non-member", async () => {
+    const rows = await runCategorySearch({
+      userId: "u1",
+      roles: { ...MEMBER, isLabMember: false },
+      q: "ada",
+      category: "person",
+      skip: 0,
+      limit: 5,
+    });
+    expect(rows).toEqual([]);
+    expect(mockPrisma.user.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -164,6 +304,25 @@ describe("runSearch — project files", () => {
       subtitle: "Atlas",
       url: "/documents/file/f1",
       fileCategory: "pdf",
+    });
+  });
+
+  it("drops files the viewer can't open and checks access as the searcher", async () => {
+    mockPrisma.projectFile.findMany.mockResolvedValue([
+      { id: "mine", title: "Query mine", currentVersion: null, project: null },
+      { id: "theirs", title: "Query theirs", currentVersion: null, project: null },
+    ]);
+    vi.mocked(filterViewableFiles).mockImplementation(async (_u, files) =>
+      files.filter((f) => f.id === "mine"),
+    );
+
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: "query" });
+
+    expect(filterViewableFiles).toHaveBeenCalledWith("u1", expect.any(Array), undefined);
+    expect(results.filter((r) => r.type === "document").map((r) => r.id)).toEqual(["mine"]);
+    expect(mockPrisma.projectFile.findMany.mock.calls[0][0].select).toMatchObject({
+      linkAccess: true,
+      folderPageId: true,
     });
   });
 
@@ -501,27 +660,27 @@ describe("runSearch — partner orgs and contacts", () => {
 });
 
 describe("runSearch — help articles", () => {
-  it("surfaces a /help article by title", async () => {
-    const help = (await runSearch({ userId: "u1", roles: MEMBER, q: "shortcuts" })).filter(
-      (r) => r.type === "helpArticle",
-    );
+  const rooms = parseHelpArticle("rooms", "---\ntitle: Booking rooms\nsummary: Find a room.\nkeywords: [reserve]\n---\nBody");
+  const help = async (q: string, roles = MEMBER) =>
+    (await runSearch({ userId: "u1", roles, q })).filter((r) => r.type === "helpArticle");
 
-    expect(help).toContainEqual({
-      type: "helpArticle",
-      id: "shortcuts",
-      title: "Keyboard shortcuts",
-      subtitle: "Help",
-      url: "/help/shortcuts",
-    });
+  beforeEach(() => vi.mocked(visibleHelpArticles).mockResolvedValue([rooms]));
+
+  it("finds an article the viewer can see, by title or keyword", async () => {
+    const result = { type: "helpArticle", id: "rooms", title: "Booking rooms", subtitle: "Help", url: "/help/articles/rooms" };
+    expect(await help("booking")).toContainEqual(result);
+    expect(await help("reserve")).toContainEqual(result);
+    expect(vi.mocked(visibleHelpArticles)).toHaveBeenCalledWith({ userId: "u1", roles: MEMBER, request: undefined });
   });
 
-  it("matches on a keyword the title doesn't contain", async () => {
-    // "MCP" is only a keyword of the AI-assistants article, not its title.
-    const help = (await runSearch({ userId: "u1", roles: MEMBER, q: "mcp" })).filter(
-      (r) => r.type === "helpArticle",
-    );
+  it("leaves out articles the viewer can't see", async () => {
+    vi.mocked(visibleHelpArticles).mockResolvedValue([]);
+    expect(await help("booking")).toEqual([]);
+  });
 
-    expect(help.map((r) => r.id)).toContain("mcp");
+  it("still finds the help pages that aren't articles", async () => {
+    // "MCP" is only a keyword of the AI-assistants setup page, not its title.
+    expect((await help("mcp")).map((r) => r.url)).toContain("/help/mcp");
   });
 });
 

@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.tasks.$id.comments";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { resolvePhotoUrl } from "~/lib/photo";

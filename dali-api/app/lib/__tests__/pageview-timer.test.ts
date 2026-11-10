@@ -4,25 +4,9 @@ import {
   MAX_VIEW_MS,
   TICK_MS,
   advanceTimer,
-  isCounting,
   pendingFlush,
   startTimer,
 } from "~/lib/pageview-timer";
-
-describe("isCounting", () => {
-  it("needs a visible document", () => {
-    expect(isCounting({ documentVisible: false, frameRendered: null })).toBe(false);
-  });
-  it("counts a visible top-level document", () => {
-    expect(isCounting({ documentVisible: true, frameRendered: null })).toBe(true);
-  });
-  it("does not count a hidden iframe", () => {
-    expect(isCounting({ documentVisible: true, frameRendered: false })).toBe(false);
-  });
-  it("counts a rendered iframe", () => {
-    expect(isCounting({ documentVisible: true, frameRendered: true })).toBe(true);
-  });
-});
 
 describe("advanceTimer", () => {
   it("accumulates while counting", () => {

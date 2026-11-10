@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { blocksToHtml, type DocBlock } from "~/collab/blocknote-server";
 import { blogListing } from "~/lib/blog-preview";

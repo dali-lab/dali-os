@@ -1,7 +1,7 @@
 // "Filed to General ▸ Meeting assets ▸ Weekly sync notes": where a meeting note
 // just landed in the Drive, for the toast that follows creating one.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { DRIVE_SPACES, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
 import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
 import { driveLocation, locationFromCrumbs } from "~/lib/drive-reveal.server";

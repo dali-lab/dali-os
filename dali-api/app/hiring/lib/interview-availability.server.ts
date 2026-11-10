@@ -1,6 +1,7 @@
 import { zonedDayStartUtc, zonedWallTimeUtc } from "~/lib/timezone";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { computeUserFreeBusy, intersectFreeIntervals, type Interval } from "~/lib/availability";
+import { forEachWithLimit } from "~/lib/concurrency";
 
 // Interviewer availability for scheduling, read straight from each member's
 // DALI OS calendar (there's no separate availability to fill in), plus the
@@ -111,7 +112,32 @@ async function computeInterviewerCalendar(
 // A cycle's slot list and the booking right after it read the same
 // calendars; a short cache keeps that to one read of each linked calendar.
 const CACHE_TTL_MS = 2 * 60_000;
+// One read runs several queries at once plus Google calls, so a full roster
+// unthrottled can fill the pg pool and stall every other request on the machine.
+const MAX_CONCURRENT_READS = 6;
 const cache = new Map<string, { expires: number; value: Promise<InterviewerCalendar> }>();
+
+function cacheKey(userId: string, config: InterviewWindowConfig): string {
+  return [
+    userId,
+    config.interviewStartDate.toISOString(),
+    config.interviewEndDate.toISOString(),
+    config.timezone,
+    config.dayStartHour,
+    config.dayEndHour,
+  ].join("|");
+}
+
+async function readCalendars(
+  userIds: string[],
+  config: InterviewWindowConfig,
+): Promise<Map<string, InterviewerCalendar>> {
+  const calendars = new Map<string, InterviewerCalendar>();
+  await forEachWithLimit(userIds, MAX_CONCURRENT_READS, async (userId) => {
+    calendars.set(userId, await computeInterviewerCalendar(userId, config));
+  });
+  return calendars;
+}
 
 /** Each interviewer's availability straight from their DALI OS calendar:
  *  working hours plus busy time on the calendars they've linked (DALI
@@ -122,26 +148,22 @@ export async function interviewerCalendars(
 ): Promise<Map<string, InterviewerCalendar>> {
   const now = Date.now();
   const unique = [...new Set(userIds)];
+  const missing = unique.filter((userId) => {
+    const hit = cache.get(cacheKey(userId, config));
+    return !hit || hit.expires < now;
+  });
+  if (missing.length > 0) {
+    const batch = readCalendars(missing, config);
+    for (const userId of missing) {
+      const key = cacheKey(userId, config);
+      const value = batch.then((calendars) => calendars.get(userId)!);
+      cache.set(key, { expires: now + CACHE_TTL_MS, value });
+      // A failed read shouldn't stick around for the whole TTL.
+      value.catch(() => cache.delete(key));
+    }
+  }
   const entries = await Promise.all(
-    unique.map(async (userId) => {
-      const key = [
-        userId,
-        config.interviewStartDate.toISOString(),
-        config.interviewEndDate.toISOString(),
-        config.timezone,
-        config.dayStartHour,
-        config.dayEndHour,
-      ].join("|");
-      let hit = cache.get(key);
-      if (!hit || hit.expires < now) {
-        const value = computeInterviewerCalendar(userId, config);
-        hit = { expires: now + CACHE_TTL_MS, value };
-        cache.set(key, hit);
-        // A failed read shouldn't stick around for the whole TTL.
-        value.catch(() => cache.delete(key));
-      }
-      return [userId, await hit.value] as const;
-    }),
+    unique.map(async (userId) => [userId, await cache.get(cacheKey(userId, config))!.value] as const),
   );
   return new Map(entries);
 }

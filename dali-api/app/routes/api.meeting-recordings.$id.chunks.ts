@@ -50,13 +50,17 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Invalid seq" }, { status: 400 });
   }
 
+  // Read before the 404/409 below: replying with the body unread resets the
+  // connection, Fly turns that into a 502, and the client retries it as a
+  // transient failure instead of seeing that the recording is gone.
+  const body = Buffer.from(await request.arrayBuffer());
+
   const rec = await ownRecording(params.id, auth.user.sub);
   if (!rec) return Response.json({ error: "Not found" }, { status: 404 });
   if (rec.finalizedAt !== null || TERMINAL_STATUSES.has(rec.status)) {
     return Response.json({ error: "Recording has ended" }, { status: 409 });
   }
 
-  const body = Buffer.from(await request.arrayBuffer());
   if (body.byteLength === 0 || body.byteLength > MAX_CHUNK_BYTES) {
     return Response.json({ error: "Chunk too large" }, { status: 413 });
   }

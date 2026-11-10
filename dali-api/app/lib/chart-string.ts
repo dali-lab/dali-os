@@ -1,7 +1,7 @@
 // Dartmouth chart string parsing and validation. Client-safe on purpose (no
 // Prisma import) so the MCP tool, the project form and the unit tests can all
 // share one implementation — CI runs the unit suite without a generated Prisma
-// client, so anything that reaches ~/lib/db can't be imported from a test.
+// client, so anything that reaches ~/lib/db.server can't be imported from a test.
 //
 // Two formats coexist permanently, and `ProjectChartString.type` records which.
 // They are not eras — a project has one or the other depending on how it is

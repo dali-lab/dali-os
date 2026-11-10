@@ -28,6 +28,17 @@ const TONE_SURFACE: Record<BannerTone, string> = {
 };
 
 export const BANNER_CARD_WIDTH = 880;
+export const POSTER_CARD_WIDTH = 480;
+
+export const BANNER_CROP_ASPECT: Partial<Record<BannerKind, number>> = { Image: 16 / 9, Poster: 3 / 4, Video: 16 / 9 };
+
+function hasBannerText(banner: Pick<BannerView, "headline" | "body" | "ctaLabel">) {
+  return Boolean(banner.headline || banner.body || banner.ctaLabel);
+}
+
+export function bannerCardWidth(banner: BannerView) {
+  return banner.kind === "Poster" && banner.mediaUrl && !hasBannerText(banner) ? POSTER_CARD_WIDTH : BANNER_CARD_WIDTH;
+}
 
 /** The banner's own content. `inert` keeps the editor preview from playing or navigating. */
 export function BannerContent({
@@ -41,9 +52,7 @@ export function BannerContent({
 }) {
   const os = useOsChrome();
   const onTone = banner.kind === "Text" && banner.tone !== "Card";
-  const hasText = Boolean(banner.headline || banner.body || banner.ctaLabel);
-
-  const text = hasText && (
+  const text = hasBannerText(banner) && (
     <div className="flex flex-col gap-3">
       {banner.headline && (
         <h2
@@ -99,6 +108,13 @@ export function BannerContent({
     return <div className={cn("px-8 py-12 md:px-14 md:py-16", TONE_SURFACE[banner.tone])}>{text}</div>;
   }
   if (banner.kind === "Poster") {
+    if (!text && banner.mediaUrl) {
+      return (
+        <div className="flex justify-center bg-os-well">
+          <img src={banner.mediaUrl} alt={banner.name} className="block h-auto max-h-[80vh] w-full object-contain" />
+        </div>
+      );
+    }
     return (
       <div className="grid bg-os-card md:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)]">
         <div className="max-h-[70vh] bg-os-well">{media("aspect-[3/4]")}</div>
@@ -188,7 +204,10 @@ export function BannerOverlay({
       onClose={() => onClose(false)}
       labelledBy={titleId}
       className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4 md:p-8"
-      containerClassName="relative my-auto w-full max-w-[880px] overflow-hidden rounded-os-card border border-os-container bg-os-card shadow-[0_32px_80px_rgba(0,0,0,0.6)]"
+      containerClassName={cn(
+        "relative my-auto w-full overflow-hidden rounded-os-card border border-os-container bg-os-card shadow-[0_32px_80px_rgba(0,0,0,0.6)]",
+        bannerCardWidth(banner) === POSTER_CARD_WIDTH ? "max-w-[480px]" : "max-w-[880px]",
+      )}
     >
       <span id={titleId} className="sr-only">
         {banner.headline || banner.name}

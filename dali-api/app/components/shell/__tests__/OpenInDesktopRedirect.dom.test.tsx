@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { OpenInDesktopRedirect } from "~/components/shell/OpenInDesktopRedirect";
-import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import * as openInDesktop from "~/lib/open-in-desktop";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,12 +12,12 @@ let root: Root;
 let open: ReturnType<typeof vi.spyOn>;
 let fallback: () => void;
 
-async function mount(flags: Record<string, boolean> = { "desktop-tabs": true }) {
+async function mount() {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root.render(createElement(FeatureFlagsProvider, { flags, children: createElement(OpenInDesktopRedirect) }));
+    root.render(createElement(OpenInDesktopRedirect));
   });
 }
 
@@ -57,11 +56,6 @@ describe("OpenInDesktopRedirect", () => {
     await mount();
     expect(open).not.toHaveBeenCalled();
     expect(text()).toBe("");
-  });
-
-  it("does nothing with the flag off", async () => {
-    await mount({});
-    expect(open).not.toHaveBeenCalled();
   });
 
   it("does nothing inside the desktop app", async () => {

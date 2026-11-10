@@ -16,6 +16,12 @@ export function desktopVersion(): string | null {
   }
 }
 
+// The native recorder (desktop/src-tauri/recorder) only exists on macOS; the
+// Windows and Linux shells record through their webview.
+export function hasNativeRecorder(): boolean {
+  return desktopVersion() != null && /Mac/.test(navigator.platform);
+}
+
 // null on the server and the first client render (effect-based so SSR markup
 // matches hydration), then the shell version, or stays null in a browser.
 export function useDesktopVersion(): string | null {

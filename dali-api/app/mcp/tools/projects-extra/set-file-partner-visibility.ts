@@ -4,7 +4,7 @@
 // Mirrors POST /api/files/:id/partner-visible. The file must be live (not
 // archived). Gate: canEditProject (Core or project member).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { McpNotFoundError, McpForbiddenError } from "./errors";
 import { canEditProject } from "../access";
 

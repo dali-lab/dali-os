@@ -6,7 +6,7 @@
 // build on. Request/Response objects never reach this module; routes
 // translate the `{ error, status }` results.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin } from "~/lib/roles";
 import type { HiringEvent, HiringEventKind } from "~/generated/prisma/client";

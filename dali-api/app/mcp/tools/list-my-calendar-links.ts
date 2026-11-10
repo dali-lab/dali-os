@@ -3,7 +3,7 @@
 // `organizerCalendarLinkId` parameter on `schedule_meeting`. Requires the
 // `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export const LIST_MY_CALENDAR_LINKS_TOOL = {
   name: "list_my_calendar_links",

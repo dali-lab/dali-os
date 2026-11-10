@@ -5,7 +5,7 @@
 // minItems, maxItems. Anything outside that subset is silently ignored.
 
 export type JsonSchema = {
-  type?: string;
+  type?: string | string[];
   properties?: Record<string, JsonSchema>;
   required?: string[];
   additionalProperties?: boolean;
@@ -33,13 +33,12 @@ function typeOf(v: unknown): string {
 function validate(value: unknown, schema: JsonSchema, path: string): string | null {
   if (schema.type) {
     const t = typeOf(value);
-    const expected = schema.type;
-    const ok =
-      t === expected ||
-      (expected === "number" && t === "integer") ||
-      (expected === "integer" && t === "integer");
+    const expected = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const ok = expected.some(
+      (e) => t === e || (e === "number" && t === "integer") || (e === "integer" && t === "integer"),
+    );
     if (!ok) {
-      return `${path || "value"}: expected ${expected}, got ${t}`;
+      return `${path || "value"}: expected ${expected.join(" or ")}, got ${t}`;
     }
   }
 

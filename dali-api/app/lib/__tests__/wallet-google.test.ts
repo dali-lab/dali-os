@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 // Keep the prisma singleton from instantiating at import; this test only
 // exercises the pure object-id parser.
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 import { userIdFromGoogleObjectId } from "~/lib/wallet-google.server";
 

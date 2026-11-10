@@ -8,7 +8,7 @@
 //             Returns {id, created}.
 //   delete  — delete pairs by id. Core only. Supports a single id per call.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError, McpNotFoundError, requireForAction } from "../../registry";

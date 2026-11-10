@@ -1,17 +1,21 @@
 // MCP `list_project_files` — files uploaded to a project. Read access for any
 // authenticated member.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
+import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_PROJECT_FILES_TOOL = {
   name: "list_project_files",
   description:
-    "List files uploaded to a project (current version metadata). Excludes archived files unless includeArchived is true.",
+    "List files uploaded to a project (current version metadata). Excludes archived files unless includeArchived is true. Most recently updated first. Pass page.nextCursor as cursor to read the next page until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
       projectId: { type: "string", minLength: 1 },
       includeArchived: { type: "boolean" },
+      ...pageProps(PAGE_LIMITS),
     },
     required: ["projectId"],
     additionalProperties: false,
@@ -19,7 +23,7 @@ export const LIST_PROJECT_FILES_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type Input = { projectId: string; includeArchived?: boolean };
+type Input = PageArgs & { projectId: string; includeArchived?: boolean };
 
 export class ListProjectFilesError extends Error {
   constructor(message: string, public status: number) {
@@ -35,12 +39,17 @@ export async function runListProjectFiles(_callerId: string, input: Input) {
   });
   if (!project) throw new ListProjectFilesError("Project not found", 404);
 
-  const files = await prisma.projectFile.findMany({
-    where: {
-      projectId: input.projectId,
-      ...(input.includeArchived ? {} : { archivedAt: null }),
-    },
-    orderBy: { updatedAt: "desc" },
+  const window = offsetWindow(input, PAGE_LIMITS);
+  const where = {
+    projectId: input.projectId,
+    ...(input.includeArchived ? {} : { archivedAt: null }),
+  };
+  const [fetched, total] = await Promise.all([
+    prisma.projectFile.findMany({
+    where,
+    orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+    skip: window.skip,
+    take: window.take,
     select: {
       id: true,
       title: true,
@@ -57,9 +66,13 @@ export async function runListProjectFiles(_callerId: string, input: Input) {
         },
       },
     },
-  });
+    }),
+    prisma.projectFile.count({ where }),
+  ]);
+  const { rows: files, page } = offsetPage(fetched, window, total);
 
   return {
+    page,
     files: files.map((f) => ({
       id: f.id,
       title: f.title,

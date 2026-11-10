@@ -5,7 +5,7 @@
 // viewer can manage sharing on. Everyone else gets kind, label and a count.
 // Group member lists are never resolved here; the Share dialog does that.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { findGoverningScopeFor, governingScopeMap, type AncestorRow } from "~/lib/pageAccess.server";
 import { PERMISSION_RANK } from "~/lib/page-sharing.server";
 import { resolveGroupMembers } from "~/lib/groups";
@@ -189,6 +189,9 @@ function summarizeOne(
   }
   if (row.linkAccess === "SignedIn") {
     return { kind: "public", label: "Anyone signed in", permission: tier(row.linkPermission, "View") };
+  }
+  if (row.linkAccess === "Partners") {
+    return { kind: "public", label: "Partners", permission: tier(row.linkPermission, "View") };
   }
 
   const ownerLabel = row.createdById === viewerId ? "Only you" : "Owner only";

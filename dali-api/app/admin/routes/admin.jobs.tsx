@@ -14,7 +14,7 @@ import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
 import { useOsChrome } from "~/components/os-chrome";
 import { Toggle } from "~/components/ui/Toggle";
 import { cn } from "~/lib/cn";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";

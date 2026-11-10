@@ -1,6 +1,5 @@
-// MCP: manage_journey_page, manage_journey_slides, set_journey_lab and
-// set_journey_quiz. Edit what's inside a journey module, saved to the draft.
-// Page and slide bodies are written as Markdown. Scope: mcp:write.
+// Edit what's inside a journey module, saved to the draft. Page and slide
+// bodies are written as Markdown.
 
 import { McpInvalidError, McpNotFoundError, requireForAction } from "../../errors";
 import type { McpCtx, McpTool } from "../../registry";
@@ -233,7 +232,7 @@ export const SET_JOURNEY_LAB: McpTool = {
     if (!args.remove && !args.lab) throw new McpInvalidError("Pass lab, or remove: true.");
     if (args.lab && !(ENTRY_FILE in args.lab.files)) throw new McpInvalidError(`The lab needs an ${ENTRY_FILE} file.`);
     const refuseIfStudio = (m: JourneyModule) => {
-      if (args.lab && m.studio) throw new McpInvalidError("This module has a whiteboard or document lab. Remove it with set_journey_studio_lab first.");
+      if (args.lab && m.studio) throw new McpInvalidError("This module has a whiteboard or document lab. Remove it with set_journey_activity (activity studio_lab, remove: true) first.");
     };
     const viewer = await journeyViewer(ctx);
     const lab: Lab | undefined = args.lab && {

@@ -8,11 +8,14 @@
 // `add` and `update` are gated on `confirmed: true` server-side: an agent
 // logging payroll-adjacent hours must show the user the preview first.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveRoleRef, currentTerm, coreRoleLabel } from "~/lib/roles";
 import { validateTimeEntryRange, ASSIGNMENT_TYPES } from "~/lib/calendar-schemas";
 import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";
 import type { AssignmentType } from "~/generated/prisma/client";
+import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../pagination";
+
+const TIME_ENTRY_PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 const CONFIRM_PROPERTY = {
   confirmed: {
@@ -160,7 +163,7 @@ export async function runListMyRoles(
 export const LIST_MY_TIME_ENTRIES_TOOL = {
   name: "list_my_time_entries",
   description:
-    "List the authenticated member's logged time entries, newest first. Use it to find the id of an entry to update or delete, or to check what is already logged before adding more.",
+    "List the authenticated member's logged time entries, newest first. Use it to find the id of an entry to update or delete, or to check what is already logged before adding more. Pass page.nextCursor as cursor to read older entries until page.hasMore is false.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -169,10 +172,7 @@ export const LIST_MY_TIME_ENTRIES_TOOL = {
         description: "Only entries on or after this date (YYYY-MM-DD).",
       },
       to: { type: "string", description: "Only entries on or before this date (YYYY-MM-DD)." },
-      limit: {
-        type: "number",
-        description: "Maximum entries to return, 1-200. Defaults to 50.",
-      },
+      ...pageProps(TIME_ENTRY_PAGE_LIMITS),
     },
     required: [],
     additionalProperties: false,
@@ -205,21 +205,30 @@ function parseDay(value: string | undefined, label: string): Date | undefined {
 
 export async function runListMyTimeEntries(
   callerId: string,
-  input: { from?: string; to?: string; limit?: number } = {},
-): Promise<{ entries: TimeEntryOut[] }> {
+  input: PageArgs & { from?: string; to?: string } = {},
+): Promise<{ entries: TimeEntryOut[]; page: PageInfo }> {
   const from = parseDay(input.from, "from");
   const to = parseDay(input.to, "to");
-  const limit = Math.min(Math.max(input.limit ?? 50, 1), 200);
+  const window = keysetWindow(input, TIME_ENTRY_PAGE_LIMITS, [
+    { field: "date", direction: "desc", type: "date" },
+    { field: "createdAt", direction: "desc", type: "date" },
+  ]);
 
-  const rows = await prisma.timeEntry.findMany({
+  const fetched = await prisma.timeEntry.findMany({
     where: {
-      userId: callerId,
-      ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
+      AND: [
+        {
+          userId: callerId,
+          ...(from || to ? { date: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}),
+        },
+        window.where,
+      ],
     },
-    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
-    take: limit,
+    orderBy: window.orderBy,
+    take: window.take,
     select: {
       id: true,
+      createdAt: true,
       date: true,
       hours: true,
       note: true,
@@ -232,7 +241,10 @@ export async function runListMyTimeEntries(
     },
   });
 
+  const { rows, page } = keysetPage(fetched, window);
+
   return {
+    page,
     entries: rows.map((r) => ({
       id: r.id,
       date: r.date.toISOString().slice(0, 10),

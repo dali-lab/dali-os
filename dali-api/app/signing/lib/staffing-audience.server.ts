@@ -17,7 +17,7 @@
 // The bulk fns feed the admin roster, proactive notifications, and the issuance
 // job; the single-user gates feed the live app-gate. Keep the two paths in sync.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getNewMemberCohortIds } from "~/hiring/lib/new-member-cohort.server";
 import type { AudiencePerson } from "./audiences";
 

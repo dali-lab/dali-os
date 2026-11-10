@@ -5,25 +5,23 @@
 // / EnhanceBar take this hook's return value as props.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useBlocker, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { desktopVersion } from "~/lib/desktop";
+import { desktopVersion, hasNativeRecorder } from "~/lib/desktop";
 import { acquireCollabDoc, releaseCollabDoc } from "~/components/doc/collab-doc";
-// Vite explicit-URL import: the worklet runs in AudioWorkletGlobalScope and is
-// loaded via audioWorklet.addModule(url), so it has to resolve to a real URL
-// rather than being bundled as a normal module (see worklet-processor.js for
-// why it can't import anything, including this app's own bundler output).
-import workletUrl from "./worklet-processor.js?url";
+import { captureCallAudio, describeMicError, listMicDevices, openMic, startLevelMeter } from "./capture";
 import {
-  captureCallAudio,
-  describeMicError,
-  listMicDevices,
-  openMic,
-  startLevelMeter,
-  WorkletCapture,
-} from "./capture";
-import { ChunkConflictError, ChunkUploadQueue } from "./upload-queue";
+  adoptDesktopSession,
+  clearLiveSession,
+  getLiveSession,
+  liveSessionBlocker,
+  startBrowserSession,
+  stopLiveSession,
+  useLiveSession,
+} from "./live-session";
+import { holdRecordingPresence, releaseRecordingPresence } from "./recording-presence";
+import { findRemoteRecording, type RecordingAwarenessState } from "./awareness";
 import {
   countSpeakersByChannel,
   formatClock,
@@ -36,7 +34,6 @@ import {
   localEditKeepIds,
   isUndoRedoTransaction,
   type EditorOp,
-  type EnhanceActionItem,
   type EnhanceBlockChange,
   type EnhanceMarkEntry,
   type SnapshotBlock,
@@ -45,7 +42,6 @@ import {
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
 import type {
   Channel,
-  ChunkResponse,
   LatestRecording,
   PollRecordingResponse,
   ProcessingStage,
@@ -116,7 +112,6 @@ export type CaptureMode = "browser" | "desktop" | null;
 
 const POLL_MS = 3000;
 const APP_WAIT_MS = 30_000;
-const STOP_DRAIN_MS = 60_000;
 // Desktop stop: how long to wait for the app's finish before offering a way out.
 const STOP_WAIT_MS = 60_000;
 // Poll latency varies by a few hundred ms; resyncing on every poll would
@@ -162,6 +157,8 @@ function describeStartError(json: unknown): string {
   }
   return code ?? "Couldn't start recording.";
 }
+
+const CONFLICT_MESSAGE = "Recording ended while this tab was in the background.";
 
 const emptyLevels: Record<Channel, number> = { mic: 0, call: 0 };
 const emptyStalled: Record<Channel, boolean> = { mic: false, call: false };
@@ -209,7 +206,6 @@ export type UseMeetingRecordingProps = {
     ops: EditorOp[],
     recordingId: string,
     transcript: string[],
-    actionItems: EnhanceActionItem[],
     speakerAt: (atSeconds: number) => string | null,
   ) => { ok: boolean; priorBlocks?: Record<string, unknown> };
   /** Subscribes to every document change (local or remote) once the editor is
@@ -235,15 +231,13 @@ export type UseMeetingRecordingProps = {
   onRevertBlock?: (id: string, priorBlocks: Record<string, unknown>) => void;
   onKeepAllBlocks?: () => number;
   onRevertAllBlocks?: (priorBlocks: Record<string, unknown>) => number;
-  /** The meeting note's project, when it's on one (specs/meeting-notes-model.md
-   *  §4) — tasks need a project, so Create tasks is hidden without one. */
+  /** The meeting note's project, when it's on one; otherwise each suggested
+   *  task picks its own. */
   projectId?: string | null;
-  /** Whether the viewer has task-create rights on `projectId`. Create tasks
-   *  is hidden without it, same as the board's own gate. */
-  canCreateTasks?: boolean;
-  /** Fired once per task created from the sheet, so the note can append a
-   *  link to the task on the matching checklist item. */
-  onTaskCreated?: (itemText: string, taskId: string, projectId: string) => void;
+  /** Fired once per task created from a suggestion line, so the note can swap
+   *  the line (by block id) for the task block. */
+  onRemoveBlock?: (id: string) => void;
+  onTaskCreated?: (blockId: string, task: { taskId: string; projectId: string; label: string }) => void;
   /** Rewrites the Transcript toggle's children with the current paragraphs
    *  after a successful speaker rename, once the transcript is already in
    *  the note (insertedAt or enhancedAt set) — otherwise the names baked
@@ -273,8 +267,8 @@ export function useMeetingRecording({
   onKeepAllBlocks,
   onRevertAllBlocks,
   projectId = null,
-  canCreateTasks = false,
   onTaskCreated,
+  onRemoveBlock,
   onSpeakersChanged,
 }: UseMeetingRecordingProps) {
   const dialog = useDialog();
@@ -307,9 +301,7 @@ export function useMeetingRecording({
   const [captureMode, setCaptureMode] = useState<CaptureMode>(null);
   const [appUnreachable, setAppUnreachable] = useState(false);
 
-  const [channelsActive, setChannelsActive] = useState<Channel[]>([]);
-  const [levels, setLevels] = useState<Record<Channel, number>>(emptyLevels);
-  const [stalled, setStalled] = useState<Record<Channel, boolean>>(emptyStalled);
+  const [polledChannels, setChannelsActive] = useState<Channel[]>([]);
   const [recordedSeconds, setRecordedSeconds] = useState(0);
   const [startedAt, setStartedAt] = useState(0);
   const [now, setNow] = useState(0);
@@ -381,7 +373,7 @@ export function useMeetingRecording({
   const [scrollTarget, setScrollTarget] = useState<number | null>(null);
 
   // Start-sheet config.
-  const [useDesktopApp, setUseDesktopApp] = useState(desktopVer != null);
+  const [useDesktopApp, setUseDesktopApp] = useState(hasNativeRecorder);
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(undefined);
   const [micDevices, setMicDevices] = useState<MediaDeviceInfo[]>([]);
   const [micLevel, setMicLevel] = useState(0);
@@ -390,34 +382,29 @@ export function useMeetingRecording({
   const [callAudioUnsupported, setCallAudioUnsupported] = useState(false);
 
   const segmentRef = useRef(0);
-  const captures = useRef<Partial<Record<Channel, WorkletCapture>>>({});
-  const streams = useRef<Partial<Record<Channel, MediaStream>>>({});
-  const queues = useRef<Partial<Record<Channel, ChunkUploadQueue>>>({});
-  const conflictedRef = useRef(false);
   const claimed = useRef(false);
+  const handledStop = useRef<string | null>(null);
+
+  const liveSession = useLiveSession();
+  const ownSession =
+    liveSession && liveSession.recordingId === recordingId && liveSession.captureMode === "browser" && !remote
+      ? liveSession
+      : null;
+  const ownLive = phase === "recording" && liveSession?.recordingId === recordingId ? liveSession : null;
+  const noSound = Boolean(ownLive?.noSound);
+  const micDevice = ownLive?.micDevice ?? null;
+  const callAudioOff = Boolean(ownLive?.callAudioOff);
+  const channelsActive = ownSession ? ownSession.channelsActive : polledChannels;
+  const levels = ownSession ? ownSession.levels : emptyLevels;
+  const stalled = ownSession ? ownSession.stalled : emptyStalled;
 
   const live = phase === "starting" || phase === "recording" || phase === "stopping";
-  const capturing = live && !remote;
-
-  function teardownCapture() {
-    for (const ch of Object.keys(captures.current) as Channel[]) {
-      captures.current[ch]?.stop();
-      queues.current[ch]?.destroy();
-      streams.current[ch]?.getTracks().forEach((t) => t.stop());
-    }
-    captures.current = {};
-    queues.current = {};
-    streams.current = {};
-    setChannelsActive([]);
-    setLevels(emptyLevels);
-    setStalled(emptyStalled);
-  }
 
   // Clears everything locally without deleting the server row — the path
   // after a successful Write notes/Insert transcript, which leaves the row
   // in place with insertedAt set (spec: "Both leave the row in place").
   function clearLocalState() {
-    teardownCapture();
+    if (recordingId) clearLiveSession(recordingId);
     writeBackup(documentName, null);
     setRecordingId(null);
     setLink(null);
@@ -446,7 +433,6 @@ export function useMeetingRecording({
     reviewedPostedRef.current = false;
     setStalePreview(false);
     segmentRef.current = 0;
-    conflictedRef.current = false;
     setPhase("idle");
     setOpen(false);
     if (transcriptParam) {
@@ -475,6 +461,93 @@ export function useMeetingRecording({
   }
 
   // ─── Pick a left-behind recording back up ──────────────────────────────
+  async function pickUp(
+    saved: Backup,
+    own: Backup | null,
+    following: Pick<LatestRecording, "ownerName" | "ownerIsYou" | "since"> | null,
+    isCancelled: () => boolean,
+  ) {
+    const res = await fetch(`/api/meeting-recordings/${saved.id}`, { credentials: "include" }).catch(() => null);
+    if (isCancelled() || claimed.current) return;
+    if (!res) return;
+    if (!res.ok) {
+      if (res.status === 404) writeBackup(documentName, null);
+      return;
+    }
+    const data = (await res.json()) as PollRecordingResponse;
+    if (isCancelled() || claimed.current) return;
+    claimed.current = true;
+    setRecordingId(saved.id);
+    setLink(saved.link || null);
+    setAiEnabled(saved.aiEnabled);
+    setChannelsActive(data.channels as Channel[]);
+    setRecordedSeconds(data.recordedSeconds);
+    setLines(data.lines);
+    setSpeakers(data.speakers);
+    setSpeakerNames(data.speakerNames ?? {});
+    setLastChunkAt(data.lastChunkAt ?? null);
+    setInsertedAt(data.insertedAt ?? null);
+    setFinalized(Boolean(data.finalizedAt));
+    setEnhanceNotes(data.notes ?? null);
+    setEnhancedAt(data.enhancedAt ?? null);
+    setEnhancedByName(data.enhancedBy ?? null);
+    setReviewedAt(data.reviewedAt ?? null);
+    segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
+    if (data.error) setError(data.error);
+    const liveStart = liveSessionStart(data);
+    if (following) {
+      setRemote({ ownerName: following.ownerName, ownerIsYou: following.ownerIsYou });
+      setStartedAt(liveStart ?? new Date(following.since).getTime());
+    }
+    const inMemory = getLiveSession();
+    const adoptable =
+      own?.captureMode === "browser" && inMemory?.recordingId === saved.id && inMemory.captureMode === "browser"
+        ? inMemory
+        : null;
+    if (adoptable && (data.status === "Pending" || data.status === "Recording" || data.status === "Stopped")) {
+      setCaptureMode("browser");
+      setStartedAt(adoptable.startedAt);
+      if (adoptable.status === "stopped") handledStop.current = `${adoptable.recordingId}:${adoptable.startedAt}`;
+      if (adoptable.conflicted) {
+        setError(CONFLICT_MESSAGE);
+        setPhase("processing");
+      } else {
+        setPhase(adoptable.status === "stopped" ? "review" : adoptable.status);
+      }
+      setOpen(true);
+    } else if ((data.status === "Pending" || data.status === "Recording") && own?.captureMode === "browser") {
+      // The tab that was capturing reloaded, so its mic is gone. Stop the
+      // session rather than show a clock over nothing; Continue picks it up.
+      setCaptureMode("browser");
+      void fetch(`/api/meeting-recordings/${saved.id}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "stop" }),
+      }).catch(() => null);
+      setError("Recording stopped when this page reloaded. Continue to pick it up.");
+      setPhase("review");
+      setOpen(true);
+    } else if (data.status === "Pending" || data.status === "Recording") {
+      setCaptureMode("desktop"); // no local capture to drive: follow the row by polling
+      if (!following) setStartedAt(liveStart ?? Date.now());
+      setPhase(data.status === "Pending" ? "starting" : "recording");
+      if (!following) setOpen(true);
+    } else if (data.status === "Stopped") {
+      setCaptureMode((m) => m ?? own?.captureMode ?? "desktop");
+      setPhase("review");
+      if (!following) setOpen(true);
+    } else if (data.status === "Processing") {
+      setPhase("processing");
+    } else if (data.status === "Done") {
+      setPhase("done");
+      if (transcriptParam) setOpen(true);
+    } else {
+      setPhase("failed");
+      if (transcriptParam) setOpen(true);
+    }
+  }
+
   useEffect(() => {
     if (claimed.current) return;
     const own = readBackup(documentName);
@@ -488,71 +561,7 @@ export function useMeetingRecording({
         ? latestRecording
         : null;
     let cancelled = false;
-    void (async () => {
-      const res = await fetch(`/api/meeting-recordings/${saved.id}`, { credentials: "include" }).catch(() => null);
-      if (cancelled || claimed.current) return;
-      if (!res) return;
-      if (!res.ok) {
-        if (res.status === 404) writeBackup(documentName, null);
-        return;
-      }
-      const data = (await res.json()) as PollRecordingResponse;
-      if (cancelled || claimed.current) return;
-      claimed.current = true;
-      setRecordingId(saved.id);
-      setLink(saved.link || null);
-      setAiEnabled(saved.aiEnabled);
-      setChannelsActive(data.channels as Channel[]);
-      setRecordedSeconds(data.recordedSeconds);
-      setLines(data.lines);
-      setSpeakers(data.speakers);
-      setSpeakerNames(data.speakerNames ?? {});
-      setLastChunkAt(data.lastChunkAt ?? null);
-      setInsertedAt(data.insertedAt ?? null);
-      setFinalized(Boolean(data.finalizedAt));
-      setEnhanceNotes(data.notes ?? null);
-      setEnhancedAt(data.enhancedAt ?? null);
-      setEnhancedByName(data.enhancedBy ?? null);
-      setReviewedAt(data.reviewedAt ?? null);
-      segmentRef.current = Math.max(0, (data.segmentStarts?.length ?? 1) - 1);
-      if (data.error) setError(data.error);
-      const liveStart = liveSessionStart(data);
-      if (following) {
-        setRemote({ ownerName: following.ownerName, ownerIsYou: following.ownerIsYou });
-        setStartedAt(liveStart ?? new Date(following.since).getTime());
-      }
-      if ((data.status === "Pending" || data.status === "Recording") && own?.captureMode === "browser") {
-        // The tab that was capturing reloaded, so its mic is gone. Stop the
-        // session rather than show a clock over nothing; Continue picks it up.
-        setCaptureMode("browser");
-        void fetch(`/api/meeting-recordings/${saved.id}`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "stop" }),
-        }).catch(() => null);
-        setError("Recording stopped when this page reloaded. Continue to pick it up.");
-        setPhase("review");
-        setOpen(true);
-      } else if (data.status === "Pending" || data.status === "Recording") {
-        setCaptureMode("desktop"); // no local capture to drive: follow the row by polling
-        if (!following) setStartedAt(liveStart ?? Date.now());
-        setPhase(data.status === "Pending" ? "starting" : "recording");
-        if (!following) setOpen(true);
-      } else if (data.status === "Stopped") {
-        setCaptureMode((m) => m ?? "desktop");
-        setPhase("review");
-        if (!following) setOpen(true);
-      } else if (data.status === "Processing") {
-        setPhase("processing");
-      } else if (data.status === "Done") {
-        setPhase("done");
-        if (transcriptParam) setOpen(true);
-      } else {
-        setPhase("failed");
-        if (transcriptParam) setOpen(true);
-      }
-    })();
+    void pickUp(saved, own, following, () => cancelled);
     return () => {
       cancelled = true;
     };
@@ -561,44 +570,83 @@ export function useMeetingRecording({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [documentName]);
 
-  // ─── Leaving mid-recording ──────────────────────────────────────────────
+  // ─── Follow a recording someone starts after this page loaded ──────────
   useEffect(() => {
-    if (!capturing) return;
-    const handler = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [capturing]);
-  const blocker = useBlocker(capturing);
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    void dialog
-      .confirm({
-        title: "Leave while recording?",
-        description:
-          captureMode === "desktop"
-            ? "The recording keeps running in the DALI OS app. Come back to this note to stop it."
-            : "Recording stops if you leave this tab.",
-        confirmLabel: "Leave",
-        cancelLabel: "Stay",
-      })
-      .then((leave) => (leave ? blocker.proceed() : blocker.reset()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blocker.state]);
-
-  // ─── Recording presence: tell every other viewer via collab awareness ──
-  useEffect(() => {
-    if (!collabToken || remote) return;
-    if (phase !== "recording" && phase !== "stopping") return;
+    if (!collabToken || phase !== "idle" || claimed.current) return;
     const entry = acquireCollabDoc(documentName, collabToken);
     const awareness = entry.provider.awareness;
-    const localUser = awareness?.getLocalState()?.user as { userId?: string } | undefined;
-    awareness?.setLocalStateField("recording", { userId: localUser?.userId ?? "", since: Date.now() });
+    if (!awareness) {
+      releaseCollabDoc(documentName);
+      return;
+    }
+    let cancelled = false;
+    let tried: string | null = null;
+    const check = () => {
+      if (claimed.current) return;
+      const states = awareness.getStates() as Map<number, RecordingAwarenessState>;
+      const found = findRemoteRecording(states, entry.ydoc.clientID);
+      if (!found?.recordingId || found.recordingId === tried) return;
+      tried = found.recordingId;
+      const localUserId = (awareness.getLocalState()?.user as { userId?: string } | undefined)?.userId;
+      void pickUp(
+        { id: found.recordingId, link: "", aiEnabled: false },
+        null,
+        {
+          ownerName: found.name,
+          ownerIsYou: Boolean(localUserId) && found.userId === localUserId,
+          since: new Date(found.since).toISOString(),
+        },
+        () => cancelled,
+      );
+    };
+    awareness.on("change", check);
+    check();
     return () => {
-      awareness?.setLocalStateField("recording", null);
+      cancelled = true;
+      awareness.off("change", check);
       releaseCollabDoc(documentName);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase === "recording" || phase === "stopping", documentName, collabToken, Boolean(remote)]);
+  }, [phase === "idle", documentName, collabToken]);
+
+  // ─── This tab's browser capture, which lives in live-session.ts ────────
+  useEffect(() => {
+    if (!ownSession) return;
+    if (ownSession.status === "stopping" && phase === "recording") {
+      setStoppingSince(Date.now());
+      setPhase("stopping");
+      return;
+    }
+    if (ownSession.status !== "stopped") return;
+    const key = `${ownSession.recordingId}:${ownSession.startedAt}`;
+    if (handledStop.current === key) return;
+    handledStop.current = key;
+    if (ownSession.conflicted) {
+      setError(CONFLICT_MESSAGE);
+      setPhase("processing");
+      return;
+    }
+    const seconds = ownSession.stoppedSeconds ?? 0;
+    setRecordedSeconds((s) => s + seconds);
+    setPhase("review");
+  }, [ownSession?.status, ownSession?.startedAt, ownSession?.conflicted]);
+
+  useEffect(() => {
+    if (recordingId && (phase === "processing" || phase === "done" || phase === "failed")) clearLiveSession(recordingId);
+  }, [phase, recordingId]);
+
+  // ─── Recording presence: tell every other viewer via collab awareness ──
+  const presenceIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const announcing = phase === "recording" || phase === "stopping";
+    if (announcing && collabToken && !remote && recordingId) {
+      holdRecordingPresence({ recordingId, documentName, collabToken });
+      presenceIdRef.current = recordingId;
+    } else if (!announcing && presenceIdRef.current) {
+      releaseRecordingPresence(presenceIdRef.current);
+      presenceIdRef.current = null;
+    }
+  }, [phase, recordingId, documentName, collabToken, remote]);
 
   // ─── Elapsed-time tick while live (both capture modes) ─────────────────
   useEffect(() => {
@@ -816,13 +864,20 @@ export function useMeetingRecording({
     }
   }
 
-  async function createRow(): Promise<StartRecordingResponse | null> {
+  async function createRow(captureSource: "desktop" | "browser"): Promise<StartRecordingResponse | null> {
     try {
       const res = await fetch("/api/meeting-recordings", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentName, scheduledMeetingId, occurrenceStart }),
+        body: JSON.stringify({
+          documentName,
+          scheduledMeetingId,
+          occurrenceStart,
+          captureSource,
+          appVersion: desktopVer,
+          clientPlatform: navigator.platform,
+        }),
       });
       const json = await res.json().catch(() => null);
       if (res.status === 409 && json?.error === "alreadyRecording" && typeof json.recordingId === "string") {
@@ -847,70 +902,9 @@ export function useMeetingRecording({
     }
   }
 
-  async function uploadChunk(
-    id: string,
-    channel: Channel,
-    chunk: { segment: number; seq: number; buffer: ArrayBuffer },
-  ): Promise<ChunkResponse> {
-    const res = await fetch(
-      `/api/meeting-recordings/${id}/chunks?channel=${channel}&segment=${chunk.segment}&seq=${chunk.seq}`,
-      {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "audio/pcm;rate=16000;channels=1" },
-        body: chunk.buffer,
-      },
-    );
-    if (res.status === 409) throw new ChunkConflictError();
-    if (!res.ok) throw new Error(`chunk upload failed: ${res.status}`);
-    return (await res.json()) as ChunkResponse;
-  }
-
-  function handleConflict() {
-    if (conflictedRef.current) return;
-    conflictedRef.current = true;
-    teardownCapture();
-    setError("Recording ended while this tab was in the background.");
-    setPhase("processing");
-  }
-
-  function armChannel(id: string, channel: Channel, stream: MediaStream) {
-    const queue = new ChunkUploadQueue((chunk) => uploadChunk(id, channel, chunk), {
-      onStalled: () => setStalled((s) => ({ ...s, [channel]: true })),
-      onResponse: (res) => {
-        setStalled((s) => ({ ...s, [channel]: false }));
-        if (res.stopRequested) void stop();
-      },
-      onConflict: handleConflict,
-    });
-    queues.current[channel] = queue;
-    streams.current[channel] = stream;
-    const capture = new WorkletCapture();
-    captures.current[channel] = capture;
-    stream.getAudioTracks()[0]?.addEventListener("ended", () => {
-      if (channel === "call") {
-        capture.stop();
-        queue.destroy();
-        delete captures.current.call;
-        delete queues.current.call;
-        delete streams.current.call;
-        setChannelsActive((chs) => chs.filter((c) => c !== "call"));
-        toast.info("Call audio stopped. Still recording your microphone.");
-      } else {
-        void stop();
-      }
-    });
-    return capture.start(
-      stream,
-      workletUrl,
-      (buffer, seq) => queue.enqueue({ segment: segmentRef.current, seq, buffer }),
-      (level) => setLevels((l) => ({ ...l, [channel]: level })),
-    );
-  }
-
   async function startDesktop() {
     setError(null);
-    const created = await createRow();
+    const created = await createRow("desktop");
     if (!created) {
       setOpen(true);
       return;
@@ -921,14 +915,41 @@ export function useMeetingRecording({
     writeBackup(documentName, { id: created.id, link: created.link, aiEnabled: created.aiEnabled, captureMode: "desktop" });
     setCaptureMode("desktop");
     setAppUnreachable(false);
-    setStartedAt(Date.now());
+    const startedAt = Date.now();
+    setStartedAt(startedAt);
     setPhase("starting");
+    adoptDesktopSession({ recordingId: created.id, documentName, status: "starting", startedAt });
     openInApp(created.link);
+  }
+
+  function startLive(id: string, micStream: MediaStream, callStream: MediaStream | null) {
+    return startBrowserSession({
+      recordingId: id,
+      documentName,
+      micStream,
+      callStream,
+      segment: segmentRef.current,
+      onCallAudioEnded: () => toast.info("Call audio stopped. Still recording your microphone."),
+    });
+  }
+
+  function abandonStart(id: string, message: string) {
+    setError(message);
+    setOpen(true);
+    void fetch(`/api/meeting-recordings/${id}`, { method: "DELETE", credentials: "include" }).catch(() => null);
+    setRecordingId(null);
+    writeBackup(documentName, null);
   }
 
   async function startBrowser() {
     setError(null);
-    const created = await createRow();
+    const blocker = liveSessionBlocker(documentName);
+    if (blocker) {
+      setError(blocker.message);
+      setOpen(true);
+      return;
+    }
+    const created = await createRow("browser");
     if (!created) {
       setOpen(true);
       return;
@@ -939,36 +960,29 @@ export function useMeetingRecording({
     writeBackup(documentName, { id: created.id, link: created.link, aiEnabled: created.aiEnabled, captureMode: "browser" });
     setCaptureMode("browser");
     segmentRef.current = 0;
-    conflictedRef.current = false;
 
     let micStream: MediaStream;
     try {
       micStream = await openMic(micDeviceId);
     } catch (err) {
-      setError(describeMicError(err));
-      setOpen(true);
-      void fetch(`/api/meeting-recordings/${created.id}`, { method: "DELETE", credentials: "include" }).catch(
-        () => null,
-      );
-      setRecordingId(null);
-      writeBackup(documentName, null);
+      abandonStart(created.id, describeMicError(err));
       return;
     }
-    const channels: Channel[] = ["mic"];
-    await armChannel(created.id, "mic", micStream);
 
+    let callStream: MediaStream | null = null;
     if (callAudioWanted) {
-      const callStream = await captureCallAudio().catch(() => null);
+      callStream = await captureCallAudio().catch(() => null);
       if (!callStream) {
         setCallAudioUnsupported(true);
         toast.info("Call audio isn't available in this browser. Recording your microphone only.");
-      } else {
-        channels.push("call");
-        await armChannel(created.id, "call", callStream);
       }
     }
-    setChannelsActive(channels);
-    setStartedAt(Date.now());
+    try {
+      setStartedAt(await startLive(created.id, micStream, callStream));
+    } catch (err) {
+      abandonStart(created.id, describeMicError(err));
+      return;
+    }
     setPhase("recording");
   }
 
@@ -976,26 +990,16 @@ export function useMeetingRecording({
     if (phase === "stopping" || phase === "processing" || phase === "review") return;
     setStoppingSince(Date.now());
     setPhase("stopping");
-    let sessionSeconds: number | null = null;
-    if (captureMode === "browser") {
-      const channels = Object.keys(captures.current) as Channel[];
-      await Promise.all(channels.map((ch) => captures.current[ch]?.flush() ?? Promise.resolve()));
-      await Promise.all(channels.map((ch) => queues.current[ch]?.drain(STOP_DRAIN_MS) ?? Promise.resolve()));
-      sessionSeconds = (Date.now() - startedAt) / 1000;
-      setRecordedSeconds((s) => s + sessionSeconds!);
-      teardownCapture();
-    }
     if (!recordingId) return;
-    // A browser capture is done uploading once drained, so it finishes the
-    // session the way the desktop app does: Stopped (so Continue works) and
-    // its length added (so the next segment starts after this one).
+    if (!remote && getLiveSession()?.recordingId === recordingId) {
+      await stopLiveSession();
+      return;
+    }
     await fetch(`/api/meeting-recordings/${recordingId}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        sessionSeconds !== null ? { action: "finish", seconds: sessionSeconds } : { action: "stop" },
-      ),
+      body: JSON.stringify({ action: "stop" }),
     }).catch(() => null);
     // A follower has no local capture to drain — stay in "stopping" until
     // the poll sees the owner's device finish (Stopped/Processing) or the
@@ -1008,7 +1012,7 @@ export function useMeetingRecording({
     // "stopping" until the poll sees the app's finish (Stopped), so Transcribe
     // can't dispatch a job that misses the mic channel.
     if (captureMode === "desktop") return;
-    setPhase(conflictedRef.current ? "processing" : "review");
+    setPhase("review");
   }
 
   async function finishAndTranscribe() {
@@ -1067,23 +1071,16 @@ export function useMeetingRecording({
     if (captureMode === "desktop") {
       if (link) openInApp(link);
       setAppUnreachable(false);
-      setStartedAt(Date.now());
+      const startedAt = Date.now();
+      setStartedAt(startedAt);
       setPhase("starting");
+      adoptDesktopSession({ recordingId, documentName, status: "starting", startedAt });
       return;
     }
     try {
       const micStream = await openMic(micDeviceId);
-      await armChannel(recordingId, "mic", micStream);
-      const channels: Channel[] = ["mic"];
-      if (callAudioWanted && !callAudioUnsupported) {
-        const callStream = await captureCallAudio().catch(() => null);
-        if (callStream) {
-          channels.push("call");
-          await armChannel(recordingId, "call", callStream);
-        }
-      }
-      setChannelsActive(channels);
-      setStartedAt(Date.now());
+      const callStream = callAudioWanted && !callAudioUnsupported ? await captureCallAudio().catch(() => null) : null;
+      setStartedAt(await startLive(recordingId, micStream, callStream));
       setPhase("recording");
     } catch (err) {
       setError(describeMicError(err));
@@ -1108,7 +1105,12 @@ export function useMeetingRecording({
    *  the "inserted" state (specs/meeting-recording-rail.md) until Discard. */
   function insert(notes: string | null) {
     const paragraphs = transcriptParagraphs(lines, speakers, roster);
-    if (!onInsert(meetingNotesMarkdown(notes), paragraphs)) {
+    const markdown = meetingNotesMarkdown(notes);
+    if (!markdown && paragraphs.length === 0) {
+      setError("There's nothing in this recording to insert.");
+      return false;
+    }
+    if (!onInsert(markdown, paragraphs)) {
       setError("The note is still loading. Try again in a moment.");
       return false;
     }
@@ -1121,6 +1123,7 @@ export function useMeetingRecording({
       }).catch(() => null);
     }
     setInsertedAt(new Date().toISOString());
+    if (recordingId) clearLiveSession(recordingId);
     return true;
   }
 
@@ -1202,7 +1205,7 @@ export function useMeetingRecording({
 
       const { ops, skipped } = applyEnhancePlan(notes.snapshot, state.blocks, notes.plan, { untouchedTemplate });
       const paragraphs = transcriptParagraphs(lines, speakers, roster);
-      const result = onApplyEnhance(ops, recordingId, paragraphs, notes.plan.actionItems, (at) =>
+      const result = onApplyEnhance(ops, recordingId, paragraphs, (at) =>
         speakerFirstNameAt(lines, at, speakers, roster, speakerNames),
       );
       if (!result.ok) {
@@ -1301,24 +1304,28 @@ export function useMeetingRecording({
     setTimeout(() => el.classList.remove("dali-cursor-flash"), 1500);
   }
 
-  // Action items into Tasks (specs/meeting-notes-model.md §4). Dedup and the
-  // description link are the server's job; this just posts the checked rows,
-  // folds the returned taskIds back into enhanceNotes so the sheet can mark
-  // them "Task created", and tells the note to link the matching checklist
-  // item (onTaskCreated — the client-side half of the mention/link decision).
   async function createTasksFromItems(
-    items: { index: number; title: string; assigneeId?: string; dueAt?: string }[],
+    items: {
+      index: number;
+      title: string;
+      assigneeId?: string;
+      dueAt?: string;
+      status?: string;
+      projectId?: string;
+      blockId?: string;
+    }[],
   ): Promise<boolean> {
     if (!recordingId || items.length === 0) return true;
     const res = await fetch(`/api/meeting-recordings/${recordingId}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "createTasks", items }),
+      body: JSON.stringify({
+        action: "createTasks",
+        items: items.map(({ blockId: _blockId, ...item }) => item),
+      }),
     }).catch(() => null);
     const json = await res?.json().catch(() => null);
-    // A failure part-way through still reports the tasks it did create; mark
-    // those so the rows read "Task created" and a retry sends only the rest.
     const created = (json?.created ?? []) as { index: number; taskId: string }[];
     const ok = Boolean(res?.ok);
     if (!ok) setEnhanceError(json?.error ?? "Couldn't create tasks.");
@@ -1331,10 +1338,11 @@ export function useMeetingRecording({
       });
       return { ...prev, plan: { ...prev.plan, actionItems } };
     });
-    if (onTaskCreated && projectId) {
-      for (const c of created) {
-        const src = items.find((it) => it.index === c.index);
-        if (src) onTaskCreated(src.title, c.taskId, projectId);
+    for (const c of created) {
+      const src = items.find((it) => it.index === c.index);
+      const taskProjectId = src?.projectId ?? projectId;
+      if (src?.blockId && taskProjectId) {
+        onTaskCreated?.(src.blockId, { taskId: c.taskId, projectId: taskProjectId, label: src.title });
       }
     }
     return ok;
@@ -1391,6 +1399,21 @@ export function useMeetingRecording({
 
   // The desktop app never answered the deep link: drop that row and reset to
   // the idle sheet with the browser radio selected, ready for Start recording.
+  // The old row has to be gone before the new start, or the server answers
+  // alreadyRecording and this client ends up following its own dead row.
+  async function retryDesktopStart() {
+    const stale = recordingId;
+    setAppUnreachable(false);
+    setRecordingId(null);
+    setPhase("idle");
+    writeBackup(documentName, null);
+    if (stale) {
+      clearLiveSession(stale);
+      await fetch(`/api/meeting-recordings/${stale}`, { method: "DELETE", credentials: "include" }).catch(() => null);
+    }
+    await startDesktop();
+  }
+
   function switchToBrowserAfterUnreachable() {
     if (recordingId) {
       void fetch(`/api/meeting-recordings/${recordingId}`, { method: "DELETE", credentials: "include" }).catch(
@@ -1441,7 +1464,6 @@ export function useMeetingRecording({
     isCore,
     roster,
     projectId,
-    canCreateTasks,
     getNoteState,
     noteVersion,
     seededFromPageId,
@@ -1460,6 +1482,9 @@ export function useMeetingRecording({
     channelsActive,
     levels,
     stalled,
+    noSound,
+    micDevice,
+    callAudioOff,
     recordedSeconds,
     now,
     lines,
@@ -1490,7 +1515,6 @@ export function useMeetingRecording({
 
     // Start-sheet config.
     useDesktopApp,
-    setUseDesktopApp,
     micDeviceId,
     setMicDeviceId,
     micDevices,
@@ -1540,9 +1564,11 @@ export function useMeetingRecording({
     revertAll,
     scrollToBlock,
     createTasksFromItems,
+    removeBlock: (id: string) => onRemoveBlock?.(id),
     setSpeaker,
     jumpToTranscript,
     cancelStart,
+    retryDesktopStart,
     switchToBrowserAfterUnreachable,
   };
 }

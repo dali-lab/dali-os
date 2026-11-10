@@ -165,7 +165,7 @@ pub fn arm_offline_watchdog(app: &AppHandle) {
 /// True if the prod origin returns *any* HTTP response within the probe timeout.
 /// A non-2xx (a 500, say) still counts as reachable — the offline page is only
 /// for "can't reach the server at all", which is what the blank webview meant.
-async fn reachable(app: &AppHandle) -> bool {
+pub(crate) async fn reachable(app: &AppHandle) -> bool {
     let http = app.state::<AppState>().http.clone();
     http.get(PROD_ORIGIN)
         .timeout(Duration::from_secs(config::OFFLINE_PROBE_TIMEOUT_SECS))

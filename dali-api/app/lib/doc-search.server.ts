@@ -21,7 +21,7 @@
 // Both passes are GIN-indexed (see the migration). The fuzzy pass costs an
 // extra round trip, which is why it is a fallback rather than an OR.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Longest body text kept per page. Bodies run to a few thousand characters;
 // this bounds the pathological ones so a single row can't dominate the table

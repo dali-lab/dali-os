@@ -2,7 +2,7 @@
 // (getPageAccess: workspace role, folder scope, named shares, general access).
 // Fill = View on the page, build (and responses) = Edit.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { isLabMember } from "~/lib/roles";
 
@@ -51,5 +51,11 @@ export async function fillAccessByPage(formId: string, userId: string | null, re
   if (!page || page.archivedAt) return "denied";
   if (page.linkAccess === "Public") return "ok";
   if (!userId) return "login";
-  return (await getPageAccess(userId, page, request)).canView ? "ok" : "denied";
+  if ((await getPageAccess(userId, page, request)).canView) return "ok";
+  // Staffing hides Share on the forms it manages, so it grants the fill itself.
+  const staffingBinding = await prisma.staffingCycleFormBinding.findFirst({
+    where: { formId },
+    select: { id: true },
+  });
+  return staffingBinding && (await isLabMember(userId, request)) ? "ok" : "denied";
 }

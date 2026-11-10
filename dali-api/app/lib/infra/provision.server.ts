@@ -3,7 +3,7 @@
 // already uses, linked to the new project and swept at once. Each step fails on
 // its own; the project itself is already created.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import type { AuditAction } from "~/lib/audit-actions";
 import { refreshProjectInfra } from "~/jobs/infra-snapshot.server";

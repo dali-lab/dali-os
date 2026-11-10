@@ -56,6 +56,21 @@ describe("POST /api/forms", () => {
     },
   );
 
+  it("refuses a request carrying two id values", async () => {
+    // The gate reads one id and the action parser keeps the last value, so a
+    // second id must never slip past a check done on the first.
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    const body = new FormData();
+    body.set("intent", "delete-form");
+    body.append("id", "mine");
+    body.append("id", "someone-elses");
+    const res = (await action({
+      request: new Request("http://os.test/api/forms", { method: "POST", body }),
+    } as never)) as Response;
+    expect(res.status).toBe(403);
+    expect(runFormsAction).not.toHaveBeenCalled();
+  });
+
   it("refuses an intent that carries no id", async () => {
     expect((await post({ intent: "rename-form" })).status).toBe(403);
     expect(canBuildForm).not.toHaveBeenCalled();

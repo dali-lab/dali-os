@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
 vi.mock("~/partners/lib/partner-activity.server", () => ({
   logPartnerActivity: vi.fn().mockResolvedValue(undefined),
@@ -10,7 +10,7 @@ vi.mock("~/partners/lib/partner-notify.server", () => ({
   notifyPartners: vi.fn().mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 }),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { createPartnerApplication } from "../partner-application-create.server";

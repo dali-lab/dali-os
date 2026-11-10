@@ -1,6 +1,6 @@
 // Sidebar destinations and their hub subtabs — not star-able as routes.
-// Documents use FavoriteStar; DB detail pages (project, person, partner org)
-// use FavoriteRouteButton on the breadcrumb.
+// Pages star from the topbar star; DB detail pages (project, person, partner
+// org) opt in with handle.favoriteRoute.
 
 const NAVBAR_PATHS = new Set([
   "/",
@@ -30,15 +30,5 @@ export function isNavbarRoute(href: string): boolean {
   if (path.startsWith("/core/partners/applications/")) return true;
   if (path.startsWith("/core/partners/orgs/")) return true;
   if (path.startsWith("/core/partners/contacts/")) return true;
-  return false;
-}
-
-/** Hub pages with no breadcrumb trail — skip the layout header row entirely. */
-export function isNavbarHubPage(href: string): boolean {
-  const path = new URL(href, "http://local").pathname;
-  if (NAVBAR_PATHS.has(path)) return true;
-  if (path.startsWith("/settings/") || path.startsWith("/help/")) return true;
-  // Resources pages carry their own masthead, tabs and back links.
-  if (path.startsWith("/resources/")) return true;
   return false;
 }

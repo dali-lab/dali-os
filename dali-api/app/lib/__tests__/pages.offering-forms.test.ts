@@ -4,7 +4,7 @@ const tx = vi.hoisted(() => ({
   $queryRaw: vi.fn(),
   page: { findFirst: vi.fn(), create: vi.fn() },
 }));
-vi.mock("~/lib/db", () => ({ prisma: { $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) } }));
 vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 

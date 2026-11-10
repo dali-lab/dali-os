@@ -9,12 +9,12 @@ import { scopeIconFor } from "~/components/drive/scope-icon";
 let container: HTMLDivElement;
 let root: Root;
 
-async function render(id: string, tiles?: boolean) {
+async function render(id: string) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
-    root.render(createElement("div", null, scopeIconFor({ id }, "sm", tiles)));
+    root.render(createElement("div", null, scopeIconFor({ id }, "sm")));
   });
   return container;
 }
@@ -24,7 +24,7 @@ afterEach(() => {
   container.remove();
 });
 
-describe("scopeIconFor tiles", () => {
+describe("scopeIconFor", () => {
   it.each([
     ["lab", "projects"],
     ["projects", "projects"],
@@ -33,32 +33,26 @@ describe("scopeIconFor tiles", () => {
     ["hiring", "hiring"],
     ["core", "core"],
   ])("renders the %s space as the %s area tile", async (id, area) => {
-    const c = await render(id, true);
+    const c = await render(id);
     expect(c.querySelector(`[data-area-tile='${area}']`)).not.toBeNull();
   });
 
   it("keeps each space's own glyph inside its area's tile", async () => {
-    const mentorship = (await render("mentorship", true)).innerHTML;
+    const mentorship = (await render("mentorship")).innerHTML;
     act(() => root.unmount());
     container.remove();
-    const projects = (await render("projects", true)).innerHTML;
+    const projects = (await render("projects")).innerHTML;
     act(() => root.unmount());
     container.remove();
-    const lab = (await render("lab", true)).innerHTML;
+    const lab = (await render("lab")).innerHTML;
     expect(mentorship).toContain("lucide-heart");
     expect(projects).toContain("lucide-folder-kanban");
     expect(lab).toContain("lucide-users");
   });
 
   it.each(["mine", "favorites", "shared"])("keeps %s a plain glyph", async (id) => {
-    const c = await render(id, true);
+    const c = await render(id);
     expect(c.querySelector("[data-area-tile]")).toBeNull();
     expect(c.querySelector("svg")).not.toBeNull();
-  });
-
-  it("keeps today's glyphs when tiles are off", async () => {
-    const c = await render("core");
-    expect(c.querySelector("[data-area-tile]")).toBeNull();
-    expect(c.querySelector("svg")!.getAttribute("class")).toContain("text-accent-coral/80");
   });
 });

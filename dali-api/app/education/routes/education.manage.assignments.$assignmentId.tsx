@@ -2,7 +2,7 @@ import { redirect, useLoaderData, Form } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.manage.assignments.$assignmentId";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireOfferingManager } from "~/education/lib/access.server";
 import {
   offeringIdForAssignment,

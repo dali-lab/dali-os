@@ -9,7 +9,7 @@ const db = vi.hoisted(() => ({
     delete: vi.fn(),
   },
 }));
-vi.mock("~/lib/db", () => ({ prisma: db }));
+vi.mock("~/lib/db.server", () => ({ prisma: db }));
 
 import { logAuditEvent } from "~/lib/audit";
 import { setTtlCacheEnabledForTests } from "~/lib/ttl-cache";

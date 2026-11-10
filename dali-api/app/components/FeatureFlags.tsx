@@ -2,9 +2,8 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { FeatureFlagKey, FeatureFlagMap } from "~/lib/feature-flags";
 
 // The resolved flag map is computed server-side in the layout loader
-// (resolveFeatureFlags) and plumbed here. Each workspace iframe runs the
-// layout loader itself, so mounting the provider in Layout (and the
-// tabless/embedded branch) covers both the shell and in-iframe documents.
+// (resolveFeatureFlags) and plumbed here. Mounting the provider in Layout (and
+// its embedded branch) covers both the shell and embedded documents.
 //
 // An empty map means "no provider" — an unresolved flag reads as off, which is
 // the safe default for any component rendered outside the provider.

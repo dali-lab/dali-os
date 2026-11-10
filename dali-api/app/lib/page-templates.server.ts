@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import type { WorkspaceType } from "~/generated/prisma/client";
 
@@ -6,7 +6,7 @@ export type PageTemplateRow = { id: string; title: string; iconEmoji: string | n
 
 // A Member workspace's templates are its owner's private set: Core gets no
 // bypass, matching getPageAccess's Member branch.
-async function canListWorkspace(
+export async function canListWorkspace(
   userId: string,
   workspaceType: WorkspaceType,
   workspaceId: string | null,

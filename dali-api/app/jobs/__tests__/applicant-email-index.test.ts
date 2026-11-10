@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     mailAccount: { findFirst: vi.fn(), update: vi.fn() },
     gmailIntegration: { findFirst: vi.fn().mockResolvedValue(null), update: vi.fn() },
@@ -30,7 +30,7 @@ vi.mock("~/email/lib/gmail-mailbox.server", () => ({
   MailboxError: MockMailboxError,
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getMailboxToken, getMessageMetadata, listMessageIds } from "~/email/lib/gmail-mailbox.server";
 import { runApplicantEmailIndex } from "~/jobs/applicant-email-index.server";
 

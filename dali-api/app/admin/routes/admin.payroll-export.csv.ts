@@ -1,5 +1,5 @@
 import type { Route } from "./+types/admin.payroll-export.csv";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { csvResponse } from "~/lib/csv";

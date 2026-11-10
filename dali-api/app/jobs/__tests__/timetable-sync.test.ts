@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
 vi.mock("~/lib/dartmouth-timetable.server", () => ({ fetchTermCatalog: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { fetchTermCatalog } from "~/lib/dartmouth-timetable.server";
 import { notify } from "~/lib/notify.server";

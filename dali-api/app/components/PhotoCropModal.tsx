@@ -1,50 +1,58 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { buttonClasses } from "~/components/ui/Button";
 import Cropper, { type Area } from "react-easy-crop";
 import { Modal, ModalHeader } from "./Modal";
 import { modalCardClass } from "~/components/os-chrome";
+import { edgeColors, fitBackdrop, fitLayout, fitZoom, type EdgeColors } from "./crop-fit";
 
-// Short side of the output. The long side follows `aspect`, so a square avatar
-// and a wide banner come out at comparable resolution.
-const OUTPUT_SHORT_SIDE = 512;
+const DEFAULT_OUTPUT_SHORT_SIDE = 512;
 
-// Draw the selected region of `imageSrc` onto a fixed-size canvas and return it
-// as a normalized image blob. `area` is in natural-image pixels, as
-// react-easy-crop reports it. WebP keeps the file small; PNG is the fallback for
-// the rare browser whose canvas can't encode WebP.
-async function getCroppedBlob(
+// Short side is the output's short edge; the long side follows `aspect`.
+export async function getCroppedBlob(
   imageSrc: string,
   area: Area,
   aspect: number,
+  shortSide = DEFAULT_OUTPUT_SHORT_SIDE,
+  fill?: EdgeColors,
 ): Promise<Blob> {
   const image = await loadImage(imageSrc);
   const canvas = document.createElement("canvas");
   const width =
-    aspect >= 1 ? Math.round(OUTPUT_SHORT_SIDE * aspect) : OUTPUT_SHORT_SIDE;
+    aspect >= 1 ? Math.round(shortSide * aspect) : shortSide;
   const height =
-    aspect >= 1 ? OUTPUT_SHORT_SIDE : Math.round(OUTPUT_SHORT_SIDE / aspect);
+    aspect >= 1 ? shortSide : Math.round(shortSide / aspect);
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Could not process image");
 
-  ctx.drawImage(
-    image,
-    area.x,
-    area.y,
-    area.width,
-    area.height,
-    0,
-    0,
-    width,
-    height,
-  );
+  const layout = fitLayout(area, image.naturalWidth, image.naturalHeight, width, height);
+  if (fill) {
+    for (const side of ["top", "bottom", "left", "right"] as const) {
+      const band = layout.bands[side];
+      if (!band) continue;
+      ctx.fillStyle = fill[side];
+      ctx.fillRect(band.x, band.y, band.width, band.height);
+    }
+  }
+  ctx.drawImage(image, layout.image.x, layout.image.y, layout.image.width, layout.image.height);
 
   const blob = await canvasToBlob(canvas, "image/webp");
   if (blob) return blob;
   const pngBlob = await canvasToBlob(canvas, "image/png");
   if (pngBlob) return pngBlob;
   throw new Error("Could not process image");
+}
+
+async function sampleEdgeColors(src: string): Promise<EdgeColors | null> {
+  const image = await loadImage(src);
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(image, 0, 0, 64, 64);
+  return edgeColors(ctx.getImageData(0, 0, 64, 64).data, 64, 64);
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -70,6 +78,9 @@ export function PhotoCropModal({
   onConfirm,
   aspect = 1,
   cropShape = "round",
+  title = "Adjust photo",
+  outputShortSide = DEFAULT_OUTPUT_SHORT_SIDE,
+  fit = false,
 }: {
   open: boolean;
   imageSrc: string | null;
@@ -78,12 +89,44 @@ export function PhotoCropModal({
   /** Crop box width:height. Defaults to the square avatar crop. */
   aspect?: number;
   cropShape?: "round" | "rect";
+  title?: string;
+  /** Short edge of the saved image in pixels. */
+  outputShortSide?: number;
+  /** Lets the image zoom out to fit whole, filling the leftover space with its edge colors. */
+  fit?: boolean;
 }) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [area, setArea] = useState<Area | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [minZoom, setMinZoom] = useState(1);
+  const [imageAspect, setImageAspect] = useState<number | null>(null);
+  const [fill, setFill] = useState<EdgeColors | null>(null);
+
+  useEffect(() => {
+    setFill(null);
+    if (!fit || !imageSrc) return;
+    let cancelled = false;
+    sampleEdgeColors(imageSrc)
+      .then((c) => !cancelled && setFill(c))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [fit, imageSrc]);
+
+  const onMediaLoaded = useCallback(
+    ({ naturalWidth, naturalHeight }: { naturalWidth: number; naturalHeight: number }) => {
+      if (!fit) return;
+      const z = Math.min(1, fitZoom(naturalWidth, naturalHeight, aspect));
+      setImageAspect(naturalWidth / naturalHeight);
+      setMinZoom(z);
+      setZoom(z);
+      setCrop({ x: 0, y: 0 });
+    },
+    [fit, aspect],
+  );
 
   const onCropComplete = useCallback((_: Area, areaPixels: Area) => {
     setArea(areaPixels);
@@ -94,7 +137,7 @@ export function PhotoCropModal({
     setError(null);
     setProcessing(true);
     try {
-      const blob = await getCroppedBlob(imageSrc, area, aspect);
+      const blob = await getCroppedBlob(imageSrc, area, aspect, outputShortSide, fit ? (fill ?? undefined) : undefined);
       onConfirm(blob);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not process image");
@@ -115,7 +158,7 @@ export function PhotoCropModal({
     >
       <ModalHeader
         titleId="photo-crop-title"
-        title="Adjust photo"
+        title={title}
         onClose={onCancel}
         hideClose={processing}
         className="mb-3"
@@ -129,6 +172,14 @@ export function PhotoCropModal({
           aspect={aspect}
           cropShape={cropShape}
           showGrid={false}
+          minZoom={minZoom}
+          restrictPosition={!fit}
+          onMediaLoaded={onMediaLoaded}
+          style={
+            fit && fill && imageAspect
+              ? { containerStyle: { background: fitBackdrop(fill, imageAspect, aspect) } }
+              : {}
+          }
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onCropComplete={onCropComplete}
@@ -139,7 +190,7 @@ export function PhotoCropModal({
         Zoom
         <input
           type="range"
-          min={1}
+          min={minZoom}
           max={3}
           step={0.01}
           value={zoom}

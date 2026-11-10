@@ -8,12 +8,10 @@
 // start, user, kind) — same ledger as meeting-reminders.server.ts, a
 // different `kind` so the two reminders don't collide on the unique index.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { expandOccurrences, noteForOccurrence, rruleUntilBasic } from "~/lib/meeting-occurrences";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isGoogleEventCancelled } from "~/lib/google-calendar";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
@@ -83,18 +81,6 @@ export async function runMeetingRecordPrompts({ now, settings }: JobContext): Pr
   const windowEnd = new Date(now.getTime() + BAND_AFTER_MS);
   const leadEnd = now.getTime() + leadMs;
 
-  // The flag is per organizer, not per occurrence — cache it across every
-  // meeting this organizer runs in this tick.
-  const flagByOrganizer = new Map<string, boolean>();
-  async function organizerCanRecord(organizerId: string): Promise<boolean> {
-    const cached = flagByOrganizer.get(organizerId);
-    if (cached !== undefined) return cached;
-    const roles = await getUserRoles(organizerId);
-    const enabled = await isFeatureEnabled("ai-meeting-notes", organizerId, roles);
-    flagByOrganizer.set(organizerId, enabled);
-    return enabled;
-  }
-
   let sent = 0;
   for (const meeting of meetings) {
     if (sent >= CAP) break;
@@ -103,7 +89,6 @@ export async function runMeetingRecordPrompts({ now, settings }: JobContext): Pr
     // can't resolve one here (attachMeetingNote needs an interactive type
     // pick), so there's no reasonable "Record" destination to offer yet.
     if (!meeting.meetingType && meeting.notePages.length === 0) continue;
-    if (!(await organizerCanRecord(meeting.organizerId))) continue;
 
     const occurrences = expandOccurrences(
       meeting,

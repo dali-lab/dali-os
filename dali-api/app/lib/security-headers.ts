@@ -1,4 +1,5 @@
 import { getAppEnv } from "./app-env";
+import { VIDEO_EMBED_ORIGINS } from "./video-embed";
 
 const isDeployed = getAppEnv() !== "dev";
 
@@ -59,6 +60,9 @@ function cspDirectives(): Directives {
     "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
     "img-src": ["'self'", "data:", "blob:", "https:"],
     "connect-src": connectSrc,
+    "frame-src": ["'self'", ...VIDEO_EMBED_ORIGINS],
+    // Uploaded video redirects from /api/upload/raw to a presigned S3 URL.
+    "media-src": ["'self'", "blob:", ...(s3Origin ? [s3Origin] : [])],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
     "form-action": ["'self'"],

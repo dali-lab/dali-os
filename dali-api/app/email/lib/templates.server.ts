@@ -5,7 +5,7 @@
 // edit-in-place, absence is meaningful) with the one capability only the dead
 // library had (history you can roll back to).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { renderEmail, type EmailTemplateVars } from "~/lib/email";
 import { logAuditEvent } from "~/lib/audit";
 

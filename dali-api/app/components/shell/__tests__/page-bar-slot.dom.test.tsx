@@ -42,9 +42,10 @@ afterEach(() => {
 });
 
 function Bar() {
-  const { actionsRef, presenceRef } = usePageBarTargetSetters();
+  const { statusRef, actionsRef, presenceRef } = usePageBarTargetSetters();
   return (
     <div id="bar">
+      <div id="status" ref={statusRef} />
       <div id="actions" ref={actionsRef} />
       <div id="presence" ref={presenceRef} />
     </div>
@@ -66,8 +67,12 @@ describe("page bar slots", () => {
         <PageBarPortal slot="presence">
           <i>avatars</i>
         </PageBarPortal>
+        <PageBarPortal slot="status">
+          <u>Saved</u>
+        </PageBarPortal>
       </PageBarSlotProvider>,
     );
+    expect(container.querySelector("#status")?.textContent).toBe("Saved");
     expect(container.querySelector("#actions")?.textContent).toBe("toolbar");
     expect(container.querySelector("#presence")?.textContent).toBe("avatars");
   });

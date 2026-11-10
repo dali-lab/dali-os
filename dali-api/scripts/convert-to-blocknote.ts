@@ -25,7 +25,7 @@
 
 import * as Y from "yjs";
 import { yDocToProsemirrorJSON } from "y-prosemirror";
-import { prisma, type Prisma } from "../app/lib/db";
+import { prisma, type Prisma } from "../app/lib/db.server";
 import {
   BLOCKNOTE_FRAGMENT,
   LEGACY_PM_FRAGMENT,

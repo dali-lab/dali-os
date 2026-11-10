@@ -16,6 +16,7 @@ export const STAGE_TONE: Record<PartnerStage, PillTone> = {
   Backlog: "neutral",
   New: "warning",
   Interview: "accent",
+  Deciding: "accent",
   Accepted: "success",
   Rejected: "danger",
 };

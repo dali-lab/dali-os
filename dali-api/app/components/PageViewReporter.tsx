@@ -3,7 +3,6 @@ import { useLocation } from "react-router";
 import {
   TICK_MS,
   advanceTimer,
-  isCounting,
   pendingFlush,
   startTimer,
   type ViewTimer,
@@ -29,27 +28,13 @@ function beacon(payload: object): void {
   }).catch(() => {});
 }
 
-function frameRendered(): boolean | null {
-  try {
-    const el = window.frameElement as HTMLElement | null;
-    if (!el) return null;
-    if (typeof el.checkVisibility === "function") return el.checkVisibility();
-    return el.getClientRects().length > 0;
-  } catch {
-    return null;
-  }
-}
-
 function counting(): boolean {
-  return isCounting({
-    documentVisible: document.visibilityState === "visible",
-    frameRendered: frameRendered(),
-  });
+  return document.visibilityState === "visible";
 }
 
 type ActiveView = { id: string; timer: ViewTimer };
 
-export function PageViewReporter({ enabled }: { enabled: boolean }) {
+export function PageViewReporter() {
   const { pathname } = useLocation();
   const previousPath = useRef<string | null>(null);
   const active = useRef<ActiveView | null>(null);
@@ -65,8 +50,6 @@ export function PageViewReporter({ enabled }: { enabled: boolean }) {
   }
 
   useEffect(() => {
-    if (!enabled) return;
-
     const id = crypto.randomUUID();
     active.current = { id, timer: startTimer(Date.now(), counting()) };
     beacon({
@@ -94,7 +77,7 @@ export function PageViewReporter({ enabled }: { enabled: boolean }) {
       flush();
       active.current = null;
     };
-  }, [pathname, enabled]);
+  }, [pathname]);
 
   return null;
 }

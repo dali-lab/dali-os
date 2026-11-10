@@ -4,7 +4,7 @@ export interface CommentSyntax {
 }
 
 export interface CodeLanguage {
-  /** A Shiki language id from @blocknote/code-block's bundle, or null for plain text. */
+  /** A Shiki language id from the doc code block's bundle, or null for plain text. */
   highlight: string | null;
   comment: CommentSyntax | null;
   autoPairs: boolean;

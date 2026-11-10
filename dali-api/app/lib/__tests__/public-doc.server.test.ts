@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { page: { findUnique: vi.fn() } },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isPublicDoc, publicDocRedirectForPath } from "~/lib/public-doc.server";
 
 const findUnique = vi.mocked(prisma.page.findUnique);

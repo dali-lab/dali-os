@@ -5,12 +5,10 @@
 // shape, kept out of meeting-recorder since it's BlockNote-specific.
 
 import {
-  actionItemMatchesBlock,
   ENHANCE_MARK_ADDED,
   ENHANCE_MARK_PRIOR,
   markOfProps,
   type EditorOp,
-  type EnhanceActionItem,
   type EnhanceMark,
   type EnhanceMarkEntry,
   type EnhanceOpBlock,
@@ -18,7 +16,7 @@ import {
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
 import { appendBlocks } from "./insert";
-import { blockOwnText } from "./schema/configs";
+import { blockOwnText, blocksToPlainText } from "./schema/configs";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 
 /** Citation chip href: an ordinary link, not a new inline node (spec §3) —
@@ -60,8 +58,17 @@ export function findTranscriptToggle(blocks: readonly DocBlock[]): DocBlock | nu
  *  wrote, so Enhance would otherwise anchor new notes below it or try to
  *  rewrite its heading. */
 export function enhanceSnapshotBlocks(blocks: readonly DocBlock[]): SnapshotBlock[] {
+  return snapshotTree(withoutTranscriptToggle(blocks));
+}
+
+/** The note's text minus its Transcript toggle, for the untouched-template check. */
+export function noteBodyText(blocks: readonly DocBlock[]): string {
+  return blocksToPlainText(withoutTranscriptToggle(blocks));
+}
+
+function withoutTranscriptToggle(blocks: readonly DocBlock[]): DocBlock[] {
   const toggle = findTranscriptToggle(blocks);
-  return snapshotTree(blocks.filter((b) => b !== toggle));
+  return blocks.filter((b) => b !== toggle);
 }
 
 export function hasTranscriptToggle(editor: DocEditorInstance): boolean {
@@ -101,47 +108,11 @@ export function buildInlineContent(
   return content as unknown as DocPartialBlock["content"];
 }
 
-/** Appends a taskMention node (plus a leading space) to a checklist item's
- *  existing content — the "Create tasks" producer's pure half. Pure/
- *  editor-free so it's unit-testable without mounting the doc editor;
- *  documents.$pageId.tsx's onTaskCreated calls this, then editor.updateBlock
- *  with the result. Replaces the plain `/projects/:id?tab=progress&task=:id`
- *  link this used to append (see taskMentionConfig in schema/configs.ts). */
-export function appendTaskMentionContent(
-  content: DocPartialBlock["content"],
-  task: { taskId: string; projectId: string; label: string },
-): DocPartialBlock["content"] {
-  const next: Array<
-    | { type: "text"; text: string; styles: object }
-    | { type: "taskMention"; props: { taskId: string; projectId: string; label: string } }
-  > = Array.isArray(content) ? [...(content as unknown as typeof next)] : [];
-  next.push(
-    { type: "text", text: " ", styles: {} },
-    {
-      type: "taskMention",
-      props: { taskId: task.taskId, projectId: task.projectId, label: task.label },
-    },
-  );
-  return next as unknown as DocPartialBlock["content"];
-}
-
-/** The action item (if any) a newly-inserted checklist block's text matches
- *  that already has a task — Create tasks run before Apply (specs/meeting-
- *  notes-model.md §4) left no checklist block to backlink the task to, so
- *  Apply links it itself as it inserts the block. */
-function taskForChecklistText(text: string, actionItems: EnhanceActionItem[] | undefined): EnhanceActionItem | null {
-  if (!actionItems?.length) return null;
-  const candidates = actionItems.filter((item) => item.taskId && actionItemMatchesBlock(item.text, text));
-  if (candidates.length === 0) return null;
-  const exact = candidates.find((item) => item.text.trim().toLowerCase() === text.trim().toLowerCase());
-  return exact ?? candidates[0]!;
-}
-
 export function toPartialBlock(
   block: EnhanceOpBlock,
   notePath: string,
   recordingId: string,
-  ctx: { actionItems?: EnhanceActionItem[]; projectId?: string | null; speakerAt?: ChipSpeakerAt } = {},
+  ctx: { speakerAt?: ChipSpeakerAt } = {},
 ): DocPartialBlock {
   const content = buildInlineContent(block.text, block.cites, notePath, recordingId, ctx.speakerAt);
   if (block.type === "heading") {
@@ -149,15 +120,6 @@ export function toPartialBlock(
   }
   if (block.type === "bulletListItem" || block.type === "bullet") {
     return { type: "bulletListItem", content } as DocPartialBlock;
-  }
-  // Action item bullets (specs/meeting-notes-model.md §4) — a real checkbox,
-  // so Create tasks can find the matching block by text once a task exists.
-  if (block.type === "checkListItem") {
-    const taskItem = ctx.projectId ? taskForChecklistText(block.text, ctx.actionItems) : null;
-    const finalContent = taskItem
-      ? appendTaskMentionContent(content, { taskId: taskItem.taskId!, projectId: ctx.projectId!, label: block.text })
-      : content;
-    return { type: "checkListItem", props: { checked: false }, content: finalContent } as DocPartialBlock;
   }
   return { type: "paragraph", content } as DocPartialBlock;
 }
@@ -186,8 +148,6 @@ export function renderEnhanceOps(
   ctx: {
     notePath: string;
     recordingId: string;
-    actionItems?: EnhanceActionItem[];
-    projectId?: string | null;
     speakerAt?: ChipSpeakerAt;
   },
 ): { priorBlocks: Record<string, unknown> } {

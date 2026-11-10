@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   extraNotifications,
   attentionCount,
+  attentionTotal,
   hasAttentionContent,
   mergedFeed,
   splitFeed,
@@ -173,5 +174,33 @@ describe("mergedFeed", () => {
 
   it("is empty when both tabs are", () => {
     expect(mergedFeed(splitFeed([], [], []))).toEqual([]);
+  });
+});
+
+describe("attentionTotal", () => {
+  const project = (id: string): ProjectWorkItem => ({
+    id,
+    title: id,
+    projectId: "proj",
+    projectName: "Atlas",
+    status: "Todo",
+    dueAt: null,
+    activityAt: "2026-09-12T12:00:00.000Z",
+    link: "/projects/proj",
+  });
+
+  it("equals attentionCount when everything is loaded", () => {
+    const tasks = [task("a"), task("b")];
+    expect(attentionTotal(tasks, [], [project("p1")])).toBe(attentionCount(tasks, [], [project("p1")]));
+    expect(attentionTotal(tasks, [], [project("p1")], { tasks: 2, projectTasks: 1 })).toBe(3);
+  });
+
+  it("adds the open and project tasks that were not loaded", () => {
+    const total = attentionTotal([task("a")], [], [project("p1")], { tasks: 120, projectTasks: 75 });
+    expect(total).toBe(2 + 119 + 74);
+  });
+
+  it("ignores a total smaller than what is loaded", () => {
+    expect(attentionTotal([task("a"), task("b")], [], [], { tasks: 1 })).toBe(2);
   });
 });

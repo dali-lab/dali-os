@@ -4,20 +4,21 @@
 //
 // NEVER log transcript text here.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
 import { canReadRecording, storedLines } from "~/lib/meeting-recording.server";
 import { speakerLabelFor, countSpeakersByChannel } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
 import { McpNotFoundError, McpInvalidError } from "../../registry";
+import { pageArray, pageProps, type PageArgs } from "../../pagination";
 
-const LINES_PER_PAGE = 2000;
+const PAGE_LIMITS = { defaultLimit: 2000, maxLimit: 5000 };
 
 export const GET_MEETING_TRANSCRIPT_DEF = {
   name: "get_meeting_transcript",
   description:
-    "Fetch the transcript of a finished meeting recording: lines with timestamps and resolved speaker labels (roster name once an editor has renamed a speaker, else You/Others or Speaker N). Paged at 2,000 lines per call; pass from/to to filter by seconds into the recording. Identify the recording by recordingId, or by meetingId (picks the newest Done recording for that occurrence, or the meeting's newest overall if occurrenceStart is omitted). Same audience as the note: the recording's owner, or anyone who can view the note it belongs to.",
+    "Fetch the transcript of a finished meeting recording: lines with timestamps and resolved speaker labels (roster name once an editor has renamed a speaker, else You/Others or Speaker N). Paged at 2,000 lines per call by default (set limit for fewer or more, max 5,000); pass page.nextCursor as cursor for the next page until page.hasMore is false. Pass from/to to filter by seconds into the recording. Identify the recording by recordingId, or by meetingId (picks the newest Done recording for that occurrence, or the meeting's newest overall if occurrenceStart is omitted). Same audience as the note: the recording's owner, or anyone who can view the note it belongs to.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -46,24 +47,19 @@ export const GET_MEETING_TRANSCRIPT_DEF = {
         minimum: 0,
         description: "Only return lines at or before this many seconds into the recording.",
       },
-      cursor: {
-        type: "integer",
-        minimum: 0,
-        description: "Opaque paging offset returned as nextCursor from a previous call. Omit for the first page.",
-      },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:read" as const,
 };
 
-type Input = {
+type Input = PageArgs & {
   recordingId?: string;
   meetingId?: string;
   occurrenceStart?: string;
   from?: number;
   to?: number;
-  cursor?: number;
 };
 
 const RECORDING_SELECT = {
@@ -142,16 +138,14 @@ export async function runGetMeetingTranscript(callerId: string, input: Input) {
   if (input.from !== undefined) filtered = filtered.filter((l) => l.at >= input.from!);
   if (input.to !== undefined) filtered = filtered.filter((l) => l.at <= input.to!);
 
-  const cursor = input.cursor ?? 0;
-  const page = filtered.slice(cursor, cursor + LINES_PER_PAGE);
-  const nextCursor = cursor + LINES_PER_PAGE < filtered.length ? cursor + LINES_PER_PAGE : null;
+  const { rows: pageLines, page } = pageArray(filtered, input, PAGE_LIMITS);
 
   return {
     recordingId: rec.id,
     status: rec.status,
     recordedSeconds: rec.recordedSeconds,
     speakers: speakersOut,
-    lines: page.map((l) => ({ at: l.at, end: l.end, speaker: keyFor(l), text: l.text })),
-    nextCursor,
+    lines: pageLines.map((l) => ({ at: l.at, end: l.end, speaker: keyFor(l), text: l.text })),
+    page,
   };
 }

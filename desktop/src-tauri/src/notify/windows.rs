@@ -23,9 +23,9 @@ pub fn raise(app: &AppHandle, banner: Banner) {
     }
     if banner.rsvp {
         toast = toast
-            .add_button("Accept", super::ACTION_RSVP_ACCEPT)
-            .add_button("Maybe", super::ACTION_RSVP_MAYBE)
-            .add_button("Decline", super::ACTION_RSVP_DECLINE);
+            .add_button(super::LABEL_RSVP_ACCEPT, super::ACTION_RSVP_ACCEPT)
+            .add_button(super::LABEL_RSVP_MAYBE, super::ACTION_RSVP_MAYBE)
+            .add_button(super::LABEL_RSVP_DECLINE, super::ACTION_RSVP_DECLINE);
     } else if banner.is_row() {
         toast = toast.add_button("Mark read", super::ACTION_READ);
     }

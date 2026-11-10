@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     mentorNote: { findUnique: vi.fn(), create: vi.fn() },
     mentorNoteTemplate: { findFirst: vi.fn() },
@@ -17,7 +17,7 @@ vi.mock("../../lib/visibility", () => ({
 }));
 vi.mock("../../lib/pair-notebook.server", () => ({ ensureMentorNotePage: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { canViewMentorship } from "../../lib/visibility";
 import { ensureMentorNotePage } from "../../lib/pair-notebook.server";

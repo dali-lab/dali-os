@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.interviews.$id.complete";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { parseJson } from "~/lib/validate";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";

@@ -5,7 +5,6 @@ import { PINK_FOLDER } from "~/components/drive/glyphs";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
 import { modalCardClass } from "~/components/os-chrome";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { DriveScopeIcon } from "~/components/drive/scope-icon";
 import { isSyntheticFolder } from "~/components/drive/picker-rows";
 
@@ -315,7 +314,6 @@ export type FolderPickerProps = {
 };
 
 export function FolderPicker(props: FolderPickerProps) {
-  const tiles = useFeatureFlag("desktop-tabs");
   const {
     open,
     onClose,
@@ -658,7 +656,7 @@ export function FolderPicker(props: FolderPickerProps) {
                 ) : (
                   <>
                     {row.kind === "drive" ? (
-                      <DriveScopeIcon scope={{ id: row.driveId, iconEmoji: row.emoji }} tiles={tiles} />
+                      <DriveScopeIcon scope={{ id: row.driveId, iconEmoji: row.emoji }} />
                     ) : row.emoji ? (
                       <span className="shrink-0" aria-hidden>
                         {row.emoji}

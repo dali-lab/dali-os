@@ -60,7 +60,7 @@ export function matches(list: BlockList, ip: string): boolean {
 
 async function loadMatchers(): Promise<Matchers> {
   return cachedForTtl(CACHE_KEY, CACHE_TTL_MS, async () => {
-    const { prisma } = await import("~/lib/db");
+    const { prisma } = await import("~/lib/db.server");
     const rules = await prisma.ipRule.findMany({
       where: { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
       select: { kind: true, cidr: true },
@@ -102,7 +102,7 @@ export function rangesOverlap(a: string, b: string): boolean {
 
 /** The trusted range `cidr` overlaps, if any. */
 export async function findOverlappingTrust(cidr: string): Promise<string | null> {
-  const { prisma } = await import("~/lib/db");
+  const { prisma } = await import("~/lib/db.server");
   const trusted = await prisma.ipRule.findMany({ where: { kind: "trust" }, select: { cidr: true } });
   return trusted.find((t) => rangesOverlap(t.cidr, cidr))?.cidr ?? null;
 }
@@ -117,7 +117,7 @@ export async function addIpRule(args: {
 }): Promise<{ id: string; cidr: string }> {
   const cidr = normalizeCidr(args.cidr);
   if (!cidr) throw new Error(`Invalid IP or range: ${args.cidr}`);
-  const { prisma } = await import("~/lib/db");
+  const { prisma } = await import("~/lib/db.server");
   const data = {
     reason: args.reason ?? null,
     source: args.source ?? "manual",
@@ -135,7 +135,7 @@ export async function addIpRule(args: {
 }
 
 export async function removeIpRule(id: string): Promise<{ kind: string; cidr: string } | null> {
-  const { prisma } = await import("~/lib/db");
+  const { prisma } = await import("~/lib/db.server");
   const row = await prisma.ipRule.findUnique({ where: { id }, select: { kind: true, cidr: true } });
   if (!row) return null;
   await prisma.ipRule.delete({ where: { id } });

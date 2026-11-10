@@ -13,7 +13,6 @@ import {
   markOfProps,
   snapshotTree,
   type EditorOp,
-  type EnhanceActionItem,
   type SnapshotBlock,
 } from "~/components/meeting-recorder/enhance-plan";
 
@@ -29,8 +28,6 @@ export function applyEnhanceOpsToDocBlocks(
   ctx: {
     pageId: string;
     recordingId: string;
-    actionItems?: EnhanceActionItem[];
-    projectId?: string | null;
     speakerAt?: ChipSpeakerAt;
   },
 ): DocBlock[] {

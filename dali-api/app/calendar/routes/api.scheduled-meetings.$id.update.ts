@@ -8,7 +8,7 @@ import {
   updateScheduledMeeting,
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { assertMeetingRoomsFree } from "~/lib/rooms.server";
 
 // Edit is deliberately narrower than create: title, time, location, description,

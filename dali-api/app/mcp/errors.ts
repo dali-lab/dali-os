@@ -56,3 +56,18 @@ export function requireForAction(
     throw new McpInvalidError(`action '${action}' requires: ${missing.join(", ")}`);
   }
 }
+
+/** Map a thrown error to a JSON-RPC {code,message}. Reads a numeric `.status`
+ *  (403→forbidden, 404→not found, else invalid-params); returns null when the
+ *  error carries no status so the caller falls back to a generic -32000. */
+export function mapToolError(err: unknown): { code: number; message: string } | null {
+  if (err && typeof err === "object" && "status" in err) {
+    const status = (err as { status: unknown }).status;
+    if (typeof status === "number") {
+      const message = err instanceof Error ? err.message : String(err);
+      const code = status === 403 ? -32003 : status === 404 ? -32004 : -32602;
+      return { code, message };
+    }
+  }
+  return null;
+}

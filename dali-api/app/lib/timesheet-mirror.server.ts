@@ -15,7 +15,7 @@
 //   on update  → await syncTimeEntryToGoogle(entry)   // patches if already mirrored
 //   on delete  → await removeTimeEntryFromGoogle(entry)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,

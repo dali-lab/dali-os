@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     groupDefinition: { findUnique: vi.fn() },
     mentorNote: { findMany: vi.fn(), count: vi.fn() },
@@ -9,7 +9,7 @@ vi.mock("~/lib/db", () => ({
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 vi.mock("~/mentorship/lib/pair-notebook.server", () => ({ ensureMentorNotePage: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { ensureMentorNotePage } from "~/mentorship/lib/pair-notebook.server";
 import { MENTOR_NOTE_BATCH, runMentorNotesToNotebooks } from "~/jobs/mentor-notes-to-notebooks.server";

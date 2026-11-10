@@ -6,7 +6,7 @@
 // over. Sprints are the computed term grid, not stored rows, so they aren't
 // captured; instantiated tasks land in the backlog until they're dated.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type {
   EpicStatus,
   TaskStatus,

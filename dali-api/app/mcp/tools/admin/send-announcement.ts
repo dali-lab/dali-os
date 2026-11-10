@@ -3,7 +3,7 @@
 // persisted to ScheduledAnnouncement and the job fires it later; otherwise
 // sendAnnouncement() is called immediately. Requires the `mcp:admin` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { sendAnnouncement } from "~/lib/announcements.server";
 import { AdminForbiddenError as McpForbiddenError, AdminInvalidError as McpInvalidError, AdminNotFoundError as McpNotFoundError } from "./errors";

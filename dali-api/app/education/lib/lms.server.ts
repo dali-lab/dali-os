@@ -3,7 +3,7 @@
 // server-rendered read-only content (no Hocuspocus exposure), managers get
 // /documents/:pageId links to the live editor.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { collabDocToProseMirror, collabDocToHtml } from "~/collab/export";
 import { listDiscussion } from "./announcements.server";

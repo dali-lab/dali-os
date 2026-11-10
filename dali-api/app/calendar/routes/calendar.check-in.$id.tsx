@@ -1,7 +1,7 @@
 import { useLoaderData } from "react-router";
 import QRCode from "qrcode";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { CheckInPanel } from "~/components/CheckInPanel";

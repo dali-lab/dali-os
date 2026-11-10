@@ -1,10 +1,7 @@
 // JWT exchanger for api.dartmouth.edu. The DartAPI login service swaps an
 // API key for a short-lived JWT (~6h) which is then passed as
-// `Authorization: Bearer <jwt>` on subsequent People-API calls.
-//
-// Distinct from the session-JWT machinery in `auth.ts` — that signs our own
-// session tokens with `jose`. This module talks to Dartmouth's login service
-// only and never inspects or signs anything itself.
+// `Authorization: Bearer <jwt>` on subsequent People-API calls. It never
+// inspects or signs anything itself.
 //
 // Cached in process memory; on cold start or after expiry we re-exchange.
 // Multi-instance Fly deployments each maintain their own cache — that's fine,

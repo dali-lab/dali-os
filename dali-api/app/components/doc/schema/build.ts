@@ -4,8 +4,6 @@
 // type enabled on one side can't be forgotten on the other.
 //
 // Audio is excluded (spec decision: "audio probably never").
-// codeBlock is registered through createCodeBlockSpec + @blocknote/code-block's
-// shiki bundle, so code blocks get syntax highlighting + a language picker.
 //
 // TYPE NOTE: the returned schema is always TYPED as the full schema (every
 // spec registered) while the runtime instance omits feature-gated specs
@@ -17,20 +15,21 @@
 
 import {
   BlockNoteSchema,
-  createCodeBlockSpec,
   createHeadingBlockSpec,
   createPageBreakBlockSpec,
   defaultBlockSpecs,
   defaultInlineContentSpecs,
 } from "@blocknote/core";
-import { codeBlockOptions } from "@blocknote/code-block";
 import { withMultiColumn } from "@blocknote/xl-multi-column";
 import type { Features } from "../features";
 import { CalloutSpec } from "./callout";
+import { codeBlockSpec } from "./code-block";
 import { ComponentSpec } from "./component";
 import { EmbedSpec } from "./embed";
+import { createMediaImageSpec, createMediaVideoSpec } from "./media";
 import { MentionSpec, PageMentionSpec, TaskMentionSpec } from "./mention";
 import { signingInlineSpecs } from "./signing";
+import { TaskSpec } from "./task";
 
 // Heading spec with allowToggleHeadings=true enables Notion-style collapsible
 // headings (h1–h3 only; h4–h6 are excluded per Notion convention — the app
@@ -52,16 +51,17 @@ function fullBlockSpecs() {
     bulletListItem: defaultBlockSpecs.bulletListItem,
     numberedListItem: defaultBlockSpecs.numberedListItem,
     checkListItem: defaultBlockSpecs.checkListItem,
-    codeBlock: createCodeBlockSpec(codeBlockOptions),
+    codeBlock: codeBlockSpec,
     divider: defaultBlockSpecs.divider,
-    image: defaultBlockSpecs.image,
+    image: createMediaImageSpec({ live: true }),
     file: defaultBlockSpecs.file,
-    video: defaultBlockSpecs.video,
+    video: createMediaVideoSpec({ live: true }),
     table: defaultBlockSpecs.table,
     toggleListItem: defaultBlockSpecs.toggleListItem,
     callout: CalloutSpec,
     embed: EmbedSpec,
     component: ComponentSpec,
+    task: TaskSpec,
     pageBreak: createPageBreakBlockSpec(),
   };
 }
@@ -89,13 +89,14 @@ export function buildSchema(features: Features = {}) {
     delete blocks.file;
     delete blocks.video;
   }
+  if (!features.richBlocks && !features.tables) delete blocks.table;
   if (!features.richBlocks) {
-    delete blocks.table;
     delete blocks.toggleListItem;
     delete blocks.callout;
     delete blocks.embed;
   }
   if (!features.components) delete blocks.component;
+  if (!features.tasks) delete blocks.task;
   if (!features.mentions) {
     delete inline.mention;
     delete inline.pageMention;

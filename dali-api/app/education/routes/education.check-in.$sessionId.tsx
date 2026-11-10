@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Route } from "./+types/education.check-in.$sessionId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isSessionCheckInOpen } from "~/education/lib/session-checkin.server";
 import { formatSessionWhen } from "~/lib/display";
 import { resolveUserTimeZone } from "~/lib/timezone";

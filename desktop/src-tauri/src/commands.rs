@@ -81,29 +81,6 @@ pub fn tray_get_view(state: State<'_, AppState>) -> Option<TrayView> {
 }
 
 #[tauri::command]
-pub fn tray_open_link(app: AppHandle, id: String) {
-    window::hide_tray_panel(&app);
-    let link = app
-        .state::<AppState>()
-        .tray_view
-        .lock()
-        .ok()
-        .and_then(|g| g.clone())
-        .and_then(|v| v.unread.into_iter().find(|r| r.id == id))
-        .and_then(|r| r.link);
-    match link {
-        Some(link) => window::open_link(&app, &link),
-        None => window::show_main(&app),
-    }
-    notify::mark_read(&app, &id);
-}
-
-#[tauri::command]
-pub fn tray_mark_all_read(app: AppHandle) {
-    notify::post(&app, config::notifications_url(), Some(serde_json::json!({})));
-}
-
-#[tauri::command]
 pub fn tray_open_app(app: AppHandle) {
     window::hide_tray_panel(&app);
     window::show_main(&app);
@@ -121,11 +98,6 @@ pub fn tray_stop_recording() {
 }
 
 #[tauri::command]
-pub fn tray_quit(app: AppHandle) {
-    app.exit(0);
-}
-
-#[tauri::command]
 pub fn tray_panel_hide(app: AppHandle) {
     window::hide_tray_panel(&app);
 }
@@ -135,8 +107,8 @@ pub fn tray_panel_set_height(app: AppHandle, height: f64) {
     window::set_tray_panel_height(&app, height);
 }
 
-/// "Join call" on the tray panel's Up next card — same http(s)-only
-/// validation as `open_external`, reused directly rather than duplicated.
+/// "Join" on the tray panel — same http(s)-only validation as
+/// `open_external`, reused directly rather than duplicated.
 #[tauri::command]
 pub fn tray_open_external(app: AppHandle, url: String) -> Result<(), String> {
     window::hide_tray_panel(&app);
@@ -144,9 +116,8 @@ pub fn tray_open_external(app: AppHandle, url: String) -> Result<(), String> {
 }
 
 /// Any tray panel row/button that navigates the main window to an app-
-/// relative path (Up next's Notes, a to-do row, the "+" menu's Meeting/
-/// Document). `path` must start with "/" — never an absolute URL or a
-/// custom scheme.
+/// relative path (a meeting, its notes, Notifications). `path` must start
+/// with "/" — never an absolute URL or a custom scheme.
 #[tauri::command]
 pub fn tray_open_path(app: AppHandle, path: String) -> Result<(), String> {
     if !path.starts_with('/') {
@@ -157,9 +128,9 @@ pub fn tray_open_path(app: AppHandle, path: String) -> Result<(), String> {
     Ok(())
 }
 
-/// "Record" on the tray panel's Up next card — starts recording the agenda's
-/// current next meeting (sourced from AppState, not the caller, since this
-/// is a mutating action).
+/// "Record" on the tray panel — starts recording the agenda's current next
+/// meeting (sourced from AppState, not the caller, since this is a mutating
+/// action).
 #[tauri::command]
 pub fn tray_record_next(app: AppHandle) {
     window::hide_tray_panel(&app);
@@ -237,11 +208,10 @@ pub async fn do_sign_out(app: AppHandle) {
         if let Ok(mut agenda) = agenda_lock {
             *agenda = None;
         }
-        let tasks_lock = st.tasks.lock();
-        if let Ok(mut tasks) = tasks_lock {
-            tasks.clear();
+        let upcoming_lock = st.agenda_upcoming.lock();
+        if let Ok(mut upcoming) = upcoming_lock {
+            upcoming.clear();
         }
-        st.task_count.store(0, std::sync::atomic::Ordering::SeqCst);
     }
     tray::refresh(&app);
     notify::clear_all_delivered();

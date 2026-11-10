@@ -4,8 +4,8 @@
 // publishes or unpublishes by hand after the boundary stays in charge; the
 // job never revisits a boundary it already processed.
 
-import { prisma } from "~/lib/db";
-import { newPublicToken } from "~/forms/lib/forms-data";
+import { prisma } from "~/lib/db.server";
+import { newPublicToken } from "~/forms/lib/form-publish.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
 // First run (or a rebuilt jobs table) has no cursor; sweeping all history

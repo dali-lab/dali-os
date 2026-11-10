@@ -11,7 +11,9 @@ import { Menu } from "~/components/ui/floating";
 import { ProjectViewSwitch } from "~/projects/components/ProjectViewSwitch";
 import { Mail } from "lucide-react";
 import { DEFAULT_AREA_TINT } from "~/lib/nav-areas";
+import { adoptDesktopSession, resetLiveSession } from "~/components/meeting-recorder/live-session";
 
+vi.mock("~/lib/desktop-candidate", () => ({ useIsBrowserDesktopCandidate: () => false }));
 vi.mock("~/components/page-docs/PageDocButton", () => ({
   PageDocButton: () => createElement("button", { type: "button", "aria-label": "Open this page's guide" }),
 }));
@@ -184,6 +186,35 @@ describe("PageBar overflow", () => {
   });
 });
 
+describe("PageBar status slot", () => {
+  it("renders the status slot right after the crumbs, on the left side", async () => {
+    await mount({
+      page: createElement(PageBarPortal, { slot: "status", children: createElement("span", { "data-testid": "status" }, "Saved") }),
+    });
+    const left = bar().firstElementChild!;
+    expect(left.lastElementChild?.textContent).toBe("Saved");
+    expect(bar().lastElementChild!.textContent).not.toContain("Saved");
+  });
+
+  it("keeps the right side in order: actions, presence, then the fixed tail", async () => {
+    await mount({
+      page: createElement(
+        "div",
+        null,
+        createElement(PageBarPortal, { slot: "actions", children: createElement("button", { "aria-label": "Share" }) }),
+        createElement(PageBarPortal, { slot: "presence", children: createElement("button", { "aria-label": "Presence" }) }),
+      ),
+    });
+    expect(barButtons()).toEqual([
+      "Share",
+      "Presence",
+      "Open this page's guide",
+      "Add this page to favorites",
+      "More actions",
+    ]);
+  });
+});
+
 describe("PageBar top spacing", () => {
   it("grows taller, with centered content, when the tab strip is hidden", async () => {
     await mount({ tabs: false });
@@ -195,5 +226,32 @@ describe("PageBar top spacing", () => {
     await mount({ tabs: true });
     expect(bar().className).toContain("h-11");
     expect(bar().className).not.toContain("pt-2.5");
+  });
+});
+
+describe("PageBar recording pill", () => {
+  afterEach(() => resetLiveSession());
+
+  async function recording() {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          recording: { id: "r1", documentName: "doc:z:body", status: "Recording", title: "Weekly sync", href: "/documents/z", sessionSeconds: 5 },
+        }),
+      ),
+    );
+    await act(async () => {
+      adoptDesktopSession({ recordingId: "r1", documentName: "doc:z:body", status: "recording", startedAt: Date.now() });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  it("leads the right-hand cluster, ahead of the page's own actions", async () => {
+    await recording();
+    await mount({ page: createElement(PageBarPortal, { slot: "actions", children: createElement("button", { "aria-label": "Page action" }) }) });
+    const right = bar().lastElementChild!;
+    expect(right.firstElementChild?.textContent).toContain("Weekly sync");
+    expect(barButtons().indexOf("Stop recording")).toBeLessThan(barButtons().indexOf("Page action"));
   });
 });

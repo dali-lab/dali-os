@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, redirect, useLoaderData, useFetcher } from "react-router";
-import { Tooltip } from "~/components/ui/floating";
+import { MultiSelect, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/members.groups";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { listAllGroups } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
@@ -10,12 +10,11 @@ import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms, currentTermMemberWhere } from "~/lib/roles";
 import { MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { Avatar } from "~/components/ui/Avatar";
-import { RolePills } from "~/components/ui/RolePills";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { cn } from "~/lib/cn";
+import { GroupRoster, type MemberCardData } from "~/members/components/GroupRoster";
 import {
   Users,
   Plus,
@@ -61,16 +60,6 @@ type GroupRow = {
 // card (photo, name, role pills) and link to the member's page. `isCurrentMember`
 // distinguishes pickable users (current-term lab members) from alumni who only
 // appear here because they're still listed in an existing group.
-type MemberCardData = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  daliEmail: string | null;
-  photoUrl: string | null;
-  coreTitles: string[];
-  domainRoles: { domainName: string; level: string }[];
-  isCurrentMember: boolean;
-};
 
 type TermOption = { id: string; code: string };
 
@@ -449,6 +438,12 @@ function StatusTabs({
   );
 }
 
+export function groupMemberOptions(members: MemberCardData[]) {
+  return members
+    .filter((m) => m.isCurrentMember)
+    .map((m) => ({ value: m.id, label: memberLabel(m), description: m.daliEmail ?? undefined }));
+}
+
 function CreateGroupForm({
   members,
   terms,
@@ -461,20 +456,9 @@ function CreateGroupForm({
   const fetcher = useFetcher();
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
-  const [query, setQuery] = useState("");
   // "always" = never term-bound; "terms" = archive after the chosen term(s) end.
   const [scope, setScope] = useState<"always" | "terms">("always");
   const [boundTerms, setBoundTerms] = useState<string[]>([]);
-
-  const filtered = members.filter((m) => {
-    if (!m.isCurrentMember) return false;
-    if (!query) return true;
-    const ql = query.toLowerCase();
-    return (
-      `${m.firstName} ${m.lastName}`.toLowerCase().includes(ql) ||
-      (m.daliEmail ?? "").toLowerCase().includes(ql)
-    );
-  });
 
   const submitting = fetcher.state !== "idle";
   const termsOk = scope === "always" || boundTerms.length > 0;
@@ -571,77 +555,18 @@ function CreateGroupForm({
         </fieldset>
 
         <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
+          <span className="block text-sm font-medium text-foreground mb-1">
             Members ({selected.length})
-          </label>
-          {selected.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-2">
-              {selected.map((id) => {
-                const m = findMember(members, id);
-                if (!m) return null;
-                return (
-                  <span
-                    key={id}
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-[6px] px-2 py-0.5 text-xs font-medium",
-                      "bg-os-accent/15 text-os-accent",
-                    )}
-                  >
-                    {memberLabel(m)}
-                    <button
-                      type="button"
-                      onClick={() => setSelected(selected.filter((s) => s !== id))}
-                      aria-label={`Remove ${memberLabel(m)}`}
-                      className="hover:text-foreground"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
-          <SearchInput
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name or email…"
-            size="sm"
-            containerClassName="w-full"
+          </span>
+          <MultiSelect
+            values={selected}
+            onChange={setSelected}
+            options={groupMemberOptions(members)}
+            searchable
+            ariaLabel="Members"
+            placeholder="Add members"
+            searchPlaceholder="Search by name or email"
           />
-          <div
-            className={cn(
-              "mt-2 max-h-48 overflow-y-auto border border-border bg-background",
-              "rounded-os-item",
-            )}
-          >
-            {filtered.slice(0, 50).map((m) => {
-              const isSel = selected.includes(m.id);
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => {
-                    if (isSel) {
-                      setSelected(selected.filter((s) => s !== m.id));
-                    } else {
-                      setSelected([...selected, m.id]);
-                      setQuery("");
-                    }
-                  }}
-                  className={`w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 flex justify-between items-center ${
-                    isSel ? "bg-muted/30" : ""
-                  }`}
-                >
-                  <span>{memberLabel(m)}</span>
-                  {isSel && (
-                    <span className={cn("text-xs", "text-os-accent")}>
-                      Selected
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 pt-1">
@@ -677,11 +602,6 @@ function CreateGroupForm({
       </fetcher.Form>
     </div>
   );
-}
-
-// Lookup helper used inside CreateGroupForm where we only have the array.
-function findMember(members: MemberCardData[], id: string): MemberCardData | undefined {
-  return members.find((m) => m.id === id);
 }
 
 function GroupCard({
@@ -856,32 +776,12 @@ function GroupCard({
           {group.memberIds.length === 0 && (
             <p className="text-sm text-muted-foreground/70">No members.</p>
           )}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {group.memberIds.map((uid) => {
-              const m = membersById.get(uid);
-              if (!m) {
-                return (
-                  <div
-                    key={uid}
-                    className={cn(
-                      "p-2 bg-os-bg dark:bg-os-card text-xs text-muted-foreground",
-                      "rounded-os-item",
-                    )}
-                  >
-                    Unknown member
-                  </div>
-                );
-              }
-              return (
-                <ExpandedMemberCard
-                  key={uid}
-                  member={m}
-                  removable={!isSystem}
-                  groupId={group.id}
-                />
-              );
-            })}
-          </div>
+          <GroupRoster
+            memberIds={group.memberIds}
+            membersById={membersById}
+            removable={!isSystem}
+            groupId={group.id}
+          />
 
           {!isSystem && !addingMember && available.length > 0 && (
             <button
@@ -947,76 +847,6 @@ function GroupCard({
             </div>
           )}
         </div>
-      )}
-    </div>
-  );
-}
-
-function ExpandedMemberCard({
-  member,
-  removable,
-  groupId,
-}: {
-  member: MemberCardData;
-  removable: boolean;
-  groupId: string;
-}) {
-  const fetcher = useFetcher();
-  const confirmSubmit = useConfirmSubmit();
-  const fullName = `${member.firstName} ${member.lastName}`.trim();
-  return (
-    <div
-      className={cn(
-        // On the open group's accent wash the card plane vanishes (the wash is
-        // mixed from os-card), so these sit a plane up: white in light, where
-        // the ramp inverts; os-card in dark, where card is already the top.
-        "relative p-2 bg-os-bg dark:bg-os-card flex items-start gap-2 hover:bg-os-card-hover transition-colors",
-        "rounded-os-item",
-      )}
-    >
-      <Link to={`/members/${member.id}`} className="flex items-start gap-2 min-w-0 flex-1">
-        <Avatar photoUrl={member.photoUrl} name={fullName} size="sm" className="flex-shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-foreground truncate">{fullName}</div>
-          <div className="mt-1">
-            {member.coreTitles.length === 0 && member.domainRoles.length === 0 ? (
-              <span className="text-muted-foreground text-xs">—</span>
-            ) : (
-              <RolePills
-                coreTitles={member.coreTitles}
-                domainRoles={member.domainRoles}
-                size="sm"
-                showLevel
-              />
-            )}
-          </div>
-        </div>
-      </Link>
-      {removable && (
-        <fetcher.Form
-          method="post"
-          className="flex-shrink-0"
-          onSubmit={confirmSubmit({
-            title: `Remove ${fullName} from this group?`,
-            description:
-              "They lose anything shared with the group — document shares and scheduling audiences that name it. You can add them back.",
-            confirmLabel: "Remove",
-            tone: "destructive",
-          })}
-        >
-          <input type="hidden" name="intent" value="remove-member" />
-          <input type="hidden" name="groupId" value={groupId} />
-          <input type="hidden" name="userId" value={member.id} />
-          <Tooltip content={`Remove ${fullName} from group`}>
-            <button
-              type="submit"
-              aria-label={`Remove ${fullName} from group`}
-              className="text-muted-foreground hover:text-destructive p-0.5"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </Tooltip>
-        </fetcher.Form>
       )}
     </div>
   );

@@ -19,7 +19,7 @@
 // their plainText snapshot mirror instead.
 
 import * as Y from "yjs";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isDomainLead } from "~/lib/roles";
 import {
   BLOCKNOTE_FRAGMENT,
@@ -263,11 +263,11 @@ export async function syncRegistryDocBack(
 // Returns true when the named entity has `structured: true` in COLLAB_SOURCES.
 // Used by persistence.ts to choose the JSON serialiser over getPlainText.
 //
-// `whiteboard` is not registered in COLLAB_SOURCES (its auth is an explicit
+// `whiteboard` and `slides` are not registered in COLLAB_SOURCES (its auth is an explicit
 // branch in authorizeCollabDoc and its Y.Doc — a Y.Map of Excalidraw elements —
 // is self-sourcing, with no source column to seed from or sync back to), but it
 // IS structured, so it must use the JSON plainText mirror rather than the
 // BlockNote-fragment getPlainText (which returns "" for a Map room).
 export function isStructuredRoom(entity: string): boolean {
-  return COLLAB_SOURCES[entity]?.structured === true || entity === "whiteboard";
+  return COLLAB_SOURCES[entity]?.structured === true || entity === "whiteboard" || entity === "slides";
 }

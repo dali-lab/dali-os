@@ -4,7 +4,7 @@
 // core.agreements.$id.signature.$sigId.tsx loader. The existing get_signed_document
 // is member-self only; this extends access to Core reviewers.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";

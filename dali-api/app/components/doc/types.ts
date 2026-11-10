@@ -4,10 +4,12 @@
 // server/entry chunk.
 
 import type React from "react";
+import type * as Y from "yjs";
 import type { TocHeading } from "./blocks-util";
 import type { Features, EditorPresetName } from "./features";
 import type { DocBlock, DocEditorInstance, DocPartialBlock } from "./schema/build";
 import type { SigningContextValue } from "./signing-context";
+import type { TaskBlockConfig } from "./task/task-composer-state";
 
 /** Collaborative save/sync state for the document body (collab mode only). */
 export type DocSyncState = "saving" | "saved" | "offline";
@@ -40,8 +42,7 @@ export interface DocCommentsConfig {
   currentUserId: string;
   /** Whether the viewer may post new comments / replies. */
   canComment: boolean;
-  /** Whether the viewer may delete other people's comments and whole threads
-   * (the editor role: canEdit || Core). Comments have no resolved state. */
+  /** Whether the viewer may delete other people's comments and whole threads (Core). */
   canModerate: boolean;
   /** Whether the comments panel is currently open (W2 uses for sidebar sync). */
   panelOpen?: boolean;
@@ -56,6 +57,8 @@ export interface DocCommentsConfig {
   editorContentRef?: React.RefObject<HTMLElement | null>;
   /** Deep-linked comment id (?comment=) for the rail to select once loaded. */
   focusCommentId?: string;
+  /** A slide text box: threads made here belong to this slide and element, and only those show. */
+  scope?: { slideId: string; elementId: string };
 }
 
 export interface DocEditorProps {
@@ -92,6 +95,10 @@ export interface DocEditorProps {
   initialContent?: DocPartialBlock[] | unknown;
   /** Presence of this prop switches the editor to collaborative mode. */
   collab?: DocCollabConfig;
+  /** Collab mode: bind to this fragment of the room's Y.Doc instead of the document body ("blocknote"). */
+  fragment?: Y.XmlFragment;
+  /** Collab mode: a BlockNote extension that replaces per-editor undo. When set, "yUndo" is disabled and undo is the host's. */
+  undoExtension?: unknown;
   /** Fired (throttled) with the live body word count as content changes. */
   onWordCountChange?: (count: number) => void;
   /** Fired when the collaborative save/sync state changes (collab mode only).
@@ -124,4 +131,10 @@ export interface DocEditorProps {
    * (applicant/partner) or signing surfaces.
    */
   aiEnabled?: boolean;
+  /** Offers "/task" on this surface. Omit to leave it out of the menu; task
+   * blocks in the document render either way. */
+  taskBlock?: TaskBlockConfig | null;
+  /** The doc's project, so a task block can name its project when it differs.
+   * Null for docs outside a project. */
+  docProjectId?: string | null;
 }

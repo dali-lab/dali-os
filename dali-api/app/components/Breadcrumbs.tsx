@@ -1,15 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useMatches, useLocation } from 'react-router'
-import { Check, ChevronDown, ChevronRight, MoreHorizontal } from 'lucide-react'
+import { Check, ChevronDown, MoreHorizontal } from 'lucide-react'
 import { cn } from '~/lib/cn'
 import { collapseMiddle } from '~/lib/collapse-middle'
 import { Menu } from "~/components/ui/floating";
 import { OS_MENU_ITEM_CLASS } from "~/components/ui/floating/styles";
-import { FavoriteRouteButton } from '~/components/FavoriteRouteButton'
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'
-import { useFeatureFlag } from '~/components/FeatureFlags'
 import { stripAppTitle } from '~/lib/page-title'
+import { usePageBarTitle } from '~/components/shell/page-bar-slot'
+import { RenameCrumb, TitleCrumbIcon } from '~/components/shell/PageBarTitleCrumb'
 
 export type Crumb = {
   label: string
@@ -138,7 +138,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   forms: 'Forms',
   calendar: 'Calendar',
   mentorship: 'Mentorship',
-  connect: 'Connect',
+  community: 'Community',
   profile: 'Profile',
   settings: 'Settings',
   help: 'Help',
@@ -401,60 +401,6 @@ export function resolveTrail(
   return { crumbs, action, favoriteRoute }
 }
 
-export function Breadcrumbs() {
-  const matches = useMatches()
-  const { pathname, search } = useLocation()
-  const favoritesBar = useFeatureFlag('favorites-bar')
-  const trail = resolveTrail(matches as MatchLike[], pathname, search)
-  if (!trail) return null
-  const { crumbs, action, favoriteRoute } = trail
-
-  // Home / single-segment pages get no trail (but still show a page action).
-  if (crumbs.length <= 1) {
-    return action ? <div className="flex justify-end w-full">{action}</div> : null
-  }
-
-  return (
-    <div className="flex items-center justify-between gap-3 flex-wrap w-full min-w-0 flex-1">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <nav
-          aria-label="Breadcrumb"
-          className="flex flex-wrap items-center gap-1 text-sm text-muted-foreground"
-        >
-          {trailEntries(crumbs).map((c, i, entries) => {
-            const leaf = i === entries.length - 1
-            if (Array.isArray(c)) {
-              return (
-                <span key={i} className="flex items-center gap-1">
-                  <ChevronRight className="w-3.5 h-3.5 opacity-50" />
-                  <CrumbOverflow crumbs={c} />
-                </span>
-              )
-            }
-            return (
-              <span key={i} className="flex items-center gap-1">
-                {i > 0 && <ChevronRight className="w-3.5 h-3.5 opacity-50" />}
-                {c.icon}
-                {c.siblings ? (
-                  <CrumbSwitcher label={c.label} siblings={c.siblings} />
-                ) : c.to ? (
-                  <Link to={c.to} className="hover:text-foreground transition-colors">
-                    {c.label}
-                  </Link>
-                ) : (
-                  <span className="text-foreground font-medium">{c.label}</span>
-                )}
-                {favoriteRoute && leaf && !favoritesBar && <FavoriteRouteButton inline />}
-              </span>
-            )
-          })}
-        </nav>
-      </div>
-      {action}
-    </div>
-  )
-}
-
 export function useDocumentTitle(): string {
   const { pathname, search } = useLocation()
   const [title, setTitle] = useState('')
@@ -494,6 +440,7 @@ export function usePageTrail(): ResolvedTrail | null {
 }
 
 export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {
+  const title = usePageBarTitle()
   if (crumbs.length === 0) return null
   return (
     <nav
@@ -518,8 +465,10 @@ export function PageBarTrail({ crumbs }: { crumbs: Crumb[] }) {
         return (
           <span key={i} className={cn('flex items-center gap-1.5', leaf ? 'min-w-0' : 'shrink-0')}>
             {separator}
-            {c.icon}
-            {c.siblings ? (
+            {leaf && title ? <TitleCrumbIcon title={title} fallback={c.icon} /> : c.icon}
+            {leaf && title?.onRename && !c.to ? (
+              <RenameCrumb title={title.title || c.label} onRename={title.onRename} />
+            ) : c.siblings ? (
               <CrumbSwitcher label={c.label} siblings={c.siblings} />
             ) : c.to ? (
               <Link to={c.to} className="transition-colors hover:text-foreground">

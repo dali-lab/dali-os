@@ -17,6 +17,13 @@ describe("deriveRailState", () => {
     expect(deriveRailState(makeRec({ phase: "failed" }))).toBe("failed");
   });
 
+  it("treats a finished recording with no transcript as noSpeech, even after an Insert", () => {
+    const done = { phase: "done" as const, hasTranscript: false };
+    expect(deriveRailState(makeRec(done))).toBe("noSpeech");
+    expect(deriveRailState(makeRec({ ...done, insertedAt: "2026-10-10T00:00:00Z" }))).toBe("noSpeech");
+    expect(deriveRailState(makeRec({ phase: "processing", hasTranscript: false }))).toBe("processing");
+  });
+
   it("splits phase 'done' into ready/generating/pendingReview/enhanced/inserted/stalePreview", () => {
     const done = { phase: "done" as const };
     expect(deriveRailState(makeRec({ ...done }))).toBe("ready");
@@ -50,6 +57,36 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     expect(html).toContain("Opening the DALI OS app…");
     expect(html).toContain(">Cancel<");
     expect(html).not.toContain("Get the app");
+  });
+
+  it("starting in the Mac app: says Starting, never that it is opening the app", () => {
+    const html = render(makeRec({ phase: "starting", captureMode: "desktop", useDesktopApp: true }));
+    expect(html).toContain("Starting…");
+    expect(html).not.toContain("Opening the DALI OS app");
+  });
+
+  it("stuck in the Mac app: offers Try again and Cancel, no download or browser fallback", () => {
+    const html = render(makeRec({ phase: "starting", captureMode: "desktop", useDesktopApp: true, appUnreachable: true }));
+    expect(html).toContain("Recording didn&#x27;t start.");
+    expect(html).toContain("If it keeps happening, quit and reopen the DALI OS app.");
+    expect(html).toContain("Try again");
+    expect(html).toContain('aria-label="Cancel"');
+    expect(html).not.toContain("Get the app");
+    expect(html).not.toContain("Record in this browser instead");
+    expect(html).not.toContain("didn&#x27;t respond");
+  });
+
+  it("following someone else's pending recording in the Mac app: no retry, which would delete their row", () => {
+    const html = render(
+      makeRec({ phase: "starting", captureMode: "desktop", useDesktopApp: true, appUnreachable: true, drives: false }),
+    );
+    expect(html).toContain("Starting…");
+    expect(html).not.toContain("Try again");
+    expect(html).not.toContain("quit and reopen");
+  });
+
+  it("starting in the Windows or Linux app: browser capture says Starting", () => {
+    expect(render(makeRec({ phase: "starting", captureMode: "browser", desktopVer: "1.0.0" }))).toContain("Starting…");
   });
 
   it("starting (desktop, after 30s): app-didn't-respond copy, Record in this browser primary, Cancel + Get the app secondaries", () => {
@@ -508,5 +545,37 @@ describe("RecordingRail per state (specs/meeting-recording-rail.md state table)"
     );
     expect(html).not.toContain("Transcribe anyway");
     expect(html).not.toContain("Discard recording");
+  });
+});
+
+describe("RecordingRail capture warnings", () => {
+  const live = { phase: "recording" as const, captureMode: "desktop" as const };
+
+  it("names the silent mic device the desktop app reported", () => {
+    const html = render(makeRec({ ...live, noSound: true, micDevice: "iPhone Microphone" }));
+    expect(html).toContain("Nothing is coming from iPhone Microphone.");
+    expect(html).toContain("System Settings &gt; Sound");
+  });
+
+  it("falls back to the general warning without a device", () => {
+    expect(render(makeRec({ ...live, noSound: true }))).toContain("No sound detected. Stop and record again.");
+  });
+
+  it("says call audio is off and where to allow it", () => {
+    const html = render(makeRec({ ...live, callAudioOff: true }));
+    expect(html).toContain("Only your mic is being recorded.");
+    expect(html).toContain("Screen &amp; System Audio Recording");
+  });
+
+  it("shows only the silent mic warning when both apply", () => {
+    const html = render(makeRec({ ...live, noSound: true, micDevice: "USB Mic", callAudioOff: true }));
+    expect(html).toContain("Nothing is coming from USB Mic.");
+    expect(html).not.toContain("Only your mic is being recorded.");
+  });
+
+  it("shows neither when capture is fine", () => {
+    const html = render(makeRec(live));
+    expect(html).not.toContain("Nothing is coming from");
+    expect(html).not.toContain("Only your mic is being recorded.");
   });
 });

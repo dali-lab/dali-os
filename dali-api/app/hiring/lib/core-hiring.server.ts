@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
 import { coreCycleTermIds } from "~/lib/core-cycle";
 import { commencementDate } from "~/lib/membership-status";

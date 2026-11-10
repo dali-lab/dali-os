@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/hiring/lib/core-hiring.server", () => ({
   getCoreDomain: vi.fn().mockResolvedValue({ id: "core" }),
   defaultCoreReviewerIds: vi.fn().mockResolvedValue(["senior-1"]),
@@ -8,7 +8,7 @@ vi.mock("~/hiring/lib/core-hiring.server", () => ({
   coreOnAccept: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { changeApplicants } from "~/hiring/lib/cycle-applicants.server";
 import { defaultTimeline } from "~/hiring/lib/cycle-timeline";
 

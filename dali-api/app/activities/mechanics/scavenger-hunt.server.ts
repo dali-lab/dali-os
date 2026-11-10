@@ -5,7 +5,7 @@
 // any page — nothing about a hunt is tied to a route.
 
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Activity } from "~/generated/prisma/client";
 import {
   DEFAULT_HINT_POLICY,

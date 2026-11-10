@@ -1,7 +1,7 @@
 // Loader and actions for /email, the unified inbox.
 
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import { requireAuth, isImpersonating, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";

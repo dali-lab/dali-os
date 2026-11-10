@@ -7,8 +7,7 @@ import { cn } from "~/lib/cn";
 
 // A slim progress bar shown during client-side route transitions. Mounted once
 // at the document root (root.tsx), so it covers every page — the applicant
-// portal, the main shell, and the pages loaded inside each workspace iframe
-// (each iframe is its own document and runs its own copy of this bar).
+// portal and the main shell.
 //
 // The bar eases toward — but never reaches — 100% while loading (real
 // completion time is unknown), then snaps to full and fades out once the
@@ -39,22 +38,17 @@ function ProgressBar({ className }: { className: string }) {
   const isTabSwitch = (navigation.location?.state as { tabSwitch?: boolean } | null)?.tabSwitch === true;
   const isLoading = navigation.state !== "idle" && !(isTabSwitch && showingKeptTab);
 
-  // Under the v2 design (the data-v2 marker root.tsx sets from the
-  // desktop-tabs flag) the bar wears the color of the mode being loaded — the
-  // destination's area tint. Otherwise, and on pages outside any area
-  // (portal, auth, home), it keeps the default accent. Resolved from the path
-  // alone: this mounts at the document root, above the shell div that carries
-  // `--area`, and outside the flag provider.
-  const v2 =
-    typeof document !== "undefined" &&
-    document.documentElement.hasAttribute("data-v2");
+  // The bar wears the color of the mode being loaded — the destination's area
+  // tint. On pages outside any area (portal, auth, home) it keeps the default
+  // accent. Resolved from the path alone: this mounts at the document root,
+  // above the shell div that carries `--area`, and outside the flag provider.
   // The tints are picked as ink on the dark shell; light mode takes the
   // area's ink instead, same as the rail's `--area` resolution in app.css.
   const light =
     typeof document !== "undefined" &&
     document.documentElement.classList.contains("light");
   const target = navigation.location ?? location;
-  const area = v2 ? areaForPath(`${target.pathname}${target.search}`) : undefined;
+  const area = areaForPath(`${target.pathname}${target.search}`);
   const color = area
     ? light
       ? areaInk(area.key)

@@ -184,6 +184,9 @@ enum DisplayFormat {
 
     static func range(_ start: Date, _ end: Date) -> String { "\(time(start)) – \(time(end))" }
 
+    /// "Tue, Nov 3".
+    static func day(_ date: Date) -> String { date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()) }
+
     /// "15 min", "1 hr", "1 hr 30 min".
     static func duration(minutes: Int) -> String {
         if minutes < 60 { return "\(minutes) min" }

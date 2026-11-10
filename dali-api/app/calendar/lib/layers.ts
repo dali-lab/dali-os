@@ -10,7 +10,7 @@
 // they're given (7 for a week, 1 for a day, a full month for the month grid),
 // so the same functions feed every view.
 
-import { getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
+import { getZonedHourFraction, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 import type { EventBlock, ExternalEventDTO, LoaderData, TimeEntryDTO } from "./types";
 import {
   EVENT_CORAL,
@@ -58,6 +58,16 @@ function dayBoundsUtc(day: GridDay, timezone: string): { startMs: number; endMs:
   };
 }
 
+/** A block's height in clock hours. The grid's rows are clock hours, so a DST
+ *  day's extra or missing hour can't be counted. Real time is the fallback for a
+ *  range the clock can't measure: past the column, or inside the repeated hour. */
+function clockDuration(startMs: number, endMs: number, startHour: number, dayEndMs: number, timezone: string): number {
+  const elapsed = (endMs - startMs) / 3_600_000;
+  if (endMs > dayEndMs) return elapsed;
+  const endHour = endMs === dayEndMs ? 24 : getZonedHourFraction(new Date(endMs), timezone);
+  return endHour > startHour ? endHour - startHour : elapsed;
+}
+
 /** Place one block into its day column(s), timezone-correct. A range that runs
  *  past midnight is cut at the day boundary and continued in the next visible
  *  column — otherwise an overnight event draws as one block that overflows the
@@ -86,9 +96,8 @@ export function placeBlock(
     // elsewhere it just means the range touches this column's edge.
     if (segEnd === segStart && !(start >= startMs && start < endMs)) continue;
 
-    const dayHours = (endMs - startMs) / 3_600_000;
-    const startHour = (segStart - startMs) / 3_600_000;
-    const duration = (segEnd - segStart) / 3_600_000;
+    const startHour = getZonedHourFraction(new Date(segStart), timezone);
+    const duration = clockDuration(segStart, segEnd, startHour, endMs, timezone);
     const clipped = segStart > start || segEnd < end;
 
     const placed: EventBlock = {
@@ -104,7 +113,7 @@ export function placeBlock(
       placed.bufferBefore = segStart > start ? 0 : Math.min(block.bufferBefore, startHour);
     }
     if (block.bufferAfter !== undefined) {
-      placed.bufferAfter = segEnd < end ? 0 : Math.min(block.bufferAfter, dayHours - startHour - duration);
+      placed.bufferAfter = segEnd < end ? 0 : Math.min(block.bufferAfter, 24 - startHour - duration);
     }
 
     if (!into[dayIdx]) into[dayIdx] = [];
@@ -123,9 +132,9 @@ export function toGridRange(
   const start = new Date(startIso);
   const end = new Date(endIso);
   const ymd = getZonedYMD(start, timezone);
-  const dayMidnight = zonedDayStartUtc(ymd.year, ymd.month, ymd.day, timezone);
-  const startHour = (start.getTime() - dayMidnight.getTime()) / 3_600_000;
-  const endHour = startHour + (end.getTime() - start.getTime()) / 3_600_000;
+  const dayEnd = zonedDayStartUtc(ymd.year, ymd.month, ymd.day + 1, timezone);
+  const startHour = getZonedHourFraction(start, timezone);
+  const endHour = startHour + clockDuration(start.getTime(), end.getTime(), startHour, dayEnd.getTime(), timezone);
   const dayIdx = days.findIndex(
     (d) =>
       d.dateUtc.getUTCFullYear() === ymd.year &&

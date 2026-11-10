@@ -8,9 +8,16 @@ import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { MultiSelect, Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
+import { Toggle } from "~/components/ui/Toggle";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import {
+  CARD_SORTS,
+  CARD_SORT_LABELS,
+  type PartnerBoardPrefs,
+  type PartnerCardSort,
+} from "../lib/partner-board";
 import type { loader } from "../routes/core.partners.settings";
 
 const SETTINGS_PATH = "/core/partners/settings";
@@ -18,7 +25,19 @@ const SETTINGS_PATH = "/core/partners/settings";
 type SettingsData = Exclude<Awaited<ReturnType<typeof loader>>, Response>;
 type ActionResult = { ok?: boolean; error?: string };
 
-export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
+type BoardDisplay = {
+  prefs: PartnerBoardPrefs;
+  onChange: (next: PartnerBoardPrefs) => void;
+};
+
+export function PartnerSettingsModal({
+  onClose,
+  board,
+}: {
+  onClose: () => void;
+  /** Applications-board display preferences; only the board page passes them. */
+  board?: BoardDisplay;
+}) {
   const data = useFetcher<SettingsData>();
   const reload = () => data.load(SETTINGS_PATH);
 
@@ -49,6 +68,7 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
         <p className="text-sm text-os-grey">Loading…</p>
       ) : (
         <div className="flex flex-col divide-y divide-os-container">
+          {board && <BoardDisplaySection board={board} />}
           <FollowUpSection key={JSON.stringify(d.settings)} data={d} onSaved={reload} />
           <section className="flex flex-col gap-5 py-6 last:pb-0">
             <h3 className="font-heading text-[15px] font-semibold text-foreground">Partner forms</h3>
@@ -59,6 +79,7 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
               forms={d.selectableForms}
               bindIntent="bind-form"
               clearIntent="clear-form"
+              publishSlot="application"
               removeDescription="New applicants will have no form to fill in until another is chosen. Submitted responses are kept."
               unpublishedNote="Partners only see the built-in pitch fields."
               onSaved={reload}
@@ -70,8 +91,9 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
               forms={d.selectableForms}
               bindIntent="bind-survey-form"
               clearIntent="clear-survey-form"
+              publishSlot="survey"
               removeDescription="Partners whose project ends will get no survey until another is chosen. Submitted responses are kept."
-              unpublishedNote="Partners won't see a survey until it is."
+              unpublishedNote="Partners won't get a survey until it's open."
               onSaved={reload}
             />
             <p className="text-sm text-os-grey">
@@ -85,6 +107,39 @@ export function PartnerSettingsModal({ onClose }: { onClose: () => void }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+function BoardDisplaySection({ board }: { board: BoardDisplay }) {
+  const { prefs, onChange } = board;
+  return (
+    <section className="flex flex-col gap-4 pb-6">
+      <h3 className="font-heading text-[15px] font-semibold text-foreground">Applications board</h3>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm text-os-grey">Order cards within a column</span>
+        <Select
+          value={prefs.sort}
+          onChange={(value) => onChange({ ...prefs, sort: value as PartnerCardSort })}
+          ariaLabel="Order cards within a column"
+          options={CARD_SORTS.map((s) => ({ value: s, label: CARD_SORT_LABELS[s] }))}
+          buttonClassName="w-full sm:w-64"
+        />
+      </div>
+      <Toggle
+        tone="os"
+        checked={prefs.showPaused}
+        onChange={(e) => onChange({ ...prefs, showPaused: e.currentTarget.checked })}
+        label="Show paused"
+        description="Keep applications on hold visible on the board."
+      />
+      <Toggle
+        tone="os"
+        checked={prefs.showRejectedPastTerms}
+        onChange={(e) => onChange({ ...prefs, showRejectedPastTerms: e.currentTarget.checked })}
+        label="Show rejected from past terms"
+        description="Include rejections older than the current term."
+      />
+    </section>
   );
 }
 
@@ -106,7 +161,7 @@ function FollowUpSection({ data, onSaved }: { data: SettingsData; onSaved: () =>
   useOnSaved(save, onSaved);
 
   return (
-    <save.Form method="post" action={SETTINGS_PATH} className="flex flex-col gap-4 pb-6">
+    <save.Form method="post" action={SETTINGS_PATH} className="flex flex-col gap-4 py-6 first:pt-0">
       <h3 className="font-heading text-[15px] font-semibold text-foreground">Interviews and follow-up</h3>
       <input type="hidden" name="intent" value="settings-save" />
       {panelIds.map((id) => (
@@ -151,6 +206,7 @@ function FormBindingRow({
   forms,
   bindIntent,
   clearIntent,
+  publishSlot,
   removeDescription,
   unpublishedNote,
   onSaved,
@@ -161,6 +217,7 @@ function FormBindingRow({
   forms: SettingsData["selectableForms"];
   bindIntent: string;
   clearIntent: string;
+  publishSlot: "application" | "survey";
   removeDescription: string;
   unpublishedNote: string;
   onSaved: () => void;
@@ -168,9 +225,14 @@ function FormBindingRow({
   const confirmSubmit = useConfirmSubmit();
   const bind = useFetcher<ActionResult>();
   const clear = useFetcher<ActionResult>();
+  const publish = useFetcher<ActionResult>();
   useOnSaved(bind, onSaved);
   useOnSaved(clear, onSaved);
-  const error = bind.data?.error ?? clear.data?.error;
+  useOnSaved(publish, onSaved);
+  const error = bind.data?.error ?? clear.data?.error ?? publish.data?.error;
+  const pendingPublished = publish.formData?.get("published");
+  const published =
+    pendingPublished != null ? pendingPublished === "1" : !!binding?.published;
 
   return (
     <div className="flex flex-col gap-2">
@@ -223,10 +285,25 @@ function FormBindingRow({
           </clear.Form>
         )}
       </div>
+      {binding?.hasVersion && (
+        <Toggle
+          tone="os"
+          checked={published}
+          disabled={publish.state !== "idle"}
+          onChange={(e) =>
+            publish.submit(
+              { intent: "set-form-published", slot: publishSlot, published: e.currentTarget.checked ? "1" : "0" },
+              { method: "post", action: SETTINGS_PATH },
+            )
+          }
+          label="Open for responses"
+          description={published ? "Partners can fill this form now." : `Closed. ${unpublishedNote}`}
+        />
+      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
-      {binding && (!binding.published || !binding.hasVersion) && (
+      {binding && !binding.hasVersion && (
         <p className="text-sm text-os-amber">
-          {binding.hasVersion ? "This form isn't published yet." : "This form has no saved version yet."} {unpublishedNote}
+          This form has no saved version yet. {unpublishedNote}
         </p>
       )}
     </div>

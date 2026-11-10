@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { createNotebookTab, ensureMeetingNotebook } from "~/lib/pages";
 import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";

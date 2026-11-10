@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { notifyNewAssignment, notifyGraded } from "./notifications.server";
 import type { SubmissionType } from "~/generated/prisma/client";

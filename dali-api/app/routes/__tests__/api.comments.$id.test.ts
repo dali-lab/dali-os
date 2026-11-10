@@ -4,8 +4,9 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/lib/comment-events.server", () => ({ publishCommentChange: vi.fn() }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isLabMember: vi.fn(),
@@ -17,12 +18,15 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
+vi.mock("~/lib/reactions.server", () => ({ reactionRefusal: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
+import { publishCommentChange } from "~/lib/comment-events.server";
 import { isCore } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { reactionRefusal } from "~/lib/reactions.server";
 import { action } from "~/routes/api.comments.$id";
 
 const mockPrismaTyped = prisma as any;
@@ -124,6 +128,32 @@ describe("edit intent", () => {
   });
 });
 
+describe("live comment updates", () => {
+  beforeEach(() => {
+    vi.mocked(publishCommentChange).mockClear();
+    mockPrisma.docComment.findUnique.mockResolvedValue(baseComment());
+    mockPrisma.docComment.update.mockResolvedValue({});
+    mockPrisma.docCommentReaction.upsert.mockResolvedValue({});
+    mockPrisma.docCommentReaction.deleteMany.mockResolvedValue({ count: 1 });
+    vi.mocked(getPageAccess).mockResolvedValue({ canComment: true } as never);
+  });
+
+  it.each([
+    ["set-anchor", { anchor: { kind: "blocknote" } }],
+    ["react", { emoji: "👍" }],
+    ["unreact", { emoji: "👍" }],
+  ])("%s tells other viewers of the doc", async (intent, body) => {
+    await post(intent, AUTHOR_ID, body);
+    expect(publishCommentChange).toHaveBeenCalledExactlyOnceWith(PAGE_ID);
+  });
+
+  it("doesn't publish reactions on non-doc targets", async () => {
+    mockPrisma.docComment.findUnique.mockResolvedValue(baseComment({ targetType: "file" }));
+    await post("react", AUTHOR_ID, { emoji: "👍" });
+    expect(publishCommentChange).not.toHaveBeenCalled();
+  });
+});
+
 // ── set-anchor intent ────────────────────────────────────────────────────────
 describe("set-anchor intent", () => {
   it("allows author to set anchor on a doc comment", async () => {
@@ -146,6 +176,29 @@ describe("set-anchor intent", () => {
     );
     const res = (await post("set-anchor", AUTHOR_ID, { anchor: {} })) as Response;
     expect(res.status).toBe(400);
+  });
+});
+
+describe("set-anchor on slide decks", () => {
+  it("accepts a slide-scoped text anchor on a deck", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ kind: "Slides" });
+    const anchor = { kind: "blocknote", slideId: "s1", elementId: "body" };
+    const res = (await post("set-anchor", AUTHOR_ID, { anchor })) as Response;
+    expect(res.status).toBe(200);
+    expect(mockPrisma.docComment.update).toHaveBeenCalledWith(expect.objectContaining({ data: { anchor } }));
+  });
+
+  it("rejects a malformed anchor", async () => {
+    const res = (await post("set-anchor", AUTHOR_ID, { anchor: { kind: "slide" } })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.docComment.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a slide anchor on a page that is not a deck", async () => {
+    mockPrisma.page.findUnique.mockResolvedValue({ kind: "Doc" });
+    const res = (await post("set-anchor", AUTHOR_ID, { anchor: { kind: "blocknote", slideId: "s1" } })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrisma.docComment.update).not.toHaveBeenCalled();
   });
 });
 
@@ -244,6 +297,20 @@ describe("react intent", () => {
       canComment: true,
     });
     mockPrismaTyped.docCommentReaction.upsert.mockResolvedValue({});
+    mockPrismaTyped.docCommentReaction.findMany.mockResolvedValue([{ emoji: "❤️" }]);
+    vi.mocked(reactionRefusal).mockResolvedValue(null);
+  });
+
+  it("checks the emoji against the ones already on the comment", async () => {
+    await post("react", AUTHOR_ID, { emoji: "👍" });
+    expect(reactionRefusal).toHaveBeenCalledWith("👍", ["❤️"]);
+  });
+
+  it.each([400, 409] as const)("refuses with %i when the emoji isn't allowed", async (status) => {
+    vi.mocked(reactionRefusal).mockResolvedValue(status);
+    const res = (await post("react", AUTHOR_ID, { emoji: ":gone:" })) as Response;
+    expect(res.status).toBe(status);
+    expect(mockPrismaTyped.docCommentReaction.upsert).not.toHaveBeenCalled();
   });
 
   it("upserts a reaction row for a valid emoji", async () => {

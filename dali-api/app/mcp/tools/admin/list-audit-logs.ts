@@ -3,7 +3,7 @@
 // the HTML viewer it returns MCP reads unless filtered out.
 // Requires the `mcp:admin` scope; caller must be isCore.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   parseAuditFilters,
@@ -12,11 +12,14 @@ import {
 } from "~/lib/audit-query";
 import { AdminForbiddenError as McpForbiddenError } from "./errors";
 import type { McpCtx } from "../../registry";
+import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
+
+const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
 
 export const LIST_AUDIT_LOGS_TOOL = {
   name: "list_audit_logs",
   description:
-    "Return paginated audit log entries. Filterable by action, actor userId, target id, person name/email or IP, and date range. Core leads only.",
+    "Return audit log entries, newest first. Filterable by action, actor userId, target id, person name/email or IP, and date range. Pass page.nextCursor as cursor to read the next page until page.hasMore is false; page.total is the count for the filters. Core leads only.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -34,18 +37,14 @@ export const LIST_AUDIT_LOGS_TOOL = {
       },
       from: { type: "string", description: "Start date (ISO)" },
       to: { type: "string", description: "End date (ISO)" },
-      limit: {
-        type: "number",
-        description: "Max results (1–200, default 50)",
-      },
-      offset: { type: "number", description: "Pagination offset" },
+      ...pageProps(PAGE_LIMITS),
     },
     additionalProperties: false,
   },
   requiredScope: "mcp:admin" as const,
 };
 
-type Args = {
+type Args = PageArgs & {
   action?: string;
   area?: string;
   userId?: string;
@@ -53,17 +52,12 @@ type Args = {
   person?: string;
   from?: string;
   to?: string;
-  limit?: number;
-  offset?: number;
 };
 
 export async function runListAuditLogs(ctx: McpCtx, args: Args) {
   if (!(await isCore(ctx.user.id))) {
     throw new McpForbiddenError("Only Core leads can view audit logs.");
   }
-
-  const limit = Math.min(Math.max(Number(args.limit ?? 50) || 50, 1), 200);
-  const offset = Math.max(Number(args.offset ?? 0) || 0, 0);
 
   const params = new URLSearchParams();
   for (const key of ["action", "area", "userId", "targetId", "person", "from", "to"] as const) {
@@ -75,16 +69,19 @@ export async function runListAuditLogs(ctx: McpCtx, args: Args) {
     ...(await resolveAuditTextFilters(prisma, filters)),
   };
 
-  const [entries, total] = await Promise.all([
+  const window = keysetWindow(args, PAGE_LIMITS, [
+    { field: "createdAt", direction: "desc", type: "date" },
+  ]);
+  const [fetched, total] = await Promise.all([
     prisma.auditLog.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      skip: offset,
+      where: { AND: [where, window.where] },
+      orderBy: window.orderBy,
+      take: window.take,
     }),
     prisma.auditLog.count({ where }),
   ]);
+  const { rows: entries, page } = keysetPage(fetched, window, total);
 
-  return { total, limit, offset, filters, entries };
+  return { page, filters, entries };
 }
 

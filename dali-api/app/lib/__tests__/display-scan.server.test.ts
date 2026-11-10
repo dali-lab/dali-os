@@ -4,7 +4,7 @@ const tx = vi.hoisted(() => ({
   $executeRaw: vi.fn(),
   displayScanSession: { findFirst: vi.fn(), deleteMany: vi.fn(), create: vi.fn() },
 }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledMeeting: { findUnique: vi.fn() },
     displayScanSession: { deleteMany: vi.fn() },
@@ -17,7 +17,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({
   resolveMeetingOccurrence: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 

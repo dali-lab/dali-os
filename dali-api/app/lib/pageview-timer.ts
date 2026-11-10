@@ -32,12 +32,6 @@ export function advanceTimer(
   };
 }
 
-export function isCounting(input: {
-  documentVisible: boolean;
-  frameRendered: boolean | null;
-}): boolean {
-  return input.documentVisible && input.frameRendered !== false;
-}
 
 export function pendingFlush(
   t: ViewTimer,

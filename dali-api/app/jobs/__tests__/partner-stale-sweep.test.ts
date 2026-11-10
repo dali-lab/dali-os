@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/partners/lib/partner-notify.server", () => ({ notifyPartners: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { runPartnerStaleSweep, isoWeekKey } from "~/jobs/partner-stale-sweep.server";
 
@@ -99,7 +99,7 @@ describe("runPartnerStaleSweep", () => {
     expect(mockPrisma.partnerApplication.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          stage: { in: ["New", "Interview"] },
+          stage: { in: ["New", "Interview", "Deciding"] },
           OR: [{ holdUntil: null }, { holdUntil: { lte: NOW } }],
         },
         take: 200,

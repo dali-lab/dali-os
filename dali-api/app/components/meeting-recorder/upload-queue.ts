@@ -6,7 +6,8 @@
 import type { ChunkResponse } from "./types";
 
 /** Thrown by the injected `upload` fn for a 409 (recording already finalized
- *  or processing) — never retried, unlike a transient network failure. */
+ *  or processing) or a 404 (row deleted) — never retried, unlike a transient
+ *  network failure. */
 export class ChunkConflictError extends Error {}
 
 export const MAX_QUEUED_CHUNKS = 20;
@@ -54,7 +55,7 @@ export class ChunkUploadQueue {
   }
 
   private pump(): void {
-    if (this.uploading || this.stopped || this.queue.length === 0) return;
+    if (this.uploading || this.timer || this.stopped || this.queue.length === 0) return;
     this.uploading = true;
     const chunk = this.queue[0]!;
     this.upload(chunk)
@@ -74,7 +75,10 @@ export class ChunkUploadQueue {
         }
         this.callbacks.onError?.(err);
         const delay = backoffDelayMs(this.attempt++);
-        this.timer = setTimeout(() => this.pump(), delay);
+        this.timer = setTimeout(() => {
+          this.timer = null;
+          this.pump();
+        }, delay);
       });
   }
 

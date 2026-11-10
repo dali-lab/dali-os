@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
+import { applicantCancelledInterview, inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
 
 function makeDa(overrides: {
   statusUpdates?: Array<{ newStatus: string }>;
@@ -177,5 +177,25 @@ describe("inferDomainApplicationStatus", () => {
       });
       expect(inferDomainApplicationStatus(da, "UnderReview")).toBe("PostInterviewPending");
     });
+  });
+});
+
+describe("applicantCancelledInterview", () => {
+  const row = (status: string, interviewRoundId = "interviews") => ({ status, interviewRoundId });
+
+  it("is true for an own cancellation with nothing rebooked", () => {
+    expect(applicantCancelledInterview([row("CancelledByApplicant")], "interviews")).toBe(true);
+  });
+
+  it.each(["Scheduled", "Completed"])("is false once a %s interview follows it", (status) => {
+    expect(applicantCancelledInterview([row("CancelledByApplicant"), row(status)], "interviews")).toBe(false);
+  });
+
+  it("only looks at the given round", () => {
+    expect(applicantCancelledInterview([row("CancelledByApplicant", "iv2")], "interviews")).toBe(false);
+  });
+
+  it("is false with no interviews", () => {
+    expect(applicantCancelledInterview([], "interviews")).toBe(false);
   });
 });

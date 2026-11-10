@@ -1,0 +1,70 @@
+// GET /api/meeting-recordings/active — the requesting user's own recording
+// that is still on the go (not yet inserted into its note), for the
+// app-level recording pill. Owner-only; never returns transcript text.
+
+import type { Route } from "./+types/api.meeting-recordings.active";
+import { requireAuth } from "~/lib/auth";
+import { prisma } from "~/lib/db.server";
+import { documentTitle } from "~/lib/meeting-recording.server";
+import { NO_SOUND_AFTER_SECONDS } from "~/lib/transcription/pcm-level";
+
+export async function loader({ request }: Route.LoaderArgs) {
+  const auth = await requireAuth(request);
+  if (!auth.ok) return auth.response;
+
+  const rec = await prisma.meetingRecording.findFirst({
+    where: {
+      userId: auth.user.sub,
+      status: { in: ["Pending", "Recording", "Stopped"] },
+      insertedAt: null,
+      finalizedAt: null,
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      documentName: true,
+      status: true,
+      sessionStartedAt: true,
+      voicedChannels: true,
+      lastChunkAt: true,
+      micDevice: true,
+      micSilent: true,
+      systemAudioAllowed: true,
+    },
+  });
+  if (!rec) return Response.json({ recording: null });
+
+  const [entity, id, part] = rec.documentName.split(":");
+  let href: string | null = null;
+  let title = "Recording";
+  if (entity === "doc" && id) {
+    href = `/documents/${id}`;
+    title = ((await documentTitle(rec.documentName)) ?? "") || "Untitled";
+  } else if (entity === "interview" && id && part === "notes") {
+    href = `/hiring/interviews/${id}`;
+    // Not the applicant's name: the pill shows on every page, screen shares included.
+    title = "Interview";
+  }
+  const sessionSeconds =
+    rec.status === "Recording" && rec.sessionStartedAt
+      ? Math.max(0, (Date.now() - rec.sessionStartedAt.getTime()) / 1000)
+      : null;
+  const noSound =
+    sessionSeconds !== null &&
+    ((sessionSeconds >= NO_SOUND_AFTER_SECONDS && rec.lastChunkAt !== null && rec.voicedChannels.length === 0) ||
+      rec.micSilent);
+
+  return Response.json({
+    recording: {
+      id: rec.id,
+      documentName: rec.documentName,
+      status: rec.status,
+      title,
+      href,
+      sessionSeconds,
+      noSound,
+      micDevice: rec.micDevice,
+      callAudioOff: sessionSeconds !== null && rec.systemAudioAllowed === false,
+    },
+  });
+}

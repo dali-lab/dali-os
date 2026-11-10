@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/upcoming-meetings", () => ({ listUpcomingMeetings: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
 import { loader } from "~/routes/api.desktop.agenda";
 
@@ -63,6 +63,7 @@ describe("GET /api/desktop/agenda", () => {
         notePageId: "note-1",
         canRecord: true,
       },
+      upcoming: [],
     });
   });
 
@@ -97,6 +98,7 @@ describe("GET /api/desktop/agenda", () => {
         notePageId: null,
         canRecord: false,
       },
+      upcoming: [],
     });
     expect(findUnique).not.toHaveBeenCalled();
   });
@@ -104,7 +106,80 @@ describe("GET /api/desktop/agenda", () => {
   it("returns next: null when nothing is in the window", async () => {
     vi.mocked(listUpcomingMeetings).mockResolvedValue([]);
     const json = await (await loader({ request: req() } as any)).json();
-    expect(json).toEqual({ next: null });
+    expect(json).toEqual({ next: null, upcoming: [] });
+  });
+
+  const meeting = (id: string, startsAt: string, endsAt: string, source = "dali") =>
+    ({
+      id,
+      title: `Meeting ${id}`,
+      startsAt,
+      endsAt,
+      location: null,
+      meetingUrl: null,
+      attendeeCount: 1,
+      source,
+      occurrenceStart: startsAt,
+      scheduledMeetingId: source === "dali" ? id : null,
+    }) as any;
+
+  it("asks for 48 hours so tomorrow's first meeting is available", async () => {
+    vi.mocked(listUpcomingMeetings).mockResolvedValue([]);
+    await loader({ request: req() } as any);
+    expect(vi.mocked(listUpcomingMeetings).mock.calls[0][2]).toEqual(
+      new Date("2026-05-16T12:00:00.000Z"),
+    );
+  });
+
+  it("lists the meetings after next, with links, capped at three", async () => {
+    vi.mocked(listUpcomingMeetings).mockResolvedValue([
+      meeting("a", "2026-05-14T13:00:00.000Z", "2026-05-14T13:30:00.000Z"),
+      meeting("b", "2026-05-14T14:00:00.000Z", "2026-05-14T14:30:00.000Z"),
+      meeting("c", "2026-05-14T15:00:00.000Z", "2026-05-14T15:30:00.000Z", "interview"),
+      meeting("d", "2026-05-14T16:00:00.000Z", "2026-05-14T16:30:00.000Z"),
+      meeting("e", "2026-05-14T17:00:00.000Z", "2026-05-14T17:30:00.000Z"),
+    ]);
+    (prisma as any).scheduledMeeting.findUnique = vi.fn().mockResolvedValue({ notePages: [] });
+
+    const json = await (await loader({ request: req() } as any)).json();
+    expect(json.next.id).toBe("a");
+    expect(json.upcoming).toEqual([
+      {
+        id: "b",
+        title: "Meeting b",
+        startsAt: "2026-05-14T14:00:00.000Z",
+        link: "/calendar?meeting=b",
+      },
+      {
+        id: "c",
+        title: "Meeting c",
+        startsAt: "2026-05-14T15:00:00.000Z",
+        link: "/hiring/interviews/c",
+      },
+      {
+        id: "d",
+        title: "Meeting d",
+        startsAt: "2026-05-14T16:00:00.000Z",
+        link: "/calendar?meeting=d",
+      },
+    ]);
+  });
+
+  it("keeps next to 12 hours but still reports a later meeting in upcoming", async () => {
+    vi.mocked(listUpcomingMeetings).mockResolvedValue([
+      meeting("tomorrow", "2026-05-15T13:30:00.000Z", "2026-05-15T14:00:00.000Z"),
+    ]);
+    const json = await (await loader({ request: req() } as any)).json();
+    expect(json.next).toBeNull();
+    expect(json.upcoming.map((r: { id: string }) => r.id)).toEqual(["tomorrow"]);
+  });
+
+  it("leaves meetings that already ended out of both fields", async () => {
+    vi.mocked(listUpcomingMeetings).mockResolvedValue([
+      meeting("ended", "2026-05-14T11:00:00.000Z", "2026-05-14T11:30:00.000Z"),
+    ]);
+    const json = await (await loader({ request: req() } as any)).json();
+    expect(json).toEqual({ next: null, upcoming: [] });
   });
 
   it("still returns an in-progress meeting whose end is ahead of now", async () => {

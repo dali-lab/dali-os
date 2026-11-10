@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     partnerApplication: {
       findUnique: vi.fn(),
@@ -51,7 +51,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { readDocAsBlocks } from "~/collab/read";
 import { runGetPartnerSow, GET_PARTNER_SOW_TOOL } from "../get-partner-sow";

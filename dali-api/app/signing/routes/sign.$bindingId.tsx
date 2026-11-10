@@ -5,8 +5,9 @@
 import { redirect, Link, useLoaderData, useActionData } from "react-router";
 import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/sign.$bindingId";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
+import { resolveGroupMembers } from "~/lib/groups";
 import { redirectToLogin } from "~/lib/login-next";
 import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
@@ -27,25 +28,25 @@ import { resolveSigningVariablesForSigner } from "~/signing/lib/variables.server
 import { SigningFillView } from "~/signing/components/SigningFillView";
 import { buttonClasses } from "~/components/ui/Button";
 
-// Which slot this user fills on a binding, and whether they've completed it.
-// Prefer an outstanding member obligation (a mentor signs before their mentee);
-// then a mentee countersignature; then a completed member copy so a signed
-// mentor can still reopen theirs. null = no access. Shared by the loader (which
-// also needs the status) and the action (which must re-derive the role
-// server-side rather than trust a client-posted value).
+// The action re-derives the role here rather than trusting a client-posted value.
 async function resolveSigning(
   userId: string,
   bindingId: string,
   audience: SigningAudience,
+  audienceGroupId: string | null,
   termId: string | null,
   request: Request,
 ): Promise<{ role: "member" | "mentee"; status: "signed" | "unsigned" } | null> {
-  const [memberState, menteeState, cohorts] = await Promise.all([
+  const [memberState, menteeState, cohorts, groupMembers] = await Promise.all([
     getBindingStateForUser(userId, bindingId, "member"),
     menteeCountersignState(userId, bindingId, request),
     getSignerCohortsForBinding(userId, termId),
+    audience === "Group" && audienceGroupId ? resolveGroupMembers(audienceGroupId) : Promise.resolve([]),
   ]);
-  const inMemberAudience = AUDIENCE_RESOLVERS[audience].includes(cohorts);
+  const inMemberAudience = AUDIENCE_RESOLVERS[audience].includes(cohorts, {
+    audienceGroupId,
+    userGroupIds: new Set(audienceGroupId && groupMembers.includes(userId) ? [audienceGroupId] : []),
+  });
   if (inMemberAudience && memberState.status !== "signed") return { role: "member", status: "unsigned" };
   if (menteeState !== "not_owed") {
     return { role: "mentee", status: menteeState === "signed" ? "signed" : "unsigned" };
@@ -78,7 +79,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: true,
       versionId: true,
       termId: true,
-      document: { select: { name: true, audience: true, requiresMenteeCountersign: true } },
+      document: { select: { name: true, audience: true, audienceGroupId: true, requiresMenteeCountersign: true } },
       version: { select: { body: true } },
       term: { select: { code: true } },
       signatures: {
@@ -96,6 +97,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     userId,
     bindingId,
     binding.document.audience,
+    binding.document.audienceGroupId,
     binding.termId,
     request,
   );
@@ -241,7 +243,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     where: { id: bindingId },
     select: {
       termId: true,
-      document: { select: { audience: true, requiresMenteeCountersign: true } },
+      document: { select: { audience: true, audienceGroupId: true, requiresMenteeCountersign: true } },
     },
   });
   if (!binding) return { error: "Agreement not found." };
@@ -249,6 +251,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     userId,
     bindingId,
     binding.document.audience,
+    binding.document.audienceGroupId,
     binding.termId,
     request,
   );

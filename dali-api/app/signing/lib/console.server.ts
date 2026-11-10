@@ -5,7 +5,7 @@
 // versioning, and config all stay in the Drive detail. Rendered by the
 // permanent /core/agreements route.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { currentTerm } from "~/lib/roles";
 import { computeRoster, makeAudienceRosterCache } from "./roster.server";

@@ -7,13 +7,19 @@ import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { isBirthdayToday } from "~/members/lib/warmth";
 import { timed } from "~/lib/server-timing";
+import { prisma } from "~/lib/db.server";
+import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { fullName } from "~/lib/display";
 import MilestoneHero from "~/components/home/MilestoneHero";
+import { BirthdayBounce, type BirthdayPerson } from "~/components/home/BirthdayBounce";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import {
   isLandingBackgroundId,
   scheduledLandingWeek,
 } from "~/components/home/landing/backgrounds/schedule";
-import { currentTermStrict, getUserRoles } from "~/lib/roles";
+import { currentTermStrict } from "~/lib/roles";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { termWeekNumber } from "~/lib/terms.shared";
 import { resultIcon } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
@@ -32,16 +38,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-  if ((await getUserRoles(auth.user.sub, request)).isAlumni) return redirect("/connect");
+  if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/community");
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
 
   // Home shows the first few of the viewer's tasks; the full list, with its
   // actions and unread notifications, lives on My Tasks and in the bell panel.
-  const [tasks, week] = await Promise.all([
+  const [tasks, week, birthdays] = await Promise.all([
     timed(request, 'home.tasks', () => loadHomeTasks(auth.user.sub, request)),
     loadCurrentWeek(tz, request),
+    timed(request, 'home.birthdays', () => loadBirthdaysToday()),
   ]);
 
   const __loaderTotal = performance.now() - __loaderStart;
@@ -73,7 +80,25 @@ export async function loader({ request }: Route.LoaderArgs) {
     week,
     user: auth.user,
     tasks,
+    birthdays,
   };
+}
+
+async function loadBirthdaysToday(): Promise<BirthdayPerson[]> {
+  const members = await prisma.user.findMany({
+    where: { ...ACTIVE_LAB_MEMBER_WHERE, birthday: { not: null } },
+    select: { id: true, firstName: true, lastName: true, photoUrl: true, birthday: true },
+  });
+  const now = new Date();
+  return Promise.all(
+    members
+      .filter((m) => isBirthdayToday(m.birthday, now))
+      .map(async (m) => ({
+        id: m.id,
+        name: fullName(m),
+        photoUrl: await resolvePhotoUrl(m.photoUrl),
+      })),
+  );
 }
 
 type HomeTask = { id: string; title: string; detail: string | null; href: string; project: boolean };
@@ -140,7 +165,8 @@ const HOME_TASK_LIMIT = 6;
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, milestoneTitle, background, tasks } = useLoaderData<typeof loader>();
+  const { user, greeting, week, milestoneTitle, background, tasks, birthdays } =
+    useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
 
   return (
@@ -161,6 +187,7 @@ export default function Home() {
           media: <TaskCardMedia task={task} />,
         }))}
       />
+      <BirthdayBounce people={birthdays} />
     </div>
   );
 }
@@ -243,18 +270,8 @@ function HomeSearch() {
   // show a pending state instead of flashing "No matches" before the first hit.
   const isSearching = trimmed.length >= MIN_QUERY_LENGTH && resultsQuery !== trimmed;
 
-  // Home renders inside the workspace iframe, so a result opens as a workspace
-  // tab rather than navigating this view away — same rule as every other link
-  // on this page.
   const openResult = (r: SearchResult) => {
-    if (window.self !== window.top) {
-      window.parent.postMessage(
-        { type: "dali:openTab", url: r.url, label: r.title },
-        window.location.origin,
-      );
-    } else {
-      window.location.assign(r.url);
-    }
+    window.location.assign(r.url);
     setOpen(false);
   };
 

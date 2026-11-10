@@ -9,11 +9,25 @@ import { useOsChrome } from "~/components/os-chrome";
 import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { useDialog } from "~/components/ui/dialog";
+import { PostComments } from "~/components/PostComments";
+import { ReactionBar, useReactionToggle } from "~/components/ReactionBar";
+import { BLOG_COMMENT_MAX, BLOG_EMOJI } from "~/lib/blog-engagement";
+import {
+  blogEngagementAction,
+  loadBlogEngagement,
+  type BlogEngagement,
+} from "~/lib/blog-engagement.server";
+import { requireResourcesViewer } from "~/lib/resources.server";
+
+function reader(viewer: Awaited<ReturnType<typeof requireResourcesViewer>>) {
+  return { id: viewer.user.sub, core: viewer.core, name: viewer.userName };
+}
 
 // The reading page. Editing happens on /resources/write/:postId.
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const { post, canEdit, canApprove } = await loadBlogPost(request, params.postId!);
+  const { viewer, post, canEdit, canApprove } = await loadBlogPost(request, params.postId!);
   return {
+    engagement: post.publishedAt ? await loadBlogEngagement(reader(viewer), post.id) : null,
     post: {
       id: post.id,
       title: post.title,
@@ -29,8 +43,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
+export async function action({ request, params }: Route.ActionArgs) {
+  return blogEngagementAction(request, reader(await requireResourcesViewer(request)), params.postId!);
+}
+
 export default function BlogPostPage() {
-  const { post, canEdit, canApprove } = useLoaderData<typeof loader>();
+  const { post, canEdit, canApprove, engagement } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
   const chrome = useOsChrome();
   const dialog = useDialog();
@@ -55,7 +73,7 @@ export default function BlogPostPage() {
           className="mr-auto inline-flex items-center gap-1.5 text-sm text-os-grey hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-          The Scoop
+          Everything DALI
         </Link>
         {post.status !== "published" && <BlogStatusPill status={post.status} />}
         {canEdit && (
@@ -101,6 +119,21 @@ export default function BlogPostPage() {
         className="mt-8 [&_.bn-editor]:!px-0"
         initialContent={post.contentJson ?? []}
       />
+      {engagement && <StoryResponses postId={post.id} {...engagement} />}
     </article>
+  );
+}
+
+function StoryResponses({
+  postId,
+  reactions: loaded,
+  comments,
+}: { postId: string } & BlogEngagement) {
+  const { reactions, react } = useReactionToggle(postId, loaded);
+  return (
+    <section aria-label="Responses" className="mt-10 flex flex-col gap-4 pb-10">
+      <ReactionBar reactions={reactions} palette={BLOG_EMOJI} onReact={react} />
+      <PostComments postId={postId} comments={comments} maxLength={BLOG_COMMENT_MAX} />
+    </section>
   );
 }

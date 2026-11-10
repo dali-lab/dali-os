@@ -21,7 +21,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, hasCycleAccess: vi.fn(), getUserRoles: vi.fn() };
@@ -36,7 +36,7 @@ vi.mock("~/hiring/lib/rubric-criteria", () => ({
   buildCriteriaLabelMap: vi.fn().mockResolvedValue({}),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { GET_APPLICATION_TOOL, runGetApplication } from "../get-application";
@@ -78,6 +78,13 @@ beforeEach(() => {
   // Default to a Core caller so the per-domain reviewer check is bypassed;
   // reviewer-scoped tests override this.
   vi.mocked(getUserRoles).mockResolvedValue({ isCore: true, isDomainLead: false } as any);
+  (prisma as any).applicationCycle.findUniqueOrThrow.mockResolvedValue({
+    anonymizeReview: false,
+    closeDate: null,
+    timeline: null,
+    domains: [],
+    statusUpdates: [],
+  });
 });
 
 describe("get_application", () => {
@@ -167,18 +174,17 @@ describe("get_application", () => {
     });
   });
 
-  it("blinds the applicant on an anonymized Standard cycle before release (A1)", async () => {
-    mockPrisma.domainApplication.findUnique.mockResolvedValue({
-      ...fakeDa,
-      application: {
-        ...fakeDa.application,
-        applicationCycle: {
-          id: "cy1",
-          generalRubricVersionId: null,
-          anonymizeReview: true,
-        },
-      },
-      decisions: [], // no Released decision → still blinded
+  it.each([
+    [true, "Applicant 1"],
+    [false, "Alice"],
+  ])("with blind review %s, shows the applicant as %s (A1)", async (anonymizeReview, name) => {
+    mockPrisma.domainApplication.findUnique.mockResolvedValue({ ...fakeDa, decisions: [] });
+    (prisma as any).applicationCycle.findUniqueOrThrow.mockResolvedValue({
+      anonymizeReview,
+      closeDate: null,
+      timeline: null,
+      domains: [],
+      statusUpdates: [{ newStatus: "Open" }],
     });
     vi.mocked(hasCycleAccess).mockResolvedValue(true);
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
@@ -189,26 +195,32 @@ describe("get_application", () => {
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
     mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
     mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([]);
-    // anonLabelMapForCycle (real) reads prisma.application.findMany.
     (prisma as any).application.findMany.mockResolvedValue([{ id: "app1" }]);
+    (prisma as any).domainApplication.findMany.mockImplementation(async ({ where }: any) =>
+      where.id ? [{ id: "da1", domainId: "dom1", applicationId: "app1" }] : [],
+    );
 
     const result = (await runGetApplication("u1", { domainApplicationId: "da1" })) as any;
-    expect(result.application.applicant.firstName).toBe("Applicant 1");
-    expect(result.application.applicant.lastName).toBe("");
+    expect(result.application.applicant.firstName).toBe(name);
+  });
+});
+
+describe("get_application interview rounds", () => {
+  const round = (id: string, status: string) => ({
+    id,
+    status,
+    startTime: new Date("2026-10-01T15:00:00Z"),
+    endTime: new Date("2026-10-01T15:30:00Z"),
+    room: null,
+    assignments: [
+      { id: `${id}-a`, cycleInterviewer: { user: { firstName: "Ada", lastName: "Lovelace" } } },
+    ],
   });
 
-  it("does NOT blind once a decision is Released (A1)", async () => {
+  it("queries every scheduled or completed round and returns each with its notes", async () => {
     mockPrisma.domainApplication.findUnique.mockResolvedValue({
       ...fakeDa,
-      application: {
-        ...fakeDa.application,
-        applicationCycle: {
-          id: "cy1",
-          generalRubricVersionId: null,
-          anonymizeReview: true,
-        },
-      },
-      decisions: [{ stage: "Released" }],
+      interviews: [round("iv2", "Scheduled"), round("iv1", "Completed")],
     });
     vi.mocked(hasCycleAccess).mockResolvedValue(true);
     vi.mocked(getCycleConfidentialityState).mockResolvedValue({
@@ -218,9 +230,18 @@ describe("get_application", () => {
     });
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
     mockPrisma.rubricVersion.findUnique.mockResolvedValue(null);
-    mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([]);
+    mockPrisma.collabDocumentVersion.findMany.mockResolvedValue([
+      { name: "interview:iv1:notes", plainText: "first round" },
+      { name: "interview:iv2:rec-notes-iv2-a", plainText: "second round rec" },
+    ]);
 
     const result = (await runGetApplication("u1", { domainApplicationId: "da1" })) as any;
-    expect(result.application.applicant.firstName).toBe("Alice");
+    expect(mockPrisma.domainApplication.findUnique.mock.calls.at(-1)![0].include.interviews).not.toHaveProperty("take");
+    expect(result.interviews.map((i: any) => i.id)).toEqual(["iv2", "iv1"]);
+    expect(result.interviews[1].jointNotes).toBe("first round");
+    expect(result.interviews[0].assignments[0].recNotes).toBe("second round rec");
+    expect(mockPrisma.collabDocumentVersion.findMany.mock.calls.at(-1)![0].where.name.in).toEqual(
+      expect.arrayContaining(["interview:iv1:notes", "interview:iv2:notes"]),
+    );
   });
 });

@@ -1,4 +1,5 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
+import type { Prisma } from "~/generated/prisma/client";
 import { notify } from "~/lib/notify.server";
 import { logAuditEvent } from "~/lib/audit";
 import { educationLink } from "./notifications.server";
@@ -10,17 +11,37 @@ import { educationLink } from "./notifications.server";
 //   - reply → the parent post's author
 // The author never notifies themself.
 
+const POST_SELECT = {
+  id: true,
+  body: true,
+  parentId: true,
+  createdAt: true,
+  author: { select: { id: true, firstName: true, lastName: true } },
+} as const;
+
+type ThreadPost = {
+  id: string;
+  body: string;
+  createdAt: Date;
+  author: { id: string; firstName: string; lastName: string };
+};
+
+function shapePost(p: ThreadPost, instructorIds: Set<string>) {
+  return {
+    id: p.id,
+    body: p.body,
+    createdAt: p.createdAt,
+    authorId: p.author.id,
+    authorName: `${p.author.firstName} ${p.author.lastName}`.trim(),
+    isInstructor: instructorIds.has(p.author.id),
+  };
+}
+
 export async function listThreads(offeringId: string, instructorIds: Set<string>) {
   const posts = await prisma.educationDiscussionPost.findMany({
     where: { offeringId },
     orderBy: { createdAt: "asc" },
-    select: {
-      id: true,
-      body: true,
-      parentId: true,
-      createdAt: true,
-      author: { select: { id: true, firstName: true, lastName: true } },
-    },
+    select: POST_SELECT,
   });
   const roots = posts.filter((p) => p.parentId === null);
   const repliesByParent = new Map<string, typeof posts>();
@@ -30,22 +51,49 @@ export async function listThreads(offeringId: string, instructorIds: Set<string>
     list.push(p);
     repliesByParent.set(p.parentId, list);
   }
-  const shape = (p: (typeof posts)[number]) => ({
-    id: p.id,
-    body: p.body,
-    createdAt: p.createdAt,
-    authorId: p.author.id,
-    authorName: `${p.author.firstName} ${p.author.lastName}`.trim(),
-    isInstructor: instructorIds.has(p.author.id),
-  });
   // Newest threads first; replies oldest-first beneath their root.
   return roots
     .slice()
     .reverse()
     .map((root) => ({
-      ...shape(root),
-      replies: (repliesByParent.get(root.id) ?? []).map(shape),
+      ...shapePost(root, instructorIds),
+      replies: (repliesByParent.get(root.id) ?? []).map((r) => shapePost(r, instructorIds)),
     }));
+}
+
+/**
+ * One window of top-level threads, newest first, each with all its replies
+ * oldest-first. `and` narrows the roots (a keyset predicate) and `take` bounds
+ * them, so the replies query only covers the threads returned.
+ */
+export async function listThreadPage(
+  offeringId: string,
+  instructorIds: Set<string>,
+  opts: { and?: Prisma.EducationDiscussionPostWhereInput; take?: number } = {},
+) {
+  const roots = await prisma.educationDiscussionPost.findMany({
+    where: { AND: [{ offeringId, parentId: null }, ...(opts.and ? [opts.and] : [])] },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: opts.take,
+    select: POST_SELECT,
+  });
+  const replies = roots.length
+    ? await prisma.educationDiscussionPost.findMany({
+        where: { offeringId, parentId: { in: roots.map((r) => r.id) } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: POST_SELECT,
+      })
+    : [];
+  const repliesByParent = new Map<string, typeof replies>();
+  for (const r of replies) {
+    const list = repliesByParent.get(r.parentId!) ?? [];
+    list.push(r);
+    repliesByParent.set(r.parentId!, list);
+  }
+  return roots.map((root) => ({
+    ...shapePost(root, instructorIds),
+    replies: (repliesByParent.get(root.id) ?? []).map((r) => shapePost(r, instructorIds)),
+  }));
 }
 
 export async function offeringInstructorIds(offeringId: string): Promise<Set<string>> {

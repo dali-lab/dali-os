@@ -6,7 +6,7 @@
 // any override.
 
 import rrulePkg from "rrule";
-import { APPLICATION_TZ, getZonedParts, zonedWallTimeUtc } from "~/lib/timezone";
+import { APPLICATION_TZ, fromWallClock, toWallClock } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -37,22 +37,8 @@ export type MeetingRule = {
 // rrule expands in. BYDAY and the time of day are Eastern (RepeatField and
 // Google both mean them that way), so expanding the real UTC instant puts an
 // evening series on the wrong day and keeps its UTC hour across DST.
-function toFloating(d: Date): Date {
-  const p = getZonedParts(d, APPLICATION_TZ);
-  return new Date(Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, d.getUTCSeconds()));
-}
-
-function fromFloating(f: Date): Date {
-  const wall = zonedWallTimeUtc(
-    f.getUTCFullYear(),
-    f.getUTCMonth() + 1,
-    f.getUTCDate(),
-    f.getUTCHours(),
-    f.getUTCMinutes(),
-    APPLICATION_TZ,
-  );
-  return new Date(wall.getTime() + f.getUTCSeconds() * 1000);
-}
+const toFloating = (d: Date) => toWallClock(d, APPLICATION_TZ);
+const fromFloating = (f: Date) => fromWallClock(f, APPLICATION_TZ);
 
 // Wider than any zone offset, so a floating window covers the real one.
 const FLOATING_PAD_MS = 24 * 60 * 60_000;
@@ -317,13 +303,19 @@ export function rruleWithUntil(recurrence: string | string[], until: Date): stri
   return parts.join(";");
 }
 
-/**
- * Strip UNTIL from a recurrence rule, returning the bare repeating rule.
- * Used when spinning up a new series from a "following" split — the new
- * series has no end date unless the user sets one.
- */
-export function bareRrule(recurrence: string | string[]): string | null {
+export function followingRule(recurrence: string | string[], seriesStart: Date, splitAt: Date): string | null {
   const arr = typeof recurrence === "string" ? [recurrence] : recurrence;
   const rule = arr.map((r) => r.replace(/^RRULE:/i, "")).find((r) => /FREQ=/i.test(r));
-  return rule ? rule.split(";").filter((p) => !/^UNTIL=/i.test(p)).join(";") : null;
+  if (!rule) return null;
+  const parts = rule.split(";");
+  const base = parts.filter((p) => !/^(UNTIL|COUNT)=/i.test(p));
+  const until = parts.find((p) => /^UNTIL=/i.test(p));
+  if (until) return [...base, until].join(";");
+  const count = parts.find((p) => /^COUNT=/i.test(p));
+  if (!count) return base.join(";");
+  const built = buildRule(rule, seriesStart);
+  if (!built) return base.join(";");
+  const before = built.all().filter((d) => d < splitAt).length;
+  const remaining = Number(count.split("=")[1]) - before;
+  return [...base, `COUNT=${Math.max(remaining, 1)}`].join(";");
 }

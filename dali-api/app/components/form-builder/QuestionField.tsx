@@ -11,9 +11,54 @@ import {
 } from "~/lib/file-validation";
 import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
-import { Select } from "~/components/ui/floating";
+import { Combobox, MultiSelect, SEARCH_THRESHOLD, Select } from "~/components/ui/floating";
+import { DateField } from "~/components/ui/DateField";
+import { OTHER_ANSWER_MAX_LENGTH } from "~/lib/form-answers";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
+
+const INPUT_BASE =
+  "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-os-accent px-4 py-2";
+
+const LONG_CHECKBOX_LIST = 12;
+
+function ChoiceDropdown({
+  value,
+  onChange,
+  options,
+  disabled,
+  placeholder,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  disabled: boolean;
+  placeholder: string;
+  className: string;
+}) {
+  if (options.length > SEARCH_THRESHOLD) {
+    return (
+      <Combobox
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        placeholder={placeholder}
+        options={options}
+        className={className}
+      />
+    );
+  }
+  return (
+    <Select
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      placeholder={placeholder}
+      options={options}
+      buttonClassName={`${className} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+    />
+  );
+}
 
 export type UrlCheckState = {
   status: "idle" | "checking" | "done";
@@ -57,11 +102,13 @@ function CheckboxField({
   options,
   value,
   onChange,
+  allowOther = false,
   disabled = false,
 }: {
   options: string[];
   value: string;
   onChange: (v: string) => void;
+  allowOther?: boolean;
   disabled?: boolean;
 }) {
   let selected: string[] = [];
@@ -75,26 +122,206 @@ function CheckboxField({
       // Unparseable state — treat as nothing selected.
     }
   }
+  const chosen = selected.filter((v) => options.includes(v));
+  const otherText = selected.find((v) => !options.includes(v)) ?? "";
+  const [otherPicked, setOtherPicked] = useState(false);
+  const otherOn = allowOther && (otherPicked || otherText !== "");
+
+  function emit(nextChosen: string[], nextOther: string) {
+    const next = [
+      ...options.filter((o) => nextChosen.includes(o)),
+      ...(nextOther.trim() !== "" ? [nextOther] : []),
+    ];
+    onChange(next.length === 0 ? "" : JSON.stringify(next));
+  }
 
   function toggle(option: string) {
-    const next = selected.includes(option)
-      ? selected.filter((o) => o !== option)
-      : options.filter((o) => selected.includes(o) || o === option);
-    onChange(next.length === 0 ? "" : JSON.stringify(next));
+    emit(
+      chosen.includes(option) ? chosen.filter((o) => o !== option) : [...chosen, option],
+      otherText,
+    );
   }
 
   return (
     <div className={`flex flex-col gap-1.5 ${disabled ? "opacity-60" : ""}`}>
+      {options.length > LONG_CHECKBOX_LIST ? (
+        <MultiSelect
+          values={chosen}
+          onChange={(next) => emit(next, otherText)}
+          options={options.map((o) => ({ value: o, label: o }))}
+          disabled={disabled}
+          placeholder="Select..."
+          buttonClassName={`${INPUT_BASE} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        />
+      ) : (
+        options.map((option) => (
+          <Checkbox
+            key={option}
+            checked={chosen.includes(option)}
+            onChange={() => toggle(option)}
+            disabled={disabled}
+            label={option}
+            className="text-base sm:text-sm text-foreground"
+          />
+        ))
+      )}
+      {allowOther && (
+        <>
+          <Checkbox
+            checked={otherOn}
+            onChange={() => {
+              if (otherOn) {
+                setOtherPicked(false);
+                emit(chosen, "");
+              } else {
+                setOtherPicked(true);
+              }
+            }}
+            disabled={disabled}
+            label="Other"
+            className="text-base sm:text-sm text-foreground"
+          />
+          {otherOn && (
+            <OtherInput
+              value={otherText}
+              onChange={(text) => emit(chosen, text)}
+              disabled={disabled}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function OtherInput({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled: boolean;
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      maxLength={OTHER_ANSWER_MAX_LENGTH}
+      disabled={disabled}
+      aria-label="Other answer"
+      placeholder="Your answer"
+      className="ml-6 w-[calc(100%-1.5rem)] rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-os-accent px-4 py-2"
+    />
+  );
+}
+
+// Single choice shown as radio buttons. A stored value that isn't one of the
+// options is an Other write-in, so re-rendering a saved answer lands on Other.
+function RadioField({
+  name,
+  options,
+  value,
+  onChange,
+  allowOther = false,
+  disabled = false,
+}: {
+  name: string;
+  options: string[];
+  value: string;
+  onChange: (v: string) => void;
+  allowOther?: boolean;
+  disabled?: boolean;
+}) {
+  const [otherPicked, setOtherPicked] = useState(false);
+  const otherOn = allowOther && (otherPicked || (value !== "" && !options.includes(value)));
+
+  return (
+    <div role="radiogroup" className={`flex flex-col gap-1.5 ${disabled ? "opacity-60" : ""}`}>
       {options.map((option) => (
-        <Checkbox
+        <Radio
           key={option}
-          checked={selected.includes(option)}
-          onChange={() => toggle(option)}
+          name={name}
+          value={option}
+          checked={!otherOn && value === option}
+          onChange={() => {
+            setOtherPicked(false);
+            onChange(option);
+          }}
           disabled={disabled}
           label={option}
           className="text-base sm:text-sm text-foreground"
         />
       ))}
+      {allowOther && (
+        <>
+          <Radio
+            name={name}
+            value="__other__"
+            checked={otherOn}
+            onChange={() => {
+              setOtherPicked(true);
+              if (options.includes(value)) onChange("");
+            }}
+            disabled={disabled}
+            label="Other"
+            className="text-base sm:text-sm text-foreground"
+          />
+          {otherOn && <OtherInput value={options.includes(value) ? "" : value} onChange={onChange} disabled={disabled} />}
+        </>
+      )}
+    </div>
+  );
+}
+
+const SCALE_VALUES = ["1", "2", "3", "4", "5"];
+
+function ScaleField({
+  value,
+  onChange,
+  low,
+  high,
+  label,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  low?: string;
+  high?: string;
+  label: string;
+  disabled?: boolean;
+}) {
+  return (
+    <div className={disabled ? "opacity-60" : ""}>
+      <div role="radiogroup" aria-label={label} className="grid grid-cols-5 gap-[6px]">
+        {SCALE_VALUES.map((n) => {
+          const selected = value === n;
+          return (
+            <button
+              key={n}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              disabled={disabled}
+              onClick={() => onChange(n)}
+              className={`h-11 rounded-lg border text-base sm:text-sm font-medium transition-colors ${
+                selected
+                  ? "bg-os-accent/15 border-os-accent text-os-accent"
+                  : "bg-card border-border text-foreground hover:border-os-accent/40"
+              } ${disabled ? "cursor-not-allowed" : ""}`}
+            >
+              {n}
+            </button>
+          );
+        })}
+      </div>
+      {(low || high) && (
+        <div className="mt-1.5 flex justify-between gap-4 text-[13px] text-muted-foreground">
+          <span>{low}</span>
+          <span className="text-right">{high}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -221,16 +448,11 @@ function ReferenceProjectCard({
               {card.sowPageId && (
                 // Not a real <a>: inside the desktop app's single webview a
                 // target="_blank" click has no window to open into and silently
-                // does nothing. requestOpenTabIfEmbedded opens it as a workspace
-                // tab when embedded in one (web); otherwise this just navigates,
-                // same as every other internal link in the app (see workspace-link.ts).
+                // does nothing, so this navigates in place.
                 <button
                   type="button"
                   onClick={() => {
-                    const url = `/documents/${card.sowPageId}`;
-                    if (!requestOpenTabIfEmbedded(url, `${option.label} — SOW`)) {
-                      window.location.href = url;
-                    }
+                    window.location.href = `/documents/${card.sowPageId}`;
                   }}
                   className="self-start inline-flex items-center gap-1.5 mt-0.5 text-xs font-medium px-2.5 py-1 rounded-full border border-os-accent/40 text-os-accent hover:bg-os-accent/10"
                 >
@@ -505,8 +727,7 @@ export function FormQuestionField({
   onUrlBlur,
   disabled = false,
 }: FormQuestionFieldProps) {
-  const inputBase =
-    "w-full rounded-lg border border-border bg-card text-base sm:text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-os-accent px-4 py-2";
+  const inputBase = INPUT_BASE;
   const disabledClass = disabled ? " opacity-60 cursor-not-allowed" : "";
 
   if (question.type === "textarea") {
@@ -536,13 +757,13 @@ export function FormQuestionField({
 
   if (question.type === "select") {
     return (
-      <Select
+      <ChoiceDropdown
         value={value}
         onChange={onChange}
         disabled={disabled}
         placeholder="Select..."
         options={(question.data.options ?? []).map((o) => ({ value: o, label: o }))}
-        buttonClassName={`${inputBase}${disabledClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        className={`${inputBase}${disabledClass}`}
       />
     );
   }
@@ -553,7 +774,64 @@ export function FormQuestionField({
         options={question.data.options ?? []}
         value={value}
         onChange={onChange}
+        allowOther={question.data.allowOther}
         disabled={disabled}
+      />
+    );
+  }
+
+  if (question.type === "radio") {
+    return (
+      <RadioField
+        name={question.key}
+        options={question.data.options ?? []}
+        value={value}
+        onChange={onChange}
+        allowOther={question.data.allowOther}
+        disabled={disabled}
+      />
+    );
+  }
+
+  if (question.type === "scale") {
+    return (
+      <ScaleField
+        value={value}
+        onChange={onChange}
+        low={question.data.scaleLow}
+        high={question.data.scaleHigh}
+        label={question.data.label}
+        disabled={disabled}
+      />
+    );
+  }
+
+  if (question.type === "date") {
+    return (
+      <DateField
+        mode="date"
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        ariaLabel={question.data.label}
+        buttonClassName={`${inputBase}${disabledClass}`}
+      />
+    );
+  }
+
+  if (question.type === "number" || question.type === "email") {
+    const isEmail = question.type === "email";
+    return (
+      <input
+        type="text"
+        inputMode={isEmail ? "email" : "decimal"}
+        autoComplete={isEmail ? "email" : "off"}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        disabled={disabled}
+        aria-disabled={disabled || undefined}
+        className={`${inputBase}${disabledClass}`}
+        placeholder={isEmail ? "name@example.com" : "Your answer"}
       />
     );
   }
@@ -579,13 +857,13 @@ export function FormQuestionField({
       );
     }
     return (
-      <Select
+      <ChoiceDropdown
         value={value}
         onChange={onChange}
         disabled={disabled || opts.length === 0}
-        placeholder={opts.length === 0 ? "No options available" : "Select..."}
+        placeholder={opts.length === 0 ? "Nothing to pick here, you can skip this" : "Select..."}
         options={opts.map((o) => ({ value: o.value, label: o.label }))}
-        buttonClassName={`${inputBase}${disabledClass} inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40`}
+        className={`${inputBase}${disabledClass}`}
       />
     );
   }

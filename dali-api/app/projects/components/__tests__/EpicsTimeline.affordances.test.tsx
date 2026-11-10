@@ -132,6 +132,19 @@ describe("EpicsTimeline drag affordances (static)", () => {
   });
 });
 
+// ── Stacking: the grid's z-indexes stay inside the card ──────────────────────
+
+describe("EpicsTimeline stacking", () => {
+  it("isolates the card so its sticky header can't paint over the page bar", () => {
+    const host = document.createElement("div");
+    host.innerHTML = renderToStaticMarkup(
+      createElement(EpicsTimeline, { epics: fixture() }),
+    );
+    const card = host.querySelector("[data-timeline-scroller]")?.parentElement;
+    expect(card?.classList.contains("isolate")).toBe(true);
+  });
+});
+
 // ── Interaction: a drag still reaches onReschedule ───────────────────────────
 
 let container: HTMLDivElement | undefined;

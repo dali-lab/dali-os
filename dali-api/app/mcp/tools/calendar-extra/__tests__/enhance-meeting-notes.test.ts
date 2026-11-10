@@ -22,9 +22,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db");
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   storedLines: vi.fn().mockReturnValue([]),
@@ -44,9 +42,7 @@ vi.mock("~/lib/meeting-notes-apply.server", async (importOriginal) => ({
   ensureTranscriptToggle: vi.fn((blocks: unknown) => blocks),
 }));
 
-import { prisma } from "~/lib/db";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { prisma } from "~/lib/db.server";
 import { canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
 import { applyEnhanceOpsToDocBlocks } from "~/lib/meeting-notes-apply.server";
 import { getCollabServer } from "~/collab/server";
@@ -90,8 +86,6 @@ function recording(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimits();
-  vi.mocked(getUserRoles).mockResolvedValue({} as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(canRecordInto).mockResolvedValue(true);
   mockPrisma.meetingRecording.findUnique.mockResolvedValue(recording());
   mockPrisma.meetingRecording.update.mockResolvedValue({});
@@ -111,13 +105,6 @@ describe("enhance_meeting_notes", () => {
       name: "McpForbiddenError",
     });
     expect(generateAndVerifyEnhancePlan).not.toHaveBeenCalled();
-  });
-
-  it("denies when the ai-meeting-notes flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    await expect(runEnhanceMeetingNotes(ctxFor("u1"), { recordingId: "rec1" })).rejects.toMatchObject({
-      name: "McpForbiddenError",
-    });
   });
 
   it("404s when the recording doesn't exist", async () => {

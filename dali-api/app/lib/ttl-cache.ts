@@ -12,6 +12,8 @@
 // Disabled under Vitest so unit tests that mock Prisma keep seeing one query
 // per call; a test of the helper itself opts in via setTtlCacheEnabledForTests.
 
+import { recordCacheRead } from "~/lib/perf-stats";
+
 type Entry = { value: unknown; expiresAt: number };
 
 const entries = new Map<string, Entry>();
@@ -38,9 +40,16 @@ export function cachedForTtl<T>(
   if (!enabled()) return compute();
   const now = Date.now();
   const hit = entries.get(key);
-  if (hit && hit.expiresAt > now) return Promise.resolve(hit.value as T);
+  if (hit && hit.expiresAt > now) {
+    recordCacheRead(key, true);
+    return Promise.resolve(hit.value as T);
+  }
   const pending = inflight.get(key);
-  if (pending) return pending as Promise<T>;
+  if (pending) {
+    recordCacheRead(key, true);
+    return pending as Promise<T>;
+  }
+  recordCacheRead(key, false);
 
   const promise = compute().then(
     (value) => {

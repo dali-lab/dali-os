@@ -9,7 +9,7 @@
 // file's own exported helpers, rather than adding a new bulk export there —
 // this change is scoped to the partners/jobs layer only.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify, type NotifyResult } from "~/lib/notify.server";
 import { getActiveCoreCycleTermIds, getAdminUserIdsFromEnv } from "~/lib/roles";
 import type { EventType } from "~/lib/notification-events";

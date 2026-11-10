@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveMeetingParticipantIds } from "~/partners/lib/partner-meetings.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { computeUserFreeBusy } from "~/lib/availability";

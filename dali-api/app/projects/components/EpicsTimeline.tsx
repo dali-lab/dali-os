@@ -474,7 +474,7 @@ function TimelineBarHover({
           ink: printed on the card, that ink is chosen against the wrong ground. */}
       <div className="mb-2.5 flex items-start justify-between gap-3">
         <div
-          className="os-record-name text-[13px] font-bold leading-snug tracking-[0.24px] break-words"
+          className="text-[13px] font-bold leading-snug tracking-[0.24px] break-words"
           style={{ color: OS_LEVEL[kind].title }}
         >
           {title}
@@ -1534,7 +1534,7 @@ export function EpicsTimeline({
 
       <div
         className={cn(
-          "overflow-hidden border border-border bg-card",
+          "isolate overflow-hidden border border-border bg-card",
           "rounded-os-card",
           fillHeight && "flex min-h-0 flex-1 flex-col",
         )}

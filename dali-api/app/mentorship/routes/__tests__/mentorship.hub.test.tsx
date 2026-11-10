@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 
 // The hub route module pulls the server stack in at import time; the component
 // under test needs none of it.
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({
@@ -68,7 +68,7 @@ describe("mentorship hub notes link", () => {
     await act(async () => {});
 
     expect(notesLink()?.getAttribute("href")).toBe(
-      "/mentorship/browse?termId=t1",
+      "/mentorship/browse?term=t1",
     );
     expect(container.textContent).not.toContain("missing a note this week");
   });
@@ -78,7 +78,7 @@ describe("mentorship hub notes link", () => {
     await act(async () => {});
 
     expect(notesLink()?.getAttribute("href")).toBe(
-      "/mentorship/browse?termId=t1",
+      "/mentorship/browse?term=t1",
     );
     expect(container.textContent).toContain("31");
     expect(container.textContent).toContain("missing a note this week");

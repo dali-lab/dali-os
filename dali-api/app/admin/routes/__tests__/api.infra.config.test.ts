@@ -6,13 +6,13 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/lib/db", () => ({ prisma: { project: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { project: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/infra/config-save.server", () => ({ saveInfraConfig: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { action } from "~/admin/routes/api.infra.config";
 

@@ -1,17 +1,15 @@
 import { useState } from "react";
-import { Mic, Monitor } from "lucide-react";
+import { Mic } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { Select } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { Radio } from "~/components/ui/Radio";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
 /**
- * The start sheet: a real decision (source, mic, consent) — the one modal
+ * The start sheet: a real decision (mic, consent) — the one modal
  * the Recording rail keeps (specs/meeting-recording-rail.md). Shown only
  * while `rec.phase === "idle"`; Start hands off to the rail (the sheet
  * closes, the rail opens) without this component doing anything special —
@@ -47,40 +45,8 @@ export function RecordStartSheet({ rec, consent }: { rec: UseMeetingRecording; c
             <Checkbox checked={agreed} onChange={(e) => setAgreed(e.target.checked)} label={consent.confirm} />
           </div>
         )}
-        {rec.desktopVer != null && (
-          <div
-            className={cn(
-              "rounded-xl border px-3 py-2.5",
-              rec.useDesktopApp ? "border-os-accent bg-os-accent/10" : "border-os-container",
-            )}
-          >
-            <Radio
-              name="capture-mode"
-              checked={rec.useDesktopApp}
-              onChange={() => rec.setUseDesktopApp(true)}
-              label={
-                <span className="inline-flex items-center gap-1.5">
-                  <Monitor className="h-3.5 w-3.5" /> Capture everything on this Mac with the DALI OS app
-                </span>
-              }
-              description="Records system audio (everyone on the call) and your mic."
-            />
-          </div>
-        )}
-        {rec.desktopVer != null && (
-          <div
-            className={cn(
-              "rounded-xl border px-3 py-2.5",
-              !rec.useDesktopApp ? "border-os-accent bg-os-accent/10" : "border-os-container",
-            )}
-          >
-            <Radio
-              name="capture-mode"
-              checked={!rec.useDesktopApp}
-              onChange={() => rec.setUseDesktopApp(false)}
-              label="Record in this browser instead"
-            />
-          </div>
+        {rec.useDesktopApp && (
+          <p className="text-sm text-foreground">Records system audio (everyone on the call) and your mic.</p>
         )}
 
         {!rec.useDesktopApp && (

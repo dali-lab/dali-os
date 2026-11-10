@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Question } from "~/types";
 import { loadPublicForm, type PublicForm } from "~/forms/lib/public-form";
 

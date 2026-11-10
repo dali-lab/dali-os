@@ -3,7 +3,7 @@ import { useFetcher, useRevalidator, Link } from "react-router";
 import type { Question } from "~/types";
 import { FormFieldList } from "~/forms/components/FormField";
 import { useFormPager, FormPageHeading } from "~/forms/components/FormPager";
-import { paginateQuestions } from "~/lib/form-pages";
+import { visiblePages } from "~/lib/form-logic";
 import { formatInstantWithZoneLabel } from "~/lib/timezone";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
@@ -191,7 +191,7 @@ function FormView({
     return initial.selectedDomainIds.filter((id) => !closed.has(id));
   });
   const [error, setError] = useState<string | null>(null);
-  const pages = useMemo(() => paginateQuestions(cycle.questions), [cycle.questions]);
+  const pages = useMemo(() => visiblePages(cycle.questions, answers), [cycle.questions, answers]);
   const pager = useFormPager(pages, { excludeFileType: false });
 
   const busy = fetcher.state !== "idle";

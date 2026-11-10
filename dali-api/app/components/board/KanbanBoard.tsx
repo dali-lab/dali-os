@@ -90,6 +90,12 @@ export type KanbanBoardProps<TCard> = {
   dropPlaceholder?: boolean;
   error?: string | null;
   emptyLabel?: ReactNode;
+  /**
+   * Stretch the board to fill its flex parent (a `fitViewport` page) so columns
+   * take the remaining viewport height and scroll internally. Each column's
+   * `listClassName` must then carry its own `md:min-h-0 md:flex-1 overflow-y-auto`.
+   */
+  fillHeight?: boolean;
 };
 
 // Default drop-target resolution for sortable multi-column boards: go by the
@@ -132,6 +138,7 @@ export function KanbanBoard<TCard>({
   dropPlaceholder = false,
   error,
   emptyLabel = "Empty",
+  fillHeight = false,
 }: KanbanBoardProps<TCard>) {
   // A small activation distance disambiguates a click from a drag: a press that
   // moves less than the threshold fires the card's onClick; past it a drag
@@ -163,14 +170,17 @@ export function KanbanBoard<TCard>({
   const containerClass =
     layout === "grid"
       ? "grid gap-4"
-      : "flex flex-col gap-3 pt-1 pb-3 px-0.5 md:flex-row md:overflow-x-auto";
+      : cn(
+          "flex flex-col gap-3 pt-1 pb-3 px-0.5 md:flex-row md:overflow-x-auto",
+          fillHeight && "md:min-h-0 md:flex-1",
+        );
   const containerStyle: CSSProperties | undefined =
     layout === "grid"
       ? { gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }
       : undefined;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className={cn("flex flex-col gap-3", fillHeight && "md:min-h-0 md:flex-1")}>
       {error && (
         <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
           {error}

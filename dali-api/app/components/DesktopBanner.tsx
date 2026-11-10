@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { Download, X } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { isBrowserDesktopCandidate } from "~/lib/desktop-candidate";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { currentPagePath, openInDesktopApp } from "~/lib/open-in-desktop";
 
 const DISMISS_KEY = "dali:desktop-banner:dismissed";
@@ -11,7 +10,6 @@ type State = "hidden" | "visible" | "trying" | "fallback";
 
 export function DesktopBanner() {
   const [state, setState] = useState<State>("hidden");
-  const explain = useFeatureFlag("desktop-tabs");
   const cancelRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -54,11 +52,9 @@ export function DesktopBanner() {
           ? "Opening…"
           : state === "fallback"
             ? "App not installed?"
-            : explain
-              ? "Get the DALI OS desktop app for tabs and native notifications."
-              : null}
+            : "Get the DALI OS desktop app for tabs and native notifications."}
       </span>
-      {state === "visible" && explain && (
+      {state === "visible" && (
         <a href="/download" className={buttonClasses("primary", "sm")}>
           <Download className="w-3.5 h-3.5" />
           Download
@@ -68,7 +64,7 @@ export function DesktopBanner() {
         <button
           type="button"
           onClick={openInApp}
-          className={buttonClasses(explain ? "secondary" : "primary", "sm")}
+          className={buttonClasses("secondary", "sm")}
         >
           Open in app
         </button>

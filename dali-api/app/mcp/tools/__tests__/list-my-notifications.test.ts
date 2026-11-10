@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { liveMeetingPingClauses, NOT_CANCELLED_MEETING } from "~/lib/notifications";
 import { runListMyNotifications, LIST_MY_NOTIFICATIONS_TOOL } from "~/mcp/tools/list-my-notifications";
 import { validateInput, type JsonSchema } from "~/lib/mcp-input";
@@ -83,8 +83,36 @@ describe("list_my_notifications", () => {
         ],
       },
       orderBy: { createdAt: "desc" },
-      take: 20,
+      take: 21,
     });
+  });
+
+  it("inbox: reports hasMore without a cursor when more items exist", async () => {
+    const row = (id: string) => ({
+      id,
+      kind: "General",
+      title: id,
+      body: null,
+      link: null,
+      readAt: null,
+      createdAt: new Date("2026-05-14T10:00:00Z"),
+      scheduledMeetingId: null,
+      rsvp: null,
+    });
+    mockPrisma.notification.findMany.mockResolvedValue([row("a"), row("b")]);
+    mockPrisma.notification.count.mockResolvedValue(2);
+    const out = await runListMyNotifications("user-1", { limit: 1 });
+    if (out.mode !== "inbox") throw new Error("expected inbox");
+    expect(out.notifications.map((n) => n.id)).toEqual(["a"]);
+    expect(out.page).toEqual({ nextCursor: null, hasMore: true, limit: 1 });
+    expect(mockPrisma.notification.findMany.mock.calls[0][0].take).toBe(2);
+  });
+
+  it("inbox: the largest page still detects more", async () => {
+    mockPrisma.notification.findMany.mockResolvedValue([]);
+    mockPrisma.notification.count.mockResolvedValue(0);
+    await runListMyNotifications("user-1", { limit: 50 });
+    expect(mockPrisma.notification.findMany.mock.calls[0][0].take).toBe(51);
   });
 
   it("inbox: returns empty list when user has no notifications", async () => {
@@ -138,7 +166,7 @@ describe("list_my_notifications", () => {
     expect(out.counts.cleared).toBe(1);
     expect(out.items).toHaveLength(1);
     expect(out.items[0].id).toBe("n2");
-    expect(out.nextCursor).toBeNull();
+    expect(out.page).toEqual({ nextCursor: null, hasMore: false, limit: 30 });
   });
 
   it("history: switches to history mode when q param is present", async () => {
@@ -157,30 +185,53 @@ describe("list_my_notifications", () => {
     expect(out.mode).toBe("history");
   });
 
-  it("history: parses and forwards a cursor from a previous nextCursor", async () => {
-    const cursorObj = { createdAt: "2026-09-01T00:00:00.000Z", id: "n-last" };
-    const cursorStr = JSON.stringify(cursorObj);
-
-    mockPrisma.notification.findMany.mockResolvedValue([]);
+  it("history: walks pages with the shared cursor on (createdAt, id)", async () => {
+    const row = (id: string, createdAt: string) => ({
+      id,
+      kind: "General",
+      title: id,
+      body: null,
+      link: null,
+      readAt: null,
+      createdAt: new Date(createdAt),
+      formId: null,
+      dueAt: null,
+      scheduledMeetingId: null,
+      createdBy: null,
+      form: null,
+      scheduledMeeting: null,
+      interviewAssignment: null,
+    });
     mockPrisma.notification.count.mockResolvedValue(0);
+    mockPrisma.notification.findMany.mockResolvedValueOnce([
+      row("n3", "2026-09-03T00:00:00.000Z"),
+      row("n2", "2026-09-02T00:00:00.000Z"),
+    ]);
+    const first = await runListMyNotifications("user-1", { status: "all", limit: 1 });
+    if (first.mode !== "history") throw new Error("expected history");
+    expect(first.items.map((i) => i.id)).toEqual(["n3"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 1 });
+    expect(first).not.toHaveProperty("nextCursor");
 
-    await runListMyNotifications("user-1", { status: "all", cursor: cursorStr });
-
-    // The where clause passed to findMany should include the keyset cursor.
-    const call = mockPrisma.notification.findMany.mock.calls[0][0] as { where: { AND?: unknown[] } };
-    const where = call.where;
-    // Cursor predicate is part of the AND array built by listNotificationHistory.
-    expect(JSON.stringify(where)).toContain("n-last");
+    mockPrisma.notification.findMany.mockResolvedValueOnce([row("n2", "2026-09-02T00:00:00.000Z")]);
+    const second = await runListMyNotifications("user-1", {
+      status: "all",
+      limit: 1,
+      cursor: first.page.nextCursor!,
+    });
+    const where = JSON.stringify(mockPrisma.notification.findMany.mock.calls[1][0].where);
+    expect(where).toContain("2026-09-03T00:00:00.000Z");
+    expect(where).toContain("n3");
+    if (second.mode !== "history") throw new Error("expected history");
+    expect(second.items.map((i) => i.id)).toEqual(["n2"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 
-  it("history: ignores a malformed cursor and treats it as first page", async () => {
-    mockPrisma.notification.findMany.mockResolvedValue([]);
-    mockPrisma.notification.count.mockResolvedValue(0);
-
-    // Should not throw even if cursor is garbage JSON.
+  it("history: a malformed cursor is an error", async () => {
     await expect(
       runListMyNotifications("user-1", { status: "all", cursor: "not-json{" }),
-    ).resolves.toBeDefined();
+    ).rejects.toThrow(/Invalid cursor/);
+    expect(mockPrisma.notification.findMany).not.toHaveBeenCalled();
   });
 
   it("history: limit alone (no semantic history param) stays in inbox mode", async () => {

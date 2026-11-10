@@ -3,7 +3,7 @@
 // requireAuth never sees these tokens: they only open /api/room-display/*,
 // scoped to the display's rooms (its own, plus the second room beside it).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { generateRawCode, generateUserCode, hashCode, normalizeUserCode } from "~/lib/pairing";
 
 export const SETUP_CODE_TTL_MS = 10 * 60 * 1000;

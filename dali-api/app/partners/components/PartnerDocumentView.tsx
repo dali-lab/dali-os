@@ -66,6 +66,7 @@ export function PartnerDocumentView({
               {historyOpen && (
                 <VersionHistoryPanel
                   documentName={documentName}
+                  canEdit={false}
                   onClose={() => setHistoryOpen(false)}
                 />
               )}

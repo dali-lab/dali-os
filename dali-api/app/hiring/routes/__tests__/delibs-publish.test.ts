@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   requireMemberSession: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock("~/hiring/lib/cycle-timeline.server", () => ({
 }));
 vi.mock("~/hiring/lib/delibs-events.server", () => ({ publishDelibsChange: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, requireCoreOrDomainLead, requireMemberSession } from "~/lib/auth";
 import { hasCycleAccess, isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { findRound } from "~/hiring/lib/cycle-timeline";

@@ -3,7 +3,7 @@
 // modal (declared domains and their per-term challenges), so an agent can
 // stand a project up in one call instead of create-then-edit.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { ensureProjectGroup } from "~/lib/groups";
 import { githubTeamSlug } from "~/lib/github-slug";

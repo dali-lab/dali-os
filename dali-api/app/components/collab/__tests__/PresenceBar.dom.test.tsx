@@ -89,6 +89,17 @@ describe("PresenceBar agent chips", () => {
     expect(card.querySelector("a")?.getAttribute("href")).toBe("/members/u-ada");
   });
 
+  it("says when the agent is pointing at something", () => {
+    mount([me, agent({ agent: { kind: "claude", action: "pointing" } })]);
+    hover(chips()[1]!);
+    expect(container.querySelector("[role='tooltip']")!.textContent).toContain("Claude · pointing");
+  });
+
+  it("shows two sessions of one person's agent as two chips", () => {
+    mount([me, agent(), agent({ clientId: 98, name: "Claude 2", color: "#2563eb" })]);
+    expect(container.querySelectorAll("[data-agent]")).toHaveLength(2);
+  });
+
   it("labels the chip link as the agent, not as the owner's profile", () => {
     mount([me, agent()]);
     const link = chips()[1]!.closest("a")!;

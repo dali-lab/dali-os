@@ -1,7 +1,7 @@
 import { redirect } from "react-router";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listCalendarsForLink } from "~/lib/google-calendar";
 import { isAdmin, isCore } from "~/lib/roles";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
@@ -238,6 +238,8 @@ export async function loadSettingsPageData(request: Request) {
       digestHourEt: user?.digestHourEt ?? null,
       isAdmin: viewerIsAdmin,
       isCore: viewerIsCore,
+      audience: "member" as const,
+      action: "/settings/notifications",
     },
     wallet: {
       apple: walletAppleConfigured(),

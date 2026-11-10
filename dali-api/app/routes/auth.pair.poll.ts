@@ -6,7 +6,7 @@
 // See TAURI_DESKTOP_PLAN.md.
 
 import type { Route } from "./+types/auth.pair.poll";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { logAuditEvent } from "~/lib/audit";

@@ -3,7 +3,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCycleAdmin: vi.fn().mockResolvedValue(true) }));
 vi.mock("~/lib/user-pages.server", () => ({ recordRouteVisit: vi.fn() }));
@@ -12,7 +12,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({ requirePageSignedOrRedirect: vi
 vi.mock("~/hiring/lib/cycle-stages.server", () => ({ delibsQualifier: vi.fn().mockResolvedValue({}) }));
 vi.mock("~/hiring/lib/email-engagement.server", () => ({ getEngagementSummaries: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
@@ -59,10 +59,10 @@ describe("domain-lead delibs board loader", () => {
     expect(vi.mocked(delibsQualifier).mock.calls[0][1]).toBe("first");
   });
 
-  it("uses accept/waitlist/reject on the last round", async () => {
+  it("starts the last round in No Decision, then accept/waitlist/reject", async () => {
     board("final");
     const res = await callLoader();
-    expect(res.columns).toEqual(["Accept", "Waitlist", "Reject"]);
+    expect(res.columns).toEqual(["No Decision", "Accept", "Waitlist", "Reject"]);
   });
 
   it("shows no board when the round is gone from the timeline", async () => {

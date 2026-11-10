@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 
 const executeRaw = prisma.$executeRaw as unknown as ReturnType<typeof vi.fn>;

@@ -5,7 +5,7 @@
 // submitted (but can be force-dismissed with intent="dismiss"). Requires
 // `mcp:write`.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isSelfClearingFormTodo, SELF_CLEARING_FORM_TODO } from "~/lib/tasks";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
@@ -52,6 +52,7 @@ type Input = {
 };
 
 export class NotificationNotFoundError extends Error {
+  status = 404;
   constructor(id: string) {
     super(`Notification ${id} not found`);
     this.name = "NotificationNotFoundError";
@@ -59,6 +60,7 @@ export class NotificationNotFoundError extends Error {
 }
 
 export class NotificationForbiddenError extends Error {
+  status = 403;
   constructor() {
     super("Notification belongs to another user");
     this.name = "NotificationForbiddenError";

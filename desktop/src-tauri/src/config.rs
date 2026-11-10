@@ -3,6 +3,10 @@
 
 pub const PROD_ORIGIN: &str = "https://os.dali.dartmouth.edu";
 pub const DEEP_LINK_SCHEME: &str = "dalios";
+// Video players docs embed (VideoProvider.embedOrigin in dali-api's
+// video-embed.ts). The navigation handler can't tell an iframe load from a
+// clicked link, so without this the player opens in the system browser instead.
+pub const VIDEO_EMBED_ORIGINS: &[&str] = &["https://www.youtube-nocookie.com"];
 
 // Bundled frontend assets (frontendDist) are served from the Tauri custom
 // protocol. On macOS/Linux that origin is `tauri://localhost`; this app ships

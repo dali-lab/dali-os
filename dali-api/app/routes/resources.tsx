@@ -3,7 +3,7 @@ import { Outlet, redirect, useFetcher, useRouteLoaderData } from "react-router";
 import { Check, PenLine, Pencil } from "lucide-react";
 import type { Route } from "./+types/resources";
 import type { loader as frontPageLoader } from "./resources._index";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { blogPostRoomName } from "~/collab/roomName";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import { UNTOUCHED_DRAFT } from "~/lib/blog-post.server";

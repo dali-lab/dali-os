@@ -14,7 +14,7 @@
 //
 // Requires the `mcp:read` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, isAdminViaEnv, isCore } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { achievementsForMember } from "~/members/lib/achievements.server";
@@ -45,6 +45,7 @@ export const GET_MEMBER_PROFILE_TOOL = {
 type Input = { memberId: string };
 
 export class MemberNotFoundError extends Error {
+  status = 404;
   constructor(memberId: string) {
     super(`No DALI member found with id ${memberId}`);
     this.name = "MemberNotFoundError";

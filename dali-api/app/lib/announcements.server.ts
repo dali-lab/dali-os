@@ -4,7 +4,7 @@
 // an attached form is still published, and dispatches through notify() so
 // per-user preferences apply.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups";
 import type { NotificationKind } from "~/generated/prisma/client";

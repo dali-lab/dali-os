@@ -1,0 +1,752 @@
+/*
+ * Week 8 bug hunt scene: a wall of foliage with a butterfly, a ladybird and a centipede in it, and
+ * an ant column, a spider, dapple, dew and pollen added on top (see Week8Background.tsx).
+ *
+ * Everything here is scoped to `.landing-week8` so it can't reach another week's background, and
+ * sized in the landing frame's container units, like the rest of landing.css, so the scene fits
+ * the shell's main column rather than the window.
+ */
+
+.landing[data-background='bug-hunt'] {
+  background: #284630;
+}
+
+html:has(.landing[data-background='bug-hunt']),
+body:has(.landing[data-background='bug-hunt']) {
+  background: #284630;
+}
+
+/*
+ * Only ever seen for the instant before the SVG paints, and in the hairline seams where two
+ * leaves abut. Measured at full size the scene is opaque to 42 pixels in 6.3 million, and those
+ * forty-two sit on edges between mid-green leaves, so the scene's own commonest green covers
+ * them without showing as a seam.
+ */
+.landing-week8 {
+  background-color: #284630;
+
+  /*
+   * The scrim colour, a deep green rather than the shared cold navy (--scrim-rgb: 11 18 32).
+   *
+   * Lifted from the scene's own darkest frequent fill (#0A2018, the shadow between the back
+   * leaves), so the glass reads as the undergrowth going dark rather than as a grey sheet laid
+   * over it -- the same reasoning week 7 used for its warm brown.
+   */
+  --w8-scrim-rgb: 10 32 24;
+
+  /*
+   * The gust: one duration for all five animated leaves, and one delay each.
+   *
+   * These are custom properties rather than literals because they are used twice -- once to drive
+   * the leaf, and once to drive whatever is riding it. If the two ever disagreed, an ant would
+   * walk on a leaf moving to a different clock, which is the exact defect this is here to fix.
+   *
+   * The delays are keyed to where each leaf sits across the frame (measured left edges: -137, 604,
+   * 877, 1410, 1531 of 4076), so the sway crosses left to right over about 2.6s. Negative, so the
+   * scene opens mid-gust rather than from dead calm.
+   */
+  --w8-gust: 7.4s;
+  --w8-gust-6: 0s;
+  --w8-gust-2: -0.47s;
+  --w8-gust-4: -0.65s;
+  --w8-gust-5: -0.99s;
+  --w8-gust-1: -1.06s;
+}
+
+/* The frame every background brings for itself (library.css only loads with the library chunk). */
+.landing-week8 {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/*
+ * A size container, so the rule below can do its arithmetic against the frame's own box rather
+ * than the viewport. landing.css lets the hero grow taller than the frame on a phone (min-height:
+ * 100svh, content that scrolls), so vh or the frame's own cqh would drift the moment it did. This is the same idiom the shared
+ * sprite system already uses (--s: max(100cqw / 4075, 100cqh / 1545)).
+ */
+.w8-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  container-type: size;
+}
+
+/*
+ * Re-framing as the window narrows.
+ *
+ * The scene is 2.64:1 and covers, so a portrait phone scales it up by about 1.8x and shows a
+ * 714-unit-wide slice of a 4076-unit frame. Anchored at xMin that slice runs x=0..714, which
+ * cuts the butterfly's right wing off and leaves nothing else: one sliced insect and a lot of
+ * leaf.
+ *
+ * Sweeping the 5.3s loop in 0.1s steps and taking the union of each insect's box over the whole
+ * loop puts the butterfly at x=203..859, the ladybird at 831..1338 and the centipede at
+ * 1551..2004. All three span 1801 units and will not fit a phone together, so something has to
+ * be chosen -- and the choice is not just about width. The copy stacks over the top two thirds
+ * of a portrait window, so the clear air is the bottom third, which in frame terms is y>1030.
+ * The butterfly (y=705..1387) and the ladybird (y=-2..504) both sit behind the copy there; the
+ * centipede (y=870..1282) is the one that comes out below it. Rendered side by side the
+ * difference is not subtle: the centipede reads as an insect on a leaf, the butterfly as a
+ * magenta smear behind the card grid.
+ *
+ * So instead of anchoring the slice's left edge, this pins its right edge at x=2135 -- the
+ * centipede's right edge plus the 131 units that centre it exactly in a 390x844 phone's slice.
+ * With the viewBox at "0 0 4076 1545" a tall box covers height-first, so the scale is cqh/1545
+ * and the slice is 1545*cqw/cqh units wide; putting its right edge at 2135 puts its left edge
+ * 2135 - 1545*cqw/cqh units in, which in pixels is 1.3819cqh - cqw.
+ *
+ * That one line degrades the way you would want it to. It is negative, and so clamped off by
+ * max(), on anything wider than 1.38:1 -- every desktop window keeps the plain left anchor and
+ * the full frame. Between 1.38:1 and 1.25:1 it shifts by a few dozen pixels and all three
+ * insects are still in view. Below 1.25:1 they drop off the left one at a time, butterfly
+ * first, and the centipede is the one left standing on a phone. No breakpoint: the geometry
+ * already knows the order to give things up in.
+ *
+ * It can never overrun the right-hand edge either, since the slack is 2.638cqh - cqw and this
+ * asks for 1.382cqh - cqw.
+ */
+.w8-scene svg {
+  --w8-shift: max(0px, 138.19cqh - 100cqw);
+}
+
+/*
+ * The scene covers the window via preserveAspectRatio="xMinYMid slice" on the SVG itself, which
+ * prep-week8-art.py writes in. Deliberately no object-fit here: that property only applies to
+ * replaced elements, so on an inline <svg> it does nothing at all and the scene comes out
+ * letterboxed into a band with the page showing above and below it.
+ */
+.w8-scene svg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Shifted left and widened by the same amount, so the box still reaches the right-hand edge. */
+  left: calc(-1 * var(--w8-shift));
+  width: calc(100% + var(--w8-shift));
+  height: 100%;
+  display: block;
+}
+
+/* ---------- Re-timing the export's loop ---------- */
+
+/*
+ * Figma hands out one gesture per object on a shared 5.3s clock. prep-week8-art.py has already
+ * rescaled each track so its gesture fills the cycle instead of running for two seconds and
+ * holding a still frame for three (see retime() for the measurement). What is left is the other
+ * half of the problem: every track still shares one duration, so they all restart together, and a
+ * scene that restarts in unison reads as a mechanism however smooth each part of it is.
+ *
+ * So each creature gets its own clock. The durations are deliberately not multiples of each
+ * other -- 1.6, 4.3, 5.9 and 7.4 -- so the combination takes about twelve minutes to come back
+ * round, which is long enough that nothing ever looks like it is repeating.
+ *
+ * These are longhands, not the `animation` shorthand, because the shorthand would reset the
+ * animation-name the export's own stylesheet set. Specificity does the rest: `.w8-scene #Group_8`
+ * outranks the export's `#Group_8`, so no !important is needed anywhere here.
+ *
+ * The selectors are per creature rather than per track, and that matters. The centipede's gait is
+ * a travelling wave spread across thirty-odd leg tracks whose stagger encodes the wave; giving
+ * them individual durations would pull the wave apart. Each creature moves as one.
+ */
+
+/*
+ * The butterfly: wings and body, back at the speed the export drew them.
+ *
+ * 4.16s, not the 5.3s on the export's own clock, because retime() cut the trailing hold and the
+ * remaining cycle is 78.49% of what it was -- 5.3 x 0.7849. So each wing beat plays at exactly its
+ * original rate and only the dead pause between beats is gone. A faster beat was tried first and
+ * read as a hinge rather than as a butterfly.
+ */
+.w8-scene #Group,
+.w8-scene #Group * {
+  animation-duration: 4.16s;
+}
+
+/* The ladybird: shell, wing cases, legs and the two antennae. */
+.w8-scene #Group_14311,
+.w8-scene #Group_14311 * {
+  animation-duration: 4.3s;
+}
+
+/* The centipede: body, antennae and every leg, all on one clock so the wave holds together. */
+.w8-scene #Group_19,
+.w8-scene #Group_19 * {
+  animation-duration: 5.9s;
+}
+
+/*
+ * The leaves, as a gust rather than as five independent nods: one shared duration so they keep
+ * their relative phase, and a delay each so the sway travels. Both come from the tokens above,
+ * which the rides below read as well.
+ */
+.w8-scene #Group_6,
+.w8-scene #Group_2,
+.w8-scene #Group_4,
+.w8-scene #Group_5,
+.w8-scene #Group_1 {
+  animation-duration: var(--w8-gust);
+}
+
+.w8-scene #Group_6 { animation-delay: var(--w8-gust-6); }
+.w8-scene #Group_2 { animation-delay: var(--w8-gust-2); }
+.w8-scene #Group_4 { animation-delay: var(--w8-gust-4); }
+.w8-scene #Group_5 { animation-delay: var(--w8-gust-5); }
+.w8-scene #Group_1 { animation-delay: var(--w8-gust-1); }
+
+/* ---------- Riding a leaf ---------- */
+
+/*
+ * The export draws the ladybird and the centipede as siblings of the leaves they are sitting on,
+ * so the leaf tips and the insect does not. Close up that is the thing that most gives the scene
+ * away, and it applies to everything added on top of the art as well -- the ant column, the
+ * spider's anchor, every drop of dew.
+ *
+ * prep-week8-art.py derives, for each animated leaf, the motion that leaf performs in frame
+ * coordinates (see leaf_rides() for how the static placement and the flip fall out of the
+ * matrices, and for the check that each derived pivot lands on its own leaf). The result is a
+ * `w8-ride-<leaf>` keyframe set that is the identity at rest, so a rider sits exactly where it was
+ * drawn and then moves with the leaf.
+ *
+ * It goes on a wrapper group with no transform of its own. #Group_14311 and #Group_19 both carry
+ * transform attributes, and a CSS `transform` animation replaces the attribute rather than
+ * composing with it.
+ *
+ * transform-origin must be 0 0: the pivot is already baked into the keyframes as a translate pair,
+ * and a non-zero origin would wrap that in a second sandwich.
+ */
+.w8-ride {
+  transform-origin: 0 0;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-duration: var(--w8-gust);
+}
+
+.w8-ride-Group_6 { animation-name: w8-ride-Group_6; animation-delay: var(--w8-gust-6); }
+.w8-ride-Group_2 { animation-name: w8-ride-Group_2; animation-delay: var(--w8-gust-2); }
+.w8-ride-Group_4 { animation-name: w8-ride-Group_4; animation-delay: var(--w8-gust-4); }
+.w8-ride-Group_5 { animation-name: w8-ride-Group_5; animation-delay: var(--w8-gust-5); }
+.w8-ride-Group_1 { animation-name: w8-ride-Group_1; animation-delay: var(--w8-gust-1); }
+
+/* And the creatures start out of step with each other and with the gust. */
+.w8-scene #Group,
+.w8-scene #Group * {
+  animation-delay: -0.3s;
+}
+
+.w8-scene #Group_14311,
+.w8-scene #Group_14311 * {
+  animation-delay: -2.1s;
+}
+
+.w8-scene #Group_19,
+.w8-scene #Group_19 * {
+  animation-delay: -3.4s;
+}
+
+/* ---------- The added layer ---------- */
+
+/*
+ * Three layers inside .w8-scene, in paint order: the export, the undergrowth added on top of it,
+ * and the lens. All of them sit *under* .landing-scrim, which is the point -- the new creatures
+ * are part of the scene, so the frosted glass over the copy frosts them too rather than leaving
+ * them sharp on top of a blurred picture.
+ *
+ * Both SVGs are matched by the `.w8-scene svg` rules above, so the overlay inherits the same
+ * cover scaling and the same --w8-shift from the same container and cannot drift out of register
+ * with the art.
+ */
+.w8-foliage {
+  position: absolute;
+  inset: 0;
+}
+
+/* Decoration only: nothing in the overlay is a target, and the search and cards sit over it. */
+.w8-undergrowth {
+  pointer-events: none;
+}
+
+/* ---------- The butterfly flies away ---------- */
+
+/*
+ * The one target in the scene. The background is pointer-events: none, which every descendant
+ * inherits; turning it back on for the butterfly alone keeps the rest of the art inert, the overlay
+ * it is drawn in included. Only when motion is allowed: under reduced motion the flight never runs, so a pointer cursor would promise nothing.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .w8-butterfly {
+    pointer-events: auto;
+    cursor: pointer;
+  }
+}
+
+/*
+ * Off the top-left of the frame and back, about 1.3s out of sight in the middle. The wrapper is the
+ * thing that moves because #Group carries a transform attribute (see prep-week8-art.py), and both
+ * exits are past the frame's top-left corner, which no framing ever shows -- --w8-shift only crops
+ * more of the left. It goes out one way and returns from above, so it reads as a flight rather than
+ * a rewind.
+ */
+.w8-butterfly {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.w8-scene[data-butterfly='away'] .w8-butterfly {
+  animation: w8-flight 5.6s ease-in-out;
+}
+
+@keyframes w8-flight {
+  0% { transform: none; }
+  6% { transform: translate(0, -50px) rotate(-6deg); }
+  20% { transform: translate(-280px, -440px) rotate(-18deg) scale(1.08); }
+  36%,
+  59.9% { transform: translate(-1050px, -1600px) rotate(-30deg) scale(1.16); }
+  60% { transform: translate(420px, -1650px) rotate(24deg) scale(1.16); }
+  80% { transform: translate(110px, -320px) rotate(12deg) scale(1.05); }
+  92% { transform: translate(0, -28px) rotate(3deg); }
+  97% { transform: translate(0, 5px) rotate(-1deg); }
+  100% { transform: none; }
+}
+
+/* Faster wingbeats in the air than at rest on the leaf. */
+.w8-scene[data-butterfly='away'] #Group,
+.w8-scene[data-butterfly='away'] #Group * {
+  animation-duration: 0.9s;
+}
+
+/* The shadow stays on the leaf: it goes as the butterfly lifts and is back as it lands. */
+.w8-scene[data-butterfly='away'] .w8-butterfly-shadow {
+  animation: w8-flight-shadow 5.6s ease-in-out;
+}
+
+@keyframes w8-flight-shadow {
+  0%,
+  100% { opacity: 1; }
+  12%,
+  90% { opacity: 0; }
+}
+
+/* ---------- Midday light, from overhead ---------- */
+
+/*
+ * The sun is directly above, so what reaches a bed of leaves is not beams but a scatter of bright
+ * patches where the canopy has a gap and cool ones where it has not. These are broad soft blobs
+ * lying on the foliage, drifting as though the canopy above were in the same breeze as the leaves
+ * below.
+ *
+ * Two groups because they blend two different ways, and the pair is the whole point: multiply for
+ * the shade, which can only darken, screen for the light, which can only brighten. Light alone
+ * flattens the scene -- it is the shadows that model it.
+ *
+ * mix-blend-mode is on the groups rather than the ellipses, so each set composites once against the
+ * foliage instead of each blob compositing against its neighbours.
+ */
+.w8-dapple-shade {
+  mix-blend-mode: multiply;
+}
+
+.w8-dapple-light {
+  mix-blend-mode: screen;
+}
+
+/*
+ * Slow, and slower than anything else in the scene. A canopy well above the frame moves at a
+ * different rate from the leaf in front of you, and the drift has to stay below the speed at which
+ * the eye starts tracking it rather than simply registering that the light has changed.
+ */
+.w8-blob {
+  animation: w8-dapple-a 54s ease-in-out infinite alternate;
+}
+
+.w8-blob-1 { animation-name: w8-dapple-b; animation-duration: 67s; }
+.w8-blob-2 { animation-name: w8-dapple-c; animation-duration: 43s; }
+.w8-blob-3 { animation-name: w8-dapple-d; animation-duration: 79s; }
+
+/* The scale breathe is what stops a drifting ellipse from reading as a drifting ellipse. */
+@keyframes w8-dapple-a {
+  from { translate: -64px -28px; scale: 1; }
+  to { translate: 58px 36px; scale: 1.14; }
+}
+
+@keyframes w8-dapple-b {
+  from { translate: 52px -40px; scale: 1.1; }
+  to { translate: -46px 30px; scale: 0.92; }
+}
+
+@keyframes w8-dapple-c {
+  from { translate: -38px 44px; scale: 0.94; }
+  to { translate: 70px -26px; scale: 1.18; }
+}
+
+@keyframes w8-dapple-d {
+  from { translate: 44px 32px; scale: 1.16; }
+  to { translate: -58px -34px; scale: 0.96; }
+}
+
+/* ---------- Dew ---------- */
+
+/*
+ * A glint that catches and loses the sun, and on every third drop a fall: it swells, lets go,
+ * drops out of frame and is replaced. The long cycle is deliberate -- a drop falling every few
+ * seconds reads as rain.
+ */
+.w8-drop-glint {
+  animation: w8-glint 6.3s ease-in-out infinite;
+}
+
+.w8-drop-1 .w8-drop-glint { animation-duration: 8.1s; animation-delay: -2.4s; }
+.w8-drop-2 .w8-drop-glint { animation-duration: 5.2s; animation-delay: -3.7s; }
+
+@keyframes w8-glint {
+  0%,
+  100% { opacity: 0.35; }
+  44% { opacity: 1; }
+}
+
+.w8-drop-2 {
+  animation: w8-dewfall 27s cubic-bezier(0.5, 0, 0.9, 0.4) infinite;
+}
+
+@keyframes w8-dewfall {
+  0%,
+  72% {
+    translate: 0 0;
+    scale: 1;
+  }
+  /* Hangs heavier just before it goes. */
+  80% {
+    translate: 0 4px;
+    scale: 0.92 1.14;
+  }
+  94%,
+  100% {
+    translate: 0 420px;
+    scale: 0.7 1.3;
+    opacity: 0;
+  }
+}
+
+/* ---------- The ant column ---------- */
+
+/*
+ * Seven ants on one trail, inside the ride for the leaf that trail is drawn on.
+ *
+ * offset-path comes from ANT_TRAIL via an inline style, so the path is declared once in
+ * critterPlaces.ts; each ant's place in the column is its own negative delay, also set there,
+ * which keeps the spacing a function of the count rather than seven hand-tuned numbers.
+ *
+ * No fade at the ends, and none needed: the trail starts and finishes off the left edge of the
+ * frame, so an ant is always out of sight at the moment it wraps. The loop has no seam to hide.
+ * 13.6s is slow enough that a 70-unit ant covers the leaf at something like a walking pace.
+ */
+.w8-ant-walker {
+  offset-rotate: auto;
+  animation: w8-ant-walk 13.6s linear infinite;
+}
+
+@keyframes w8-ant-walk {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
+}
+
+/* The body rocks over its legs. transform-origin 0 0 is the ant's own centre, since the art is
+ * shifted onto its origin so offset-path rides its middle. */
+.w8-ant {
+  transform-origin: 0 0;
+  animation: w8-ant-rock 0.52s ease-in-out infinite alternate;
+}
+
+@keyframes w8-ant-rock {
+  from { rotate: -3deg; }
+  to { rotate: 3deg; }
+}
+
+.w8-ant-legs {
+  transform-origin: 0 0;
+  animation: w8-ant-step 0.26s steps(2, jump-none) infinite;
+}
+
+@keyframes w8-ant-step {
+  from { translate: -1.6px 0; }
+  to { translate: 1.6px 0; }
+}
+
+/* ---------- Spider ---------- */
+
+/*
+ * Comes down on a thread tied to the underside of the ladybird's leaf, hangs, and goes back up. An
+ * event rather than a cycle, which is the one thing the export's loop had none of -- everything in
+ * it returns to where it started every few seconds, so nothing ever arrives.
+ *
+ * Three animations on one clock. The body descends, the thread stretches to match, and the pair
+ * swings together about the anchor. The descent and the thread share every keyframe percentage
+ * because if they ever disagreed the spider would come off the end of its own silk.
+ */
+.w8-spider-drop {
+  animation: w8-abseil 23s ease-in-out infinite;
+}
+
+@keyframes w8-abseil {
+  0%,
+  8% { translate: 0 26px; }
+  36%,
+  58% { translate: 0 336px; }
+  86%,
+  100% { translate: 0 26px; }
+}
+
+/*
+ * The thread is a one-unit line scaled in Y, because x1/y1/x2/y2 are SVG geometry attributes and
+ * not CSS properties -- there is no way to animate the endpoint directly. Its stroke is
+ * non-scaling, or a scale of 336 would be a scale of 336 on the stroke width too.
+ */
+.w8-spider-thread {
+  transform-origin: 0 0;
+  animation: w8-thread 23s ease-in-out infinite;
+}
+
+@keyframes w8-thread {
+  0%,
+  8% { scale: 1 26; }
+  36%,
+  58% { scale: 1 336; }
+  86%,
+  100% { scale: 1 26; }
+}
+
+/* Swinging about the anchor, which is this group's own origin -- so the thread tilts with it. */
+.w8-spider-swing {
+  transform-origin: 0 0;
+  animation: w8-swing 7.9s ease-in-out infinite alternate;
+}
+
+@keyframes w8-swing {
+  from { rotate: -1.1deg; }
+  to { rotate: 1.1deg; }
+}
+
+.w8-spider-legs {
+  transform-origin: 0 24px;
+  animation: w8-spider-flex 3.3s ease-in-out infinite;
+}
+
+@keyframes w8-spider-flex {
+  0%,
+  100% { scale: 1 1; }
+  50% { scale: 0.9 1.08; }
+}
+
+/* ---------- Pollen ---------- */
+
+/*
+ * Three depth bands drifting at different speeds, which is what gives the frame depth rather than
+ * just activity. Each band moves as one GPU-friendly group; each mote also wanders inside it, so
+ * the band never reads as a sheet of dots sliding past.
+ *
+ * Written as the `translate` property rather than `transform`, the same rule week 7's dust
+ * follows: the motes sit at their own cx/cy and the individual transform properties compose with
+ * that, where animating `transform` would be a second positioning system fighting the first.
+ */
+.w8-pollen {
+  opacity: 0.55;
+}
+
+.w8-pollen-band {
+  animation: w8-pollen-drift 43s ease-in-out infinite alternate;
+}
+
+.w8-pollen-near {
+  opacity: 0.8;
+  animation-duration: 31s;
+}
+
+.w8-pollen-far {
+  opacity: 0.4;
+  animation-duration: 57s;
+}
+
+@keyframes w8-pollen-drift {
+  from { translate: -70px 34px; }
+  to { translate: 70px -34px; }
+}
+
+.w8-mote {
+  animation: w8-mote-a 13s ease-in-out infinite;
+}
+
+.w8-mote-1 { animation-name: w8-mote-b; animation-duration: 17s; }
+.w8-mote-2 { animation-name: w8-mote-c; animation-duration: 19s; }
+.w8-mote-3 { animation-name: w8-mote-d; animation-duration: 23s; }
+
+@keyframes w8-mote-a {
+  0%, 100% { translate: 0 0; }
+  33% { translate: 22px 14px; }
+  66% { translate: 9px 31px; }
+}
+
+@keyframes w8-mote-b {
+  0%, 100% { translate: 0 0; }
+  33% { translate: -17px 19px; }
+  66% { translate: 6px 36px; }
+}
+
+@keyframes w8-mote-c {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 14px 26px; }
+}
+
+@keyframes w8-mote-d {
+  0%, 100% { translate: 0 0; }
+  50% { translate: -20px 22px; }
+}
+
+/* ---------- Reduced motion ---------- */
+
+/*
+ * Stop every loop rather than pausing it. Paused, a wing is caught halfway through a beat and an
+ * ant hangs in mid-stride; dropped, each track falls back to the pose in its own markup.
+ *
+ * landing.css also pauses loops inside .landing-animated, so this has to win. Hence the
+ * !important: it is overriding the export's inline stylesheet and the shared pause rule at once,
+ * and neither can be reached any other way.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .w8-scene svg * {
+    animation: none !important;
+  }
+
+  /*
+   * Dropping an animation is not enough for anything that was *placed* by one.
+   *
+   * The ant column starts its keyframes at offset-distance 0%, which is off the left of the frame,
+   * so all seven would be parked out of sight on top of each other; they are spread along the
+   * trail by hand instead. The spider starts tucked against its leaf with a 26-unit thread, which
+   * reads as a dot on a leaf, so it is left hanging in view with the thread to match -- and the
+   * thread's length has to be set here too, since it is normally carried by its own animation.
+   */
+  .w8-ant-walker:nth-child(1) { offset-distance: 14%; }
+  .w8-ant-walker:nth-child(2) { offset-distance: 26%; }
+  .w8-ant-walker:nth-child(3) { offset-distance: 38%; }
+  .w8-ant-walker:nth-child(4) { offset-distance: 50%; }
+  .w8-ant-walker:nth-child(5) { offset-distance: 62%; }
+  .w8-ant-walker:nth-child(6) { offset-distance: 74%; }
+  .w8-ant-walker:nth-child(7) { offset-distance: 86%; }
+
+  .w8-spider-drop { translate: 0 260px; }
+  .w8-spider-thread { scale: 1 260; }
+}
+
+/* ---------- The glass ---------- */
+
+/*
+ * The copy sits on a pane of glass with a real edge, not a frosted wash that fades out: a hard
+ * border, so the pane reads as a sheet laid over the scene, and a 3px blur, so leaf edges and veins
+ * still read through it rather than a green fog.
+ *
+ * The problem this pane solves is not that the scene is bright -- mean luminance is 0.13 -- but
+ * that it is *busy*: every leaf has a pale rim and a vein, so white type crosses a light edge every
+ * few characters. Blur fixes that by removing the high frequencies; a tint fixes it by compressing
+ * the range toward one colour. The two are interchangeable, and with the blur this low the tint
+ * carries the readability. Change one, re-measure.
+ *
+ * The tint is 0.34 here, up from the 0.28 the scene was tuned at in isolation: DALI OS's copy
+ * column is wider and sits further left, over brighter foliage, and at 0.28 the badge and the
+ * tasks heading fell to 5.55-5.67:1. Sampling the 95th-percentile luminance of the backdrop (copy
+ * hidden) under every text band at 390, 820, 1024, 1512 and 2560 wide, worst of six loop phases,
+ * white copy now holds 6.15:1 at its worst -- the tasks heading at 1512x861.
+ *
+ * One honest caveat: a 95th-percentile sample flatters low blur, because what actually breaks
+ * legibility is a pale leaf rim crossing a letter rather than the band's overall level. Treat the
+ * numbers as a floor.
+ *
+ * saturate() is above 1: frosted glass desaturates, a clean pane does not, and pushing it slightly
+ * the other way keeps the greens behind it reading as leaves rather than as grey.
+ */
+.landing-week8 .landing-scrim {
+  /*
+   * Stacked: a pane down from the top with its hard edge just below the task cards.
+   *
+   * Not a percentage. The stacked copy is a fixed stack of pixel-sized parts under a
+   * max(40px, 7cqh) top pad (landing.css), so a percentage over-covers a tall window and falls
+   * short on a short one -- on a landscape phone the copy overflows, the hero grows, and the cards
+   * end at 93.5% of it. The cards bottom out at most 486px below that pad (at 600 wide, where the
+   * column is widest before the 640 breakpoint shrinks the cards), so 520px covers them everywhere
+   * with room for a wrapped greeting, and min() takes the full height once the copy overflows.
+   * Measured at thirteen stacked sizes from 360x780 to 1180x1200 plus 844x390 and 667x375, the
+   * pane clears the cards by at least 34px at each.
+   *
+   * On a portrait phone that leaves the bottom quarter of the scene clear -- the pane ends at
+   * 68.6% of a 390x844 window, and the centipede (56%-83% of the height there) comes out from
+   * under it.
+   */
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: min(100%, max(40px, 7cqh) + 520px);
+  border-bottom: 1px solid rgb(255 255 255 / 0.14);
+  background: rgb(var(--w8-scrim-rgb) / 0.34);
+  -webkit-backdrop-filter: blur(3px) saturate(1.08) brightness(0.8);
+  backdrop-filter: blur(3px) saturate(1.08) brightness(0.8);
+
+  /*
+   * The edge, lit the way the rest of the page's glass is lit. landing.css gives the badge, the
+   * search bar and the cards a Figma "Glass" treatment -- a bright inner rim, a faint colour
+   * fringe from the dispersion setting, and a broad inner sheen. This is the same recipe at panel
+   * scale, so the pane belongs to the same material as the controls sitting on it.
+   */
+  box-shadow:
+    inset 0 -1px 0 rgb(255 255 255 / 0.08),
+    inset 0 -2px 0 rgb(255 120 150 / 0.05),
+    inset 0 0 90px rgb(255 255 255 / 0.035);
+}
+
+/*
+ * Beside the copy instead of above it, once the layout goes two-column.
+ *
+ * The edge follows the copy column rather than the art: 38.1% of the window in at 1024x640,
+ * 41.3% at 1512x861, 54.4% at 2560x1440. landing.css publishes the column's geometry as --pad and
+ * --content-w on .landing, and .landing-scrim inherits both, so the pane cannot drift out of step
+ * with the text however the column is retuned. The gutter is what stops the edge touching the
+ * first glyph.
+ *
+ * The cost, taken deliberately: the column reaches further left than the ladybird does, so the
+ * ladybird and the spider sit partly behind the pane at every desktop size short of 2560. With the
+ * blur at 3px that reads as a tonal step across them rather than as half an insect going out of
+ * focus, which is the only reason this trade is worth making.
+ *
+ * The clamp is a guard for shapes the column arithmetic was not derived for; it does not bind at
+ * any of the sizes above.
+ */
+@container landing (min-width: 900px) and (min-aspect-ratio: 11/10) {
+  .landing-week8 {
+    /* Clear air between the pane's edge and the first glyph of the copy. */
+    --w8-pane-gutter: clamp(28px, 3.2cqw, 72px);
+  }
+
+  .landing-week8 .landing-scrim {
+    inset: 0 0 0 clamp(30%, calc(100% - var(--pad) - var(--content-w) - var(--w8-pane-gutter)), 70%);
+    height: auto;
+    border-bottom: 0;
+    border-left: 1px solid rgb(255 255 255 / 0.14);
+    box-shadow:
+      inset 1px 0 0 rgb(255 255 255 / 0.08),
+      inset 2px 0 0 rgb(255 120 150 / 0.05),
+      inset 0 0 120px rgb(255 255 255 / 0.035);
+  }
+}
+
+/*
+ * Nothing to blur if the browser cannot blur it. The pane keeps its shape and its edge -- those
+ * are layout, not effect -- and the tint goes up to cover what the blur was doing.
+ *
+ * Heavier than the numbers look like they need. Sampling the 95th percentile of a backdrop
+ * flatters a flat tint for the same reason it flatters a small blur: the thing that actually
+ * breaks legibility is the pale leaf rim crossing a letter, not the band's overall level.
+ */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .landing-week8 .landing-scrim {
+    background: rgb(var(--w8-scrim-rgb) / 0.64);
+  }
+}

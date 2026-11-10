@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/doc-search.server", () => ({ indexPageBody: vi.fn() }));
 // Decoding real Y.Doc bytes is covered by the collab tests; here the sweep's
 // job is choosing WHICH documents to decode, so the decode is stubbed.
 vi.mock("~/collab/read", () => ({ stateToBlocks: vi.fn(() => ({ blocks: [], source: "blocknote" })) }));
 vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn(() => "body text") }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { indexPageBody } from "~/lib/doc-search.server";
 import { runDocSearchIndex } from "~/jobs/doc-search-index.server";
 

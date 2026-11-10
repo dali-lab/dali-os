@@ -2,7 +2,7 @@
 // assignees can comment on their own tasks; Core can comment on anything.
 // Mirrors the spirit of update_task_status — self-service is allowed.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
 

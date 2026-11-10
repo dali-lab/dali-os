@@ -8,7 +8,7 @@
 // mine done" flow — even when they aren't otherwise project editors. Anyone
 // else is rejected. Requires the `mcp:write` scope.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import {
   TASK_STATUSES,

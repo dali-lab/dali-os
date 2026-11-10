@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { desktopVersion } from "../desktop";
+import { desktopVersion, hasNativeRecorder } from "../desktop";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -25,5 +25,27 @@ describe("desktopVersion", () => {
       },
     });
     expect(desktopVersion()).toBeNull();
+  });
+});
+
+describe("hasNativeRecorder", () => {
+  const shell = { top: { __DALI_DESKTOP: { version: "0.1.21" } } };
+
+  it("is true in the macOS shell", () => {
+    vi.stubGlobal("window", shell);
+    vi.stubGlobal("navigator", { platform: "MacIntel" });
+    expect(hasNativeRecorder()).toBe(true);
+  });
+
+  it.each(["Win32", "Linux x86_64"])("is false in the %s shell", (platform) => {
+    vi.stubGlobal("window", shell);
+    vi.stubGlobal("navigator", { platform });
+    expect(hasNativeRecorder()).toBe(false);
+  });
+
+  it("is false in a Mac browser", () => {
+    vi.stubGlobal("window", { top: {} });
+    vi.stubGlobal("navigator", { platform: "MacIntel" });
+    expect(hasNativeRecorder()).toBe(false);
   });
 });

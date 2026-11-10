@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.me";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { listActiveGroupNamesForUser } from "~/lib/groups";
 import { leadLabels, orderedEmails, parseStatusBody } from "~/lib/mobile-format";

@@ -13,7 +13,7 @@
 // by Core when authoring a contract template so listPartnerContractDocuments
 // has something precise to filter on instead of listing every agreement.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { formatUsd } from "~/lib/money";
 import { PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { applyAdminSignatures } from "~/signing/lib/presign.server";

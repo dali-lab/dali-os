@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
-import { Breadcrumbs, PageBarTrail } from "~/components/Breadcrumbs";
+import { PageBarTrail, usePageTrail } from "~/components/Breadcrumbs";
+
+function RouteTrail() {
+  const trail = usePageTrail();
+  return trail && trail.crumbs.length > 1 ? createElement(PageBarTrail, { crumbs: trail.crumbs }) : null;
+}
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -12,7 +17,7 @@ let root: Root;
 
 async function mount(path: string, handle: Record<string, unknown>, data: unknown = { ok: true }) {
   const Stub = createRoutesStub([
-    { path, handle, loader: () => data, Component: () => createElement(Breadcrumbs) },
+    { path, handle, loader: () => data, Component: RouteTrail },
   ]);
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -30,11 +35,11 @@ afterEach(() => {
 });
 
 const crumbs = () =>
-  Array.from(container.querySelectorAll("nav[aria-label='Breadcrumb'] a, nav[aria-label='Breadcrumb'] span.font-medium")).map(
+  Array.from(container.querySelectorAll("nav[aria-label='Breadcrumb'] a, nav[aria-label='Breadcrumb'] span.font-semibold")).map(
     (el) => [el.textContent, el.getAttribute("href")],
   );
 
-describe("Breadcrumbs with hideBreadcrumbs", () => {
+describe("Page trail with hideBreadcrumbs", () => {
   it("shows nothing from the path", async () => {
     await mount("/documents/abc", { hideBreadcrumbs: true });
     expect(container.querySelector("nav")).toBeNull();
@@ -79,7 +84,7 @@ async function openOverflow() {
   return Array.from(document.querySelectorAll("[role='menuitem']")).map((el) => [el.textContent, el.getAttribute("href")]);
 }
 
-describe("Breadcrumbs overflow", () => {
+describe("Page trail overflow", () => {
   it("keeps the first and last two crumbs and folds the rest behind a menu", async () => {
     await mount("/documents/abc", { breadcrumbTrail: longTrail }, { title: "Kickoff" });
     expect(crumbs()).toEqual([

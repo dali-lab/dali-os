@@ -21,6 +21,7 @@ export type MemberEmailArgs = {
   // its own (announcements with a body) pass false to avoid duplicating it.
   titleInBody?: boolean;
   footer?: EmailFooter;
+  settingsPath?: string;
   baseUrl: string;
 };
 
@@ -57,6 +58,7 @@ export function renderMemberEmailDocument(args: MemberEmailArgs): {
     preheader: plainPreheader(args),
     cta: args.link ? { href: args.link, label } : null,
     footer: args.footer ?? "notifications",
+    settingsPath: args.settingsPath,
     baseUrl: args.baseUrl,
   });
 
@@ -77,6 +79,6 @@ function buildText(args: MemberEmailArgs, label: string): string {
   const body = htmlToPlainText(resolveBody(args));
   if (body) parts.push(body);
   if (args.link) parts.push(`${label}: ${args.link}`);
-  parts.push(`DALI OS · ${args.baseUrl}/settings/notifications`);
+  parts.push(`DALI OS · ${args.baseUrl}${args.settingsPath ?? "/settings/notifications"}`);
   return parts.join("\n\n");
 }

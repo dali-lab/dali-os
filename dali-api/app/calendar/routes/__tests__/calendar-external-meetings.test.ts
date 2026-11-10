@@ -7,12 +7,12 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/general-calendar", () => ({
   isGeneralCalendarEvent: vi.fn(() => false),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { meetingsForExternalEvents } from "~/calendar/routes/calendar.server";
 import type { CalendarEvent } from "~/lib/google-calendar";
 

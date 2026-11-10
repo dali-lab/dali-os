@@ -5,8 +5,11 @@ import {
   clearFilterColumn,
   columnResponses,
   filterValues,
+  hasFilterParams,
   matchesFilters,
+  readFilterParams,
   toggleFilterValue,
+  writeFilterParams,
   type ColumnFilter,
 } from "../submission-filters";
 
@@ -133,5 +136,89 @@ describe("columnResponses", () => {
       { cells: { year: ["2024", "2028"] } },
     ];
     expect(columnResponses(people, "year")).toEqual(["2024", "2026", "2028"]);
+  });
+
+  it("follows a given order instead of sorting, so terms aren't lexical", () => {
+    const projects = [{ cells: { term: ["24F", "25W"] } }, { cells: { term: ["25S"] } }];
+    expect(columnResponses(projects, "term", ["25S", "25W", "24F"])).toEqual([
+      "25S",
+      "25W",
+      "24F",
+    ]);
+  });
+
+  it("lists every ordered value even when no row has it", () => {
+    const projects = [{ cells: { term: "25W" } }];
+    expect(columnResponses(projects, "term", ["26F", "25W"])).toEqual(["26F", "25W"]);
+  });
+
+  it("puts responses missing from the order after it, sorted", () => {
+    const projects = [{ cells: { term: ["25W", "Zeta", "Alpha"] } }];
+    expect(columnResponses(projects, "term", ["25W"])).toEqual(["25W", "Alpha", "Zeta"]);
+  });
+});
+
+describe("readFilterParams / writeFilterParams", () => {
+  it("reads one filter per f.<column> param, keeping every repeated value", () => {
+    const params = new URLSearchParams("f.domain=Design&term=t1&f.domain=Eng&f.status=Yes");
+    expect(readFilterParams(params)).toEqual([
+      { columnKey: "domain", values: ["Design", "Eng"] },
+      { columnKey: "status", values: ["Yes"] },
+    ]);
+  });
+
+  it("ignores params without the prefix and empty values", () => {
+    expect(readFilterParams(new URLSearchParams("q=ada&domain=d1&f.status="))).toEqual([]);
+  });
+
+  it("writes filters as repeated params and keeps every other param", () => {
+    const next = writeFilterParams(new URLSearchParams("term=t1&q=ada"), [
+      { columnKey: "domain", values: ["Design", "Eng"] },
+    ]);
+    expect(next.toString()).toBe("term=t1&q=ada&f.domain=Design&f.domain=Eng");
+  });
+
+  it("replaces filters already in the URL, so a removed column disappears", () => {
+    const next = writeFilterParams(new URLSearchParams("f.status=Yes&term=t1"), [
+      { columnKey: "domain", values: ["Eng"] },
+    ]);
+    expect(next.toString()).toBe("term=t1&f.domain=Eng");
+    expect(writeFilterParams(next, []).toString()).toBe("term=t1");
+  });
+
+  it("round-trips column keys and values with URL-special characters", () => {
+    const filters: ColumnFilter[] = [
+      { columnKey: "q:why & how", values: ["Yes, & more", "50% = half"] },
+    ];
+    expect(readFilterParams(writeFilterParams(new URLSearchParams(), filters))).toEqual(filters);
+  });
+});
+
+describe("hasFilterParams / markEmpty", () => {
+  it("is false for a URL with no filter params", () => {
+    expect(hasFilterParams(new URLSearchParams("q=ada&term=t1"))).toBe(false);
+  });
+
+  it("is true for a filter or the no-filters marker", () => {
+    expect(hasFilterParams(new URLSearchParams("f.domain=Design"))).toBe(true);
+    expect(hasFilterParams(new URLSearchParams("f="))).toBe(true);
+  });
+
+  it("writes the marker only when asked and the list is empty", () => {
+    expect(writeFilterParams(new URLSearchParams("q=a"), [], { markEmpty: true }).toString()).toBe("q=a&f=");
+    expect(writeFilterParams(new URLSearchParams("q=a"), []).toString()).toBe("q=a");
+    expect(
+      writeFilterParams(new URLSearchParams(), [{ columnKey: "domain", values: ["Eng"] }], {
+        markEmpty: true,
+      }).toString(),
+    ).toBe("f.domain=Eng");
+  });
+
+  it("drops an old marker once a filter is picked", () => {
+    const next = writeFilterParams(new URLSearchParams("f=&q=a"), [
+      { columnKey: "domain", values: ["Eng"] },
+    ]);
+    expect(next.toString()).toBe("q=a&f.domain=Eng");
+    expect(readFilterParams(new URLSearchParams("f="))).toEqual([]);
   });
 });

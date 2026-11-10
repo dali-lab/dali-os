@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mentorship.notes";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { canViewMentorship, mentorNoteWhere } from "../lib/visibility";

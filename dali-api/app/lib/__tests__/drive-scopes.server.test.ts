@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { groupDefinition: { findUnique: vi.fn() }, page: { findMany: vi.fn() } },
 }));
 vi.mock("~/lib/drive.server", () => ({
@@ -16,7 +16,7 @@ vi.mock("~/lib/drive-roots.server", () => ({
   ensureAllRoots: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadDriveScope, buildLinkedProcessMap } from "~/lib/drive.server";
 import { isImpersonating } from "~/lib/auth";
 import type { AuthSuccess } from "~/lib/auth";

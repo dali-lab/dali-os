@@ -4,14 +4,14 @@
 // exposed separately because it can be large and a client may only need it when
 // planning the next sprint.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 
 export const PROJECT_BACKLOG_RESOURCE = {
   uriTemplate: "dali://projects/{projectId}/backlog",
   name: "Project backlog",
   description:
-    "Every undated task on a project (no start or due date, so unscheduled into any sprint), excluding Done/Cancelled. Use this when planning the next sprint.",
+    "Every undated task on a project (no start or due date, so unscheduled into any sprint), excluding Done/Cancelled. Returns at most 200 tasks, highest priority first, with total and truncated; when truncated, list_my_tasks with projectId reads the caller's own tasks on the project. Use this when planning the next sprint.",
   mimeType: "application/json",
   requiredScope: "mcp:read" as const,
 };
@@ -30,6 +30,8 @@ export class ProjectBacklogNotFoundError extends Error {
   }
 }
 
+const BACKLOG_LIMIT = 200;
+
 export async function readProjectBacklogResource(projectId: string): Promise<string> {
   const project = await prisma.project.findUnique({
     where: { id: projectId },
@@ -37,14 +39,17 @@ export async function readProjectBacklogResource(projectId: string): Promise<str
   });
   if (!project) throw new ProjectBacklogNotFoundError(projectId);
 
-  const tasks = await prisma.task.findMany({
-    where: {
-      projectId,
-      startsAt: null,
-      dueAt: null,
-      status: { notIn: ["Done", "Cancelled"] },
-    },
-    orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+  const where = {
+    projectId,
+    startsAt: null,
+    dueAt: null,
+    status: { notIn: ["Done", "Cancelled"] as ("Done" | "Cancelled")[] },
+  };
+  const [tasks, total] = await Promise.all([
+    prisma.task.findMany({
+    where,
+    orderBy: [{ priority: "desc" }, { createdAt: "asc" }, { id: "asc" }],
+    take: BACKLOG_LIMIT,
     select: {
       id: true,
       title: true,
@@ -59,11 +64,15 @@ export async function readProjectBacklogResource(projectId: string): Promise<str
         },
       },
     },
-  });
+    }),
+    prisma.task.count({ where }),
+  ]);
 
   return JSON.stringify(
     {
       project: { id: project.id, name: project.name },
+      total,
+      truncated: total > tasks.length,
       tasks: tasks.map((t) => ({
         id: t.id,
         title: t.title,

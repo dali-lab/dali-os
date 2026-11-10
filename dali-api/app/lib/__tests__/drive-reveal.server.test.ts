@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { page: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/pageAccess.server", () => ({
   PAGE_ACCESS_SELECT: { id: true },
   getPageAccess: vi.fn(),
 }));
 vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { driveHref, driveRevealHref } from "~/lib/drive-reveal.server";

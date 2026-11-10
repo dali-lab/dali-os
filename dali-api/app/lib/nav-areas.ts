@@ -11,7 +11,6 @@ import {
   ClipboardPen,
   Clock,
   DoorOpen,
-  Flag,
   Files,
   FileSignature,
   FileText,
@@ -30,6 +29,8 @@ import {
   Images,
   Map as MapIcon,
   Lightbulb,
+  ListTodo,
+  Flag,
   Mail,
   MapPinned,
   Newspaper,
@@ -220,6 +221,9 @@ const coreClusterSubtabs: SubTab[] = CORE_CLUSTERS.map((c) => ({
 // Onboarding journeys. A first-term member gets it pinned under Drive, where
 // they'll see it every day; everyone else finds it in the Lab area.
 const ONBOARDING_NAV_ITEM: SubTab = { label: "Journeys", href: "/journeys", icon: MapIcon };
+const REFER_NAV_ITEM: SubTab = { label: "Refer a partner", href: "/refer", icon: Handshake };
+const CORE_TASKBOARD_NAV_ITEM: SubTab = { label: "Taskboard", href: "/core", icon: ListTodo };
+const CORE_MILESTONES_NAV_ITEM: SubTab = { label: "Milestones", href: "/core/milestones", icon: Flag };
 
 const REGROUPED_AREAS: NavArea[] = [
   {
@@ -232,11 +236,12 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Projects", href: "/projects", icon: FolderKanban },
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
-      { label: "Connect", href: "/connect", icon: MapPinned },
+      { label: "Community", href: "/community", icon: MapPinned },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => !r.isAlumni && (r.isLabMentor || r.isCore) },
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
       { label: "Attendance", href: "/attendance", icon: ClipboardCheck, gate: (r) => !r.isAlumni },
+      REFER_NAV_ITEM,
       ONBOARDING_NAV_ITEM,
     ],
   },
@@ -244,13 +249,13 @@ const REGROUPED_AREAS: NavArea[] = [
     key: "community",
     label: "Community",
     icon: Sparkles,
-    hubPath: "/connect",
-    description: "Connect, gallery, events",
+    hubPath: "/community",
+    description: "Alumni map, gallery, events",
     subtabs: [
-      { label: "Connect", href: "/connect", icon: MapPinned },
+      { label: "Community", href: "/community", icon: MapPinned },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Blogs", href: "/resources", icon: Newspaper },
+      { label: "Stories", href: "/resources", icon: Newspaper },
     ],
   },
   {
@@ -273,7 +278,8 @@ const REGROUPED_AREAS: NavArea[] = [
     description: "Staffing, payroll, processes",
     gate: (r) => r.isCore,
     subtabs: [
-      { label: "Milestones", href: "/core", icon: Flag },
+      CORE_TASKBOARD_NAV_ITEM,
+      CORE_MILESTONES_NAV_ITEM,
       { label: "Staffing", href: "/core/staffing", icon: Kanban },
       { label: "Partners", href: "/core/partners", icon: Handshake },
       { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen },
@@ -285,9 +291,6 @@ const REGROUPED_AREAS: NavArea[] = [
       // system administration. It renders its own Core compliance console.
       { label: "Agreements", href: "/core/agreements", icon: FileSignature },
       { label: "Drive folders", href: "/core/drive-folders", icon: FolderCog },
-      // Room and door-display management. The member-facing booking page sits
-      // in the top bar (see ROOM_BOOKING_NAV_ITEM).
-      { label: "Rooms", href: "/core/rooms", icon: DoorOpen },
     ],
   },
   {
@@ -369,10 +372,15 @@ export function areaIconFor(key: string): LucideIcon | undefined {
  */
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   const hidden = new Set<string>();
-  if (flags.community) hidden.add("/connect");
+  if (flags.community) hidden.add("/community");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
+  if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
+  if (!flags["core-taskboard"]) {
+    hidden.add(CORE_TASKBOARD_NAV_ITEM.href);
+    hidden.add(CORE_MILESTONES_NAV_ITEM.href);
+  }
   return REGROUPED_AREAS.filter((a) => flags.community || a.key !== "community").map((a) =>
-    a.key === "projects" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
+    a.key === "projects" || a.key === "core" ? { ...a, subtabs: a.subtabs.filter((t) => !hidden.has(t.href)) } : a,
   );
 }
 
@@ -391,15 +399,15 @@ export function pinnedNavItems(
     : [drive, ...hub];
 }
 
-/** Where the wordmark and the workspace's first tab land. Connect is the alumni Home. */
+/** Where the wordmark and the workspace's first tab land. Community is the alumni Home. */
 export function homeNavItem(r: Pick<RoleFlags, "isAlumni">): SubTab {
   return r.isAlumni
-    ? { label: "Home", href: "/connect", icon: Home }
+    ? { label: "Home", href: "/community", icon: Home }
     : { label: "Home", href: "/", icon: Home };
 }
 
 // Alumni get one area, so the sidebar shows no section switcher for them.
-// Connect is left out because it is their home (see homeNavItem).
+// Community is left out because it is their home (see homeNavItem).
 const ALUMNI_AREAS: NavArea[] = [
   {
     key: "projects",
@@ -408,10 +416,10 @@ const ALUMNI_AREAS: NavArea[] = [
     hubPath: "/projects",
     subtabs: [
       { label: "Projects", href: "/projects", icon: FolderKanban },
-      { label: "People", href: "/members", icon: UsersRound },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Blogs", href: "/resources", icon: Newspaper },
+      { label: "Stories", href: "/resources", icon: Newspaper },
+      REFER_NAV_ITEM,
     ],
   },
 ];
@@ -428,13 +436,13 @@ function areasForViewer(
     }));
   }
   if (!r?.isAlumni) return areasFor(flags);
-  if (flags.community) return ALUMNI_AREAS;
-  const communityHrefs = new Set(
-    REGROUPED_AREAS.find((a) => a.key === "community")!.subtabs.map((t) => t.href),
+  const hidden = new Set<string>(
+    flags.community ? [] : REGROUPED_AREAS.find((a) => a.key === "community")!.subtabs.map((t) => t.href),
   );
+  if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
   return ALUMNI_AREAS.map((a) => ({
     ...a,
-    subtabs: a.subtabs.filter((t) => !communityHrefs.has(t.href)),
+    subtabs: a.subtabs.filter((t) => !hidden.has(t.href)),
   }));
 }
 
@@ -442,19 +450,18 @@ function areasForViewer(
 export const ROOM_BOOKING_NAV_ITEM: SubTab = { label: "Room booking", href: "/rooms", icon: DoorOpen };
 
 // Both area sets at once. isAreaSubtabPath and the icon map are read from places
-// with no flag context — the favorites star (FavoriteRouteButton), the
+// with no flag context — the topbar favorites star, the
 // favorites/recents glyphs (FavoriteIcon), and parseRouteHref server-side. Both
 // the legacy (NAV_AREAS) and current (areasFor) regrouped sets are included so a
 // favorite saved under the old nav still resolves its area and icon.
 const ALL_AREAS: NavArea[] = [
   ...NAV_AREAS,
-  ...areasFor({ community: true, "onboarding-journeys": true }),
+  ...areasFor({ community: true, "onboarding-journeys": true, "refer-a-partner": true, "core-taskboard": true }),
 ];
 
-// These matchers are handed a live URL, not a bare pathname: in tab mode the
-// sidebar tracks the focused tab, whose url keeps its query string (layout.tsx
-// cleanUrl), and favorites are stored as `pathname + search`
-// (FavoriteRouteButton). An area and its sub-tab are a function of the path
+// These matchers are handed a live URL, not a bare pathname: the sidebar
+// keeps the query string, and favorites are stored as `pathname + search`
+// (the topbar star). An area and its sub-tab are a function of the path
 // alone, so trim the query/hash before matching — otherwise
 // /projects/staffing?term=25F matches no sub-tab and drops the sidebar back to
 // the bare area.
@@ -574,7 +581,7 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
 // sub-tab claims the exact filtered url: Core ▸ Agreements lives at
 // /drive?type=agreement but belongs to Core, so the Drive pin must NOT light up
 // there. Handed a live url (pathname + search) like the other matchers, so the
-// query is visible in tabless mode too (there `location.pathname` drops it).
+// query is visible (`location.pathname` alone drops it).
 export function isPinnedActive(
   path: string,
   href: string,
@@ -592,7 +599,7 @@ export function isPinnedActive(
  * Does this page render its own horizontal nav row? Only `areaSubnav` pages
  * (e.g. calendar) do — the dali.os shell owns every other area's sub-navigation
  * from the sidebar. Anything that stands down "because the page has its own
- * row" (the tabless history arrows) asks this so it doesn't double the row.
+ * row" (the history arrows) asks this so it doesn't double the row.
  */
 export function hasSubnavRow(
   matches: readonly { handle?: unknown }[],

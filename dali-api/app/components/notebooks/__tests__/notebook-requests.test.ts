@@ -6,6 +6,7 @@ import {
   removeFromNotebookRequest,
   renameRequest,
   sendJson,
+  setNoteDateRequest,
 } from "~/components/notebooks/notebook-requests";
 
 describe("request builders", () => {
@@ -32,6 +33,14 @@ describe("request builders", () => {
 
   it("detaches a note through the page's meeting route", () => {
     expect(detachRequest("p1")).toEqual({ url: "/api/pages/p1/meeting", body: { intent: "detach-meeting" } });
+  });
+
+  it("sets or clears a note's date through its date route", () => {
+    expect(setNoteDateRequest("p1", "2026-10-14")).toEqual({
+      url: "/api/pages/p1/date",
+      body: { date: "2026-10-14" },
+    });
+    expect(setNoteDateRequest("p1", null)).toEqual({ url: "/api/pages/p1/date", body: { date: null } });
   });
 
   it("renames through the ordinary document route with a trimmed title", () => {

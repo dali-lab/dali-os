@@ -16,6 +16,10 @@ import {
   runListPartnerApplications,
 } from "./list-partner-applications";
 import {
+  LIST_PARTNER_ACTIVITY_TOOL,
+  runListPartnerActivity,
+} from "./list-partner-activity";
+import {
   GET_PARTNER_APPLICATION_TOOL,
   runGetPartnerApplication,
 } from "./get-partner-application";
@@ -77,6 +81,11 @@ export const PARTNERS_TOOLS: McpTool[] = [
     def: GET_PARTNER_ORG_TOOL,
     run: (ctx: McpCtx, args) =>
       runGetPartnerOrg(ctx.user.id, args as Parameters<typeof runGetPartnerOrg>[1]),
+  },
+  {
+    def: LIST_PARTNER_ACTIVITY_TOOL,
+    run: (ctx: McpCtx, args) =>
+      runListPartnerActivity(ctx.user.id, args as Parameters<typeof runListPartnerActivity>[1]),
   },
   {
     def: LIST_PARTNER_APPLICATIONS_TOOL,

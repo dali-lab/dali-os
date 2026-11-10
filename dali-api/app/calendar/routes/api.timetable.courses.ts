@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.timetable.courses";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isLabMember } from "~/lib/roles";
 import { refreshSubjectOfferings } from "~/lib/timetable-cache.server";

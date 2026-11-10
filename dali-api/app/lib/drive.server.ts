@@ -17,7 +17,7 @@
 //     Core or staffed on project X.
 //   • Forms:          Pages (kind Form), filtered by page access like docs.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { pageOpenHref } from "~/lib/page-href";
 import { getPageAccess, getPageAccessBulk, governingScopeMap, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { canViewFile } from "~/lib/fileAccess.server";
@@ -141,6 +141,14 @@ export type DriveItem =
       iconEmoji: null; // files have no emoji; callers use a fixed icon
       updatedAt: Date;
       href: string;
+      /** "Shared with me" space only: who granted the viewer access. */
+      sharedBy?: { name: string } | null;
+      /** "Shared with me" space only: when the share was made. */
+      sharedAt?: Date;
+      /** "Shared with me" space only: the viewer reaches this file by a named share. */
+      sharedWithMe?: boolean;
+      /** "Shared with me" space only: the viewer granted a named share on this file. */
+      sharedByMe?: boolean;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
       sizeBytes?: number | null;
       /** Whether the viewer has favorited this item (pages only). */
@@ -164,7 +172,7 @@ export type DriveItem =
       title: string;
       /** `folderPageId` — null when unplaced. */
       parentFolderId: string | null;
-      iconEmoji: null; // forms have no emoji; callers use a fixed icon
+      iconEmoji: string | null;
       updatedAt: Date;
       href: string;
       /** File size in bytes (files only; null elsewhere). Drives the Size column. */
@@ -312,7 +320,7 @@ export function formRowToDriveItem(
     id: row.id,
     title: row.title,
     parentFolderId,
-    iconEmoji: null,
+    iconEmoji: row.iconEmoji,
     updatedAt: row.updatedAt,
     href: `/forms/edit/${row.id}`,
     audience,

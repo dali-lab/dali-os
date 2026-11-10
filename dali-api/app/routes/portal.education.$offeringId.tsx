@@ -2,7 +2,7 @@ import { redirect, useLoaderData, Link, Form } from "react-router";
 import type { Route } from "./+types/portal.education.$offeringId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { withdrawApplication } from "~/education/lib/decisions.server";
 import {
   getOfferingDetail,

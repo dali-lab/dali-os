@@ -2,11 +2,20 @@ name: Test dali-api
 
 on:
   push:
-    branches: [staging, prod]
+    branches: [prod]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  changes:
+    uses: ./.github/workflows/changed-paths.yml
+
   test-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
@@ -33,7 +42,45 @@ jobs:
           path: dali-api/coverage/
           retention-days: 7
 
+  integration-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    defaults:
+      run:
+        working-directory: dali-api
+    env:
+      DATABASE_URL: postgresql://dali:dali@localhost:5432/dali_integration
+      DIRECT_URL: postgresql://dali:dali@localhost:5432/dali_integration
+      JWT_SECRET: test-secret-for-ci-at-least-32-chars
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dali
+          POSTGRES_PASSWORD: dali
+          POSTGRES_DB: dali_integration
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Run integration tests
+        run: npm run test:integration
+
   e2e-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:
@@ -85,6 +132,8 @@ jobs:
           retention-days: 7
 
   test-asr:
+    needs: changes
+    if: needs.changes.outputs.asr == 'true'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     defaults:
       run:

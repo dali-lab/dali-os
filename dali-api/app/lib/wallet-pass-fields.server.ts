@@ -5,7 +5,7 @@
 // Every field except the name is optional and omitted from the pass when unknown,
 // so a partially-onboarded member still gets a valid pass.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { dateToTermCode } from "~/lib/terms.shared";
 

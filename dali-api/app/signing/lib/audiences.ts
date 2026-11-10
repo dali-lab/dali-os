@@ -5,7 +5,7 @@
 // audience type is one entry here plus (if needed) a SignerCohorts flag — no
 // changes to the gate, roster, notifier, or fill flow.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import { resolveGroupMembers, resolveDynamicQuery } from "~/lib/groups";
 import { currentTerm } from "~/lib/roles";

@@ -35,6 +35,8 @@ struct PassScanPanel: View {
     @Environment(DisplayStore.self) private var store
     @State private var phase: Phase = .ready
     @State private var lastCode: String?
+    /// Nil until the camera permission is settled.
+    @State private var cameraReady: Bool?
     #if DEBUG
     @State private var debugToken = ""
     #endif
@@ -44,15 +46,15 @@ struct PassScanPanel: View {
     var body: some View {
         ZStack {
             Brand.coolBlack
-            if QRScannerView.isCameraAvailable {
+            if cameraReady == true {
                 QRScannerView { code in handle(code) }
                 ScanFrame(scanning: phase == .ready)
-            } else {
+            } else if cameraReady == false {
                 noCamera
             }
 
             #if DEBUG
-            if phase == .ready, store.isDemo || !QRScannerView.isCameraAvailable {
+            if phase == .ready, store.isDemo || cameraReady == false {
                 simulateButtons
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: simulateAtBottom ? .bottomTrailing : .topTrailing)
                     .padding(simulateAtBottom ? EdgeInsets(top: 0, leading: 0, bottom: 96, trailing: 24) : EdgeInsets(top: 12, leading: 0, bottom: 0, trailing: 12))
@@ -70,6 +72,7 @@ struct PassScanPanel: View {
         }
         .clipShape(.rect(cornerRadius: rounded ? Brand.cardRadius : 0))
         .animation(.easeOut(duration: 0.2), value: phase)
+        .task { cameraReady = await QRScannerView.requestCamera() }
     }
 
     private var promptPill: some View {
@@ -148,7 +151,7 @@ struct PassScanPanel: View {
             Text("Camera unavailable")
                 .font(Brand.body(19, .semibold))
                 .foregroundStyle(.white)
-            Text("Allow camera access for this display to scan DALI passes.")
+            Text("Turn on Camera for DALI OS in Settings ▸ Privacy & Security to scan DALI passes.")
                 .font(Brand.body(15))
                 .foregroundStyle(Brand.mediumGray)
                 .multilineTextAlignment(.center)

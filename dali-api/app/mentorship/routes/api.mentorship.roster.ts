@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mentorship.roster";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors } from "~/lib/cors";

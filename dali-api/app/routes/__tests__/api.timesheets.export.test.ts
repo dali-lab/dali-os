@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     timeEntry: { findMany: vi.fn() },
     userAvailabilitySettings: { findUnique: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/lib/cors", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getRoleLabel, getUserRoleInstances } from "~/lib/roles";
 import { loader } from "~/routes/api.timesheets.export";
 
@@ -102,6 +102,17 @@ describe("GET /api/timesheets/export", () => {
       hours: 2,
       description: "Work",
     });
+  });
+
+  it("places a date-only entry at 9:00 on the day clocks fall back", async () => {
+    vi.setSystemTime(new Date("2026-11-03T16:00:00Z"));
+    findEntries.mockResolvedValue([
+      { ...entry("2026-11-01T00:00:00Z", 2), startTime: null, endTime: null },
+    ]);
+
+    const { body } = await get();
+
+    expect(body.entries[0]).toMatchObject({ date: "2026-11-01", start: "09:00", end: "11:00" });
   });
 
   it("files a late-evening entry under its local day's period", async () => {

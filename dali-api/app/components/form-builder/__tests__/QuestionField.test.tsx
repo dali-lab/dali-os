@@ -234,3 +234,73 @@ describe("FormQuestionField — onChange is wired (and the rendered input would 
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+describe("FormQuestionField — long option lists get search", () => {
+  const names = (n: number) => Array.from({ length: n }, (_, i) => `Choice ${i}`);
+
+  it("keeps the plain dropdown for a select with up to 8 options", () => {
+    const q: Question = { key: "c", type: "select", required: false, data: { label: "C", options: names(8) } };
+    const html = renderField({ question: q, value: "", onChange: () => {} });
+    expect(html).toMatch(/<button[^>]*aria-haspopup="listbox"/);
+    expect(html).not.toMatch(/<input[^>]*role="combobox"/);
+  });
+
+  it("renders a searchable dropdown for a select with more than 8 options", () => {
+    const q: Question = { key: "c", type: "select", required: false, data: { label: "C", options: names(9) } };
+    const html = renderField({ question: q, value: "Choice 4", onChange: () => {} });
+    expect(html).toMatch(/<input[^>]*role="combobox"/);
+    expect(html).toContain('value="Choice 4"');
+  });
+
+  it("renders a searchable dropdown for a long reference list, showing the label not the id", () => {
+    const q: Question = {
+      key: "proj",
+      type: "reference",
+      required: false,
+      data: {
+        label: "Project",
+        referenceSource: "domains:active",
+        referenceOptions: Array.from({ length: 9 }, (_, i) => ({ value: `id${i}`, label: `Domain ${i}` })),
+      },
+    };
+    const html = renderField({ question: q, value: "id2", onChange: () => {} });
+    expect(html).toMatch(/<input[^>]*role="combobox"/);
+    expect(html).toContain('value="Domain 2"');
+  });
+
+  it("disables the searchable dropdown when disabled", () => {
+    const q: Question = { key: "c", type: "select", required: false, data: { label: "C", options: names(9) } };
+    const html = renderField({ question: q, value: "", onChange: () => {}, disabled: true });
+    expect(html).toMatch(/<input[^>]*role="combobox"[^>]*disabled=""/);
+  });
+
+  it("keeps checkboxes for a checkbox question with up to 12 options", () => {
+    const q: Question = { key: "c", type: "checkbox", required: false, data: { label: "C", options: names(12) } };
+    const html = renderField({ question: q, value: "", onChange: () => {} });
+    expect(html.match(/type="checkbox"/g)).toHaveLength(12);
+    expect(html).not.toContain("aria-haspopup");
+  });
+
+  it("renders a multi-pick dropdown with chips for a checkbox question with more than 12 options", () => {
+    const q: Question = { key: "c", type: "checkbox", required: false, data: { label: "C", options: names(13) } };
+    const html = renderField({ question: q, value: JSON.stringify(["Choice 1", "Choice 7"]), onChange: () => {} });
+    expect(html).not.toContain('type="checkbox"');
+    expect(html).toMatch(/<button[^>]*aria-haspopup="listbox"/);
+    expect(html).toContain("2 selected");
+    expect(html).toContain('aria-label="Remove Choice 1"');
+    expect(html).toContain('aria-label="Remove Choice 7"');
+  });
+
+  it("still offers Other below a long checkbox list", () => {
+    const q: Question = {
+      key: "c",
+      type: "checkbox",
+      required: false,
+      data: { label: "C", options: names(13), allowOther: true },
+    };
+    const html = renderField({ question: q, value: JSON.stringify(["Choice 1", "my own"]), onChange: () => {} });
+    expect(html).toContain("Other");
+    expect(html).toContain('value="my own"');
+    expect(html).toContain("1 selected");
+  });
+});

@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // The token functions only read process.env at call time, so setting the secret
 // per-test is enough. prisma is mocked away since these tests exercise the pure
 // sign/verify crypto, not ensure/rotate.
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 import {
   signWalletToken,

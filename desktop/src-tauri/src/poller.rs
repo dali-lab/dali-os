@@ -30,8 +30,8 @@ use crate::{
     config, frontmost, keychain,
     notify::{self, Banner, RecordPromptPayload},
     state::{
-        AgendaNext, AppState, AuthState, PendingRecordPrompt, RecentNotif, TaskItem, CONNECTION_LIVE,
-        CONNECTION_OFFLINE, CONNECTION_POLLING,
+        AgendaNext, AgendaUpcoming, AppState, AuthState, PendingRecordPrompt, RecentNotif,
+        CONNECTION_LIVE, CONNECTION_OFFLINE, CONNECTION_POLLING,
     },
     tray, tray_model, window,
 };
@@ -59,21 +59,6 @@ struct NotifResp {
     // Absent on older servers → nothing extra to retire.
     #[serde(rename = "retiredIds", default)]
     retired_ids: Vec<String>,
-    // The member's open to-dos (forms to fill, agreements to sign, …),
-    // surfaced in the tray panel's "To do" section.
-    #[serde(rename = "taskCount", default)]
-    task_count: i64,
-    #[serde(default)]
-    tasks: Vec<TaskItemResp>,
-}
-
-#[derive(Deserialize)]
-struct TaskItemResp {
-    id: String,
-    #[serde(default)]
-    title: String,
-    #[serde(default)]
-    link: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -174,7 +159,7 @@ pub fn spawn(app: AppHandle) {
     });
 }
 
-/// Keeps the "Up next" countdown (minutesUntil) current between agenda
+/// Keeps the panel's countdown (minutesUntil) current between agenda
 /// fetches — a plain tick, no network call of its own.
 async fn agenda_ticker(app: AppHandle) {
     let mut interval = tokio::time::interval(Duration::from_secs(60));
@@ -322,16 +307,6 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
     }
     app.state::<AppState>().unread_count.store(body.unread_count, Ordering::SeqCst);
 
-    let tasks: Vec<TaskItem> = body
-        .tasks
-        .iter()
-        .map(|t| TaskItem { id: t.id.clone(), title: t.title.clone(), link: t.link.clone() })
-        .collect();
-    if let Ok(mut g) = app.state::<AppState>().tasks.lock() {
-        *g = tasks;
-    }
-    app.state::<AppState>().task_count.store(body.task_count, Ordering::SeqCst);
-
     fetch_agenda(app, http, token).await;
 
     window::set_badge(app, body.unread_count);
@@ -343,6 +318,20 @@ async fn sync_once(app: &AppHandle, http: &reqwest::Client, token: &str) -> Sync
 struct AgendaResp {
     #[serde(default)]
     next: Option<AgendaItem>,
+    // Absent on older servers → the panel shows only the next meeting.
+    #[serde(default)]
+    upcoming: Vec<AgendaUpcomingItem>,
+}
+
+#[derive(Deserialize)]
+struct AgendaUpcomingItem {
+    id: String,
+    #[serde(default)]
+    title: String,
+    #[serde(rename = "startsAt")]
+    starts_at: String,
+    #[serde(default)]
+    link: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -364,9 +353,9 @@ struct AgendaItem {
     can_record: bool,
 }
 
-/// GET /api/desktop/agenda for the next upcoming meeting/interview. Errors
-/// (network, non-2xx, bad JSON) are ignored — the previous value is kept
-/// rather than flickering the "Up next" section on a transient failure.
+/// GET /api/desktop/agenda for the next meeting/interview and what follows it.
+/// Errors (network, non-2xx, bad JSON) are ignored — the previous value is
+/// kept rather than flickering the panel on a transient failure.
 async fn fetch_agenda(app: &AppHandle, http: &reqwest::Client, token: &str) {
     let resp = match http.get(config::agenda_url()).bearer_auth(token).send().await {
         Ok(r) if r.status().is_success() => r,
@@ -385,17 +374,22 @@ async fn fetch_agenda(app: &AppHandle, http: &reqwest::Client, token: &str) {
         note_page_id: i.note_page_id,
         can_record: i.can_record,
     });
+    let upcoming: Vec<AgendaUpcoming> = body
+        .upcoming
+        .into_iter()
+        .map(|i| AgendaUpcoming { id: i.id, title: i.title, starts_at: i.starts_at, link: i.link })
+        .collect();
     if let Ok(mut g) = app.state::<AppState>().agenda.lock() {
         *g = next;
     }
+    if let Ok(mut g) = app.state::<AppState>().agenda_upcoming.lock() {
+        *g = upcoming;
+    }
 }
 
-/// Records a successful sync: timestamps it, and restores the connection
-/// indicator to Polling unless the SSE stream already has it at Live.
+/// Records a successful sync: restores the connection indicator to Polling
+/// unless the SSE stream already has it at Live.
 fn mark_synced(app: &AppHandle) {
-    if let Ok(mut g) = app.state::<AppState>().last_sync.lock() {
-        *g = Some(std::time::Instant::now());
-    }
     let state = app.state::<AppState>();
     if state.connection.load(Ordering::SeqCst) != CONNECTION_LIVE {
         state.connection.store(CONNECTION_POLLING, Ordering::SeqCst);

@@ -5,7 +5,7 @@ import { PartnerBackLink } from "~/partners/components/PartnerBackLink";
 import { RequestMeetingModal } from "~/partners/components/RequestMeetingModal";
 import { PartnerMeetingsSection } from "~/partners/components/PartnerMeetingsSection";
 import type { Route } from "./+types/partner.applications.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
 import { termCodeLabel } from "~/lib/display";
@@ -102,7 +102,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     // Interview stage is the real target (scheduling the meeting the stage is
     // named for); New is allowed too so a partner isn't stuck waiting for
     // Core to move the card before they can ask for time.
-    canRequestMeeting: application.stage === "New" || application.stage === "Interview",
+    canRequestMeeting: application.stage === "New" || application.stage === "Interview" || application.stage === "Deciding",
     meetings,
     pendingMeetingRequests: meetingRequests.pending,
     declinedMeetingRequests: meetingRequests.declined,

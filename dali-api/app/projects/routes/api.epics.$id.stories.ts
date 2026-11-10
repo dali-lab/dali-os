@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.epics.$id.stories";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 

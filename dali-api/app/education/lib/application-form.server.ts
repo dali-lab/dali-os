@@ -5,7 +5,7 @@
 // version directly, so submissions can't arrive outside an application.
 
 import { randomUUID } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { createForm } from "~/forms/lib/form-page.server";
 import { ensureOfferingFormsFolder } from "~/lib/pages";
 import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";

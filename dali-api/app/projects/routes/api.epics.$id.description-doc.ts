@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.epics.$id.description-doc";
 import { randomUUID } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { replaceCollabDocContent } from "~/collab/write";

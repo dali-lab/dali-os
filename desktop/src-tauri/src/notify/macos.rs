@@ -149,9 +149,9 @@ pub fn init(app: &AppHandle) {
     let invite = UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
         &NSString::from_str(CATEGORY_INVITE),
         &NSArray::from_retained_slice(&[
-            action(super::ACTION_RSVP_ACCEPT, "Accept"),
-            action(super::ACTION_RSVP_MAYBE, "Maybe"),
-            action(super::ACTION_RSVP_DECLINE, "Decline"),
+            action(super::ACTION_RSVP_ACCEPT, super::LABEL_RSVP_ACCEPT),
+            action(super::ACTION_RSVP_MAYBE, super::LABEL_RSVP_MAYBE),
+            action(super::ACTION_RSVP_DECLINE, super::LABEL_RSVP_DECLINE),
         ]),
         &no_intents,
         UNNotificationCategoryOptions::empty(),

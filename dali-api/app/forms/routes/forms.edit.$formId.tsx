@@ -2,9 +2,9 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
+import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
 import type { DriveNoticeKey } from "~/lib/drive-notices";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   loadFormForEdit,
   runFormsAction,
@@ -12,14 +12,24 @@ import {
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { PageIcon } from "~/components/PageIcon";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
+import { mappedQuestionFeatures } from "~/forms/lib/mapped-questions.server";
+import { formFillers } from "~/forms/lib/prefill.server";
 import {
   loadFormHiringLinks,
   unlinkHiringForm,
 } from "~/hiring/lib/form-links.server";
 import { FormDetail } from "~/forms/components/FormDetail";
+import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
+import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
+import { deleteFormResponse } from "~/forms/lib/form-response.server";
+import {
+  loadTrackerCounts,
+  loadTrackerList,
+  sendFormReminder,
+} from "~/forms/lib/form-tracker.server";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${(data as any)?.form?.name ?? "Form"} · Forms · DALI OS` },
@@ -35,7 +45,7 @@ export const handle = {
   docTitle: "Forms",
   breadcrumbTrail: (data: unknown) => {
     const d = data as {
-      form?: { name: string };
+      form?: { name: string; iconEmoji: string | null };
       driveCrumbs?: { scope: string; folders: { id: string; title: string; iconEmoji: string | null }[] } | null;
     } | undefined;
     if (!d?.form) return null;
@@ -47,7 +57,11 @@ export const handle = {
         to: `/drive?scope=${scope}&folder=${f.id}`,
         icon: <PageIcon iconEmoji={f.iconEmoji} />,
       })),
-      { label: d.form.name },
+      {
+        label: d.form.name,
+        emoji: d.form.iconEmoji,
+        icon: d.form.iconEmoji ? <PageIcon iconEmoji={d.form.iconEmoji} /> : undefined,
+      },
     ];
   },
 };
@@ -79,6 +93,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     return viewerRedirect(auth.user.sub, params.formId, request);
   }
 
+  const url = new URL(request.url);
+  if (url.searchParams.get("tracker") === "list") {
+    return Response.json({ list: await loadTrackerList(params.formId) });
+  }
+
   const form = await loadFormForEdit(params.formId);
   if (!form) return redirect("/drive?type=form");
   // Terms for term-scoped reference questions (e.g. projects active in a
@@ -100,21 +119,37 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   // Results are per version: `?view=results&version=N` loads that version's
   // responses (the latest when N is omitted).
-  const url = new URL(request.url);
   const resultsVersion =
     url.searchParams.get("view") === "results"
       ? (form.versions.find(
           (v) => String(v.versionNumber) === url.searchParams.get("version"),
         ) ?? form.versions[form.versions.length - 1])
       : undefined;
-  const results = resultsVersion
-    ? await loadVersionResponses(form.id, resultsVersion.id)
+  const summaryActive =
+    resultsVersion != null && url.searchParams.get("show") !== "responses";
+  const summary =
+    summaryActive && resultsVersion
+      ? await loadVersionSummary(form.id, resultsVersion, {
+          slot: url.searchParams.get("slot") ?? "",
+        })
+      : null;
+  const results = resultsVersion && !summaryActive
+    ? await loadVersionResponses(form.id, resultsVersion.id, {
+        page: parsePageParam(url.searchParams.get("page")),
+        q: url.searchParams.get("q") ?? "",
+        slot: url.searchParams.get("slot") ?? "",
+      })
     : null;
+  const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;
 
   return {
     results,
+    summary,
+    tracker,
     form,
     terms,
+    mappedQuestions: Object.fromEntries(await mappedQuestionFeatures(params.formId)),
+    fillers: await formFillers(params.formId),
     usages,
     managing,
     hiringLinks,
@@ -137,10 +172,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get("intent") as string | null;
 
   // The gate above is for this route's form; a builder of one form must not
-  // reach another through a crafted id.
-  const targetId = formData.get("id");
-  if (typeof targetId === "string" && targetId && targetId !== params.formId)
+  // reach another through a crafted id. Check EVERY id value — the action
+  // parser keeps the last one, get() would only vet the first.
+  if (
+    formData
+      .getAll("id")
+      .some((v) => typeof v !== "string" || (v !== "" && v !== params.formId))
+  )
     return forbidden(request);
+
+  // Creating lands in a folder, not in this form — gate on the destination
+  // like /api/forms does (the id guard above can't cover an id-less intent).
+  if (intent === "create-form") {
+    const folder = (formData.get("folderPageId") as string | null) || null;
+    if (!(await canCreateForm(auth.user.sub, folder, request)))
+      return forbidden(request);
+  }
 
   if (intent === "unlink-hiring-form") {
     const linkType = formData.get("linkType") as "application" | "challenge";
@@ -148,10 +195,41 @@ export async function action({ request, params }: Route.ActionArgs) {
     const cycleDomainFormId =
       (formData.get("cycleDomainFormId") as string) || undefined;
     const result = await unlinkHiringForm(
-      { linkType, cycleId, cycleDomainFormId },
+      { formId: params.formId, linkType, cycleId, cycleDomainFormId },
       auth.user.sub,
     );
     return Response.json(result, { status: "error" in result ? 400 : 200 });
+  }
+
+  if (intent === "delete-form-response") {
+    const submissionId = formData.get("submissionId");
+    if (typeof submissionId !== "string" || !submissionId) {
+      return Response.json({ error: "Invalid input" }, { status: 400 });
+    }
+    const deleted = await deleteFormResponse({
+      formId: params.formId,
+      submissionId,
+      actorId: auth.user.sub,
+      request,
+    });
+    if ("error" in deleted)
+      return Response.json({ error: deleted.error }, { status: deleted.status });
+    return deleted;
+  }
+
+  if (intent === "send-form-reminder") {
+    const message = formData.get("message");
+    if (typeof message !== "string") {
+      return Response.json({ error: "Invalid input" }, { status: 400 });
+    }
+    const sent = await sendFormReminder({
+      formId: params.formId,
+      actorId: auth.user.sub,
+      message,
+      request,
+    });
+    if ("error" in sent) return Response.json({ error: sent.error }, { status: sent.status });
+    return sent;
   }
 
   const result = await runFormsAction(formData, auth.user.sub);

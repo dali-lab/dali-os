@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.tour.complete";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, unauthorized } from "~/lib/auth";
 
 // Mark the launch tour completed for the current member so it isn't auto-shown

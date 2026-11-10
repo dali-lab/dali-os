@@ -16,8 +16,12 @@ struct QRScannerView: UIViewControllerRepresentable {
         controller.onCode = onCode
     }
 
-    static var isCameraAvailable: Bool {
-        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) != nil
+    /// Whether the scanner can run: there's a front camera and the app may use
+    /// it. Asks the first time. Without access the session runs with no input,
+    /// which looks like a black camera, so callers show why instead.
+    static func requestCamera() async -> Bool {
+        guard AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) != nil else { return false }
+        return await AVCaptureDevice.requestAccess(for: .video)
     }
 }
 

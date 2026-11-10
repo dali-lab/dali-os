@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { Question } from "~/types";
 import { FormFieldList } from "~/forms/components/FormField";
 import { FormPageHeading } from "~/forms/components/FormPager";
-import { paginateQuestions } from "~/lib/form-pages";
+import { visiblePages } from "~/lib/form-logic";
 import { Button } from "~/components/ui/Button";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
@@ -13,7 +13,7 @@ export interface ChallengePreviewProps {
 }
 
 export function ChallengePreview({ description, questions }: ChallengePreviewProps) {
-  const pages = useMemo(() => paginateQuestions(questions), [questions]);
+  const pages = useMemo(() => visiblePages(questions, {}), [questions]);
   const [index, setIndex] = useState(0);
   const active = Math.min(index, pages.length - 1);
   const page = pages[active];

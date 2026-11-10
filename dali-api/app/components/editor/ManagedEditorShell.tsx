@@ -3,7 +3,7 @@
 // version history alongside a live collab working draft.
 //
 // What it provides:
-//   • Header slot: inline rename form + save-state badge (autosaved / saving…)
+//   • Page-bar slots: status, actions, overflow rows and click-to-rename on the title crumb
 //   • Version sidebar slot: scrollable version list with "New version" button
 //   • "Restore this version" affordance: seeds the collab room from a past version
 //   • Unsaved-changes guard: warns before leaving while a "new version" draft
@@ -11,28 +11,15 @@
 //     for the explicit "Save Version" workflow gate)
 //
 // Styled with os tokens (os-accent, muted, card, border).
-//
-// Usage:
-//   <ManagedEditorShell
-//     name={document.name}
-//     onRename={(name) => submit({ intent: "rename", name })}
-//     isDrafting={isCreating}
-//     versionSidebar={<VersionList versions={...} />}
-//     headerActions={<ArchiveButton />}
-//   >
-//     {/* editor body + insert controls */}
-//   </ManagedEditorShell>
 
 import {
   type ReactNode,
   useEffect,
-  useRef,
-  useState,
 } from "react";
-import { buttonClasses } from "~/components/ui/Button";
-import { Form } from "react-router";
-import { Pencil, RotateCcw } from "lucide-react";
+import { useSubmit } from "react-router";
+import { RotateCcw } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
+import { PageBarMenuItems, PageBarPortal, PageBarTitle } from "~/components/shell/page-bar-slot";
 
 // ─── Save-state indicator ────────────────────────────────────────────────────
 
@@ -55,108 +42,28 @@ function SaveStateBadge({ state }: { state: SaveState }) {
   );
 }
 
-// ─── Inline rename ───────────────────────────────────────────────────────────
+// ─── Rename ──────────────────────────────────────────────────────────────────
 
 interface RenameProps {
   name: string;
-  /** Called with the new name; parent is responsible for the Form submit. */
+  /** Called with the new name; parent is responsible for committing it. */
   onRename?: (name: string) => void;
-  /** When provided, wraps the rename form in a React Router <Form> posting this intent. */
+  /** Posts `{ intent, name }` to the route's action when set. */
   renameIntent?: string;
-  /** Error from action data to show under the rename field. */
+  /** Error from action data to show above the body. */
   renameError?: string;
 }
 
-function InlineRename({
-  name: initialName,
-  onRename,
-  renameIntent,
-  renameError,
-}: RenameProps) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(initialName);
-
-  // Keep draft in sync when the parent commits a rename (action redirect).
-  const prevName = useRef(initialName);
-  if (prevName.current !== initialName) {
-    prevName.current = initialName;
-    setDraft(initialName);
-  }
-
-  if (editing) {
-    // Notify the parent of the new name and leave edit mode. In the <Form> path
-    // this MUST run from the form's onSubmit — never from the Save button's
-    // onClick. A discrete-event setState in the button's click handler flushes
-    // synchronously and unmounts the <Form> before the browser dispatches the
-    // submit, silently dropping the POST (this is why in-doc rename "did nothing").
-    const commit = () => {
-      onRename?.(draft);
-      setEditing(false);
-    };
-
-    const fields = (isForm: boolean) => (
-      <>
-        <input
-          type="text"
-          name="name"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          className="px-3 py-2 text-base border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-os-accent/30 min-w-[18rem]"
-          autoFocus
-        />
-        <button
-          type={isForm ? "submit" : "button"}
-          className={buttonClasses("primary", "md")}
-          onClick={isForm ? undefined : commit}
-        >
-          Save
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setDraft(initialName);
-            setEditing(false);
-          }}
-          className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
-        >
-          Cancel
-        </button>
-      </>
-    );
-
-    return (
-      <div className="flex items-center gap-2">
-        {renameIntent ? (
-          <Form
-            method="post"
-            className="flex items-center gap-2"
-            onSubmit={commit}
-          >
-            <input type="hidden" name="intent" value={renameIntent} />
-            {fields(true)}
-          </Form>
-        ) : (
-          <div className="flex items-center gap-2">{fields(false)}</div>
-        )}
-        {renameError && (
-          <p className="mt-1 text-xs text-red-600">{renameError}</p>
-        )}
-      </div>
-    );
-  }
-
+function RenameRegistration({ name, onRename, renameIntent }: RenameProps) {
+  const submit = useSubmit();
   return (
-    <div className="flex items-center gap-3">
-      <h1 className="text-2xl font-bold text-foreground">{initialName}</h1>
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="text-muted-foreground/70 hover:text-foreground"
-        aria-label="Rename"
-      >
-        <Pencil className="w-4 h-4" />
-      </button>
-    </div>
+    <PageBarTitle
+      title={name}
+      onRename={(next) => {
+        onRename?.(next);
+        if (renameIntent) submit({ intent: renameIntent, name: next }, { method: "post" });
+      }}
+    />
   );
 }
 
@@ -227,8 +134,12 @@ export interface ManagedEditorShellProps {
   saveState?: SaveState;
   /** Metadata badges rendered under the title (kind, scope, audience…). */
   metaBadges?: ReactNode;
-  /** Action buttons rendered to the right of the title row (New Version, Archive…). */
+  /** Page-bar status after the title crumb, e.g. "v4 · In force". */
+  status?: ReactNode;
+  /** Page-bar buttons: type buttons first, then the one filled primary. */
   headerActions?: ReactNode;
+  /** Extra rows for the page bar's overflow menu, after Rename. */
+  menuItems?: ReactNode;
   /** Full version sidebar — the caller owns version selection, listing, and restore. */
   versionSidebar?: ReactNode;
   /** Editor body + insert controls — rendered in the main column. */
@@ -244,7 +155,9 @@ export function ManagedEditorShell({
   rename,
   saveState,
   metaBadges,
+  status,
   headerActions,
+  menuItems,
   versionSidebar,
   children,
   isDrafting = false,
@@ -255,29 +168,21 @@ export function ManagedEditorShell({
 
   return (
     <div className="space-y-6">
-      {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
-          {rename ? (
-            <InlineRename {...rename} name={rename.name ?? name} />
-          ) : (
-            <h1 className="text-2xl font-bold text-foreground">{name}</h1>
-          )}
-          {metaBadges && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {metaBadges}
-            </div>
-          )}
-          {saveState && (
-            <div className="mt-0.5">
-              <SaveStateBadge state={saveState} />
-            </div>
-          )}
-        </div>
-        {headerActions && (
-          <div className="flex items-center gap-2 shrink-0">{headerActions}</div>
-        )}
-      </div>
+      {(status || saveState) && (
+        <PageBarPortal slot="status">
+          <span className="flex items-center gap-2 text-[13px] text-os-muted">
+            {status}
+            {saveState && <SaveStateBadge state={saveState} />}
+          </span>
+        </PageBarPortal>
+      )}
+      {headerActions && <PageBarPortal slot="actions">{headerActions}</PageBarPortal>}
+      {rename && <RenameRegistration {...rename} name={rename.name ?? name} />}
+      {menuItems && <PageBarMenuItems>{menuItems}</PageBarMenuItems>}
+      {rename?.renameError && <p className="text-sm text-destructive">{rename.renameError}</p>}
+      {metaBadges && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{metaBadges}</div>
+      )}
 
       {/* ── Body: version sidebar + editor ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[16rem_1fr] gap-6">

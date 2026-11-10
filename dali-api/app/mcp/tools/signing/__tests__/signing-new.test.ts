@@ -66,7 +66,7 @@ vi.mock("~/mcp/registry", async () => {
 
 // ─── Prisma mock ──────────────────────────────────────────────────────────────
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     signingSignature: {
       findUnique: vi.fn(),
@@ -164,7 +164,7 @@ vi.mock("~/lib/signing-fields", () => ({
 // ─── Imports after mocks ─────────────────────────────────────────────────────
 
 import { isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   listMySignedDocuments,
   getBindingStateForUser,
@@ -473,6 +473,72 @@ describe("list_agreements", () => {
       "2026-09-01T08:00:00.000Z",
     );
     expect(result.activity[0].signedAt).toBe("2026-09-05T10:00:00.000Z");
+  });
+
+  describe("bindings and activity bounds", () => {
+    const binding = (bindingId: string, isCurrent: boolean) => ({
+      bindingId,
+      versionNumber: 1,
+      scopeKey: `scope:${bindingId}`,
+      scopeLabel: bindingId,
+      termId: isCurrent ? "t1" : "t0",
+      isCurrent,
+      signedCount: 0,
+      total: 0,
+      outstanding: [],
+      lastRemindedAt: null,
+    });
+    const overview = (activityCount: number) => ({
+      termId: "t1",
+      termCode: "26F",
+      agreements: [
+        {
+          id: "d1",
+          name: "Member Agreement",
+          gateScope: "App",
+          audience: "Members",
+          cadence: "PerTerm",
+          versionCount: 1,
+          publishedCount: 1,
+          draftPending: false,
+          latestPublishedVersionId: "v1",
+          needsActivation: false,
+          pendingRecipients: null,
+          bindings: [binding("now", true), binding("old1", false), binding("old2", false)],
+        },
+      ],
+      activity: Array.from({ length: activityCount }, (_, i) => ({
+        signatureId: `s${i}`,
+        documentId: "d1",
+        documentName: "Member Agreement",
+        signerName: "Ada",
+        signedAt: new Date("2026-09-05T10:00:00.000Z"),
+      })),
+    });
+
+    it("returns only current bindings by default and counts the ones left out", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      vi.mocked(getAgreementsOverview).mockResolvedValue(overview(1) as never);
+      const result = await runListAgreements(ctx());
+      expect(result.agreements[0].bindings.map((b) => b.bindingId)).toEqual(["now"]);
+      expect(result.agreements[0].pastBindingCount).toBe(2);
+    });
+
+    it("returns past bindings too with includePastBindings", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      vi.mocked(getAgreementsOverview).mockResolvedValue(overview(1) as never);
+      const result = await runListAgreements(ctx(), { includePastBindings: true });
+      expect(result.agreements[0].bindings.map((b) => b.bindingId)).toEqual(["now", "old1", "old2"]);
+      expect(result.agreements[0].pastBindingCount).toBe(0);
+    });
+
+    it("flags the activity feed as possibly truncated when it is full", async () => {
+      vi.mocked(isCore).mockResolvedValue(true);
+      vi.mocked(getAgreementsOverview).mockResolvedValue(overview(15) as never);
+      expect((await runListAgreements(ctx())).activityMayBeTruncated).toBe(true);
+      vi.mocked(getAgreementsOverview).mockResolvedValue(overview(14) as never);
+      expect((await runListAgreements(ctx())).activityMayBeTruncated).toBe(false);
+    });
   });
 
   it("calls getAgreementsOverview with no termId when omitted", async () => {

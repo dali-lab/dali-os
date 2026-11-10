@@ -1,7 +1,7 @@
 // MCP `manage_domain_lead` — add or remove a domain lead assignment for the
 // current term. Requires the `mcp:admin` scope; caller must be an admin.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isAdmin, currentTerm } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import {

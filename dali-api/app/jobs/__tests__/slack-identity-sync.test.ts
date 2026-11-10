@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/members/lib/slack-sync.server", () => ({
   syncSlackUserId: vi.fn(),
 }));
@@ -8,7 +8,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn(() => true),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { syncSlackUserId } from "~/members/lib/slack-sync.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { runSlackIdentitySync } from "~/jobs/slack-identity-sync.server";

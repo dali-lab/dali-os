@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   listMyNotifications,
   listRetiredMeetingPingIds,
   liveMeetingPingClauses,
   NOT_CANCELLED_MEETING,
   annotateRecordPromptFeed,
+  STALE_AFTER_EVENTS,
 } from "~/lib/notifications";
 
 const mockPrisma = prisma as unknown as {
@@ -79,6 +80,39 @@ describe("liveMeetingPingClauses", () => {
       ],
     });
   });
+
+  it("hides an assignment unless it is Active on a Scheduled interview", () => {
+    const [, , assignment] = liveMeetingPingClauses(NOW);
+    expect(assignment).toEqual({
+      OR: [
+        { interviewAssignmentId: null },
+        { interviewAssignment: { status: "Active", interview: { status: "Scheduled" } } },
+      ],
+    });
+  });
+});
+
+describe("liveMeetingPingClauses age limits", () => {
+  const hoursAgo = (h: number) => new Date(NOW.getTime() - h * 3_600_000);
+
+  it("hides cancellations after 3 days, proposed times after 7, record prompts after 3 hours", () => {
+    const [, , , aged] = liveMeetingPingClauses(NOW);
+    expect(aged).toEqual({
+      NOT: {
+        OR: [
+          { eventType: "meeting.cancelled", createdAt: { lte: hoursAgo(72) } },
+          { eventType: "meeting.time_proposed", createdAt: { lte: hoursAgo(168) } },
+          { eventType: "meeting.record_prompt", createdAt: { lte: hoursAgo(3) } },
+        ],
+      },
+    });
+  });
+
+  it("only covers event types that set staleAfterMs", () => {
+    expect(STALE_AFTER_EVENTS.map(([t]) => t).sort()).toEqual(
+      ["meeting.cancelled", "meeting.record_prompt", "meeting.time_proposed"],
+    );
+  });
 });
 
 describe("listMyNotifications", () => {
@@ -145,11 +179,15 @@ describe("listRetiredMeetingPingIds", () => {
     expect(await listRetiredMeetingPingIds("user-1")).toEqual(["past-reminder"]);
 
     const [candidates, live] = mockPrisma.notification.findMany.mock.calls;
-    // Candidates: unread, meeting-backed, within the lookback window.
+    // Candidates: unread, meeting- or interview-backed, within the lookback window.
     expect(candidates[0].where).toEqual({
       recipientUserId: "user-1",
       readAt: null,
-      scheduledMeetingId: { not: null },
+      OR: [
+        { scheduledMeetingId: { not: null } },
+        { interviewAssignmentId: { not: null } },
+        { eventType: { in: ["meeting.cancelled", "meeting.time_proposed", "meeting.record_prompt"] } },
+      ],
       createdAt: { gte: new Date(NOW.getTime() - 30 * 24 * 3_600_000) },
     });
     expect(live[0].where).toEqual({

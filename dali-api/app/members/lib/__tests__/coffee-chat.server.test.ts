@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { findUnique: vi.fn() },
     coffeeChatInvite: { findFirst: vi.fn(), create: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn() },
@@ -10,7 +10,7 @@ vi.mock("~/lib/db", () => ({
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { respondToCoffeeChat, sendCoffeeChatInvite } from "../coffee-chat.server";
 

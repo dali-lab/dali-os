@@ -9,7 +9,7 @@ import {
   type DocEditorInstance,
   type DocSyncState,
 } from "~/components/doc";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resourceHubRoomName } from "~/collab/roomName";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { isAiEnabled } from "~/lib/ai.server";

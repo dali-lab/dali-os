@@ -2,7 +2,7 @@
 // see; editors also see drafts. Lesson pages and slide bodies come back as
 // Markdown. Scope: mcp:read.
 
-import { McpForbiddenError, McpNotFoundError } from "../../errors";
+import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../errors";
 import type { McpCtx, McpTool } from "../../registry";
 import { findDomain, listViewerJourneys, loadJourneyById } from "~/journeys/lib/journeys.server";
 import { getJourneyProgress, sameContent } from "~/journeys/lib/journey";
@@ -89,13 +89,14 @@ export const GET_JOURNEY: McpTool = {
   def: {
     name: "get_journey",
     description:
-      "Read one onboarding journey. `version` draft (editors only, the default for them) or published. `detail` outline (module graph, page titles, counts) or full (page bodies and slide bodies as Markdown, lab files and steps, whiteboard and document labs with their checks, quiz questions with answers; full is editors only). Also returns what still blocks publishing.",
+      "Read one onboarding journey. `version` draft (editors only, the default for them) or published. `detail` outline (module graph, page titles, counts) or full (page bodies and slide bodies as Markdown, lab files and steps, whiteboard and document labs with their checks, quiz questions with answers; full is editors only). With full, pass `moduleId` to expand only that module and keep the others as outline, which keeps a large journey readable one module at a time. Also returns what still blocks publishing.",
     inputSchema: inputSchema({
       type: "object" as const,
       properties: {
         journeyId: { type: "string", minLength: 1 },
         version: { type: "string", enum: ["draft", "published"] },
         detail: { type: "string", enum: ["outline", "full"], description: "Default outline." },
+        moduleId: { type: "string", minLength: 1, description: "With detail full: expand only this module. Other modules stay outline." },
       },
       required: ["journeyId"],
       additionalProperties: false,
@@ -113,8 +114,11 @@ export const GET_JOURNEY: McpTool = {
     const shown = (wantDraft ? j.draft : j.published) as JourneyContent | null;
     if (!shown) throw new McpNotFoundError("This journey hasn't been published yet.");
     const full = args.detail === "full";
+    const moduleId = typeof args.moduleId === "string" ? args.moduleId : undefined;
+    if (moduleId && !full) throw new McpInvalidError("moduleId requires detail full.");
+    if (moduleId && !shown.modules.some((m) => m.id === moduleId)) throw new McpNotFoundError("Module not found.");
     const modules = [];
-    for (const m of shown.modules) modules.push(await moduleDetail(m, full));
+    for (const m of shown.modules) modules.push(await moduleDetail(m, full && (!moduleId || m.id === moduleId)));
     return {
       id: j.id,
       domain: j.domain,

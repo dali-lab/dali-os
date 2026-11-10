@@ -30,7 +30,6 @@ import {
 } from "y-prosemirror";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
-import type { EditorState } from "prosemirror-state";
 import { withCollaboration } from "@blocknote/core/yjs";
 import { en } from "@blocknote/core/locales";
 import {
@@ -52,6 +51,7 @@ import { AiBar } from "./ai/AiBar";
 import { AiCardHost } from "./ai/AiCardHost";
 import type { AiBarConfig } from "./ai/AiBar";
 import { DocCommentsRail } from "./comments/DocCommentsRail";
+import { DaliThread } from "./comments/DaliThread";
 import { CommentComposer } from "./comments/CommentComposer";
 import { CommentEditorProvider, commentEditorSchema } from "./comments/CommentEditor";
 import { BlockNoteView } from "@blocknote/shadcn";
@@ -65,11 +65,18 @@ import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
-import { enhancePasteHandler } from "./enhance-render";
+import { docPasteHandler } from "./paste-embed";
+import { PasteAsMenu } from "./PasteAsMenu";
+import { keepCollabUndoAlive } from "./collab-undo";
+import { createAgentTouchPlugin } from "./agent-touch";
+import { resolveFragment, undoOptions } from "./collab-binding";
+import { createSelectAllPlugin } from "./select-all";
+import { createTableDragSelectPlugin } from "./table-drag-select";
 import { buildSchema, type DocEditorInstance, type DocPartialBlock } from "./schema/build";
-import { BLOCKNOTE_FRAGMENT } from "./schema/configs";
 import { PageMentionTitleProvider, useMentionMenuItems } from "./schema/mention";
 import { getFilteredDocSlashMenuItems } from "./schema/slash-menu";
+import { TaskComposer } from "./task/TaskComposer";
+import { DocProjectProvider } from "./task/task-block-context";
 import { DEFAULT_SIGNING_CTX, SigningContext } from "./signing-context";
 import { usePresence, useRegisterCollabEditor } from "../collab/PresenceProvider";
 import type { DocCollabConfig, DocCommentsConfig, DocEditorProps } from "./types";
@@ -80,6 +87,7 @@ import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
 import { readEmojiSuggestionsPreference } from "~/lib/emoji-suggestions";
+import { isCommandKShortcut, paintFormatShortcut } from "~/lib/shortcuts";
 import { modalCardClass } from "~/components/os-chrome";
 
 export default function DocEditorImpl(props: DocEditorProps) {
@@ -99,7 +107,7 @@ function LocalDoc(props: ResolvedProps) {
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
   const toast = useToast();
-  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
+  const uploadFile = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   // Normalized once per (schema, content) pair; the editor is recreated on
   // schema/dictionary change anyway, so this rides the same memo.
   // Read-only embeds also drop the trailing blank line an author left; there
@@ -117,7 +125,7 @@ function LocalDoc(props: ResolvedProps) {
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
-      pasteHandler: enhancePasteHandler,
+      pasteHandler: docPasteHandler as never,
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
     },
     [schema, dictionary],
@@ -155,8 +163,15 @@ function CollabDocInner(
   const schema = useDocSchema(props.features);
   const dictionary = useDocDictionary(props.placeholder);
   const toast = useToast();
-  const uploadFile = useMemo(() => withUploadErrorToast(uploadEditorImage, toast.error), [toast]);
+  const uploadFile = useMemo(() => withUploadErrorToast((file) => uploadEditorImage(file, toast.info), toast.error), [toast]);
   const threadStore = useThreadStore(props.comments);
+  const hostUndo = undoOptions(props);
+  const extensions = [
+    ...(threadStore
+      ? [CommentsExtension({ schema: commentEditorSchema, threadStore, resolveUsers: makeResolveDocUsers(threadStore) })]
+      : []),
+    ...(hostUndo.extensions as never[]),
+  ];
 
   const editor = useCreateBlockNote(
     // withCollaboration injects the CollaborationExtension (ySync + yCursor +
@@ -168,25 +183,16 @@ function CollabDocInner(
       dictionary,
       uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
-      pasteHandler: enhancePasteHandler,
+      pasteHandler: docPasteHandler as never,
       // The edge-drop cursor is what turns "drag a block to the side of
       // another" into a column split; without it columns are slash-menu only.
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
       // Wire CommentsExtension when a threadStore is available. Extensions are
       // passed through withCollaboration unchanged (see dist/yjs.js).
-      ...(threadStore
-        ? {
-            extensions: [
-              CommentsExtension({
-                schema: commentEditorSchema,
-                threadStore,
-                resolveUsers: makeResolveDocUsers(threadStore),
-              }),
-            ],
-          }
-        : {}),
+      ...(extensions.length > 0 ? { extensions } : {}),
+      ...(hostUndo.disableExtensions ? { disableExtensions: hostUndo.disableExtensions } : {}),
       collaboration: {
-        fragment: entry.ydoc.getXmlFragment(BLOCKNOTE_FRAGMENT),
+        fragment: resolveFragment(entry.ydoc, props),
         // Awareness color must be 6-digit hex (y-prosemirror appends a hex
         // alpha suffix); extra keys like userId ride along for presence.
         user: {
@@ -206,25 +212,20 @@ function CollabDocInner(
     // threadStore is stable per (pageId, userId) via useThreadStore; adding it
     // here is safe and ensures the editor is re-created if comments config
     // changes (e.g. canEdit toggle).
-    [schema, dictionary, entry, threadStore],
+    [schema, dictionary, entry, threadStore, props.fragment, props.undoExtension],
   );
 
-  // FIX (undo no-ops in collab): y-prosemirror's yUndoPlugin creates its
-  // UndoManager in plugin-STATE init but destroys it from the plugin VIEW's
-  // destroy(). BlockNote 0.52 / tiptap v3 keep the EditorState — plugin state
-  // included — across editor.unmount()/mount() (StrictMode's simulated
-  // remount, BlockNoteView's editable-change remount), so the first unmount
-  // kills the manager and every later mount reuses the dead instance: undo
-  // permanently no-ops. Neuter destroy() so the manager's lifetime matches the
-  // EditorState that owns it; its real end of life is releaseCollabDoc's
-  // ydoc.destroy(). Found by duck-typing over the live plugin list rather than
-  // yUndoPluginKey.getState() — the prod bundle can inline y-prosemirror's key
-  // module twice, making key-based lookup silently return null (the same trap
-  // the deleted TipTap CollaborativeEditor hit).
+  useMemo(() => (props.undoExtension ? undefined : keepCollabUndoAlive(editor)), [editor, props.undoExtension]);
+
   useEffect(() => {
-    const um = findCollabUndoManager(editor.prosemirrorState);
-    if (um) um.destroy = () => {};
-  }, [editor]);
+    const awareness = entry.provider.awareness;
+    if (!awareness) return;
+    const key = "dali-agent-touch-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createAgentTouchPlugin(awareness)] });
+    return () => {
+      editor.unregisterExtension(key);
+    };
+  }, [editor, entry]);
 
   // One-shot seed: if the caller supplied seedContent (e.g. the latest agreement
   // version body) and the Y.Doc is empty after the server syncs, write the seed
@@ -239,7 +240,7 @@ function CollabDocInner(
 
     const tryApply = () => {
       if (seedApplied.current) return;
-      const fragment = entry.ydoc.getXmlFragment(BLOCKNOTE_FRAGMENT);
+      const fragment = resolveFragment(entry.ydoc, props);
       // Only seed when the room is truly empty — either new (no server row) or
       // the server returned an empty document.
       if (fragment.length > 0) {
@@ -270,16 +271,6 @@ function CollabDocInner(
   return <DocView {...props} editor={editor} collabEntry={entry} />;
 }
 
-function findCollabUndoManager(state: EditorState): Y.UndoManager | null {
-  for (const plugin of state.plugins) {
-    const pluginState = plugin.getState(state) as { undoManager?: Y.UndoManager } | undefined;
-    if (pluginState && typeof pluginState.undoManager?.undo === "function") {
-      return pluginState.undoManager;
-    }
-  }
-  return null;
-}
-
 // ─── Comments helpers ────────────────────────────────────────────────────────
 
 /**
@@ -296,9 +287,10 @@ function useThreadStore(comments: DocCommentsConfig | undefined): DaliThreadStor
       currentUserId: comments.currentUserId,
       canComment: comments.canComment,
       canModerate: comments.canModerate,
+      scope: comments.scope,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate]);
+  }, [comments?.pageId, comments?.currentUserId, comments?.canComment, comments?.canModerate, comments?.scope?.slideId, comments?.scope?.elementId]);
 }
 
 /**
@@ -537,8 +529,7 @@ function DocView(
     if (!pmView) return;
     const dom = pmView.dom as HTMLElement;
     const onKeyDown = (e: KeyboardEvent) => {
-      const isK = e.key === "k" || e.key === "K";
-      if (!isK || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (!isCommandKShortcut(e)) return;
       if (pmView.state.selection.empty) return; // nothing selected to link
       e.preventDefault();
       e.stopPropagation();
@@ -562,9 +553,9 @@ function DocView(
     return () => dom.removeEventListener("keydown", onKeyDown);
   }, [editor, editable, dialog]);
 
-  // Cmd/Ctrl+Shift+C / +V — paint format, the Google Docs pair. C snapshots the
-  // styles at the cursor, V replaces the selection's styles with that snapshot.
-  // Like Cmd+K above, BlockNote ships no binding for either.
+  // Cmd/Ctrl+Shift+C / +V — paint format. C snapshots the styles at the cursor,
+  // V replaces the selection's styles with that snapshot. Like Cmd+K above,
+  // BlockNote ships no binding for either.
   //
   // V CLEARS BEFORE IT APPLIES: paint format replaces formatting rather than
   // adding to it, and removeStyles only reads the KEYS of what it's handed
@@ -573,9 +564,8 @@ function DocView(
   // carry. Passing the snapshot alone would leave the target's existing bold
   // in place.
   //
-  // Both are gated on a non-empty selection, matching Cmd+K. Note Chrome binds
-  // Cmd+Shift+C to the DevTools inspector — preventDefault on the editor DOM is
-  // what keeps it from opening while the caret is in a document.
+  // Chrome binds Cmd+Shift+C to the DevTools inspector — preventDefault on the
+  // editor DOM is what keeps it from opening while the caret is in a document.
   const paintedStylesRef = useRef<Record<string, unknown> | null>(null);
   useEffect(() => {
     if (!editable) return;
@@ -583,18 +573,19 @@ function DocView(
     if (!pmView) return;
     const dom = pmView.dom as HTMLElement;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return;
-      const key = e.key.toLowerCase();
-      if (key !== "c" && key !== "v") return;
-      if (pmView.state.selection.empty) return;
+      const painted = paintedStylesRef.current;
+      const intent = paintFormatShortcut(e, {
+        selection: !pmView.state.selection.empty,
+        copied: painted !== null,
+      });
+      if (!intent) return;
       e.preventDefault();
       e.stopPropagation();
-      if (key === "c") {
+      if (intent === "copy" || !painted) {
         paintedStylesRef.current = { ...editor.getActiveStyles() };
         return;
       }
-      const painted = paintedStylesRef.current;
-      if (!painted) return; // nothing copied yet — leave the selection alone
+      paintedStylesRef.current = null;
       const clearAll = Object.fromEntries(
         Object.keys(editor.schema.styleSchema).map((styleKey) => [styleKey, true]),
       );
@@ -624,6 +615,14 @@ function DocView(
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, props.findOpen]);
+
+  useEffect(() => {
+    const key = "dali-selection-ext";
+    editor.registerExtension({ key, prosemirrorPlugins: [createTableDragSelectPlugin(), createSelectAllPlugin()] });
+    return () => {
+      editor.unregisterExtension(key);
+    };
+  }, [editor]);
 
   const hasComments = Boolean(props.comments);
   const panelOpen = props.comments?.panelOpen ?? false;
@@ -682,13 +681,18 @@ function DocView(
   const [emojiSuggestions] = useState(readEmojiSuggestionsPreference);
   const getMentionItems = useMentionMenuItems(editor);
 
+  const [taskAnchorId, setTaskAnchorId] = useState<string | null>(null);
+  const openTaskComposer = useCallback(() => setTaskAnchorId(editor.getTextCursorPosition().block.id), [editor]);
+  const taskBlock = props.taskBlock;
+
   const menus: ReactNode = (
     <>
+      <PasteAsMenu editor={editor} />
       {/* Custom "/" menu: AI items first (when enabled), then the standard set. */}
       <SuggestionMenuController
         triggerCharacter="/"
         getItems={(query) =>
-          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [])
+          getFilteredDocSlashMenuItems(editor, features, query, aiItems ?? [], taskBlock ? openTaskComposer : undefined)
         }
       />
       {features.mentions && (
@@ -731,6 +735,7 @@ function DocView(
             the reply box receives focus when the popover opens. */}
         {hasComments && !railVisible && (
           <FloatingThreadController
+            floatingThread={DaliThread}
             portalElement={floatingRootRef.current ?? undefined}
             floatingUIOptions={{ focusManagerProps: { disabled: false } }}
           />
@@ -755,6 +760,15 @@ function DocView(
           )
         }
       </CommentEditorProvider>
+      {taskBlock && taskAnchorId && (
+        <TaskComposer
+          key={taskAnchorId}
+          editor={editor}
+          anchorId={taskAnchorId}
+          config={taskBlock}
+          onClose={() => setTaskAnchorId(null)}
+        />
+      )}
       {/* AI inline card — anchored to the trigger block via BlockPopover.
           Rendered inside BlockNoteView children so useBlockNoteEditor is in
           scope (BlockPopover requires the editor context). Only mounts when
@@ -780,6 +794,7 @@ function DocView(
   return (
     <PageMentionTitleProvider>
     <SigningContext.Provider value={props.signing ?? DEFAULT_SIGNING_CTX}>
+    <DocProjectProvider value={props.docProjectId}>
       <div
         ref={viewRef}
         className={[
@@ -848,6 +863,7 @@ function DocView(
           />
         </Modal>
       )}
+    </DocProjectProvider>
     </SigningContext.Provider>
     </PageMentionTitleProvider>
   );
@@ -898,7 +914,7 @@ function useDocSchema(features: Features) {
     () => buildSchema(features),
     // Individual flags, not the object: hosts typically pass a fresh literal
     // every render and a schema rebuild recreates the whole editor.
-    [features.mentions, features.images, features.files, features.richBlocks, features.columns, features.components, features.pageBreak, Boolean(features.signing)],
+    [features.mentions, features.images, features.files, features.richBlocks, features.tables, features.columns, features.components, features.pageBreak, Boolean(features.signing)],
   );
 }
 

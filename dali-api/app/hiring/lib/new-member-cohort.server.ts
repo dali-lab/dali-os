@@ -8,7 +8,7 @@
 // mid-term. Callers intersect this with the active-member set (see
 // app/signing/lib/audiences.ts).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { CycleApplicants } from "~/generated/prisma/enums";
 import { getActiveCycles } from "./cycles";
 

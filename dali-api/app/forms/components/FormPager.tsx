@@ -20,6 +20,8 @@ export type FormPagerState = {
   // Returns the first missing question (for an inline error) or null.
   goNext: (getValue: (q: Question) => string | undefined) => Question | null;
   reset: () => void;
+  // Jump to a page index, clamped to the pages that exist.
+  goTo: (index: number) => void;
 };
 
 export function useFormPager(
@@ -47,6 +49,7 @@ export function useFormPager(
       return null;
     },
     reset: () => setIndex(0),
+    goTo: (i) => setIndex(Math.max(0, Math.min(pages.length - 1, Math.floor(i) || 0))),
   };
 }
 

@@ -1,48 +1,84 @@
-// Core milestones: the vocabulary shared by the board (/core/milestones) and
-// the hub banner. Client-safe.
+import { termWeekNumber } from "~/lib/terms.shared";
 
-/** Academic-year order, which is the order the tabs read in. */
-export const MILESTONE_SEASONS = ["F", "W", "S", "X"] as const;
-export type MilestoneSeason = (typeof MILESTONE_SEASONS)[number];
+export const MILESTONE_WEEKS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
+export const MILESTONE_KINDS = ["Milestone", "Plan"] as const;
+export type MilestoneKind = (typeof MILESTONE_KINDS)[number];
 
-/** Week 0 is the lead-up before the term starts; 1-10 are the term itself. */
-export const LAST_MILESTONE_WEEK = 10;
-export const MILESTONE_WEEKS = Array.from({ length: LAST_MILESTONE_WEEK + 1 }, (_, i) => i);
+const DAY_MS = 86_400_000;
+const WEEK_MS = 7 * DAY_MS;
 
-/** Filter value standing for milestones with no domain. */
-export const ALL_LAB = "all-lab";
-
-export function weekLabel(week: number): string {
-  return week === 0 ? "Before term" : `Week ${week}`;
+export function isValidWeek(week: unknown): week is number {
+  return typeof week === "number" && Number.isInteger(week) && week >= 0 && week <= 10;
 }
 
-const WEEK_MS = 7 * 86_400_000;
-
-/** Which board column `now` falls in for a term starting on `startDate`. */
-export function termWeek(startDate: Date, now: Date): number {
-  const elapsed = now.getTime() - startDate.getTime();
-  if (elapsed < 0) return 0;
-  return Math.min(LAST_MILESTONE_WEEK, Math.floor(elapsed / WEEK_MS) + 1);
+export function weekStartMs(termStartMs: number, week: number): number {
+  return termStartMs + (week - 1) * WEEK_MS;
 }
 
-/**
- * A column's ids after `id` is dropped on `overId` (null for the column itself,
- * which appends). Within a column, dragging down lands after the card under
- * the pointer and dragging up lands before it, which is how the cards have
- * already shuffled on screen by the time the drop happens.
- */
-export function dropOrder(column: string[], id: string, overId: string | null): string[] {
-  const rest = column.filter((x) => x !== id);
-  const overIndex = overId === null ? -1 : column.indexOf(overId);
-  if (overIndex === -1) return [...rest, id];
-  rest.splice(column.includes(id) ? overIndex : rest.indexOf(overId!), 0, id);
-  return rest;
+export function weekRange(termStartMs: number, week: number): { startMs: number; endMs: number } {
+  const startMs = weekStartMs(termStartMs, week);
+  return { startMs, endMs: startMs + 6 * DAY_MS };
 }
 
-/** An empty filter shows everything; otherwise a milestone shows when it
- *  carries any picked domain, or is lab-wide and ALL_LAB is picked. */
-export function matchesDomainFilter(domainIds: string[], filter: string[]): boolean {
-  if (filter.length === 0) return true;
-  if (domainIds.length === 0) return filter.includes(ALL_LAB);
-  return domainIds.some((id) => filter.includes(id));
+export function currentTermWeek(todayUtcMs: number, termStartMs: number): number | null {
+  const week = termWeekNumber(todayUtcMs, termStartMs);
+  if (week === 0 || (week >= 1 && week <= 10)) return week;
+  return null;
+}
+
+export type SeasonTerm = { id: string; year: number; season: string };
+
+export function sameSeasonLastYear<T extends SeasonTerm>(term: SeasonTerm, terms: T[]): T | null {
+  return terms.find((t) => t.season === term.season && t.year === term.year - 1) ?? null;
+}
+
+export type PositionedItem = { id: string };
+
+export function renumber<T extends PositionedItem>(items: T[]): { id: string; position: number }[] {
+  return items.map((item, position) => ({ id: item.id, position }));
+}
+
+export function reorder<T extends PositionedItem>(items: T[], id: string, toIndex: number): T[] {
+  const from = items.findIndex((i) => i.id === id);
+  if (from === -1) return items;
+  const next = items.slice();
+  const [moved] = next.splice(from, 1);
+  const at = Math.max(0, Math.min(toIndex, next.length));
+  next.splice(at, 0, moved);
+  return next;
+}
+
+export function termLabel(term: { season: string; year: number }): string {
+  const names: Record<string, string> = { W: "Winter", S: "Spring", X: "Summer", F: "Fall" };
+  return `${names[term.season] ?? term.season} ${String(term.year % 100).padStart(2, "0")}`;
+}
+
+export function nextTermLabel(term: { season: string; year: number }): string {
+  const order = ["W", "S", "X", "F"];
+  const i = order.indexOf(term.season);
+  if (i === order.length - 1) return termLabel({ season: "W", year: term.year + 1 });
+  return termLabel({ season: order[i + 1], year: term.year });
+}
+
+export type MilestoneItem = {
+  id: string;
+  week: number;
+  kind: MilestoneKind;
+  title: string;
+  notes: string | null;
+  position: number;
+  owners: { id: string; name: string }[];
+};
+
+export function itemsFor(items: MilestoneItem[], week: number, kind: MilestoneKind): MilestoneItem[] {
+  return items.filter((i) => i.week === week && i.kind === kind);
+}
+
+export function weekSummary(items: MilestoneItem[], week: number, maxTitles = 2) {
+  const milestones = itemsFor(items, week, "Milestone");
+  return {
+    titles: milestones.slice(0, maxTitles).map((m) => m.title),
+    more: Math.max(0, milestones.length - maxTitles),
+    planned: itemsFor(items, week, "Plan").length,
+  };
 }

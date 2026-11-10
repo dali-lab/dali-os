@@ -2,7 +2,7 @@ import { useLoaderData, Link } from "react-router";
 import type { Route } from "./+types/portal.education.$offeringId.page.$pageId";
 import { requireEnrollment } from "~/education/lib/access.server";
 import { readMaterialPage } from "~/education/lib/lms.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { MaterialPageBody } from "~/education/components/MaterialPageBody";

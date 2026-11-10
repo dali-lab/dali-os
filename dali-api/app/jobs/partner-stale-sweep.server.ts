@@ -5,7 +5,7 @@
 //
 // Idempotent via notify()'s dedupKey — no claim/send ledger needed.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { OPEN_STAGES, isStale } from "~/partners/lib/partner-application";
 import type { JobContext, JobResult } from "~/jobs/registry";

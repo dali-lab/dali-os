@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireMemberSession: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
@@ -11,7 +11,7 @@ vi.mock("~/lib/pageAccess.server", async (orig) => ({ ...(await orig<typeof impo
 vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
 vi.mock("~/lib/move-constraint.server", () => ({ moveConstraintFor: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";

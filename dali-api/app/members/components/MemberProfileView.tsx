@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { SIDE_PARAM } from "~/lib/side-panel";
+import { useOpenBeside } from "~/components/side-panel/use-side-panel";
 import {
   Form,
   Link,
   useFetcher,
   useLocation,
-  useNavigation,
   useRevalidator,
   useSearchParams,
   useSubmit,
@@ -16,7 +15,6 @@ import {
   Briefcase,
   Cake,
   Clock,
-  Coffee,
   FileText,
   Fingerprint,
   Github,
@@ -56,6 +54,7 @@ import {
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { PersonalNotesRail } from "./PersonalNotesRail";
+import { ProfileRequestButtons } from "./ProfileRequestButtons";
 import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
@@ -105,15 +104,6 @@ function isTab(x: string | null): x is Tab {
   return (TABS as readonly string[]).includes(x ?? "");
 }
 
-function openNoteLegacy(pageId: string, label: string) {
-  const url = `/documents/${pageId}`;
-  if (window.self !== window.top) {
-    window.parent.postMessage({ type: "dali:openTabToSide", url, label }, window.location.origin);
-  } else {
-    window.location.assign(url);
-  }
-}
-
 export function MemberProfileView({
   data,
   actionError,
@@ -131,6 +121,7 @@ export function MemberProfileView({
     showReviewsRow,
     isSelf,
     resume,
+    coffeeChatSent,
     resumeReviewSent,
     openTo,
     canEdit,
@@ -155,32 +146,6 @@ export function MemberProfileView({
     canSeeGroups,
   } = data;
 
-  // /members/:id renders inside a TabWorkspace iframe; a successful save only
-  // revalidates the iframe's loaders, not the parent shell. Tell the parent
-  // so it can refresh the sidebar avatar. On /profile this is a no-op since
-  // window.parent === window.
-  const navigation = useNavigation();
-  const wasSubmitting = useRef(false);
-  useEffect(() => {
-    if (navigation.state === "submitting") {
-      wasSubmitting.current = true;
-      return;
-    }
-    if (navigation.state === "idle" && wasSubmitting.current) {
-      wasSubmitting.current = false;
-      if (
-        !actionError &&
-        typeof window !== "undefined" &&
-        window.parent !== window
-      ) {
-        window.parent.postMessage(
-          { type: "dali:profileUpdated" },
-          window.location.origin,
-        );
-      }
-    }
-  }, [navigation.state, actionError]);
-
   const hasEducation =
     !!data.education &&
     (data.education.attended.length > 0 ||
@@ -199,7 +164,6 @@ export function MemberProfileView({
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
-        prev.delete(SIDE_PARAM);
         return prev;
       },
       { replace: true, preventScrollReset: true },
@@ -216,8 +180,9 @@ export function MemberProfileView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.hash]);
 
+  const openBeside = useOpenBeside();
   function openNote(note: { id: string; title: string }) {
-    openNoteLegacy(note.id, note.title);
+    openBeside({ href: `/documents/${note.id}` });
   }
 
   // Live "last active" for this member's header (respects their hide-activity
@@ -251,6 +216,7 @@ export function MemberProfileView({
         photoUrlResolved={photoUrlResolved}
         canEdit={canEdit}
         isSelf={isSelf}
+        coffeeChatSent={coffeeChatSent}
         resumeReviewSent={resumeReviewSent}
         openTo={openTo}
         isStaff={isStaff}
@@ -362,6 +328,7 @@ function MemberHeader({
   photoUrlResolved,
   canEdit,
   isSelf,
+  coffeeChatSent,
   resumeReviewSent,
   openTo,
   isStaff,
@@ -375,6 +342,7 @@ function MemberHeader({
   photoUrlResolved: string | null;
   canEdit: boolean;
   isSelf: boolean;
+  coffeeChatSent: boolean;
   resumeReviewSent: boolean;
   openTo: ProfilePageData["openTo"];
   isStaff: boolean;
@@ -405,11 +373,13 @@ function MemberHeader({
               <span className="text-[13px] text-os-grey">@{member.handle}</span>
             )}
           </div>
-          {!isSelf && openTo.resumeReviews && (
-            <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-              <RequestButton kind="ResumeReview" firstName={member.firstName} sent={resumeReviewSent} />
-            </div>
-          )}
+          <ProfileRequestButtons
+            isSelf={isSelf}
+            openTo={openTo}
+            firstName={member.firstName}
+            coffeeChatSent={coffeeChatSent}
+            resumeReviewSent={resumeReviewSent}
+          />
         </div>
 
         {/* Status / warmth badges + presence */}
@@ -459,72 +429,6 @@ function MemberHeader({
 
       </div>
     </header>
-  );
-}
-
-const REQUEST_BUTTONS = {
-  CoffeeChat: {
-    intent: "coffee-chat",
-    icon: Coffee,
-    label: "Coffee chat",
-    sentLabel: "Coffee chat invite sent",
-    title: (name: string) => `Invite ${name} to a coffee chat?`,
-    description: (name: string) =>
-      `${name} gets an email and a notification that someone wants to grab coffee. They see your name only if they accept.`,
-    confirmLabel: "Send invite",
-  },
-  ResumeReview: {
-    intent: "resume-review",
-    icon: FileText,
-    label: "Resume review",
-    sentLabel: "Resume review requested",
-    title: (name: string) => `Ask ${name} to review your resume?`,
-    description: (name: string) =>
-      `${name} gets an email and a notification that someone wants a resume review. They see your name only if they accept.`,
-    confirmLabel: "Send request",
-  },
-} as const;
-
-// Sends an anonymous request. `sent` comes from the loader, so the button stays
-// in its sent state on every later visit.
-function RequestButton({
-  kind,
-  firstName,
-  sent,
-}: {
-  kind: keyof typeof REQUEST_BUTTONS;
-  firstName: string;
-  sent: boolean;
-}) {
-  const fetcher = useFetcher<{ error?: string } | null>();
-  const { confirm } = useDialog();
-  const busy = fetcher.state !== "idle";
-  const done = sent || busy;
-  const copy = REQUEST_BUTTONS[kind];
-  const Icon = copy.icon;
-
-  async function send() {
-    const ok = await confirm({
-      title: copy.title(firstName),
-      description: copy.description(firstName),
-      confirmLabel: copy.confirmLabel,
-    });
-    if (ok) fetcher.submit({ intent: copy.intent }, { method: "post" });
-  }
-
-  return (
-    <div className="mt-1 flex shrink-0 flex-col items-end gap-1">
-      <button
-        type="button"
-        onClick={() => void send()}
-        disabled={done}
-        className="inline-flex items-center gap-1.5 rounded-full border border-os-container px-3 py-1 text-[12px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground disabled:pointer-events-none disabled:opacity-70"
-      >
-        <Icon className="h-3.5 w-3.5" />
-        {done ? copy.sentLabel : copy.label}
-      </button>
-      {fetcher.data?.error && <p className="text-xs text-destructive">{fetcher.data.error}</p>}
-    </div>
   );
 }
 

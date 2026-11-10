@@ -3,7 +3,7 @@ import type { Route } from "./+types/core.communications.banners.$bannerId";
 import { listAllGroups } from "~/lib/groups";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { fullName } from "~/lib/display";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { coreHandle } from "~/core/coreNav";
 import { requireCommsViewer } from "~/core/lib/communications.server";

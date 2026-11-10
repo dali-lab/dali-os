@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     aiUsage: { groupBy: vi.fn() },
     user: { findMany: vi.fn() },
@@ -8,7 +8,7 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { runListAiUsage, LIST_AI_USAGE_TOOL } from "~/mcp/tools/admin/list-ai-usage";
 import type { McpCtx } from "~/mcp/registry";

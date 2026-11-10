@@ -1,7 +1,7 @@
 import { useLoaderData } from "react-router";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
 import { walletTokensConfigured } from "~/lib/wallet-token";
 import { AttendeeScanner } from "~/components/AttendeeScanner";

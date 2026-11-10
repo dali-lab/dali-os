@@ -21,7 +21,7 @@ async function pick(page: Page, field: string, option: string) {
     .locator('.os-field-group')
     .filter({ has: page.locator('.os-field-label', { hasText: new RegExp(`^${field}`) }) })
     .first();
-  await row.locator('button[aria-haspopup="listbox"]').first().click();
+  await row.locator('button[aria-haspopup]').first().click();
   await page.getByRole('option', { name: option }).first().click();
   if (await page.getByRole('listbox').isVisible()) {
     await row.locator('.os-field-label').click();
@@ -49,7 +49,7 @@ test.describe('Task modal save', () => {
     expect(created.ok()).toBe(true);
     const { id } = (await created.json()) as { id: string };
 
-    await page.goto(`/projects/${PROJECT_ID}?tab=board&embed=1&task=${id}`);
+    await page.goto(`/projects/${PROJECT_ID}?tab=board&task=${id}`);
     await page.waitForLoadState('networkidle');
 
     await page.getByRole('button', { name: 'Edit task' }).click();
@@ -65,7 +65,7 @@ test.describe('Task modal save', () => {
     expect((await saved).ok()).toBe(true);
 
     // Reload: what shows now is what the server kept, not the optimistic card.
-    await page.goto(`/projects/${PROJECT_ID}?tab=board&embed=1`);
+    await page.goto(`/projects/${PROJECT_ID}?tab=board`);
     await page.waitForLoadState('networkidle');
     const card = page
       .locator(COLUMN)

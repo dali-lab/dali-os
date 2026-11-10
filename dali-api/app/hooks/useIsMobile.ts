@@ -28,9 +28,9 @@ export function useMediaQuery(query: string): boolean {
  * (i.e. ≤767px — a phone or narrow tablet).  Stays `false` on the server
  * and on first client render so SSR output matches.
  *
- * Prefer the server-side UA detection in `lib/tabless.ts` for shell-level
- * decisions that must avoid a layout flash; use this hook for in-component
- * behavioural tweaks that only matter post-hydration.
+ * Use this hook for in-component behavioural tweaks that only matter
+ * post-hydration; shell-level decisions that must avoid a layout flash belong
+ * on the server.
  */
 export function useIsMobile(): boolean {
   return useMediaQuery("(max-width: 767px)");

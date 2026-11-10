@@ -1,19 +1,14 @@
-import { useMemo, useState } from "react";
-import { Check, ChevronDown, Search, Tag as TagIcon, X } from "lucide-react";
-import { Popover } from "~/components/ui/floating";
+import { ChevronDown, Tag as TagIcon } from "lucide-react";
+import { MultiSelect, toggledValue } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
 import { hexColor } from "~/lib/drive-tags";
 
 export type FilterTag = { id: string; label: string; color: string | null };
 
-// The Drive tag filter as a compact multi-select dropdown — the same move the
-// type filter made from a chip row to a Select pill, applied to tags. The pill
-// shows how many tags are active; the panel is a checklist that toggles each
-// tag in place (the popover stays open so several can be picked at once). The
-// active tags themselves render as removable chips under the toolbar (owned by
-// the hub), so this control stays one compact pill no matter how many tags the
-// lab has.
+// The active tags render as removable chips under the toolbar (owned by the
+// hub), so this control stays one compact pill no matter how many tags the lab
+// has.
 export function DriveTagFilter({
   tags,
   selectedIds,
@@ -27,27 +22,37 @@ export function DriveTagFilter({
   onClear: () => void;
   os: boolean;
 }) {
+  const values = tags.filter((t) => selectedIds.has(t.id)).map((t) => t.id);
   const count = selectedIds.size;
   const label = count === 0 ? "Tags" : count === 1 ? "1 tag" : `${count} tags`;
 
   return (
-    <Popover
-      align="left"
+    <MultiSelect
+      values={values}
+      onChange={(next) => {
+        if (next.length === 0) return onClear();
+        const changed = toggledValue(values, next);
+        if (changed) onToggle(changed);
+      }}
+      options={tags.map((t) => {
+        const swatch = hexColor(t.color);
+        return {
+          value: t.id,
+          label: t.label,
+          icon: swatch ? (
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: swatch }} />
+          ) : undefined,
+        };
+      })}
+      searchable
+      chips={false}
       ariaLabel="Filter by tag"
-      trigger={(open) => (
-        <button
-          type="button"
-          aria-label="Filter by tag"
-          aria-pressed={count > 0}
-          className={cn(
-            filterPillClass(os),
-            "w-full sm:w-44",
-            count > 0 &&
-              (os
-                ? "border-os-accent text-os-accent"
-                : "border-os-accent text-os-accent"),
-          )}
-        >
+      searchPlaceholder="Filter tags"
+      noMatchesLabel="No tags match."
+      clearLabel="Clear tags"
+      buttonClassName={cn(filterPillClass(os), "w-full sm:w-44", count > 0 && "border-os-accent text-os-accent")}
+      renderTrigger={({ open }) => (
+        <>
           <span className="inline-flex min-w-0 items-center gap-2">
             <TagIcon className="h-3.5 w-3.5 shrink-0 opacity-70" />
             <span className="truncate">{label}</span>
@@ -58,124 +63,8 @@ export function DriveTagFilter({
               open && "rotate-180",
             )}
           />
-        </button>
-      )}
-    >
-      {() => (
-        <TagPanel
-          tags={tags}
-          selectedIds={selectedIds}
-          onToggle={onToggle}
-          onClear={onClear}
-          os={os}
-        />
-      )}
-    </Popover>
-  );
-}
-
-// The panel is its own component so the query it holds is created fresh with
-// each opening — a stale filter left behind by the previous visit would hide
-// tags the pill claims are there.
-function TagPanel({
-  tags,
-  selectedIds,
-  onToggle,
-  onClear,
-  os,
-}: {
-  tags: FilterTag[];
-  selectedIds: Set<string>;
-  onToggle: (id: string) => void;
-  onClear: () => void;
-  os: boolean;
-}) {
-  const [query, setQuery] = useState("");
-  const count = selectedIds.size;
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q ? tags.filter((t) => t.label.toLowerCase().includes(q)) : tags;
-  }, [tags, query]);
-
-  return (
-    <div className="min-w-[12rem] max-w-[16rem]">
-      {tags.length === 0 ? (
-        <p className="px-2 py-1.5 text-sm text-muted-foreground">No tags yet.</p>
-      ) : (
-        <>
-          {/* Type to narrow the list. A lab with more than a screenful of tags
-              is the case this control exists for, and scrolling a checklist to
-              find one is the slow way to do it. */}
-          <div className="relative border-b border-border pb-1.5">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="text"
-              autoFocus
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Filter tags"
-              aria-label="Filter tags"
-              className="w-full rounded-lg bg-transparent py-1.5 pl-8 pr-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-            />
-          </div>
-          {shown.length === 0 ? (
-            <p className="px-3 py-2 text-sm text-muted-foreground">No tags match.</p>
-          ) : (
-            <ul className="max-h-72 overflow-y-auto py-0.5" role="group" aria-label="Tags">
-              {shown.map((tag) => {
-                const active = selectedIds.has(tag.id);
-                const swatch = hexColor(tag.color);
-                return (
-                  <li key={tag.id}>
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={active}
-                      onClick={() => onToggle(tag.id)}
-                      className={cn(
-                        "flex w-full items-center gap-2 text-left text-sm transition-colors",
-                        os ? "rounded-lg px-3 py-2" : "rounded px-2 py-1.5",
-                        active
-                          ? "bg-os-accent/10 text-foreground"
-                          : "text-foreground hover:bg-muted/50",
-                      )}
-                    >
-                      <Check
-                        className={cn(
-                          "h-3.5 w-3.5 shrink-0 text-os-accent",
-                          active ? "opacity-100" : "opacity-0",
-                        )}
-                      />
-                      {swatch && (
-                        <span
-                          className="h-2.5 w-2.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: swatch }}
-                        />
-                      )}
-                      <span className="truncate">{tag.label}</span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
         </>
       )}
-      {count > 0 && (
-        <div className="mt-0.5 border-t border-border pt-0.5">
-          <button
-            type="button"
-            onClick={onClear}
-            className={cn(
-              "flex w-full items-center gap-2 text-left text-sm text-muted-foreground transition-colors hover:text-foreground",
-              os ? "rounded-lg px-3 py-2 hover:bg-os-container" : "rounded px-2 py-1.5 hover:bg-muted/50",
-            )}
-          >
-            <X className="h-3.5 w-3.5 shrink-0" />
-            Clear tags
-          </button>
-        </div>
-      )}
-    </div>
+    />
   );
 }

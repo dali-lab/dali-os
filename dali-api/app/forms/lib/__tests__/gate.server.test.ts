@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   currentTerm: vi.fn(),
 }));
@@ -21,7 +21,7 @@ vi.mock("~/projects/lib/form-slots", () => ({
   boundSlotCycleIds: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getBoundFormGateOutstanding } from "~/forms/lib/gate.server";
 import { currentTerm } from "~/lib/roles";
 import { getSignerCohorts } from "~/signing/lib/state.server";

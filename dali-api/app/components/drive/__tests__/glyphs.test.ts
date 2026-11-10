@@ -92,9 +92,18 @@ describe("pickGlyph", () => {
     expect(pickGlyph(folder({ folderType: "Meetings", iconEmoji: "🗓" }))).toEqual({ kind: "emoji", emoji: "🗓" });
   });
 
-  it("gives a folder or doc its emoji when it has one", () => {
+  it("gives a folder, doc or form its emoji when it has one", () => {
     expect(pickGlyph(folder({ iconEmoji: "🚀" }))).toEqual({ kind: "emoji", emoji: "🚀" });
     expect(pickGlyph(doc({ iconEmoji: "📝" }))).toEqual({ kind: "emoji", emoji: "📝" });
+    expect(pickGlyph({ type: "form", iconEmoji: "📋" })).toEqual({ kind: "emoji", emoji: "📋" });
+  });
+
+  it("draws a form without an emoji as a form", () => {
+    expect(pickGlyph({ type: "form", iconEmoji: null })).toEqual({ kind: "form" });
+  });
+
+  it.each(["file", "agreement", "rubric"] as const)("ignores an emoji on a %s", (type) => {
+    expect(pickGlyph({ type, iconEmoji: "📋" })).toEqual({ kind: type });
   });
 
   it("picks the notebook glyph with its tab badge, ahead of an emoji", () => {

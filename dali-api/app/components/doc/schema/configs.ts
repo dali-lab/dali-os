@@ -69,6 +69,20 @@ export const taskMentionConfig = {
   content: "none",
 } as const;
 
+// Task block: a live row for a project task. The task must exist before the
+// block does, so no draft state ever lives in the document. Same props and
+// reasoning as taskMention: `label` is the title snapshot readers without
+// project access see, and everything else is fetched live.
+export const taskConfig = {
+  type: "task",
+  propSchema: {
+    taskId: { default: "" },
+    label: { default: "" },
+    projectId: { default: "" },
+  },
+  content: "none",
+} as const;
+
 // Callout: colored container with an emoji icon. Representation decision from
 // the spike (Phase 0, item 6): content is INLINE; additional paragraphs live
 // as nested children, painted into the box via CSS on the child blockGroup
@@ -210,6 +224,7 @@ export function blockOwnText(block: AnyBlock): string {
       )
       .join("\n");
   }
+  if (block.type === "task") return String(block.props?.label ?? "");
   if (block.type === "file" || block.type === "video") {
     // File and video blocks carry their display name + URL in props, not
     // inline content. Emit "name (url)" matching the image caption convention

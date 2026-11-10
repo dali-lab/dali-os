@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: { findUnique: vi.fn() },
     groupDefinition: { findUnique: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
   governingScopeMap: vi.fn(() => new Map()),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { notebookLocationParts, notebookLocationPartsBulk } from "~/lib/note-path.server";
 

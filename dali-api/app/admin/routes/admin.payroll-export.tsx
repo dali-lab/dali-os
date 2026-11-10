@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
+import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import {
   redirect,
   useFetcher,
@@ -9,7 +12,7 @@ import {
 import type { Route } from "./+types/admin.payroll-export";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
 import { EmptyState, Pill, adminTable } from "~/admin/components/console-ui";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, currentTermMemberWhere } from "~/lib/roles";
@@ -20,10 +23,11 @@ import { AlertTriangle, Download, Plus, Trash2 } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { useDialog } from "~/components/ui/dialog";
 import { Segmented } from "~/components/ui/Segmented";
-import { Select, Popover, Tooltip, InfoTip } from "~/components/ui/floating";
+import { Popover, Tooltip, InfoTip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { TermFilter } from "~/components/TermFilter";
 import { ALL_LEVELS, isLevel } from "~/lib/level";
 import {
   buildPayrollRows,
@@ -84,6 +88,11 @@ export async function action({ request }: Route.ActionArgs) {
   });
 
   return Response.json({ ok: true });
+}
+
+// The role view is client side; term and the domain and level pills scope the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term", "domain", "level"]);
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -167,7 +176,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 type Role = "Project" | "Core" | "Instructor" | "Technigala";
-type RoleView = "all" | Role;
+const ROLE_VIEWS = ["all", "Project", "Core", "Instructor", "Technigala"] as const satisfies readonly ("all" | Role)[];
+type RoleView = (typeof ROLE_VIEWS)[number];
 
 type HireRow = {
   key: string;
@@ -227,7 +237,7 @@ export default function PayrollExport() {
   const fetcher = useFetcher();
   const dialog = useDialog();
   const { panel, actionBtn, actionBtnPrimary, iconBtn, bodyText } = useOsChrome();
-  const [view, setView] = useState<RoleView>("all");
+  const [view, setView] = useSearchParamChoice<RoleView>("role", ROLE_VIEWS, "all");
 
   // Every candidate starts checked: admins uncheck people who didn't work the
   // term (Summer is the main case). Not persisted across reloads.
@@ -400,24 +410,12 @@ export default function PayrollExport() {
         section="payroll"
         actions={
           <>
-            <Select
-              value={selectedTermId}
-              ariaLabel="Term"
-              options={terms.map((t) => ({
-                value: t.id,
-                label: t.isCurrent ? `${t.code} (current)` : t.code,
-              }))}
-              // Submit the picked value explicitly: the form's DOM still holds
-              // the old value in the same tick.
-              onChange={(value) => {
-                const params = new URLSearchParams(searchParams);
-                params.set("term", value);
-                // Domain pills come from the term's assignments, so a term
-                // switch drops the role filter to avoid stale ids.
-                params.delete("domain");
-                params.delete("level");
-                submit(params, { method: "get" });
-              }}
+            <TermFilter
+              terms={terms}
+              selected={selectedTermId}
+              includeAll={false}
+              replace
+              clearOnChange={["domain", "level"]}
               buttonClassName={cn(actionBtn(), "justify-between")}
             />
             <TechnigalaPicker options={addOptions} onPick={addTechnigala} />

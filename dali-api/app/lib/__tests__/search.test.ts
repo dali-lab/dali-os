@@ -23,6 +23,11 @@ describe("matchScore", () => {
     expect(matchScore("  PROJECT Zero ", "project")).toBe(1);
   });
 
+  it("ranks every query word found out of order below a substring", () => {
+    expect(matchScore("Ada Lovelace", "lovelace ada")).toBe(4);
+    expect(matchScore("Ada Lovelace", "ada byron")).toBeNull();
+  });
+
   it("returns null for no match or empty query", () => {
     expect(matchScore("Alex", "bob")).toBeNull();
     expect(matchScore("Alex", "")).toBeNull();

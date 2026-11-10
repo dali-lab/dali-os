@@ -57,12 +57,13 @@ export type EmailTemplateDef = {
 };
 
 const APPLICANT_SAMPLE = { firstName: "Alex", domain: "Engineering" };
+const RESPOND_BY_SAMPLE = "Monday, June 8, 2026";
 const INTERVIEW_SAMPLE = {
   firstName: "Alex",
   domain: "Engineering",
   time: "Tuesday, April 8 at 2:00 PM ET",
   location: "Pod Appa, DALI Lab",
-  meetingUrl: "https://dartmouth.zoom.us/j/000000",
+  meetingUrl: "https://meet.google.com/abc-defg-hij",
 };
 
 export const EMAIL_TEMPLATES = {
@@ -106,8 +107,8 @@ export const EMAIL_TEMPLATES = {
     description:
       "Sent when a lead releases an Accepted decision, and when an applicant is accepted off the waitlist. The onboarding and credentials block is appended to it.",
     purpose: "Hiring",
-    variables: ["firstName", "domain"],
-    sample: APPLICANT_SAMPLE,
+    variables: ["firstName", "domain", "startTerm", "respondBy"],
+    sample: { ...APPLICANT_SAMPLE, startTerm: "27W", respondBy: RESPOND_BY_SAMPLE },
     footer: "transactional",
     whenMissing: "error",
   },
@@ -116,8 +117,8 @@ export const EMAIL_TEMPLATES = {
     label: "Decision: waitlisted",
     description: "Sent when a lead releases a Waitlisted decision.",
     purpose: "Hiring",
-    variables: ["firstName", "domain"],
-    sample: APPLICANT_SAMPLE,
+    variables: ["firstName", "domain", "respondBy"],
+    sample: { ...APPLICANT_SAMPLE, respondBy: RESPOND_BY_SAMPLE },
     footer: "transactional",
     whenMissing: "error",
   },
@@ -164,8 +165,8 @@ export const EMAIL_TEMPLATES = {
     description:
       "Appended to the Accepted decision email. Holds the acceptance deadline, the required-event date and the sign-off, so they change here rather than in a deploy.",
     purpose: "Hiring",
-    variables: ["slackUrl"],
-    sample: { slackUrl: "https://dali-lab.slack.com" },
+    variables: ["slackUrl", "startTerm", "respondBy"],
+    sample: { slackUrl: "https://dali-lab.slack.com", startTerm: "27W", respondBy: RESPOND_BY_SAMPLE },
     footer: "transactional",
     // Clearing it would strip the next-steps half of every acceptance email, so
     // it falls back rather than vanishing.
@@ -176,10 +177,10 @@ export const EMAIL_TEMPLATES = {
       subject: "Next steps",
       body: [
         "Once you're in, finish setting up by completing your member profile and onboarding steps.",
-        "<strong>The deadline to accept your offer and complete onboarding is June 8th, 2026.</strong>",
+        "<strong>The deadline to accept your offer and complete onboarding is {{respondBy}}.</strong>",
         'We use Slack day-to-day at <a href="{{slackUrl}}">DALI Studios</a>. A teammate will add you to the workspace shortly.',
         "We also have a special event planned for all day Sunday, September 13th. This is a required event. If there is any concern with this requirement, please reach out.",
-        "We are very excited to welcome you to DALI soon and look forward to an incredible 26F together. Please reach out with any questions.",
+        "We are very excited to welcome you to DALI soon and look forward to an incredible {{startTerm}} together. Please reach out with any questions.",
         "Best,\nSean Noh and DALI Hiring",
       ].join("\n\n"),
     },
@@ -288,6 +289,17 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "skip",
   },
+  "hiring:notification:InterviewInterviewerChanged": {
+    area: "Hiring",
+    label: "Co-interviewer changed (interviewer)",
+    description:
+      "Sent to the interviewer who stays on an interview when the other interviewer changes. Carries the calendar update. Falls back to the interview booked email if this one isn't written.",
+    purpose: "Hiring",
+    variables: ["firstName", "domain", "time", "location", "meetingUrl"],
+    sample: INTERVIEW_SAMPLE,
+    footer: "transactional",
+    whenMissing: "skip",
+  },
   "hiring:notification:InterviewCancelledApplicant": {
     area: "Hiring",
     label: "Interview cancelled (applicant)",
@@ -333,7 +345,7 @@ export const EMAIL_TEMPLATES = {
   "hiring:notification:InterviewReminderApplicant": {
     area: "Hiring",
     label: "Interview reminder (applicant)",
-    description: "Sent 24 hours and 1 hour before the interview.",
+    description: "Sent 1 hour before the interview.",
     purpose: "Hiring",
     variables: ["firstName", "domain", "time", "location", "meetingUrl"],
     sample: INTERVIEW_SAMPLE,
@@ -343,7 +355,7 @@ export const EMAIL_TEMPLATES = {
   "hiring:notification:InterviewReminderInterviewer": {
     area: "Hiring",
     label: "Interview reminder (interviewer)",
-    description: "Sent 24 hours and 1 hour before the interview.",
+    description: "Sent 1 hour before the interview.",
     purpose: "Hiring",
     variables: ["firstName", "domain", "time", "location", "meetingUrl"],
     sample: INTERVIEW_SAMPLE,
@@ -408,6 +420,48 @@ export const EMAIL_TEMPLATES = {
     sample: { firstName: "Alex", domain: "Intro to UX" },
     footer: "transactional",
     whenMissing: "skip",
+  },
+
+  // ── Forms: receipts ──────────────────────────────────────────────────────
+  // Two keys because the copy differs in kind, not wording: the public one has
+  // no {{answers}} on purpose (anyone can type any address into a public form),
+  // so an operator can't add them back by editing a shared body.
+  "forms.receipt": {
+    area: "Forms",
+    label: "Response receipt",
+    description: "Sent to a signed-in person after they submit a form that emails a copy of the response.",
+    purpose: "General",
+    variables: ["firstName", "formName", "submittedAt", "answers"],
+    sample: {
+      firstName: "Alex",
+      formName: "Spring check-in",
+      submittedAt: "Monday, June 8, 2026 at 2:00 PM ET",
+      answers: "How is your week going?: Busy but good\nAnything blocking you?: No",
+    },
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      subject: "Your response to {{formName}}",
+      body: "Hi {{firstName}},\n\nHere is a copy of your response to {{formName}}, submitted {{submittedAt}}.\n\n{{answers}}",
+    },
+  },
+  "forms.receipt-public": {
+    area: "Forms",
+    label: "Response receipt (not signed in)",
+    description:
+      "Sent to the address someone typed at a form's Email question when they weren't signed in. It never includes their answers.",
+    purpose: "General",
+    variables: ["formName", "submittedAt"],
+    sample: {
+      formName: "Spring check-in",
+      submittedAt: "Monday, June 8, 2026 at 2:00 PM ET",
+    },
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      subject: "We got your response to {{formName}}",
+      body: "Thanks for filling out {{formName}}. We received your response on {{submittedAt}}.",
+    },
   },
 } as const satisfies Record<string, EmailTemplateDef>;
 

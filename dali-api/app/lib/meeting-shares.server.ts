@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { getPageAccess, PAGE_ACCESS_SELECT, type PageShape } from "~/lib/pageAccess.server";
 import type { SharePrincipalType } from "~/generated/prisma/client";

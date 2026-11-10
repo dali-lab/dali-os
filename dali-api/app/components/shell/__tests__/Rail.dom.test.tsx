@@ -114,19 +114,19 @@ describe("Rail", () => {
     expect(q("button[aria-label='DALI OS home']")).not.toBeNull();
   });
 
-  it("hides Email and Drive for alumni and sends Home to Connect", async () => {
+  it("hides Email and Drive for alumni and sends Home to Community", async () => {
     const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
     await mount({
       isAlumni: true,
       home: homeNavItem({ isAlumni: true }),
       pinned: pinnedNavItems({ isAlumni: true }),
-      path: "/connect",
+      path: "/community",
       tabClickProps,
     });
     expect(q("button[aria-label='Email']")).toBeNull();
     expect(q("button[aria-label='Drive']")).toBeNull();
-    // The wordmark carries the alumni home (Connect).
-    expect(tabClickProps).toHaveBeenCalledWith({ url: "/connect", label: "Home" });
+    // The wordmark carries the alumni home (Community).
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/community", label: "Home" });
   });
 
   it("shows the pinned items it is given", async () => {
@@ -348,7 +348,13 @@ describe("Rail compact sizing", () => {
 
 describe("Rail section order", () => {
   const fav = { id: "p1", title: "Roadmap", href: "/documents/p1", iconKind: "page", isRoute: false } as unknown as RailProps["favorites"][number];
-  const meeting = { meetingId: "m1", title: "Weekly sync", startsAt: "2026-10-14T18:00:00Z", href: "/documents/n1" };
+  const meeting = {
+    meetingId: "m1",
+    title: "Weekly sync",
+    startsAt: "2026-10-14T18:00:00Z",
+    endsAt: "2026-10-14T18:30:00Z",
+    href: "/documents/n1",
+  };
   const lab = area("lab");
 
   // Each section sits right after its own divider; the last divider belongs to the account row.

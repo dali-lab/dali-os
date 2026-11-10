@@ -18,7 +18,7 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/members/lib/personal-notes.server", () => ({
   NoteForbiddenError: class extends Error {},
   NoteNotFoundError: class extends Error {},

@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.cycles.$cycleId.coverage";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
-import { generateCandidateSlots, isInterviewerFree, explainAvailableSlots } from "~/hiring/lib/scheduling";
+import { availabilityFor, generateCandidateSlots, isInterviewerFree, loadSlotContext } from "~/hiring/lib/scheduling";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import { FIRST_INTERVIEW_ROUND_ID } from "~/hiring/lib/cycle-timeline";
@@ -132,18 +132,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     select: { domainId: true, domain: { select: { name: true } } },
     orderBy: { domain: { name: "asc" } },
   });
-  const domains = await Promise.all(
-    cycleDomains.map(async (d) => {
-      const availability = await explainAvailableSlots(params.cycleId!, roundId, [d.domainId], "in-person");
-      return {
-        domainId: d.domainId,
-        domainName: d.domain.name,
-        bookableSlotCount: availability.slots.length,
-        blocker: availability.blocker,
-        bookingNoticeHours: availability.bookingNoticeHours,
-      };
-    }),
-  );
+  const slotContext = await loadSlotContext(params.cycleId!, roundId, "in-person");
+  const domains = cycleDomains.map((d) => {
+    const availability = availabilityFor(slotContext, [d.domainId]);
+    return {
+      domainId: d.domainId,
+      domainName: d.domain.name,
+      bookableSlotCount: availability.slots.length,
+      blocker: availability.blocker,
+      bookingNoticeHours: availability.bookingNoticeHours,
+    };
+  });
 
   return Response.json({
     configured: true,

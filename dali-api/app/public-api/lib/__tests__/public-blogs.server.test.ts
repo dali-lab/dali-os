@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { blogPost: { findMany: vi.fn(), findFirst: vi.fn() } },
 }));
 vi.mock("~/collab/blocknote-server", () => ({
   blocksToHtml: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { blocksToHtml } from "~/collab/blocknote-server";
 import { getPublicBlog, listPublicBlogs } from "../public-blogs.server";
 

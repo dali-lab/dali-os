@@ -2,7 +2,7 @@
 // Meeting links are set manually by admins via the interview dashboard.
 // This module is kept for future use once S2S app credentials are configured.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 const ZOOM_ACCOUNT_ID = process.env.ZOOM_ACCOUNT_ID;
 const ZOOM_CLIENT_ID = process.env.ZOOM_CLIENT_ID;

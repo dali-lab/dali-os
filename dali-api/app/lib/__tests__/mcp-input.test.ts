@@ -68,4 +68,27 @@ describe("validateInput", () => {
     expect(validateInput({ q: "abcdef" }, schema).ok).toBe(false);
     expect(validateInput({ q: "abc" }, schema).ok).toBe(true);
   });
+
+  it("accepts any type in a type list and names them all when none match", () => {
+    const schema: JsonSchema = {
+      type: "object",
+      properties: { projectId: { type: ["string", "null"] } },
+      required: ["projectId"],
+      additionalProperties: false,
+    };
+    expect(validateInput({ projectId: "p1" }, schema).ok).toBe(true);
+    expect(validateInput({ projectId: null }, schema).ok).toBe(true);
+    expect(validateInput({ projectId: 3 }, schema)).toEqual({
+      ok: false,
+      error: "projectId: expected string or null, got integer",
+    });
+  });
+
+  it("keeps the single-type error message", () => {
+    const schema: JsonSchema = { type: "object", properties: { n: { type: "integer" } } };
+    expect(validateInput({ n: "x" }, schema)).toEqual({
+      ok: false,
+      error: "n: expected integer, got string",
+    });
+  });
 });

@@ -1,5 +1,5 @@
-// Browser-style back/forward stack helpers. TabWorkspace keeps per-tab
-// stacks in localStorage; tabless mode uses a single global stack in memory.
+// Browser-style back/forward stack helpers, kept in a single global stack in
+// memory (desktop tabs keep their own per-tab history).
 
 export const HISTORY_CAP = 50;
 

@@ -11,7 +11,7 @@
 
 import { parseSessionId } from "~/lib/cookies";
 import { lookupSession, rollSession } from "~/lib/session";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { auth } from "~/lib/betterauth.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { getClientIp } from "~/lib/rate-limit";

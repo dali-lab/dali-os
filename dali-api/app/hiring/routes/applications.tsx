@@ -1,28 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
-import { usePersistedState } from "~/hooks/usePersistedState";
+import { useMemo, useState } from "react";
+import { useRememberedSearch } from "~/hooks/useRememberedSearch";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import {
   applicationColumns,
   visibleSort,
-  DEFAULT_SORT,
-  EMPTY_FILTERS,
+  CYCLE_SCOPED_PARAMS,
   ENGAGEMENT_FILTERS,
-  withFilterDefaults,
-  isApplicationFilters,
-  isApplicationSort,
+  filtersFromParams,
   sortApplications,
+  sortFromParams,
+  writeViewParams,
   type ApplicationFilters,
   type ApplicationSort,
 } from "~/hiring/lib/application-filters";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
-import { redirect, useLoaderData, useNavigate, useSearchParams } from "react-router";
-import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
+import { redirect, useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
+import { SlidersHorizontal } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import type { Route } from "./+types/applications";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { Popover, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
@@ -47,10 +47,10 @@ import {
   type PipelineStage,
 } from "~/hiring/lib/pipeline-stage";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
-import { applicationBlindLabelsForCycle, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabels, blindUser } from "~/hiring/lib/anonymization.server";
 import { domainCloseDate } from "~/hiring/lib/domain-windows";
 import { lateByLabel } from "~/hiring/lib/late-submission";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { ApplicationsTable } from "~/hiring/components/ApplicationsTable";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Applications · Hiring · DALI OS" },
@@ -62,6 +62,11 @@ export const meta: Route.MetaFunction = () => [
 //   • Reviewers: only the domains they're a CycleReviewer for, and only the
 //     cycles they're assigned on.
 // Read-only — rows link to the read-only detail page.
+// Search, filters and sort run in the browser; only the cycle scopes the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["cycle"]);
+}
+
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
@@ -78,7 +83,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   ]);
   const { isCore, isAdmin, isDomainLead, isInterviewer } = roles;
-  const applicationEventsEnabled = await isFeatureEnabled("application-events", auth.user.sub, roles, request);
 
   // Hard gate: a user with no hiring role at all (not Core/Admin/DomainLead and
   // a reviewer/interviewer on no cycle) has no business here — send them home
@@ -108,7 +112,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       name: true,
       createdAt: true,
       applicants: true,
-      anonymizeReview: true,
       closeDate: true,
       // Status is event-sourced; newest update wins, default Draft.
       statusUpdates: {
@@ -123,7 +126,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     name: c.name,
     createdAt: c.createdAt,
     applicants: c.applicants,
-    anonymizeReview: c.anonymizeReview,
     closeDate: c.closeDate,
     currentStatus: c.statusUpdates[0]?.newStatus ?? "Draft",
   }));
@@ -248,14 +250,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   ]);
   const domainOptions = domainOptionRows.map((d) => ({ id: d.id, name: d.displayName }));
 
-  // Blind review applies here the same way it does on the applicant-detail
-  // pages: everyone (Core, Admin, leads, reviewers) sees "Applicant N" until
-  // every domain the applicant selected has a Released decision. A domain
-  // outside this viewer's visible set still counts, so the full set of each
-  // application's selected DomainApplications is looked up separately from
-  // the (possibly domain-filtered) `domainApps` rows above.
-  const applicationIds = [...new Set(domainApps.map((da) => da.application.id))];
-
   // Engagement signals for the filter panel: one grouped lookup each, keyed
   // on the applicant's User id, which blinding leaves intact.
   const applicantUserIds = [...new Set(domainApps.map((da) => da.application.user.id))];
@@ -264,25 +258,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // blind-label lookup and the engagement-signal queries run concurrently
   // instead of one after the other.
   const [blindLabels, [priorRows, emailSummaries, educationRows, eventRows]] = await Promise.all([
-    (async () => {
-      const daIdsByApplication = new Map<string, string[]>();
-      if (applicationIds.length > 0) {
-        const allSelectedDas = await prisma.domainApplication.findMany({
-          where: { applicationId: { in: applicationIds }, selected: true },
-          select: { id: true, applicationId: true },
-        });
-        for (const row of allSelectedDas) {
-          const arr = daIdsByApplication.get(row.applicationId) ?? [];
-          arr.push(row.id);
-          daIdsByApplication.set(row.applicationId, arr);
-        }
-      }
-      return applicationBlindLabelsForCycle({
-        cycleId: selected.id,
-        anonymizeReview: selected.anonymizeReview,
-        applications: [...daIdsByApplication.entries()].map(([id, daIds]) => ({ id, daIds })),
-      });
-    })(),
+    domainApplicationBlindLabels({
+      cycleId: selected.id,
+      domainApplicationIds: domainApps.map((da) => da.id),
+    }),
     applicantUserIds.length
       ? Promise.all([
           prisma.application.findMany({
@@ -300,24 +279,20 @@ export async function loader({ request }: Route.LoaderArgs) {
             select: { applicantUserId: true },
             distinct: ["applicantUserId"],
           }),
-          applicationEventsEnabled
-            ? prisma.hiringEventAttendance.findMany({
-                where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
-                select: { userId: true, eventId: true },
-              })
-            : Promise.resolve([]),
+          prisma.hiringEventAttendance.findMany({
+            where: { userId: { in: applicantUserIds }, event: { applicationCycleId: selected.id } },
+            select: { userId: true, eventId: true },
+          }),
         ])
       : Promise.resolve([[], new Map<string, EngagementSummary>(), [], []] as const),
   ]);
-  const eventOptions = applicationEventsEnabled
-    ? (
-        await prisma.hiringEvent.findMany({
-          where: { applicationCycleId: selected.id },
-          orderBy: { startsAt: "asc" },
-          select: { id: true, title: true, startsAt: true },
-        })
-      ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }))
-    : [];
+  const eventOptions = (
+    await prisma.hiringEvent.findMany({
+      where: { applicationCycleId: selected.id },
+      orderBy: { startsAt: "asc" },
+      select: { id: true, title: true, startsAt: true },
+    })
+  ).map((e) => ({ id: e.id, title: e.title, startsAt: e.startsAt.toISOString() }));
   const returningUserIds = new Set(priorRows.map((r) => r.userId));
   const educatedUserIds = new Set(educationRows.map((r) => r.applicantUserId));
   const attendedEventIdsByUser = new Map<string, string[]>();
@@ -329,7 +304,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const rows = domainApps
     .map((da) => {
-      const blindLabel = blindLabels.get(da.application.id);
+      const blindLabel = blindLabels.get(da.id);
       const u = blindLabel ? blindUser(da.application.user, blindLabel) : da.application.user;
       const updates = da.application.statusUpdates;
       const status = updates[0]?.newStatus ?? "Draft";
@@ -399,26 +374,7 @@ function joinNames(users: { firstName: string | null; lastName: string | null; d
   return names.length > 0 ? names.join(", ") : null;
 }
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 const STATUSES = ["Submitted", "Draft", "Withdrawn"] as const;
-
-const STATUS_TONE: Record<string, string> = {
-  Submitted: "bg-os-green/15 text-os-green",
-  Draft: "bg-os-container text-os-grey",
-  Withdrawn: "bg-os-amber/15 text-os-amber",
-};
-
-const SORT_DIRECTIONS = [
-  { dir: "asc", Icon: ChevronUp, label: "ascending" },
-  { dir: "desc", Icon: ChevronDown, label: "descending" },
-] as const;
 
 // Toggle one value in a multi-select filter.
 function toggle<T extends string>(list: T[], value: T): T[] {
@@ -427,49 +383,24 @@ function toggle<T extends string>(list: T[], value: T): T[] {
 
 export default function ApplicationsDatabase() {
   const data = useLoaderData<typeof loader>();
-  const navigate = useNavigate();
   const { pageTitle, panel } = useOsChrome();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedCycleId = data.gate === "ok" ? data.selectedCycleId : null;
-  // Filters are remembered per cycle so opening an applicant and coming back
-  // (or returning days later) lands on the same view. An empty list means
-  // "all"; a cycle with nothing stored starts clean.
-  const [filters, setFilters] = usePersistedState<ApplicationFilters>(
-    `dali:applications:filters:${selectedCycleId ?? "none"}`,
-    EMPTY_FILTERS,
-    isApplicationFilters,
-  );
-  const { domainIds, statuses, stage, engagement, eventIds, pieIncludesInProgress, query } =
-    withFilterDefaults(filters);
-  const patch = (next: Partial<ApplicationFilters>) => setFilters((prev) => ({ ...prev, ...next }));
+  // Opening an applicant and coming back (or returning days later from the
+  // sidebar) lands on the same cycle and view.
+  useRememberedSearch("dali:applications:view");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
+  const filters = useMemo(() => filtersFromParams(searchParams), [searchParams]);
+  const { domainIds, statuses, stage, engagement, eventIds, pieIncludesInProgress } = filters;
+  const patch = (next: Partial<ApplicationFilters> & { sort?: ApplicationSort }) =>
+    setSearchParams((prev) => writeViewParams(prev, next), {
+      replace: true,
+      preventScrollReset: true,
+    });
   const setDomainIds = (f: (prev: string[]) => string[]) => patch({ domainIds: f(domainIds) });
   const setStatuses = (f: (prev: string[]) => string[]) => patch({ statuses: f(statuses) });
   const setStage = (next: string | null | ((prev: string | null) => string | null)) =>
     patch({ stage: typeof next === "function" ? next(stage) : next });
-  const setQuery = (next: string) => patch({ query: next });
-
-  // The last cycle viewed is remembered too: landing on the page without
-  // ?cycle= reopens it instead of the newest cycle.
-  const [lastCycleId, setLastCycleId] = usePersistedState<string | null>(
-    "dali:applications:cycle",
-    null,
-    (v): v is string | null => v === null || typeof v === "string",
-  );
-  const cycleIds = data.gate === "ok" ? data.cycles.map((c) => c.id) : [];
-  useEffect(() => {
-    if (!selectedCycleId) return;
-    if (searchParams.get("cycle")) {
-      if (lastCycleId !== selectedCycleId) setLastCycleId(selectedCycleId);
-      return;
-    }
-    if (lastCycleId && lastCycleId !== selectedCycleId && cycleIds.includes(lastCycleId)) {
-      const next = new URLSearchParams(searchParams);
-      next.set("cycle", lastCycleId);
-      setSearchParams(next, { replace: true });
-    }
-    // Runs when the cycle or the stored preference changes, not on every param edit.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCycleId, lastCycleId]);
 
   const rows = data.gate === "ok" ? data.rows : [];
   // A remembered domain that this viewer can no longer see (reassigned, or a
@@ -496,11 +427,8 @@ export default function ApplicationsDatabase() {
       return true;
     });
   }, [rows, activeDomainIds, statuses, engagement, activeEventIds, query]);
-  const [sort, setSort] = usePersistedState<ApplicationSort>(
-    "dali:applications:sort",
-    DEFAULT_SORT,
-    isApplicationSort,
-  );
+  const sort = sortFromParams(searchParams);
+  const setSort = (next: ApplicationSort) => patch({ sort: next });
   const columns = applicationColumns(data.gate === "ok" ? data.selectedCycleStatus : "");
   const activeSort = visibleSort(sort, columns);
   const filteredRows = useMemo(
@@ -563,9 +491,9 @@ export default function ApplicationsDatabase() {
           ariaLabel="Cycle"
           value={data.selectedCycleId}
           onChange={(cycleId) => {
-            setLastCycleId(cycleId);
             const next = new URLSearchParams(searchParams);
             next.set("cycle", cycleId);
+            for (const key of CYCLE_SCOPED_PARAMS) next.delete(key);
             setSearchParams(next);
           }}
           options={data.cycles.map((c) => ({ value: c.id, label: `${c.name} · ${c.status}` }))}
@@ -715,90 +643,13 @@ export default function ApplicationsDatabase() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[640px]">
-              <thead className="text-os-grey text-xs">
-                <tr>
-                  {columns.map((col) => (
-                    <th
-                      key={col.key}
-                      aria-sort={
-                        activeSort.key !== col.key
-                          ? undefined
-                          : activeSort.dir === "asc"
-                            ? "ascending"
-                            : "descending"
-                      }
-                      className="text-left font-medium px-6 py-4"
-                    >
-                      <span className="inline-flex items-center gap-1.5">
-                        {col.label}
-                        <span className="inline-flex flex-col">
-                          {SORT_DIRECTIONS.map(({ dir, Icon, label }) => {
-                            const active = activeSort.key === col.key && activeSort.dir === dir;
-                            return (
-                              <button
-                                key={dir}
-                                type="button"
-                                title={`Sort ${label}`}
-                                aria-label={`Sort by ${col.label}, ${label}`}
-                                aria-pressed={active}
-                                onClick={() => setSort({ key: col.key, dir })}
-                                className={cn(
-                                  "-my-0.5 rounded transition-colors hover:text-foreground",
-                                  active ? "text-os-accent" : "text-os-grey/50",
-                                )}
-                              >
-                                <Icon className="h-3 w-3" strokeWidth={3} aria-hidden />
-                              </button>
-                            );
-                          })}
-                        </span>
-                      </span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRows.map((r) => (
-                  <tr
-                    key={r.id}
-                    onClick={() => navigate(`/hiring/applications/${r.id}`)}
-                    className="border-t border-os-container hover:bg-os-card-hover cursor-pointer transition-colors"
-                  >
-                    <td className="px-6 py-3.5 font-medium text-foreground">
-                      {r.name}
-                    </td>
-                    <td className="px-6 py-3.5 text-foreground">{r.domain}</td>
-                    <td className="px-6 py-3.5">
-                      <span
-                        className={cn(
-                          "inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold",
-                          STATUS_TONE[r.status] ?? STATUS_TONE.Draft,
-                        )}
-                      >
-                        {r.status}
-                      </span>
-                    </td>
-                    {columns.some((c) => c.key === "submittedAt") && (
-                      <td className="px-6 py-3.5 text-os-grey">
-                        <span className="inline-flex items-center gap-2">
-                          {r.submittedAt ? formatDate(r.submittedAt) : "—"}
-                          {r.lateBy && <Pill dot="warning">{r.lateBy}</Pill>}
-                        </span>
-                      </td>
-                    )}
-                    {columns.some((c) => c.key === "reviewers") && (
-                      <td className="px-6 py-3.5 text-os-grey">{r.reviewers ?? "—"}</td>
-                    )}
-                    {columns.some((c) => c.key === "interviewers") && (
-                      <td className="px-6 py-3.5 text-os-grey">{r.interviewers ?? "—"}</td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ApplicationsTable
+            rows={filteredRows}
+            columns={columns}
+            activeSort={activeSort}
+            onSort={setSort}
+            resetKey={JSON.stringify([selectedCycleId, filters, query, activeSort])}
+          />
         )}
       </div>
     </div>

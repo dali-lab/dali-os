@@ -6,6 +6,9 @@
 // hub. Behind the `infra-dashboard` flag.
 
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
+import type { ShouldRevalidateFunctionArgs } from "react-router";
+import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
+import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
@@ -66,6 +69,11 @@ import {
 export const handle = adminHandle("infrastructure");
 
 export const meta: Route.MetaFunction = () => [{ title: "Infrastructure · Admin · DALI OS" }];
+
+// The tab is client side; only the term scopes the loader.
+export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
+  return skipClientOnlySearchChange(args, ["term"]);
+}
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -154,13 +162,14 @@ export function fleetTotals(projects: Pick<ProjectFleet, "fly" | "neon">[]) {
   };
 }
 
-type Tab = "overview" | "cleanup" | "requests";
+const TABS = ["overview", "cleanup", "requests"] as const;
+type Tab = (typeof TABS)[number];
 
 export default function AdminInfrastructure() {
   const data = useLoaderData<typeof loader>();
   const infra = useInfra();
   const { actionBtn } = useOsChrome();
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useSearchParamChoice<Tab>("tab", TABS, "overview");
   const totals = fleetTotals(data.projects);
 
   return (

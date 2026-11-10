@@ -3,7 +3,7 @@ import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { HIRING_STATUS } from "~/hiring/lib/portal-cycle-card";
 import type { Route } from "./+types/portal.applications";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import {

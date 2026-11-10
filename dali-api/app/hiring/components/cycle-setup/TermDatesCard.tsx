@@ -32,6 +32,9 @@ export function TermDatesCard({
   startTermIds,
   startTermCandidates,
   showStartTerms = false,
+  offerRespondBy = null,
+  waitlistRespondBy = null,
+  showRespondBy = false,
 }: {
   termId: string | null;
   termOptions: TermOption[];
@@ -45,6 +48,10 @@ export function TermDatesCard({
   startTermCandidates: StartTermOption[];
   /** Students cycles only: Fellowship/Core hires are already members. */
   showStartTerms?: boolean;
+  offerRespondBy?: string | null;
+  waitlistRespondBy?: string | null;
+  /** Cycles whose decisions go out by email. */
+  showRespondBy?: boolean;
 }) {
   const { panel, panelPad, sectionTitle, bodyText, fieldLabel, formTrigger } = useOsChrome();
   const fetcher = useFetcher();
@@ -52,6 +59,8 @@ export function TermDatesCard({
   const [open, setOpen] = useState(toYmd(openDate));
   const [close, setClose] = useState(toYmd(closeDate));
   const [startTerms, setStartTerms] = useState<string[]>(startTermIds);
+  const [offerBy, setOfferBy] = useState(toYmd(offerRespondBy));
+  const [waitlistBy, setWaitlistBy] = useState(toYmd(waitlistRespondBy));
   // The open date is fixed once applications have opened.
   const openLocked = cycleStatus !== "Draft";
   // One row height for the term dropdown, the date fields (h-9) and Save.
@@ -149,6 +158,41 @@ export function TermDatesCard({
               : chosenStartTerms.length === 1
                 ? "One term, so applicants aren't asked. Everyone hired starts in it."
                 : "Applicants pick one of these on the application. Core can change it later from Onboarding."}
+          </p>
+        </div>
+      )}
+
+      {showRespondBy && (
+        <div className="flex flex-col gap-2 border-t border-os-container pt-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div className={fieldLabel}>
+              Offer response deadline
+              <DateField
+                mode="date"
+                name="offerRespondBy"
+                value={offerBy}
+                onChange={setOfferBy}
+                ariaLabel="Offer response deadline"
+                className="w-44"
+                buttonClassName={termTrigger}
+              />
+            </div>
+            <div className={fieldLabel}>
+              Waitlist response deadline
+              <DateField
+                mode="date"
+                name="waitlistRespondBy"
+                value={waitlistBy}
+                onChange={setWaitlistBy}
+                ariaLabel="Waitlist response deadline"
+                className="w-44"
+                buttonClassName={termTrigger}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-os-grey">
+            The Accepted and Waitlisted emails show these where they use {"{{respondBy}}"}. A
+            decision that uses it can't be released until its date is set and still ahead.
           </p>
         </div>
       )}

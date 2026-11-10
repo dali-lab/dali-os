@@ -4,7 +4,7 @@
 // via notify(); callers fire-and-forget so a delivery hiccup never fails the
 // underlying write.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "./project-members.server";
 

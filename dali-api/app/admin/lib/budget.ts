@@ -4,7 +4,7 @@
 // substitutions (projectId-keyed expense seam, cuid ids, Decimal → number at
 // this boundary — React Router single-fetch can't serialize Prisma Decimal).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { decimalToNumber, roundCents } from "~/lib/money";
 import { computeExpensesByProjectChartTerm } from "~/admin/lib/payroll-reconcile.server";
 import {

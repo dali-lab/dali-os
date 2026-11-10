@@ -5,7 +5,7 @@
 // to look someone up (linking a thread to the applicant it belongs to).
 
 import type { Route } from "./+types/api.users.search";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";

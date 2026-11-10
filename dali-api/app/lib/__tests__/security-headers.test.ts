@@ -41,6 +41,22 @@ describe("securityHeaders / contentSecurityPolicy", () => {
     expect(csp).toContain("frame-ancestors 'self'");
   });
 
+  it("allows the video player origins in frames", async () => {
+    const { contentSecurityPolicy } = await loadHeaders({ DALI_APP_ENV: "dev" });
+    expect(contentSecurityPolicy()).toContain("frame-src 'self' https://www.youtube-nocookie.com");
+  });
+
+  it("allows uploaded video from the S3 bucket", async () => {
+    const { contentSecurityPolicy } = await loadHeaders({
+      DALI_APP_ENV: "dev",
+      AWS_S3_BUCKET: "dali-uploads",
+      AWS_REGION: "us-east-1",
+    });
+    expect(contentSecurityPolicy()).toContain(
+      "media-src 'self' blob: https://dali-uploads.s3.us-east-1.amazonaws.com",
+    );
+  });
+
   it("preserves single-quoted CSP keywords like 'self' and 'none'", async () => {
     const { contentSecurityPolicy } = await loadHeaders({ DALI_APP_ENV: "dev" });
     const csp = contentSecurityPolicy();

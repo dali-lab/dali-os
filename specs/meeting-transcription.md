@@ -38,7 +38,7 @@ speaker labels and a link back to the meeting occurrence.
 | Transcript handling | Words and lines persisted on `MeetingRecording`, linked to `scheduledMeetingId` + `occurrenceStart`. Read access follows the note; edit actions follow note edit access. Retention via `retention-janitor`, 365 days. |
 | Provider seam | `app/lib/transcription/` exposes `TranscriptionProvider.process(recording)` with one implementation (`modal`). Swapping vendors later is a contained change. |
 | Record prompt | Organizer notification at start, in-page banner for any editor during the window, desktop one-tap banner only for live DALI meetings where a note exists or can be created. Per-series opt-out. |
-| Privacy | Transcript audience = note audience. Audio deleted at finalize. Modal retains job metadata, logs and the result (words and timings), never audio. Per-project Disabled switch. Not a HIPAA environment by design. |
+| Privacy | Transcript audience = note audience. Audio deleted a day after finalize. Modal retains job metadata, logs and the result (words and timings), never audio. Per-project Disabled switch. Not a HIPAA environment by design. |
 | CI | `deploy-asr.yml` runs `modal deploy` per branch on `asr/**` changes, plus a Python test job in `test.yml`. Part of the MVP. |
 | Cost at 100% adoption | $20 to $35 a month during term, mostly inside Modal's $30 Starter credit. See "Costs". |
 

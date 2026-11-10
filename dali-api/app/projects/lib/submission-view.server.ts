@@ -4,7 +4,7 @@
 // row's resolved cell strings. DB lookups live here; the ordering/visibility
 // logic is the pure submission-columns.ts.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Question } from "~/types";
 import type { Slot } from "./form-slots";
 import { parseColumnMapping, type ColumnMapping } from "./slot-roles";

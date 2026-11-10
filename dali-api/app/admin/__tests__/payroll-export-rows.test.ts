@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     projectAssignment: { findMany: vi.fn() },
     jobCodeLookup: { findMany: vi.fn() },
@@ -9,7 +9,7 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/chart-string.server", () => ({ resolveChartStringsForTerm: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveChartStringsForTerm } from "~/lib/chart-string.server";
 import { buildPayrollRows } from "~/admin/lib/payroll-export";
 

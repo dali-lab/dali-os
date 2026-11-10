@@ -4,6 +4,9 @@ import { ChevronDown } from "lucide-react";
 import {
   EVENT_TYPES,
   EVENT_TYPE_KEYS,
+  defaultEmailFor,
+  reachesAudience,
+  type Audience,
   type EventDef,
   type EventType,
 } from "~/lib/notification-events";
@@ -13,6 +16,7 @@ import { Segmented } from "~/components/ui/Segmented";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
+import { ChannelPreview, type Channel } from "~/components/settings/ChannelPreview";
 import {
   WEEKDAY_NAMES,
   digestHourLabel,
@@ -42,14 +46,16 @@ const AREA_ORDER = [
 export const DIGEST_VALUES = ["Instant", "Daily", "Weekly", "Off"] as const;
 export type DigestValue = (typeof DIGEST_VALUES)[number];
 
+export function emailChoices(audience: Audience): readonly DigestValue[] {
+  return audience === "member" ? DIGEST_VALUES : ["Instant", "Off"];
+}
+
 const EMAIL_LABEL: Record<DigestValue, string> = {
   Instant: "Instantly",
   Daily: "Daily digest",
   Weekly: "Weekly digest",
   Off: "Off",
 };
-
-export const NOTIFICATIONS_ACTION = "/settings/notifications";
 
 export type NotificationsSettingsData = {
   prefs: {
@@ -69,6 +75,8 @@ export type NotificationsSettingsData = {
   digestHourEt: number | null;
   isAdmin: boolean;
   isCore: boolean;
+  audience: Audience;
+  action: string;
 };
 
 type Choice = { inApp: boolean; desktop: boolean; slackDm: boolean; email: DigestValue };
@@ -79,12 +87,22 @@ export function inAppForced(def: EventDef, email: DigestValue): boolean {
   return !!def.lockedInApp || email === "Daily" || email === "Weekly";
 }
 
-export function visibleAreas(isAdmin: boolean, isCore: boolean) {
+export type SettingsViewer = { isAdmin: boolean; isCore: boolean; audience: Audience };
+
+export function canEditEvent(def: EventDef, viewer: SettingsViewer): boolean {
+  return (
+    reachesAudience(def, viewer.audience) &&
+    !(def.adminOnly && !viewer.isAdmin) &&
+    !(def.coreOnly && !viewer.isCore)
+  );
+}
+
+export function visibleAreas(viewer: SettingsViewer) {
   return AREA_ORDER.map((area) => ({
     area,
     events: VISIBLE_EVENTS.filter((k) => {
       const def: EventDef = EVENT_TYPES[k];
-      return def.area === area && !(def.adminOnly && !isAdmin) && !(def.coreOnly && !isCore);
+      return def.area === area && canEditEvent(def, viewer);
     }),
   })).filter((g) => g.events.length > 0);
 }
@@ -92,6 +110,7 @@ export function visibleAreas(isAdmin: boolean, isCore: boolean) {
 /** The form the action reads: a `:present` marker per row, checkboxes as "on". */
 export function choicesToFormData(choices: Choices): FormData {
   const fd = new FormData();
+  fd.set("intent", "notifications");
   for (const [eventType, c] of Object.entries(choices)) {
     fd.set(`${eventType}:present`, "1");
     if (c.inApp) fd.set(`${eventType}:inApp`, "on");
@@ -102,7 +121,15 @@ export function choicesToFormData(choices: Choices): FormData {
   return fd;
 }
 
-const COLS = "grid grid-cols-[minmax(0,1fr)_64px_64px_64px_160px] items-center gap-2";
+const CHANNEL_HEADERS: { channel: Channel; label: string }[] = [
+  { channel: "inApp", label: "In-app" },
+  { channel: "desktop", label: "Desktop" },
+  { channel: "slackDm", label: "Slack DM" },
+  { channel: "email", label: "Email" },
+];
+
+const MEMBER_COLS = "grid grid-cols-[minmax(0,1fr)_64px_64px_64px_160px] items-center gap-2";
+const OUTSIDE_COLS = "grid grid-cols-[minmax(0,1fr)_64px_160px] items-center gap-2";
 
 export function NotificationsSettingsBlock({
   prefs,
@@ -111,12 +138,22 @@ export function NotificationsSettingsBlock({
   digestHourEt,
   isAdmin,
   isCore,
+  audience,
+  action,
 }: NotificationsSettingsData) {
+  const isMember = audience === "member";
+  const COLS = isMember ? MEMBER_COLS : OUTSIDE_COLS;
+  const headers = isMember
+    ? CHANNEL_HEADERS
+    : CHANNEL_HEADERS.filter((h) => h.channel === "inApp" || h.channel === "email");
   const { compactField, actionBtn, actionBtnPrimary } = useOsChrome();
   const toast = useToast();
   const saveFetcher = useFetcher<{ ok: boolean; error: string | null }>();
   const hourFetcher = useFetcher<{ ok: boolean; error: string | null }>();
-  const areas = useMemo(() => visibleAreas(isAdmin, isCore), [isAdmin, isCore]);
+  const areas = useMemo(
+    () => visibleAreas({ isAdmin, isCore, audience }),
+    [isAdmin, isCore, audience],
+  );
 
   const saved = useMemo<Choices>(() => {
     const byType = new Map(prefs.map((p) => [p.eventType, p]));
@@ -125,7 +162,7 @@ export function NotificationsSettingsBlock({
       for (const t of events) {
         const def: EventDef = EVENT_TYPES[t];
         const row = byType.get(t);
-        const email = (row?.digestFrequency ?? def.defaults.email) as DigestValue;
+        const email = (row?.digestFrequency ?? defaultEmailFor(def, audience)) as DigestValue;
         out[t] = {
           inApp: inAppForced(def, email) || (row?.inApp ?? def.defaults.inApp),
           desktop: row?.desktop ?? def.defaults.desktop,
@@ -135,7 +172,7 @@ export function NotificationsSettingsBlock({
       }
     }
     return out;
-  }, [prefs, areas]);
+  }, [prefs, areas, audience]);
 
   const [draft, setDraft] = useState<Choices>(saved);
   useEffect(() => setDraft(saved), [saved]);
@@ -184,48 +221,56 @@ export function NotificationsSettingsBlock({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex max-w-xl flex-col gap-1 text-sm text-os-grey">
           <p>Choose where each notification reaches you. Locked ones are required.</p>
-          <p className="text-os-muted">
-            A daily or weekly digest keeps in-app on, since digests list what you haven't read.
-            Weekly digests go out on {WEEKDAY_NAMES[digestSchedule.weeklyWeekday]}s.
-          </p>
-          {!slackConnected && (
-            <p className="text-os-muted">
-              Slack DMs need Slack connected.{" "}
-              <Link to="/settings/connections" className="text-os-accent hover:text-os-accent-hover">
-                Connect it in Connections
-              </Link>
-              .
-            </p>
+          {isMember && (
+            <>
+              <p className="text-os-muted">
+                A daily or weekly digest keeps in-app on, since digests list what you haven't read.
+                Weekly digests go out on {WEEKDAY_NAMES[digestSchedule.weeklyWeekday]}s.
+              </p>
+              {!slackConnected && (
+                <p className="text-os-muted">
+                  Slack DMs need Slack connected.{" "}
+                  <Link to="/settings/connections" className="text-os-accent hover:text-os-accent-hover">
+                    Connect it in Connections
+                  </Link>
+                  .
+                </p>
+              )}
+            </>
           )}
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-os-grey">Digests arrive at</span>
-          <Segmented
-            ariaLabel="Digest time"
-            size="md"
-            value={String(hour)}
-            onChange={(v) =>
-              hourFetcher.submit(
-                { intent: "digest-hour", hour: v },
-                { method: "post", action: NOTIFICATIONS_ACTION },
-              )
-            }
-            options={digestHourOptions(defaultHour).map((h) => ({
-              value: String(h),
-              label: digestHourLabel(h),
-            }))}
-          />
-        </div>
+        {isMember && (
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-os-grey">Digests arrive at</span>
+            <Segmented
+              ariaLabel="Digest time"
+              size="md"
+              value={String(hour)}
+              onChange={(v) =>
+                hourFetcher.submit({ intent: "digest-hour", hour: v }, { method: "post", action })
+              }
+              options={digestHourOptions(defaultHour).map((h) => ({
+                value: String(h),
+                label: digestHourLabel(h),
+              }))}
+            />
+          </div>
+        )}
       </div>
 
       <div className="no-scrollbar overflow-x-auto">
-        <div className="flex min-w-[700px] flex-col gap-3">
-          <div className={cn(COLS, "px-6 text-xs font-semibold text-os-muted")}>
+        <div className={cn("flex flex-col gap-3", isMember && "min-w-[700px]")}>
+          <div className={cn(COLS, "items-end px-6 text-xs font-semibold text-os-muted")}>
             <span>Notification</span>
-            <span className="text-center">In-app</span>
-            <span className="text-center">Desktop</span>
-            <span className="text-center">Slack DM</span>
-            <span>Email</span>
+            {headers.map(({ channel, label }) => (
+              <span
+                key={channel}
+                className={cn("flex flex-col gap-1.5", channel === "email" ? "items-start" : "items-center")}
+              >
+                <ChannelPreview channel={channel} />
+                {label}
+              </span>
+            ))}
           </div>
 
           {areas.map(({ area, events }) => {
@@ -291,25 +336,29 @@ export function NotificationsSettingsBlock({
                               />
                             </MaybeTip>
                           </span>
-                          <span className="flex justify-center">
-                            <Checkbox
-                              tone="os"
-                              aria-label={`${def.label} desktop`}
-                              checked={c.desktop}
-                              onChange={(e) => update(eventType, { desktop: e.target.checked })}
-                            />
-                          </span>
-                          <span className="flex justify-center">
-                            <MaybeTip tip={slackConnected ? null : "Connect Slack first."}>
-                              <Checkbox
-                                tone="os"
-                                aria-label={`${def.label} Slack DM`}
-                                checked={c.slackDm}
-                                disabled={!slackConnected}
-                                onChange={(e) => update(eventType, { slackDm: e.target.checked })}
-                              />
-                            </MaybeTip>
-                          </span>
+                          {isMember && (
+                            <>
+                              <span className="flex justify-center">
+                                <Checkbox
+                                  tone="os"
+                                  aria-label={`${def.label} desktop`}
+                                  checked={c.desktop}
+                                  onChange={(e) => update(eventType, { desktop: e.target.checked })}
+                                />
+                              </span>
+                              <span className="flex justify-center">
+                                <MaybeTip tip={slackConnected ? null : "Connect Slack first."}>
+                                  <Checkbox
+                                    tone="os"
+                                    aria-label={`${def.label} Slack DM`}
+                                    checked={c.slackDm}
+                                    disabled={!slackConnected}
+                                    onChange={(e) => update(eventType, { slackDm: e.target.checked })}
+                                  />
+                                </MaybeTip>
+                              </span>
+                            </>
+                          )}
                           {def.externalEmail ? (
                             <Tooltip content="This email comes from its own pipeline, not your notification settings.">
                               <span className="pl-3 text-xs text-os-muted">Sent separately</span>
@@ -319,7 +368,7 @@ export function NotificationsSettingsBlock({
                               ariaLabel={`${def.label} email`}
                               value={c.email}
                               onChange={(email) => update(eventType, { email })}
-                              options={DIGEST_VALUES.map((v) => ({ value: v, label: EMAIL_LABEL[v] }))}
+                              options={emailChoices(audience).map((v) => ({ value: v, label: EMAIL_LABEL[v] }))}
                               buttonClassName={cn(
                                 compactField,
                                 "inline-flex w-full items-center justify-between gap-1 border border-os-container px-3 py-1.5 text-sm",
@@ -355,7 +404,7 @@ export function NotificationsSettingsBlock({
               onClick={() =>
                 saveFetcher.submit(choicesToFormData(draft), {
                   method: "post",
-                  action: NOTIFICATIONS_ACTION,
+                  action,
                 })
               }
             >

@@ -1,7 +1,7 @@
 import { Outlet, redirect, useLoaderData, useRouteError } from "react-router";
 import { Home, FolderKanban } from "lucide-react";
 import type { Route } from "./+types/partner-layout";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
 import { impersonationAllowsWrites, isImpersonating } from "~/lib/auth";

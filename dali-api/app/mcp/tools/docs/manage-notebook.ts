@@ -1,7 +1,7 @@
 // MCP `manage_notebook` — faceted notebook management tool.
 // Actions: create · set_template · add_page · detach_note · attach_note ·
 // merge_into · dissolve · trash · set_series_notebook.
-// Rename is manage_page / update_page; this tool adds no rename. Errors carry a
+// Rename is manage_page update; this tool adds no rename. Errors carry a
 // numeric status (NotebookError), which the dispatcher maps to JSON-RPC codes.
 
 import { McpInvalidError } from "~/mcp/errors";

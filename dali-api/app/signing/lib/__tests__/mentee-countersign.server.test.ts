@@ -18,7 +18,7 @@ const h = vi.hoisted(() => ({
   notify: vi.fn(),
 }));
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     signingBinding: {
       findUnique: vi.fn(async ({ select }: { select: Record<string, unknown> }) =>

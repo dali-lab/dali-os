@@ -16,7 +16,7 @@ import { cn } from "~/lib/cn";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listAllGroups } from "~/lib/groups";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { logAuditEvent } from "~/lib/audit";
@@ -43,7 +43,6 @@ import {
 import { fullName } from "~/lib/display";
 
 export const handle = {
-  roomyBreadcrumb: true,
   breadcrumbTrail: (data: unknown) => {
     const d = data as
       | { activity?: { name: string }; viewerIsAdmin?: boolean; isAdmin?: boolean }

@@ -24,9 +24,10 @@ import {
 import { MessageSquare } from "lucide-react";
 import { CommentsExtension } from "@blocknote/core/comments";
 import type { ThreadData } from "@blocknote/core/comments";
-import { Thread, useThreads } from "@blocknote/react";
+import { useThreads } from "@blocknote/react";
 import { useBlockNoteEditor } from "@blocknote/react";
 import { useExtension, useExtensionState } from "@blocknote/react";
+import { DaliThread } from "./DaliThread";
 
 // How DocEditorImpl talks to the rail via comments config.
 export interface DocCommentsRailProps {
@@ -418,7 +419,7 @@ function RailCard({
       // Clicking the card wrapper (not Thread's own focus handler) also selects.
       onClick={selectOnce}
     >
-      <Thread
+      <DaliThread
         thread={thread}
         selected={selected}
         orphaned={orphaned}

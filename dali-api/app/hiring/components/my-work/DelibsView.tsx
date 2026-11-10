@@ -123,7 +123,7 @@ function DelibsSessionView({
         </h3>
       </div>
       <div
-        className={`grid grid-cols-1 gap-4 ${columns.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}
+        className={`grid grid-cols-1 gap-4 ${columns.length >= 4 ? 'md:grid-cols-4' : columns.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}
       >
         {columns.map((col) => {
           const ids = columnOrder[col] ?? []

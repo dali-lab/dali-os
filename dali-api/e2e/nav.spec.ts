@@ -2,13 +2,9 @@ import { test, expect } from './fixtures';
 
 // Hiring navigation: the sidebar's Hiring entry lands on /hiring (My work) and
 // carries the role-gated tools (My work / Applications / Domain /
-// Cycles / Waitlists / Onboarding / Library) as its children. They used to be
-// an in-page pill row inside the workspace iframe; the new left navigation
-// (sidebar-redesign, on for everyone) suppresses that row and puts the same
-// role-gated set in the sidebar, so that is where these assert.
+// Cycles / Waitlists / Onboarding / Library) as its children, so that is where
+// these assert.
 const sidebar = (page: import('@playwright/test').Page) => page.locator('aside');
-const hiringFrame = (page: import('@playwright/test').Page) =>
-  page.frameLocator('iframe[title="Hiring"]');
 
 test.describe('navigation for hiring lead', () => {
   test.beforeEach(async ({ loginAs }) => {
@@ -27,8 +23,7 @@ test.describe('navigation for hiring lead', () => {
   test('can navigate to cycles page', async ({ page }) => {
     await page.goto('/hiring/lead');
     await expect(page).toHaveURL(/\/hiring\/lead/);
-    const frame = hiringFrame(page);
-    await expect(frame.getByRole('heading', { name: 'Cycles', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Cycles', exact: true })).toBeVisible();
   });
 });
 

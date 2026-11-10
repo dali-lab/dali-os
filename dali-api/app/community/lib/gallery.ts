@@ -37,6 +37,28 @@ export async function encodeGalleryImage(
   return null;
 }
 
+export function scaledGalleryCopy(
+  bitmap: ImageBitmap,
+  width: number,
+  height: number,
+  kind: keyof typeof QUALITY,
+): Promise<File | null> {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  ctx?.drawImage(bitmap, 0, 0, width, height);
+  return encodeGalleryImage((type, quality) => {
+    // JPEG has no alpha, so transparent areas would otherwise encode as black.
+    if (type === "image/jpeg" && ctx) {
+      ctx.globalCompositeOperation = "destination-over";
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, width, height);
+    }
+    return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+  }, kind);
+}
+
 /** The display copy's size, or null when the original is already small enough to show. */
 export function galleryDisplaySize(
   width: number,
@@ -49,10 +71,6 @@ export function galleryDisplaySize(
     width: Math.max(1, Math.round(width * scale)),
     height: Math.max(1, Math.round(height * scale)),
   };
-}
-
-export function isGalleryEmoji(value: string): boolean {
-  return (GALLERY_EMOJI as readonly string[]).includes(value);
 }
 
 /** The prefix a viewer's display copies and tiles go under (the presign route adds uploads/). */
@@ -160,20 +178,6 @@ export function layoutMasonry<T extends { width: number; height: number }>(
     heights[target] += item.height / item.width + footerRatio;
   }
   return cols;
-}
-
-type Reaction = { emoji: string; count: number; mine: boolean };
-
-/** The viewer's reaction toggled locally, in palette order, so a tap shows before the server answers. */
-export function toggleReaction(reactions: Reaction[], emoji: string): Reaction[] {
-  const hit = reactions.find((r) => r.emoji === emoji);
-  const next = hit
-    ? reactions
-        .map((r) => (r.emoji === emoji ? { ...r, count: r.count + (r.mine ? -1 : 1), mine: !r.mine } : r))
-        .filter((r) => r.count > 0)
-    : [...reactions, { emoji, count: 1, mine: true }];
-  const order = (e: string) => (GALLERY_EMOJI as readonly string[]).indexOf(e);
-  return next.sort((a, b) => order(a.emoji) - order(b.emoji));
 }
 
 /** "gallery-demo-day-setup.jpg": the caption's first words, or the post's own name without one. */

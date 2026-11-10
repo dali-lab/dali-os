@@ -62,6 +62,18 @@ vi.mock("../../time-entries", () => ({
   runDeleteTimeEntry: vi.fn(),
 }));
 
+vi.mock("../../file-sharing", () => ({
+  FILE_SHARING_PROPERTIES: {},
+  FILE_SHARING_REQUIRED: {},
+  runFileSharingAction: vi.fn(),
+}));
+
+vi.mock("../../page-sharing", () => ({
+  PAGE_SHARING_PROPERTIES: {},
+  PAGE_SHARING_REQUIRED: {},
+  runPageSharingAction: vi.fn(),
+}));
+
 vi.mock("../../document-curation", () => ({
   SET_DOCUMENT_SHARING_TOOL: {
     inputSchema: { type: "object", properties: {}, required: ["pageId"] },

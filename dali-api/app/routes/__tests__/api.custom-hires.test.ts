@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     customHire: {
       findUnique: vi.fn(),
@@ -19,7 +19,7 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isLabMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

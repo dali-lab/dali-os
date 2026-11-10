@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import type { TaskProject } from "~/components/doc/task/task-api";
 import { createElement, act } from "react";
 import { MemoryRouter } from "react-router";
 import { ActionItemDraftProvider, SUCCESS_VISIBLE_MS } from "./action-item-draft";
@@ -9,13 +10,29 @@ import { makeRec, mountDom } from "./test-support";
 import type { EnhanceActionItem } from "./enhance-plan";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 
+let projectsMock: TaskProject[] = [];
+vi.mock("~/components/doc/task/task-api", () => ({ useTaskProjects: () => projectsMock }));
+
 let editorRoot: HTMLElement;
 
 const BLOCKS = [
-  { id: "b1", type: "checkListItem", text: "Add two reviewers to the 26W cycle" },
-  { id: "b2", type: "checkListItem", text: "Send the catering quote" },
+  { id: "h", type: "heading", text: "Tasks" },
+  { id: "b1", type: "paragraph", text: "Add two reviewers to the 26W cycle" },
+  { id: "b2", type: "paragraph", text: "Send the catering quote" },
+  { id: "h2", type: "heading", text: "Notes" },
   { id: "b3", type: "paragraph", text: "Unrelated paragraph" },
 ];
+const [HEADING, LINE_A, LINE_B, NOTES_HEADING, UNRELATED] = BLOCKS as [
+  (typeof BLOCKS)[number],
+  (typeof BLOCKS)[number],
+  (typeof BLOCKS)[number],
+  (typeof BLOCKS)[number],
+  (typeof BLOCKS)[number],
+];
+const BOTH_LINES = [HEADING, LINE_A, LINE_B, NOTES_HEADING, UNRELATED];
+const ONLY_A = [HEADING, LINE_A, NOTES_HEADING, UNRELATED];
+const ONLY_B = [HEADING, LINE_B, NOTES_HEADING, UNRELATED];
+const NO_LINES = [NOTES_HEADING, UNRELATED];
 
 function buildEditor() {
   editorRoot = document.createElement("div");
@@ -41,7 +58,7 @@ function recWith(items: EnhanceActionItem[] = ITEMS, extra: Partial<UseMeetingRe
   return makeRec({
     phase: "done",
     enhancedAt: "2026-10-18T12:00:00Z",
-    canCreateTasks: true,
+    canEdit: true,
     projectId: "p1",
     roster: [
       { userId: "u-maya", name: "Maya Chen" },
@@ -88,6 +105,7 @@ const chipsFor = (i: number) => document.querySelector(`[data-action-chips-for="
 
 beforeEach(() => {
   window.localStorage.clear();
+  projectsMock = [{ id: "p1", name: "Campus Compost" }];
 });
 
 afterEach(() => {
@@ -98,70 +116,74 @@ afterEach(() => {
 
 const chipRules = () => document.querySelector('style[data-enhance-rules="chips"]')?.textContent ?? "";
 
+const noteState = (blocks: typeof BLOCKS) => ({ getNoteState: () => ({ blocks, bodyText: "" }) });
+const sent = (rec: UseMeetingRecording) => (rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+const addButton = (text: string) => button(`Add task: ${text}`);
+const clickAsync = (el: Element) =>
+  act(async () => {
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+const pickStatus = (text: string, label: string) => {
+  click(document.querySelector(`button[aria-label="Status for ${text}"]`)!);
+  click([...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.includes(label))!);
+};
+
 describe("tasks bar visibility", () => {
   it("appears once the editor becomes ready and the note version bumps", () => {
     let state: { blocks: typeof BLOCKS; bodyText: string } | null = null;
     const getNoteState = () => state;
     buildEditor();
-    const ui = mountDom(
-      createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: recWith(ITEMS, { getNoteState, noteVersion: 0 }), children: createElement(EnhanceBar, { rec: recWith(ITEMS, { getNoteState, noteVersion: 0 }) }) })),
-    );
-    expect(bar()?.textContent ?? "").not.toContain("action items");
+    const first = recWith(ITEMS, { getNoteState, noteVersion: 0 });
+    const ui = mountDom(createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: first, children: createElement(EnhanceBar, { rec: first }) })));
+    expect(bar()?.textContent ?? "").not.toContain("suggested task");
     state = { blocks: BLOCKS, bodyText: "" };
     const next = recWith(ITEMS, { getNoteState, noteVersion: 1 });
-    ui.rerender(
-      createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: next, children: createElement(EnhanceBar, { rec: next }) })),
-    );
-    expect(bar()?.textContent).toContain("2 action items");
+    ui.rerender(createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: next, children: createElement(EnhanceBar, { rec: next }) })));
+    expect(bar()?.textContent).toContain("2 suggested tasks");
     ui.unmount();
   });
 
-  it("shows with counts once nothing is pending", () => {
+  it("shows the counts and copy once nothing is pending", () => {
     const { unmount } = mount(recWith());
-    expect(bar()?.textContent).toContain("2 action items");
-    expect(bar()?.textContent).toContain("Check owners and dates, then add them to the project board.");
-    expect(button("Create 2 tasks")).toBeTruthy();
-    unmount();
-  });
-
-  it("names the unmatched owners", () => {
-    const { unmount } = mount(recWith());
-    expect(bar()?.textContent).toContain("1 owner needs a pick.");
-    unmount();
-  });
-
-  it("pluralizes the unmatched owners sentence", () => {
-    const items = ITEMS.map((i) => ({ ...i, ownerUserId: null }));
-    const { unmount } = mount(recWith(items));
-    expect(bar()?.textContent).toContain("2 owners need a pick.");
+    expect(bar()?.textContent).toContain("2 suggested tasks");
+    expect(bar()?.textContent).toContain("Check owners and dates, then add them.");
+    expect(button("Add all")).toBeTruthy();
+    expect(button("Not now")).toBeTruthy();
     unmount();
   });
 
   it("uses the singular for one item", () => {
-    const { unmount } = mount(recWith([ITEMS[0]!]));
-    expect(bar()?.textContent).toContain("1 action item");
-    expect(button("Create 1 task")).toBeTruthy();
+    const { unmount } = mount(recWith([ITEMS[0]!], noteState(ONLY_A)));
+    expect(bar()?.textContent).toContain("1 suggested task");
+    expect(bar()?.textContent).not.toContain("1 suggested tasks");
     unmount();
   });
 
-  it("is hidden once Enhance's lines are gone from the note, even with a plan", () => {
-    const { unmount } = mount(recWith(ITEMS, { getNoteState: () => ({ blocks: [BLOCKS[2]!], bodyText: "" }) }));
-    expect(document.body.textContent).not.toContain("action items");
+  it("is hidden once the suggestion lines are gone from the note, even with a plan", () => {
+    const { unmount } = mount(recWith(ITEMS, noteState(NO_LINES)));
+    expect(document.body.textContent).not.toContain("suggested task");
     expect(document.querySelector("[data-action-chips-for]")).toBeNull();
     unmount();
   });
 
-  it("is hidden when no checked item has a live checklist line", () => {
-    const { unmount } = mount(recWith(ITEMS, { getNoteState: () => ({ blocks: [BLOCKS[0]!], bodyText: "" }) }));
-    expect(button("Create 1 task")).toBeTruthy();
-    click(document.querySelector(`input[aria-label="Make a task: ${ITEMS[0]!.text}"]`)!);
-    expect(bar()).toBeNull();
+  it("ignores lines outside the Tasks section", () => {
+    const { unmount } = mount(recWith(ITEMS, noteState([UNRELATED, { id: "b1", type: "paragraph", text: LINE_A.text }])));
+    expect(document.body.textContent).not.toContain("suggested task");
+    expect(document.querySelector("[data-action-chips-for]")).toBeNull();
+    unmount();
+  });
+
+  it("still finds old checklist lines under an Action items heading", () => {
+    const old = [{ id: "h", type: "heading", text: "Action items" }, { ...LINE_A, type: "checkListItem" }];
+    const { unmount } = mount(recWith([ITEMS[0]!], noteState(old)));
+    expect(bar()?.textContent).toContain("1 suggested task");
+    expect(chipsFor(0)).not.toBeNull();
     unmount();
   });
 
   it("is hidden while marks are pending", () => {
     const { unmount } = mount(recWith(ITEMS, { pendingMarks: [{ id: "b1", mark: "enhance-added", type: "paragraph", text: "x" }] }));
-    expect(document.body.textContent).not.toContain("action items");
+    expect(document.body.textContent).not.toContain("suggested task");
     expect(document.querySelector("[data-action-chips-for]")).toBeNull();
     unmount();
   });
@@ -170,20 +192,36 @@ describe("tasks bar visibility", () => {
     const items = ITEMS.map((i, n) => ({ ...i, taskId: `t${n}` }));
     const { unmount } = mount(recWith(items));
     expect(bar()).toBeNull();
+    expect(document.querySelector("[data-action-chips-for]")).toBeNull();
     unmount();
   });
 
-  it("is hidden for a viewer who cannot create tasks, with read-only chips", () => {
-    const { unmount } = mount(recWith(ITEMS, { canCreateTasks: false }));
+  it("is hidden for a viewer who cannot edit, with read-only chips", () => {
+    const { unmount } = mount(recWith(ITEMS, { canEdit: false }));
     expect(bar()).toBeNull();
     expect(chipsFor(0)?.textContent).toContain("Maya Chen");
     expect(chipsFor(0)?.querySelector("input")).toBeNull();
+    expect(chipsFor(0)?.querySelector("button")).toBeNull();
     unmount();
   });
 
-  it("is hidden without a project", () => {
-    const { unmount } = mount(recWith(ITEMS, { projectId: null }));
+  it("is hidden when the viewer has no project to add tasks to", () => {
+    projectsMock = [];
+    const { unmount } = mount(recWith());
     expect(bar()).toBeNull();
+    unmount();
+  });
+
+  it("is hidden when the note's project is not one the viewer can add to", () => {
+    projectsMock = [{ id: "other", name: "Other" }];
+    const { unmount } = mount(recWith());
+    expect(bar()).toBeNull();
+    unmount();
+  });
+
+  it("shows on a note without a project when the viewer has projects", () => {
+    const { unmount } = mount(recWith(ITEMS, { projectId: null }));
+    expect(bar()?.textContent).toContain("2 suggested tasks");
     unmount();
   });
 
@@ -207,7 +245,7 @@ describe("tasks bar visibility", () => {
     const next = recWith();
     next.enhanceNotes!.snapshotAt = "snap-2";
     const second = mount(next);
-    expect(bar()?.textContent).toContain("2 action items");
+    expect(bar()?.textContent).toContain("2 suggested tasks");
     second.unmount();
   });
 
@@ -221,16 +259,14 @@ describe("tasks bar visibility", () => {
   });
 });
 
-describe("creating tasks", () => {
-  it("sends the checked, untasked items with the chosen owner and due date", async () => {
+describe("adding tasks", () => {
+  it("Add all sends every item with its status, owner, due date and line", async () => {
     const rec = recWith();
     const { unmount } = mount(rec);
-    await act(async () => {
-      button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    await clickAsync(button("Add all"));
     expect(rec.createTasksFromItems).toHaveBeenCalledWith([
-      { index: 0, title: ITEMS[0]!.text, assigneeId: "u-maya", dueAt: new Date("2026-10-23").toISOString() },
-      { index: 1, title: ITEMS[1]!.text, assigneeId: undefined, dueAt: undefined },
+      { index: 0, title: ITEMS[0]!.text, assigneeId: "u-maya", dueAt: new Date("2026-10-23").toISOString(), status: "Todo", projectId: undefined, blockId: "b1" },
+      { index: 1, title: ITEMS[1]!.text, assigneeId: undefined, dueAt: undefined, status: "Backlog", projectId: undefined, blockId: "b2" },
     ]);
     unmount();
   });
@@ -238,49 +274,61 @@ describe("creating tasks", () => {
   it("skips items that already have a task", async () => {
     const rec = recWith([{ ...ITEMS[0]!, taskId: "t0" }, ITEMS[1]!]);
     const { unmount } = mount(rec);
-    await act(async () => {
-      button("Create 1 task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect((rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0]).toHaveLength(1);
-    expect((rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0][0].index).toBe(1);
+    await clickAsync(button("Add all"));
+    expect(sent(rec).map((s: { index: number }) => s.index)).toEqual([1]);
     unmount();
   });
 
-  it("does not send an excluded item", async () => {
+  it("Add sends only that item", async () => {
     const rec = recWith();
     const { unmount } = mount(rec);
-    click(document.querySelector(`input[aria-label="Make a task: ${ITEMS[1]!.text}"]`)!);
-    expect(button("Create 1 task")).toBeTruthy();
-    await act(async () => {
-      button("Create 1 task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const sent = (rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(sent.map((s: { index: number }) => s.index)).toEqual([0]);
+    await clickAsync(addButton(ITEMS[0]!.text));
+    expect(rec.createTasksFromItems).toHaveBeenCalledTimes(1);
+    expect(sent(rec)).toEqual([
+      { index: 0, title: ITEMS[0]!.text, assigneeId: "u-maya", dueAt: new Date("2026-10-23").toISOString(), status: "Todo", projectId: undefined, blockId: "b1" },
+    ]);
     unmount();
   });
 
-  it("shows Creating while busy", async () => {
+  it("titles the task with the line as it reads in the note now", async () => {
+    const edited = [{ ...LINE_A, text: "Add two reviewers to the 26W cycle by Friday" }, LINE_B];
+    const rec = recWith(ITEMS, noteState([HEADING, ...edited]));
+    const { unmount } = mount(rec);
+    await clickAsync(button("Add all"));
+    expect(sent(rec)[0].title).toBe("Add two reviewers to the 26W cycle by Friday");
+    unmount();
+  });
+
+  it("never sends an item whose line was deleted from the note", async () => {
+    const rec = recWith(ITEMS, noteState(ONLY_B));
+    const { unmount } = mount(rec);
+    expect(bar()?.textContent).toContain("1 suggested task");
+    await clickAsync(button("Add all"));
+    expect(sent(rec).map((s: { index: number }) => s.index)).toEqual([1]);
+    unmount();
+  });
+
+  it("shows Adding while busy and disables every Add", async () => {
     let finish: (ok: boolean) => void = () => {};
     const rec = recWith(ITEMS, { createTasksFromItems: vi.fn(() => new Promise<boolean>((r) => (finish = r))) });
     const { unmount } = mount(rec);
-    click(button("Create 2 tasks"));
-    expect(button("Creating…").disabled).toBe(true);
+    click(addButton(ITEMS[0]!.text));
+    expect(button("Adding…").disabled).toBe(true);
+    expect(addButton(ITEMS[1]!.text).disabled).toBe(true);
+    click(addButton(ITEMS[1]!.text));
+    expect(rec.createTasksFromItems).toHaveBeenCalledTimes(1);
     await act(async () => finish(true));
     unmount();
   });
 
-  it("shows the success state with a board link once every item has a task, then hides after 4 seconds", async () => {
+  it("shows Added N tasks with a board link once every item has a task, then hides after 4 seconds", async () => {
     vi.useFakeTimers();
     const rec = recWith();
     const ui = mount(rec);
-    await act(async () => {
-      button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    await clickAsync(button("Add all"));
     const tasked = recWith([{ ...ITEMS[0]!, taskId: "t0" }, { ...ITEMS[1]!, taskId: "t1" }]);
-    ui.rerender(
-      createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: tasked, children: createElement(EnhanceBar, { rec: tasked }) })),
-    );
-    expect(bar()?.textContent).toContain("Added 2 tasks to the project board");
+    ui.rerender(createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: tasked, children: createElement(EnhanceBar, { rec: tasked }) })));
+    expect(bar()?.textContent).toContain("Added 2 tasks");
     expect(document.querySelector('a[href="/projects/p1?tab=progress"]')?.textContent).toBe("View board");
     act(() => {
       vi.advanceTimersByTime(SUCCESS_VISIBLE_MS - 1);
@@ -293,112 +341,159 @@ describe("creating tasks", () => {
     ui.unmount();
   });
 
-  it("keeps the tasks bar, with an Added note, while untasked lines remain", async () => {
+  it("keeps the bar, with an Added note, while suggestions remain", async () => {
     vi.useFakeTimers();
-    const rec = recWith();
-    const { unmount } = mount(rec);
-    await act(async () => {
-      button("Add task: " + ITEMS[0]!.text).dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(bar()?.textContent).toContain("Added 1 task to the project board");
-    expect(button("Create 2 tasks")).toBeTruthy();
+    const { unmount } = mount(recWith());
+    await clickAsync(addButton(ITEMS[0]!.text));
+    expect(bar()?.textContent).toContain("Added 1 task");
+    expect(button("Add all")).toBeTruthy();
     act(() => {
       vi.advanceTimersByTime(SUCCESS_VISIBLE_MS);
     });
     expect(bar()?.textContent).not.toContain("Added");
-    expect(button("Create 2 tasks")).toBeTruthy();
     unmount();
   });
 
-  it("never sends an item whose line was reverted or deleted from the note", async () => {
-    const rec = recWith(ITEMS, { getNoteState: () => ({ blocks: [BLOCKS[1]!, BLOCKS[2]!], bodyText: "" }) });
-    const { unmount } = mount(rec);
-    expect(bar()?.textContent).toContain("1 action item");
-    await act(async () => {
-      button("Create 1 task").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const sent = (rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(sent.map((s: { index: number }) => s.index)).toEqual([1]);
-    unmount();
-  });
-
-  it("titles the task with the line as it reads in the note now", async () => {
-    const edited = [{ ...BLOCKS[0]!, text: "Add two reviewers to the 26W cycle by Friday" }, BLOCKS[1]!];
-    const rec = recWith(ITEMS, { getNoteState: () => ({ blocks: edited, bodyText: "" }) });
-    const { unmount } = mount(rec);
-    await act(async () => {
-      button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const sent = (rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(sent[0].title).toBe("Add two reviewers to the 26W cycle by Friday");
-    unmount();
-  });
-
-  it("shows no success state when creation fails", async () => {
+  it("shows no success state when adding fails", async () => {
     const rec = recWith(ITEMS, { createTasksFromItems: vi.fn(async () => false) });
     const { unmount } = mount(rec);
-    await act(async () => {
-      button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    await clickAsync(button("Add all"));
     expect(bar()?.textContent).not.toContain("Added");
-    expect(button("Create 2 tasks")).toBeTruthy();
     unmount();
   });
 
   it("clears the success timer on unmount", async () => {
     vi.useFakeTimers();
     const { unmount } = mount(recWith());
-    await act(async () => {
-      button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    await clickAsync(button("Add all"));
     const before = vi.getTimerCount();
     unmount();
     expect(vi.getTimerCount()).toBeLessThan(before);
   });
+
+  it("links to no board when the added tasks span several projects", async () => {
+    projectsMock = [
+      { id: "p1", name: "Campus Compost" },
+      { id: "p2", name: "Trail Maps" },
+    ];
+    vi.useFakeTimers();
+    const rec = recWith(ITEMS, { projectId: null });
+    const ui = mount(rec);
+    pickProject(ITEMS[0]!.text, "Campus Compost");
+    pickProject(ITEMS[1]!.text, "Trail Maps");
+    await clickAsync(button("Add all"));
+    const tasked = recWith(ITEMS.map((i, n) => ({ ...i, taskId: `t${n}` })), { projectId: null });
+    ui.rerender(createElement(MemoryRouter, null, createElement(ActionItemDraftProvider, { rec: tasked, children: createElement(EnhanceBar, { rec: tasked }) })));
+    expect(bar()?.textContent).toContain("Added 2 tasks");
+    expect(document.querySelector("a")).toBeNull();
+    ui.unmount();
+  });
 });
 
-describe("adding one task", () => {
-  it("sends only that item, with its owner and due date", async () => {
+const pickProject = (text: string, name: string) => {
+  const input = document.querySelector<HTMLInputElement>(`input[aria-label="Project for ${text}"]`)!;
+  act(() => input.focus());
+  click([...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.includes(name))!);
+};
+
+describe("date required for tasks outside Backlog", () => {
+  it("starts undated items in Backlog and dated items in To do", () => {
+    const { unmount } = mount(recWith());
+    expect(document.querySelector(`button[aria-label="Status for ${ITEMS[0]!.text}"]`)?.textContent).toContain("To do");
+    expect(document.querySelector(`button[aria-label="Status for ${ITEMS[1]!.text}"]`)?.textContent).toContain("Backlog");
+    unmount();
+  });
+
+  it("blocks Add on an undated item once it leaves Backlog, and Add all skips it", async () => {
     const rec = recWith();
     const { unmount } = mount(rec);
-    await act(async () => {
-      button("Add task: " + ITEMS[0]!.text).dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    expect(rec.createTasksFromItems).toHaveBeenCalledTimes(1);
-    expect(rec.createTasksFromItems).toHaveBeenCalledWith([
-      { index: 0, title: ITEMS[0]!.text, assigneeId: "u-maya", dueAt: new Date("2026-10-23").toISOString() },
-    ]);
+    pickStatus(ITEMS[1]!.text, "In progress");
+    expect(addButton(ITEMS[1]!.text).disabled).toBe(true);
+    expect(addButton(ITEMS[0]!.text).disabled).toBe(false);
+    await clickAsync(button("Add all"));
+    expect(sent(rec).map((s: { index: number }) => s.index)).toEqual([0]);
     unmount();
   });
 
-  it("disables every Add task and Create while a request is in flight", async () => {
-    let finish: (ok: boolean) => void = () => {};
-    const rec = recWith(ITEMS, { createTasksFromItems: vi.fn(() => new Promise<boolean>((r) => (finish = r))) });
+  it("disables Add all when no item can be added", () => {
+    const rec = recWith([{ ...ITEMS[1]! }], noteState(ONLY_B));
     const { unmount } = mount(rec);
-    click(button("Add task: " + ITEMS[0]!.text));
-    expect(button("Add task: " + ITEMS[1]!.text).disabled).toBe(true);
-    expect(button("Creating…").disabled).toBe(true);
-    click(button("Add task: " + ITEMS[1]!.text));
-    expect(rec.createTasksFromItems).toHaveBeenCalledTimes(1);
-    await act(async () => finish(true));
+    pickStatus(ITEMS[1]!.text, "In progress");
+    expect(button("Add all").disabled).toBe(true);
     unmount();
   });
 
-  it("is not offered on an excluded item", () => {
-    const { unmount } = mount(recWith());
-    click(document.querySelector(`input[aria-label="Make a task: ${ITEMS[1]!.text}"]`)!);
-    expect([...document.querySelectorAll("button")].some((b) => b.getAttribute("aria-label") === `Add task: ${ITEMS[1]!.text}`)).toBe(false);
+  it("sends the picked status once the item has a date", async () => {
+    const rec = recWith();
+    const { unmount } = mount(rec);
+    pickStatus(ITEMS[0]!.text, "In progress");
+    await clickAsync(addButton(ITEMS[0]!.text));
+    expect(sent(rec)[0].status).toBe("InProgress");
     unmount();
   });
 });
 
-describe("action item chips", () => {
-  it("renders one chip group per matching checklist block and none for other blocks", () => {
+describe("project picker", () => {
+  it("is absent on a note with a project", () => {
+    const { unmount } = mount(recWith());
+    expect(document.querySelector('input[aria-label^="Project for"]')).toBeNull();
+    unmount();
+  });
+
+  it("is offered on a note without a project, blocking Add until one is picked", async () => {
+    projectsMock = [
+      { id: "p1", name: "Campus Compost" },
+      { id: "p2", name: "Trail Maps" },
+    ];
+    const rec = recWith(ITEMS, { projectId: null });
+    const { unmount } = mount(rec);
+    expect(addButton(ITEMS[0]!.text).disabled).toBe(true);
+    pickProject(ITEMS[0]!.text, "Trail Maps");
+    expect(addButton(ITEMS[0]!.text).disabled).toBe(false);
+    await clickAsync(addButton(ITEMS[0]!.text));
+    expect(sent(rec)[0].projectId).toBe("p2");
+    unmount();
+  });
+
+  it("defaults to the only project the viewer has", async () => {
+    const rec = recWith(ITEMS, { projectId: null });
+    const { unmount } = mount(rec);
+    expect(addButton(ITEMS[0]!.text).disabled).toBe(false);
+    await clickAsync(button("Add all"));
+    expect(sent(rec).map((s: { projectId?: string }) => s.projectId)).toEqual(["p1", "p1"]);
+    unmount();
+  });
+});
+
+describe("dismissing a suggestion", () => {
+  it("removes that line from the note", () => {
+    const rec = recWith();
+    const { unmount } = mount(rec);
+    click(button(`Dismiss suggestion: ${ITEMS[1]!.text}`));
+    expect(rec.removeBlock).toHaveBeenCalledWith("b2");
+    expect(rec.removeBlock).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+});
+
+describe("suggestion chips", () => {
+  it("renders one chip group per matching line and none for other blocks", () => {
     const { unmount } = mount(recWith());
     expect(chipsFor(0)).not.toBeNull();
     expect(chipsFor(1)).not.toBeNull();
     expect(document.querySelectorAll("[data-action-chips-for]")).toHaveLength(2);
     expect(editorRoot.querySelectorAll("[data-action-chips], [style]")).toHaveLength(0);
+    unmount();
+  });
+
+  it("offers status, owner, due, Add and dismiss on each line, with no checkbox", () => {
+    const { unmount } = mount(recWith());
+    const group = chipsFor(0)!;
+    expect(group.querySelector(`button[aria-label="Status for ${ITEMS[0]!.text}"]`)).not.toBeNull();
+    expect(group.querySelector("input[role=combobox]")).not.toBeNull();
+    expect(group.textContent).toContain("Add");
+    expect(group.querySelector(`button[aria-label="Dismiss suggestion: ${ITEMS[0]!.text}"]`)).not.toBeNull();
+    expect(group.querySelector('input[type="checkbox"]')).toBeNull();
     unmount();
   });
 
@@ -418,7 +513,6 @@ describe("action item chips", () => {
     expect(chipRules()).toContain(
       '@media (max-width: 699px) {\n.dali-doc .bn-block-outer[data-id="b1"] > .bn-block > .bn-block-content { padding-bottom: 72px; }',
     );
-    expect(chipRules()).not.toContain("20rem");
     unmount();
     expect(document.querySelector("style[data-enhance-rules]")).toBeNull();
     Element.prototype.getBoundingClientRect = original;
@@ -427,7 +521,7 @@ describe("action item chips", () => {
   it("never sets an attribute on the editor's nodes when its observers fire", async () => {
     const spy = vi.spyOn(Element.prototype, "setAttribute");
     const { unmount } = mount(recWith());
-    editorRoot.querySelector('[data-id="b1"] p')!.textContent = `${BLOCKS[0]!.text} `;
+    editorRoot.querySelector('[data-id="b1"] p')!.textContent = `${LINE_A.text} `;
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 60));
     });
@@ -463,7 +557,7 @@ describe("action item chips", () => {
   });
 
   it("read-only chips explain an owner with no roster match", () => {
-    const { unmount } = mount(recWith(ITEMS, { canCreateTasks: false }));
+    const { unmount } = mount(recWith(ITEMS, { canEdit: false }));
     const owner = [...chipsFor(1)!.querySelectorAll("span")].find((el) => el.textContent === "Jordan")!;
     act(() => owner.dispatchEvent(new FocusEvent("focus", { bubbles: true })));
     act(() => owner.focus());
@@ -479,13 +573,13 @@ describe("action item chips", () => {
   });
 
   it("shows Add owner and Add date when the plan has neither", () => {
-    const { unmount } = mount(recWith([{ text: ITEMS[0]!.text }]));
+    const { unmount } = mount(recWith([{ text: ITEMS[0]!.text }], noteState(ONLY_A)));
     expect(chipsFor(0)!.querySelector("input[role=combobox]")!.getAttribute("placeholder")).toBe("Add owner");
     expect(chipsFor(0)!.textContent).toContain("Add date");
     unmount();
   });
 
-  it("picking an owner from the unmatched chip sets the owner and clears the unmatched count", async () => {
+  it("picking an owner from the unmatched chip sets the owner", async () => {
     const rec = recWith();
     const { unmount } = mount(rec);
     const input = chipsFor(1)!.querySelector<HTMLInputElement>("input[role=combobox]")!;
@@ -493,29 +587,15 @@ describe("action item chips", () => {
     expect(document.body.textContent).toContain("In this meeting");
     click([...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.includes("Jordan Lee"))!);
     expect(chipsFor(1)!.querySelector<HTMLInputElement>("input[role=combobox]")!.value).toBe("Jordan Lee");
-    expect(bar()?.textContent).not.toContain("needs a pick");
-    await act(async () => {
-      button("Create 2 tasks").dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-    const sent = (rec.createTasksFromItems as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(sent[1].assigneeId).toBe("u-jordan");
+    await clickAsync(button("Add all"));
+    expect(sent(rec)[1].assigneeId).toBe("u-jordan");
     unmount();
   });
 
-  it("excluded items render muted", () => {
-    const { unmount } = mount(recWith());
-    click(document.querySelector(`input[aria-label="Make a task: ${ITEMS[1]!.text}"]`)!);
-    expect(chipsFor(1)!.firstElementChild!.className).toContain("opacity-50");
-    expect(chipsFor(1)!.querySelector("input[role='combobox']")).toBeNull();
-    unmount();
-  });
-
-  it("replaces the chips with a task link once the item has a task", () => {
+  it("shows nothing on a line whose item already has a task", () => {
     const { unmount } = mount(recWith([{ ...ITEMS[0]!, taskId: "t9" }, ITEMS[1]!]));
-    const link = chipsFor(0)!.querySelector("a")!;
-    expect(link.getAttribute("href")).toBe("/projects/p1?tab=progress&task=t9");
-    expect(link.textContent).toBe("Task");
-    expect(chipsFor(0)!.querySelector("input")).toBeNull();
+    expect(chipsFor(0)).toBeNull();
+    expect(chipsFor(1)).not.toBeNull();
     unmount();
   });
 
@@ -531,42 +611,6 @@ describe("action item chips", () => {
   });
 });
 
-describe("tasks whose checklist line was removed", () => {
-  const tasked = ITEMS.map((i, n) => ({ ...i, taskId: `t${n}` }));
-  const without = (id: string) => ({ getNoteState: () => ({ blocks: BLOCKS.filter((b) => b.id !== id), bodyText: "" }) });
-
-  it("keeps a link to the task so it is never unreachable", () => {
-    const { unmount } = mount(recWith(tasked, without("b2")));
-    expect(bar()?.textContent).toContain("1 task's line was removed");
-    const link = bar()!.querySelector("a")!;
-    expect(link.textContent).toBe("View task");
-    expect(link.getAttribute("href")).toBe("/projects/p1?tab=progress&task=t1");
-    unmount();
-  });
-
-  it("names each task when several lines were removed", () => {
-    const { unmount } = mount(recWith(tasked, { getNoteState: () => ({ blocks: [BLOCKS[2]!], bodyText: "" }) }));
-    expect(bar()?.textContent).toContain("2 tasks' lines were removed");
-    expect([...bar()!.querySelectorAll("a")].map((a) => a.textContent)).toEqual([
-      `View task: ${ITEMS[0]!.text}`,
-      `View task: ${ITEMS[1]!.text}`,
-    ]);
-    unmount();
-  });
-
-  it("shows nothing while every tasked line is still in the note", () => {
-    const { unmount } = mount(recWith(tasked));
-    expect(bar()).toBeNull();
-    unmount();
-  });
-
-  it("shows nothing when the note state is not available yet", () => {
-    const { unmount } = mount(recWith(tasked, { getNoteState: () => null }));
-    expect(bar()).toBeNull();
-    unmount();
-  });
-});
-
 describe("enhance error note", () => {
   it("shows the error under the tasks bar", () => {
     const { unmount } = mount(recWith(ITEMS, { enhanceError: "The note is still loading. Try again in a moment." }));
@@ -576,9 +620,9 @@ describe("enhance error note", () => {
 });
 
 describe("bar menu for non-editors", () => {
-  it("hides More from a viewer who is not allowed to edit", () => {
+  it("shows no tasks bar and no More menu to a viewer who cannot edit", () => {
     const { unmount } = mount(recWith(ITEMS, { canEdit: false }));
-    expect(bar()?.textContent).toContain("2 action items");
+    expect(bar()).toBeNull();
     expect(document.querySelector('[aria-label="More"]')).toBeNull();
     unmount();
   });

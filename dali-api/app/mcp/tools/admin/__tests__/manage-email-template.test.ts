@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     emailTemplateVersion: { findFirst: vi.fn() },
     user: { findUnique: vi.fn() },
@@ -17,7 +17,7 @@ vi.mock("~/email/lib/templates.server", () => ({
   rollbackEmailTemplate: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import {

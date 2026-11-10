@@ -17,7 +17,7 @@ describe("tab strip cookie", () => {
     expect(parseTabStripCookie("a=b; dali_tabstrip=1")).toBe("1");
     expect(parseTabStripCookie("dali_tabstrip=0")).toBe("0");
     expect(parseTabStripCookie("dali_tabstrip=yes")).toBeNull();
-    expect(parseTabStripCookie("dali_tabless=1")).toBeNull();
+    expect(parseTabStripCookie("theme=dark")).toBeNull();
     expect(parseTabStripCookie("")).toBeNull();
   });
 

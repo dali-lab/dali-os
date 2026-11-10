@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: { project: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() } },
 }));
-vi.mock("~/lib/db", () => ({ prisma: prismaMock }));
+vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 
 import {
   buildInfraConfigUpdate,

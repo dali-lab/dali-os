@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
@@ -15,7 +15,7 @@ vi.mock("~/lib/collabAuth", () => ({
   authorizeCollabDoc: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { readDocAsBlocks } from "~/collab/read";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
@@ -48,7 +48,7 @@ const mockPrisma = prisma as unknown as {
     create: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
-  projectFile: { findMany: ReturnType<typeof vi.fn> };
+  projectFile: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
 };
 
 beforeEach(() => vi.clearAllMocks());
@@ -63,6 +63,48 @@ describe("pages + files tools", () => {
     expect(UPDATE_PAGE_TOOL.requiredScope).toBe("mcp:write");
     expect(UPLOAD_PROJECT_FILE_TOOL.requiredScope).toBe("mcp:write");
     expect(GET_TASK_TOOL.requiredScope).toBe("mcp:read");
+  });
+
+  const pageRow = (id: string, parentPageId: string | null, position = 0) => ({
+    id,
+    parentPageId,
+    title: id,
+    kind: "FreeForm",
+    iconEmoji: null,
+    position,
+    archivedAt: null,
+  });
+
+  it("list_project_pages renders every level up to MAX_PAGE_DEPTH", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", overviewPageId: null, prdPageId: null });
+    mockPrisma.page.findMany.mockResolvedValue(
+      Array.from({ length: 8 }, (_, i) => pageRow(`d${i}`, i === 0 ? null : `d${i - 1}`)),
+    );
+    const out = await runListProjectPages("u1", { projectId: "p1" });
+    let node: any = out.pages[0];
+    const seen = [node.id];
+    while (node.children.length > 0) {
+      node = node.children[0];
+      seen.push(node.id);
+    }
+    expect(seen).toEqual(["d0", "d1", "d2", "d3", "d4", "d5", "d6"]);
+  });
+
+  it("list_project_pages pages top-level pages with their subtrees intact", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", overviewPageId: null, prdPageId: null });
+    mockPrisma.page.findMany.mockResolvedValue([
+      pageRow("r1", null, 0),
+      pageRow("r2", null, 1),
+      pageRow("r3", null, 2),
+      pageRow("r1-c", "r1"),
+    ]);
+    const first = await runListProjectPages("u1", { projectId: "p1", limit: 2 });
+    expect(first.pages.map((p) => p.id)).toEqual(["r1", "r2"]);
+    expect(first.pages[0].children.map((c) => c.id)).toEqual(["r1-c"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    const second = await runListProjectPages("u1", { projectId: "p1", limit: 2, cursor: first.page.nextCursor! });
+    expect(second.pages.map((p) => p.id)).toEqual(["r3"]);
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 
   it("list_project_pages builds a 2-level tree", async () => {
@@ -124,6 +166,31 @@ describe("pages + files tools", () => {
     const out = await runReadPage("u1", { pageId: "pg1" });
     expect(readDocAsBlocks).toHaveBeenCalledWith("page:lab-handbook");
     expect(out.markdown).toBe("");
+  });
+
+  it("read_page returns long markdown in chunks that join back to the whole page", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", title: "Long", kind: "FreeForm", workspaceType: "Lab", workspaceId: null, contentDocId: null, iconEmoji: null,
+    });
+    const paragraph = (text: string) => ({ id: text, type: "paragraph", props: {}, content: [{ type: "text", text, styles: {} }], children: [] });
+    vi.mocked(readDocAsBlocks).mockResolvedValue([paragraph("alpha bravo"), paragraph("charlie delta")] as never);
+
+    const whole = await runReadPage("u1", { pageId: "pg1" });
+    expect(whole.page).toEqual({ nextCursor: null, hasMore: false, limit: 50_000, total: whole.markdown.length });
+
+    const first = await runReadPage("u1", { pageId: "pg1", limit: 10 });
+    expect(first.markdown).toHaveLength(10);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 10, total: whole.markdown.length });
+
+    let text = first.markdown;
+    let cursor = first.page.nextCursor;
+    while (cursor) {
+      const next = await runReadPage("u1", { pageId: "pg1", limit: 10, cursor });
+      text += next.markdown;
+      cursor = next.page.nextCursor;
+    }
+    expect(text).toBe(whole.markdown);
   });
 
   it("read_page 404s missing page", async () => {
@@ -257,6 +324,82 @@ describe("pages + files tools", () => {
     expect(out).toMatchObject({ id: "pg1", blockCount: 2 });
   });
 
+  it("set_page_content keeps a lab member mention and warns about an unknown page", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", kind: "FreeForm", workspaceType: "Project", workspaceId: "p1", contentDocId: null, archivedAt: null,
+    });
+    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
+    vi.mocked(prisma.user.findMany).mockResolvedValue([{ id: "u2", handle: "ana" }] as never);
+    mockPrisma.page.findMany.mockResolvedValue([]);
+    const out = await runSetPageContent("u1", {
+      pageId: "pg1",
+      markdown: "Ask [@Ana Ruiz](/members/u2) about [Old plan](/documents/gone)",
+    });
+    expect(out.warnings).toEqual(['No page with id gone: "Old plan" was written as plain text']);
+    const [, blocks] = vi.mocked(replaceCollabDocContent).mock.calls[0]!;
+    expect((blocks as any[])[0].content).toEqual([
+      { type: "text", text: "Ask ", styles: {} },
+      { type: "mention", props: { id: "u2", label: "ana" } },
+      { type: "text", text: " about ", styles: {} },
+      { type: "text", text: "Old plan", styles: {} },
+    ]);
+  });
+
+  it("set_page_content leaves warnings out when every reference checks out", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", kind: "FreeForm", workspaceType: "Project", workspaceId: "p1", contentDocId: null, archivedAt: null,
+    });
+    mockPrisma.page.update.mockResolvedValue({ id: "pg1" });
+    const out = await runSetPageContent("u1", { pageId: "pg1", markdown: "plain" });
+    expect(out).not.toHaveProperty("warnings");
+  });
+
+  it("create_page returns warnings for references it wrote as plain text", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findFirst.mockResolvedValue(null);
+    mockPrisma.page.create.mockResolvedValue({ id: "pg-new" });
+    vi.mocked(prisma.user.findMany).mockResolvedValue([] as never);
+    const out = await runCreatePage("u1", { projectId: "p1", title: "Imported", content: "cc [@Partner](/members/x9)" });
+    expect((out as { warnings?: string[] }).warnings).toEqual(['No member with id x9: "Partner" was written as plain text']);
+    const [, blocks] = vi.mocked(replaceCollabDocContent).mock.calls[0]!;
+    expect((blocks as any[])[0].content.map((c: any) => c.type)).toEqual(["text", "text"]);
+  });
+
+  it("create_page without content checks nothing and has no warnings", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.page.findFirst.mockResolvedValue(null);
+    mockPrisma.page.create.mockResolvedValue({ id: "pg-new" });
+    const out = await runCreatePage("u1", { projectId: "p1", title: "Empty" });
+    expect(out).not.toHaveProperty("warnings");
+    expect(prisma.user.findMany).not.toHaveBeenCalled();
+  });
+
+  it("read_page writes mentions as links that set_page_content reads back", async () => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: false });
+    mockPrisma.page.findUnique.mockResolvedValue({
+      id: "pg1", title: "T", kind: "FreeForm", workspaceType: "Lab", workspaceId: null, contentDocId: null, iconEmoji: null,
+    });
+    vi.mocked(readDocAsBlocks).mockResolvedValue([
+      {
+        id: "b",
+        type: "paragraph",
+        props: {},
+        content: [
+          { type: "mention", props: { id: "u2", label: "ana" } },
+          { type: "text", text: " ", styles: {} },
+          { type: "pageMention", props: { pageId: "pg9", label: "Plan" } },
+        ],
+        children: [],
+      },
+    ] as never);
+    const out = await runReadPage("u1", { pageId: "pg1" });
+    expect(out.markdown.trim()).toBe("[@ana](/members/u2) [Plan](/documents/pg9)");
+  });
+
   it("set_page_content denies callers who are neither Core nor staffed", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(false);
@@ -328,5 +471,36 @@ describe("pages + files tools", () => {
       title: "Spec",
       currentVersion: { fileName: "spec.pdf" },
     });
+  });
+
+  it("list_project_files pages by offset with an id tiebreak on updatedAt", async () => {
+    const file = (id: string) => ({
+      id,
+      title: id,
+      archivedAt: null,
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-02T00:00:00Z"),
+      currentVersion: null,
+    });
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    mockPrisma.projectFile.count = vi.fn().mockResolvedValue(3);
+    mockPrisma.projectFile.findMany.mockResolvedValueOnce([file("f1"), file("f2")]);
+    const first = await runListProjectFiles("u1", { projectId: "p1", limit: 1 });
+    expect(first.files.map((f) => f.id)).toEqual(["f1"]);
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+    expect(mockPrisma.projectFile.findMany.mock.calls.at(-1)![0].orderBy).toEqual([
+      { updatedAt: "desc" },
+      { id: "asc" },
+    ]);
+
+    mockPrisma.projectFile.findMany.mockResolvedValueOnce([file("f2")]);
+    const second = await runListProjectFiles("u1", { projectId: "p1", limit: 1, cursor: first.page.nextCursor! });
+    expect(mockPrisma.projectFile.findMany.mock.calls.at(-1)![0]).toMatchObject({ skip: 1, take: 2 });
+    expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+
+  it("list_project_files rejects a bad cursor", async () => {
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    await expect(runListProjectFiles("u1", { projectId: "p1", cursor: "nope" })).rejects.toThrow(/Invalid cursor/);
   });
 });

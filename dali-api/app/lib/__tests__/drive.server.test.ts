@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/pageAccess.server", () => {
   const getPageAccess = vi.fn();
   return {
@@ -29,7 +29,7 @@ vi.mock("~/lib/page-audience.server", () => ({
   ),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccess, getPageAccessBulk, governingScopeMap } from "~/lib/pageAccess.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { summarizeAudience } from "~/lib/page-audience.server";
@@ -284,6 +284,12 @@ describe("loadDriveScope — forms are Form-kind pages by page access", () => {
       partnerVisible: true,
       linkedProcess: null,
     });
+  });
+
+  it.each(scopes)("$name: carries a form's emoji like a doc's", async ({ scope }) => {
+    mockPrisma.page.findMany.mockResolvedValue([formRow({ iconEmoji: "📋" })]);
+    const items = await loadDriveScope({ userSub: "u1", scope });
+    expect(items.find((i) => i.id === "form-1")).toMatchObject({ type: "form", iconEmoji: "📋" });
   });
 
   it("keeps a form in a live folder under that folder", async () => {

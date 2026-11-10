@@ -4,10 +4,8 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { AnimatedTileCluster } from "~/components/auth/AnimatedTileCluster";
 
-// The dali.os auth dress (desktop-tabs flag): a dark os-shell split screen —
-// brand panel with the animated tile cluster on the left, a step-animated form
-// column on the right. The legacy brand-tint shell stays in AuthShell.tsx for
-// the flag-off path.
+// The dali.os auth dress: a dark os-shell split screen — brand panel with the
+// animated tile cluster on the left, a step-animated form column on the right.
 
 export function AuthShellV2({
   title,

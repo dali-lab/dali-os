@@ -5,7 +5,7 @@
 
 import { redirect } from "react-router";
 import type { Route } from "./+types/core.agreements.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore, currentTerm } from "~/lib/roles";
@@ -302,7 +302,11 @@ export async function action({ request, params }: Route.ActionArgs) {
       cadence?: SigningCadence;
       audienceGroupId?: string | null;
       requiresMenteeCountersign?: boolean;
+      kind?: "PartnerContract" | null;
     } = {};
+    const kindValue = formData.get("kind");
+    if (kindValue === "PartnerContract") data.kind = "PartnerContract";
+    else if (kindValue === "General") data.kind = null;
     if (SCOPES.includes(gateScope)) data.gateScope = gateScope;
     if (AUDIENCES.includes(audience)) data.audience = audience;
     if (CADENCES.includes(cadence)) data.cadence = cadence;

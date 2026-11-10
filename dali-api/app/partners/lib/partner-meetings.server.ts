@@ -9,7 +9,7 @@
 // listPartnerMeetingsForContact and resolveMeetingParticipantIds are read-only
 // helpers the API routes and portal loaders share.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { createScheduledMeeting } from "~/lib/scheduled-meeting";
 import { computeUserFreeBusy } from "~/lib/availability";

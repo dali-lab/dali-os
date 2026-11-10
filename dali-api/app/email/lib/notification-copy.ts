@@ -106,7 +106,7 @@ export const NOTIFICATION_COPY = {
     description: "Sent to the organizer shortly before a meeting they organize starts.",
     variables: ["itemTitle"],
     subject: "{{itemTitle}} is starting. Record it?",
-    body: "DALI can transcribe it and delete the audio once it's done.",
+    body: "DALI can transcribe it and delete the audio after.",
   },
   "meeting.transcript_ready": {
     eventType: "meeting.transcript_ready",
@@ -320,7 +320,7 @@ export const NOTIFICATION_COPY = {
     purpose: "Hiring",
     eventType: "hiring.interview_cancelled",
     label: "Interview cancelled",
-    description: "Sent to an interviewer when a hiring lead cancels an interview they were assigned to.",
+    description: "Sent to an interviewer when an interview they were assigned to is cancelled or moved to a new time.",
     variables: ["personName", "itemDetail"],
     subject: "Interview cancelled: {{personName}}",
     body: "{{itemDetail}}",
@@ -380,20 +380,38 @@ export const NOTIFICATION_COPY = {
   },
   "blog.submitted": {
     eventType: "blog.submitted",
-    label: "Blog post submitted",
-    description: "Sent to admins when a member submits a blog post for approval.",
+    label: "Story submitted",
+    description: "Sent to admins when a member submits a story for approval.",
     variables: ["personName", "itemTitle"],
-    subject: "{{personName}} submitted a blog post: {{itemTitle}}",
+    subject: "{{personName}} submitted a story: {{itemTitle}}",
     body: "Review it and approve to publish.",
     linkLabel: "Review post",
   },
   "blog.approved": {
     eventType: "blog.approved",
-    label: "Blog post approved",
-    description: "Sent to the author when an admin approves their blog post.",
+    label: "Story approved",
+    description: "Sent to the author when an admin approves their story.",
     variables: ["itemTitle"],
-    subject: "Your blog post was published: {{itemTitle}}",
+    subject: "Your story was published: {{itemTitle}}",
     body: "",
+  },
+  "blog.comment": {
+    eventType: "blog.comment",
+    label: "Story comment",
+    description: "Sent to a story's author when someone comments on it.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} commented on your story",
+    body: "{{itemDetail}}",
+    linkLabel: "Open story",
+  },
+  "blog.reaction": {
+    eventType: "blog.reaction",
+    label: "Story reaction",
+    description: "Sent to a story's author when someone reacts to it.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} reacted to your story",
+    body: "{{itemDetail}}",
+    linkLabel: "Open story",
   },
 
   // ── People ───────────────────────────────────────────────────────────────
@@ -470,6 +488,15 @@ export const NOTIFICATION_COPY = {
     subject: "{{personName}} reacted to your photo",
     body: "{{itemDetail}}",
     linkLabel: "Open photo",
+  },
+  "community.event_nearby": {
+    eventType: "community.event_nearby",
+    label: "Alumni event nearby",
+    description: "Sent to opted-in members when an alum posts an event within 50 km of them.",
+    variables: ["personName", "itemDetail"],
+    subject: "{{personName}} is hosting an event near you",
+    body: "{{itemDetail}}",
+    linkLabel: "See event",
   },
 
   // ── Onboarding ───────────────────────────────────────────────────────────
@@ -618,6 +645,14 @@ export const NOTIFICATION_COPY = {
     subject: "Feedback received: {{itemTitle}}",
     body: "",
   },
+  "partner.referral_received": {
+    eventType: "partner.referral_received",
+    label: "New partner referral",
+    description: "Sent to Core when a member refers a potential partner through the bounty program.",
+    variables: ["itemTitle", "itemDetail"],
+    subject: "New partner referral: {{itemTitle}}",
+    body: "{{itemDetail}}",
+  },
 
   // ── Announcements ────────────────────────────────────────────────────────
   // No `body`: Core and instructors author these per send, so only the framing
@@ -629,6 +664,15 @@ export const NOTIFICATION_COPY = {
       "Sent by Core to a chosen audience. The subject and body are written per announcement; only the frame around them comes from here.",
     variables: ["itemTitle"],
     subject: "{{itemTitle}}",
+  },
+  "form.reminder": {
+    eventType: "form.reminder",
+    label: "Form reminder",
+    description:
+      "Sent to people who haven't filled out a form, by the form's owner or a day before it closes. The message is written per send; only the frame around it comes from here.",
+    variables: ["itemTitle"],
+    subject: "Reminder: {{itemTitle}}",
+    linkLabel: "Open form",
   },
   "education.announcement": {
     eventType: "education.announcement",

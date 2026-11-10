@@ -1,7 +1,7 @@
 import * as Y from "yjs";
 import { yDocToProsemirrorJSON } from "y-prosemirror";
 import type { Server as HocuspocusServer } from "@hocuspocus/server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { indexPageBody } from "~/lib/doc-search.server";
 import { isPresenceRoom } from "./roomName";
@@ -14,6 +14,9 @@ import {
 } from "./blocknote-server";
 import { mapPmDocToBlocks } from "./legacy/pm-to-blocknote";
 import { getStructuredData, ydocToBlocks } from "./read";
+import { stripCommentFormats } from "./comment-formats";
+import { readDeck } from "./read-deck.server";
+import { restoreDeck } from "./deck-write.server";
 
 const SNAPSHOT_MIN_INTERVAL_MS = 30_000;
 
@@ -110,21 +113,17 @@ async function seedContent(name: string): Promise<string | null> {
   return null;
 }
 
-/**
- * LAZY CONVERSION — the in-app migration mechanism. If a loaded doc has legacy
- * Tiptap content in "default" but nothing in "blocknote" yet, map the PM JSON
- * to blocks and write them into the "blocknote" fragment the BlockNote editor
- * binds. The "default" fragment is left untouched (it simply goes stale) so
- * the conversion is one-way and re-runnable. Runs in-process on the
- * Hocuspocus-owned doc, so there is no cross-writer race.
- */
+// Decode from a clone: y-prosemirror deletes what it can't decode, and on the
+// live doc Hocuspocus would broadcast that deletion.
 function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
   const blocknote = doc.getXmlFragment(BLOCKNOTE_FRAGMENT);
   if (blocknote.length > 0) return false;
   if (doc.getXmlFragment(LEGACY_PM_FRAGMENT).length === 0) return false;
 
+  const clone = new Y.Doc();
   try {
-    const pmJson = yDocToProsemirrorJSON(doc, LEGACY_PM_FRAGMENT);
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
+    const pmJson = yDocToProsemirrorJSON(clone, LEGACY_PM_FRAGMENT);
     const { blocks, losses } = mapPmDocToBlocks(pmJson);
     doc.transact(() => {
       blocksToFragment(blocks, blocknote);
@@ -139,6 +138,8 @@ function convertLegacyFragment(name: string, doc: Y.Doc): boolean {
     // BlockNote clients and the legacy state stays intact for another attempt.
     console.error(`[collab:convert] conversion failed for ${name}`, err);
     return false;
+  } finally {
+    clone.destroy();
   }
 }
 
@@ -155,7 +156,7 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
 
   if (existing) {
     Y.applyUpdate(doc, new Uint8Array(existing.state));
-    if (convertLegacyFragment(name, doc)) {
+    if (!isSlidesRoom(name) && convertLegacyFragment(name, doc)) {
       // Persist the converted state right away so the conversion is durable
       // (a view-only session never fires onStoreDocument) and so a second
       // instance loading this doc sees a populated "blocknote" fragment
@@ -178,47 +179,6 @@ export async function loadDocument(name: string, doc: Y.Doc): Promise<void> {
     doc.transact(() => {
       blocksToFragment(plainTextToBlocks(content), doc.getXmlFragment(BLOCKNOTE_FRAGMENT));
     });
-  }
-}
-
-/**
- * Strip inline-comment format attributes from every Y.XmlText node inside
- * `element`. The `comment` ProseMirror mark is stored by y-prosemirror as
- * attributes whose keys start with `"comment"` (e.g. `"comment--<hash>"`).
- * The server's BlockNote schema does not include the comment mark, so when
- * y-prosemirror tries to deserialise those attributes it throws and then
- * *deletes the Y.XmlText item* from the doc — corrupting the live document
- * and causing Hocuspocus to broadcast the deletion to clients.
- *
- * Call this on a **temporary clone** of the doc before reading plain text so
- * the deletion side-effect never touches the live document.
- */
-function stripCommentFormats(element: Y.XmlFragment | Y.XmlElement): void {
-  for (let i = 0; i < element.length; i++) {
-    const child = element.get(i);
-    if (child instanceof Y.XmlText) {
-      const delta = child.toDelta() as Array<{
-        insert?: string;
-        attributes?: Record<string, unknown>;
-      }>;
-      let pos = 0;
-      for (const op of delta) {
-        const len = typeof op.insert === "string" ? op.insert.length : 1;
-        if (op.attributes) {
-          const commentKeys = Object.keys(op.attributes).filter((k) =>
-            k.startsWith("comment"),
-          );
-          if (commentKeys.length > 0) {
-            const nullAttrs: Record<string, null> = {};
-            for (const k of commentKeys) nullAttrs[k] = null;
-            child.format(pos, len, nullAttrs);
-          }
-        }
-        pos += len;
-      }
-    } else if (child instanceof Y.XmlElement) {
-      stripCommentFormats(child);
-    }
   }
 }
 
@@ -267,6 +227,16 @@ function getStructuredPlainText(doc: Y.Doc): string {
   }
 }
 
+function isSlidesRoom(name: string): boolean {
+  return parseDocName(name)?.entity === "slides";
+}
+
+function roomPlainText(name: string, doc: Y.Doc): string {
+  if (isSlidesRoom(name)) return readDeck(doc).plainText;
+  const parsed = parseDocName(name);
+  return parsed && isStructuredRoom(parsed.entity) ? getStructuredPlainText(doc) : getPlainText(doc);
+}
+
 /**
  * Store the Y.Doc binary state into CollabDocument, and sync the plain text
  * back to the source field so existing queries/views remain correct.
@@ -286,8 +256,7 @@ export async function storeDocument(
   // runs through the BlockNote fragment path and returns "" for them. Use the
   // JSON serialiser instead so the version snapshot plainText mirror is useful.
   const parsed = parseDocName(name);
-  const structured = parsed ? isStructuredRoom(parsed.entity) : false;
-  const plainText = structured ? getStructuredPlainText(doc) : getPlainText(doc);
+  const plainText = roomPlainText(name, doc);
 
   // Upsert the Y.Doc binary state
   const row = await prisma.collabDocument.upsert({
@@ -328,6 +297,14 @@ export async function storeDocument(
         where: { id },
         data: { interviewPrepNote: plainText },
       });
+    }
+  }
+
+  if (entity === "slides" && field === "deck") {
+    try {
+      await indexPageBody(id, plainText, row.updatedAt);
+    } catch (err) {
+      console.error(`[doc-search] indexing failed for deck ${id}`, err);
     }
   }
 
@@ -462,14 +439,23 @@ export async function forceSnapshot(
   try {
     const doc = conn.document;
     if (!doc) throw new Error("Document not found for this name");
-    const state = Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>;
-    const plainText = getPlainText(doc);
-    await prisma.collabDocumentVersion.create({
-      data: { name, state, plainText, authorIds, label },
-    });
+    await saveVersion(name, doc, label, authorIds);
   } finally {
     await conn.disconnect();
   }
+}
+
+export async function saveVersion(
+  name: string,
+  doc: Y.Doc,
+  label: string,
+  authorIds: string[],
+): Promise<void> {
+  const state = Y.encodeStateAsUpdate(doc) as Uint8Array<ArrayBuffer>;
+  const plainText = roomPlainText(name, doc);
+  await prisma.collabDocumentVersion.create({
+    data: { name, state, plainText, authorIds, label },
+  });
 }
 
 /**
@@ -496,6 +482,18 @@ export async function restoreVersion(
   });
   if (!version || version.name !== name) {
     throw new Error("Version not found for this document");
+  }
+
+  if (isSlidesRoom(name)) {
+    const conn = await server.hocuspocus.openDirectConnection(name);
+    try {
+      await conn.transact((doc) => {
+        restoreDeck(doc, new Uint8Array(version.state));
+      });
+    } finally {
+      await conn.disconnect();
+    }
+    return;
   }
 
   const tmp = new Y.Doc();

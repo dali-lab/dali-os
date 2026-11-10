@@ -47,22 +47,6 @@ export function setThemePreference(preference: ThemePreference) {
   window.dispatchEvent(
     new CustomEvent(THEME_CHANGE_EVENT, { detail: { preference } }),
   );
-  // Tell the shell / sibling iframes (same-origin) so they update immediately.
-  // `storage` only fires in *other* documents; this covers the parent↔iframe case.
-  try {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage(
-        { type: THEME_CHANGE_EVENT, preference },
-        window.location.origin,
-      );
-    }
-    window.postMessage(
-      { type: THEME_CHANGE_EVENT, preference },
-      window.location.origin,
-    );
-  } catch {
-    // ignore cross-origin access errors
-  }
 }
 
 /** Static boot script path — served from /public so CSP script-src 'self' works. */

@@ -1,7 +1,7 @@
 // POST /api/meeting-recordings — start a recording for a collaborative
 // document. Creates the MeetingRecording row and returns the dalios:// link
 // the page hands to the desktop app (browsers record in-page instead).
-// Gated on the `ai-meeting-notes` flag and on write access to the document's
+// Gated on write access to the document's
 // collab room (the same check the collab server applies).
 //
 // Also accepts `scheduledMeetingId` (+ optional `occurrenceStart`) in place
@@ -13,8 +13,6 @@ import type { Route } from "./+types/api.meeting-recordings";
 import { requireAuth } from "~/lib/auth";
 import { isAiEnabled } from "~/lib/ai.server";
 import { isTranscriptionEnabled } from "~/lib/transcription/provider";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUserRoles } from "~/lib/roles";
 import { attachMeetingNote } from "~/lib/scheduled-meeting";
 import { pageDocName } from "~/collab/roomName";
 import { logAuditEvent } from "~/lib/audit";
@@ -23,7 +21,11 @@ import {
   createRecording,
   projectRecordingDisabled,
   recordingDeepLink,
+  type RecordingClient,
 } from "~/lib/meeting-recording.server";
+
+const clientString = (value: unknown) =>
+  typeof value === "string" && value ? value.slice(0, 32) : undefined;
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
@@ -38,13 +40,13 @@ export async function action({ request }: Route.ActionArgs) {
     typeof body?.scheduledMeetingId === "string" && body.scheduledMeetingId ? body.scheduledMeetingId : undefined;
   const occurrenceStartRaw = typeof body?.occurrenceStart === "string" ? body.occurrenceStart : undefined;
   const occurrenceStart = occurrenceStartRaw ? new Date(occurrenceStartRaw) : undefined;
+  const client: RecordingClient = {
+    captureSource: body?.captureSource === "desktop" || body?.captureSource === "browser" ? body.captureSource : undefined,
+    appVersion: clientString(body?.appVersion),
+    clientPlatform: clientString(body?.clientPlatform),
+  };
   if (occurrenceStartRaw && Number.isNaN(occurrenceStart?.getTime())) {
     return Response.json({ error: "Invalid occurrenceStart" }, { status: 400 });
-  }
-
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("ai-meeting-notes", auth.user.sub, roles, request))) {
-    return Response.json({ error: "Not available" }, { status: 403 });
   }
 
   if (scheduledMeetingId) {
@@ -74,7 +76,7 @@ export async function action({ request }: Route.ActionArgs) {
   const rec = await createRecording(auth.user.sub, documentName, {
     scheduledMeetingId,
     occurrenceStart: occurrenceStart ?? null,
-  });
+  }, client);
   if (!rec) {
     return Response.json(
       { error: "Recording is busy right now, try again in a few minutes." },

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
@@ -8,7 +8,8 @@ import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
 import { currentInternDomains } from "~/hiring/lib/intern-eligibility";
 import type { Question } from "~/types";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
-import { findMissingRequired } from "~/lib/form-answers";
+import { dropHiddenAnswers } from "~/lib/form-logic";
+import { findMissingRequired, normalizeAnswerFormats, validateAnswerFormats } from "~/lib/form-answers";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { APPLICANT_GROUP_CONFIG, applicantGroup, applicantPortalPath } from "./applicant-groups.server";
 import { getCoreDomain } from "./core-hiring.server";
@@ -277,7 +278,8 @@ export async function handleInternalCyclePortalAction(
     const selectedDomainIds = pickedDomainIds.filter((id) => !closedDomainIds.has(id));
 
     if (intent === "submit") {
-      const missing = findMissingRequired(questions, (q) => answers[q.key]).map(
+      const visible = dropHiddenAnswers(questions, answers);
+      const missing = findMissingRequired(visible, (q) => answers[q.key]).map(
         (q) => q.data.label || q.key,
       );
       if (missing.length > 0) {
@@ -286,6 +288,11 @@ export async function handleInternalCyclePortalAction(
           { status: 400 },
         );
       }
+      const formatErrors = validateAnswerFormats(visible, answers);
+      if (formatErrors.length > 0) {
+        return Response.json({ error: formatErrors[0].message }, { status: 400 });
+      }
+      normalizeAnswerFormats(visible, answers);
       if (selectedDomainIds.length === 0) {
         return Response.json(
           {

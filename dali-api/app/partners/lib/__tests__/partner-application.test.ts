@@ -6,6 +6,7 @@ import {
   PARTNER_EDITABLE_STAGES,
   PARTNER_STAGES,
   PARTNER_STAGE_LABELS,
+  PROJECTING_STAGES,
   partnerTrackIndex,
   UNDECIDED_STAGES,
 } from "../partner-application";
@@ -15,7 +16,7 @@ const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
 
 describe("partner stages", () => {
   it("orders the board with Backlog first", () => {
-    expect(PARTNER_STAGES).toEqual(["Backlog", "New", "Interview", "Accepted", "Rejected"]);
+    expect(PARTNER_STAGES).toEqual(["Backlog", "New", "Interview", "Deciding", "Accepted", "Rejected"]);
   });
 
   it("labels every stage", () => {
@@ -38,8 +39,15 @@ describe("partner stages", () => {
     expect(isStale({ stage: "Interview", lastActivityAt: daysAgo(2) }, 14, now)).toBe(false);
   });
 
+  it("watches Deciding for staleness, projects it, and keeps it out of partner edits", () => {
+    expect(OPEN_STAGES).toContain("Deciding");
+    expect(PROJECTING_STAGES).toContain("Deciding");
+    expect(PARTNER_EDITABLE_STAGES).not.toContain("Deciding");
+    expect(isStale({ stage: "Deciding", lastActivityAt: daysAgo(20) }, 14, now)).toBe(true);
+  });
+
   it("counts Backlog as undecided so a renewal is not created beside it", () => {
-    expect(UNDECIDED_STAGES).toEqual(["Backlog", "New", "Interview"]);
+    expect(UNDECIDED_STAGES).toEqual(["Backlog", "New", "Interview", "Deciding"]);
   });
 
   it("lets the partner edit their pitch while it sits in Backlog or New", () => {
@@ -50,6 +58,7 @@ describe("partner stages", () => {
     expect(partnerTrackIndex({ stage: "Backlog", resultingProjectId: null })).toBe(0);
     expect(partnerTrackIndex({ stage: "New", resultingProjectId: null })).toBe(0);
     expect(partnerTrackIndex({ stage: "Interview", resultingProjectId: null })).toBe(1);
+    expect(partnerTrackIndex({ stage: "Deciding", resultingProjectId: null })).toBe(2);
     expect(partnerTrackIndex({ stage: "Rejected", resultingProjectId: null })).toBe(2);
     expect(partnerTrackIndex({ stage: "Accepted", resultingProjectId: "p1" })).toBe(3);
   });

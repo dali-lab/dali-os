@@ -20,7 +20,6 @@ export function RecordPromptBanner({
   occurrenceStart,
   windowEndIso,
   canEdit,
-  recordingEnabled,
   recordPromptEnabled,
   hasActiveRecording,
   canDontSuggest,
@@ -35,7 +34,6 @@ export function RecordPromptBanner({
   /** ISO timestamp — when the window closes (start + durationMinutes). */
   windowEndIso: string;
   canEdit: boolean;
-  recordingEnabled: boolean;
   recordPromptEnabled: boolean;
   hasActiveRecording: boolean;
   /** Organizer or Core — shows the overflow's "Don't suggest" item. */
@@ -75,7 +73,6 @@ export function RecordPromptBanner({
     inDesktopShell ||
     !live ||
     !canEdit ||
-    !recordingEnabled ||
     !recordPromptEnabled ||
     hasActiveRecording ||
     dismissed

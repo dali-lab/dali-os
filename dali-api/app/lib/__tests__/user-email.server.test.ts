@@ -4,7 +4,7 @@ vi.mock("~/lib/dartmouth-people", () => ({
   findNetIdByAddress: vi.fn(async () => null),
 }));
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     userEmail: {
       findUnique: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("~/lib/db", () => ({
   },
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { findNetIdByAddress } from "~/lib/dartmouth-people";
 import {
   normalizeEmailAddress,

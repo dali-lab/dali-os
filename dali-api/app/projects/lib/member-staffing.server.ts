@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { SLOTS, type Slot } from "./form-slots";
 
 // The member-facing view of the open staffing round's forms. Mirrors what a

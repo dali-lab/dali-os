@@ -4,13 +4,10 @@ import { Combobox, Select, type SelectOption } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
 
-// Term dropdown shared by every term-scoped surface — list filters (Projects
-// hub, Members, Intent to Work, Project Bids, Education management, Partner
-// applications…) and mandatory single-term switchers (staffing cycle,
-// agreements focus term, payroll export). Drives the loader via the `?term=`
-// search param so term-scoped data re-queries on change. `selected` comes from
-// resolveTermFilter() so the rendered value matches what the loader actually
-// used (including the current-term / current-&-upcoming default).
+// The one term picker for every page whose loader is scoped by term. Writes
+// `?term=<id>` (or the ALL_TERMS / UPCOMING sentinel) so the loader re-queries.
+// `selected` should be the value the loader actually used, e.g. from
+// resolveTermFilter(), so the trigger matches the data on screen.
 export function TermFilter({
   terms,
   selected,
@@ -29,6 +26,12 @@ export function TermFilter({
   // couple of terms the list is faster to scan than to type at, so only the
   // places carrying a long term history ask for it.
   searchable = false,
+  // Wraps each option's label, e.g. "Active in 26F" where the term scopes
+  // something narrower than the whole page.
+  formatLabel,
+  // Params that belong to the old term (ids picked from its data) and would
+  // be stale after a switch.
+  clearOnChange = [],
 }: {
   terms: TermOption[];
   selected: string;
@@ -37,17 +40,20 @@ export function TermFilter({
   includeUpcoming?: boolean;
   replace?: boolean;
   searchable?: boolean;
+  formatLabel?: (label: string) => string;
+  clearOnChange?: string[];
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const options: SelectOption<string>[] = termFilterOrder(terms, {
     includeAll,
     includeUpcoming,
-  });
+  }).map((o) => (formatLabel ? { ...o, label: formatLabel(o.label) } : o));
 
   function apply(value: string) {
     const next = new URLSearchParams(searchParams);
     next.set("term", value);
+    for (const key of clearOnChange) next.delete(key);
     setSearchParams(next, { replace });
   }
 

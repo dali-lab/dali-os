@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.interview-assignments.$id.notes";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";

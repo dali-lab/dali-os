@@ -1,27 +1,27 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Link } from "react-router";
-import { ListChecks, Plus } from "lucide-react";
-import { Avatar } from "~/components/ui/Avatar";
-import { Checkbox } from "~/components/ui/Checkbox";
-import { DateField } from "~/components/ui/DateField";
+import { Plus, X } from "lucide-react";
+import { IconButton } from "~/components/ui/IconButton";
 import { Combobox, Tooltip, type SelectOption } from "~/components/ui/floating";
+import {
+  TASK_CHIP_BASE as CHIP_BASE,
+  TASK_CHIP_CLASS as CHIP_CLASS,
+  TASK_CHIP_REQUIRED_CLASS as UNMATCHED_CLASS,
+  TaskDueChip,
+  TaskOwnerChip,
+  TaskStatusChip,
+} from "~/components/tasks/TaskFieldChips";
 import { cn } from "~/lib/cn";
 import { useActionItemDraft } from "./action-item-draft";
-import { actionItemMatchesBlock } from "./enhance-plan";
+import { findSuggestionLines } from "./enhance-plan";
 import { contentOf, findBlock, frameThrottle, overlayHost, toHost, type HostBox } from "./block-dom";
 import { useBlockStyleRules } from "./block-style-rules";
 import { chipSpaceCss, NARROW_BREAKPOINT } from "./enhance-rules";
-import { DUR, POP_FRAMES, animate } from "./motion";
+import { DUR } from "./motion";
 import { PopIn } from "./PopIn";
-import { isSearchableQuery, useLabMemberSearch } from "./member-search";
 import { formatIsoDate, type UseMeetingRecording } from "./use-meeting-recording";
 
 export { NARROW_BREAKPOINT };
-
-const CHIP_BASE = "h-7 rounded-full border px-2.5 text-xs font-medium";
-const CHIP_CLASS = cn(CHIP_BASE, "border-border bg-card text-foreground");
-const UNMATCHED_CLASS = cn(CHIP_BASE, "border-dashed border-os-amber/60 bg-os-amber/10 text-foreground");
 
 type Placement = { index: number; id: string; box: HostBox; fromRight: number };
 type Size = { width: number; height: number };
@@ -39,62 +39,48 @@ function samePlacements(a: Placement[], b: Placement[]): boolean {
 function OwnerChip({ index }: { index: number }) {
   const draft = useActionItemDraft()!;
   const row = draft.rowFor(index);
-  const swap = useRef<HTMLDivElement>(null);
-  const lastOwner = useRef(row.ownerUserId);
-  useEffect(() => {
-    if (lastOwner.current === row.ownerUserId) return;
-    lastOwner.current = row.ownerUserId;
-    void animate(swap.current, POP_FRAMES(0.92), DUR.ownerIn);
-  }, [row.ownerUserId]);
   const item = draft.items[index]!;
-  const { setQuery, query, results } = useLabMemberSearch();
-
-  const options = useMemo<SelectOption[]>(() => {
-    const roster: SelectOption[] = draft.roster.map((r) => ({ value: r.userId, label: r.name, description: "In this meeting" }));
-    const found: SelectOption[] = results
-      .filter((m) => !draft.roster.some((r) => r.userId === m.id))
-      .map((m) => ({ value: m.id, label: m.name, description: "Lab member" }));
-    const known = [...roster, ...found];
-    if (row.ownerUserId && !known.some((o) => o.value === row.ownerUserId)) {
-      known.push({ value: row.ownerUserId, label: row.ownerName || "Assigned" });
-    }
-    return known;
-  }, [draft.roster, results, row.ownerUserId, row.ownerName]);
-
   const unmatched = !row.ownerUserId && Boolean(item.ownerName);
-  const selectedName = options.find((o) => o.value === row.ownerUserId)?.label;
-
   return (
-    <div ref={swap}>
-    <Combobox
+    <TaskOwnerChip
       value={row.ownerUserId}
-      options={options}
-      onChange={(value) => draft.setRow(index, { ownerUserId: value, ownerName: options.find((o) => o.value === value)?.label ?? "" })}
-      onQueryChange={setQuery}
+      name={row.ownerName}
+      roster={draft.roster}
+      rosterLabel="In this meeting"
+      onChange={(ownerUserId, ownerName) => draft.setRow(index, { ownerUserId, ownerName })}
       ariaLabel={`Owner for ${item.text}`}
       placeholder={unmatched ? `“${item.ownerName}” · pick owner` : "Add owner"}
-      emptyLabel={isSearchableQuery(query) ? "No matches" : "Type to search lab members"}
-      icon={selectedName ? <Avatar name={selectedName} size="xs" /> : undefined}
       className={cn("w-48", unmatched ? UNMATCHED_CLASS : CHIP_CLASS)}
     />
-    </div>
   );
 }
 
 function DueChip({ index }: { index: number }) {
   const draft = useActionItemDraft()!;
-  const row = draft.rowFor(index);
+  const required = draft.needsDate(index);
   return (
-    <div className="w-36">
-      <DateField
-        mode="date"
-        value={row.dueAt}
-        onChange={(value) => draft.setRow(index, { dueAt: value })}
-        placeholder="Add date"
-        ariaLabel={`Due date for ${draft.items[index]!.text}`}
-        buttonClassName={cn(CHIP_CLASS, "justify-between")}
-      />
-    </div>
+    <TaskDueChip
+      value={draft.rowFor(index).dueAt}
+      onChange={(dueAt) => draft.setRow(index, { dueAt })}
+      ariaLabel={`Due date for ${draft.items[index]!.text}`}
+      buttonClassName={cn(required ? UNMATCHED_CLASS : CHIP_CLASS, "justify-between")}
+    />
+  );
+}
+
+function ProjectChip({ index }: { index: number }) {
+  const draft = useActionItemDraft()!;
+  const projectId = draft.rowFor(index).projectId;
+  const options = useMemo<SelectOption[]>(() => draft.projects.map((p) => ({ value: p.id, label: p.name })), [draft.projects]);
+  return (
+    <Combobox
+      value={projectId}
+      options={options}
+      onChange={(next) => draft.setRow(index, { projectId: next })}
+      ariaLabel={`Project for ${draft.items[index]!.text}`}
+      placeholder="Pick project"
+      className={cn("w-40", projectId ? CHIP_CLASS : UNMATCHED_CLASS)}
+    />
   );
 }
 
@@ -125,54 +111,48 @@ function ItemChips({ index, order }: { index: number; order: number }) {
   const item = draft.items[index]!;
   const row = draft.rowFor(index);
 
-  if (item.taskId) {
-    return draft.projectId ? (
-      <PopIn from={0.8} ms={DUR.taskChip} delay={order * DUR.taskChipStagger} enabled={draft.created !== null}>
-        <Link
-          to={`/projects/${draft.projectId}?tab=progress&task=${item.taskId}`}
-          className={cn(CHIP_BASE, "inline-flex items-center gap-1 border-os-accent/40 bg-os-accent/10 text-os-accent")}
-        >
-          <ListChecks className="h-3.5 w-3.5" aria-hidden />
-          Task
-        </Link>
-      </PopIn>
-    ) : null;
-  }
-
+  if (item.taskId) return null;
   if (!draft.editable) return <ReadOnlyChips index={index} />;
 
+  const delay = (n: number) => order * DUR.chipStagger + n * DUR.chipGap;
   return (
-    <div className={cn("flex items-center gap-1.5", !row.checked && "opacity-50")}>
-      <Checkbox
-        tone="os"
-        checked={row.checked}
-        onChange={(e) => draft.setRow(index, { checked: e.target.checked })}
-        aria-label={`Make a task: ${item.text}`}
-      />
-      {row.checked ? (
-        <>
-          <PopIn delay={order * DUR.chipStagger}>
-            <OwnerChip index={index} />
-          </PopIn>
-          <PopIn delay={order * DUR.chipStagger + DUR.chipGap}>
-            <DueChip index={index} />
-          </PopIn>
-          <PopIn delay={order * DUR.chipStagger + 2 * DUR.chipGap}>
-            <button
-              type="button"
-              onClick={() => void draft.createOne(index)}
-              disabled={draft.busy}
-              aria-label={`Add task: ${item.text}`}
-              className={cn(CHIP_BASE, "inline-flex items-center gap-1 border-os-accent/40 bg-os-accent/10 text-os-accent hover:bg-os-accent/20 disabled:opacity-50")}
-            >
-              <Plus className="h-3.5 w-3.5" aria-hidden />
-              Add task
-            </button>
-          </PopIn>
-        </>
-      ) : (
-        <span className="text-xs text-muted-foreground">No task</span>
+    <div className="flex items-center gap-1.5">
+      {draft.needsProject && (
+        <PopIn delay={delay(0)}>
+          <ProjectChip index={index} />
+        </PopIn>
       )}
+      <PopIn delay={delay(0)}>
+        <TaskStatusChip
+          value={row.status}
+          onChange={(status) => draft.setRow(index, { status })}
+          ariaLabel={`Status for ${item.text}`}
+        />
+      </PopIn>
+      <PopIn delay={delay(1)}>
+        <OwnerChip index={index} />
+      </PopIn>
+      <PopIn delay={delay(2)}>
+        <DueChip index={index} />
+      </PopIn>
+      <PopIn delay={delay(3)}>
+        <button
+          type="button"
+          onClick={() => void draft.createOne(index)}
+          disabled={draft.busy || !draft.canAdd(index)}
+          aria-label={`Add task: ${item.text}`}
+          className={cn(CHIP_BASE, "inline-flex items-center gap-1 border-os-accent/40 bg-os-accent/10 text-os-accent hover:bg-os-accent/20 disabled:opacity-50")}
+        >
+          <Plus className="h-3.5 w-3.5" aria-hidden />
+          Add
+        </button>
+      </PopIn>
+      <IconButton
+        label={`Dismiss suggestion: ${item.text}`}
+        icon={X}
+        onClick={() => draft.dismissLine(index)}
+        disabled={draft.busy}
+      />
     </div>
   );
 }
@@ -210,8 +190,8 @@ function ChipGroup({
 }
 
 /**
- * Owner and due chips at the right edge of each checklist block that matches
- * one of the plan's action items. A React overlay driven by the plan: nothing
+ * Status, owner and due chips, Add and dismiss at the right edge of each
+ * suggestion line that matches one of the plan's action items. A React overlay driven by the plan: nothing
  * here writes into the editor's DOM or the document. The room the chips need
  * is reserved by a generated style rule sized to the rendered chip group.
  */
@@ -251,18 +231,16 @@ export function ActionItemChips({ rec, getRoot }: { rec: UseMeetingRecording; ge
     const items = draft.items;
 
     function measure() {
-      const blocks = (recRef.current.getNoteState?.()?.blocks ?? []).filter((b) => b.type === "checkListItem");
-      const used = new Set<string>();
+      const lines = findSuggestionLines(recRef.current.getNoteState?.()?.blocks ?? [], items);
       const next: Placement[] = [];
       const host = overlayHost(root!);
       if (!host) return;
       const hostRect = host.getBoundingClientRect();
       for (let index = 0; index < items.length; index++) {
-        const block = blocks.find((b) => !used.has(b.id) && actionItemMatchesBlock(items[index]!.text, b.text));
-        if (!block) continue;
+        const block = lines[index];
+        if (!block || items[index]!.taskId) continue;
         const el = findBlock(root!, block.id);
         if (!el) continue;
-        used.add(block.id);
         const content = contentOf(el);
         resize?.observe(content);
         const box = toHost(content.getBoundingClientRect(), hostRect);

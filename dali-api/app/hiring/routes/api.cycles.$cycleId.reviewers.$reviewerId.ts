@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.cycles.$cycleId.reviewers.$reviewerId";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireCoreOrDomainLead } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";

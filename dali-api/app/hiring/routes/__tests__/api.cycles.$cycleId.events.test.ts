@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/hiring/lib/hiring-events.server", () => ({ createHiringEvent: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { createHiringEvent } from "~/hiring/lib/hiring-events.server";
 import { action } from "~/hiring/routes/api.cycles.$cycleId.events";
 
@@ -38,8 +34,6 @@ beforeEach(() => {
     ok: true,
     user: { sub: "core-1", email: "core@dali.edu", type: "member" },
   } as never);
-  vi.mocked(getUserRoles).mockResolvedValue({} as never);
-  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(createHiringEvent).mockResolvedValue({
     ok: true,
     event: { id: "evt-1", ...validBody },
@@ -53,13 +47,6 @@ describe("POST /api/hiring/cycles/:cycleId/events", () => {
     expect(createHiringEvent).toHaveBeenCalledWith(
       expect.objectContaining({ cycleId: CYCLE_ID, actorId: "core-1", kind: "HelpHour" }),
     );
-  });
-
-  it("returns 404 when the flag is off", async () => {
-    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await run(validBody);
-    expect(res.status).toBe(404);
-    expect(createHiringEvent).not.toHaveBeenCalled();
   });
 
   it("surfaces the lib's 403 for a non-Core actor", async () => {

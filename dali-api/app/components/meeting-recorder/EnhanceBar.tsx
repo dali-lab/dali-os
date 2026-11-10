@@ -8,6 +8,7 @@ import { Menu, MenuItem } from "~/components/ui/floating";
 import { enhanceWasUndone, useActionItemDraft, type ActionItemDraft } from "./action-item-draft";
 import { BAR_ATTR } from "./block-dom";
 import { BarTransition, type BarContent } from "./BarTransition";
+import { CALL_AUDIO_OFF_DETAIL, micSilentDetail } from "./capture-warnings";
 import { DUR, enterRef } from "./motion";
 import { PopIn } from "./PopIn";
 import { deriveRailState, ENHANCE_AGAIN_TIP } from "./RecordingRail";
@@ -97,32 +98,8 @@ function EnhanceErrorNote({ rec }: { rec: UseMeetingRecording }) {
   return rec.enhanceError ? <p>{rec.enhanceError}</p> : null;
 }
 
-function taskHref(draft: ActionItemDraft, taskId: string): string {
-  return `/projects/${draft.projectId}?tab=progress&task=${taskId}`;
-}
-
-function OrphanedTasksNote({ draft }: { draft: ActionItemDraft }) {
-  const { orphanedTasks } = draft;
-  if (orphanedTasks.length === 0 || !draft.projectId) return null;
-  return (
-    <p>
-      {orphanedTasks.length === 1 ? "1 task's line was removed" : `${orphanedTasks.length} tasks' lines were removed`}
-      {orphanedTasks.map((item) => (
-        <span key={item.taskId}>
-          {" · "}
-          <Link to={taskHref(draft, item.taskId!)} className="font-medium text-os-accent hover:underline">
-            View task{orphanedTasks.length > 1 ? `: ${item.text}` : ""}
-          </Link>
-        </span>
-      ))}
-    </p>
-  );
-}
-
 function tasksBar(rec: UseMeetingRecording, draft: ActionItemDraft | null): BarContent {
   if (!draft) return null;
-
-  const board = "the project board";
 
   if (draft.created !== null && !draft.stepVisible) {
     return {
@@ -130,62 +107,45 @@ function tasksBar(rec: UseMeetingRecording, draft: ActionItemDraft | null): BarC
       node: (
         <BarShell
           icon={<ListChecks className="h-4 w-4" aria-hidden />}
-          title={`Added ${plural(draft.created, "task")} to ${board}`}
+          title={`Added ${plural(draft.created, "task")}`}
           actions={
-            draft.projectId ? (
-              <Link to={`/projects/${draft.projectId}?tab=progress`} className={buttonClasses("ghost", "sm")}>
+            draft.boardProjectId ? (
+              <Link to={`/projects/${draft.boardProjectId}?tab=progress`} className={buttonClasses("ghost", "sm")}>
                 View board
               </Link>
             ) : null
           }
-          note={<OrphanedTasksNote draft={draft} />}
         />
       ),
     };
   }
 
-  if (!draft.stepVisible) {
-    if (draft.orphanedTasks.length === 0 || !draft.projectId) return null;
-    return {
-      key: "tasks-orphaned",
-      node: <BarShell icon={<ListChecks className="h-4 w-4" aria-hidden />} title="Tasks from this meeting" note={<OrphanedTasksNote draft={draft} />} />,
-    };
-  }
-
-  const unmatched =
-    draft.unmatchedCount > 0
-      ? ` ${draft.unmatchedCount === 1 ? "1 owner needs a pick." : `${draft.unmatchedCount} owners need a pick.`}`
-      : "";
+  if (!draft.stepVisible) return null;
 
   return {
     key: "tasks",
     node: (
       <BarShell
         icon={<ListChecks className="h-4 w-4" aria-hidden />}
-        title={plural(draft.untaskedCount, "action item")}
-        middle={
-          <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">
-            Check owners and dates, then add them to {board}.{unmatched}
-          </p>
-        }
+        title={plural(draft.untaskedCount, "suggested task")}
+        middle={<p className="min-w-0 flex-1 text-[13px] text-muted-foreground">Check owners and dates, then add them.</p>}
         actions={
           <>
             {ghost(draft.dismiss, "Not now")}
             <button
               type="button"
               onClick={() => void draft.create()}
-              disabled={draft.busy || draft.checkedCount === 0}
+              disabled={draft.busy || draft.addableCount === 0}
               className={buttonClasses("primary", "sm")}
             >
-              {draft.busy ? "Creating…" : `Create ${plural(draft.checkedCount, "task")}`}
+              {draft.busy ? "Adding…" : "Add all"}
             </button>
             <BarMenu rec={rec} enhanceAgain={() => void rec.enhanceNow()} />
           </>
         }
         note={
           <>
-            {draft.created !== null && <p>Added {plural(draft.created, "task")} to {board}</p>}
-            <OrphanedTasksNote draft={draft} />
+            {draft.created !== null && <p>Added {plural(draft.created, "task")}</p>}
             <EnhanceErrorNote rec={rec} />
           </>
         }
@@ -320,6 +280,21 @@ function barContent(
   const owner = rec.remote ? ` · ${rec.remote.ownerIsYou ? "another device" : rec.remote.ownerName}` : "";
 
   switch (state) {
+    case "recording":
+      if (rec.noSound) {
+        return {
+          key: "noSound",
+          node: rec.micDevice ? (
+            <BarShell title="Your mic isn't picking up sound" detail={micSilentDetail(rec.micDevice)} />
+          ) : (
+            <BarShell title="No sound detected" detail="Nothing has been picked up so far. Stop and record again." />
+          ),
+        };
+      }
+      return rec.callAudioOff
+        ? { key: "callAudioOff", node: <BarShell title="Call audio is off" detail={CALL_AUDIO_OFF_DETAIL} /> }
+        : null;
+
     case "processing": {
       const d = describeProcessing(rec.processingStage ?? "starting", rec.progress);
       return {
@@ -367,6 +342,12 @@ function barContent(
     case "enhanced":
       if (!enhanceWasUndone(rec)) return tasksBar(rec, draft);
       return readyBar(rec, "ready", celebrate, owner);
+
+    case "noSpeech":
+      return {
+        key: "noSpeech",
+        node: <BarShell title="No speech was captured" detail="Nothing was transcribed from this recording. Discard it and record again." />,
+      };
 
     case "ready":
     case "inserted":

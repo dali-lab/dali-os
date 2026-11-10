@@ -50,6 +50,20 @@ type DomainApplicationWithStatusRelations = DomainApplicationGetPayload<{
   include: typeof domainApplicationStatusInclude;
 }>;
 
+// ─── applicantCancelledInterview ─────────────────────────────────────────────
+
+/** The applicant's own cancellation with nothing rebooked: a withdrawal from this round. */
+export function applicantCancelledInterview(
+  interviews: { status: string; interviewRoundId: string }[],
+  roundId: string,
+): boolean {
+  const inRound = interviews.filter((i) => i.interviewRoundId === roundId);
+  return (
+    inRound.some((i) => i.status === "CancelledByApplicant") &&
+    !inRound.some((i) => i.status === "Scheduled" || i.status === "Completed")
+  );
+}
+
 // ─── inferDomainApplicationStatus ────────────────────────────────────────────
 
 /**
@@ -135,7 +149,6 @@ export function inferDomainApplicationStatus(
     const inRound = interviews.filter((i) => i.interviewRoundId === round);
     const scheduled = inRound.find((i) => i.status === "Scheduled");
     const completed = inRound.find((i) => i.status === "Completed");
-    const cancelledByApplicant = inRound.find((i) => i.status === "CancelledByApplicant");
 
     if (scheduled) {
       // Step 5: a future interview is on the calendar
@@ -145,7 +158,7 @@ export function inferDomainApplicationStatus(
       // Step 6: interview happened, decision hasn't advanced
       return "PostInterviewPending";
     }
-    if (cancelledByApplicant) {
+    if (applicantCancelledInterview(interviews, round)) {
       // Step 6b: applicant cancelled — treat as withdrawal
       return "Withdrawn";
     }

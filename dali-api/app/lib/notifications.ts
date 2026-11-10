@@ -3,7 +3,7 @@
 // "what counts as a recent notification" policy lives in one place.
 
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { EVENT_TYPES, isEventType, type EventDef } from "~/lib/notification-events";
 import { noteForOccurrence } from "~/lib/meeting-occurrences";
 
@@ -55,19 +55,48 @@ const notPastMeetingInvite = (now: Date): Prisma.NotificationWhereInput => ({
   ],
 });
 
+// A notification linked to an InterviewAssignment is only live while that
+// assignment is still Active on a still-Scheduled interview. Once it moves to
+// Declined/Replaced or the interview is Cancelled/Completed, the row hides with
+// no fan-out writes.
+const LIVE_INTERVIEW_ASSIGNMENT: Prisma.NotificationWhereInput = {
+  OR: [
+    { interviewAssignmentId: null },
+    { interviewAssignment: { status: "Active", interview: { status: "Scheduled" } } },
+  ],
+};
+
+export const STALE_AFTER_EVENTS: [eventType: string, ms: number][] = Object.entries(
+  EVENT_TYPES as Record<string, EventDef>,
+).flatMap(([eventType, def]) => (def.staleAfterMs ? [[eventType, def.staleAfterMs]] : []));
+
+const notAgedOut = (now: Date): Prisma.NotificationWhereInput => ({
+  NOT: {
+    OR: STALE_AFTER_EVENTS.map(([eventType, ms]) => ({
+      eventType,
+      createdAt: { lte: new Date(now.getTime() - ms) },
+    })),
+  },
+});
+
 /**
- * Staleness hides for meeting-backed notifications that are still awaiting
- * action, as AND clauses. Both read paths build on this — the tasks path
- * (listOpenTasks/countOpenTasks, which drives the web bell's `taskCount`) and
+ * Staleness hides for meeting- and interview-backed notifications that are still
+ * awaiting action, as AND clauses. Both read paths build on this — the tasks path
+ * (listOpenTasksPage/countOpenTasks, which drive the bell's `taskCount`) and
  * the inbox path (listMyNotifications, which drives the desktop app's feed and
  * dock badge) — so the two counts can't disagree.
  *
  * Only meaningful for unread rows: a row the user has already read is plain
- * history. History (listNotificationHistory) applies none of these and
- * annotates the rows via resolveNotificationState instead.
+ * history. History (listNotificationHistory) applies these only to its open
+ * bucket and annotates the rows via resolveNotificationState instead.
  */
 export function liveMeetingPingClauses(now: Date): Prisma.NotificationWhereInput[] {
-  return [notExpiredMeetingReminder(now), notPastMeetingInvite(now)];
+  return [
+    notExpiredMeetingReminder(now),
+    notPastMeetingInvite(now),
+    LIVE_INTERVIEW_ASSIGNMENT,
+    notAgedOut(now),
+  ];
 }
 
 export interface ListNotificationsOptions {
@@ -75,6 +104,8 @@ export interface ListNotificationsOptions {
   limit?: number;
   /** When true, only return notifications with readAt = null. */
   onlyUnread?: boolean;
+  /** Upper bound for `limit`. Defaults to 50. */
+  maxLimit?: number;
 }
 
 export interface NotificationListResult {
@@ -91,7 +122,7 @@ export async function listMyNotifications(
   userId: string,
   opts: ListNotificationsOptions = {},
 ): Promise<NotificationListResult> {
-  const limit = Math.max(1, Math.min(opts.limit ?? 50, 50));
+  const limit = Math.max(1, Math.min(opts.limit ?? 50, opts.maxLimit ?? 50));
   const now = new Date();
   const live = liveMeetingPingClauses(now);
   const where: Prisma.NotificationWhereInput = {
@@ -214,7 +245,7 @@ const RETIRED_CAP = 200;
  * Ids of meeting-backed rows that the live-surface hides have dropped while
  * still unread: a "Starting soon" reminder whose occurrence has passed, an
  * un-RSVP'd one-off invite to a meeting that already happened, anything on a
- * Cancelled meeting.
+ * Cancelled meeting, an assignment to an interview the member is no longer on.
  *
  * The desktop app retires a delivered banner when its row comes back through
  * the feed with `readAt` set — which never happens to these, because going
@@ -232,7 +263,11 @@ export async function listRetiredMeetingPingIds(
     where: {
       recipientUserId: userId,
       readAt: null,
-      scheduledMeetingId: { not: null },
+      OR: [
+        { scheduledMeetingId: { not: null } },
+        { interviewAssignmentId: { not: null } },
+        { eventType: { in: STALE_AFTER_EVENTS.map(([eventType]) => eventType) } },
+      ],
       createdAt: { gte: new Date(now.getTime() - RETIRED_LOOKBACK_MS) },
     },
     orderBy: { createdAt: "desc" },

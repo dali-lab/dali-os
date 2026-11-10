@@ -10,7 +10,7 @@
 // format change degrades to "0 upserted" rather than wiping the catalog.
 
 import type { JobContext, JobResult } from "~/jobs/registry";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { dartmouthTermCode, daliTermCodeFromDartmouth } from "~/lib/terms.shared";
 import { fetchTermCatalog } from "~/lib/dartmouth-timetable.server";

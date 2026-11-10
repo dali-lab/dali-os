@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { DriveItem } from "~/lib/drive.server";
 
 type Viewer = { userId: string; isCore: boolean; termId: string | null };

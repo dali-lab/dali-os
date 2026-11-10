@@ -4,7 +4,7 @@
 // other caller that wants the "which agreement → who" preview before it fires.
 // Both confirm the recipient list first — issuance is never silent.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { AUDIENCE_RESOLVERS } from "./audiences";
 import { activateVersion } from "./activate.server";

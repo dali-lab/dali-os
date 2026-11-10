@@ -3,7 +3,7 @@
 // unified feed fetches it live.
 
 import { randomUUID } from "node:crypto";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getAppEnv, STAGING_REDIRECT_EMAIL } from "~/lib/app-env";
 import { buildEncryptedTokens, parseStoredTokens } from "~/lib/google-calendar";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";

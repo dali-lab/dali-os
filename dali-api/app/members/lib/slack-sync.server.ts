@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { lookupSlackUserByEmail } from "~/slack/lib/slack-client";
 
 // Resolve and persist a member's Slack user id from their email, so later

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { expandOccurrences, nextOpenOccurrence } from "~/lib/meeting-occurrences";
 
 const LOOKAHEAD_MS = 120 * 24 * 60 * 60_000;

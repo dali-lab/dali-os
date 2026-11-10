@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("~/lib/google-calendar", () => ({
   NotAGuestError: class NotAGuestError extends Error {},
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { respondToGoogleEventAsSelf } from "~/lib/google-calendar";
 import { submitCalendarAction } from "~/calendar/routes/calendar.server";

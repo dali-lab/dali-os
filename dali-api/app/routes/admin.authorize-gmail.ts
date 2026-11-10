@@ -8,7 +8,7 @@
 import { requireAuth } from "~/lib/auth";
 import { isCore } from '~/lib/roles'
 import { getApiBaseUrl, APPLICATIONS_FROM_EMAIL } from '~/lib/app-env'
-import { buildGoogleAuthUrl, GMAIL_READONLY_SCOPE, GMAIL_SEND_SCOPE } from '~/lib/google-oauth'
+import { buildGoogleAuthUrl, GMAIL_READONLY_SCOPE, GMAIL_SEND_SCOPE, GOOGLE_CALENDAR_SCOPE } from '~/lib/google-oauth'
 import { isEmailPurpose, type EmailPurposeKey } from '~/lib/email-identities'
 import { randomBytes } from 'node:crypto'
 
@@ -16,7 +16,7 @@ const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
 
 const SCOPES = [
   GMAIL_SEND_SCOPE,
-  'https://www.googleapis.com/auth/calendar',
+  GOOGLE_CALENDAR_SCOPE,
   'openid',
   'email',
 ]

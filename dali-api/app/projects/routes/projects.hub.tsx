@@ -9,17 +9,18 @@ import {
   useNavigate,
   useSearchParams,
 } from "react-router";
+import { useSearchParamState } from "~/hooks/useSearchParamState";
 import { Select } from "~/components/ui/floating";
 import type { Route } from "./+types/projects.hub";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { getUserRoles } from "~/lib/roles";
+import { currentTerm, getUserRoles } from "~/lib/roles";
+import { termFilterOrder } from "~/lib/terms.shared";
 import {
   captureProjectTemplate,
   instantiateProjectTemplate,
 } from "~/lib/project-templates.server";
-import { requestOpenTabIfEmbedded } from "~/components/workspace-link";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { timed } from "~/lib/server-timing";
 import { githubTeamSlug } from "~/lib/github-slug";
@@ -66,16 +67,30 @@ type ProjectStatus = "Active" | "Paused" | "Archived";
 // up" is the website column's value for a project with no showcase row at all:
 // "which projects has nobody written up yet" is the question that column gets
 // asked most.
-const FILTER_COLUMNS: FilterColumn[] = [
-  { key: "status", label: "Status", icon: CircleDot },
-  // A project matches a term when it's anywhere in the ProjectTerm set — a
-  // project may span several terms. Status is deliberately a separate column:
-  // most of the lab's history is Archived, so folding it into Term made past
-  // terms read as empty.
-  { key: "term", label: "Term", icon: CalendarRange },
-  { key: "website", label: "Website", icon: Globe },
-  { key: "partner", label: "Partner", icon: Handshake },
-];
+function filterColumns(
+  terms: readonly { code: string }[],
+  currentTermCode: string | null,
+): FilterColumn[] {
+  return [
+    { key: "status", label: "Status", icon: CircleDot },
+    // A project matches a term when it's anywhere in the ProjectTerm set — a
+    // project may span several terms. Status is deliberately a separate column:
+    // most of the lab's history is Archived, so folding it into Term made past
+    // terms read as empty.
+    {
+      key: "term",
+      label: "Term",
+      icon: CalendarRange,
+      order: termFilterOrder(
+        terms.map((t) => ({ id: t.code, code: t.code, isCurrent: t.code === currentTermCode })),
+        { includeAll: false },
+      ).map((o) => o.value),
+      optionLabel: (code) => (code === currentTermCode ? `${code} (current)` : code),
+    },
+    { key: "website", label: "Website", icon: Globe },
+    { key: "partner", label: "Partner", icon: Handshake },
+  ];
+}
 
 const NO_SHOWCASE_LABEL = "Not written up";
 
@@ -129,11 +144,14 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // The create modal's "Start term" picker. Term *filtering* happens client-side
   // in the advanced filter bar, off each row's term set.
-  const terms = await timed(request, 'hub.terms', () =>
-    prisma.term.findMany({
-      orderBy: { sortKey: "desc" },
-      select: { id: true, code: true },
-    }));
+  const [terms, current] = await timed(request, 'hub.terms', () =>
+    Promise.all([
+      prisma.term.findMany({
+        orderBy: { sortKey: "desc" },
+        select: { id: true, code: true },
+      }),
+      currentTerm(request),
+    ]));
 
   const projects = await timed(request, 'hub.projects', () => prisma.project.findMany({
     orderBy: [{ status: "asc" }, { name: "asc" }],
@@ -178,8 +196,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     }),
   );
 
-  // getUserRoles(sub, request) resolves isCore and canViewStaffing in one cached
-  // round-trip — no second hit even though canViewStaffing delegates to isCore.
   const [roles, partnerOrgs] =
     await timed(request, 'hub.meta', () => Promise.all([
       getUserRoles(auth.user.sub, request),
@@ -209,6 +225,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     rows,
     terms,
+    currentTermCode: current?.code ?? null,
     partnerOrgs,
     canEdit,
     canStaff,
@@ -341,6 +358,7 @@ export default function ProjectsListPage() {
   const {
     rows,
     terms,
+    currentTermCode,
     partnerOrgs,
     canEdit,
     canStaff,
@@ -358,7 +376,7 @@ export default function ProjectsListPage() {
     setNewIconEmoji(null);
     setCreating(true);
   };
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
   const [view, setView] = useViewPreference("dali:view:projects", "list");
 
   // An old ?public= link (from the Drive templates gallery era of this filter)
@@ -369,9 +387,11 @@ export default function ProjectsListPage() {
     publicParam === SHOWCASE_FILTER_NONE
       ? NO_SHOWCASE_LABEL
       : (SHOWCASE_LABELS[publicParam as ShowcaseStatusValue] ?? null);
-  const initialFilters: ColumnFilter[] = linkedWebsite
-    ? [{ columnKey: "website", values: [linkedWebsite] }]
-    : [];
+  const initialFilters: ColumnFilter[] = [
+    ...(currentTermCode ? [{ columnKey: "term", values: [currentTermCode] }] : []),
+    ...(linkedWebsite ? [{ columnKey: "website", values: [linkedWebsite] }] : []),
+  ];
+  const columns = useMemo(() => filterColumns(terms, currentTermCode), [terms, currentTermCode]);
 
   const filterRows = useMemo(
     () =>
@@ -387,7 +407,7 @@ export default function ProjectsListPage() {
     [rows],
   );
 
-  const columnFilters = useColumnFilters(FILTER_COLUMNS, initialFilters);
+  const columnFilters = useColumnFilters(columns, initialFilters, { inUrl: true });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -547,7 +567,7 @@ export default function ProjectsListPage() {
         />
         <div className="min-w-[220px] flex-1">
           <ColumnFilters
-            columns={FILTER_COLUMNS}
+            columns={columns}
             rows={filterRows}
             filters={columnFilters.filters}
             onChange={columnFilters.setFilters}
@@ -587,7 +607,7 @@ function ProjectsTable({ rows }: { rows: ProjectRow[] }) {
   const navigate = useNavigate();
   const open = (p: ProjectRow) => {
     const url = `/projects/${p.id}`;
-    if (!requestOpenTabIfEmbedded(url, p.name)) navigate(url);
+    navigate(url);
   };
   return (
     <div className="overflow-x-auto">
@@ -648,7 +668,7 @@ function ProjectsCards({ rows, onNew }: { rows: ProjectRow[]; onNew?: () => void
   return (
     // auto-fill rather than fixed columns: the design's cards hold their
     // 280px minimum and the row simply fits fewer of them as the pane
-    // narrows, which is what a split-screen workspace tab needs. No width
+    // narrows beside an open side panel. No width
     // cap on the grid — one left the cards short of the pane's right edge on
     // a wide window, with the filter row above still running full width.
     <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-6">

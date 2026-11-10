@@ -2,10 +2,10 @@
 
 import { describe, it, expect, beforeEach, vi, afterAll } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/meeting-recording.server", () => ({ applyResult: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { applyResult } from "~/lib/meeting-recording.server";
 import { signHmac } from "~/lib/transcription/hmac";
 import { action } from "~/routes/api.meeting-recordings.$id.result";

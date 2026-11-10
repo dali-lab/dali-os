@@ -1,6 +1,6 @@
-import { useLayoutEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useActionData, useNavigation, useSubmit } from "react-router";
-import { ChevronLeft, Image as ImageIcon, Maximize2, RectangleVertical, Trash2, Type, Upload, Video, X } from "lucide-react";
+import { ChevronLeft, Image as ImageIcon, Maximize2, RectangleVertical, Trash2, Type, Video, X } from "lucide-react";
 import { Segmented } from "~/components/ui/Segmented";
 import { Toggle } from "~/components/ui/Toggle";
 import { Radio } from "~/components/ui/Radio";
@@ -11,16 +11,14 @@ import { Combobox, Select } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
-import { BANNER_CARD_WIDTH, BannerContent, BannerFooter, BannerOverlay } from "~/components/banners/BannerContent";
+import { BANNER_CARD_WIDTH, BANNER_CROP_ASPECT, BannerContent, BannerFooter, BannerOverlay, bannerCardWidth } from "~/components/banners/BannerContent";
+import { MediaField } from "./MediaField";
 import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
-import { uploadFileToS3 } from "~/lib/upload-client";
-import { rawUploadUrl } from "~/components/doc/upload";
 import { cn } from "~/lib/cn";
 import {
   BANNER_PAGES,
   BANNER_ROLES,
   BANNER_ROLE_LABELS,
-  BANNER_UPLOAD_PREFIX,
   FREQUENCY_HELP,
   STATUS_DOT,
   STATUS_LABEL,
@@ -221,6 +219,7 @@ export function BannerEditor({ data }: { data: EditorData }) {
                   accept="image/*"
                   value={draft.mediaUrl}
                   onChange={(mediaUrl) => patch({ mediaUrl })}
+                  cropAspect={BANNER_CROP_ASPECT[draft.kind]}
                 />
                 {data.recentMedia.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
@@ -450,62 +449,6 @@ function Panel({ title, error, children }: { title: string; error?: string; chil
   );
 }
 
-/** Upload a file or paste an https:// link. */
-function MediaField({
-  label,
-  accept,
-  value,
-  onChange,
-}: {
-  label: string;
-  accept: string;
-  value: string | null;
-  onChange: (url: string | null) => void;
-}) {
-  const os = useOsChrome();
-  const toast = useToast();
-  const [uploading, setUploading] = useState(false);
-  const isUpload = value?.startsWith("/api/upload/raw") ?? false;
-
-  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setUploading(true);
-    try {
-      const meta = await uploadFileToS3(file, BANNER_UPLOAD_PREFIX, accept);
-      onChange(rawUploadUrl(meta.s3Key));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  return (
-    <div className={os.fieldLabel}>
-      {label}
-      <div className="flex items-center gap-2">
-        <input
-          className="min-w-0 flex-1"
-          value={isUpload ? "Uploaded file" : (value ?? "")}
-          readOnly={isUpload}
-          onChange={(e) => onChange(e.target.value || null)}
-          placeholder="https://"
-        />
-        {value ? (
-          <IconButton label="Remove" icon={X} onClick={() => onChange(null)} />
-        ) : (
-          <label className={cn(os.actionBtn(), "cursor-pointer", uploading && "pointer-events-none opacity-50")}>
-            <Upload className={os.actionIcon} /> {uploading ? "Uploading…" : "Upload"}
-            <input type="file" accept={accept} className="sr-only" onChange={onFile} />
-          </label>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const PAD = 24;
 
 /** A scaled-down picture of what a viewer sees: the banner card over a dimmed DALI OS. */
@@ -514,6 +457,7 @@ function BannerPreview({ banner }: { banner: Parameters<typeof BannerContent>[0]
   const cardRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.5);
   const [cardHeight, setCardHeight] = useState(500);
+  const cardWidth = bannerCardWidth(banner);
 
   useLayoutEffect(() => {
     const frame = frameRef.current;
@@ -558,7 +502,7 @@ function BannerPreview({ banner }: { banner: Parameters<typeof BannerContent>[0]
         ref={cardRef}
         inert
         className="absolute left-1/2 top-6 overflow-hidden rounded-os-card border border-os-container bg-os-card"
-        style={{ width: BANNER_CARD_WIDTH, transform: `translateX(-50%) scale(${scale})`, transformOrigin: "top center" }}
+        style={{ width: cardWidth, transform: `translateX(-50%) scale(${scale})`, transformOrigin: "top center" }}
       >
         <span className="absolute right-4 top-4 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/50 text-white">
           <X className="h-4 w-4" />

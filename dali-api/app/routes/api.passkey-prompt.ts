@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.passkey-prompt";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   shouldOfferPasskey,
   setPasskeyPromptDismissed,

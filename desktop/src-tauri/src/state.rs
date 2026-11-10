@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Mutex;
-use std::time::Instant;
 
 use serde::Serialize;
 
@@ -68,12 +67,12 @@ pub struct AgendaNext {
     pub can_record: bool,
 }
 
-// One open to-do (form to fill, agreement to sign, …) from the notifications
-// payload's `tasks` array.
+// A meeting after `AgendaNext`, from the same response's `upcoming` array.
 #[derive(Clone)]
-pub struct TaskItem {
+pub struct AgendaUpcoming {
     pub id: String,
     pub title: String,
+    pub starts_at: String,
     pub link: Option<String>,
 }
 
@@ -145,12 +144,9 @@ pub struct AppState {
     // Latest value from /api/desktop/agenda (poller.rs), or None if there's
     // no upcoming meeting.
     pub agenda: Mutex<Option<AgendaNext>>,
-    // Latest open to-dos from the notifications payload's `tasks` field.
-    pub tasks: Mutex<Vec<TaskItem>>,
-    pub task_count: AtomicI64,
+    pub agenda_upcoming: Mutex<Vec<AgendaUpcoming>>,
     // CONNECTION_LIVE/POLLING/OFFLINE — set by poller.rs's sync loop.
     pub connection: AtomicU8,
-    pub last_sync: Mutex<Option<Instant>>,
 }
 
 impl AppState {
@@ -176,10 +172,8 @@ impl AppState {
             dismissed_record_prompts: Mutex::new(HashSet::new()),
             recording_title: Mutex::new(None),
             agenda: Mutex::new(None),
-            tasks: Mutex::new(Vec::new()),
-            task_count: AtomicI64::new(0),
+            agenda_upcoming: Mutex::new(Vec::new()),
             connection: AtomicU8::new(CONNECTION_POLLING),
-            last_sync: Mutex::new(None),
         }
     }
 

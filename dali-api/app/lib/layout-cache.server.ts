@@ -3,8 +3,9 @@ import { publish, subscribe } from "~/lib/realtime-bus.server";
 import { onDbOperation } from "~/lib/db-write-hooks";
 
 // Per-user cache for the shell (layout) loader's reads, which ran on every
-// navigation. Only the layout reads through here: actions and page loaders keep
-// calling the same helpers uncached, so authorization never sees stale data.
+// navigation. The layout reads through here, and page loaders can reach the
+// roles piece through `readOnlyRoles` for display. Actions and access decisions
+// keep calling the same helpers uncached, so authorization never sees stale data.
 // A write that changes one of these clears it on every machine through the
 // realtime bus; the TTL bounds anything a write site doesn't clear.
 

@@ -11,7 +11,7 @@
 // their DomainEligibility. preferenceRank carries the bid's 1-based rank.
 // (ProjectRoleRequest is headcount display only; it never gates bids.)
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { Level } from "~/lib/level";
 
 // Re-export under the legacy name for callers that still import `BidLevel`.

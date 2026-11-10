@@ -1,6 +1,5 @@
 // Onboarding IS the "Welcome to DALI! 👋" profile form, rendered INLINE here —
-// no cross-URL redirect, so the embedded workspace tab's URL (/onboarding)
-// matches its content (avoids the tab-identity race that surfaced other pages).
+// no cross-URL redirect.
 // Submitting the form writes the member's profile, stamps DALIMember.onboardedAt,
 // and clears the onboarding task (see submitMemberForm in public-form.ts).
 // Everything else happens in earlier provisioning (DALI email, Slack invite) or
@@ -11,7 +10,7 @@ import type { Route } from "./+types/onboarding";
 import { redirect, useLoaderData } from "react-router";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loadPublicForm } from "~/forms/lib/public-form";
 import {
   MemberFormFillView,
@@ -51,16 +50,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     : null;
 
   return {
+    userId: auth.user.sub,
     form: form ? { ...form, token: profileForm!.publicToken! } : null,
   };
 }
 
 export default function OnboardingPage({ loaderData }: Route.ComponentProps) {
-  const { form } = useLoaderData<typeof loader>();
+  const { form, userId } = useLoaderData<typeof loader>();
   return (
     <MemberFormShell>
       {form ? (
-        <MemberFormFillView data={form} />
+        <MemberFormFillView data={form} saveProgress progressUserId={userId} />
       ) : (
         <div className="py-10 text-center">
           <h1 className="font-heading text-xl font-bold text-foreground">

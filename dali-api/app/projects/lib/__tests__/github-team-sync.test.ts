@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { __setGitHubClientForTests } from "~/lib/github";
 import { syncProjectTeam } from "~/projects/lib/github-team-sync";
 import type { Octokit } from "@octokit/rest";

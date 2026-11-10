@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.projects.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm, isCore, isProjectMember } from "~/lib/roles";
 import { currentSprintBand } from "~/projects/lib/task-board";
 import { DAY } from "~/projects/lib/timeline-days";

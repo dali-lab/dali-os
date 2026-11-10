@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   currentTerm: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock("~/education/lib/application-form.server", () => ({
   createOfferingApplicationForm: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, currentTerm } from "~/lib/roles";
 import { peopleByNetId } from "~/lib/dartmouth-people";
 import { isOfferingManager } from "~/education/lib/access.server";

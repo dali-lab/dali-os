@@ -1,4 +1,4 @@
-import { prisma } from "./db";
+import { prisma } from "./db.server";
 import { resolvePhotoUrl } from "./photo";
 import { primaryEmail } from "~/lib/display";
 

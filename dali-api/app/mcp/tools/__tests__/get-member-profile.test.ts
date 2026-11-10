@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/photo", () => ({
   resolvePhotoUrl: vi.fn().mockResolvedValue("https://cdn.example.com/photo.jpg"),
 }));
@@ -25,7 +25,7 @@ vi.mock("~/lib/roles", async (importOriginal) => {
   };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import { isCore } from "~/lib/roles";
 import {

@@ -18,8 +18,23 @@ vi.mock("~/lib/drive-hub.server", () => ({
 
 const prompt = vi.fn();
 const toastError = vi.fn();
+const toastInfo = vi.fn();
+const flags = vi.hoisted(() => ({ on: new Set<string>() }));
+const pptx = vi.hoisted(() => ({
+  parsePptxFile: vi.fn(),
+  uploadImages: vi.fn(),
+  stashImport: vi.fn(),
+}));
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ prompt }) }));
-vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ error: toastError, success: vi.fn() }) }));
+vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ error: toastError, success: vi.fn(), info: toastInfo }) }));
+vi.mock("~/components/FeatureFlags", async (orig) => ({ ...(await orig<object>()), useFeatureFlag: (key: string) => flags.on.has(key) }));
+vi.mock("~/components/doc/upload", () => ({ uploadEditorImage: vi.fn(), uploadErrorMessage: (e: Error) => e.message }));
+vi.mock("~/components/slides/pptx/pending-import", () => ({ stashImport: pptx.stashImport }));
+vi.mock("~/components/slides/pptx/import-client", async (orig) => ({
+  ...(await orig<object>()),
+  parsePptxFile: pptx.parsePptxFile,
+  uploadImages: pptx.uploadImages,
+}));
 
 import { NewMenu, makeScopeActions, notebookPlacement } from "~/routes/drive.hub";
 
@@ -43,6 +58,8 @@ const originalLocation = window.location;
 beforeEach(() => {
   prompt.mockReset();
   toastError.mockReset();
+  toastInfo.mockReset();
+  flags.on.clear();
   assign.mockReset();
   onCreated.mockReset();
   Object.defineProperty(window, "location", { configurable: true, value: { assign } });
@@ -56,7 +73,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-async function mountMenu(s: Scope, currentFolderId: string | null = null) {
+async function mountMenu(s: Scope, currentFolderId: string | null = null, actions: object = {}, canManageAgreements = false) {
   container = document.createElement("div");
   document.body.appendChild(container);
   const mounted = createRoot(container);
@@ -65,8 +82,8 @@ async function mountMenu(s: Scope, currentFolderId: string | null = null) {
     mounted.render(
       createElement(NewMenu, {
         scope: s,
-        actions: {} as never,
-        canManageAgreements: false,
+        actions: actions as never,
+        canManageAgreements,
         onUploadClick: () => {},
         uploading: false,
         onTemplate: () => {},
@@ -251,6 +268,19 @@ describe("New menu: creating in place", () => {
     expect(assign).not.toHaveBeenCalled();
   });
 
+  it("createSlides with a preset name skips the prompt, returns the id and leaves navigation to the caller", async () => {
+    expect(await actionsFor("lab").createSlides("From file")).toBe("new1");
+    expect(prompt).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(JSON.parse((fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body)).toMatchObject({ title: "From file", kind: "Slides" });
+  });
+
+  it("createSlides without a name prompts and reveals the deck", async () => {
+    prompt.mockResolvedValue(" Plan ");
+    expect(await actionsFor("lab").createSlides()).toBe("new1");
+    expect(onCreated).toHaveBeenCalledWith("new1");
+  });
+
   it.each(["createDoc", "createFolder", "createWhiteboard"] as const)("%s reveals nothing when the create fails", async (method) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "nope" }) }));
     prompt.mockResolvedValue("Thing");
@@ -281,6 +311,166 @@ describe("New menu: creating in place", () => {
       document.querySelector<HTMLElement>('[data-testid="drive-new-form"]')!.closest<HTMLElement>('[role="menuitem"]')!.click();
     });
     expect(assign).toHaveBeenCalledWith("/forms/edit/form1");
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe("New menu: agreements and rubrics", () => {
+  const entry = (testId: string) => document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+  const click = async (testId: string) => {
+    await act(async () => {
+      entry(testId)!.closest<HTMLElement>('[role="menuitem"]')!.click();
+    });
+  };
+  const posted = (fetchMock: ReturnType<typeof vi.fn>) => {
+    const [url, init] = fetchMock.mock.calls[0];
+    return { url, body: Object.fromEntries((init.body as FormData).entries()) };
+  };
+
+  it.each([
+    ["core", true, false],
+    ["hiring", false, true],
+    ["lab", false, false],
+    ["mentorship", false, false],
+  ])("in %s offers agreement=%s, rubric=%s to Core", async (id, agreement, rubric) => {
+    await mountMenu(scope({ id }), null, {}, true);
+    expect(!!entry("drive-new-agreement")).toBe(agreement);
+    expect(!!entry("drive-new-rubric")).toBe(rubric);
+  });
+
+  it("offers neither to someone who can't manage agreements", async () => {
+    await mountMenu(scope({ id: "hiring" }));
+    expect(entry("drive-new-rubric")).toBeNull();
+    act(() => root?.unmount());
+    await mountMenu(scope({ id: "core" }));
+    expect(entry("drive-new-agreement")).toBeNull();
+  });
+
+  it("creates a rubric in the open folder and opens its editor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, rubricId: "r1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue("  Design rubric ");
+    await mountMenu(scope({ id: "hiring", rootFolderId: "hiring-root" }), "sub", {}, true);
+    await click("drive-new-rubric");
+    expect(posted(fetchMock)).toEqual({ url: "/api/rubrics", body: { name: "Design rubric", folderPageId: "sub" } });
+    expect(assign).toHaveBeenCalledWith("/hiring/rubrics/r1");
+  });
+
+  it("files a rubric at the Hiring root when no folder is open", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true, rubricId: "r1" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue("Design rubric");
+    await mountMenu(scope({ id: "hiring", rootFolderId: "hiring-root" }), null, {}, true);
+    await click("drive-new-rubric");
+    expect(posted(fetchMock).body.folderPageId).toBe("hiring-root");
+  });
+
+  it("says so and stays put when the rubric can't be created", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({ error: "Forbidden" }) }));
+    prompt.mockResolvedValue("Design rubric");
+    await mountMenu(scope({ id: "hiring" }), null, {}, true);
+    await click("drive-new-rubric");
+    expect(toastError).toHaveBeenCalledWith("Couldn't create the rubric");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("posts nothing when the rubric name prompt is cancelled", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue(null);
+    await mountMenu(scope({ id: "hiring" }), null, {}, true);
+    await click("drive-new-rubric");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("creates an agreement in the open folder", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, redirected: true, url: "http://x/core/agreements/a1" });
+    vi.stubGlobal("fetch", fetchMock);
+    prompt.mockResolvedValue("NDA");
+    await mountMenu(scope({ id: "core", rootFolderId: "core-root" }), "legal", {}, true);
+    await click("drive-new-agreement");
+    const { url, body } = posted(fetchMock);
+    expect(url).toBe("/core/agreements");
+    expect(body).toMatchObject({ intent: "create", name: "NDA", folderPageId: "legal" });
+    expect(assign).toHaveBeenCalledWith("http://x/documents/agreement/a1");
+  });
+});
+
+describe("New menu: New deck from PowerPoint", () => {
+  const item = (id = "lab") => document.querySelector(`[data-testid="drive-new-slides-pptx-${id}"]`);
+  const pick = async (file: File) => {
+    const input = document.querySelector<HTMLInputElement>('input[aria-label="Choose a PowerPoint file"]')!;
+    Object.defineProperty(input, "files", { configurable: true, value: [file] });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  };
+  const pptxFile = (name = "Q4 review.pptx") => new File([new Uint8Array([1, 2, 3])], name);
+  const slides = [{ layoutId: "content", title: [], subtitle: [], body: [], image: null, notes: "" }];
+
+  beforeEach(() => {
+    pptx.parsePptxFile.mockReset().mockResolvedValue({ slides: [], skipped: { chart: 1 } });
+    pptx.uploadImages.mockReset().mockResolvedValue({ slides, skipped: { chart: 1 } });
+    pptx.stashImport.mockReset().mockReturnValue(true);
+  });
+
+  it.each([
+    [[], false],
+    [["drive-slides"], false],
+    [["slides-collab"], false],
+    [["drive-slides", "slides-collab"], true],
+  ] as const)("flags %j: offered is %s", async (on, offered) => {
+    for (const f of on) flags.on.add(f);
+    await mountMenu(scope({ id: "lab" }));
+    expect(item() !== null).toBe(offered);
+  });
+
+  it("creates a deck named after the file and hands it the prepared slides", async () => {
+    flags.on.add("drive-slides").add("slides-collab");
+    const createSlides = vi.fn().mockResolvedValue("deck1");
+    await mountMenu(scope({ id: "lab" }), null, { createSlides });
+    await pick(pptxFile());
+    expect(createSlides).toHaveBeenCalledWith("Q4 review");
+    expect(pptx.stashImport).toHaveBeenCalledWith("deck1", { slides, skipped: { chart: 1 } });
+    expect(onCreated).toHaveBeenCalledWith("deck1");
+  });
+
+  it("rejects a file that isn't a .pptx before reading it", async () => {
+    flags.on.add("drive-slides").add("slides-collab");
+    const createSlides = vi.fn();
+    await mountMenu(scope({ id: "lab" }), null, { createSlides });
+    await pick(pptxFile("notes.pdf"));
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining(".pptx"));
+    expect(pptx.parsePptxFile).not.toHaveBeenCalled();
+    expect(createSlides).not.toHaveBeenCalled();
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+
+  it("creates no deck when the file can't be read", async () => {
+    flags.on.add("drive-slides").add("slides-collab");
+    pptx.parsePptxFile.mockRejectedValue(new Error("That file couldn't be read."));
+    const createSlides = vi.fn();
+    await mountMenu(scope({ id: "lab" }), null, { createSlides });
+    await pick(pptxFile());
+    expect(createSlides).not.toHaveBeenCalled();
+    expect(toastError).toHaveBeenCalledWith("That file couldn't be read.", expect.anything());
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+
+  it("opens the empty deck and says so when the slides can't be carried over", async () => {
+    flags.on.add("drive-slides").add("slides-collab");
+    pptx.stashImport.mockReturnValue(false);
+    await mountMenu(scope({ id: "lab" }), null, { createSlides: vi.fn().mockResolvedValue("deck2") });
+    await pick(pptxFile());
+    expect(toastError).toHaveBeenCalledWith(expect.stringContaining("Import slides"), expect.anything());
+    expect(onCreated).toHaveBeenCalledWith("deck2");
+  });
+
+  it("stops when the deck can't be created", async () => {
+    flags.on.add("drive-slides").add("slides-collab");
+    await mountMenu(scope({ id: "lab" }), null, { createSlides: vi.fn().mockResolvedValue(null) });
+    await pick(pptxFile());
+    expect(pptx.stashImport).not.toHaveBeenCalled();
     expect(onCreated).not.toHaveBeenCalled();
   });
 });

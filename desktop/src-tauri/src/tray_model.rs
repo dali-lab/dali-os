@@ -7,13 +7,12 @@
 use serde::Serialize;
 
 use crate::config;
-use crate::state::{AgendaNext, RecentNotif, TaskItem};
+use crate::state::{AgendaNext, AgendaUpcoming, RecentNotif};
 
 const TITLE_MAX_CHARS: usize = 44;
 // Menubar real estate is scarce (MeetingBar and Notion Calendar cap around
 // here too): short title, terse countdown.
 const NEXT_TITLE_MAX_CHARS: usize = 18;
-const TASKS_MAX: usize = 3;
 
 pub struct TraySnapshot {
     pub unread_count: i64,
@@ -21,11 +20,9 @@ pub struct TraySnapshot {
     pub recording: Option<RecordingSnap>,
     pub version: String,
     pub next: Option<AgendaNext>,
+    pub upcoming: Vec<AgendaUpcoming>,
     pub now_unix: i64,
-    pub tasks: Vec<TaskItem>,
-    pub task_count: i64,
     pub connection: Connection,
-    pub last_sync_secs: Option<u64>,
 }
 
 pub struct RecordingSnap {
@@ -49,10 +46,8 @@ pub struct TrayView {
     pub recording: Option<RecordingView>,
     pub version: String,
     pub next: Option<NextView>,
-    pub tasks: Vec<TaskRow>,
-    pub task_count: i64,
+    pub upcoming: Vec<UpcomingRow>,
     pub connection: Connection,
-    pub last_sync_secs: Option<u64>,
 }
 
 #[derive(Serialize, Clone, PartialEq, Debug)]
@@ -88,9 +83,10 @@ pub struct NextView {
 
 #[derive(Serialize, Clone, PartialEq, Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct TaskRow {
+pub struct UpcomingRow {
     pub id: String,
     pub title: String,
+    pub starts_at: String,
     pub link: Option<String>,
 }
 
@@ -143,6 +139,22 @@ fn build_next(next: &AgendaNext, now_unix: i64) -> Option<NextView> {
     })
 }
 
+/// The agenda refreshes on sync, so a row can start between fetches; once it
+/// has, it's no longer "later" and comes off the list. Rows with an
+/// unparseable start have no time to show and are dropped too.
+fn build_upcoming(upcoming: &[AgendaUpcoming], now_unix: i64) -> Vec<UpcomingRow> {
+    upcoming
+        .iter()
+        .filter(|u| parse_iso8601_unix(&u.starts_at).is_some_and(|starts| starts > now_unix))
+        .map(|u| UpcomingRow {
+            id: u.id.clone(),
+            title: u.title.clone(),
+            starts_at: u.starts_at.clone(),
+            link: u.link.clone(),
+        })
+        .collect()
+}
+
 /// Rows with an empty title are dropped (nothing to show), urgent rows are
 /// bumped to the front (stable, so feed order is preserved within each
 /// group), and the result is capped at `config::TRAY_RECENT_MAX`.
@@ -161,13 +173,6 @@ pub fn build(s: &TraySnapshot) -> TrayView {
         })
         .collect();
 
-    let tasks = s
-        .tasks
-        .iter()
-        .take(TASKS_MAX)
-        .map(|t| TaskRow { id: t.id.clone(), title: t.title.clone(), link: t.link.clone() })
-        .collect();
-
     TrayView {
         unread_count: s.unread_count,
         unread,
@@ -177,10 +182,8 @@ pub fn build(s: &TraySnapshot) -> TrayView {
         }),
         version: s.version.clone(),
         next: s.next.as_ref().and_then(|n| build_next(n, s.now_unix)),
-        tasks,
-        task_count: s.task_count,
+        upcoming: build_upcoming(&s.upcoming, s.now_unix),
         connection: s.connection,
-        last_sync_secs: s.last_sync_secs,
     }
 }
 
@@ -271,11 +274,9 @@ mod tests {
             recording: None,
             version: "1.2.3".to_string(),
             next: None,
+            upcoming: Vec::new(),
             now_unix: 0,
-            tasks: Vec::new(),
-            task_count: 0,
             connection: Connection::Live,
-            last_sync_secs: None,
         }
     }
 
@@ -304,8 +305,7 @@ mod tests {
         assert_eq!(v.recording, None);
         assert_eq!(v.version, "1.2.3");
         assert_eq!(v.next, None);
-        assert!(v.tasks.is_empty());
-        assert_eq!(v.task_count, 0);
+        assert!(v.upcoming.is_empty());
     }
 
     #[test]
@@ -518,29 +518,62 @@ mod tests {
         assert_eq!(v.next, None);
     }
 
-    // ── Tasks ────────────────────────────────────────────────────────────
+    // ── Upcoming ─────────────────────────────────────────────────────────
 
-    fn task(id: &str) -> TaskItem {
-        TaskItem { id: id.to_string(), title: format!("Task {id}"), link: Some(format!("/tasks/{id}")) }
+    fn upcoming(id: &str, starts_at: &str) -> AgendaUpcoming {
+        AgendaUpcoming {
+            id: id.to_string(),
+            title: format!("Meeting {id}"),
+            starts_at: starts_at.to_string(),
+            link: Some(format!("/calendar?meeting={id}")),
+        }
     }
 
     #[test]
-    fn tasks_cap_at_three() {
+    fn upcoming_rows_keep_order_and_fields() {
         let mut s = empty_snapshot();
-        s.tasks = (0..5).map(|i| task(&i.to_string())).collect();
-        s.task_count = 5;
+        s.upcoming = vec![
+            upcoming("a", "2026-10-10T14:00:00.000Z"),
+            upcoming("b", "2026-10-10T15:00:00.000Z"),
+        ];
+        s.now_unix = parse_iso8601_unix("2026-10-10T13:00:00.000Z").unwrap();
         let v = build(&s);
-        assert_eq!(v.tasks.len(), 3);
-        assert_eq!(v.task_count, 5);
+        assert_eq!(
+            v.upcoming,
+            vec![
+                UpcomingRow {
+                    id: "a".to_string(),
+                    title: "Meeting a".to_string(),
+                    starts_at: "2026-10-10T14:00:00.000Z".to_string(),
+                    link: Some("/calendar?meeting=a".to_string()),
+                },
+                UpcomingRow {
+                    id: "b".to_string(),
+                    title: "Meeting b".to_string(),
+                    starts_at: "2026-10-10T15:00:00.000Z".to_string(),
+                    link: Some("/calendar?meeting=b".to_string()),
+                },
+            ],
+        );
     }
 
     #[test]
-    fn tasks_below_cap_are_unchanged() {
+    fn upcoming_row_drops_off_once_it_has_started() {
         let mut s = empty_snapshot();
-        s.tasks = vec![task("1")];
-        s.task_count = 1;
-        let v = build(&s);
-        assert_eq!(v.tasks.len(), 1);
+        s.upcoming = vec![
+            upcoming("started", "2026-10-10T14:00:00.000Z"),
+            upcoming("later", "2026-10-10T15:00:00.000Z"),
+        ];
+        s.now_unix = parse_iso8601_unix("2026-10-10T14:00:00.000Z").unwrap();
+        let ids: Vec<String> = build(&s).upcoming.into_iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec!["later"]);
+    }
+
+    #[test]
+    fn upcoming_row_with_unparseable_start_is_dropped() {
+        let mut s = empty_snapshot();
+        s.upcoming = vec![upcoming("bad", "not-a-date")];
+        assert!(build(&s).upcoming.is_empty());
     }
 
     // ── Connection ───────────────────────────────────────────────────────
@@ -553,13 +586,10 @@ mod tests {
     }
 
     #[test]
-    fn connection_and_last_sync_pass_through_build() {
+    fn connection_passes_through_build() {
         let mut s = empty_snapshot();
         s.connection = Connection::Offline;
-        s.last_sync_secs = Some(42);
-        let v = build(&s);
-        assert_eq!(v.connection, Connection::Offline);
-        assert_eq!(v.last_sync_secs, Some(42));
+        assert_eq!(build(&s).connection, Connection::Offline);
     }
 
     // ── ISO-8601 parsing ─────────────────────────────────────────────────

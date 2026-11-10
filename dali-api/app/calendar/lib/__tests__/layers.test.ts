@@ -13,9 +13,11 @@ import {
   perCalendarLegend,
   visibleExternalEvents,
   linkedEventFor,
+  placeBlock,
+  toGridRange,
 } from "../layers";
-import { EVENT_CORAL } from "../event-block";
-import type { LoaderData, TimeEntryDTO } from "../types";
+import { EVENT_CORAL, formatHourMinute } from "../event-block";
+import type { EventBlock, LoaderData, TimeEntryDTO } from "../types";
 
 // Minimal loader fixture — only the fields the builders read. Timezone UTC keeps
 // the hour math trivial (zonedDayStartUtc(y,m,d,"UTC") === Date.UTC(y,m,d)).
@@ -45,6 +47,103 @@ describe("buildGridDays", () => {
 
   it("supports a single day (day view)", () => {
     expect(buildGridDays("2026-08-18T00:00:00.000Z", 1)).toHaveLength(1);
+  });
+});
+
+describe("placement across daylight saving", () => {
+  const TZ = "America/New_York";
+  const FALL_BACK = "2026-11-01T00:00:00.000Z";
+  const SPRING_FORWARD = "2027-03-14T00:00:00.000Z";
+
+  type BlockInput = Parameters<typeof placeBlock>[4];
+
+  function place(dayIso: string, startIso: string, endIso: string, block: Partial<BlockInput> = {}): EventBlock {
+    const into: Record<number, EventBlock[]> = {};
+    placeBlock(buildGridDays(dayIso, 1), TZ, startIso, endIso, block as BlockInput, into);
+    return into[0][0];
+  }
+
+  function label(block: EventBlock): string {
+    return `${formatHourMinute(block.startHour)} – ${formatHourMinute(block.startHour + block.duration)}`;
+  }
+
+  it("draws an event at its clock time on the fall-back day", () => {
+    const block = place(FALL_BACK, "2026-11-01T17:00:00-05:00", "2026-11-01T18:00:00-05:00");
+    expect(block).toMatchObject({ startHour: 17, duration: 1 });
+    expect(label(block)).toBe("5:00 PM – 6:00 PM");
+  });
+
+  it("draws an event at its clock time on the spring-forward day", () => {
+    const block = place(SPRING_FORWARD, "2027-03-14T17:00:00-04:00", "2027-03-14T18:00:00-04:00");
+    expect(block).toMatchObject({ startHour: 17, duration: 1 });
+    expect(label(block)).toBe("5:00 PM – 6:00 PM");
+  });
+
+  it("leaves events before the fall-back change where they were", () => {
+    expect(place(FALL_BACK, "2026-11-01T00:30:00-04:00", "2026-11-01T01:00:00-04:00")).toMatchObject({
+      startHour: 0.5,
+      duration: 0.5,
+    });
+  });
+
+  it("measures an event spanning the change by the clock", () => {
+    expect(place(FALL_BACK, "2026-11-01T00:00:00-04:00", "2026-11-01T03:00:00-05:00")).toMatchObject({
+      startHour: 0,
+      duration: 3,
+    });
+    expect(place(SPRING_FORWARD, "2027-03-14T01:00:00-05:00", "2027-03-14T04:00:00-04:00")).toMatchObject({
+      startHour: 1,
+      duration: 3,
+    });
+  });
+
+  it("uses real time for an event inside the repeated hour", () => {
+    expect(place(FALL_BACK, "2026-11-01T01:30:00-04:00", "2026-11-01T01:15:00-05:00")).toMatchObject({
+      startHour: 1.5,
+      duration: 0.75,
+    });
+  });
+
+  it("runs a block to the bottom of the grid when it ends at midnight", () => {
+    expect(place(FALL_BACK, "2026-11-01T22:00:00-05:00", "2026-11-02T00:00:00-05:00")).toMatchObject({
+      startHour: 22,
+      duration: 2,
+    });
+  });
+
+  it("clips an overnight event at the end of a DST day", () => {
+    const into: Record<number, EventBlock[]> = {};
+    placeBlock(
+      buildGridDays(FALL_BACK, 2),
+      TZ,
+      "2026-11-01T23:00:00-05:00",
+      "2026-11-02T01:00:00-05:00",
+      {} as BlockInput,
+      into,
+    );
+    expect(into[0][0]).toMatchObject({ startHour: 23, duration: 1 });
+    expect(into[1][0]).toMatchObject({ startHour: 0, duration: 1 });
+  });
+
+  it("stops the after-buffer at the bottom of a 25-hour day", () => {
+    const block = place(FALL_BACK, "2026-11-01T23:00:00-05:00", "2026-11-01T23:30:00-05:00", { bufferAfter: 2 });
+    expect(block.bufferAfter).toBe(0.5);
+  });
+
+  it("agrees with toGridRange, which anchors the editor on a placed block", () => {
+    const start = "2026-11-01T17:00:00-05:00";
+    const end = "2026-11-01T18:00:00-05:00";
+    const block = place(FALL_BACK, start, end);
+    expect(toGridRange(buildGridDays(FALL_BACK, 1), TZ, start, end)).toEqual({
+      dayIdx: 0,
+      startHour: block.startHour,
+      endHour: block.startHour + block.duration,
+    });
+  });
+
+  it("keeps toGridRange's elapsed span for a range past the column", () => {
+    const range = toGridRange(buildGridDays(FALL_BACK, 2), TZ, "2026-11-01T23:00:00-05:00", "2026-11-02T01:00:00-05:00");
+    expect(range).toEqual({ dayIdx: 0, startHour: 23, endHour: 25 });
   });
 });
 

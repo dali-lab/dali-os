@@ -1,14 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   getSender,
   getSenderRefreshToken,
   getApplicationsGmailRefreshToken,
   isSenderConnected,
   noteSenderHealth,
+  getHiringCalendarSender,
 } from "~/lib/gmail-integration";
 
 const mockPrisma = prisma as unknown as {
@@ -153,5 +154,27 @@ describe("isSenderConnected", () => {
 
     expect(await isSenderConnected("Partners")).toBe(false);
     expect(mockPrisma.gmailIntegration.findFirst).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("getHiringCalendarSender", () => {
+  it("only matches the enabled Hiring row for that address with Calendar granted", async () => {
+    mockPrisma.gmailIntegration.findFirst.mockResolvedValue({ id: "h1", oauthTokens: "hiring-token" });
+
+    const sender = await getHiringCalendarSender("applications@example.edu");
+
+    expect(sender).toEqual({ id: "h1", refreshToken: "hiring-token" });
+    expect(mockPrisma.gmailIntegration.findFirst.mock.calls[0][0].where).toEqual({
+      purpose: "Hiring",
+      enabled: true,
+      sendAsEmail: { equals: "applications@example.edu", mode: "insensitive" },
+      scopes: { has: "https://www.googleapis.com/auth/calendar" },
+    });
+  });
+
+  it("is null when no Hiring row has Calendar access", async () => {
+    mockPrisma.gmailIntegration.findFirst.mockResolvedValue(null);
+
+    expect(await getHiringCalendarSender("applications@example.edu")).toBeNull();
   });
 });

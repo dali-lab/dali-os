@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   requireCore: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/roles");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead, hasCycleAccess } from "~/lib/roles";
 import { action } from "~/hiring/routes/api.delibs.$id.moves";

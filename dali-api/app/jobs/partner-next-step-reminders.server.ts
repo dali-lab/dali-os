@@ -3,7 +3,7 @@
 // the due timestamp, so moving nextStepDueAt makes a fresh reminder and the
 // old one just goes inert (same convention as task due reminders).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifyPartners } from "~/partners/lib/partner-notify.server";
 import { OPEN_STAGES } from "~/partners/lib/partner-application";
 import type { JobContext, JobResult } from "~/jobs/registry";

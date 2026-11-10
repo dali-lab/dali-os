@@ -2,7 +2,7 @@
 // /api/mobile/time routes, so both surfaces validate, attribute, and mirror an
 // entry the same way.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveRoleRef } from "~/lib/roles";
 import { validateTimeEntryRange } from "~/lib/calendar-schemas";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";

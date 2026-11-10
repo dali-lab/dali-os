@@ -132,7 +132,7 @@ describe("the collapse covered what the old stores held", () => {
     );
     const onboarding = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("hiring:onboarding:"));
     const education = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("education:"));
-    expect(hiringSlots).toHaveLength(18);
+    expect(hiringSlots).toHaveLength(19);
     // Not a slot: appended to the Accepted letter, so it has no NotificationType
     // of its own. It exists so the acceptance deadline and sign-off stop living
     // in library code where they went stale silently.

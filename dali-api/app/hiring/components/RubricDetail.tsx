@@ -29,6 +29,7 @@ import type { RubricCriterion } from '~/types'
 import { formatDateTime } from '~/lib/display'
 import { useUserTimeZone } from '~/hooks/useUserTimeZone'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
+import { useUndoKeys } from '~/hooks/useUndoKeys'
 import { rubricDraftName } from '~/collab/roomName'
 import {
   ManagedEditorShell,
@@ -121,6 +122,7 @@ export function RubricDetail() {
     'items',
     initialCriteria,
   )
+  useUndoKeys({ undo, redo, canUndo, canRedo })
 
   // ── Criterion mutators ───────────────────────────────────────────────────
 
@@ -269,9 +271,9 @@ export function RubricDetail() {
         !isCreatingVersion ? (
           <button
             onClick={handleStartCreate}
-            className={buttonClasses("primary", "md")}
+            className={buttonClasses("primary", "sm")}
           >
-            <Plus className="w-4 h-4 mr-2" />
+            <Plus className="w-4 h-4" />
             New Version
           </button>
         ) : null

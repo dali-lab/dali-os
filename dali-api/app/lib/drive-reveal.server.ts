@@ -3,7 +3,7 @@
 // by a named share has no place in their own Drive tree, so it lands on the
 // Shared with me space instead.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { driveFolderCrumbs, type DriveCrumbs } from "~/lib/drive-crumbs.server";
 import { workspaceDriveScope } from "~/lib/drive-crumbs";

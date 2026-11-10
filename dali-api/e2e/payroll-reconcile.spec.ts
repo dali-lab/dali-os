@@ -7,8 +7,7 @@ import { test, expect } from './fixtures';
 // PII rule: every name/netid here is synthetic (Ada Lovelace / f00pay01, the
 // seed's payroll fixture student). No real export is ever read.
 //
-// The page is admin-only and renders standalone via ?embed=1 (client-side nav
-// would wrap it in the TabWorkspace iframe — see education.spec.ts).
+// The page is admin-only.
 
 const ADMIN_EMAIL = 'admin@dali.dartmouth.edu';
 
@@ -90,7 +89,7 @@ test.describe('payroll: reconcile', () => {
     const payPeriod = activePayPeriodName();
 
     await loginAs({ daliEmail: ADMIN_EMAIL });
-    await page.goto('/admin/payroll/reconcile?embed=1');
+    await page.goto('/admin/payroll/reconcile');
 
     // Header + empty state before any upload for this term.
     await expect(

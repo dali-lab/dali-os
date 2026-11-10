@@ -307,6 +307,16 @@ describe("resolveAuditTextFilters", () => {
     });
   });
 
+  it("matches a full name word by word", async () => {
+    const prisma = fakePrisma([{ id: "u-1" }]);
+    await resolveAuditTextFilters(prisma, { ...EMPTY, person: "Ada Lovelace" });
+    const where = vi.mocked(prisma.user.findMany).mock.calls[0][0]!.where!;
+    expect(where.AND).toHaveLength(2);
+    expect((where.AND as { OR: unknown[] }[])[1].OR).toContainEqual({
+      lastName: { contains: "lovelace", mode: "insensitive" },
+    });
+  });
+
   it("yields a deliberately impossible OR when text search finds nothing", async () => {
     const prisma = fakePrisma([]);
     const patch = await resolveAuditTextFilters(prisma, { ...EMPTY, person: "nobody" });

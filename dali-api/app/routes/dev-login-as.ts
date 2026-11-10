@@ -8,7 +8,7 @@
 import type { Route } from "./+types/dev-login-as";
 import { isDevLoginEnabled } from "~/lib/dev-login";
 import { startLoginSession } from "~/lib/login-session.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   if (!isDevLoginEnabled()) {

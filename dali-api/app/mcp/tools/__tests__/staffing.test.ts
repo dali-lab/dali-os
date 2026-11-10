@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
+import { validateInput } from "~/lib/mcp-input";
 import {
+  SET_STAFFING_ASSIGNMENT_TOOL,
   runGetStaffingBoard,
   runSetStaffingAssignment,
   runSetDomainEligibility,
@@ -98,6 +100,30 @@ describe("get_staffing_board", () => {
     expect(out.columns.every((c) => c.projectId !== null)).toBe(true);
   });
 
+  it("filters to one project and leaves out the unassigned column", async () => {
+    mockPrisma.staffingAssignment.findMany.mockResolvedValue([
+      {
+        userId: "u1",
+        projectId: "p1",
+        domainId: "d1",
+        level: "P2",
+        status: "Proposed",
+        user: { firstName: "Ada", lastName: "Lovelace" },
+      },
+    ]);
+    mockPrisma.project.findMany.mockResolvedValue([{ id: "p1", name: "DALI OS" }]);
+    mockPrisma.domain.findMany.mockResolvedValue([{ id: "d1", displayName: "Fullstack Dev" }]);
+    mockPrisma.staffingBoardMember.findMany.mockClear();
+
+    const out = await runGetStaffingBoard(ME, { projectId: "p1" });
+    expect(mockPrisma.staffingAssignment.findMany.mock.calls.at(-1)![0].where).toMatchObject({
+      projectId: "p1",
+      status: { not: "Declined" },
+    });
+    expect(mockPrisma.staffingBoardMember.findMany).not.toHaveBeenCalled();
+    expect(out.columns.map((c) => c.projectId)).toEqual(["p1"]);
+  });
+
   it("404s when no cycle exists at all", async () => {
     mockPrisma.staffingCycle.findFirst.mockResolvedValue(null);
     await expect(runGetStaffingBoard(ME, {})).rejects.toThrow(StaffingNotFoundError);
@@ -105,6 +131,14 @@ describe("get_staffing_board", () => {
 });
 
 describe("set_staffing_assignment", () => {
+  it("accepts a project id or null for projectId at the input gate", () => {
+    const schema = SET_STAFFING_ASSIGNMENT_TOOL.inputSchema;
+    const base = { cycleId: "cyc-1", userId: "u" };
+    expect(validateInput({ ...base, projectId: "p1" }, schema).ok).toBe(true);
+    expect(validateInput({ ...base, projectId: null }, schema).ok).toBe(true);
+    expect(validateInput({ ...base, projectId: 1 }, schema).ok).toBe(false);
+  });
+
   beforeEach(() => {
     mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
     mockPrisma.domain.count.mockResolvedValue(1);

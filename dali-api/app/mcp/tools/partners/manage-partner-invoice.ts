@@ -1,7 +1,7 @@
 // MCP tool: manage_partner_invoice — create/update/set_status for manual
 // partner invoice tracking. Scope: mcp:write. Gated to isCore.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { upsertInvoice, setInvoiceStatus } from "~/partners/lib/partner-finance.server";
 import { McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction } from "../../registry";

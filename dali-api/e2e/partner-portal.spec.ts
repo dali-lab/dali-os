@@ -43,20 +43,18 @@ test.describe('internal Organizations pages (Core)', () => {
     await loginAs({ daliEmail: 'admin@dali.dartmouth.edu' });
   });
 
-  // ?embed=1 renders member routes standalone instead of inside the
-  // TabWorkspace iframe shell (see kanban-drag.spec.ts).
   test('lists partner orgs with counts', async ({ page }) => {
-    await page.goto('/core/partners/directory?embed=1');
+    await page.goto('/core/partners/directory');
     await expect(
       page.getByRole('heading', { name: 'Partners' }),
     ).toBeVisible();
-    await expect(page.getByText('Tuck School of Business')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Tuck School of Business' })).toBeVisible();
   });
 
   test('org detail shows members, pending invites, and projects', async ({ page }) => {
     // The org page opens on its Timeline tab; members, invites and projects
     // live on their own tabs, reached by URL (clicking races hydration).
-    await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts&embed=1');
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts');
     await expect(
       page.getByRole('heading', { name: 'Tuck School of Business' }),
     ).toBeVisible();
@@ -64,7 +62,7 @@ test.describe('internal Organizations pages (Core)', () => {
     // once on the tab. Assert presence, not oneness.
     await expect(page.getByText('Pat Tuck').first()).toBeVisible();
     await expect(page.getByText('invitee.tuck@example.com')).toBeVisible();
-    await page.goto('/core/partners/orgs/partner-tuck-school?tab=projects&embed=1');
+    await page.goto('/core/partners/orgs/partner-tuck-school?tab=projects');
     await expect(page.getByText('Tuck Alumni Connect')).toBeVisible();
   });
 
@@ -104,7 +102,7 @@ test.describe('internal Organizations pages (Core)', () => {
       // clicking the dialog's action button.
 
       // Move: Tuck → Hood.
-      await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts&embed=1');
+      await page.goto('/core/partners/orgs/partner-tuck-school?tab=contacts');
       // The first Core org page of a run can take a while to compile on the
       // dev server; wait for the row itself rather than racing it.
       await expect(page.getByText('Movey Tester')).toBeVisible({ timeout: 20_000 });
@@ -121,7 +119,7 @@ test.describe('internal Organizations pages (Core)', () => {
       await row.getByRole('button', { name: 'Move', exact: true }).last().click();
       await page.getByRole('dialog').getByRole('button', { name: 'Move', exact: true }).click();
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
-      await page.goto('/core/partners/orgs/partner-hood-museum?tab=contacts&embed=1');
+      await page.goto('/core/partners/orgs/partner-hood-museum?tab=contacts');
       await expect(page.getByText('Movey Tester')).toBeVisible();
 
       // Remove from Hood.
@@ -133,7 +131,7 @@ test.describe('internal Organizations pages (Core)', () => {
       await expect(page.getByText('Movey Tester')).not.toBeVisible();
 
       // Delete the empty org — lands back on the org list without it.
-      await page.goto(`/core/partners/orgs/${emptyOrgId}?tab=settings&embed=1`);
+      await page.goto(`/core/partners/orgs/${emptyOrgId}?tab=settings`);
       await page.getByRole('button', { name: 'Delete organization' }).click();
       await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
       await expect(
@@ -207,14 +205,14 @@ test.describe('project hub share toggle (member)', () => {
   test('project details shows the Partners section; drive shows share states', async ({ page }) => {
     // Partners live on Project details; the project's files (and their
     // partner-share toggles) live on the Drive tab.
-    await page.goto('/projects/project-tuck-alumni?tab=details&embed=1');
+    await page.goto('/projects/project-tuck-alumni?tab=details');
     await expect(page.getByRole('heading', { name: 'Partners' })).toBeVisible();
     // The os Partners view leads with the contacts — name and role on their
     // own lines rather than the old "Name (Role)" org summary.
     await expect(page.getByText('Pat Tuck', { exact: true })).toBeVisible();
     await expect(page.getByText('Program Sponsor', { exact: true })).toBeVisible();
 
-    await page.goto('/projects/project-tuck-alumni?tab=drive&embed=1');
+    await page.goto('/projects/project-tuck-alumni?tab=drive');
     // Seeded states: Weekly Partner Update shared, Internal Retro Notes not —
     // read off each row's menu, which names the action that would flip it.
     await docMenuItem(page, 'Weekly Partner Update', 'Stop sharing with partner');
@@ -225,7 +223,7 @@ test.describe('project hub share toggle (member)', () => {
   });
 
   test('toggling share flips the badge and back', async ({ page }) => {
-    await page.goto('/projects/project-tuck-alumni?tab=drive&embed=1');
+    await page.goto('/projects/project-tuck-alumni?tab=drive');
     await (await docMenuItem(page, 'Internal Retro Notes', 'Share with partner')).click();
     // Sharing on now prompts for confirmation (action guardrails); the revert
     // direction ("Stop sharing") does not.

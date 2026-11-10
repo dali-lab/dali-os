@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
-    mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn() },
+    mailMessageIndex: { findMany: vi.fn(), createMany: vi.fn(), updateMany: vi.fn() },
     partnerContact: { findMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/user-email.server", () => ({ findUserIdsByAddresses: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { findUserIdsByAddresses } from "~/lib/user-email.server";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { parseAddressList } from "~/email/lib/address-list";
@@ -17,6 +17,7 @@ import {
   classifyDirection,
   counterpartAddresses,
   indexMessages,
+  relinkPartnerContacts,
   type IndexableMessage,
 } from "~/email/lib/mail-index.server";
 
@@ -211,14 +212,28 @@ describe("indexMessages: partner contact linking", () => {
     expect(data[0]).toMatchObject({ linkedUserId: null, linkedPartnerContactId: "pc1", linkSource: "Auto" });
   });
 
-  it("prefers a User match over a PartnerContact match on the partners@ inbox", async () => {
+  it("links both the User and the PartnerContact when an address matches each", async () => {
     vi.mocked(findUserIdsByAddresses).mockResolvedValue(new Map([["ada@x.com", "u1"]]));
     db.partnerContact.findMany.mockResolvedValue([{ id: "pc1", email: "ada@x.com" }]);
 
     await indexMessages({ accountId: "acc1", inboxAddress: PARTNERS_FROM_EMAIL, metas: [meta({ to: PARTNERS_FROM_EMAIL })] });
 
     const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
-    expect(data[0]).toMatchObject({ linkedUserId: "u1", linkedPartnerContactId: null, linkSource: "Auto" });
+    expect(data[0]).toMatchObject({ linkedUserId: "u1", linkedPartnerContactId: "pc1", linkSource: "Auto" });
+  });
+
+  it("links a contact on one recipient even when a User matches a different recipient", async () => {
+    vi.mocked(findUserIdsByAddresses).mockResolvedValue(new Map([["grace@x.com", "u1"]]));
+    db.partnerContact.findMany.mockResolvedValue([{ id: "pc1", email: "ada@x.com" }]);
+
+    await indexMessages({
+      accountId: "acc1",
+      inboxAddress: PARTNERS_FROM_EMAIL,
+      metas: [meta({ direction: "Outbound", from: PARTNERS_FROM_EMAIL, to: "grace@x.com, ada@x.com" })],
+    });
+
+    const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
+    expect(data[0]).toMatchObject({ linkedUserId: "u1", linkedPartnerContactId: "pc1", linkSource: "Auto" });
   });
 
   it("looks up PartnerContact off a non-partners address when linkPartnerContacts is passed explicitly", async () => {
@@ -252,5 +267,83 @@ describe("indexMessages: partner contact linking", () => {
 
     const data = db.mailMessageIndex.createMany.mock.calls[0][0].data;
     expect(data[0]).toMatchObject({ linkedUserId: null, linkedPartnerContactId: null, linkSource: "None" });
+  });
+});
+
+describe("relinkPartnerContacts", () => {
+  const inbound = (id: string, fromAddress: string) => ({ id, direction: "Inbound", fromAddress, toAddresses: [] });
+  const outbound = (id: string, toAddresses: string[]) => ({
+    id,
+    direction: "Outbound",
+    fromAddress: PARTNERS_FROM_EMAIL,
+    toAddresses,
+  });
+
+  beforeEach(() => {
+    db.partnerContact.findMany.mockResolvedValue([
+      { id: "pc1", email: "ada@x.com" },
+      { id: "pc2", email: "grace@x.com" },
+    ]);
+    db.mailMessageIndex.updateMany.mockImplementation(async ({ where }) => ({ count: where.id.in.length }));
+  });
+
+  it("does nothing when there are no contacts", async () => {
+    db.partnerContact.findMany.mockResolvedValue([]);
+
+    expect(await relinkPartnerContacts("acc1", PARTNERS_FROM_EMAIL, 100)).toBe(0);
+
+    expect(db.mailMessageIndex.findMany).not.toHaveBeenCalled();
+    expect(db.mailMessageIndex.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("only selects unlinked, non-Manual rows on this account that match a contact, up to the limit", async () => {
+    await relinkPartnerContacts("acc1", PARTNERS_FROM_EMAIL, 25);
+
+    const query = db.mailMessageIndex.findMany.mock.calls[0][0];
+    expect(query.where).toEqual({
+      accountId: "acc1",
+      linkedPartnerContactId: null,
+      linkSource: { not: "Manual" },
+      OR: [
+        { direction: "Inbound", fromAddress: { in: ["ada@x.com", "grace@x.com"] } },
+        { direction: "Outbound", toAddresses: { hasSome: ["ada@x.com", "grace@x.com"] } },
+      ],
+    });
+    expect(query.take).toBe(25);
+  });
+
+  it("links inbound rows by sender and outbound rows by recipient, grouped per contact", async () => {
+    db.mailMessageIndex.findMany.mockResolvedValue([
+      inbound("r1", "ada@x.com"),
+      outbound("r2", ["nobody@x.com", "ada@x.com"]),
+      outbound("r3", ["grace@x.com"]),
+    ]);
+
+    expect(await relinkPartnerContacts("acc1", PARTNERS_FROM_EMAIL, 100)).toBe(3);
+
+    expect(db.mailMessageIndex.updateMany).toHaveBeenCalledTimes(2);
+    expect(db.mailMessageIndex.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["r1", "r2"] }, linkedPartnerContactId: null, linkSource: { not: "Manual" } },
+      data: { linkedPartnerContactId: "pc1", linkSource: "Auto" },
+    });
+    expect(db.mailMessageIndex.updateMany).toHaveBeenCalledWith({
+      where: { id: { in: ["r3"] }, linkedPartnerContactId: null, linkSource: { not: "Manual" } },
+      data: { linkedPartnerContactId: "pc2", linkSource: "Auto" },
+    });
+  });
+
+  it("leaves an existing User link alone", async () => {
+    db.mailMessageIndex.findMany.mockResolvedValue([inbound("r1", "ada@x.com")]);
+
+    await relinkPartnerContacts("acc1", PARTNERS_FROM_EMAIL, 100);
+
+    expect(db.mailMessageIndex.updateMany.mock.calls[0][0].data).not.toHaveProperty("linkedUserId");
+  });
+
+  it("counts only rows actually updated, so a link made mid-run isn't reported", async () => {
+    db.mailMessageIndex.findMany.mockResolvedValue([inbound("r1", "ada@x.com"), inbound("r2", "ada@x.com")]);
+    db.mailMessageIndex.updateMany.mockResolvedValue({ count: 1 });
+
+    expect(await relinkPartnerContacts("acc1", PARTNERS_FROM_EMAIL, 100)).toBe(1);
   });
 });

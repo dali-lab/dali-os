@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { validateBids, type BidCycle } from "~/projects/lib/bid-validation";
 
 // The shared db mock doesn't define these models; attach vi.fns so this file

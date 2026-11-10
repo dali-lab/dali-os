@@ -11,7 +11,7 @@
 // not a CAS row-claim: a re-fired tick creates no new in-app rows, and the Slack
 // post is gated on that fresh dispatch so it fires exactly once per sprint.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { postMessage, slackConfigured } from "~/slack/lib/slack-client";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";

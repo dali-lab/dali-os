@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { mailAccount: { findFirst: vi.fn() } },
 }));
 vi.mock("~/lib/gmail-integration", () => ({
@@ -16,7 +16,7 @@ vi.mock("~/email/lib/gmail-mailbox.server", () => ({
   MailboxError: class MailboxError extends Error {},
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getMailboxReader } from "~/lib/gmail-integration";
 import { refreshGoogleToken } from "~/lib/google-oauth";
 import { getMailboxToken } from "~/email/lib/gmail-mailbox.server";

@@ -14,7 +14,7 @@ import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { Avatar } from "~/components/ui/Avatar";
 import { Checkbox } from "~/components/ui/Checkbox";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { effectiveStartTermId, eligibleStartTerms } from "~/hiring/lib/start-terms";
 import { resolvePhotoUrl } from "~/lib/photo";

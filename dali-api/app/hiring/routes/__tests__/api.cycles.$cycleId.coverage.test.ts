@@ -1,19 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ hasCycleAccess: vi.fn() }));
 vi.mock("~/hiring/lib/interview-availability.server", () => ({ interviewerCalendars: vi.fn() }));
 vi.mock("~/hiring/lib/scheduling", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/hiring/lib/scheduling")>()),
-  explainAvailableSlots: vi.fn(),
+  loadSlotContext: vi.fn(),
+  availabilityFor: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
-import { explainAvailableSlots } from "~/hiring/lib/scheduling";
+import { availabilityFor, loadSlotContext } from "~/hiring/lib/scheduling";
 import { loader } from "~/hiring/routes/api.cycles.$cycleId.coverage";
 
 const mockPrisma = prisma as unknown as {
@@ -59,7 +60,9 @@ beforeEach(() => {
 
 describe("coverage loader", () => {
   it("reports what each cycle domain's applicants can book in person, with the blocker", async () => {
-    vi.mocked(explainAvailableSlots).mockImplementation(async (_cycleId, _roundId, domainIds) =>
+    const context = { blocked: { slots: [], blocker: null, bookingNoticeHours: 12 } };
+    vi.mocked(loadSlotContext).mockResolvedValue(context);
+    vi.mocked(availabilityFor).mockImplementation((_context, domainIds) =>
       domainIds[0] === "dev"
         ? { slots: [{ startTime: "a", endTime: "b" }], blocker: null, bookingNoticeHours: 12 }
         : { slots: [], blocker: "one-interviewer", bookingNoticeHours: 12 },
@@ -72,15 +75,17 @@ describe("coverage loader", () => {
       { domainId: "design", domainName: "Design", bookableSlotCount: 0, blocker: "one-interviewer", bookingNoticeHours: 12 },
       { domainId: "dev", domainName: "Developer", bookableSlotCount: 1, blocker: null, bookingNoticeHours: 12 },
     ]);
-    expect(explainAvailableSlots).toHaveBeenCalledWith("cycle1", "interviews", ["design"], "in-person");
-    expect(explainAvailableSlots).toHaveBeenCalledWith("cycle1", "interviews", ["dev"], "in-person");
+    expect(loadSlotContext).toHaveBeenCalledTimes(1);
+    expect(loadSlotContext).toHaveBeenCalledWith("cycle1", "interviews", "in-person");
+    expect(availabilityFor).toHaveBeenCalledWith(context, ["design"]);
+    expect(availabilityFor).toHaveBeenCalledWith(context, ["dev"]);
   });
 
   it("returns no domains when the cycle has no interview config", async () => {
     mockPrisma.interviewConfig.findUnique.mockResolvedValue(null);
     const body = await (await run()).json();
     expect(body).toMatchObject({ configured: false, domains: [] });
-    expect(explainAvailableSlots).not.toHaveBeenCalled();
+    expect(loadSlotContext).not.toHaveBeenCalled();
   });
 
   it("refuses members without cycle access", async () => {

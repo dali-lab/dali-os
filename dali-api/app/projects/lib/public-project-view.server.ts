@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";
 import { parseDetails, parseMedia, type ShowcaseDetail } from "./showcase-content";

@@ -38,8 +38,8 @@ export async function assertNoHorizontalOverflow(
     `[${routeLabel}] outer document scrollWidth (${outerScrollWidth}px) exceeds viewport (${viewportWidth}px)`,
   );
 
-  // Check child frames defensively — mobile is tabless (no iframes) but a
-  // route might embed one (e.g. a video or third-party widget).
+  // Check child frames defensively: a route might embed one (e.g. a video or
+  // third-party widget).
   for (const frame of page.frames()) {
     if (frame === page.mainFrame()) continue;
     const frameScrollWidth = await frame
@@ -130,6 +130,15 @@ export async function resetEducationApplications(offeringId: string) {
  * @param page - Playwright Page instance
  * @param confirmLabel - The dialog's `confirmLabel` (the verb alone, e.g. 'Delete')
  */
+// A click before React hydrates is dropped, so retry until the dialog opens.
+export async function openDialog(page: Page, buttonName: string) {
+  const dialog = page.getByRole('dialog');
+  await expect(async () => {
+    if (!(await dialog.isVisible())) await page.getByRole('button', { name: buttonName }).click();
+    await expect(dialog).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 60_000 });
+}
+
 export async function confirmDialog(page: Page, confirmLabel: string) {
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();

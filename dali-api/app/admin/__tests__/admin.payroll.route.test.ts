@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn((_req: Request) =>
@@ -32,7 +32,7 @@ import {
   recordProjectChartString,
   resolveChartStringsForTerm,
 } from "~/lib/chart-string.server";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { loader as pageLoader, action as pageAction } from "~/admin/routes/admin.payroll";
 import { loader as csvLoader } from "~/admin/routes/admin.payroll.csv";
 

@@ -32,12 +32,6 @@ export function AppearanceSettingsBlock() {
       setPreference(readThemePreference());
       applyTheme();
     }
-    function onMessage(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return;
-      if (!e.data || e.data.type !== THEME_CHANGE_EVENT) return;
-      setPreference(readThemePreference());
-      applyTheme();
-    }
     function onMedia() {
       if (readThemePreference() === "system") applyTheme();
     }
@@ -45,13 +39,11 @@ export function AppearanceSettingsBlock() {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     window.addEventListener("storage", onStorage);
     window.addEventListener(THEME_CHANGE_EVENT, onThemeChange);
-    window.addEventListener("message", onMessage);
     mq.addEventListener("change", onMedia);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(THEME_CHANGE_EVENT, onThemeChange);
-      window.removeEventListener("message", onMessage);
-      mq.removeEventListener("change", onMedia);
+        mq.removeEventListener("change", onMedia);
     };
   }, []);
 

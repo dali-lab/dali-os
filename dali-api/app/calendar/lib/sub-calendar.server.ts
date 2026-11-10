@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 /**
  * Enable or disable one sub-calendar on a link. A single UPDATE, so two quick

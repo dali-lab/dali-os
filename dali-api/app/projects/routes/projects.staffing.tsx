@@ -6,7 +6,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { STAFFING_MEMBER_SELECT } from "~/lib/prisma-shapes";
 import { primaryEmail } from "~/lib/display";
 import { canManageStaffing, canViewStaffing } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
+import { cachedDomains, cachedTerms } from "~/lib/reference-cache.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getPresenceUser } from "~/lib/presence-user";
@@ -27,6 +28,15 @@ import type {
   Preference,
 } from "../lib/staffing-board";
 
+const PROJECT_COLUMN_SELECT = {
+  id: true,
+  name: true,
+  status: true,
+  iconEmoji: true,
+  githubTeamSlug: true,
+  slackChannelName: true,
+} as const;
+
 export const handle = {
   docKey: "projects.staffing",
   docTitle: "Staffing",
@@ -46,30 +56,17 @@ export async function loader({ request }: Route.LoaderArgs) {
     "/core/staffing",
   );
   if (regrouped) return regrouped;
-  // Viewing and managing the board are both Core/Admin (canViewStaffing and
-  // canManageStaffing are the same membership set); the UI still hides drag
-  // affordances when canManage is false (e.g. a future read-only tier).
-  if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
-
-  const canManage = await canManageStaffing(auth.user.sub);
-
-  // Term picker drives which cycle the board shows. ?term=<code> selects it;
-  // default to the current term, then the newest term. Staffing is always
-  // open — there's exactly one cycle per term, auto-created on first view.
   // Newest-first; the date fields let us resolve "current term" in-memory
-  // instead of a second term query.
-  const terms = await prisma.term.findMany({
-    orderBy: { sortKey: "desc" },
-    select: {
-      id: true,
-      code: true,
-      startDate: true,
-      endDate: true,
-      sortKey: true,
-    },
-  });
-  const collabToken = await getCollabToken(request);
-  const presenceUser = await getPresenceUser(auth.user.sub);
+  // instead of a second term query. Everything here is discarded unless the
+  // viewer passes the canViewStaffing gate below.
+  const [canView, canManage, terms, collabToken, presenceUser] = await Promise.all([
+    canViewStaffing(auth.user.sub, request),
+    canManageStaffing(auth.user.sub, request),
+    cachedTerms(),
+    getCollabToken(request),
+    getPresenceUser(auth.user.sub),
+  ]);
+  if (!canView) return redirect("/");
   const presence = {
     collabToken,
     currentUserId: auth.user.sub,
@@ -122,25 +119,27 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // The pool of members on the board is everyone who submitted at least one
   // StaffingPreference for this cycle. Members who didn't bid don't show up.
-  const preferences = await prisma.staffingPreference.findMany({
-    where: { staffingCycleId: cycle.id },
-    select: {
-      userId: true,
-      projectId: true,
-      domainId: true,
-      level: true,
-      preferenceRank: true,
-      notes: true,
-    },
-  });
-
-  const memberUserIds = Array.from(new Set(preferences.map((p) => p.userId)));
-
-  const [users, rawAssignmentRows, projects, domains, roleRequests, cardOrders] =
-    await Promise.all([
-    prisma.user.findMany({
-      where: { id: { in: memberUserIds } },
-      select: STAFFING_MEMBER_SELECT,
+  const [
+    preferences,
+    rawAssignmentRows,
+    projects,
+    domains,
+    roleRequests,
+    cardOrders,
+    bidsBinding,
+    bidSubmitterRows,
+    boardMemberRows,
+  ] = await Promise.all([
+    prisma.staffingPreference.findMany({
+      where: { staffingCycleId: cycle.id },
+      select: {
+        userId: true,
+        projectId: true,
+        domainId: true,
+        level: true,
+        preferenceRank: true,
+        notes: true,
+      },
     }),
     // Both in-progress (Proposed) and finalized (Confirmed) assignments — a
     // confirmed roster must stay on the board after finalize, not vanish.
@@ -161,9 +160,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       orderBy: [{ status: "asc" }, { name: "asc" }],
       // githubTeamSlug pre-fills the Finalize modal's editable GitHub field.
-      select: { id: true, name: true, status: true, iconEmoji: true, githubTeamSlug: true, slackChannelName: true },
+      select: PROJECT_COLUMN_SELECT,
     }),
-    prisma.domain.findMany({ select: { id: true, displayName: true } }),
+    cachedDomains().then((rows) => rows.map(({ id, displayName }) => ({ id, displayName }))),
     // Read only to union in projects being staffed this term that have no
     // ProjectTerm row (see stagedProjectIds) — the board shows what is assigned,
     // not what was asked for.
@@ -177,11 +176,46 @@ export async function loader({ request }: Route.LoaderArgs) {
       where: { staffingCycleId: cycle.id },
       select: { userId: true, sortKey: true, columnKey: true },
     }),
+    // Full Project Bids answers per member, so clicking a card shows the whole
+    // bid, not just the resolved rankings. One call resolves every member's
+    // submission for the cycle in a few batched queries.
+    getSlotBinding(cycle.id, "project-bids").then(async (binding) => ({
+      binding,
+      view: binding
+        ? await buildSubmissionView({
+            cycleIds: [cycle.id],
+            slot: "project-bids",
+            formId: binding.formId,
+          })
+        : null,
+    })),
+    prisma.formSubmission.findMany({
+      where: { staffingCycleId: cycle.id, slot: "project-bids" },
+      select: { userId: true },
+      distinct: ["userId"],
+    }),
+    prisma.staffingBoardMember.findMany({
+      where: { staffingCycleId: cycle.id },
+      select: { userId: true },
+    }),
   ]);
 
+  const memberUserIds = Array.from(new Set(preferences.map((p) => p.userId)));
+  const memberUserIdSet = new Set(memberUserIds);
+  // Bid-submitters whose bids resolved to no StaffingPreference would otherwise
+  // vanish, so they surface as flagged Unassigned cards.
+  const bidSubmitterIds = bidSubmitterRows
+    .map((s) => s.userId)
+    .filter((id): id is string => !!id && !memberUserIdSet.has(id));
+  // Members a staffing lead manually placed on the board (no bid). Anyone who
+  // bid or was flagged is skipped so their real bid takes over.
+  const placedIds = new Set([...memberUserIds, ...bidSubmitterIds]);
+  const boardMemberIds = boardMemberRows
+    .map((b) => b.userId)
+    .filter((id) => !placedIds.has(id));
+
   // Collapse a member's Proposed + Confirmed rows to their live rows per project
-  // (see dedupeLiveAssignments) so a finalized roster stays on the board; a
-  // member staffed on several projects keeps a live row on each.
+  // (see dedupeLiveAssignments) so a finalized roster stays on the board.
   const assignmentRows = dedupeLiveAssignments(rawAssignmentRows);
 
   // Union in any non-archived project that's actually being staffed this cycle
@@ -197,11 +231,35 @@ export async function loader({ request }: Route.LoaderArgs) {
       ...roleRequests.map((r) => r.projectId),
     ]),
   ).filter((id) => !columnProjectIds.has(id));
-  if (stagedProjectIds.length > 0) {
-    const strays = await prisma.project.findMany({
-      where: { id: { in: stagedProjectIds }, status: { not: "Archived" } },
-      select: { id: true, name: true, status: true, iconEmoji: true, githubTeamSlug: true, slackChannelName: true },
-    });
+
+  const [users, stagedProjects] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: [...memberUserIds, ...bidSubmitterIds, ...boardMemberIds] } },
+      select: STAFFING_MEMBER_SELECT,
+    }),
+    stagedProjectIds.length > 0
+      ? prisma.project.findMany({
+          where: { id: { in: stagedProjectIds } },
+          select: PROJECT_COLUMN_SELECT,
+        })
+      : [],
+  ]);
+
+  const bidsBindingRow = bidsBinding.binding;
+  const bidFieldsByUser = new Map<string, BidField[]>();
+  for (const row of bidsBinding.view?.rows ?? []) {
+    // Show the member's own form answers (question fields) that have a value.
+    // Builtins like "Submitter" are redundant in a per-member modal.
+    bidFieldsByUser.set(
+      row.userId,
+      row.detailFields
+        .filter((f) => f.source === "question" && f.value.trim() !== "")
+        .map((f) => ({ label: f.label, value: f.value })),
+    );
+  }
+
+  const strays = stagedProjects.filter((p) => p.status !== "Archived");
+  if (strays.length > 0) {
     projects.push(...strays);
     projects.sort(
       (a, b) => a.status.localeCompare(b.status) || a.name.localeCompare(b.name),
@@ -219,33 +277,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       notes: p.notes,
     });
     prefsByUser.set(p.userId, list);
-  }
-
-  // Same shape for both pools (members with preferences, and bid-submitters
-  // whose bids resolved to none). preferences/unresolvedBid are passed in
-  // because they differ between the two.
-  // Full Project Bids answers per member, so clicking a card shows the whole
-  // bid (all form answers), not just the resolved rankings. One call resolves
-  // every member's submission for the cycle (reference answers → project/domain
-  // names) in a few batched queries — cheaper than a fetch per opened card.
-  const bidsBinding = await getSlotBinding(cycle.id, "project-bids");
-  const bidFieldsByUser = new Map<string, BidField[]>();
-  if (bidsBinding) {
-    const view = await buildSubmissionView({
-      cycleIds: [cycle.id],
-      slot: "project-bids",
-      formId: bidsBinding.formId,
-    });
-    for (const row of view.rows) {
-      // Show the member's own form answers (question fields) that have a value.
-      // Builtins like "Submitter" are redundant in a per-member modal.
-      bidFieldsByUser.set(
-        row.userId,
-        row.detailFields
-          .filter((f) => f.source === "question" && f.value.trim() !== "")
-          .map((f) => ({ label: f.label, value: f.value })),
-      );
-    }
   }
 
   const toMemberInput = async (
@@ -274,62 +305,21 @@ export async function loader({ request }: Route.LoaderArgs) {
     unresolvedBid,
   });
 
-  const members: MemberInput[] = await Promise.all(
-    users.map((u) => toMemberInput(u, prefsByUser.get(u.id) ?? [], false)),
-  );
-
-  // A member who submitted this cycle's Project Bids form but produced no
-  // StaffingPreference (their picks had no open role in an eligibility domain)
-  // would otherwise vanish — the pool above is preference-derived. Surface them
-  // as flagged Unassigned cards so a staffing lead can act. Only users not
-  // already in the preference pool need adding.
-  const bidSubmitterIds = (
-    await prisma.formSubmission.findMany({
-      where: { staffingCycleId: cycle.id, slot: "project-bids" },
-      select: { userId: true },
-      distinct: ["userId"],
-    })
-  )
-    .map((s) => s.userId)
-    .filter((id): id is string => !!id && !memberUserIds.includes(id));
-
-  if (bidSubmitterIds.length > 0) {
-    const flaggedUsers = await prisma.user.findMany({
-      where: { id: { in: bidSubmitterIds } },
-      select: STAFFING_MEMBER_SELECT,
+  const usersById = new Map(users.map((u) => [u.id, u]));
+  const usersFor = (ids: string[]) =>
+    ids.flatMap((id) => {
+      const u = usersById.get(id);
+      return u ? [u] : [];
     });
-    const flagged = await Promise.all(
-      flaggedUsers.map((u) => toMemberInput(u, [], true)),
-    );
-    members.push(...flagged);
-  }
 
-  // Members a staffing lead manually placed on the board (no bid) — surfaced as
-  // ordinary Unassigned cards (no unresolved-bid flag). Skip anyone already in
-  // the pool above (they bid, or were flagged), so their real bid takes over.
-  const placedUserIds = new Set(members.map((m) => m.userId));
-  const boardMemberIds = (
-    await prisma.staffingBoardMember.findMany({
-      where: { staffingCycleId: cycle.id },
-      select: { userId: true },
-    })
-  )
-    .map((b) => b.userId)
-    .filter((id) => !placedUserIds.has(id));
-
-  if (boardMemberIds.length > 0) {
-    const manualUsers = await prisma.user.findMany({
-      where: { id: { in: boardMemberIds } },
-      select: STAFFING_MEMBER_SELECT,
-    });
-    const manual = await Promise.all(
-      manualUsers.map(async (u) => ({
-        ...(await toMemberInput(u, [], false)),
-        manuallyAdded: true,
-      })),
-    );
-    members.push(...manual);
-  }
+  const members: MemberInput[] = await Promise.all([
+    ...usersFor(memberUserIds).map((u) => toMemberInput(u, prefsByUser.get(u.id) ?? [], false)),
+    ...usersFor(bidSubmitterIds).map((u) => toMemberInput(u, [], true)),
+    ...usersFor(boardMemberIds).map(async (u) => ({
+      ...(await toMemberInput(u, [], false)),
+      manuallyAdded: true,
+    })),
+  ]);
 
   // Apply the domain filter to the member pool — see matchesDomainFilter for
   // what counts as "in this domain" (hired role, not bids). Ignore an unknown
@@ -364,16 +354,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Resolve names for every project any preference references so the card/modal
   // shows the project name instead of leaking the raw id. Archived projects
   // stay out of `projects` (no droppable column) — this map is labels only.
-  const referencedProjectIds = Array.from(
-    new Set(preferences.map((p) => p.projectId)),
-  ).filter((id) => !projects.some((p) => p.id === id));
-  const extraProjectNames =
-    referencedProjectIds.length > 0
-      ? await prisma.project.findMany({
-          where: { id: { in: referencedProjectIds } },
-          select: { id: true, name: true },
-        })
-      : [];
+  const preferenceProjectIds = new Set(preferences.map((p) => p.projectId));
+  const extraProjectNames = stagedProjects.filter(
+    (p) => p.status === "Archived" && preferenceProjectIds.has(p.id),
+  );
   const projectNames: Record<string, string> = {
     ...Object.fromEntries(projects.map((p) => [p.id, p.name])),
     ...Object.fromEntries(extraProjectNames.map((p) => [p.id, p.name])),
@@ -383,7 +367,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // board legitimately has no new bids to staff — surface that so a lead
   // doesn't read an empty board as a bug. (Legacy StaffingPreference rows
   // may still appear; that's the documented exception.)
-  const bidsFormBound = !!bidsBinding;
+  const bidsFormBound = !!bidsBindingRow;
 
   return {
     cycle: {

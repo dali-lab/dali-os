@@ -26,9 +26,8 @@ export default defineConfig({
       dependencies: ['chromium'],
     },
     {
-      // Pixel 7 = Chromium-based + Android UA + hasTouch. The Android UA causes
-      // the server's tabless.ts to force the single-page shell, so routes render
-      // as plain outer-document pages — making the horizontal-overflow check
+      // Pixel 7 = Chromium-based + Android UA + hasTouch. Routes render as plain
+      // outer-document pages, which makes the horizontal-overflow check
       // meaningful. No new browser binary needed: CI already installs chromium.
       name: 'mobile-pixel7',
       use: {

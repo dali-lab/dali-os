@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
@@ -13,6 +13,7 @@ vi.mock("~/lib/github-slug", () => ({
 vi.mock("~/partners/lib/partner-activity.server", () => ({
   setApplicationStage: vi.fn().mockResolvedValue("New"),
 }));
+vi.mock("~/partners/lib/planning-notes.server", () => ({ movePlanningNoteToProject: vi.fn() }));
 // Stub the registry so the BY_NAME map side-effect doesn't pull in every
 // tool module. We only need the error classes here.
 vi.mock("~/mcp/registry", () => {
@@ -42,9 +43,10 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { setApplicationStage } from "~/partners/lib/partner-activity.server";
+import { movePlanningNoteToProject } from "~/partners/lib/planning-notes.server";
 import {
   runPromotePartnerApplication,
   PROMOTE_PARTNER_APPLICATION_TOOL,
@@ -134,6 +136,71 @@ describe("promote_partner_application", () => {
         data: expect.objectContaining({ resultingProjectId: "proj-new" }),
       }),
     );
+    const tx = vi.mocked(setApplicationStage).mock.calls[0][0];
+    expect(movePlanningNoteToProject).toHaveBeenCalledWith(tx, { applicationId: "app-1", projectId: "proj-new" });
+  });
+
+  it("creates role requests for every target term", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.partnerApplication = {
+      findUnique: vi.fn().mockResolvedValue({
+        id: "app-3",
+        title: "Two Terms",
+        summary: null,
+        resultingProjectId: null,
+        partnerOrgId: "org-3",
+        targetTerms: [{ termId: "term-26f" }, { termId: "term-27w" }],
+        domains: [
+          { domainId: "domain-ml", expectedMembers: 2 },
+          { domainId: "domain-web", expectedMembers: 0 },
+        ],
+      }),
+    };
+    const createFn = vi.fn().mockResolvedValue({ id: "proj-two", name: "Two Terms" });
+    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        project: { create: createFn },
+        partnerApplication: { update: vi.fn() },
+      } as unknown as typeof prisma);
+    });
+
+    await runPromotePartnerApplication("u1", { applicationId: "app-3" });
+    const data = (createFn.mock.calls[0][0] as { data: Record<string, any> }).data;
+    expect(data.roleRequests.create).toEqual([
+      { termId: "term-26f", domainId: "domain-ml", level: "P1", slots: 2 },
+      { termId: "term-27w", domainId: "domain-ml", level: "P1", slots: 2 },
+    ]);
+    expect(data.projectTerms.create).toEqual({ termId: "term-26f" });
+  });
+
+  it("carries the application's icon and PI onto the project", async () => {
+    mockPrisma.partnerApplication.findUnique.mockResolvedValue({
+      id: "app-4",
+      title: "Icons",
+      iconEmoji: "🚀",
+      piUserId: "core-1",
+      summary: null,
+      resultingProjectId: null,
+      partnerOrgId: "org-1",
+      applicantContactId: "c1",
+      applicantContact: { id: "c1", name: "Ada" },
+      targetTerms: [{ termId: "term-26f" }],
+      domains: [],
+    } as never);
+    const createFn = vi.fn().mockResolvedValue({ id: "proj-icon", name: "Icons" });
+    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        project: { create: createFn },
+        partnerApplication: { update: vi.fn() },
+      } as unknown as typeof prisma);
+    });
+
+    await runPromotePartnerApplication("u1", { applicationId: "app-4" });
+    const data = (createFn.mock.calls[0][0] as { data: Record<string, any> }).data;
+    expect(data.iconEmoji).toBe("🚀");
+    expect(data.projectTerms.create).toEqual({ termId: "term-26f", piUserId: "core-1" });
   });
 
   it("promotes without terms or domains when none provided", async () => {

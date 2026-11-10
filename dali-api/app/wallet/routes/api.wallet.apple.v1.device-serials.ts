@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.wallet.apple.v1.device-serials";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // PassKit web-service "list updated passes for device" endpoint.
 //

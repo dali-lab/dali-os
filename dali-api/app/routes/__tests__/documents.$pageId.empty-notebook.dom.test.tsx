@@ -62,6 +62,13 @@ describe("EmptyNotebook", () => {
     expect(container.querySelector(".bn-editor, [contenteditable='true']")).toBeNull();
   });
 
+  it("pictures the empty notebook above its message, hidden from screen readers", async () => {
+    await mount();
+    const art = container.querySelector("[data-empty-notebook-art]");
+    expect(art?.getAttribute("aria-hidden")).toBe("true");
+    expect(art?.nextElementSibling?.textContent).toBe("No notes yet. Add one from the menu.");
+  });
+
   it("offers the next-meeting note and existing document in the Add menu", async () => {
     await mount();
     const add = [...container.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Add")!;

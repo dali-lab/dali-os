@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     collabDocumentVersion: {
       findUnique: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("~/collab/persistence", () => ({
   restoreVersion: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import {
   NAME_COLLAB_VERSION_TOOL,

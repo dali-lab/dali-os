@@ -1,5 +1,5 @@
 import { getAppEnv } from "~/lib/app-env";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // Tracks that a user tapped "Not now" on the first-time passkey offer, so the
 // post-login prompt doesn't nag them again. This is a per-browser cookie, NOT a

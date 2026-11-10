@@ -4,7 +4,7 @@
 // Read in one query per notify() call rather than per recipient — a fan-out can
 // be hundreds of people and they all share the same template.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { interpolateVars } from "~/lib/template-variables";
 
 import {

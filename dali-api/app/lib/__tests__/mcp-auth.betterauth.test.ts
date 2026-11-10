@@ -30,7 +30,7 @@ vi.mock("~/lib/betterauth.server", () => ({
   },
 }));
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     oAuthGrant: {
       findUnique: mockOAuthGrantFindUnique,

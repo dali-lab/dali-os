@@ -1,4 +1,4 @@
-// MCP `update_page` — rename / re-icon / move / archive a project workspace
+// manage_page `update`: rename / re-icon / move / archive a project workspace
 // page. Mirrors the app's rules (api.documents.$id.ts + api.projects.$id
 // .documents.ts): pages (documents and folders alike) nest inside any Folder up
 // to MAX_PAGE_DEPTH, and archiving a Folder requires it to be empty. Archive is the Page model's soft delete, so this
@@ -6,7 +6,7 @@
 // duplicating. Gate mirrors web project-edit access: Core, or staffed on the
 // page's project.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";

@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { Link } from "react-router";
+import { Check, ChevronRight } from "lucide-react";
 import {
   autoUpdate,
   flip,
@@ -95,7 +96,7 @@ function MenuRoot({
   });
 
   const click = useClick(context);
-  const dismiss = useDismiss(context);
+  const dismiss = useDismiss(context, { outsidePress: outsidePressExceptSubmenus });
   const role = useRole(context, { role: "menu" });
   const listNav = useListNavigation(context, {
     listRef,
@@ -132,7 +133,7 @@ function MenuRoot({
       {triggerEl}
       {open && (
         <FloatingPortal>
-          <FloatingFocusManager context={context} modal={false}>
+          <FloatingFocusManager context={context} modal={false} closeOnFocusOut={false}>
             <div
               ref={refs.setFloating}
               style={floatingStyles}
@@ -170,6 +171,7 @@ export function MenuItem({
   label,
   icon,
   shortcut,
+  checked,
   onSelect,
   disabled,
   destructive,
@@ -181,6 +183,8 @@ export function MenuItem({
   icon?: ReactNode;
   /** A muted hint at the row's trailing edge, e.g. the key that does the same thing. */
   shortcut?: string;
+  /** Marks the row as the current choice: a check takes the icon's place. */
+  checked?: boolean;
   onSelect?: () => void;
   disabled?: boolean;
   destructive?: boolean;
@@ -192,7 +196,8 @@ export function MenuItem({
   return (
     <button
       type="button"
-      role="menuitem"
+      role={checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={checked}
       ref={item.ref}
       disabled={disabled}
       tabIndex={active ? 0 : -1}
@@ -205,7 +210,7 @@ export function MenuItem({
         },
       })}
     >
-      {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
+      {checked ? <Check className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden /> : icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
       {shortcut ? <span className="min-w-0 flex-1">{children}</span> : children}
       {shortcut && <span className="ml-4 shrink-0 text-xs text-muted-foreground">{shortcut}</span>}
     </button>
@@ -255,6 +260,127 @@ export function MenuLinkItem({
   );
 }
 
+const SUB_SELECTOR = "[data-menu-sub]";
+
+/** Keeps a click inside a submenu panel from counting as a click outside the menu that holds it. */
+export const outsidePressExceptSubmenus = (event: Event) => !(event.target as Element | null)?.closest?.(SUB_SELECTOR);
+
+/** A row that opens a second panel beside it on hover, click or the right arrow key. */
+export function MenuSub({
+  label,
+  icon,
+  disabled,
+  children,
+}: {
+  label: string;
+  icon?: ReactNode;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const menu = useMenuContext("<Menu.Sub>");
+  const panelClass = usePanelClass();
+  const item = useListItem({ label: disabled ? null : label });
+  const active = menu.activeIndex === item.index;
+  const [open, setOpen] = useState(false);
+  const listRef = useRef<Array<HTMLElement | null>>([]);
+  const labelsRef = useRef<Array<string | null>>([]);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const { refs, floatingStyles } = useFloating({
+    open,
+    onOpenChange: setOpen,
+    placement: "right-start",
+    whileElementsMounted: autoUpdate,
+    middleware: [
+      offset({ mainAxis: 2, alignmentAxis: -6 }),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        padding: 8,
+        apply({ elements, availableHeight }) {
+          Object.assign(elements.floating.style, { maxHeight: `${Math.min(availableHeight, 360)}px` });
+        },
+      }),
+    ],
+  });
+  const subMenu = useMemo<MenuContextValue>(
+    () => ({ activeIndex: null, getItemProps: (props) => props ?? {}, close: menu.close }),
+    [menu.close],
+  );
+  const setTrigger = useMergeRefs([item.ref, refs.setReference, triggerRef]);
+  const focusRow = (dir: 1 | -1 | "first") => {
+    const rows = [...(panelRef.current?.querySelectorAll<HTMLElement>("[role^='menuitem']:not(:disabled)") ?? [])];
+    if (rows.length === 0) return;
+    const at = rows.indexOf(document.activeElement as HTMLElement);
+    const next = dir === "first" ? 0 : (at + dir + rows.length) % rows.length;
+    rows[next].focus();
+  };
+  return (
+    <div onMouseLeave={() => setOpen(false)}>
+      <button
+        type="button"
+        role="menuitem"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        ref={setTrigger}
+        disabled={disabled}
+        tabIndex={active ? 0 : -1}
+        className={itemClass(active || open, false)}
+        {...menu.getItemProps({
+          onClick: () => setOpen((o) => !o),
+          onMouseEnter: () => !disabled && setOpen(true),
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === "ArrowRight" || e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              setOpen(true);
+              setTimeout(() => focusRow("first"), 0);
+            }
+          },
+        })}
+      >
+        {icon && <span className="shrink-0 text-muted-foreground">{icon}</span>}
+        <span className="min-w-0 flex-1">{label}</span>
+        <ChevronRight className="ml-4 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+      {open && (
+        <FloatingPortal>
+          <div
+            ref={(node) => {
+              refs.setFloating(node);
+              panelRef.current = node;
+            }}
+            data-menu-sub
+            role="menu"
+            aria-label={label}
+            style={floatingStyles}
+            className={`${panelClass} min-w-[10rem]`}
+            onMouseDown={(e) => e.preventDefault()}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                e.stopPropagation();
+                focusRow(e.key === "ArrowDown" ? 1 : -1);
+              } else if (e.key === "ArrowLeft") {
+                e.preventDefault();
+                e.stopPropagation();
+                setOpen(false);
+                triggerRef.current?.focus();
+              }
+            }}
+          >
+            <MenuContext.Provider value={subMenu}>
+              <FloatingList elementsRef={listRef} labelsRef={labelsRef}>
+                {children}
+              </FloatingList>
+            </MenuContext.Provider>
+          </div>
+        </FloatingPortal>
+      )}
+    </div>
+  );
+}
+
 export function MenuSeparator() {
   return <hr className="my-1 border-border" />;
 }
@@ -263,4 +389,5 @@ export const Menu = Object.assign(MenuRoot, {
   Item: MenuItem,
   LinkItem: MenuLinkItem,
   Separator: MenuSeparator,
+  Sub: MenuSub,
 });

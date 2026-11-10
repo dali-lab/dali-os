@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { isUserInAnyGroup } from "~/lib/groups";
 import type { UserRoles } from "~/lib/roles";

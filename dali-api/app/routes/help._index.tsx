@@ -23,8 +23,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   return null;
 }
 
-// Icons live here rather than in the shared HELP_ARTICLES registry, which stays
-// data-only so it can be indexed by the (client-safe) palette search.
 const ICONS: Record<string, LucideIcon> = {
   "getting-started": BookOpen,
   shortcuts: Keyboard,
@@ -35,7 +33,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 const CARDS = HELP_ARTICLES.map((a) => ({
-  to: `/help/${a.slug}`,
+  to: a.href,
   title: a.title,
   body: a.summary,
   icon: ICONS[a.slug] ?? BookOpen,
@@ -78,6 +76,9 @@ export default function HelpIndex() {
           </li>
         ))}
       </ul>
+      <Link to="/help/articles" className="mt-4 inline-block text-sm font-medium text-os-accent hover:underline">
+        All guides
+      </Link>
     </main>
   );
 }

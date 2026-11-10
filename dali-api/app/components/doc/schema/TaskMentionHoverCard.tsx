@@ -13,19 +13,29 @@ import { TASK_STATUS_LABELS, type TaskStatus } from "~/projects/lib/task-board";
 // taskMentionConfig) — status, assignee, and due date are live task state,
 // so they're fetched here rather than snapshotted into the document.
 
-type CardTask = {
+export type CardTask = {
   id: string;
   title: string;
   status: TaskStatus;
   assignee: { name: string } | null;
+  assignees: { id: string; name: string }[];
+  projectName: string;
   dueAt: string | null;
 };
 
 const cache = new Map<string, CardTask | null>();
 const inflight = new Map<string, Promise<CardTask | null>>();
+const listeners = new Map<string, Set<() => void>>();
+const readAt = new Map<string, number>();
+// BlockNote rebuilds a block on any change to it, so a mount isn't a new view.
+const FRESH_MS = 30_000;
 
-async function loadTask(id: string): Promise<CardTask | null> {
-  if (cache.has(id)) return cache.get(id)!;
+function publish(id: string) {
+  for (const listener of listeners.get(id) ?? []) listener();
+}
+
+async function loadTask(id: string, fresh = false): Promise<CardTask | null> {
+  if (!fresh && cache.has(id)) return cache.get(id)!;
   const existing = inflight.get(id);
   if (existing) return existing;
 
@@ -46,6 +56,56 @@ async function loadTask(id: string): Promise<CardTask | null> {
   const task = await p;
   cache.set(id, task);
   return task;
+}
+
+/** Seeds the cache with a task that was just created, so its block paints
+ *  without a loading flash. */
+export function primeTaskCard(task: CardTask) {
+  cache.set(task.id, task);
+  readAt.set(task.id, Date.now());
+  publish(task.id);
+}
+
+/** Applies an optimistic edit to every block showing this task. Returns the
+ *  undo for a failed save. */
+export function updateTaskCard(id: string, patch: Partial<CardTask>): () => void {
+  const previous = cache.get(id);
+  if (!previous) return () => {};
+  cache.set(id, { ...previous, ...patch });
+  publish(id);
+  return () => {
+    cache.set(id, previous);
+    publish(id);
+  };
+}
+
+/** Like useTaskMentionCard, for a block that edits the task: re-reads the task
+ *  on mount, because the cache outlives the page, and follows later edits. */
+export function useFreshTaskCard(taskId: string): CardTask | null | "loading" {
+  const [state, setState] = useState<CardTask | null | "loading">(() =>
+    cache.has(taskId) ? cache.get(taskId)! : "loading",
+  );
+
+  useEffect(() => {
+    if (!taskId) {
+      setState(null);
+      return;
+    }
+    const sync = () => setState(cache.has(taskId) ? cache.get(taskId)! : "loading");
+    const subscribed = listeners.get(taskId) ?? new Set();
+    listeners.set(taskId, subscribed);
+    subscribed.add(sync);
+    sync();
+    if (Date.now() - (readAt.get(taskId) ?? 0) > FRESH_MS) {
+      readAt.set(taskId, Date.now());
+      void loadTask(taskId, true).then(() => publish(taskId));
+    }
+    return () => {
+      subscribed.delete(sync);
+    };
+  }, [taskId]);
+
+  return state;
 }
 
 /** Status→color for the chip's dot and the hover card's status line: the same

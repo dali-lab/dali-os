@@ -63,7 +63,7 @@ jobs:
   build-macos:
     needs: decide
     if: ${{ needs.decide.outputs.release == 'true' }}
-    runs-on: macos-14 # Apple silicon
+    runs-on: macos-15 # Apple silicon
     outputs:
       mac_url: ${{ steps.upload.outputs.mac_url }}
     steps:

@@ -5,7 +5,9 @@
 // management) can still open it to see the current binding/columns
 // read-only — both inner components already render that way when canManage
 // is false.
+import { useCallback, useState } from "react";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { useDialog } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { SlotFormPicker } from "./SlotFormPicker";
 import { SlotColumnMapper } from "./SlotColumnMapper";
@@ -29,6 +31,7 @@ type FormQuestion = {
   label: string;
   type: string;
   referenceSource?: string;
+  options?: string[];
 };
 
 export function SlotAdvancedSettingsModal({
@@ -53,10 +56,28 @@ export function SlotAdvancedSettingsModal({
   canManage: boolean;
 }) {
   const titleId = `slot-advanced-${slot}`;
+  const dialog = useDialog();
+  const [mappingDirty, setMappingDirty] = useState(false);
+  const onMappingDirty = useCallback((d: boolean) => setMappingDirty(d), []);
+  const close = async () => {
+    if (
+      mappingDirty &&
+      !(await dialog.confirm({
+        title: "Discard unsaved column changes?",
+        description: "Your column mapping edits haven't been saved.",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+        tone: "destructive",
+      }))
+    )
+      return;
+    setMappingDirty(false);
+    onClose();
+  };
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={close}
       labelledBy={titleId}
       containerClassName={modalCardClass("max-w-3xl")}
     >
@@ -64,7 +85,7 @@ export function SlotAdvancedSettingsModal({
         titleId={titleId}
         title={`${slotLabel} settings`}
         subtitle="Connect the form members fill, then map its questions to the columns shown on the board."
-        onClose={onClose}
+        onClose={close}
         closeLabel="Close settings"
       />
 
@@ -82,6 +103,7 @@ export function SlotAdvancedSettingsModal({
             mapping={binding.mapping}
             cycleTerms={cycleTerms}
             canManage={canManage}
+            onDirtyChange={onMappingDirty}
           />
         )}
         {binding && (
@@ -101,7 +123,7 @@ export function SlotAdvancedSettingsModal({
       <div className="mt-4 flex justify-end">
         <button
           type="button"
-          onClick={onClose}
+          onClick={close}
           className="px-3 py-1.5 text-sm font-medium rounded-md border border-border text-foreground hover:bg-muted"
         >
           Done

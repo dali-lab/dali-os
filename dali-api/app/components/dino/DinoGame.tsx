@@ -77,7 +77,7 @@ export function DinoGame() {
   const [status, setStatus] = useState<GameState["status"]>("ready");
   const [score, setScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
-  const board = useLeaderboard("/api/dino-scores", true);
+  const board = useLeaderboard("/api/dino-scores");
   const { available, submit, clearPersonalBest } = board;
   // A fresh object per run, so two runs ending on the same score both report.
   const [finished, setFinished] = useState<{ score: number } | null>(null);

@@ -1,17 +1,17 @@
 // Pure "who, if anyone, is recording" lookup over a Hocuspocus/Yjs awareness
-// snapshot. The recorder writes { recording: { userId, since } } onto its own
-// local state on the document's existing per-room awareness (see
-// RecordingPresencePill and MeetingRecorder); BlockNote's own collaboration
+// snapshot. The recorder writes { recording: { userId, since, recordingId } }
+// onto its own local state on the document's existing per-room awareness (see
+// recording-presence.ts); BlockNote's own collaboration
 // config already puts { user: { name, userId, color } } on that same local
 // state (DocEditorImpl's `collaboration.user`), so a client that's recording
 // carries both fields at once and no separate name lookup is needed.
 
 export type RecordingAwarenessState = {
   user?: { name?: string };
-  recording?: { userId: string; since: number } | null;
+  recording?: { userId: string; since: number; recordingId?: string } | null;
 };
 
-export type RemoteRecording = { name: string; since: number };
+export type RemoteRecording = { name: string; since: number; userId: string; recordingId: string | null };
 
 /**
  * The earliest-started remote recorder, or null. Excludes `localClientId` so
@@ -28,7 +28,12 @@ export function findRemoteRecording(
     const recording = state.recording;
     if (!recording) continue;
     if (!earliest || recording.since < earliest.since) {
-      earliest = { name: state.user?.name?.trim() || "Someone", since: recording.since };
+      earliest = {
+        name: state.user?.name?.trim() || "Someone",
+        since: recording.since,
+        userId: recording.userId,
+        recordingId: recording.recordingId ?? null,
+      };
     }
   }
   return earliest;

@@ -11,6 +11,6 @@
 
 import { coreHandle } from "~/core/coreNav";
 
-export { meta, loader, action, default } from "~/projects/routes/projects.project-bids";
+export { meta, loader, action, shouldRevalidate, default } from "~/projects/routes/projects.project-bids";
 
 export const handle = coreHandle("project-bids");

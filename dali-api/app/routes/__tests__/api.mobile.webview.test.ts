@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const updateMany = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/db", () => ({ prisma: { devicePairing: { updateMany } } }));
+vi.mock("~/lib/db.server", () => ({ prisma: { devicePairing: { updateMany } } }));
 const requireMobileUser = vi.fn();
 vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/mobile-auth.server")>()),

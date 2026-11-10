@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as Y from "yjs";
 
 // Mock the DB + roles before importing the module under test.
-vi.mock("~/lib/db", () => {
+vi.mock("~/lib/db.server", () => {
   const mock: any = {
     mentorNote: { findUnique: vi.fn(), updateMany: vi.fn() },
     mentorNoteTemplate: { findUnique: vi.fn(), update: vi.fn() },
@@ -11,9 +11,9 @@ vi.mock("~/lib/db", () => {
 });
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { COLLAB_SOURCES, seedRegistryDoc, syncRegistryDocBack } from "../sources";
+import { COLLAB_SOURCES, isStructuredRoom, seedRegistryDoc, syncRegistryDocBack } from "../sources";
 import { BLOCKNOTE_FRAGMENT, plainTextToBlocks } from "../blocknote-server";
 import { ydocToBlocks } from "../read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
@@ -130,5 +130,13 @@ describe("authorize", () => {
     expect(await COLLAB_SOURCES.mentorNoteTemplate.authorize("u1", "t1")).toBe(true);
     mockIsCore.mockResolvedValue(false);
     expect(await COLLAB_SOURCES.mentorNoteTemplate.authorize("u1", "t1")).toBe(false);
+  });
+});
+
+describe("isStructuredRoom", () => {
+  it("treats slide decks like whiteboards, which are Y.Map rooms", () => {
+    expect(isStructuredRoom("slides")).toBe(true);
+    expect(isStructuredRoom("whiteboard")).toBe(true);
+    expect(isStructuredRoom("doc")).toBe(false);
   });
 });

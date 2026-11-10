@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { meetingNotebookIdentity, type NotebookMeeting } from "~/lib/meeting-notebook";
 import { suggestNotebooks, type NotebookCandidate } from "~/lib/notebook-suggest";

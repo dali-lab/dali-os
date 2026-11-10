@@ -14,7 +14,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isLabMember: vi.fn() };
@@ -38,7 +38,7 @@ vi.mock("~/members/lib/personal-notes-actions.server", () => ({
   deleteNote: vi.fn(),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isLabMember } from "~/lib/roles";
 import { noteAccess, NoteNotFoundError } from "~/members/lib/personal-notes.server";
 import { createNote, deleteNote } from "~/members/lib/personal-notes-actions.server";
@@ -55,6 +55,7 @@ import {
 const mockPrisma = prisma as unknown as {
   page: {
     findMany: ReturnType<typeof vi.fn>;
+    count: ReturnType<typeof vi.fn>;
     findUnique: ReturnType<typeof vi.fn>;
   };
   user: { findMany: ReturnType<typeof vi.fn> };
@@ -86,6 +87,53 @@ describe("list_personal_notes", () => {
     const out = await runListPersonalNotes("u1", { scope: "own" });
     expect(out.notes).toHaveLength(1);
     expect(out.notes[0]).toMatchObject({ id: "n1", visibility: "private", owner: null });
+  });
+
+  const note = (id: string, workspaceId = "u1") => ({
+    id, title: id, iconEmoji: null, kind: "FreeForm", parentPageId: null, workspaceId,
+    profileVisible: false, labListing: "None", updatedAt: new Date("2026-01-01"), tags: [], _count: { shares: 0 },
+  });
+
+  it("pages own notes with an id tiebreak and a cursor, and the last page has none", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    mockPrisma.page.count.mockResolvedValue(3);
+    mockPrisma.page.findMany.mockResolvedValueOnce([note("a"), note("b"), note("c")]);
+
+    const first = await runListPersonalNotes("u1", { limit: 2 });
+    expect(mockPrisma.page.findMany.mock.calls[0][0]).toMatchObject({
+      orderBy: [{ parentPageId: "asc" }, { position: "asc" }, { id: "asc" }],
+      skip: 0,
+      take: 3,
+    });
+    expect(first.notes.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(first.page).toMatchObject({ hasMore: true, limit: 2, total: 3 });
+
+    mockPrisma.page.findMany.mockResolvedValueOnce([note("c")]);
+    const second = await runListPersonalNotes("u1", { limit: 2, cursor: first.page.nextCursor! });
+    expect(mockPrisma.page.findMany.mock.calls[1][0]).toMatchObject({ skip: 2 });
+    expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
+  it("pages shared notes by offset with an id tiebreak, since updatedAt changes", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(true);
+    mockPrisma.page.count.mockResolvedValue(3);
+    mockPrisma.user.findMany.mockResolvedValue([{ id: "u2", firstName: "Ada", lastName: "Lovelace" }]);
+    mockPrisma.page.findMany.mockResolvedValueOnce([note("a", "u2"), note("b", "u2"), note("c", "u2")]);
+
+    const first = await runListPersonalNotes("u1", { scope: "shared", limit: 2 });
+    expect(mockPrisma.page.findMany.mock.calls[0][0]).toMatchObject({
+      orderBy: [{ updatedAt: "desc" }, { id: "asc" }],
+      skip: 0,
+      take: 3,
+    });
+    expect(first.notes.map((n) => n.id)).toEqual(["a", "b"]);
+    expect(first.notes[0].owner).toEqual({ id: "u2", name: "Ada Lovelace" });
+    expect(first.page).toMatchObject({ hasMore: true, total: 3 });
+
+    mockPrisma.page.findMany.mockResolvedValueOnce([note("c", "u2")]);
+    const second = await runListPersonalNotes("u1", { scope: "shared", limit: 2, cursor: first.page.nextCursor! });
+    expect(mockPrisma.page.findMany.mock.calls[1][0]).toMatchObject({ skip: 2 });
+    expect(second.page).toMatchObject({ nextCursor: null, hasMore: false });
   });
 });
 

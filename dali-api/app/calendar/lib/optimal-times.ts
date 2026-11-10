@@ -44,7 +44,8 @@ export function slotIsFree(free: MsInterval[], startMs: number, endMs: number): 
 
 /**
  * Business-hours grid of candidate meeting slots across the given local days.
- * `dayStartMs[i]` is local midnight (epoch ms) of grid day i; starts step every
+ * `dayMinuteMs[i](minute)` is the epoch ms of that wall-clock minute on grid day
+ * i, so a day with a clock change keeps its hours; starts step every
  * `stepMinutes` within [bandStartHour, bandEndHour) and a meeting must end
  * within the band. The band keeps "optimal" to sensible daytime/evening hours —
  * without it a 3am slot where everyone's calendar is empty would rank as
@@ -55,7 +56,7 @@ export function slotIsFree(free: MsInterval[], startMs: number, endMs: number): 
  * `Date.now()`). Defaults to 0 (no cut-off) for future weeks and unit tests.
  */
 export function candidateSlots(
-  dayStartMs: number[],
+  dayMinuteMs: ((minute: number) => number)[],
   bandStartHour: number,
   bandEndHour: number,
   stepMinutes: number,
@@ -66,9 +67,9 @@ export function candidateSlots(
   const durMs = durationMinutes * 60_000;
   const firstStartMin = bandStartHour * 60;
   const lastStartMin = bandEndHour * 60 - durationMinutes; // must end by band end
-  for (const dayMs of dayStartMs) {
+  for (const atMinute of dayMinuteMs) {
     for (let min = firstStartMin; min <= lastStartMin; min += stepMinutes) {
-      const startMs = dayMs + min * 60_000;
+      const startMs = atMinute(min);
       if (startMs < minStartMs) continue; // never suggest a time in the past
       out.push({ startMs, endMs: startMs + durMs });
     }
@@ -109,7 +110,7 @@ export function rankSlots(
 
 /** Build candidate slots over the days/band and return the best distinct ones. */
 export function findOptimalSlots(opts: {
-  dayStartMs: number[];
+  dayMinuteMs: ((minute: number) => number)[];
   perUserFree: MsInterval[][];
   bandStartHour: number;
   bandEndHour: number;
@@ -120,7 +121,7 @@ export function findOptimalSlots(opts: {
   minStartMs?: number;
 }): RankedSlot[] {
   const candidates = candidateSlots(
-    opts.dayStartMs,
+    opts.dayMinuteMs,
     opts.bandStartHour,
     opts.bandEndHour,
     opts.stepMinutes,

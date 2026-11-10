@@ -28,11 +28,11 @@ export const SUBMIT_FORM_TOOL = {
       },
       versionId: {
         type: "string",
-        description: "The form version ID to submit against.",
+        description: "The form version ID to submit against (versionId from get_form with token).",
       },
       answers: {
         type: "object",
-        description: "Answer map: question key → answer value.",
+        description: "Answer map: question key → answer value. Checkbox answers are an array of strings.",
         additionalProperties: true,
       },
     },

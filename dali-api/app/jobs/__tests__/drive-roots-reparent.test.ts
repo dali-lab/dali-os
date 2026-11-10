@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     groupDefinition: { findUnique: vi.fn() },
     form: { findMany: vi.fn() },
@@ -11,7 +11,7 @@ vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 vi.mock("~/lib/drive-roots.server", () => ({ ensureAllRoots: vi.fn() }));
 vi.mock("~/lib/pages", () => ({ collectSubtree: vi.fn(), MAX_PAGE_DEPTH: 6 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import { ensureAllRoots } from "~/lib/drive-roots.server";
 import { collectSubtree } from "~/lib/pages";

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: { collabDocumentVersion: { findUnique: vi.fn(), update: vi.fn() } },
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -14,7 +14,7 @@ vi.mock("~/collab/persistence", () => ({ restoreVersion: vi.fn() }));
 vi.mock("~/collab/read", () => ({ stateToBlocks: vi.fn() }));
 vi.mock("~/collab/blocknote-server", () => ({ blocksToHtml: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { getCollabServer } from "~/collab/server";
@@ -76,5 +76,22 @@ describe("POST /api/collab/versions/:id restore", () => {
     findVersion.mockResolvedValue({ id: "v1", name: "doc:p1:body" } as never);
     expect((await run({ intent: "name", label: "Final" })).status).toBe(200);
     expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /api/collab/versions/:id read-only callers", () => {
+  beforeEach(() => {
+    vi.mocked(authorizeCollabDoc).mockResolvedValue({ allowed: true, readOnly: true });
+  });
+
+  it("rejects restore without touching the document", async () => {
+    expect((await run({ intent: "restore" })).status).toBe(403);
+    expect(restoreVersion).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects naming a version", async () => {
+    expect((await run({ intent: "name", label: "Final" })).status).toBe(403);
+    expect(prisma.collabDocumentVersion.update).not.toHaveBeenCalled();
   });
 });

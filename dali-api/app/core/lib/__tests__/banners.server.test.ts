@@ -5,7 +5,7 @@ const db = vi.hoisted(() => ({
   bannerImpression: { upsert: vi.fn(), groupBy: vi.fn() },
   user: { findMany: vi.fn() },
 }));
-vi.mock("~/lib/db", () => ({ prisma: db }));
+vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/groups", () => ({ isUserInAnyGroup: vi.fn() }));
 
 import { isUserInAnyGroup } from "~/lib/groups";

@@ -5,7 +5,7 @@
 // and curl-while-logged-in — no CI secret needed).
 
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { tick, runJob } from "~/jobs/runner.server";

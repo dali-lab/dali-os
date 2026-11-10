@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledMeeting: { findUnique: vi.fn() },
     meetingAttendance: { findMany: vi.fn(), findFirst: vi.fn() },
@@ -8,7 +8,7 @@ vi.mock("~/lib/db", () => ({
 }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => (u ? `https://cdn/${u}` : null)) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getDisplayCheckIns, isCheckedIn } from "~/lib/display-check-ins.server";
 
 const occurrenceStart = new Date("2026-10-23T22:00:00Z");

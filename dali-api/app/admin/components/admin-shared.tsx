@@ -346,8 +346,8 @@ export function StaffToggle({ member, disabled }: { member: Member; disabled?: b
 // Takes any user (member or not) since site users spans every account type.
 //
 // A native form (not a fetcher): POST /admin/impersonate swaps the session
-// cookie and 302s to "/", so the whole shell — including open workspace iframes
-// — must reload as the target user. A client-side revalidation would leave them
+// cookie and 302s to "/", so the whole shell
+// must reload as the target user. A client-side revalidation would leave them
 // on the stale session. We confirm first, then submit the form imperatively.
 export function ImpersonateButton({
   user,

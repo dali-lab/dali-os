@@ -20,20 +20,23 @@ export function PageIconPicker({
   // Legacy compat: editing was the old prop name — if canEdit is absent but
   // editing is present, treat them the same. Callers should migrate to canEdit.
   editing,
+  size = "lg",
 }: {
   iconEmoji: string | null;
   canEdit?: boolean;
   onChange: (emoji: string | null) => void;
   /** @deprecated use canEdit */
   editing?: boolean;
+  size?: "lg" | "md";
 }) {
   const editable = canEdit ?? editing ?? false;
+  const emojiSize = size === "md" ? "text-2xl" : "text-4xl";
 
   // Read-only: show the icon if set, otherwise render nothing so the title
   // sits flush.
   if (!editable) {
     return iconEmoji ? (
-      <span className="text-4xl leading-none" aria-hidden>
+      <span className={cn(emojiSize, "leading-none")} aria-hidden>
         {iconEmoji}
       </span>
     ) : null;
@@ -49,7 +52,7 @@ export function PageIconPicker({
             type="button"
             className={
               iconEmoji
-                ? "text-4xl leading-none hover:opacity-80"
+                ? cn(emojiSize, "leading-none hover:opacity-80")
                 : "text-xs text-muted-foreground hover:text-foreground rounded border border-dashed border-border px-2 py-1"
             }
           >

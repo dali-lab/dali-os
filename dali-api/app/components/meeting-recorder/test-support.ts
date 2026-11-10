@@ -9,7 +9,6 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     isCore: false,
     roster: [],
     projectId: null,
-    canCreateTasks: false,
     getNoteState: () => null,
     noteVersion: 0,
     seededFromPageId: null,
@@ -27,6 +26,9 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     channelsActive: ["mic"],
     levels: { mic: 0, call: 0 },
     stalled: { mic: false, call: false },
+    noSound: false,
+    micDevice: null,
+    callAudioOff: false,
     recordedSeconds: 724,
     now: 0,
     lines: [],
@@ -55,7 +57,6 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     processingStage: null,
 
     useDesktopApp: false,
-    setUseDesktopApp: vi.fn(),
     micDeviceId: undefined,
     setMicDeviceId: vi.fn(),
     micDevices: [],
@@ -67,7 +68,7 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     callAudioUnsupported: false,
 
     live: false,
-    hasTranscript: false,
+    hasTranscript: true,
     drives: true,
     canDiscard: true,
     canStopOthers: false,
@@ -103,9 +104,11 @@ export function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetin
     revertAll: vi.fn(() => 0),
     scrollToBlock: vi.fn(),
     createTasksFromItems: vi.fn(async () => true),
+    removeBlock: vi.fn(),
     setSpeaker: vi.fn(async () => {}),
     jumpToTranscript: vi.fn(),
     cancelStart: vi.fn(),
+    retryDesktopStart: vi.fn(),
     switchToBrowserAfterUnreachable: vi.fn(),
   };
   return { ...base, ...overrides };

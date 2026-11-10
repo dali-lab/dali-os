@@ -11,7 +11,7 @@
 //   - ExternalMentor    — non-roster mentors placed on the project (cycle-scoped)
 // so a currently-active external mentor still hears replies to their feedback.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 
 export async function currentProjectParticipantIds(

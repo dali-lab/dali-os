@@ -19,13 +19,23 @@ import {
   removeFromNotebookRequest,
   renameRequest,
   sendJson,
+  setNoteDateRequest,
   type JsonRequest,
 } from "~/components/notebooks/notebook-requests";
+import { DateField } from "~/components/ui/DateField";
 import { useOpenMeetingNote } from "~/calendar/components/AddMeetingNoteModal";
 import { cn } from "~/lib/cn";
 import { formatDateShort } from "~/lib/display";
 
-export type NotebookTab = { id: string; label: string; meeting: string | null; isNote: boolean; week: string | null };
+export type NotebookTab = {
+  id: string;
+  label: string;
+  meeting: string | null;
+  isNote: boolean;
+  week: string | null;
+  /** YYYY-MM-DD in the application timezone, or null when the note has no date. */
+  date: string | null;
+};
 
 export type NotebookView = {
   id: string;
@@ -344,6 +354,63 @@ function SetTemplateModal({
   );
 }
 
+function SetNoteDateModal({
+  tab,
+  onClose,
+  onSaved,
+}: {
+  tab: NotebookTab;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const titleId = useId();
+  const run = useNotebookRequest();
+  const [value, setValue] = useState(tab.date ?? "");
+  const [saving, setSaving] = useState(false);
+
+  if (typeof document === "undefined") return null;
+
+  async function save(next: string | null) {
+    setSaving(true);
+    const ok = await run(setNoteDateRequest(tab.id, next), onSaved);
+    if (!ok) setSaving(false);
+  }
+
+  return createPortal(
+    <Modal open onClose={onClose} labelledBy={titleId} containerClassName={modalCardClass("max-w-sm")}>
+      <ModalHeader titleId={titleId} title="When did this note happen?" onClose={onClose} />
+      <p className="mb-3 text-sm text-muted-foreground">
+        Picks the week this note sits under in the rail.
+      </p>
+      <DateField mode="date" value={value} onChange={setValue} ariaLabel="Note date" />
+      <div className="mt-6 flex items-center justify-between gap-2">
+        <button
+          type="button"
+          disabled={saving || !tab.date}
+          onClick={() => void save(null)}
+          className={buttonClasses("ghost", "sm")}
+        >
+          Clear date
+        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onClose} className={buttonClasses("ghost", "sm")}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={saving || !value}
+            className={buttonClasses("primary", "sm")}
+            onClick={() => void save(value)}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </Modal>,
+    document.body,
+  );
+}
+
 function NotebookTitle({ notebook }: { notebook: NotebookView }) {
   const revalidator = useRevalidator();
   const run = useNotebookRequest();
@@ -391,6 +458,7 @@ function TabMenu({ notebook, tab, current }: { notebook: NotebookView; tab: Note
   const revalidator = useRevalidator();
   const run = useNotebookRequest();
   const [picking, setPicking] = useState(false);
+  const [dating, setDating] = useState(false);
 
   async function rename() {
     const next = await dialog.prompt({
@@ -446,10 +514,23 @@ function TabMenu({ notebook, tab, current }: { notebook: NotebookView; tab: Note
         }
       >
         <Menu.Item onSelect={() => void rename()}>Rename…</Menu.Item>
+        {!tab.isNote && (
+          <Menu.Item onSelect={() => setDating(true)}>{tab.date ? "Change date…" : "Set date…"}</Menu.Item>
+        )}
         {tab.isNote && <Menu.Item onSelect={() => void detach()}>Detach from meeting</Menu.Item>}
         <Menu.Item onSelect={() => setPicking(true)}>Move to notebook…</Menu.Item>
         <Menu.Item onSelect={() => void remove()}>Remove from notebook</Menu.Item>
       </Menu>
+      {dating && (
+        <SetNoteDateModal
+          tab={tab}
+          onClose={() => setDating(false)}
+          onSaved={() => {
+            setDating(false);
+            revalidator.revalidate();
+          }}
+        />
+      )}
       {picking && (
         <NotebookPicker
           open

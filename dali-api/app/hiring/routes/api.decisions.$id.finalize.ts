@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.decisions.$id.finalize";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireCoreOrDomainLead, requireMemberSession } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";

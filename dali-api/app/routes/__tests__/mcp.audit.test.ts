@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockLogAuditEvent = vi.hoisted(() => vi.fn());
 const mockAuthenticate = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockLogAuditEvent }));
 vi.mock("~/lib/mcp-auth", () => ({ authenticateMcpRequest: mockAuthenticate }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: () => null }));
@@ -84,6 +84,16 @@ describe("mcp tools/call audit", () => {
       action: "mcp.tool_read",
       targetId: "t1",
       metadata: { toolName: "fake_read", outcome: "ok" },
+    });
+  });
+
+  it("marks the call as coming from an MCP client with its grant", async () => {
+    await call("fake_read", { taskId: "t1" });
+    expect(loggedEvent().metadata).toMatchObject({
+      origin: "mcp",
+      clientId: "c1",
+      clientName: "Client",
+      grantId: "g1",
     });
   });
 

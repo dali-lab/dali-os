@@ -1,15 +1,20 @@
 import type { Route } from "./+types/api.my-interview.reschedule";
 import { z } from "zod";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, idSchema } from "~/lib/validate";
 import { assignInterviewers, releaseInterviewRoom } from "~/hiring/lib/scheduling";
+import { interviewChangeDeadlines } from "~/hiring/lib/interview-time";
 // import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
 import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
-import { sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
-import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
+import { getInterviewerRecipients, sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
+import {
+  getActiveInterviewerUserIds,
+  notifyInterviewAssigned,
+  notifyInterviewCancelled,
+} from "~/hiring/lib/interview-notifications";
 
 const RescheduleSchema = z
   .object({
@@ -42,7 +47,7 @@ export async function action({ request }: Route.ActionArgs) {
   // If assignInterviewers throws (no free interviewers at the new slot), the
   // whole transaction rolls back and the old interview stays Scheduled.
   try {
-    const { newInterview, oldInterviewId, oldCalendarEventId } = await prisma.$transaction(
+    const { newInterview, oldInterviewId, oldCalendarEventId, oldInterviewers, oldInterviewerUserIds } = await prisma.$transaction(
       async (tx) => {
         const current = await tx.interview.findFirst({
           where: {
@@ -51,13 +56,7 @@ export async function action({ request }: Route.ActionArgs) {
             status: "Scheduled",
           },
           include: {
-            domainApplication: {
-              include: {
-                application: {
-                  include: { domainApplications: { select: { domainId: true } } },
-                },
-              },
-            },
+            domainApplication: { select: { domainId: true } },
             roomBooking: { select: { userId: true } },
           },
         });
@@ -74,9 +73,7 @@ export async function action({ request }: Route.ActionArgs) {
             },
           },
         });
-        const rescheduleNoticeHours = config?.rescheduleNoticeHours ?? 12;
-        const cutoff = new Date(current.startTime.getTime() - rescheduleNoticeHours * 60 * 60_000);
-        if (new Date() > cutoff) {
+        if (new Date() > interviewChangeDeadlines(current.startTime, config).rescheduleBy) {
           throw new Error("__TOO_LATE_TO_RESCHEDULE__");
         }
 
@@ -86,11 +83,8 @@ export async function action({ request }: Route.ActionArgs) {
           throw new Error("__TOO_SOON_TO_BOOK__");
         }
 
-        // DomainApplication.domainId is authoritative and always set, for
-        // every applicant group.
-        const applicantDomainIds = current.domainApplication.application.domainApplications
-          .map((da) => da.domainId)
-          .filter((id): id is string => id !== null);
+        const oldInterviewers = await getInterviewerRecipients(current.id, tx);
+        const oldInterviewerUserIds = await getActiveInterviewerUserIds(current.id, tx);
 
         await tx.interview.update({
           where: { id: current.id },
@@ -109,7 +103,7 @@ export async function action({ request }: Route.ActionArgs) {
           current.applicationCycleId,
           current.interviewRoundId,
           current.domainApplicationId,
-          applicantDomainIds,
+          [current.domainApplication.domainId],
           new Date(newStart),
           new Date(newEnd),
           tx,
@@ -120,6 +114,8 @@ export async function action({ request }: Route.ActionArgs) {
           newInterview: created,
           oldInterviewId: current.id,
           oldCalendarEventId: current.calendarEventId,
+          oldInterviewers,
+          oldInterviewerUserIds,
         };
       },
       { isolationLevel: "Serializable" },
@@ -146,8 +142,14 @@ export async function action({ request }: Route.ActionArgs) {
     });
 
     // Best-effort: cancel old calendar event + send new invite
-    sendInterviewCancelEmails(oldInterviewId, domainApplicationId).catch(() => {});
+    sendInterviewCancelEmails(oldInterviewId, domainApplicationId, oldInterviewers).catch(() => {});
     sendInterviewInviteEmails(newInterview.id, domainApplicationId).catch(() => {});
+    notifyInterviewCancelled({
+      interviewId: oldInterviewId,
+      interviewerUserIds: oldInterviewerUserIds,
+      reason: "moved",
+      createdByUserId: auth.user.sub,
+    }).catch(() => {});
     notifyInterviewAssigned({
       assignmentIds: (newInterview.assignments ?? []).map((a) => a.id),
     }).catch(() => {});

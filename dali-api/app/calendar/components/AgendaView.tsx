@@ -100,8 +100,9 @@ export function AgendaView({
 
   if (rows.length === 0) {
     return (
-      <div className="grid flex-1 place-items-center py-16 text-sm text-muted-foreground">
-        Nothing scheduled in this range.
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 py-16 text-sm text-muted-foreground">
+        <EmptyRangeArt />
+        <p>Nothing scheduled in this range.</p>
       </div>
     );
   }
@@ -146,6 +147,19 @@ export function AgendaView({
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function EmptyRangeArt() {
+  return (
+    <div data-empty-agenda-art className="w-20 overflow-hidden rounded-md border border-os-container bg-os-nav" aria-hidden>
+      <div className="h-2.5 bg-os-accent/70" />
+      <div className="grid grid-cols-5 gap-0.5 p-1.5">
+        {Array.from({ length: 10 }, (_, i) => (
+          <div key={i} className="h-2.5 rounded-[2px] bg-os-container/70" />
+        ))}
       </div>
     </div>
   );

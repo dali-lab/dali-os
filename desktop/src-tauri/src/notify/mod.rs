@@ -55,6 +55,10 @@ pub const RSVP_PREFIX: &str = "rsvp:";
 pub const ACTION_RSVP_ACCEPT: &str = "rsvp:accepted";
 pub const ACTION_RSVP_MAYBE: &str = "rsvp:tentative";
 pub const ACTION_RSVP_DECLINE: &str = "rsvp:declined";
+
+pub const LABEL_RSVP_ACCEPT: &str = "Going";
+pub const LABEL_RSVP_MAYBE: &str = "Maybe";
+pub const LABEL_RSVP_DECLINE: &str = "Can't make it";
 // Legacy record-prompt banner actions (macOS only — notify/macos.rs's
 // `dali-record-prompt` category). No longer attached to a newly-raised
 // banner (see the module doc above); kept so one delivered before this
@@ -71,7 +75,7 @@ pub struct Banner {
     pub body: String,
     pub link: Option<String>,
     pub urgent: bool,
-    // Meeting invite awaiting an RSVP → Accept/Maybe/Decline buttons.
+    // Meeting invite awaiting an RSVP → Going/Maybe/Can't make it buttons.
     pub rsvp: bool,
     // Legacy record-prompt banner (macOS) → Record/Open buttons. Nothing
     // raised by this build ever sets this true (see the module doc above);
@@ -369,10 +373,8 @@ pub(crate) fn start_recording_from_prompt(app: &AppHandle, id: String, payload: 
 
 // Fire-and-forget authenticated POST. The server publishes the write to the
 // notification stream, so badge/tray/Notification Center converge through the
-// delivery loop rather than ad-hoc local state edits. `pub(crate)`: also used
-// directly by commands::tray_mark_all_read (no per-id URL, so `mark_read`
-// above doesn't fit).
-pub(crate) fn post(app: &AppHandle, url: String, json: Option<serde_json::Value>) {
+// delivery loop rather than ad-hoc local state edits.
+fn post(app: &AppHandle, url: String, json: Option<serde_json::Value>) {
     let http = app.state::<AppState>().http.clone();
     tauri::async_runtime::spawn(async move {
         let Some(token) = keychain::get_token() else {
@@ -384,4 +386,23 @@ pub(crate) fn post(app: &AppHandle, url: String, json: Option<serde_json::Value>
         }
         let _ = req.send().await;
     });
+}
+
+#[cfg(test)]
+mod rsvp_label_tests {
+    use super::*;
+
+    #[test]
+    fn rsvp_labels_match_the_web_set() {
+        assert_eq!(LABEL_RSVP_ACCEPT, "Going");
+        assert_eq!(LABEL_RSVP_MAYBE, "Maybe");
+        assert_eq!(LABEL_RSVP_DECLINE, "Can't make it");
+    }
+
+    #[test]
+    fn rsvp_action_ids_are_unchanged() {
+        assert_eq!(ACTION_RSVP_ACCEPT, "rsvp:accepted");
+        assert_eq!(ACTION_RSVP_MAYBE, "rsvp:tentative");
+        assert_eq!(ACTION_RSVP_DECLINE, "rsvp:declined");
+    }
 }

@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.reviews.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCycleAdmin, isDomainLeadForCycle } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";

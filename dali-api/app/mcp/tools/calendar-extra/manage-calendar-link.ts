@@ -2,7 +2,7 @@
 // visibility. Mirrors the action logic of settings.calendar.tsx.
 // Requires `mcp:write` scope (self only — only the link owner can modify it).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import { McpNotFoundError, McpInvalidError } from "../../registry";

@@ -3,7 +3,7 @@
 // tool. Handles scope resolution, optional Google Calendar push, and
 // participant notification fan-out.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { notify } from "~/lib/notify.server";
 import { resolveGroupMembers } from "~/lib/groups";
@@ -53,7 +53,7 @@ import {
   noteForOccurrence,
   resolveOccurrence,
   rruleWithUntil,
-  bareRrule,
+  followingRule,
   type Occurrence,
   type OccurrenceException,
   type OccurrenceMeeting,
@@ -2181,7 +2181,7 @@ async function updateScheduledMeetingImpl(
       }
     }
 
-    const newRule = bareRrule(meeting.recurrenceRule ?? "FREQ=WEEKLY");
+    const newRule = followingRule(meeting.recurrenceRule ?? "FREQ=WEEKLY", meeting.selectedAt ?? meeting.createdAt, new Date(occurrenceStart));
 
     const ownerLink = meeting.organizerCalendarLinkId
       ? await prisma.userCalendarLink.findUnique({

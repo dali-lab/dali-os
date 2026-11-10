@@ -9,21 +9,35 @@
 // as serialized ProseMirror JSON.
 
 import { z } from "zod";
-import { prisma, Prisma } from "~/lib/db";
-import { createForm, deleteForm, moveForm, renameForm, setFormAudience } from "./form-page.server";
+import { prisma, Prisma } from "~/lib/db.server";
+import { createForm, deleteForm, moveForm, renameForm, setFormAudience, setFormIcon } from "./form-page.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import type { Question } from "~/types";
 import { isReferenceSourceKey, referenceSourceNeedsTerm } from "./reference-sources.shared";
+import { isPrefillFieldKey, prefillFieldFits } from "./prefill-fields";
 import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.server";
+import { newPublicToken, setFormPublished } from "./form-publish.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { isLayoutOnly } from "~/lib/form-answers";
+import { showIfProblems } from "~/lib/form-logic";
+import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
+
+function prefillFits(q: Question): boolean {
+  const key = q.data.prefill;
+  return key === undefined || (isPrefillFieldKey(key) && prefillFieldFits(key, q));
+}
 
 const QUESTION_TYPES: Question["type"][] = [
   "text",
   "textarea",
   "select",
+  "radio",
+  "scale",
+  "date",
+  "number",
+  "email",
   "github_url",
   "figma_url",
   "drive_url",
@@ -57,13 +71,27 @@ export function isQuestionArray(x: unknown): x is Question[] {
   );
 }
 
+// Answers are keyed by question, so a repeated key is never a second
+// question: it's a copy left by concurrent builder edits. Keep the first.
+export function dropRepeatedKeys(questions: Question[]): Question[] {
+  const seen = new Set<string>();
+  return questions.filter((q) => {
+    if (seen.has(q.key)) return false;
+    seen.add(q.key);
+    return true;
+  });
+}
+
 // Parse + validate a version's question set to the same standard "Save as
 // version" enforces (≥1 question, every question labelled, reference sources
 // resolved). Shared by save-version and update-version so an in-place edit is
 // held to exactly the rules a fresh version is. Returns the parsed questions
 // on success, or a ready-to-return error result.
-function validateVersionQuestions(
+export function validateVersionQuestions(
   raw: string,
+  // Question key -> the staffing feature that reads it, for the form being
+  // saved. A mapped question can't carry a rule.
+  mapped?: ReadonlyMap<string, string>,
 ): { ok: true; questions: Question[] } | { error: string; status: number } {
   let questions: unknown;
   try {
@@ -73,11 +101,37 @@ function validateVersionQuestions(
   }
   if (!isQuestionArray(questions) || questions.length === 0)
     return { error: "Add at least one valid question.", status: 400 };
+  questions = dropRepeatedKeys(questions);
   for (const q of questions) {
     if (q.type === "info" && !hasInfoBody(q.data.body))
       return { error: "Every text block needs some text.", status: 400 };
     if (!isLayoutOnly(q.type) && !q.data.label.trim())
       return { error: "Every question needs a label.", status: 400 };
+    if (q.type === "radio" && (q.data.options ?? []).length < 2)
+      return {
+        error: `"${q.data.label}" needs at least two options.`,
+        status: 400,
+      };
+    if (
+      q.type === "number" &&
+      [q.data.min, q.data.max].some(
+        (b) => b !== undefined && !(typeof b === "number" && Number.isFinite(b)),
+      )
+    )
+      return {
+        error: `"${q.data.label}" needs numbers for its minimum and maximum.`,
+        status: 400,
+      };
+    if (
+      q.type === "number" &&
+      q.data.min !== undefined &&
+      q.data.max !== undefined &&
+      q.data.min > q.data.max
+    )
+      return {
+        error: `"${q.data.label}" has a minimum higher than its maximum.`,
+        status: 400,
+      };
     if (q.type === "reference" && !isReferenceSourceKey(q.data.referenceSource))
       return {
         error: `"${q.data.label}" is a reference question but has no valid data source.`,
@@ -92,7 +146,14 @@ function validateVersionQuestions(
         error: `"${q.data.label}" needs a term selected for its data source.`,
         status: 400,
       };
+    if (!prefillFits(q))
+      return {
+        error: `"${q.data.label}" can't fill in from that record.`,
+        status: 400,
+      };
   }
+  const [conditionProblem] = showIfProblems(questions, mapped);
+  if (conditionProblem) return { error: conditionProblem.message, status: 400 };
   return { ok: true, questions };
 }
 
@@ -178,6 +239,10 @@ export type FormDetail = {
   opensAt: string | null;
   closesAt: string | null;
   oneResponsePerMember: boolean;
+  allowResponseEdit: boolean;
+  remindBeforeClose: boolean;
+  confirmationMessage: unknown;
+  sendReceipt: boolean;
   notifyOnSubmission: boolean;
   listed: boolean;
   audience: "Members" | "SignedIn" | "Groups" | "Public";
@@ -188,6 +253,7 @@ export type FormDetail = {
   // to fillers.
   draft: { questions: Question[]; description: unknown } | null;
   workspaceType: string | null;
+  iconEmoji: string | null;
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -199,7 +265,7 @@ export async function loadFormForEdit(
     prisma.form.findUnique({
       where: { id: formId },
       include: {
-        page: { select: { workspaceType: true } },
+        page: { select: { workspaceType: true, iconEmoji: true } },
         versions: {
           orderBy: { versionNumber: "asc" },
           include: {
@@ -225,11 +291,16 @@ export async function loadFormForEdit(
     opensAt: form.opensAt?.toISOString() ?? null,
     closesAt: form.closesAt?.toISOString() ?? null,
     oneResponsePerMember: form.oneResponsePerMember,
+    allowResponseEdit: form.allowResponseEdit,
+    remindBeforeClose: form.remindBeforeClose,
+    confirmationMessage: ensureBlocks(safeParseJsonString(form.confirmationMessage)),
+    sendReceipt: form.sendReceipt,
     notifyOnSubmission: form.notifyOnSubmission,
     listed: form.listed,
     audience: form.audience,
     audienceGroupIds: form.audienceGroupIds,
     workspaceType: form.page?.workspaceType ?? null,
+    iconEmoji: form.page?.iconEmoji ?? null,
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,
@@ -252,6 +323,35 @@ export async function loadFormForEdit(
         }
       : null,
   };
+}
+
+export const CONFIRMATION_MESSAGE_MAX = 20_000;
+const SAFE_HREF = /^(https?:|mailto:)/i;
+
+function hasUnsafeHref(node: unknown): boolean {
+  if (Array.isArray(node)) return node.some(hasUnsafeHref);
+  if (node === null || typeof node !== "object") return false;
+  return Object.entries(node).some(([key, value]) =>
+    key === "href" && typeof value === "string"
+      ? !SAFE_HREF.test(value.trim())
+      : hasUnsafeHref(value),
+  );
+}
+
+// Block JSON from the settings editor → the string to store. Empty content
+// clears the message; anything that isn't a block array, or carries a link
+// that isn't http(s)/mailto, is refused.
+export function parseConfirmationMessage(
+  raw: string,
+): { ok: true; value: string | null } | { ok: false; error: string } {
+  if (raw.trim() === "") return { ok: true, value: null };
+  const parsed = safeParseJsonString(raw);
+  if (!Array.isArray(parsed)) return { ok: false, error: "Invalid confirmation message." };
+  if (isEmptyBlocks(parsed)) return { ok: true, value: null };
+  if (hasUnsafeHref(parsed)) {
+    return { ok: false, error: "Links must start with http, https or mailto." };
+  }
+  return { ok: true, value: JSON.stringify(parsed) };
 }
 
 export function safeParseJsonString(s: string | null | undefined): unknown {
@@ -287,6 +387,11 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     id: z.string().min(1),
     name: z.string().trim().min(1).max(120),
   }),
+  z.object({
+    intent: z.literal("set-form-icon"),
+    id: z.string().min(1),
+    iconEmoji: z.string().trim().max(64),
+  }),
   z.object({ intent: z.literal("delete-form"), id: z.string().min(1) }),
   z.object({
     intent: z.literal("move-form"),
@@ -302,6 +407,7 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     questions: z.string(), // JSON-encoded Question[]
     description: z.string().optional(), // JSON-encoded ProseMirror doc
   }),
+  z.object({ intent: z.literal("discard-draft"), id: z.string().min(1) }),
   z.object({
     // "Publish" — freeze the working copy into a new version and publish the
     // form in one step (publishing is skipped for managed forms, whose
@@ -342,9 +448,13 @@ export const ActionSchema = z.discriminatedUnion("intent", [
   z.object({
     intent: z.literal("update-form-settings"),
     id: z.string().min(1),
-    oneResponsePerMember: z.enum(["true", "false"]),
-    notifyOnSubmission: z.enum(["true", "false"]),
-    listed: z.enum(["true", "false"]),
+    oneResponsePerMember: z.enum(["true", "false"]).optional(),
+    allowResponseEdit: z.enum(["true", "false"]).optional(),
+    remindBeforeClose: z.enum(["true", "false"]).optional(),
+    sendReceipt: z.enum(["true", "false"]).optional(),
+    confirmationMessage: z.string().max(CONFIRMATION_MESSAGE_MAX).optional(), // block JSON; "" clears
+    notifyOnSubmission: z.enum(["true", "false"]).optional(),
+    listed: z.enum(["true", "false"]).optional(),
   }),
   z.object({
     intent: z.literal("update-form-audience"),
@@ -353,14 +463,6 @@ export const ActionSchema = z.discriminatedUnion("intent", [
     groupIds: z.string().optional(), // JSON-encoded string[]; Groups only
   }),
 ]);
-
-// Unguessable public token for a published form's external fill URL.
-// Exported for the form-windows job, which mints one on scheduled publish.
-export function newPublicToken(): string {
-  // 24 bytes of URL-safe randomness — collision-resistant, not enumerable.
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
 
 // Published-flag update for save-version/update-version's `publish`. Mints the
 // link token on first publish and reuses it after, like publish-form. Null
@@ -478,6 +580,15 @@ export async function runFormsAction(
       await renameForm(input.id, input.name);
       return { ok: true };
     }
+    case "set-form-icon": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await setFormIcon(input.id, input.iconEmoji || null);
+      return { ok: true };
+    }
     case "delete-form": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
@@ -518,10 +629,24 @@ export async function runFormsAction(
       await prisma.form.update({
         where: { id: input.id },
         data: {
-          draftQuestions: questions as object,
+          draftQuestions: dropRepeatedKeys(questions) as object,
           draftIntro: input.description?.trim() || null,
         },
       });
+      return { ok: true };
+    }
+    case "discard-draft": {
+      const exists = await prisma.form.findUnique({
+        where: { id: input.id },
+        select: { id: true },
+      });
+      if (!exists) return { error: "Not found", status: 404 };
+      await prisma.form.update({
+        where: { id: input.id },
+        data: { draftQuestions: Prisma.DbNull, draftIntro: null },
+      });
+      const { clearFormDraftRoom } = await import("~/collab/write");
+      await clearFormDraftRoom(input.id);
       return { ok: true };
     }
     case "save-version": {
@@ -534,7 +659,10 @@ export async function runFormsAction(
         ? await publishData(input.id, exists.publicToken)
         : null;
 
-      const validated = validateVersionQuestions(input.questions);
+      const validated = validateVersionQuestions(
+        input.questions,
+        await mappedQuestionFeatures(input.id),
+      );
       if (!("ok" in validated)) return validated;
 
       const last = await prisma.formVersion.findFirst({
@@ -574,7 +702,10 @@ export async function runFormsAction(
         ? await publishData(input.id, version.form.publicToken)
         : null;
 
-      const validated = validateVersionQuestions(input.questions);
+      const validated = validateVersionQuestions(
+        input.questions,
+        await mappedQuestionFeatures(input.id),
+      );
       if (!("ok" in validated)) return validated;
 
       // Re-check the lock inside the write so a response landing between the
@@ -636,42 +767,10 @@ export async function runFormsAction(
       }
       return { ok: true };
     }
-    case "publish-form": {
-      const form = await prisma.form.findUnique({
-        where: { id: input.id },
-        select: { id: true, publicToken: true, _count: { select: { versions: true } } },
-      });
-      if (!form) return { error: "Not found", status: 404 };
-      if (form._count.versions === 0)
-        return {
-          error: "Add at least one question version before publishing.",
-          status: 400,
-        };
-      await prisma.form.update({
-        where: { id: input.id },
-        data: {
-          published: true,
-          // Mint a token on first publish; reuse it on re-publish so a
-          // shared link stays valid.
-          publicToken: form.publicToken ?? newPublicToken(),
-        },
-      });
-      return { ok: true };
-    }
-    case "unpublish-form": {
-      const exists = await prisma.form.findUnique({
-        where: { id: input.id },
-        select: { id: true },
-      });
-      if (!exists) return { error: "Not found", status: 404 };
-      // Keep publicToken so re-publishing restores the same link; just flip
-      // the flag so the public route 404s.
-      await prisma.form.update({
-        where: { id: input.id },
-        data: { published: false },
-      });
-      return { ok: true };
-    }
+    case "publish-form":
+      return setFormPublished(input.id, true);
+    case "unpublish-form":
+      return setFormPublished(input.id, false);
     case "update-form-window": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
@@ -686,32 +785,78 @@ export async function runFormsAction(
         return { error: "Close must be after open.", status: 400 };
       await prisma.form.update({
         where: { id: input.id },
-        data: { opensAt, closesAt },
+        // The reminder is anchored to the close time, so it goes with it.
+        data: { opensAt, closesAt, ...(closesAt ? {} : { remindBeforeClose: false }) },
       });
       return { ok: true };
     }
     case "update-form-settings": {
       const exists = await prisma.form.findUnique({
         where: { id: input.id },
-        select: { id: true },
+        select: { id: true, closesAt: true, oneResponsePerMember: true },
       });
       if (!exists) return { error: "Not found", status: 404 };
+      if (input.remindBeforeClose === "true" && !exists.closesAt)
+        return { error: "Set a close time to use this.", status: 400 };
+      if (
+        input.allowResponseEdit === "true" &&
+        input.oneResponsePerMember === undefined &&
+        !exists.oneResponsePerMember
+      )
+        return { error: "Turn on one response per member to use this.", status: 400 };
+      const confirmation =
+        input.confirmationMessage === undefined
+          ? null
+          : parseConfirmationMessage(input.confirmationMessage);
+      if (confirmation && !confirmation.ok)
+        return { error: confirmation.error, status: 400 };
       await prisma.form.update({
         where: { id: input.id },
         data: {
-          oneResponsePerMember: input.oneResponsePerMember === "true",
-          notifyOnSubmission: input.notifyOnSubmission === "true",
-          listed: input.listed === "true",
+          ...(input.oneResponsePerMember
+            ? { oneResponsePerMember: input.oneResponsePerMember === "true" }
+            : {}),
+          // Editing needs the one response to edit, so it can't outlive that setting.
+          ...(input.oneResponsePerMember === "false"
+            ? { allowResponseEdit: false }
+            : input.allowResponseEdit
+              ? { allowResponseEdit: input.allowResponseEdit === "true" }
+              : {}),
+          ...(input.remindBeforeClose
+            ? { remindBeforeClose: input.remindBeforeClose === "true" }
+            : {}),
+          ...(input.sendReceipt ? { sendReceipt: input.sendReceipt === "true" } : {}),
+          ...(confirmation?.ok ? { confirmationMessage: confirmation.value } : {}),
+          ...(input.notifyOnSubmission
+            ? { notifyOnSubmission: input.notifyOnSubmission === "true" }
+            : {}),
+          ...(input.listed ? { listed: input.listed === "true" } : {}),
         },
       });
       return { ok: true };
     }
     case "update-form-audience": {
-      const exists = await prisma.form.findUnique({
-        where: { id: input.id },
-        select: { id: true },
+      const page = await prisma.page.findUnique({
+        where: { id: input.id, kind: "Form" },
+        select: {
+          id: true,
+          workspaceType: true,
+          workspaceId: true,
+          createdById: true,
+        },
       });
-      if (!exists) return { error: "Not found", status: 404 };
+      if (!page) return { error: "Not found", status: 404 };
+
+      // The audience rewrites the page's general access and its group shares,
+      // which is the Share dialog's power — edit access on the questions
+      // isn't enough.
+      const { canManageSharing } = await import("~/lib/page-share-access.server");
+      if (!(await canManageSharing(page, userId))) {
+        return {
+          error: "Only someone who manages this form's sharing can change its audience.",
+          status: 403,
+        };
+      }
 
       let ids: string[] = [];
       if (input.audience === "Groups") {

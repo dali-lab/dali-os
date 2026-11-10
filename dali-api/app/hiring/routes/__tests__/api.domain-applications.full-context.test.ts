@@ -1,14 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
+vi.mock("~/hiring/lib/anonymization.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/hiring/lib/anonymization.server")>()),
+  domainApplicationBlindLabel: vi.fn(),
+}));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getUserRoles, hasCycleAccess } from "~/lib/roles";
+import { domainApplicationBlindLabel } from "~/hiring/lib/anonymization.server";
 import { loader } from "~/hiring/routes/api.domain-applications.$id.full-context";
 
 const mockPrisma = prisma as unknown as {
@@ -28,6 +33,7 @@ const CYCLE_ID = "cycle-1";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(domainApplicationBlindLabel).mockResolvedValue(null);
   (mockPrisma as any).domainApplication = { findUnique: vi.fn() };
   (mockPrisma as any).domainApplicationCycle = { findUnique: vi.fn() };
   (mockPrisma as any).rubricVersion = { findUnique: vi.fn(), findMany: vi.fn() };
@@ -171,6 +177,21 @@ describe("GET /api/hiring/domain-applications/:id/full-context", () => {
     expect(json.criteriaByKey.g1c).toEqual({ label: "General", maxScore: 5, description: undefined });
     expect(json.criteriaByKey.c1).toEqual({ label: "Craft", maxScore: 5, description: undefined });
     expect(hasCycleAccess).toHaveBeenCalledWith(USER_ID, CYCLE_ID);
+  });
+
+  it("hides the applicant's name while the application is blinded", async () => {
+    setupHappyPathDomainApp();
+    vi.mocked(hasCycleAccess).mockResolvedValue(true);
+    vi.mocked(domainApplicationBlindLabel).mockResolvedValue("Applicant 2");
+
+    const res = await loader({
+      request: makeRequest(),
+      params: { id: DA_ID },
+      context: {},
+    } as any);
+
+    const json: any = await res.json();
+    expect(json.application.applicant).toEqual({ firstName: "Applicant 2", lastName: "" });
   });
 
   it("returns 403 when the user does not have cycle access", async () => {

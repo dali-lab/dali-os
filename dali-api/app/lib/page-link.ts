@@ -2,18 +2,6 @@ export const COPY_PAGE_LINK_EVENT = 'dali:copy-page-link'
 
 type LocationLike = { pathname: string; search: string; hash: string }
 
-export function isCopyPageLinkShortcut(e: {
-  metaKey: boolean
-  ctrlKey: boolean
-  shiftKey: boolean
-  altKey: boolean
-  key: string
-}): boolean {
-  return (
-    (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')
-  )
-}
-
 // The form tab urls are stored in: no `embed` marker, hash kept.
 export function cleanTabUrl(input: LocationLike | string): string {
   // The base only makes a relative url parseable; it never reaches the result.

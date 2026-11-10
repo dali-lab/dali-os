@@ -42,7 +42,6 @@ export const CORE_CLUSTERS: NavCluster[] = [
         to: "/core/communications/listserv",
         icon: Mails,
         description: "Submit emails for the campus listserv. The outreach lead reviews and sends them.",
-        flag: "listserv",
       },
       {
         key: "banners",
@@ -86,8 +85,8 @@ const STANDALONE_LABELS: Record<string, string> = {
   access: "Roles & domains",
   agreements: "Agreements",
   "drive-folders": "Drive folders",
-  rooms: "Rooms",
   partners: "Partners",
+  milestones: "Milestones",
 };
 
 export const CORE_ATTENDANCE_ICON = ClipboardCheck;
@@ -130,7 +129,6 @@ export function coreHandle(
   leafLabel?: (data: unknown) => string | null | undefined,
 ) {
   return {
-    roomyBreadcrumb: true,
     breadcrumbTrail: (data: unknown) => {
       const d = data as { isAdmin?: boolean; viewerIsAdmin?: boolean } | null;
       const trail = coreTrail(active, !!d?.isAdmin || !!d?.viewerIsAdmin);

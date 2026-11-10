@@ -6,18 +6,9 @@ import { buttonClasses, type ButtonSize } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 
-// Tell the shell's sidebar task poller that the task list changed. Inside a
-// TabWorkspace iframe the poller lives in the parent, so relay via postMessage;
-// the shell re-dispatches it as a same-window event (see Layout.tsx).
+// Tell the shell's task poller that the task list changed.
 export function notifyTasksChanged() {
-  if (window.self !== window.top) {
-    window.parent.postMessage(
-      { type: "dali:tasksChanged" },
-      window.location.origin,
-    );
-  } else {
-    window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
-  }
+  window.dispatchEvent(new Event(TASKS_CHANGED_EVENT));
 }
 
 type Answer = "accepted" | "declined" | "tentative";
@@ -34,12 +25,14 @@ export function RsvpButtons({
   notificationId,
   onResponded,
   onFailed,
+  onSaved,
   size = "xs",
   className = "mt-2 gap-1",
 }: {
   notificationId: string;
   onResponded?: (rsvp: "Accepted" | "Declined" | "Tentative") => void;
   onFailed?: () => void;
+  onSaved?: () => void;
   size?: ButtonSize;
   className?: string;
 }) {
@@ -68,6 +61,7 @@ export function RsvpButtons({
         return;
       }
       if (json.gcalError) toast.error(`Recorded in-app, but Google sync failed: ${json.gcalError}`);
+      onSaved?.();
       await revalidator.revalidate();
       notifyTasksChanged();
     } catch (err) {

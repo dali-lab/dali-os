@@ -21,6 +21,51 @@ final class RoomDisplayUITests: XCTestCase {
     }
 
     @MainActor
+    func testCustomPicksATimeOnTheSliderThenBooksAfterAScan() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demoDisplay", "rooms"]
+        app.launch()
+
+        let book = app.buttons["Book now"]
+        XCTAssertTrue(book.waitForExistence(timeout: 5))
+        book.tap()
+        let custom = app.buttons["Custom"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 5))
+        custom.tap()
+
+        XCTAssertTrue(app.staticTexts["Which day?"].waitForExistence(timeout: 5))
+        app.buttons["booking-day-1"].tap()
+        let timeline = app.otherElements["day-timeline"]
+        XCTAssertTrue(timeline.waitForExistence(timeout: 5))
+        timeline.tap()
+        let scan = app.buttons["Scan pass to book"]
+        XCTAssertTrue(scan.waitForExistence(timeout: 5))
+        scan.tap()
+        let simulate = app.buttons["Simulate a scan"]
+        XCTAssertTrue(simulate.waitForExistence(timeout: 5))
+        simulate.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Booked for'")).firstMatch.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testBackFromCustomReturnsToBookNow() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-demoDisplay", "rooms"]
+        app.launch()
+
+        let book = app.buttons["Book now"]
+        XCTAssertTrue(book.waitForExistence(timeout: 5))
+        book.tap()
+        let custom = app.buttons["Custom"]
+        XCTAssertTrue(custom.waitForExistence(timeout: 5))
+        custom.tap()
+        let back = app.buttons["Back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 5))
+        back.tap()
+        XCTAssertTrue(app.buttons["Continue"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
     func testEndEarlyNeedsAPassScan() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-demoDisplay", "rooms"]

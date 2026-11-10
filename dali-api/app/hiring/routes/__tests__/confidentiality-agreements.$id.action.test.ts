@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     dALIMember: { findUnique: vi.fn() },
     signingDocumentVersion: { findFirst: vi.fn(), create: vi.fn() },
@@ -14,7 +14,7 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/collab/legacy/pm-to-blocknote", () => ({ ensureBlocks: (b: unknown) => b }));
 vi.mock("~/hiring/components/ConfidentialityAgreementDetail", () => ({ ConfidentialityAgreementDetail: () => null }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore, isDomainLead } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";

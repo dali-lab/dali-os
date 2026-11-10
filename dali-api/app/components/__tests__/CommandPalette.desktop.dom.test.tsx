@@ -16,7 +16,7 @@ function mount(extra: { onOpenInDesktop?: () => void; onOpen?: () => void } = {}
   root = createRoot(container);
   act(() =>
     root.render(
-      createElement(CommandPalette, { open: true, onClose: () => {}, tabless: false, focusMode: false, onOpen: () => {}, ...extra }),
+      createElement(CommandPalette, { open: true, onClose: () => {}, focusMode: false, onOpen: () => {}, ...extra }),
     ),
   );
 }

@@ -34,6 +34,7 @@ import {
   pageMentionConfig,
   signingFieldConfigs,
   taskMentionConfig,
+  taskConfig,
   variableConfig,
 } from "~/components/doc/schema/configs";
 import {
@@ -43,8 +44,12 @@ import {
   type SigningFieldType,
 } from "~/lib/signing-fields";
 import { sanitizeRichEmailHtml, htmlToPlainText, NOTIFICATION_BODY_MAX } from "~/lib/email";
+import { createMediaImageSpec, createMediaVideoSpec } from "~/components/doc/schema/media";
+import { categorize } from "~/lib/file-type";
+import { parseVideoEmbed } from "~/lib/video-embed";
 import { parseComponentData } from "~/components/doc/components/kinds";
 import { ComponentView } from "~/components/doc/components/views";
+import { linksToInlineRefs, mapInlineArrays, type InlineArrayKind } from "./inline-refs";
 
 export { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT } from "~/components/doc/schema/configs";
 
@@ -89,8 +94,7 @@ export interface DocBlock {
 
 // ---------------------------------------------------------------------------
 // Core (non-React) specs over the shared configs. Renders are used by the
-// HTML/Markdown serializers: markdown takes each node's textContent, so these
-// double as the plain-text form of every custom node.
+// HTML/Markdown serializers.
 
 const mentionSpec = createInlineContentSpec(mentionConfig, {
   render: (ic) => {
@@ -110,14 +114,6 @@ const pageMentionSpec = createInlineContentSpec(pageMentionConfig, {
   },
 });
 
-// Unlike mention/pageMention (plain spans), this renders as a real anchor —
-// HTML export (blocksToHtml/blocksToFullHtml, which feed docx/education/
-// public-site rendering and the Chromium PDF path) carries a working deep
-// link to the task. Markdown export shares this same render (no
-// toExternalHTML override, same convention as embedSpec below), so the
-// anchor becomes a real markdown link; plain-text export bypasses this
-// entirely (blocksToPlainText's own inlineText() renders the label alone —
-// see configs.ts).
 const taskMentionSpec = createInlineContentSpec(taskMentionConfig, {
   render: (ic) => {
     const dom = document.createElement("a");
@@ -179,6 +175,20 @@ const calloutSpec = createBlockSpec(calloutConfig, {
 
 // Bookmark/embed: renders as an anchor card so export / version-history HTML
 // keeps the link (content: "none" — no contentDOM).
+const taskSpec = createBlockSpec(taskConfig, {
+  render: (block) => {
+    const taskId = String(block.props.taskId ?? "");
+    const projectId = String(block.props.projectId ?? "");
+    const dom = document.createElement("a");
+    dom.setAttribute("data-task-id", taskId);
+    if (taskId && projectId) {
+      dom.setAttribute("href", `/projects/${projectId}?tab=progress&task=${taskId}`);
+    }
+    dom.textContent = String(block.props.label ?? "") || "Untitled task";
+    return { dom };
+  },
+})();
+
 const embedSpec = createBlockSpec(embedConfig, {
   render: (block) => {
     const url = String(block.props.url ?? "");
@@ -233,8 +243,8 @@ const componentSpec = createBlockSpec(componentConfig, {
 // document the server touches (export, version history, sync-back). The column
 // specs are built with the core createBlockSpecFromTiptapNode — no React — so
 // they are safe under the jsdom conversions below.
-export const serverSchema = withMultiColumn(BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, callout: calloutSpec, embed: embedSpec, component: componentSpec, pageBreak: createPageBreakBlockSpec() },
+const buildServerSchema = (media: { markdown?: boolean }) => withMultiColumn(BlockNoteSchema.create({
+  blockSpecs: { ...defaultBlockSpecs, image: createMediaImageSpec(media), video: createMediaVideoSpec(media), callout: calloutSpec, embed: embedSpec, component: componentSpec, task: taskSpec, pageBreak: createPageBreakBlockSpec() },
   inlineContentSpecs: {
     ...defaultInlineContentSpecs,
     mention: mentionSpec,
@@ -246,24 +256,35 @@ export const serverSchema = withMultiColumn(BlockNoteSchema.create({
   styleSpecs: { ...defaultStyleSpecs },
 }));
 
+export const serverSchema = buildServerSchema({});
+
 // ---------------------------------------------------------------------------
 // Singleton editor + a serialization lock. The async conversions install a
 // jsdom window on globalThis for their duration (_withJSDOM); two interleaved
 // conversions would tear each other's globals down, so they queue.
 
 let editorSingleton: ServerBlockNoteEditor<any, any, any> | null = null;
+let markdownEditorSingleton: ServerBlockNoteEditor<any, any, any> | null = null;
+
+function createServerEditor(schema: unknown): ServerBlockNoteEditor<any, any, any> {
+  const editor = ServerBlockNoteEditor.create({ schema: schema as any });
+  // server-util's default jsdom has an opaque origin, where localStorage
+  // throws. BlockNote's toggle wrapper (toggle list items, toggle headings)
+  // reads localStorage during blocksToFullHTML, so any doc with a toggle
+  // failed the full-HTML render. A real origin gives it an in-memory store.
+  (editor as unknown as { jsdom: { reconfigure(o: { url: string }): void } }).jsdom
+    .reconfigure({ url: "http://localhost/" });
+  return editor;
+}
 
 export function getServerEditor(): ServerBlockNoteEditor<any, any, any> {
-  if (!editorSingleton) {
-    editorSingleton = ServerBlockNoteEditor.create({ schema: serverSchema as any });
-    // server-util's default jsdom has an opaque origin, where localStorage
-    // throws. BlockNote's toggle wrapper (toggle list items, toggle headings)
-    // reads localStorage during blocksToFullHTML, so any doc with a toggle
-    // failed the full-HTML render. A real origin gives it an in-memory store.
-    (editorSingleton as unknown as { jsdom: { reconfigure(o: { url: string }): void } }).jsdom
-      .reconfigure({ url: "http://localhost/" });
-  }
+  editorSingleton ??= createServerEditor(serverSchema);
   return editorSingleton;
+}
+
+function getMarkdownEditor(): ServerBlockNoteEditor<any, any, any> {
+  markdownEditorSingleton ??= createServerEditor(buildServerSchema({ markdown: true }));
+  return markdownEditorSingleton;
 }
 
 let conversionChain: Promise<unknown> = Promise.resolve();
@@ -316,21 +337,93 @@ export async function renderAnnouncementBody(
   return { html, text: htmlToPlainText(html, { maxLength: NOTIFICATION_BODY_MAX }) };
 }
 
+const CELL_BREAK = "\uE000";
+const REF_TYPES = new Set(["mention", "pageMention", "taskMention"]);
+
+export interface MarkdownOptions {
+  inlineRefs?: boolean;
+}
+
+const escapeMarkdown = (text: string) => text.replace(/[\\[\]*_`<>]/g, "\\$&");
+
+function refLink(inline: DocInline): DocInline | null {
+  const props = inline.props ?? {};
+  const label = String(props.label ?? "");
+  const link = (href: string, text: string): DocInline => ({
+    type: "link",
+    href,
+    content: [{ type: "text", text: escapeMarkdown(text), styles: {} }],
+  });
+  if (inline.type === "mention" && props.id) return link(`/members/${props.id}`, `@${label}`);
+  if (inline.type === "pageMention" && props.pageId) return link(`/documents/${props.pageId}`, label || "Untitled");
+  if (inline.type === "taskMention" && props.taskId && props.projectId) {
+    return link(`/projects/${props.projectId}?tab=progress&task=${props.taskId}`, label || "Untitled task");
+  }
+  return null;
+}
+
+function prepareInlines(inlines: DocInline[], kind: InlineArrayKind, options: MarkdownOptions): DocInline[] {
+  const clean = (text: string) => text.replaceAll(CELL_BREAK, "");
+  return inlines.map((inline) => {
+    if (REF_TYPES.has(inline.type) && typeof inline.props?.label === "string") {
+      const label = clean(inline.props.label);
+      const ref = { ...inline, props: { ...inline.props, label: kind === "cell" ? label.replaceAll("\n", " ") : label } };
+      return (options.inlineRefs && refLink(ref)) || ref;
+    }
+    const next = { ...inline };
+    if (typeof next.text === "string") {
+      next.text = kind === "cell" ? clean(next.text).replaceAll("\n", CELL_BREAK) : clean(next.text);
+    }
+    if (Array.isArray(next.content)) next.content = prepareInlines(next.content, kind, options);
+    return next;
+  });
+}
+
 /** Blocks → Markdown. Custom inline nodes serialize as their plain-text form
- * (mention → "@handle", unfilled field → "__________", variable → value or
- * "{{name}}"). */
-export function blocksToMarkdown(blocks: DocBlock[]): Promise<string> {
+ * unless `inlineRefs` is set, which writes user, page and task mentions as
+ * links that `markdownToBlocks(md, { inlineRefs: true })` turns back into chips. */
+export function blocksToMarkdown(blocks: DocBlock[], options: MarkdownOptions = {}): Promise<string> {
   if (blocks.length === 0) return Promise.resolve("");
-  return serialized(() => getServerEditor().blocksToMarkdownLossy(blocks as any));
+  const prepared = mapInlineArrays(blocks, (inlines, kind) => prepareInlines(inlines, kind, options));
+  return serialized(() => getMarkdownEditor().blocksToMarkdownLossy(prepared as any)).then((markdown) =>
+    markdown.replaceAll(CELL_BREAK, "<br>"),
+  );
 }
 
 /** Markdown → blocks. Empty/whitespace input yields a single empty paragraph
  * (BlockNote's empty-document normal form). */
-export function markdownToBlocks(markdown: string): Promise<DocBlock[]> {
+export function markdownToBlocks(markdown: string, options: MarkdownOptions = {}): Promise<DocBlock[]> {
   return serialized(async () => {
-    const blocks = await getServerEditor().tryParseMarkdownToBlocks(markdown);
-    return blocks as unknown as DocBlock[];
+    const blocks = restoreVideos((await getServerEditor().tryParseMarkdownToBlocks(markdown)) as unknown as DocBlock[]);
+    return options.inlineRefs ? linksToInlineRefs(blocks) : blocks;
   });
+}
+
+// An upload's filename sits in the raw route's `key`, not its path.
+function urlFileName(url: string): string {
+  try {
+    const parsed = new URL(url, "http://localhost");
+    return parsed.searchParams.get("key") ?? parsed.pathname;
+  } catch {
+    return "";
+  }
+}
+
+function isVideoImage(block: DocBlock): boolean {
+  if (block.type !== "image") return false;
+  const url = String(block.props?.url ?? "");
+  if (parseVideoEmbed(url)) return true;
+  const names = [urlFileName(url), String(block.props?.name ?? "")];
+  return names.some((fileName) => categorize({ fileName }) === "video");
+}
+
+// Markdown has no video syntax, so a video arrives as an image.
+function restoreVideos(blocks: DocBlock[]): DocBlock[] {
+  return blocks.map((block) => ({
+    ...block,
+    type: isVideoImage(block) ? "video" : block.type,
+    children: restoreVideos(block.children ?? []),
+  }));
 }
 
 /** Write blocks into a Y.XmlFragment. REPLACE semantics: server-util diffs the

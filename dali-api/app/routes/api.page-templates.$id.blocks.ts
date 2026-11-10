@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.page-templates.$id.blocks";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors } from "~/lib/cors";
 import { getPageAccess } from "~/lib/pageAccess.server";

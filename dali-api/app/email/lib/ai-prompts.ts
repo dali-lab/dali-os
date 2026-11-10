@@ -23,7 +23,7 @@ export function writingSystemPrompt(
   if (surface === "post") {
     switch (task) {
       case "draft":
-        return `You write for The Scoop, the blog of DALI, a student design and development lab at Dartmouth. Write what the user asks as part of their post, in a clear, warm, readable voice. If the post so far is given, continue from it without repeating it or its title. ${MARKDOWN}`;
+        return `You write for Everything DALI, the stories page of DALI, a student design and development lab at Dartmouth. Write what the user asks as part of their post, in a clear, warm, readable voice. If the post so far is given, continue from it without repeating it or its title. ${MARKDOWN}`;
       case "rephrase":
         return `Rewrite the user's blog post text following their instruction if one is given, otherwise make it clearer and more engaging. Keep the meaning, facts, names and language. ${MARKDOWN}`;
       case "proofread":

@@ -3,7 +3,8 @@ import { Link, useFetcher } from "react-router";
 import { EyeOff, MessageCircle } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Avatar } from "~/components/ui/Avatar";
-import { ReactionPicker } from "~/components/ReactionBar";
+import { ReactionEmoji, ReactionPicker } from "~/components/ReactionBar";
+import { hasRoomForReaction, toggleReaction } from "~/lib/reactions";
 import type { GalleryTileData } from "~/community/lib/gallery.server";
 import {
   GALLERY_EMOJI,
@@ -11,7 +12,6 @@ import {
   galleryColumnCount,
   galleryFeedHref,
   layoutMasonry,
-  toggleReaction,
 } from "~/community/lib/gallery";
 import { GalleryPostMenu } from "./GalleryPostMenu";
 
@@ -101,8 +101,9 @@ function GalleryTile({
           <div className="flex items-center gap-1 rounded-full bg-os-card/95 p-0.5 shadow-sm">
             <ReactionPicker
               palette={GALLERY_EMOJI}
-              onReact={(emoji) => {
-                setReactions((rs) => toggleReaction(rs, emoji));
+              onReact={(emoji, imageUrl) => {
+                if (!hasRoomForReaction(reactions.map((r) => r.emoji), emoji)) return;
+                setReactions((rs) => toggleReaction(rs, emoji, imageUrl));
                 fetcher.submit(
                   { intent: "react", postId: post.id, emoji },
                   { method: "post", action: href },
@@ -144,8 +145,13 @@ function GalleryTile({
             </Link>
           )}
           {top && (
-            <span className={cn("shrink-0 tabular-nums", top.mine && "text-os-accent")}>
-              {top.emoji} {top.count}
+            <span
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1 tabular-nums",
+                top.mine && "text-os-accent",
+              )}
+            >
+              <ReactionEmoji emoji={top.emoji} imageUrl={top.imageUrl} /> {top.count}
             </span>
           )}
           {post.commentCount > 0 && (

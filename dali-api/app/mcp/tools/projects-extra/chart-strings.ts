@@ -14,7 +14,7 @@
 // — hence the default, and hence `source` on every effective answer, because a
 // caller that can't tell inherited from explicit will eventually confuse them.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isAdmin } from "~/lib/roles";
 import { DALI_PROJECTS_GL, parseChartString, type ChartStringType } from "~/lib/chart-string";
 import {

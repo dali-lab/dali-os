@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { Link, useNavigate } from "react-router";
 import { Eye, Plus } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
@@ -19,7 +20,8 @@ import {
 import type { BannerDTO, BannerStats } from "~/core/lib/banners.server";
 
 type Row = BannerDTO & { stats: BannerStats };
-type Filter = "all" | BannerStatus;
+const FILTERS = ["all", "draft", "scheduled", "live", "ended"] as const satisfies readonly ("all" | BannerStatus)[];
+type Filter = (typeof FILTERS)[number];
 
 const KIND_TEXT: Record<BannerDTO["kind"], string> = { Image: "Image", Poster: "Poster", Video: "Video", Text: "Text" };
 const DAY: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
@@ -38,7 +40,7 @@ export function BannersList({
 }) {
   const os = useOsChrome();
   const navigate = useNavigate();
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useSearchParamChoice<Filter>("status", FILTERS, "all");
   const [preview, setPreview] = useState<Row | null>(null);
   const now = useMemo(() => new Date(data.now), [data.now]);
   const groupName = (id: string) => data.groups.find((g) => g.id === id)?.name ?? "A group";

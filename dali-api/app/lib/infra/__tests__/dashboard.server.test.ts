@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 import { buildProjectFleet, buildUnlinkedFleet } from "../dashboard.server";
 import type { InfraProjectInfo } from "../project-infra.server";

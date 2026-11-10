@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";

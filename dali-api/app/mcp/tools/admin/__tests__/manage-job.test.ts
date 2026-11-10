@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     scheduledJob: { update: vi.fn(), findMany: vi.fn() },
   },
@@ -18,7 +18,7 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { jobByName, JOBS, resolveJobSettings } from "~/jobs/registry";
 import { runJob } from "~/jobs/runner.server";

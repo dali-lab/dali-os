@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.move-destinations";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";

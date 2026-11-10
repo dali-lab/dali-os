@@ -32,7 +32,7 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     contexts: ["email"],
   },
   location: { description: "Interview or event location.", contexts: ["email"] },
-  meetingUrl: { description: "Zoom join URL for online interviews.", contexts: ["email"] },
+  meetingUrl: { description: "Google Meet link for online interviews. Empty for in-person ones; {{location}} already includes it.", contexts: ["email"] },
   eventTitle: { description: "The application event's title.", contexts: ["email"] },
   originalCloseDate: {
     description: "The cycle's original close date (pre-extension), formatted in Eastern Time.",
@@ -52,6 +52,28 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
   },
   applyUrl: {
     description: "Link to the cycle's apply page.",
+    contexts: ["email"],
+  },
+  // Not {{term}}: that is the cycle's own term on forms, and a hire can start
+  // in a later term than the one the hiring runs in.
+  startTerm: {
+    description: "The term the hire starts in, e.g. 27W: the applicant's pick, or the cycle's term.",
+    contexts: ["email"],
+  },
+  respondBy: {
+    description:
+      "The cycle's respond-by date for this decision (offer or waitlist), e.g. Monday, June 8, 2026. Set on the cycle's Setup tab.",
+    contexts: ["email"],
+  },
+
+  // ── Form receipts ───────────────────────────────────────────────────────
+  formName: { description: "The name of the form that was submitted.", contexts: ["email"] },
+  submittedAt: {
+    description: "When the response was submitted, written out in Eastern Time.",
+    contexts: ["email"],
+  },
+  answers: {
+    description: "The person's answers, one \"Question: answer\" line each. Left out of the copy sent to people who aren't signed in.",
     contexts: ["email"],
   },
 

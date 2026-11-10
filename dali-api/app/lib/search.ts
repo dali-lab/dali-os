@@ -4,6 +4,7 @@
 // queries live in search.server.ts.
 
 import type { FileCategory } from "~/lib/file-type";
+import { matchesAllWords } from "~/lib/person-search";
 
 export type SearchResultType =
   | "person"
@@ -23,6 +24,26 @@ export type SearchResultType =
   | "cycle"
   | "guide"
   | "helpArticle";
+
+/** Types a search can return. `challenge` has a URL but no search source. */
+export const SEARCH_CATEGORIES: SearchResultType[] = [
+  "person",
+  "group",
+  "project",
+  "task",
+  "education",
+  "partner",
+  "partnerContact",
+  "document",
+  "application",
+  "form",
+  "rubric",
+  "confidentialityAgreement",
+  "partnerApplication",
+  "cycle",
+  "guide",
+  "helpArticle",
+];
 
 export interface SearchResult {
   type: SearchResultType;
@@ -125,7 +146,7 @@ export const buildUrl: Record<Exclude<SearchResultType, "task">, (id: string) =>
 };
 
 // Lower is better; null means no match. exact(0) > prefix(1) > word-start(2) >
-// substring(3). Whitespace-trimmed, case-insensitive.
+// substring(3) > every word somewhere(4). Whitespace-trimmed, case-insensitive.
 export function matchScore(text: string, query: string): number | null {
   const t = text.trim().toLowerCase();
   const q = query.trim().toLowerCase();
@@ -134,6 +155,7 @@ export function matchScore(text: string, query: string): number | null {
   if (t.startsWith(q)) return 1;
   if (t.split(/\s+/).some((word) => word.startsWith(q))) return 2;
   if (t.includes(q)) return 3;
+  if (matchesAllWords(t, q)) return 4;
   return null;
 }
 
@@ -154,12 +176,12 @@ export interface Rankable {
 }
 
 // Rank matches, tie-break alphabetically by title, cap to PER_CATEGORY_CAP.
-export function rankResults(entries: Rankable[], query: string): SearchResult[] {
+export function rankResults(entries: Rankable[], query: string, cap = PER_CATEGORY_CAP): SearchResult[] {
   return entries
     .map((e) => ({ e, score: bestScore(e.text, query) }))
     .filter((x): x is { e: Rankable; score: number } => x.score !== null)
     .sort((a, b) => a.score - b.score || a.e.result.title.localeCompare(b.e.result.title))
-    .slice(0, PER_CATEGORY_CAP)
+    .slice(0, cap)
     .map((x) => x.e.result);
 }
 

@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import type { DrivePageAncestry } from "~/lib/drive-page-trail";
 

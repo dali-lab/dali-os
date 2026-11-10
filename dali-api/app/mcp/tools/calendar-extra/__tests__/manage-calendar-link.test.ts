@@ -20,7 +20,7 @@ vi.mock("~/mcp/registry", () => {
   }
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     userCalendarLink: {
       findUnique: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock("~/lib/db", () => ({
 vi.mock("~/calendar/lib/sub-calendar.server", () => ({ setSubCalendarEnabled: vi.fn() }));
 vi.mock("~/calendar/lib/external-cache.server", () => ({ markCalendarChanged: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import {
   runManageCalendarLink,

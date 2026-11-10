@@ -5,7 +5,7 @@ import { matchesPage } from "~/core/lib/banners";
 import type { BannerDTO, BannerEvent } from "~/core/lib/banners.server";
 import { BannerOverlay } from "./BannerContent";
 
-export type BannerScope = "open" | "page" | "all";
+export type BannerScope = "page" | "all";
 
 function record(id: string, event: BannerEvent) {
   void fetch(`/api/banners/${encodeURIComponent(id)}/event`, {
@@ -19,7 +19,8 @@ function record(id: string, event: BannerEvent) {
 
 /**
  * Picks the next banner to open from the viewer's live set: an app-open one
- * when this document first loads, a page one when its page is visited. Each
+ * when this document first loads (never in a page-scoped embed), a page one
+ * when its page is visited. Each
  * shows at most once per document; frequency and snooze across visits are
  * the server's job.
  */
@@ -34,7 +35,7 @@ export function pickBanner(
     live.find((b) => {
       if (shown.has(b.id)) return false;
       if (b.trigger === "AppOpen") return isFirstLoad && scope !== "page";
-      return scope !== "open" && matchesPage(b.triggerPath, pathname);
+      return matchesPage(b.triggerPath, pathname);
     }) ?? null
   );
 }

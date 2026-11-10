@@ -9,7 +9,7 @@
 // right trade-off for a 15-minute-lead ping; task reminders make the
 // opposite choice because their windows are hours wide).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { expandOccurrences } from "~/lib/meeting-occurrences";
 import { APPLICATION_TZ, formatInstantWithZoneLabel, resolveUserTimeZone } from "~/lib/timezone";

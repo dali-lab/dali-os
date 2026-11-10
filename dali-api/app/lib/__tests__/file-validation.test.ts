@@ -118,11 +118,18 @@ describe("isReservedUploadKey", () => {
     "//uploads/resumes/u1/a.pdf",
     "resumes/u1/a.pdf",
     "uploads/resumes/u1/a.pdf",
+    "drive-downloads/x.zip",
+    "uploads/drive-downloads/x.zip",
+    "uploads/../uploads/resumes/x.pdf",
+    "uploads//resumes/x.pdf",
+    "uploads/./resumes/x.pdf",
+    "uploads/avatars/../resumes/x.pdf",
+    "uploads/avatars/../../uploads/payroll-imports/x.csv",
   ])("reserves %s", (key) => {
     expect(isReservedUploadKey(key)).toBe(true);
   });
 
-  it.each(["avatars/me.png", "uploads/avatars/me.png", "resumes-old/a.pdf", "applications/resumes/a.pdf", "uploads/uploads/resumes/a.pdf"])(
+  it.each(["avatars/me.png", "uploads/avatars/me.png", "resumes-old/a.pdf", "applications/resumes/a.pdf", "uploads/uploads/resumes/a.pdf", "uploads/avatars/../me.png", "uploads//avatars/me.png"])(
     "allows %s",
     (key) => {
       expect(isReservedUploadKey(key)).toBe(false);

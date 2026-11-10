@@ -1,0 +1,181 @@
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { Link } from "react-router";
+import { useDesktopVersion } from "~/lib/desktop";
+import { Button } from "~/components/ui/Button";
+import type { DeckPosition } from "~/components/slides/deck/builds";
+import { PresentStage } from "./PresentStage";
+import { PresenterView } from "./PresenterView";
+import { FollowStage } from "./FollowStage";
+import { deckUrl, presentUrl } from "./urls";
+import type { PresentDeck } from "./deck-source";
+import { usePresenterSession } from "./usePresenterSession";
+import { useFollowDeck } from "./useFollowDeck";
+import { positionFor, useDeckRender } from "./useDeckRender";
+import { PollLayer } from "./PollLayer";
+import { PresenterPolls, pollsOnSlide } from "./PresenterPolls";
+import { ReactionOverlay } from "./ReactionOverlay";
+import { JoinCard } from "./JoinCard";
+import { useAutoBuilds } from "./useBuildMotion";
+import { slideHasHtml } from "~/components/slides/deck/html-element";
+import { HtmlPreviewContext } from "~/components/slides/deck/html-preview";
+import { PauseCustomCodeButton } from "./PauseCustomCodeButton";
+import { useJoinHidden } from "./useJoinHidden";
+import { usePolls } from "./usePolls";
+import { useReactions } from "./useReactions";
+
+export interface DriverProps {
+  pageId: string;
+  title: string;
+  viewerId: string;
+  deck: PresentDeck;
+  startSlideId: string | null;
+  view: "present" | "presenter";
+  onLeave: () => void;
+}
+
+/** Runs the presentation: starts it on open, posts every move, and ends it on Esc or End. */
+export function PresentDriver({ pageId, title, viewerId, deck, startSlideId, view, onLeave }: DriverProps) {
+  const { live, ready, start, go, end } = usePresenterSession(pageId);
+  const polls = usePolls(pageId);
+  const reactions = useReactions(pageId, !live.reactionsOff);
+  const { slideIds, stepsOf, autoDelayOf, isAuto, renderSlide } = useDeckRender(deck);
+  const [joinHidden, setJoinHidden] = useJoinHidden(pageId, live.startedAt);
+  const previewCtx = useMemo(() => ({ pageId }), [pageId]);
+  const desktop = useDesktopVersion() != null;
+  const started = useRef(false);
+  const wasActive = useRef(false);
+
+  const first = positionFor(slideIds, stepsOf, startSlideId, 0) ?? { index: 0, step: 0 };
+  const mineLive = live.active && live.presenter?.id === viewerId;
+  const pos = (mineLive && positionFor(slideIds, stepsOf, live.slideId, live.build)) || first;
+
+  useEffect(() => {
+    if (started.current || !ready || slideIds.length === 0) return;
+    started.current = true;
+    if (!mineLive) void start(slideIds[first.index], 0);
+  }, [ready, slideIds.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (live.active) wasActive.current = true;
+    else if (wasActive.current) onLeave();
+  }, [live.active]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const move = useCallback(
+    (to: DeckPosition) => {
+      const id = slideIds[to.index];
+      if (id) void go(id, to.step);
+    },
+    [slideIds, go],
+  );
+  const finish = useCallback(() => void end(), [end]);
+  const ignore = useCallback(() => {}, []);
+
+  useAutoBuilds({ index: pos.index, step: pos.step, enabled: mineLive, autoDelayOf, advance: move });
+
+  const currentId = slideIds[pos.index];
+  const slidePolls = pollsOnSlide(deck.slides.find((x) => x.id === currentId)?.elements);
+  const shareUrl = typeof window === "undefined" ? undefined : `${window.location.origin}${deckUrl(pageId)}`;
+  const hasCustomCode = slideHasHtml(deck.slides);
+  const joinCard = shareUrl && slidePolls.length > 0 && !joinHidden ? <JoinCard url={shareUrl} onHide={() => setJoinHidden(true)} /> : null;
+
+  if (view === "presenter") {
+    return (
+      <HtmlPreviewContext.Provider value={previewCtx}>
+      <PollLayer state={polls.state}>
+        <PresenterView
+          title={title}
+          slideIds={slideIds}
+          notes={deck.notes}
+          index={pos.index}
+          step={pos.step}
+          stepsOf={stepsOf}
+          isAuto={isAuto}
+          onIndexChange={ignore}
+          onPositionChange={move}
+          renderSlide={renderSlide}
+          onEnd={finish}
+          shareUrl={shareUrl}
+          startedAt={live.startedAt}
+          overlay={
+            <>
+              <ReactionOverlay items={reactions} />
+              {joinCard}
+            </>
+          }
+          extras={
+            <PresenterPolls
+              polls={slidePolls}
+              state={polls.state}
+              reactionsOff={live.reactionsOff}
+              joinHidden={joinHidden}
+              onJoinHidden={setJoinHidden}
+              onClose={polls.close}
+              onOpen={polls.open}
+              onReset={polls.reset}
+              onReactionsOff={polls.setReactionsOff}
+            />
+          }
+          actions={
+            <>
+              {hasCustomCode && <PauseCustomCodeButton />}
+              {desktop && (
+                <Link to={presentUrl(pageId, slideIds[pos.index])} className="text-xs text-os-accent underline">
+                  Open slide show
+                </Link>
+              )}
+            </>
+          }
+        />
+      </PollLayer>
+      </HtmlPreviewContext.Provider>
+    );
+  }
+  return (
+    <PollLayer state={polls.state}>
+      <PresentStage
+        slideIds={slideIds}
+        index={pos.index}
+        step={pos.step}
+        stepsOf={stepsOf}
+        isAuto={isAuto}
+        onIndexChange={ignore}
+        onPositionChange={move}
+        renderSlide={renderSlide}
+        transitions={{ slides: deck.slides, themeId: deck.themeId }}
+        onExit={finish}
+        hasCustomCode={hasCustomCode}
+      >
+        <ReactionOverlay items={reactions} />
+        {joinCard}
+      </PresentStage>
+    </PollLayer>
+  );
+}
+
+/** For people who can't drive: the stage follows whoever is presenting. */
+export function PresentFollower({ pageId, deck, onLeave }: { pageId: string; deck: PresentDeck; onLeave: () => void }) {
+  const follow = useFollowDeck(pageId);
+  if (!follow.active || !follow.presenter) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-os-grey" role="status">
+        <p>{follow.ready ? "Nobody is presenting right now." : "Checking for a presentation..."}</p>
+        <Link to={deckUrl(pageId)}>
+          <Button variant="secondary" size="sm">
+            Back to the deck
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+  return (
+    <FollowStage
+      pageId={pageId}
+      deck={deck}
+      presenterName={follow.presenter.name}
+      slideId={follow.slideId}
+      build={follow.build}
+      reactionsOff={follow.reactionsOff}
+      onBrowse={onLeave}
+    />
+  );
+}

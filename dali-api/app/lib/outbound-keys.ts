@@ -23,3 +23,8 @@ import { randomUUID } from "node:crypto";
 export function freshKey(prefix: string, scope: string): string {
   return `${prefix}:${scope}:${randomUUID()}`;
 }
+
+// notify() appends the recipient id, so one key per event is one alert per person.
+export function communityEventNearbyKey(eventId: string): string {
+  return `community.event_nearby:${eventId}`;
+}

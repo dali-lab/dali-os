@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   actionItemMatchesBlock,
   applyEnhancePlan,
+  findSuggestionLines,
   buildEnhanceChangeRows,
   classifyEnhanceMark,
   ENHANCE_MARK_ADDED,
@@ -677,18 +678,15 @@ describe("applyEnhancePlan with nested blocks", () => {
 
 describe("applyEnhancePlan action items section", () => {
   const item = (text: string, cites: number[] = [7]) => ({ text, cites });
+  const para = (text: string, cites: number[] = [7]) => ({ type: "paragraph", text, cites, added: true });
 
-  it("appends an Action items heading and one checklist item per action item at the bottom of the note", () => {
+  it("appends a Tasks heading and one paragraph per action item at the bottom of the note", () => {
     const blocks = [block("a", "paragraph", "Notes"), { ...block("c", "bulletListItem", "nested"), parentId: "a" }];
     const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope"), item("Ben books the room", [9])] };
     expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
       {
         kind: "appendAtEnd",
-        blocks: [
-          { type: "heading", text: "Action items", cites: [], added: true },
-          { type: "checkListItem", text: "Ada sends the scope", cites: [7], added: true },
-          { type: "checkListItem", text: "Ben books the room", cites: [9], added: true },
-        ],
+        blocks: [{ type: "heading", text: "Tasks", cites: [], added: true }, para("Ada sends the scope"), para("Ben books the room", [9])],
       },
     ]);
   });
@@ -716,13 +714,56 @@ describe("applyEnhancePlan action items section", () => {
     ];
     const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope")] };
     expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
-      { kind: "insertAfter", afterId: "x", blocks: [{ type: "checkListItem", text: "Ada sends the scope", cites: [7], added: true }] },
+      { kind: "insertAfter", afterId: "x", blocks: [para("Ada sends the scope")] },
     ]);
   });
 
-  it("skips an action item already in the note as a checklist item", () => {
-    const blocks = [block("a", "checkListItem", "Ada sends the revised scope")];
+  it("appends to the end of the author's own Tasks heading section", () => {
+    const blocks = [
+      block("h1", "heading", "tasks"),
+      block("x", "paragraph", "Existing"),
+      block("h2", "heading", "Notes"),
+      block("n", "paragraph", "Stuff"),
+    ];
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the scope")] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
+      { kind: "insertAfter", afterId: "x", blocks: [para("Ada sends the scope")] },
+    ]);
+  });
+
+  it("skips an action item already in the Tasks section as a paragraph", () => {
+    const blocks = [block("h", "heading", "Tasks"), block("a", "paragraph", "Ada sends the revised scope")];
     const plan: EnhancePlan = { blocks: [], actionItems: [item("ada sends the revised scope.")] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([]);
+  });
+
+  it("skips an action item already in the Tasks section as an old checklist item", () => {
+    const blocks = [block("h", "heading", "Action items"), block("a", "checkListItem", "Ada sends the revised scope")];
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("ada sends the revised scope.")] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([]);
+  });
+
+  it("does not treat a matching paragraph outside the Tasks section as the suggestion", () => {
+    const blocks = [
+      block("h1", "heading", "Notes"),
+      block("a", "paragraph", "Ada sends the revised scope"),
+      block("h2", "heading", "Tasks"),
+    ];
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the revised scope")] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([
+      { kind: "insertAfter", afterId: "h2", blocks: [para("Ada sends the revised scope")] },
+    ]);
+  });
+
+  it("skips an action item that already has a task block with the same label", () => {
+    const blocks = [block("a", "task", "Ada sends the revised scope")];
+    const plan: EnhancePlan = { blocks: [], actionItems: [item("Ada sends the revised scope")] };
+    expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([]);
+  });
+
+  it("doesn't suggest an item that already has a task, even when its block is gone", () => {
+    const blocks = [block("a", "paragraph", "Notes")];
+    const plan: EnhancePlan = { blocks: [], actionItems: [{ ...item("Ada sends the scope"), taskId: "t1" }] };
     expect(applyEnhancePlan(blocks, blocks, plan).ops).toEqual([]);
   });
 
@@ -743,7 +784,10 @@ describe("applyEnhancePlan action items section", () => {
     const { ops } = applyEnhancePlan(blocks, blocks, plan);
     expect(ops).toHaveLength(1);
     expect(ops[0]).toMatchObject({ kind: "appendAtEnd" });
-    expect((ops[0] as { blocks: { text: string }[] }).blocks.map((b) => b.text)).toEqual(["Action items", "Ada sends the scope"]);
+    expect((ops[0] as { blocks: { text: string; type: string }[] }).blocks.map((b) => [b.type, b.text])).toEqual([
+      ["heading", "Tasks"],
+      ["paragraph", "Ada sends the scope"],
+    ]);
   });
 
   it("keeps an untouched template's Action items heading once it is filled", () => {
@@ -753,5 +797,36 @@ describe("applyEnhancePlan action items section", () => {
     expect(result.ops).toContainEqual({ kind: "remove", id: "h1" });
     expect(result.ops).not.toContainEqual({ kind: "remove", id: "h2" });
     expect(result.hiddenHeadings).toBe(1);
+  });
+});
+
+describe("findSuggestionLines", () => {
+  const items = [{ text: "Ada sends the revised scope" }, { text: "Ben books the conference room" }];
+
+  it("finds paragraph and checklist lines under a Tasks or Action items heading", () => {
+    const blocks = [
+      block("h1", "heading", "Tasks"),
+      block("a", "paragraph", "Ada sends the revised scope"),
+      block("h2", "heading", "Action items:"),
+      block("b", "checkListItem", "Ben books the conference room"),
+    ];
+    expect(findSuggestionLines(blocks, items).map((l) => l?.id)).toEqual(["a", "b"]);
+  });
+
+  it("ignores matching lines outside the section and other block types", () => {
+    const blocks = [
+      block("p", "paragraph", "Ada sends the revised scope"),
+      block("h1", "heading", "Tasks"),
+      block("c", "bulletListItem", "Ada sends the revised scope"),
+      block("h2", "heading", "Notes"),
+      block("d", "paragraph", "Ben books the conference room"),
+    ];
+    expect(findSuggestionLines(blocks, items)).toEqual([null, null]);
+  });
+
+  it("gives each block to at most one item", () => {
+    const blocks = [block("h", "heading", "Tasks"), block("a", "paragraph", "Ada sends the revised scope")];
+    const twins = [{ text: "Ada sends the revised scope" }, { text: "Ada sends the revised scope" }];
+    expect(findSuggestionLines(blocks, twins).map((l) => l?.id ?? null)).toEqual(["a", null]);
   });
 });

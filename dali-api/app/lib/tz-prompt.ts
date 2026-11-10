@@ -2,8 +2,8 @@
 // cookie (not a DB column) because dismissal is transient, per-browser nagging
 // suppression rather than durable user state — a genuine relocation on a new
 // device should re-prompt. The DURABLE part (the actual chosen tz) is persisted
-// to User.timeZone by the same action. Mirrors lib/tabless.ts on purpose:
-// self-contained, read server-side in the layout loader so there's no flash.
+// to User.timeZone by the same action. Self-contained, read
+// server-side in the layout loader so there's no flash.
 //
 // The value stored is the IANA zone the user chose to KEEP (i.e. dismissed
 // against). We re-prompt only when the freshly detected browser zone differs

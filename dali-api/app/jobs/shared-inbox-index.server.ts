@@ -19,7 +19,7 @@
 // backfill fills in the earliest gaps before the most recent ones, making
 // steady forward progress across runs instead of thrashing on new mail.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
 import type { JobContext, JobResult } from "~/jobs/registry";
 import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
@@ -30,6 +30,7 @@ import {
   getSharedInboxToken,
   indexMessages,
   isAutoReply,
+  relinkPartnerContacts,
   type IndexableMessage,
 } from "~/email/lib/mail-index.server";
 
@@ -138,6 +139,11 @@ export async function runSharedInboxIndex(
 
   const created = await indexMessages({ accountId: account.id, inboxAddress: address, metas: indexable });
 
+  const relinked =
+    address.toLowerCase() === PARTNERS_FROM_EMAIL
+      ? await relinkPartnerContacts(account.id, address, maxMessagesPerRun)
+      : 0;
+
   const checked = await classifyUncheckedInbound(token, account.id, maxMessagesPerRun - toProcess.length);
 
   const drained = missing.length <= maxMessagesPerRun;
@@ -146,7 +152,7 @@ export async function runSharedInboxIndex(
   }
 
   const progress = drained ? "backfill complete" : `backfill remaining ${missing.length - toProcess.length}`;
-  const note = `indexed ${created} via ${source}; ${progress}${checked ? `; checked ${checked} for auto-replies` : ""}`;
+  const note = `indexed ${created} via ${source}; ${progress}${relinked ? `; linked ${relinked} to partner contacts` : ""}${checked ? `; checked ${checked} for auto-replies` : ""}`;
 
   return { items: created, note };
 }

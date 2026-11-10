@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   PartyPopper,
   CalendarDays,
@@ -346,16 +346,13 @@ export function LaunchWelcome({
   // it once, overriding any browser-localStorage "seen" flag (the tour is now
   // tracked per USER on the server).
   shouldShowTour = false,
-  // Tabless mode: pages render in this window, so there's no `dali:tabNavigated`
-  // from an iframe to advance steps — we watch the router location instead.
-  tabless = false,
 }: {
   firstName: string;
   hasCalendarLink?: boolean;
   shouldShowTour?: boolean;
-  tabless?: boolean;
 }) {
   const routerLocation = useLocation();
+  const navigate = useNavigate();
   // Steps are stable for a given user within a session; the calendar step
   // only offers the "connect Google Calendar" action when they haven't
   // linked one yet.
@@ -466,9 +463,7 @@ export function LaunchWelcome({
     setNextTarget(shouldPulse ? nextButtonRef.current : null);
   }, [phase, step, arrived]);
 
-  // Listen for iframe-reported tab navigation — that's how the workspace
-  // signals "the user is now looking at X". Sidebar clicks open iframe tabs,
-  // so useLocation on the parent shell never fires.
+  // The router location signals "the user is now looking at X".
   const handleUrl = useCallback(
     (url: string) => {
       if (phase !== "card") return;
@@ -487,22 +482,8 @@ export function LaunchWelcome({
   );
 
   useEffect(() => {
-    function onMsg(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return;
-      const d = e.data;
-      if (!d || d.type !== "dali:tabNavigated" || typeof d.url !== "string") return;
-      handleUrl(d.url);
-    }
-    window.addEventListener("message", onMsg);
-    return () => window.removeEventListener("message", onMsg);
-  }, [handleUrl]);
-
-  // Tabless equivalent of the `dali:tabNavigated` bridge above: the page is a
-  // real navigation in this window, so advance the tour off the router location.
-  useEffect(() => {
-    if (!tabless) return;
     handleUrl(routerLocation.pathname);
-  }, [tabless, routerLocation.pathname, handleUrl]);
+  }, [routerLocation.pathname, handleUrl]);
 
   function startTour() {
     try {
@@ -516,10 +497,7 @@ export function LaunchWelcome({
   }
 
   function finishAndGoHome() {
-    window.postMessage(
-      { type: "dali:openTab", url: "/", label: "Home" },
-      window.location.origin,
-    );
+    navigate("/");
     finishTour();
   }
 

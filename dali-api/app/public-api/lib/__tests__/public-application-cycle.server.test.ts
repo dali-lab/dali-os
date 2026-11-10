@@ -5,9 +5,9 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // counts) are covered by app/hiring/lib/__tests__/cycles.test.ts. What's under
 // test here is the narrower public projection on top of it.
 vi.mock("~/hiring/lib/cycles", () => ({ getOpenCycles: vi.fn() }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { getOpenCycles } from "~/hiring/lib/cycles";
 import {
   getPublicApplicationCycles,

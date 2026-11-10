@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.presence.statuses";
 import { requireAuth } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { derivePresenceState, type AvatarStatus } from "~/lib/presence";
 
 const MAX_IDS = 200;

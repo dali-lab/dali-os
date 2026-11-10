@@ -9,6 +9,7 @@ import { formatDateTime } from "./use-meeting-recording";
 import type { UseMeetingRecording } from "./use-meeting-recording";
 import type { Channel } from "./types";
 import { RecordingTranscript } from "./RecordingTranscript";
+import { CALL_AUDIO_OFF_DETAIL, micSilentDetail } from "./capture-warnings";
 
 export const ENHANCE_AGAIN_TIP = "Rebuilds the notes from the current text and the transcript.";
 
@@ -25,6 +26,7 @@ export type RailState =
   | "review"
   | "processing"
   | "failed"
+  | "noSpeech"
   | "ready"
   | "generating"
   | "pendingReview"
@@ -38,10 +40,11 @@ export type RailState =
  *  derived from the document (rec.pendingMarks), not a flag: Step 2,
  *  "Pending is derived from the document". */
 export function deriveRailState(
-  rec: Pick<UseMeetingRecording, "phase" | "insertedAt" | "stalePreview" | "enhanceBusy" | "pendingMarks" | "enhancedAt">,
+  rec: Pick<UseMeetingRecording, "phase" | "insertedAt" | "stalePreview" | "enhanceBusy" | "pendingMarks" | "enhancedAt" | "hasTranscript">,
 ): RailState | null {
   if (rec.phase === "idle") return null;
   if (rec.phase !== "done") return rec.phase;
+  if (!rec.hasTranscript) return "noSpeech";
   if (rec.stalePreview) return "stalePreview";
   if (rec.enhanceBusy) return "generating";
   if (rec.pendingMarks.length > 0) return "pendingReview";
@@ -135,6 +138,21 @@ function lastAudioLabel(lastChunkAt: string | null | undefined): string {
   return `last audio ${Math.floor(minutes / 60)} hr ago`;
 }
 
+function nativeStartStuck(rec: UseMeetingRecording): boolean {
+  return rec.useDesktopApp && rec.captureMode === "desktop" && rec.appUnreachable && rec.drives;
+}
+
+function appHandoffStuck(rec: UseMeetingRecording): boolean {
+  return !rec.useDesktopApp && rec.captureMode === "desktop" && rec.appUnreachable;
+}
+
+function startingStatus(rec: UseMeetingRecording): string {
+  if (nativeStartStuck(rec)) return "Recording didn't start.";
+  if (appHandoffStuck(rec)) return "The DALI OS app didn't respond.";
+  if (rec.captureMode === "desktop" && !rec.useDesktopApp) return "Opening the DALI OS app…";
+  return "Starting…";
+}
+
 /** Exported for the top-bar narrow-canvas live Popover, which shows the same
  *  status line text beside its own meters + Stop. */
 export function statusLineFor(rec: UseMeetingRecording, state: RailState): ReactNode {
@@ -157,12 +175,7 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
   let text: string;
   switch (state) {
     case "starting":
-      text =
-        rec.captureMode === "desktop"
-          ? rec.appUnreachable
-            ? "The DALI OS app didn't respond."
-            : "Opening the DALI OS app…"
-          : "Starting…";
+      text = startingStatus(rec);
       break;
     case "stopping":
       text = rec.stopStuck ? "The DALI OS app hasn't confirmed the stop." : "Stopping…";
@@ -175,6 +188,9 @@ export function statusLineFor(rec: UseMeetingRecording, state: RailState): React
       break;
     case "failed":
       text = rec.error ?? "Recording failed.";
+      break;
+    case "noSpeech":
+      text = "No speech was captured. Discard this recording and record again.";
       break;
     case "ready": {
       const n = rec.speakerKeys.length;
@@ -241,7 +257,17 @@ function FollowerLiveActions({ rec }: { rec: UseMeetingRecording }) {
 function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailState }) {
   switch (state) {
     case "starting":
-      if (rec.captureMode === "desktop" && rec.appUnreachable) {
+      if (nativeStartStuck(rec)) {
+        return (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <IconButton label="Cancel" icon={Trash2} tone="destructive" onClick={rec.cancelStart} />
+            <button type="button" onClick={() => void rec.retryDesktopStart()} className={buttonClasses("primary", "sm")}>
+              Try again
+            </button>
+          </div>
+        );
+      }
+      if (appHandoffStuck(rec)) {
         return (
           <div className="flex flex-wrap items-center gap-1.5">
             <IconButton label="Cancel" icon={Trash2} tone="destructive" onClick={rec.cancelStart} />
@@ -312,6 +338,11 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
       );
 
     case "processing":
+      return rec.canDiscard ? (
+        <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
+      ) : null;
+
+    case "noSpeech":
       return rec.canDiscard ? (
         <IconButton label="Discard recording" icon={Trash2} tone="destructive" onClick={() => void rec.discard()} />
       ) : null;
@@ -416,7 +447,14 @@ function RailActions({ rec, state }: { rec: UseMeetingRecording; state: RailStat
 function RailBody({ rec, state }: { rec: UseMeetingRecording; state: RailState }) {
   switch (state) {
     case "starting":
-      return rec.captureMode === "desktop" && rec.appUnreachable ? (
+      if (nativeStartStuck(rec)) {
+        return (
+          <p className="rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">
+            If it keeps happening, quit and reopen the DALI OS app.
+          </p>
+        );
+      }
+      return appHandoffStuck(rec) ? (
         <p className="rounded-xl bg-os-well px-3 py-3 text-sm text-foreground">
           Update the DALI OS app, or record in this browser.
         </p>
@@ -454,6 +492,12 @@ export function RecordingBody({ rec }: { rec: UseMeetingRecording }) {
   const channelLabel: Record<Channel, string> = { mic: "Microphone", call: "Call audio" };
   return (
     <div className="flex flex-col gap-2 rounded-xl bg-os-well px-3 py-3">
+      {rec.noSound && (
+        <p className="text-sm text-destructive">
+          {rec.micDevice ? micSilentDetail(rec.micDevice) : "No sound detected. Stop and record again."}
+        </p>
+      )}
+      {!rec.noSound && rec.callAudioOff && <p className="text-sm text-muted-foreground">{CALL_AUDIO_OFF_DETAIL}</p>}
       {rec.captureMode === "browser" ? (
         <>
           {rec.channelsActive.length > 0 && (

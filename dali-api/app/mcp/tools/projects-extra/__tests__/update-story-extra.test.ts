@@ -5,7 +5,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     userStory: {
       findUnique: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock("~/lib/roles", async (orig) => {
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { runUpdateStory, UPDATE_STORY_TOOL } from "~/mcp/tools/update-story";
 

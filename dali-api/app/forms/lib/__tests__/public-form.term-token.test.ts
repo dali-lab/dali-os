@@ -1,9 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
+vi.mock("~/forms/lib/submission-notify.server", () => ({
+  notifyFormSubmission: vi.fn().mockResolvedValue(undefined),
+  sendFormReceipt: vi.fn().mockResolvedValue(undefined),
+}));
 
-import { prisma } from "~/lib/db";
-import { loadPublicForm } from "~/forms/lib/public-form";
+import { prisma } from "~/lib/db.server";
+import {
+  loadPublicForm,
+  submitAnonymousForm,
+  submitMemberForm,
+} from "~/forms/lib/public-form";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -51,6 +59,7 @@ function binding(code: string, slot = "intent-to-work") {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mockPrisma.formSubmission.create.mockResolvedValue({ id: "sub-1" });
 });
 
 describe("loadPublicForm term token", () => {
@@ -99,6 +108,130 @@ describe("loadPublicForm term token", () => {
     const form = await loadPublicForm("tok");
 
     expect(form?.questions[0].data.label).toContain("{{term}}");
+  });
+});
+
+describe("submitting a checkbox option written with {{term}}", () => {
+  const CHECKBOX = {
+    key: "q1",
+    type: "checkbox",
+    required: true,
+    data: { label: "When in {{term}}?", options: ["Early {{term}}", "Late {{term}}"] },
+  };
+
+  function checkboxForm(cycleBindings: unknown[]) {
+    return {
+      id: "form-1",
+      name: "Intent to Work",
+      published: true,
+      oneResponsePerMember: false,
+      versions: [{ id: "ver-1", questions: [CHECKBOX], updatedAt: new Date("2026-10-01") }],
+      cycleBindings,
+    };
+  }
+
+  function boundForm() {
+    return checkboxForm([
+      {
+        slot: "level-up",
+        updatedAt: new Date("2026-09-29"),
+        columnMapping: null,
+        staffingCycle: {
+          id: "cycle-1",
+          termId: "term-1",
+          maxPreferencesPerMember: 3,
+          term: { code: "27S" },
+        },
+      },
+    ]);
+  }
+
+  beforeEach(() => {
+    mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null, linkAccess: "Public" });
+    mockPrisma.formSubmission.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction = vi.fn(
+      async (fn: (tx: unknown) => Promise<void>) => fn(prisma),
+    ) as never;
+  });
+
+  it("accepts the term-filled option a member saw on a bound form", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(boundForm());
+
+    const result = await submitMemberForm({
+      token: "tok",
+      versionId: "ver-1",
+      userId: "user-1",
+      answers: { q1: '["Early 27S"]' },
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(mockPrisma.formSubmission.create.mock.calls[0][0].data.answers).toEqual({
+      q1: ["Early 27S"],
+    });
+  });
+
+  it("accepts the term-filled option on an anonymous fill", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(boundForm());
+
+    const result = await submitAnonymousForm({
+      token: "tok",
+      versionId: "ver-1",
+      answers: { q1: '["Late 27S"]' },
+      submitterIp: null,
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("still rejects an option from another term", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(boundForm());
+
+    const result = await submitMemberForm({
+      token: "tok",
+      versionId: "ver-1",
+      userId: "user-1",
+      answers: { q1: '["Early 27W"]' },
+    });
+
+    expect(result).toMatchObject({ status: 400 });
+  });
+
+  it("names the term in the error rather than the token", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(boundForm());
+
+    const result = await submitMemberForm({
+      token: "tok",
+      versionId: "ver-1",
+      userId: "user-1",
+      answers: { q1: "[]" },
+    });
+
+    expect(result).toMatchObject({ error: '"When in 27S?" is required.' });
+  });
+
+  it("leaves an unbound form's literal token as the valid option", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue(checkboxForm([]));
+
+    const result = await submitAnonymousForm({
+      token: "tok",
+      versionId: "ver-1",
+      answers: { q1: '["Early {{term}}"]' },
+      submitterIp: null,
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("loadPublicForm icon", () => {
+  it("serves the form page's emoji to the fill view", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ ...formRow([]), page: { iconEmoji: "📋" } });
+    expect((await loadPublicForm("tok"))?.iconEmoji).toBe("📋");
+  });
+
+  it("serves null when the form has no emoji", async () => {
+    mockPrisma.form.findUnique.mockResolvedValue({ ...formRow([]), page: { iconEmoji: null } });
+    expect((await loadPublicForm("tok"))?.iconEmoji).toBeNull();
   });
 });
 

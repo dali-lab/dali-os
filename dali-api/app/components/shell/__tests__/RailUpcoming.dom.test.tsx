@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
-import { RailUpcoming, UPCOMING_REFRESH_MS, useUpcomingMeetings } from "~/components/shell/RailUpcoming";
+import { RailUpcoming, UPCOMING_REFRESH_MS, UPCOMING_TICK_MS, useUpcomingMeetings } from "~/components/shell/RailUpcoming";
 import type { UpcomingMeeting } from "~/lib/upcoming-meetings.server";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -30,23 +30,53 @@ afterEach(() => {
 
 const NOW = new Date("2026-10-13T16:00:00Z"); // noon Tuesday in New York, the lab zone
 const meetings: UpcomingMeeting[] = [
-  { meetingId: "m1", title: "Dev Mentors Meeting", startsAt: "2026-10-13T18:00:00Z", href: "/documents/n1" },
-  { meetingId: "m2", title: "", startsAt: "2026-10-15T14:00:00Z", href: "/whiteboard/n2" },
+  {
+    meetingId: "m1",
+    title: "Dev Mentors Meeting",
+    startsAt: "2026-10-13T18:00:00Z",
+    endsAt: "2026-10-13T18:30:00Z",
+    href: "/documents/n1",
+  },
+  {
+    meetingId: "m2",
+    title: "",
+    startsAt: "2026-10-15T14:00:00Z",
+    endsAt: "2026-10-15T14:30:00Z",
+    href: "/whiteboard/n2",
+  },
 ];
 
+const fakeClock = () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+  vi.setSystemTime(NOW);
+};
+
 describe("RailUpcoming", () => {
+  const rows = () => Array.from(container.querySelectorAll("button")).map((b) => b.textContent);
+
   it("lists each meeting with its time today or its weekday", async () => {
-    await render(() => createElement(RailUpcoming, { meetings, tabClickProps: () => ({}), now: NOW }));
-    const rows = Array.from(container.querySelectorAll("button")).map((b) => b.textContent);
-    expect(rows).toEqual(["Dev Mentors Meeting2:00 PM", "UntitledThu"]);
+    fakeClock();
+    await render(() => createElement(RailUpcoming, { meetings, tabClickProps: () => ({}) }));
+    expect(rows()).toEqual(["Dev Mentors Meeting2:00 PM", "UntitledThu"]);
     expect(container.querySelector("h2")!.textContent).toBe("Upcoming");
   });
 
   it("opens a meeting's notes as a tab", async () => {
     const tabClickProps = vi.fn(() => ({}));
-    await render(() => createElement(RailUpcoming, { meetings, tabClickProps, now: NOW }));
+    await render(() => createElement(RailUpcoming, { meetings, tabClickProps }));
     expect(tabClickProps).toHaveBeenCalledWith({ url: "/documents/n1", label: "Dev Mentors Meeting" });
     expect(tabClickProps).toHaveBeenCalledWith({ url: "/whiteboard/n2", label: "" });
+  });
+
+  it("flips to Now when a meeting starts, without new data", async () => {
+    fakeClock();
+    vi.setSystemTime(new Date("2026-10-13T17:59:45Z"));
+    await render(() => createElement(RailUpcoming, { meetings, tabClickProps: () => ({}) }));
+    expect(rows()[0]).toBe("Dev Mentors Meeting2:00 PM");
+    await act(async () => {
+      vi.advanceTimersByTime(UPCOMING_TICK_MS);
+    });
+    expect(rows()[0]).toBe("Dev Mentors MeetingNow");
   });
 });
 
@@ -89,8 +119,22 @@ describe("useUpcomingMeetings", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
+  it("drops a meeting when it ends, ahead of the next refresh", async () => {
+    fakeClock();
+    vi.setSystemTime(new Date("2026-10-13T18:29:45Z"));
+    const fetchSpy = respond(meetings);
+    await render(() => createElement(Probe, { enabled: true }));
+    await act(async () => {});
+    expect(seen.map((m) => m.meetingId)).toEqual(["m1", "m2"]);
+    await act(async () => {
+      vi.advanceTimersByTime(UPCOMING_TICK_MS);
+    });
+    expect(seen.map((m) => m.meetingId)).toEqual(["m2"]);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the last list when a refresh fails", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    fakeClock();
     const fetchSpy = respond(meetings);
     await render(() => createElement(Probe, { enabled: true }));
     await act(async () => {});

@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Modal } from "~/components/Modal";
 import { buttonClasses } from "~/components/ui/Button";
-import { useFeatureFlag } from "~/components/FeatureFlags";
 import { isBrowserDesktopCandidate } from "~/lib/desktop-candidate";
 import { readOpenInAppCookie } from "~/lib/open-in-app-pref";
 import {
@@ -15,11 +14,10 @@ import {
 type State = "idle" | "opening" | "fallback";
 
 export function OpenInDesktopRedirect() {
-  const flag = useFeatureFlag("desktop-tabs");
   const [state, setState] = useState<State>("idle");
 
   useEffect(() => {
-    if (!flag || !isBrowserDesktopCandidate()) return;
+    if (!isBrowserDesktopCandidate()) return;
     if (!readOpenInAppCookie() || stayInBrowserThisTab()) return;
     const { pathname, search } = window.location;
     if (isOpenInDesktopExcluded(pathname, search)) return;
@@ -28,7 +26,7 @@ export function OpenInDesktopRedirect() {
       onFallback: () => setState("fallback"),
       onOpened: () => setState("idle"),
     });
-  }, [flag]);
+  }, []);
 
   function stay() {
     setStayInBrowserThisTab();

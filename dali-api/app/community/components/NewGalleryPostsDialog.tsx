@@ -15,8 +15,8 @@ import {
   GALLERY_CAPTION_MAX,
   GALLERY_MAX_PHOTOS,
   GALLERY_THUMB_WIDTH,
-  encodeGalleryImage,
   galleryDisplaySize,
+  scaledGalleryCopy,
   galleryKeyPrefix,
   galleryOriginalKeyPrefix,
   type NewGalleryPost,
@@ -31,17 +31,6 @@ type Row = {
   error?: string;
   upload?: Omit<NewGalleryPost, "caption">;
 };
-
-function scaledCopy(bitmap: ImageBitmap, width: number, height: number, kind: "thumb" | "display") {
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, width, height);
-  return encodeGalleryImage(
-    (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality)),
-    kind,
-  );
-}
 
 // Size, average colour and the two smaller copies, read before upload so the
 // feed can reserve each tile's shape, paint it while it loads, and load the
@@ -58,7 +47,7 @@ async function readImage(file: File) {
 
     const thumb =
       bitmap.width > GALLERY_THUMB_WIDTH
-        ? await scaledCopy(
+        ? await scaledGalleryCopy(
             bitmap,
             GALLERY_THUMB_WIDTH,
             Math.round((bitmap.height * GALLERY_THUMB_WIDTH) / bitmap.width),
@@ -67,7 +56,7 @@ async function readImage(file: File) {
         : null;
     const displaySize = file.type === "image/gif" ? null : galleryDisplaySize(bitmap.width, bitmap.height);
     const display = displaySize
-      ? await scaledCopy(bitmap, displaySize.width, displaySize.height, "display")
+      ? await scaledGalleryCopy(bitmap, displaySize.width, displaySize.height, "display")
       : null;
     return {
       width: bitmap.width,

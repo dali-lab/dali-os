@@ -1,0 +1,10 @@
+[data-slide-morph] [data-element],
+[data-slide-morph] [data-slot] {
+  transition:
+    left var(--morph-ms, 700ms) ease,
+    top var(--morph-ms, 700ms) ease,
+    width var(--morph-ms, 700ms) ease,
+    height var(--morph-ms, 700ms) ease,
+    transform var(--morph-ms, 700ms) ease,
+    opacity var(--morph-ms, 700ms) ease;
+}

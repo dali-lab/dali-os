@@ -14,6 +14,12 @@ import {
 import { EDITOR_PRESETS, hasSigning, resolveFeatures } from "../features";
 import { blocksToPlainText } from "../schema/configs";
 
+describe("task block schema", () => {
+  it("is registered on document surfaces so they never strip a task block", () => {
+    expect(EDITOR_PRESETS.document.tasks).toBe(true);
+  });
+});
+
 const sampleBlocks = [
   { type: "heading", props: { level: 1 }, content: [{ type: "text", text: "Title" }] },
   {
@@ -44,7 +50,7 @@ const sampleBlocks = [
 
 describe("resolveFeatures", () => {
   it("resolves preset names to the legacy preset shapes", () => {
-    expect(resolveFeatures("document")).toEqual({ mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true });
+    expect(resolveFeatures("document")).toEqual({ mentions: true, images: true, files: true, richBlocks: true, pageBreak: true, columns: true, tasks: true });
     expect(resolveFeatures("guide")).toEqual({ mentions: true, images: true, files: true, pageBreak: true, columns: true });
     expect(resolveFeatures("agreement")).toEqual({ images: true, signing: true });
     expect(resolveFeatures("field")).toEqual({});

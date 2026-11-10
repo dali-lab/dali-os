@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { redirect, useLoaderData } from "react-router";
 import type { Route } from "./+types/domain-lead.application.$id";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { recordRouteVisit } from "~/lib/user-pages.server";
 import { requireAuth } from "~/lib/auth";
 import { isDomainLeadForCycle } from "~/lib/roles";
@@ -39,7 +39,7 @@ import { listPriorApplications } from "~/hiring/lib/prior-applications.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { interviewNotesRoomName } from "~/collab/roomName";
 import { PriorApplicationsPanel } from "~/hiring/components/PriorApplicationsPanel";
-import { applicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
+import { domainApplicationBlindLabel, blindUser } from "~/hiring/lib/anonymization.server";
 import { getApplicantEmailEngagement } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEmailPanel } from "~/hiring/components/ApplicantEmailPanel";
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
@@ -137,13 +137,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
   if (confRedirect) return confRedirect;
 
-  // Blind review applies on this page to every viewer alike (domain leads
-  // included) — only a Released decision on every domain the applicant
-  // selected lifts it.
-  const blindLabel = await applicationBlindLabel({
+  const blindLabel = await domainApplicationBlindLabel({
     cycleId: da.application.applicationCycleId,
-    applicationId: da.application.id,
-    anonymizeReview: da.application.applicationCycle.anonymizeReview,
+    domainApplicationId: da.id,
   });
   const blinded = blindLabel != null;
   if (blindLabel) da.application.user = blindUser(da.application.user, blindLabel);

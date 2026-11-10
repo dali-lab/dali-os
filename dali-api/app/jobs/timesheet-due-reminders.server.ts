@@ -4,7 +4,7 @@
 // lastSuccessAt: it rides the digest wall-clock gate for "once at sendHourEt"
 // and notify()'s dedupKey for "once per period".
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { currentTerm } from "~/lib/roles";
 import { shouldRunDigest } from "~/lib/notification-digest.server";

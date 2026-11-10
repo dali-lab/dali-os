@@ -2,7 +2,7 @@ import { CoverPattern, coverGround, isPatternCover } from "~/components/resource
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   ledDomainIds,
   requireResourceHubViewer,

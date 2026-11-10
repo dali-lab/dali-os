@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useFetcher, useLoaderData } from "react-router";
 import { Plus } from "lucide-react";
 import type { Route } from "./+types/mentorship.warnings";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
 import { DateField } from "~/components/ui/DateField";

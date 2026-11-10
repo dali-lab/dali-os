@@ -11,7 +11,7 @@
 // threshold) so managers clear Done/Cancelled off the board immediately;
 // the weekly job keeps the age-gated sweep via `archiveIdleTasks`.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

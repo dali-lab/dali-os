@@ -2,7 +2,7 @@
 
 Native SwiftUI app for DALI OS. It is a single universal target for iPhone and iPad (iOS 18+). It talks to the same `dali-api` backend as the web and desktop apps.
 
-- **iPad: room door display.** The iPad hangs between two rooms and shows both side by side: each as available, starting soon, or in use, with what's on now and today's list. People can walk up and **Book now** for 15 to 90 minutes, or **End early** / **Extend 15 min** a booking, by scanning their DALI wallet pass (ending or extending takes the booker's pass, or Core's). While a DALI event (a SelfCheckIn meeting) is running in a room, that room's panel becomes a check-in station, and while iPad scanning is on from a meeting's page the whole screen is the scanner with a live check-in count.
+- **iPad: room door display.** The iPad hangs between two rooms and shows both side by side: each as available, starting soon, or in use, with what's on now and today's list. People can walk up and **Book now** for 15 minutes to an hour, choose **Custom** (or **Book later** while the room is in use) to drag out any time on any day up to 90 days ahead, or **End early** / **Extend 15 min** a booking, by scanning their DALI wallet pass (ending or extending takes the booker's pass, or Core's). While a DALI event (a SelfCheckIn meeting) is running in a room, that room's panel becomes a check-in station, and while iPad scanning is on from a meeting's page the whole screen is the scanner with a live check-in count.
 - **iPhone: member app.** This is a placeholder for now.
 
 ## Develop

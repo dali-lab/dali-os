@@ -23,9 +23,9 @@ const notebook: NotebookView = {
   projectId: null,
   nextNotes: [],
   tabs: [
-    { id: "nb1", label: "Oct 6", meeting: "Weekly sync", isNote: true, week: null },
-    { id: "p2", label: "Oct 13", meeting: "Weekly sync", isNote: true, week: null },
-    { id: "p3", label: "Agenda", meeting: null, isNote: false, week: null },
+    { id: "nb1", label: "Oct 6", meeting: "Weekly sync", isNote: true, week: null, date: null },
+    { id: "p2", label: "Oct 13", meeting: "Weekly sync", isNote: true, week: null, date: null },
+    { id: "p3", label: "Agenda", meeting: null, isNote: false, week: null, date: null },
   ],
 };
 
@@ -104,6 +104,11 @@ function key(el: Element, k: string) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  });
   posts = [];
   calendarPosts = [];
   vi.stubGlobal(
@@ -257,6 +262,77 @@ describe("NotebookRail manage authority", () => {
   });
 });
 
+describe("NotebookRail note date", () => {
+  const button = (label: string) =>
+    [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent?.trim() === label)!;
+  const dialog = () => document.body.querySelector('[role="dialog"]');
+  const dated = () => rail({
+    tabs: notebook.tabs.map((tab) => tab.id === "p3" ? { ...tab, date: "2026-10-14" } : tab),
+  });
+
+  it("sets an undated note using the calendar and closes the modal after saving", async () => {
+    await rail();
+    await menuItem("Options for Agenda", "Set date");
+    expect(dialog()?.textContent).toContain("When did this note happen?");
+    expect(nav().contains(dialog())).toBe(false);
+    expect(button("Save").disabled).toBe(true);
+    expect(button("Clear date").disabled).toBe(true);
+    await click(byLabel("Note date")!);
+    const day = document.body.querySelector<HTMLButtonElement>("button[data-day]")!;
+    const date = day.dataset.day;
+    await click(day);
+    await click(button("Save"));
+    expect(posts).toEqual([{ url: "/api/pages/p3/date", body: { date } }]);
+    expect(dialog()).toBeNull();
+  });
+
+  it("prefills an existing date and lets the manager change it", async () => {
+    await dated();
+    await menuItem("Options for Agenda", "Change date");
+    expect(byLabel("Note date")?.textContent).toContain("Oct 14, 2026");
+    await click(byLabel("Note date")!);
+    await click(document.body.querySelector('[data-day="2026-10-20"]')!);
+    await click(button("Save"));
+    expect(posts).toEqual([{ url: "/api/pages/p3/date", body: { date: "2026-10-20" } }]);
+    expect(dialog()).toBeNull();
+  });
+
+  it("clears an existing date", async () => {
+    await dated();
+    await menuItem("Options for Agenda", "Change date");
+    await click(button("Clear date"));
+    expect(posts).toEqual([{ url: "/api/pages/p3/date", body: { date: null } }]);
+    expect(dialog()).toBeNull();
+  });
+
+  it("cancels without saving", async () => {
+    await rail();
+    await menuItem("Options for Agenda", "Set date");
+    await click(button("Cancel"));
+    expect(posts).toEqual([]);
+    expect(dialog()).toBeNull();
+  });
+
+  it("keeps the modal usable when the server refuses the change", async () => {
+    await dated();
+    await menuItem("Options for Agenda", "Change date");
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(JSON.stringify({ error: "You can't manage this notebook" }), { status: 403 }));
+    await click(button("Save"));
+    expect(dialog()).toBeTruthy();
+    expect(button("Save").disabled).toBe(false);
+    expect(document.body.textContent).toContain("You can't manage this notebook");
+  });
+
+  it("does not offer a date override on a meeting-linked note", async () => {
+    await rail();
+    await click(byLabel("Options for Oct 6")!);
+    const items = [...document.body.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent);
+    expect(items).toContain("Detach from meeting");
+    expect(items).not.toContain("Set date…");
+    expect(items).not.toContain("Change date…");
+  });
+});
+
 describe("NotebookRail collapse", () => {
   const strip = () => container.querySelector('[data-testid="notebook-rail-strip"]');
 
@@ -405,10 +481,10 @@ describe("NotebookRail tab list", () => {
 describe("NotebookRail week dividers", () => {
   const dividers = () => [...nav().querySelectorAll("[data-testid='notebook-rail-week']")];
   const weeks = [
-    { id: "nb1", label: "Oct 23", meeting: null, isNote: true, week: "Week 7" },
-    { id: "p2", label: "Oct 20", meeting: null, isNote: true, week: "Week 7" },
-    { id: "p3", label: "Oct 16", meeting: null, isNote: true, week: "Week 6" },
-    { id: "p4", label: "Oct 6", meeting: null, isNote: true, week: "Week 5" },
+    { id: "nb1", label: "Oct 23", meeting: null, isNote: true, week: "Week 7", date: null },
+    { id: "p2", label: "Oct 20", meeting: null, isNote: true, week: "Week 7", date: null },
+    { id: "p3", label: "Oct 16", meeting: null, isNote: true, week: "Week 6", date: null },
+    { id: "p4", label: "Oct 6", meeting: null, isNote: true, week: "Week 5", date: null },
   ];
 
   it("labels each run of tabs from the same week once, in the order the tabs come", async () => {
@@ -424,7 +500,7 @@ describe("NotebookRail week dividers", () => {
 
   it("draws no divider for undated tabs", async () => {
     await rail({
-      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null }, ...weeks.slice(0, 1)],
+      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null, date: null }, ...weeks.slice(0, 1)],
     });
     expect(dividers().map((d) => d.textContent)).toEqual(["Week 7"]);
   });
@@ -443,7 +519,7 @@ describe("NotebookRail week dividers", () => {
 
   it("spaces the first divider when undated tabs sit above it", async () => {
     await rail({
-      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null }, ...weeks],
+      tabs: [{ id: "a", label: "Agenda", meeting: null, isNote: false, week: null, date: null }, ...weeks],
     });
     expect(spaced()).toEqual([true, true, true]);
   });

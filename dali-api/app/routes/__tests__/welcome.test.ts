@@ -6,7 +6,7 @@ const mockCaptureDartmouthIdentity = vi.hoisted(() => vi.fn());
 const mockUserUpdate = vi.hoisted(() => vi.fn());
 const mockPasskeyCount = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     user: { update: mockUserUpdate },
     passkey: { count: mockPasskeyCount },
@@ -104,8 +104,20 @@ describe("GET /welcome loader", () => {
       step: "setup",
       email: "ada@dartmouth.edu",
       door: "dartmouth",
+      next: null,
       needsName: true,
-      authV2: false,
+    });
+  });
+
+  it("setup step passes a safe next through and drops an unsafe one", async () => {
+    mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
+    const at = (url: string) => loader({ request: makeRequest(url) } as any);
+    expect(await at("http://localhost/welcome?door=partner&next=%2Fpartner%2Fapply")).toMatchObject({
+      step: "setup",
+      next: "/partner/apply",
+    });
+    expect(await at("http://localhost/welcome?door=partner&next=%2F%2Fevil.com")).toMatchObject({
+      next: null,
     });
   });
 
@@ -121,14 +133,14 @@ describe("GET /welcome loader", () => {
     const result = await loader({
       request: makeRequest("http://localhost/welcome?door=partner&step=passkey"),
     } as any);
-    expect(result).toEqual({ step: "passkey", destination: "/partner", authV2: false });
+    expect(result).toEqual({ step: "passkey", destination: "/partner" });
   });
 
   it("step=passkey (post-login, next) offers it with the safe next as destination", async () => {
     const result = await loader({
       request: makeRequest("http://localhost/welcome?step=passkey&next=%2Fcalendar"),
     } as any);
-    expect(result).toEqual({ step: "passkey", destination: "/calendar", authV2: false });
+    expect(result).toEqual({ step: "passkey", destination: "/calendar" });
   });
 
   it("step=passkey skips (redirects) when the user already has a passkey", async () => {
@@ -223,6 +235,24 @@ describe("POST /welcome action — door destinations", () => {
       request: makePostRequest({ door: "partner", intent: "skip", fullName: "Ada Lovelace" }),
     } as any)) as Response;
     expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/welcome?door=partner&step=passkey");
+  });
+
+  it("partner door setup keeps next so they land where they were headed", async () => {
+    mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
+    const res = (await action({
+      request: makePostRequest({ door: "partner", fullName: "Ada Lovelace", next: "/partner/apply" }),
+    } as any)) as Response;
+    expect(res.headers.get("Location")).toBe(
+      "/welcome?door=partner&step=passkey&next=%2Fpartner%2Fapply",
+    );
+  });
+
+  it("drops an unsafe next on setup", async () => {
+    mockGetBetterAuthUser.mockResolvedValue(PARTNER_USER);
+    const res = (await action({
+      request: makePostRequest({ door: "partner", fullName: "Ada Lovelace", next: "//evil.com" }),
+    } as any)) as Response;
     expect(res.headers.get("Location")).toBe("/welcome?door=partner&step=passkey");
   });
 });

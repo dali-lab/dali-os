@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import type { CycleApplicants } from "~/generated/prisma/client";
 import { currentTerm } from "~/lib/roles";
 import type { TermOption } from "~/lib/terms.shared";

@@ -11,7 +11,7 @@ struct RoomPanel: View {
     /// front camera.
     @Binding var scanningRoomID: String?
 
-    @State private var booking = false
+    @State private var booking: BookingFlow?
     @State private var change: PendingChange?
 
     private var state: RoomState { RoomState(items: schedule.items, now: now) }
@@ -54,8 +54,13 @@ struct RoomPanel: View {
         .shadow(color: Brand.shadow, radius: 6, y: 2)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(schedule.room.name) availability")
-        .sheet(isPresented: $booking) {
-            BookingSheet(room: schedule.room, state: state)
+        .sheet(item: $booking) { flow in
+            switch flow {
+            case .quick:
+                BookingSheet(room: schedule.room, state: state, onCustom: { booking = .custom(fromQuick: true) })
+            case .custom(let fromQuick):
+                CustomBookingSheet(room: schedule.room, onBack: fromQuick ? { booking = .quick } : nil)
+            }
         }
         .sheet(item: $change) { pending in
             BookingChangeSheet(room: schedule.room, booking: pending.booking, change: pending.change)
@@ -68,12 +73,23 @@ struct RoomPanel: View {
         change = state.current.map { PendingChange(change: kind, booking: $0) }
     }
 
-    @ViewBuilder
+    private func openBooking(_ flow: BookingFlow) {
+        scanningRoomID = nil
+        booking = flow
+    }
+
+    /// While the room can't be booked from now, later times still can.
+    private var bookLater: some View {
+        Button { openBooking(.custom(fromQuick: false)) } label: {
+            Label("Book later", systemImage: "calendar")
+        }
+    }
+
     private func footer(_ state: RoomState) -> some View {
-        if state.current == nil || state.canChange {
-            VStack(spacing: 8) {
-                if state.current != nil {
-                    HStack(spacing: 12) {
+        VStack(spacing: 8) {
+            if state.current != nil {
+                HStack(spacing: 12) {
+                    if state.canChange {
                         Button { openChange(.extend, state) } label: {
                             Label("Extend \(BookingChange.extendMinutes) min", systemImage: "clock")
                         }
@@ -84,29 +100,27 @@ struct RoomPanel: View {
                         }
                         .buttonStyle(BrandButtonStyle(tint: .coral, size: .lg, fullWidth: true))
                     }
-                } else {
-                    let canBook = !state.bookableDurations.isEmpty
-                    Button {
-                        scanningRoomID = nil
-                        booking = true
-                    } label: {
-                        Label(canBook ? "Book now" : "Next meeting starting soon", systemImage: "plus")
-                    }
-                    .buttonStyle(BrandButtonStyle(size: .lg, fullWidth: true))
-                    .disabled(!canBook)
-                    if canBook {
-                        Label("Confirm with your DALI pass", systemImage: "qrcode.viewfinder")
-                            .font(Brand.body(14))
-                            .foregroundStyle(Brand.textMuted)
-                    }
+                    bookLater
+                        .buttonStyle(BrandButtonStyle(variant: .outline, tint: .navy, size: .lg, fullWidth: true))
                 }
+            } else if state.bookableDurations.isEmpty {
+                bookLater
+                    .buttonStyle(BrandButtonStyle(size: .lg, fullWidth: true))
+            } else {
+                Button { openBooking(.quick) } label: {
+                    Label("Book now", systemImage: "plus")
+                }
+                .buttonStyle(BrandButtonStyle(size: .lg, fullWidth: true))
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity)
-            .background(Brand.surfaceMuted)
-            .overlay(alignment: .top) { Rectangle().fill(Brand.borderSubtle).frame(height: 1) }
+            Label("Confirm with your DALI pass", systemImage: "qrcode.viewfinder")
+                .font(Brand.body(14))
+                .foregroundStyle(Brand.textMuted)
         }
+        .padding(.horizontal, 28)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
+        .background(Brand.surfaceMuted)
+        .overlay(alignment: .top) { Rectangle().fill(Brand.borderSubtle).frame(height: 1) }
     }
 }
 

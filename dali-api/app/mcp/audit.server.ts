@@ -57,11 +57,14 @@ export function mcpArgKeys(args: Record<string, unknown> | undefined): string[] 
   return args ? Object.keys(args).sort() : [];
 }
 
+export type McpToolOrigin = "mcp" | "ask";
+
 export type McpToolCallAuth = {
   user: { id: string };
+  origin: McpToolOrigin;
   clientId: string;
   clientName: string;
-  grantId: string;
+  grantId: string | null;
 };
 
 export type McpToolCallInput = {
@@ -86,6 +89,7 @@ export function buildMcpToolCallEvent({
     targetId: mcpTargetId(args),
     metadata: {
       toolName,
+      origin: auth.origin,
       clientId: auth.clientId,
       clientName: auth.clientName,
       grantId: auth.grantId,

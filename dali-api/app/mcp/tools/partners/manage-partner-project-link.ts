@@ -6,7 +6,7 @@
 //   end    — set endedAt = now on a ProjectPartner (projectPartnerId required).
 //   unlink — permanently delete a ProjectPartner (projectPartnerId required).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   linkProjectPartner,

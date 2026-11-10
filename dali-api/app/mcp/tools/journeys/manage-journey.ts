@@ -30,7 +30,7 @@ export const MANAGE_JOURNEY: McpTool = {
   def: {
     name: "manage_journey",
     description:
-      "Create and manage onboarding journeys. Actions: create (domain code, optional title/description; starts as a private draft you own, with one Welcome module), update (title, description, recommended), publish (makes the current draft live for learners; fails while publishIssues remain), discard (drops unpublished changes; a never-published journey is deleted, owners only), delete (owners only; removes learner progress too). Core can create in any domain, domain leads in the domains they lead. Edit modules with manage_journey_module, pages with manage_journey_page, slides with manage_journey_slides, labs with set_journey_lab, quizzes with set_journey_quiz, and access with manage_journey_access.",
+      "Create and manage onboarding journeys. Actions: create (domain code, optional title/description; starts as a private draft you own, with one Welcome module), update (title, description, recommended), publish (makes the current draft live for learners; fails while publishIssues remain), discard (drops unpublished changes; a never-published journey is deleted, owners only), delete (owners only; removes learner progress too). Core can create in any domain, domain leads in the domains they lead. Edit modules with manage_journey_module, pages with manage_journey_page, slides with manage_journey_slides, labs and quizzes with set_journey_activity, and access with manage_journey_access.",
     inputSchema: inputSchema({
       type: "object" as const,
       properties: {

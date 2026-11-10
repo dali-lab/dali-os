@@ -5,7 +5,7 @@
 import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, McpForbiddenError, requireForAction } from "../../errors";
 import { isCore } from "~/lib/roles";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import {
   captureProjectTemplate,
   instantiateProjectTemplate,

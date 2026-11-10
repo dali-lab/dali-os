@@ -16,7 +16,7 @@ vi.mock("~/lib/betterauth-compat.server", () => ({
 vi.mock("~/lib/betterauth.server", () => ({
   auth: { api: { stopImpersonating: mockStopImpersonating } },
 }));
-vi.mock("~/lib/db", () => ({ prisma: {} }));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isDomainLead: vi.fn(),

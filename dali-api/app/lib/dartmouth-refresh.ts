@@ -10,7 +10,7 @@
 // graduatedAt + classYear math.
 
 import type { Prisma } from "~/generated/prisma/client";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { peopleByNetId } from "~/lib/dartmouth-people";
 
 const DAY_MS = 24 * 60 * 60 * 1000;

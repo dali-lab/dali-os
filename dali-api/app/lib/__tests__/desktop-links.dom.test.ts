@@ -2,17 +2,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { installDesktopLinkHandling } from "~/lib/desktop-links";
 
-// The shim reads the shell's injected global off window.top and posts tab
-// requests to window.parent, so both stand in for "we are a workspace tab
-// inside the desktop shell".
-function pretendDesktopTab() {
-  const postMessage = vi.fn();
+const open = vi.fn();
+let tabsOn = true;
+vi.mock("~/lib/desktop-tabs-store", () => ({
+  tabActions: { open: (...args: unknown[]) => open(...args) },
+  tabsActive: () => tabsOn,
+}));
+
+// The shim reads the shell's injected global off window.top, so it stands in
+// for "we are inside the desktop shell".
+function pretendDesktop() {
   Object.defineProperty(window, "top", {
     configurable: true,
     value: { __DALI_DESKTOP: { version: "0.1.6" }, location: { href: "" } },
   });
-  Object.defineProperty(window, "parent", { configurable: true, value: { postMessage } });
-  return postMessage;
 }
 
 function clickLink(attrs: Record<string, string>, text = "a link") {
@@ -27,6 +30,8 @@ function clickLink(attrs: Record<string, string>, text = "a link") {
 describe("installDesktopLinkHandling", () => {
   beforeEach(() => {
     document.body.innerHTML = "";
+    open.mockClear();
+    tabsOn = true;
     delete (window as Window & { __daliDesktopLinks?: boolean }).__daliDesktopLinks;
   });
 
@@ -38,28 +43,22 @@ describe("installDesktopLinkHandling", () => {
     expect((window as Window & { __daliDesktopLinks?: boolean }).__daliDesktopLinks).toBeUndefined();
   });
 
-  it("turns a target=_blank in-app link into a workspace tab", () => {
-    const postMessage = pretendDesktopTab();
+  it("turns a target=_blank in-app link into a desktop tab", () => {
+    pretendDesktop();
     installDesktopLinkHandling();
     clickLink({ href: "/projects/deserto", target: "_blank" }, "Deserto");
-    expect(postMessage).toHaveBeenCalledWith(
-      { type: "dali:openTab", url: `${window.location.origin}/projects/deserto`, label: "Deserto" },
-      window.location.origin,
-    );
+    expect(open).toHaveBeenCalledWith({ url: "/projects/deserto", label: "Deserto" });
   });
 
   it("routes window.open the same way — the doc editor's link toolbar uses it", () => {
-    const postMessage = pretendDesktopTab();
+    pretendDesktop();
     installDesktopLinkHandling();
     expect(window.open("/documents/abc", "_blank")).toBeNull();
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "dali:openTab", url: `${window.location.origin}/documents/abc` }),
-      window.location.origin,
-    );
+    expect(open).toHaveBeenCalledWith({ url: "/documents/abc", label: "/documents/abc" });
   });
 
   it("hands an off-site link to the shell by navigating the top frame", () => {
-    pretendDesktopTab();
+    pretendDesktop();
     installDesktopLinkHandling();
     clickLink({ href: "https://example.com/doc", target: "_blank" });
     // The shell cancels this navigation and opens the URL in the OS browser,
@@ -70,14 +69,14 @@ describe("installDesktopLinkHandling", () => {
   });
 
   it("leaves an ordinary in-app click to the router", () => {
-    const postMessage = pretendDesktopTab();
+    pretendDesktop();
     installDesktopLinkHandling();
     // Swallow the default in the bubble phase (the shim's own listener is on
     // capture, so it has already had its look) — otherwise jsdom warns about
     // the real navigation it can't perform.
     document.addEventListener("click", (e) => e.preventDefault());
     const a = clickLink({ href: "/home" });
-    expect(postMessage).not.toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
     expect((window.top as unknown as { location: { href: string } }).location.href).toBe("");
     expect(a.isConnected).toBe(true);
   });

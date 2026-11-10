@@ -7,9 +7,9 @@ import { isPresenceRoom } from "./roomName";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { notifyCollabDocMentions } from "./mentions.server";
 import { reconcilePageLinks } from "./page-links.server";
-import { attachAgentPresence } from "./agent-presence.server";
+import { attachAgentPresence, republishAgents } from "./agent-presence.server";
 
-const WS_MAX_PAYLOAD_BYTES = 1_048_576; // 1 MB
+const WS_MAX_PAYLOAD_BYTES = 4_194_304; // 4 MB
 const WS_MAX_CONNECTIONS = 100;
 const WS_MAX_CONNECTIONS_PER_USER = 20;
 
@@ -119,6 +119,10 @@ export function startCollabServer() {
       return { user };
     },
 
+    async connected({ documentName }: { documentName: string }) {
+      republishAgents(documentName);
+    },
+
     async onLoadDocument({ document, documentName }: { document: any; documentName: string }) {
       console.log(`[collab:server] onLoadDocument doc=${documentName}`);
       await loadDocument(documentName, document);
@@ -131,8 +135,9 @@ export function startCollabServer() {
       recordAuthor(documentName, userId);
     },
 
-    async onStoreDocument({ documentName, document }: { documentName: string; document: any }) {
+    async onStoreDocument({ documentName, document, context }: { documentName: string; document: any; context?: any }) {
       console.log(`[collab:server] onStoreDocument doc=${documentName}`);
+      recordAuthor(documentName, context?.authorId);
       const stored = await storeDocument(documentName, document);
       if (!stored) return;
       const authors = drainAuthors(documentName);
@@ -162,6 +167,7 @@ export function startCollabServer() {
         else userConnectionCounts.set(userId, prev - 1);
       }
       console.log(`[collab:server] onDisconnect doc=${documentName} (connections: ${connectionCount})`);
+      recordAuthor(documentName, context?.authorId);
       const stored = await storeDocument(documentName, document);
       if (!stored) return;
       const authors = drainAuthors(documentName);

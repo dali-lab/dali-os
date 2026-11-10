@@ -94,6 +94,7 @@ export default [
     route("admin/platform/flags", "admin/routes/admin.feature-flags.tsx"),
     route("admin/onboarding", "admin/routes/admin.activities.tsx"),
     route("admin/onboarding/:id", "admin/routes/admin.activities.$id.tsx"),
+    route("admin/rooms", "rooms/routes/admin.rooms.tsx"),
     ...[
       "system", "payroll-export", "site-users", "security", "outbound-messages", "email-senders",
       "analytics", "ai-usage", "activity", "jobs", "infrastructure", "feature-flags", "activities",
@@ -123,6 +124,7 @@ export default [
     // (app/core/routes/), so there is one implementation per surface and the
     // old URL keeps working; the source loaders redirect flag-on viewers here.
     route("core", "core/routes/core.hub.tsx"),
+    route("core/milestones", "core/routes/core.milestones.tsx"),
     route("core/staffing", "core/routes/core.staffing.tsx"),
     route("core/intent-to-work", "core/routes/core.intent-to-work.tsx"),
     route("core/intent-to-work/:userId", "core/routes/core.intent-to-work.$userId.tsx"),
@@ -134,7 +136,7 @@ export default [
     route("core/access/roles", "core/routes/core.access.roles.tsx"),
     route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
-    route("core/rooms", "rooms/routes/core.rooms.tsx"),
+    route("core/rooms", "admin/routes/admin.legacy-redirect.ts", { id: "legacy-core-rooms" }),
     route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx", [
       index("core/routes/core.communications._index.tsx"),
@@ -152,7 +154,11 @@ export default [
     // application records), Core-only. The external portal at /partner/*
     // (singular) is a separate surface and does not move.
     route("core/partners", "partners/routes/core.partners.tsx"),
+    route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
+    route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
     route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+    route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+    route("core/partners/referrals/:id", "partners/routes/core.partners.referrals.$id.tsx"),
     route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
@@ -202,8 +208,15 @@ export default [
     // with the editor's "/" blocks.
     route("resource-hub", "routes/resource-hub.tsx"),
     route("resource-hub/:pageId", "routes/resource-hub.$pageId.tsx"),
+    route("api/resources/blog-posts", "routes/api.resources.blog-posts.ts"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
+
+    // Partner Bounty — member-facing referral hub. Quiz-gated entry at /refer;
+    // /refer/new is the tier-specific submission form.
+    route("refer", "partners/routes/refer.tsx"),
+    route("refer/new", "partners/routes/refer.new.tsx"),
+    route("refer/done", "partners/routes/refer.done.tsx"),
     route("release-notes", "routes/release-notes._index.tsx"),
     route("release-notes/:id", "routes/release-notes.$id.tsx"),
 
@@ -232,15 +245,21 @@ export default [
     ),
     route("whiteboard/:pageId", "routes/whiteboard.$pageId.tsx"),
     route("slides/:pageId", "routes/slides.$pageId.tsx"),
+    route("slides/:pageId/export.pdf", "routes/slides.$pageId.export-pdf.ts"),
+    route("slides/:pageId/html-preview/:elementId", "routes/slides.$pageId.html-preview.$elementId.ts"),
+    route("slides/:pageId/present", "routes/slides.$pageId.present.tsx"),
+    route("slides/:pageId/presenter", "routes/slides.$pageId.presenter.tsx"),
     route("documents/:pageId", "routes/documents.$pageId.tsx"),
 
     // Members directory (separate from admin/members)
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
-    // Connect: map of where alumni are based (members + alumni).
-    route("connect", "members/routes/connect.tsx"),
-    // Community: Connect lives here in the sidebar, alongside these.
+    // Community: map of where alumni are based (members + alumni).
+    route("community", "members/routes/community.tsx"),
+    route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
+    route("connect/*", "members/routes/connect-redirect.ts"),
+    // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
@@ -251,6 +270,7 @@ export default [
     route("journeys", "journeys/routes/journeys.tsx"),
     route("journeys/access", "journeys/routes/journeys.access.tsx"),
     route("journeys/reviews", "journeys/routes/journeys.reviews.tsx"),
+    route("journeys/reviews/more", "journeys/routes/journeys.reviews.more.ts"),
     route("journeys/:domain", "journeys/routes/journeys.$domain.tsx"),
     route("journeys/:domain/:journeyId", "journeys/routes/journeys.$domain.$journeyId.tsx"),
     route("journeys/:domain/:journeyId/edit", "journeys/routes/journeys.$domain.$journeyId.edit.tsx"),
@@ -305,6 +325,7 @@ export default [
     // deep-link editor/responses surfaces plus the action-only mutation
     // endpoint the Drive and editor POST to.
     route("api/forms", "routes/api.forms.ts"),
+    route("api/rubrics", "routes/api.rubrics.ts"),
     route("api/folder-receivers", "routes/api.folder-receivers.ts"),
     route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
@@ -344,12 +365,11 @@ export default [
 
     // Help pages (same convention as Settings).
     route("help", "routes/help._index.tsx"),
-    route("help/getting-started", "routes/help.getting-started.tsx"),
     route("help/shortcuts", "routes/help.shortcuts.tsx"),
-    route("help/calendar", "routes/help.calendar.tsx"),
-    route("help/staffing", "routes/help.staffing.tsx"),
-    route("help/notifications", "routes/help.notifications.tsx"),
     route("help/mcp", "routes/help.mcp.tsx"),
+    route("help/articles", "routes/help.articles._index.tsx"),
+    route("help/articles/:slug", "routes/help.articles.$slug.tsx"),
+    route("help/:slug", "routes/help.$slug.tsx"),
   ]),
 
   // Applicant portal (lightweight layout). /portal is the non-member home
@@ -527,7 +547,12 @@ export default [
   route("api/groups/:groupId", "admin/routes/api.groups.$groupId.ts"),
   route("api/tour/complete", "routes/api.tour.complete.ts"),
   route("api/timezone/update", "routes/api.timezone.update.ts"),
+  route("api/feedback/posts", "routes/api.feedback.posts.ts"),
+  route("api/custom-emoji", "routes/api.custom-emoji.ts"),
+  route("api/release-notes", "routes/api.release-notes.ts"),
+  route("api/announcements/sent", "routes/api.announcements.sent.ts"),
   route("api/notifications", "routes/api.notifications.ts"),
+  route("api/my-tasks", "routes/api.my-tasks.ts"),
   route("api/notifications/stream", "routes/api.notifications.stream.ts"),
   route("api/presence/statuses", "routes/api.presence.statuses.ts"),
   route("api/presence/hide-activity", "routes/api.presence.hide-activity.ts"),
@@ -563,6 +588,8 @@ export default [
   route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
   route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
 
+  route("api/attendance/feed", "routes/api.attendance.feed.ts"),
+
   // Scheduled meetings
   route("api/scheduled-meetings", "calendar/routes/api.scheduled-meetings.ts"),
   route("api/scheduled-meetings/:id/update", "calendar/routes/api.scheduled-meetings.$id.update.ts"),
@@ -585,6 +612,7 @@ export default [
   route("api/rooms", "rooms/routes/api.rooms.ts"),
   route("api/rooms/:id/schedule", "rooms/routes/api.rooms.$id.schedule.ts"),
   route("api/rooms/:id/bookings", "rooms/routes/api.rooms.$id.bookings.ts"),
+  route("api/room-bookings/:id", "rooms/routes/api.room-bookings.$id.ts"),
   route("api/room-bookings/:id/cancel", "rooms/routes/api.room-bookings.$id.cancel.ts"),
   route("api/room-display/activate", "rooms/routes/api.room-display.activate.ts"),
   route("api/room-display/schedule", "rooms/routes/api.room-display.schedule.ts"),
@@ -663,6 +691,7 @@ export default [
     "api/projects/:id/tasks/archive",
     "projects/routes/api.projects.$id.tasks.archive.ts",
   ),
+  route("api/task-options", "projects/routes/api.task-options.ts"),
   route("api/tasks/:id/move", "projects/routes/api.tasks.$id.move.ts"),
   route("api/tasks/:id/view", "projects/routes/api.tasks.$id.view.ts"),
   route("api/tasks/:id/comments", "projects/routes/api.tasks.$id.comments.ts"),
@@ -695,13 +724,24 @@ export default [
   ),
   // Lab-wide documents (collab Pages scoped to the Lab workspace)
   route("api/lab-documents", "routes/api.lab-documents.ts"),
+  route("api/documents/emojis", "projects/routes/api.documents.emojis.ts"),
   route("api/documents/:id", "projects/routes/api.documents.$id.ts"),
   route("api/documents/:pageId/panel", "routes/api.documents.$pageId.panel.ts"),
+  route("api/slides/:pageId/live", "routes/api.slides.$pageId.live.ts"),
+  route("api/slides/:pageId/live/stream", "routes/api.slides.$pageId.live.stream.ts"),
+  route("api/slide-templates", "routes/api.slide-templates.ts"),
+  route("api/slide-templates/:id", "routes/api.slide-templates.$id.ts"),
+  route("api/slides/:pageId/from-template", "routes/api.slides.$pageId.from-template.ts"),
+  route("api/slides/:pageId/polls", "routes/api.slides.$pageId.polls.ts"),
+  route("api/slides/:pageId/polls/stream", "routes/api.slides.$pageId.polls.stream.ts"),
+  route("api/slides/:pageId/reactions", "routes/api.slides.$pageId.reactions.ts"),
+  route("api/slides/:pageId/reactions/stream", "routes/api.slides.$pageId.reactions.stream.ts"),
   route("api/notebooks", "routes/api.notebooks.ts"),
   route("api/notebooks/default", "routes/api.notebooks.default.ts"),
   route("api/notebooks/mentorship-pair", "routes/api.notebooks.mentorship-pair.ts"),
   route("api/notebooks/:id", "routes/api.notebooks.$id.ts"),
   route("api/pages/:id/meeting", "routes/api.pages.$id.meeting.ts"),
+  route("api/pages/:id/date", "routes/api.pages.$id.date.ts"),
   route("api/pages/:id/partner-visible", "projects/routes/api.pages.$id.partner-visible.ts"),
   route("api/pages/:id/public-visible", "projects/routes/api.pages.$id.public-visible.ts"),
 
@@ -723,6 +763,7 @@ export default [
   route("api/drive/move", "routes/api.drive.move.ts"),
   // Drive unified file upload: scope-agnostic file registration (Lab or Project).
   route("api/drive/files", "routes/api.drive.files.ts"),
+  route("api/drive/download", "routes/api.drive.download.ts"),
   // Drive Trash: list/restore/purge archived items (docs, files, forms).
   route("api/drive/trash", "routes/api.drive.trash.ts"),
   route("api/pages/:id/template", "routes/api.pages.$id.template.ts"),
@@ -733,7 +774,9 @@ export default [
   // Project files (standalone uploads with versions)
   route("api/projects/:id/files", "projects/routes/api.projects.$id.files.ts"),
   route("api/files/:id", "projects/routes/api.files.$id.ts"),
+  route("api/files/:id/download", "projects/routes/api.files.$id.download.ts"),
   route("api/files/:id/partner-visible", "projects/routes/api.files.$id.partner-visible.ts"),
+  route("api/files/:id/share", "routes/api.files.$id.share.ts"),
 
   // Lab-wide document/file tags
   route("api/doctags", "routes/api.doctags.ts"),
@@ -758,6 +801,7 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+  route("slides/:pageId/export.pptx", "routes/slides.$pageId.export-pptx.ts"),
 
   // Public read-only render for "Anyone with the link" documents — registered
   // OUTSIDE the app-shell layout so an unauthenticated visitor can read it. The
@@ -781,6 +825,7 @@ export default [
   // JSON create path for the board modal's create mode (see the form-based
   // create intent on core.partners.tsx for the list view's twin).
   route("api/partner-applications", "partners/routes/api.partner-applications.ts"),
+  route("api/partner-activity", "partners/routes/api.partner-activity.ts"),
   route("api/partner-applications/:id/move", "partners/routes/api.partner-applications.$id.move.ts"),
   route("api/partner-applications/:id/status", "partners/routes/api.partner-applications.$id.status.ts"),
   route("api/partner-applications/:id/domains", "partners/routes/api.partner-applications.$id.domains.ts"),
@@ -841,6 +886,7 @@ export default [
   route("api/hiring/domain-applications/:id/full-context", "hiring/routes/api.domain-applications.$id.full-context.ts"),
   route("api/hiring/domain-applications/:id/schedule-interview", "hiring/routes/api.domain-applications.$id.schedule-interview.ts"),
   route("api/hiring/domain-applications/:id/resend-invite", "hiring/routes/api.domain-applications.$id.resend-invite.ts"),
+  route("api/hiring/domain-applications/:id/reopen-scheduling", "hiring/routes/api.domain-applications.$id.reopen-scheduling.ts"),
 
   route("api/hiring/reviews/:id", "hiring/routes/api.reviews.$id.ts"),
   route("api/hiring/reviews/:id/submit", "hiring/routes/api.reviews.$id.submit.ts"),
@@ -881,7 +927,7 @@ export default [
   route("admin/authorize-gmail", "routes/admin.authorize-gmail.ts"),
   route("admin/authorize-gmail/callback", "routes/admin.authorize-gmail.callback.ts"),
 
-  // BetterAuth admin impersonation (flag-gated on `betterauth`).
+  // BetterAuth admin impersonation.
   route("admin/impersonate", "routes/admin.impersonate.ts"),
   route("admin/stop-impersonating", "routes/admin.stop-impersonating.ts"),
 
@@ -914,6 +960,7 @@ export default [
   // AI document-writing assistant — requires an AI provider key to be active
   // (ANTHROPIC_API_KEY, or DARTMOUTH_CHAT_API_KEY for the Dartmouth Chat gateway).
   route("api/ai/doc", "routes/api.ai.doc.ts"),
+  route("api/ask", "routes/api.ask.ts"),
   // AI project TL;DR — cached work-status summary for the Progress-tab status
   // bar. Same provider gating as api/ai/doc, plus the `project-tldr-ai` flag.
   route("api/ai/project-tldr", "routes/api.ai.project-tldr.ts"),
@@ -931,10 +978,10 @@ export default [
   // — not wired into existing auth flows yet.
   route("api/auth/*", "routes/api.auth.$.ts"),
 
-  // Meeting-note recording: transcript in, notes Markdown out. Behind the
-  // `ai-meeting-notes` flag; same provider gating as api/ai/doc.
+  // Meeting-note recording: transcript in, notes Markdown out. Same provider
+  // gating as api/ai/doc.
   route("api/ai/meeting-notes", "routes/api.ai.meeting-notes.ts"),
-  // Enhance (specs/meeting-notes-model.md §2): same flag/permission/budget as
+  // Enhance (specs/meeting-notes-model.md §2): same permission/budget as
   // Write notes above, merges the model's plan against the note's typed
   // blocks instead of appending a fixed summary.
   route("api/ai/meeting-notes/enhance", "routes/api.ai.meeting-notes.enhance.ts"),
@@ -943,6 +990,7 @@ export default [
   // lands on /result. Desktop app depends on these (see
   // desktop/src-tauri/src/recording.rs).
   route("api/meeting-recordings", "routes/api.meeting-recordings.ts"),
+  route("api/meeting-recordings/active", "routes/api.meeting-recordings.active.ts"),
   route("api/meeting-recordings/:id", "routes/api.meeting-recordings.$id.ts"),
   route("api/meeting-recordings/:id/chunks", "routes/api.meeting-recordings.$id.chunks.ts"),
   route("api/meeting-recordings/:id/result", "routes/api.meeting-recordings.$id.result.ts"),

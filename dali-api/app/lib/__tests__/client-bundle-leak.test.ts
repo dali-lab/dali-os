@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 // Regression guard for the "server code leaked into a client route" class of
-// bug. `~/lib/db` instantiates a PrismaClient at module load and pulls in the
+// bug. `~/lib/db.server` instantiates a PrismaClient at module load and pulls in the
 // ~4.8MB Prisma query-compiler wasm; `~/lib/rate-limit` used to start a
 // setInterval at module load. Both are top-level side effects that rolldown
 // cannot tree-shake, so any route whose CLIENT bundle retains them ships that
@@ -60,7 +60,7 @@ describe("client bundle leak guard", () => {
       leakingComponentRoutes,
       `These rendered routes ship server-only DB code to the browser. A route ` +
         `that renders must reach Prisma only through a *.server.ts helper, ` +
-        `never via a direct top-level \`import { prisma } from "~/lib/db"\`: ` +
+        `never via a direct top-level \`import { prisma } from "~/lib/db.server"\`: ` +
         `${leakingComponentRoutes.join(", ")}`,
     ).toEqual([]);
   });

@@ -33,7 +33,7 @@ const gallery = vi.hoisted(() => ({
   visibleTo: vi.fn(() => ({ visible: true })),
 }));
 
-vi.mock("~/lib/db", () => ({ prisma: db }));
+vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/roles", () => roles);
 vi.mock("~/lib/feature-flags.server", () => flags);
 vi.mock("~/lib/s3", () => s3);

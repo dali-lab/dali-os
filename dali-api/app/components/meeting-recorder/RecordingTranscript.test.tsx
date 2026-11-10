@@ -19,7 +19,6 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     isCore: false,
     roster: [],
     projectId: null,
-    canCreateTasks: false,
     getNoteState: () => null,
     noteVersion: 0,
     seededFromPageId: null,
@@ -37,6 +36,9 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     channelsActive: [],
     levels: { mic: 0, call: 0 },
     stalled: { mic: false, call: false },
+    noSound: false,
+    micDevice: null,
+    callAudioOff: false,
     recordedSeconds: 0,
     now: 0,
     lines,
@@ -65,7 +67,6 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     processingStage: null,
 
     useDesktopApp: false,
-    setUseDesktopApp: vi.fn(),
     micDeviceId: undefined,
     setMicDeviceId: vi.fn(),
     micDevices: [],
@@ -113,9 +114,11 @@ function makeRec(overrides: Partial<UseMeetingRecording> = {}): UseMeetingRecord
     revertAll: vi.fn(() => 0),
     scrollToBlock: vi.fn(),
     createTasksFromItems: vi.fn(async () => true),
+    removeBlock: vi.fn(),
     setSpeaker: vi.fn(async () => {}),
     jumpToTranscript: vi.fn(),
     cancelStart: vi.fn(),
+    retryDesktopStart: vi.fn(),
     switchToBrowserAfterUnreachable: vi.fn(),
   };
   return { ...base, ...overrides };

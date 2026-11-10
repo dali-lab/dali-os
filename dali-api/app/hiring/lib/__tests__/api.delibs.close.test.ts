@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   requireCore: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { requireAuth, requireCoreOrDomainLead } from "~/lib/auth";
 import { isCore, isDomainLead } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
@@ -108,6 +108,21 @@ describe("POST /api/hiring/delibs/:id (intent=close)", () => {
       where: { id: SESSION_ID },
       data: { status: "Closed" },
     });
+  });
+
+  it("gives cards left in No Decision on the final round no draft, and keeps moved cards", async () => {
+    mockPrisma.delibsSession.findUnique.mockResolvedValue({
+      id: SESSION_ID,
+      roundId: "final",
+      applicationCycle: { timeline: null },
+      columnOrder: { "No Decision": ["da-idle"], Accept: ["da-accept-1"], Reject: ["da-reject-1"] },
+    });
+
+    const res = await action({ request: makeCloseRequest(), params: { id: SESSION_ID }, context: {} } as any);
+
+    expect(res.status).toBe(200);
+    const calls = mockTx.decision.create.mock.calls.map((c: any[]) => c[0].data);
+    expect(calls.map((d: any) => d.domainApplicationId).sort()).toEqual(["da-accept-1", "da-reject-1"]);
   });
 
   it("sets waitlistRank to null on Accept and Reject decisions", async () => {

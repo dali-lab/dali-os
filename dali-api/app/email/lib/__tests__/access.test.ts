@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     projectAssignment: { findMany: vi.fn() },
     mailSubscription: { findMany: vi.fn() },
@@ -15,7 +15,7 @@ vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolveGroupMembers } from "~/lib/groups";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";

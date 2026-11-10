@@ -1,16 +1,17 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/forms/lib/submission-notify.server", () => ({
   notifyFormSubmission: vi.fn().mockResolvedValue(undefined),
+  sendFormReceipt: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("~/forms/lib/form-access.server", () => ({ fillAccessByPage: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { fillAccessByPage } from "~/forms/lib/form-access.server";
 import { submitAnonymousForm } from "~/forms/lib/public-form";
-import { notifyFormSubmission } from "~/forms/lib/submission-notify.server";
+import { notifyFormSubmission, sendFormReceipt } from "~/forms/lib/submission-notify.server";
 
 const mockPrisma = prisma as unknown as Record<
   string,
@@ -63,8 +64,10 @@ describe("submitAnonymousForm", () => {
         answers: { q1: "hello" },
         submitterIp: "1.2.3.4",
       },
+      select: { id: true },
     });
     expect(mockNotify).toHaveBeenCalledWith({ formId: "form-1" });
+    expect(sendFormReceipt).toHaveBeenCalledWith({ formId: "form-1", submissionId: "sub-1" });
     // None of the member-path side effects.
     expect(mockPrisma.notification.updateMany).not.toHaveBeenCalled();
     expect(mockPrisma.formSubmission.findFirst).not.toHaveBeenCalled();

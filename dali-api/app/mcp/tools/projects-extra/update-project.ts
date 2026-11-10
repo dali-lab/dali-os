@@ -8,7 +8,7 @@
 //
 // Gate: canEditProject (Core or current project member).
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { canEditProject } from "../access";
 

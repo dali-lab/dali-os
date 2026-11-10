@@ -1,4 +1,4 @@
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 
 // A user's upcoming education sessions, drawn from the offerings they're
 // approved into. Shared by the calendar (member) and the portal home

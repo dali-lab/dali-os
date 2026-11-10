@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { resolveAiProvider, stripJsonFences } from "~/lib/ai.server";
+import { modelParams, resolveAiProvider, stripJsonFences } from "~/lib/ai.server";
 import { toImportedJobs, type ImportedJob } from "./work-history-import";
 
 const SYSTEM_PROMPT = `You extract work history from a resume or a LinkedIn profile PDF.
@@ -44,7 +44,7 @@ export async function extractJobsFromPdf(
   if (!provider) throw new ResumeProviderMissingError();
 
   const message = await provider.client.messages.create({
-    model: provider.sonnetModel,
+    ...modelParams(provider, "resumeExtract"),
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [

@@ -7,6 +7,7 @@ const confirm = vi.fn();
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm }) }));
 
 import { ShareDialog } from "~/components/sharing/ShareDialog";
+import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,18 +43,22 @@ function stubFetch(kind: string, linkAccess = "LabMembers") {
   );
 }
 
-async function mount(props: { fillUrl?: string | null } = {}) {
+async function mount(props: { fillUrl?: string | null } = {}, flags: Record<string, boolean> = {}) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => {
     root!.render(
-      createElement(ShareDialog, {
-        page: { id: "f1", title: "Intake", workspaceType: "Lab" },
-        open: true,
-        onClose: () => {},
-        ...props,
-      }),
+      createElement(
+        FeatureFlagsProvider,
+        { flags, children: null },
+        createElement(ShareDialog, {
+          page: { id: "f1", title: "Intake", workspaceType: "Lab" },
+          open: true,
+          onClose: () => {},
+          ...props,
+        }),
+      ),
     );
   });
   await act(async () => {});
@@ -160,6 +165,35 @@ describe("ShareDialog form variant", () => {
       linkAccess: "LabMembers",
       linkPermission: "View",
     });
+  });
+});
+
+describe("ShareDialog Partners audience", () => {
+  it("offers Partners on a form when form-prefill is on, and sends it as View", async () => {
+    stubFetch("Form", "Restricted");
+    await mount({ fillUrl: "/forms/fill/tok" }, { "form-prefill": true });
+    await click(byLabel("General access audience"));
+    const partners = [...document.querySelectorAll('[role="option"]')].find((o) => o.textContent?.startsWith("Partners"));
+    expect(partners?.textContent).toContain("Partner accounts that belong to a partner organization");
+    await click(partners);
+    expect(posts.find((p) => p.intent === "general-access")).toMatchObject({
+      linkAccess: "Partners",
+      linkPermission: "View",
+    });
+  });
+
+  it("keeps Partners listed on a form already shared that way, flag off", async () => {
+    stubFetch("Form", "Partners");
+    await mount({ fillUrl: "/forms/fill/tok" });
+    await click(byLabel("General access audience"));
+    expect(options().some((o) => o.startsWith("Partners"))).toBe(true);
+  });
+
+  it("never offers Partners on a document", async () => {
+    stubFetch("FreeForm", "LabMembers");
+    await mount({}, { "form-prefill": true });
+    await click(byLabel("General access audience"));
+    expect(options().some((o) => o.startsWith("Partners"))).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { presenceRoomName, isPresenceRoom, PRESENCE_ROOM_PREFIX } from "../roomName";
+import { presenceRoomName, isPresenceRoom, PRESENCE_ROOM_PREFIX, slidesRoomName } from "../roomName";
 
 describe("presenceRoomName", () => {
   it("prefixes with presence:", () => {
@@ -17,5 +17,11 @@ describe("isPresenceRoom", () => {
     expect(isPresenceRoom("review:abc:feedback")).toBe(false);
     expect(isPresenceRoom("interview:xyz:notes")).toBe(false);
     expect(isPresenceRoom("")).toBe(false);
+  });
+});
+
+describe("slidesRoomName", () => {
+  it("is slides:{pageId}:deck", () => {
+    expect(slidesRoomName("p1")).toBe("slides:p1:deck");
   });
 });

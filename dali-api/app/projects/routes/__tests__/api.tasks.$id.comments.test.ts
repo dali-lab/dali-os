@@ -4,7 +4,7 @@ vi.mock("~/lib/auth", () => ({
   requireMemberSession: vi.fn(),
   requireProjectEditAccess: vi.fn(),
 }));
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -14,7 +14,7 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 }));
 
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
 import { loader, action } from "~/projects/routes/api.tasks.$id.comments";
 

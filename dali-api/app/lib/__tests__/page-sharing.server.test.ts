@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     groupDefinition: { findMany: vi.fn(), findUnique: vi.fn() },
     pageShare: { findMany: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() },
@@ -12,7 +12,7 @@ vi.mock("~/lib/groups", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { listVisibleGroupIdsForUser } from "~/lib/groups";
 import {
   permissionAtLeast,

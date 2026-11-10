@@ -11,6 +11,7 @@ import type { DocBlock, DocInline, DocTableCell } from "../blocknote-server";
 import type { PMNode } from "../export-html";
 import {
   SIGNING_FIELD_TYPES,
+  blockOwnText,
 } from "~/components/doc/schema/configs";
 
 type PMMark = NonNullable<PMNode["marks"]>[number];
@@ -246,6 +247,11 @@ function blockToPm(block: DocBlock): PMNode[] {
       ];
     case "table":
       return [tableToPm(block), ...children];
+    case "task":
+      return [
+        { type: "paragraph", content: [{ type: "text", text: blockOwnText(block) || "Untitled task" }] },
+        ...children,
+      ];
     case "file":
     case "video":
     case "audio": {

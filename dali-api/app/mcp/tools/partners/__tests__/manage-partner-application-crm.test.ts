@@ -5,8 +5,11 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
+    $transaction: vi.fn(),
+    term: { findMany: vi.fn() },
+    partnerApplicationTargetTerm: { deleteMany: vi.fn(), createMany: vi.fn() },
     partnerApplication: {
       update: vi.fn(),
       findUnique: vi.fn(),
@@ -63,7 +66,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import {
@@ -358,5 +361,24 @@ describe("update_domain_scope (expectedChallenges)", () => {
       data: Record<string, unknown>;
     };
     expect(updateCall.data).not.toHaveProperty("expectedChallenges");
+  });
+});
+
+
+describe("update_details preserves term planning", () => {
+  it("retains existing target rows and their planning fields", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(prisma.term.findMany).mockResolvedValue([{ id: "kept" }, { id: "added" }] as never);
+    vi.mocked(prisma.$transaction).mockImplementation(async (callback: any) => callback(prisma));
+    await runManagePartnerApplication("u1", {
+      action: "update_details", applicationId: "a1", targetTermIds: ["kept", "added"],
+    });
+    expect(prisma.partnerApplicationTargetTerm.deleteMany).toHaveBeenCalledWith({
+      where: { applicationId: "a1", termId: { notIn: ["kept", "added"] } },
+    });
+    expect(prisma.partnerApplicationTargetTerm.createMany).toHaveBeenCalledWith({
+      data: [{ applicationId: "a1", termId: "kept" }, { applicationId: "a1", termId: "added" }],
+      skipDuplicates: true,
+    });
   });
 });

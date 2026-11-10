@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     page: {
       findUnique: vi.fn(),
@@ -35,7 +35,7 @@ vi.mock("~/lib/pages", () => ({
 vi.mock("~/lib/scheduled-meeting", () => ({ resolveMeetingOccurrence: vi.fn(), seedPageFromTemplate: vi.fn() }));
 vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(), removeMeetingShares: vi.fn() }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import {
@@ -63,6 +63,7 @@ import {
   getNotebook,
   mergeNotebooks,
   notebookErrorResponse,
+  setNoteDate,
   setNotebookTemplate,
   setSeriesNotebook,
   trashNotebook,
@@ -1054,5 +1055,80 @@ describe("structure mutations need manage authority", () => {
     pages({ nb1: notebookRow(), doc1: docRow() });
     await expect(addToNotebook("doc1", "nb1", "u1")).resolves.toBeUndefined();
     expect(moveIntoNotebook).toHaveBeenCalledWith("doc1", "nb1");
+  });
+});
+
+describe("setNoteDate", () => {
+  const orphan = (over: Record<string, unknown> = {}) =>
+    docRow({
+      meetingNoteId: null,
+      parentPageId: "nb1",
+      parent: { id: "nb1", kind: "Notebook", parentPageId: "folder1" },
+      ...over,
+    });
+  const DATE = new Date("2026-10-14T04:00:00.000Z");
+
+  it("updates only meetingOccurrenceStart on an orphan note in a notebook", async () => {
+    pages({ doc1: orphan() });
+
+    await setNoteDate("doc1", DATE, "u1");
+
+    expect(m.page.update).toHaveBeenCalledWith({
+      where: { id: "doc1" },
+      data: { meetingOccurrenceStart: DATE },
+    });
+  });
+
+  it("clears the date when passed null", async () => {
+    pages({ doc1: orphan() });
+
+    await setNoteDate("doc1", null, "u1");
+
+    expect(m.page.update).toHaveBeenCalledWith({
+      where: { id: "doc1" },
+      data: { meetingOccurrenceStart: null },
+    });
+  });
+
+  it("400s a note still linked to a meeting", async () => {
+    pages({ doc1: orphan({ meetingNoteId: "m1" }) });
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(400);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("400s a page that is not in a notebook", async () => {
+    pages({ doc1: orphan({ parent: { id: "folder1", kind: "Folder", parentPageId: null } }) });
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(400);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("403s a viewer who cannot edit the page", async () => {
+    pages({ doc1: orphan() });
+    access({ doc1: VIEW_ONLY });
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(403);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("403s an editor who cannot manage the notebook", async () => {
+    pages({ doc1: orphan() });
+    access({ nb1: VIEW_ONLY });
+    m.scheduledMeeting.findFirst.mockResolvedValue(null);
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(403);
+    expect(getPageAccess).toHaveBeenCalledWith("u1", expect.objectContaining({ id: "nb1" }), undefined, { ignoreShares: true });
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("404s a document the actor cannot view", async () => {
+    pages({ doc1: orphan() });
+    access({ doc1: NONE });
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(404);
+    expect(m.page.update).not.toHaveBeenCalled();
+  });
+
+  it("404s a missing or trashed page", async () => {
+    pages({});
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(404);
+    pages({ doc1: orphan({ archivedAt: new Date() }) });
+    expect((await rejection(setNoteDate("doc1", DATE, "u1"))).status).toBe(404);
   });
 });

@@ -4,7 +4,7 @@
 // already have it set, so a crash-and-retry (or a slow run overlapping the
 // next tick) can't double-send.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { sendPartnerSurvey } from "~/partners/lib/partner-survey.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

@@ -12,6 +12,7 @@ import { UNSAFE_DataRouterStateContext, UNSAFE_LocationContext, UNSAFE_RouteCont
 import { PageBarVisibility } from '~/components/shell/page-bar-slot'
 import { sameUrl } from '~/lib/desktop-tabs'
 import { getTabsSnapshot } from '~/lib/desktop-tabs-store'
+import { scrollPageTo } from '~/lib/page-scroll'
 import { useDesktopTabsState } from '~/components/DesktopTabs'
 import { publishDisplayedTab } from '~/components/shell/displayed-tab'
 
@@ -119,7 +120,7 @@ function KeepAliveHost({ children }: { children: ReactNode }) {
     if (lastShown.current === showId) return
     lastShown.current = showId
     const tab = getTabsSnapshot().tabs.find((t) => t.id === showId)
-    if (tab) window.scrollTo(0, tab.scrollY)
+    if (tab) scrollPageTo(tab.scrollY)
   }, [showId])
 
   return (

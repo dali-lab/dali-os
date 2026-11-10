@@ -1,4 +1,4 @@
-// Place name → coordinates, for the Connect map. OpenStreetMap's Nominatim:
+// Place name → coordinates, for the Community map. OpenStreetMap's Nominatim:
 // free and keyless, but its usage policy wants an identifying User-Agent and
 // low volume, so this is only called when someone saves a changed location.
 // Never throws: a lookup that fails or finds nothing just means no pin.

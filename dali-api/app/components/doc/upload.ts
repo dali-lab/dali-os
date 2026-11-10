@@ -6,13 +6,43 @@
 // BlockNote routes all media uploads (image, file, video) through the single
 // editor `uploadFile` callback — uploadEditorImage handles all three.
 
-import { uploadFileToS3 } from "~/lib/upload-client";
+import { galleryDisplaySize, scaledGalleryCopy } from "~/community/lib/gallery";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "~/lib/file-validation";
+import { formatBytes, uploadFileToS3 } from "~/lib/upload-client";
 
 export const IMAGE_UPLOAD_ACCEPT = "image/*";
 const UPLOAD_KEY_PREFIX = "doc-images";
 
+// A GIF would lose its animation and an SVG has no pixels to reduce.
+const NOT_SHRINKABLE = new Set(["image/gif", "image/svg+xml"]);
+
 export function rawUploadUrl(key: string): string {
   return `/api/upload/raw?key=${encodeURIComponent(key)}`;
+}
+
+/** The file to upload: an over-cap image as a smaller copy, anything else as
+ * it came. A file that can't be shrunk goes through unchanged so the upload
+ * reports the size cap. */
+async function shrinkToCap(file: File): Promise<File> {
+  if (
+    file.size <= MAX_UPLOAD_BYTES ||
+    !file.type.startsWith("image/") ||
+    NOT_SHRINKABLE.has(file.type)
+  ) {
+    return file;
+  }
+  // Rejects on formats the browser can't decode, like HEIC outside Safari.
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return file;
+  try {
+    const { width, height } = galleryDisplaySize(bitmap.width, bitmap.height) ?? bitmap;
+    const copy = await scaledGalleryCopy(bitmap, width, height, "display");
+    if (!copy || copy.size > MAX_UPLOAD_BYTES) return file;
+    const stem = file.name.replace(/\.[^.]*$/, "");
+    return new File([copy], `${stem}.${copy.name.split(".").pop()}`, { type: copy.type });
+  } finally {
+    bitmap.close();
+  }
 }
 
 /** Upload one media file (image, document attachment, or video) and return
@@ -23,10 +53,23 @@ export function rawUploadUrl(key: string): string {
  * No accept filter here: the presign endpoint enforces `isBlockedUpload`
  * (defense-in-depth) and the individual block UIs pass their own accept
  * strings. We upload to the doc-images prefix so all editor media lives
- * under one key namespace. */
-export async function uploadEditorImage(file: File): Promise<string> {
-  const meta = await uploadFileToS3(file, UPLOAD_KEY_PREFIX);
+ * under one key namespace. `notify` hears when an image had to be shrunk. */
+export async function uploadEditorImage(
+  file: File,
+  notify?: (message: string) => void,
+): Promise<string> {
+  const upload = await shrinkToCap(file);
+  if (upload !== file) {
+    notify?.(
+      `Image shrunk from ${formatBytes(file.size)} to ${formatBytes(upload.size)} to fit the ${MAX_UPLOAD_LABEL} limit.`,
+    );
+  }
+  const meta = await uploadFileToS3(upload, UPLOAD_KEY_PREFIX);
   return rawUploadUrl(meta.s3Key);
+}
+
+export function uploadErrorMessage(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : "Upload failed";
 }
 
 /** BlockNote swallows upload errors: the upload panel shows a generic
@@ -40,7 +83,7 @@ export function withUploadErrorToast(
     try {
       return await upload(file);
     } catch (err) {
-      showError(err instanceof Error && err.message ? err.message : "Upload failed");
+      showError(uploadErrorMessage(err));
       throw err;
     }
   };

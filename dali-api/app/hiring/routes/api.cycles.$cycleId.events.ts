@@ -1,8 +1,6 @@
 import type { Route } from "./+types/api.cycles.$cycleId.events";
 import { z } from "zod";
 import { requireAuth } from "~/lib/auth";
-import { getUserRoles } from "~/lib/roles";
-import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, nullableTrimmed } from "~/lib/validate";
 import { createHiringEvent } from "~/hiring/lib/hiring-events.server";
@@ -30,11 +28,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return withCors(request, auth.response);
-
-  const roles = await getUserRoles(auth.user.sub, request);
-  if (!(await isFeatureEnabled("application-events", auth.user.sub, roles, request))) {
-    return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
-  }
 
   const body = await parseJson(request, CreateEventSchema);
   if (body instanceof Response) return withCors(request, body);

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { PKPass } from "passkit-generator";
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { walletTokensConfigured, signWalletToken, ensureWalletSecret, signWalletAuthToken } from "~/lib/wallet-token";
 import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
 import { getApiBaseUrl } from "~/lib/app-env";

@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     task: { findUnique: vi.fn() },
     taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() },
@@ -22,7 +22,7 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
   syncIssueForTask: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
 import { runUpdateTask, UPDATE_TASK_TOOL } from "~/mcp/tools/update-task";

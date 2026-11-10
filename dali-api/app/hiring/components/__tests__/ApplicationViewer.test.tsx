@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ApplicationViewer } from "../ApplicationViewer";
+import { ApplicationViewer, answerEntries } from "../ApplicationViewer";
 import { DialogProvider } from "~/components/ui/dialog";
 import type { Question } from "~/types";
 
@@ -87,6 +87,28 @@ describe("ApplicationViewer file/url rendering", () => {
     expect(html).toContain(`href="${presignedUrl}"`);
   });
 
+  it("names the challenge section from the DA's domain when the challenge version carries none", () => {
+    const application = {
+      answers: {},
+      generalChallengeVersion: { questions: [] },
+      domainApplications: [
+        {
+          id: "da-1",
+          answers: { essay: "Pixels all day." },
+          challengeVersion: { questions: [essayQ] },
+          domain: { name: "design", displayName: "Design" },
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(Viewer, { application, questionLabels: { essay: "Why DALI?" } }),
+    );
+
+    expect(html).toContain("Design");
+    expect(html).toContain("Pixels all day.");
+  });
+
   it("renders github_url answers as an external link without annotation", () => {
     const application = {
       answers: { gh: "https://github.com/carol/x" },
@@ -140,5 +162,30 @@ describe("ApplicationViewer file/url rendering", () => {
     expect(html.indexOf("Resume")).toBeGreaterThan(html.indexOf("Why DALI?"));
     expect(html.match(/—/g)).toHaveLength(2);
     expect(html).not.toContain("Read me");
+  });
+});
+
+
+describe("answerEntries with rules", () => {
+  const questions: Question[] = [
+    { key: "returning", type: "select", required: true, data: { label: "Returning?", options: ["Yes", "No"] } },
+    {
+      key: "why",
+      type: "text",
+      required: true,
+      data: { label: "Why?", showIf: { questionKey: "returning", op: "is", value: "No" } },
+    },
+  ];
+
+  it("leaves out a question that was not asked, and does not bring it back as an orphan", () => {
+    expect(answerEntries(questions, { returning: "Yes", why: "draft" }).map(([k]) => k)).toEqual(["returning"]);
+  });
+
+  it("keeps a shown question's blank, and still lists answers whose question is gone", () => {
+    expect(answerEntries(questions, { returning: "No", old: "x" })).toEqual([
+      ["returning", "No"],
+      ["why", undefined],
+      ["old", "x"],
+    ]);
   });
 });

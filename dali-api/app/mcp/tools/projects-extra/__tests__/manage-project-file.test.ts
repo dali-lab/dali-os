@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db", () => ({
+vi.mock("~/lib/db.server", () => ({
   prisma: {
     projectFile: {
       findUnique: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("~/projects/lib/file-notifications.server", () => ({
   notifyFileNewVersion: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import {
   runManageProjectFile,

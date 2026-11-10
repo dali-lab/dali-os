@@ -12,11 +12,13 @@ export const DEFAULT_SYNC_INTERVAL_MS = 5 * 60_000;
  * and `sync` every `syncMs`. A reconnecting EventSource sends
  * Last-Event-ID (set by the `id:` line on connect); it gets an immediate
  * `sync`, since publishes while it was disconnected never reached it.
+ * `carryData` puts a publisher's payload in the event for streams of ephemeral
+ * events a client cannot refetch; every other surface stays payload-less.
  */
 export function busEventStream(
   request: Request,
   topics: string[],
-  { syncMs = DEFAULT_SYNC_INTERVAL_MS }: { syncMs?: number } = {},
+  { syncMs = DEFAULT_SYNC_INTERVAL_MS, carryData = false }: { syncMs?: number; carryData?: boolean } = {},
 ): Response {
   const encoder = new TextEncoder();
   const unsubscribes: (() => void)[] = [];
@@ -39,14 +41,19 @@ export function busEventStream(
           // Controller closed (client gone); cancel() tears down.
         }
       };
-      const send = (event: BusEvent) => write(`event: ${event}\ndata: 1\n\n`);
+      const send = (event: BusEvent, data?: string) => write(`event: ${event}\ndata: ${carryData && data ? data.replace(/[\r\n]/g, " ") : 1}\n\n`);
 
       write(": connected\nid: 1\n\n");
       if (reconnected) send("sync");
 
       for (const topic of new Set(topics)) unsubscribes.push(subscribe(topic, send));
       keepalive = setInterval(() => write(": keepalive\n\n"), KEEPALIVE_INTERVAL_MS);
-      sync = setInterval(() => send("sync"), syncMs);
+      // A deploy reconnects every client at once, so a sync timed from connect
+      // would have them all re-fetch in the same second, every syncMs.
+      sync = setTimeout(() => {
+        send("sync");
+        sync = setInterval(() => send("sync"), syncMs);
+      }, Math.random() * syncMs);
 
       request.signal.addEventListener("abort", () => {
         teardown();

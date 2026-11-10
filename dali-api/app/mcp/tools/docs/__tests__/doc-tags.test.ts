@@ -14,14 +14,14 @@ vi.mock("~/mcp/registry", () => {
   }
   return { requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
 });
-vi.mock("~/lib/db");
+vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
 });
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import {
   LIST_DOC_TAGS_TOOL,
@@ -46,7 +46,7 @@ const mockPrisma = prisma as unknown as {
   projectFileTag: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
 };
 
-// Ensure the auto-mock populates all model sub-methods (vi.mock("~/lib/db") may omit some).
+// Ensure the auto-mock populates all model sub-methods (vi.mock("~/lib/db.server") may omit some).
 beforeEach(() => {
   const mp = mockPrisma as Record<string, Record<string, unknown>>;
   for (const [model, methods] of [

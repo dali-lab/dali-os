@@ -8,7 +8,7 @@
 // meetingRequestedAt, meetings[], and source in addition to the base fields.
 // No ownership in this model — there is no assigned meeter.
 
-import { prisma } from "~/lib/db";
+import { prisma } from "~/lib/db.server";
 import { canViewStaffing } from "~/lib/roles";
 import { partnerContractStatus } from "~/partners/lib/partner-contract.server";
 import { McpForbiddenError, McpNotFoundError } from "../../registry";
