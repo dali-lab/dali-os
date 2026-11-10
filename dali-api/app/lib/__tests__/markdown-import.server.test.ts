@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { strToU8, zipSync } from "fflate";
 
 vi.mock("~/lib/s3", () => ({ putObject: vi.fn() }));
-vi.mock("~/lib/drive-download.server", () => ({ MAX_ZIP_BYTES: 5_000, MAX_ZIP_FILES: 4 }));
 
-import { ImportError, importLimitFor, importMarkdownFile, readImportFile } from "~/lib/markdown-import.server";
+import { ImportError, IMPORT_ZIP_BYTES, importLimitFor, importMarkdownFile, readImportFile } from "~/lib/markdown-import.server";
+
+const SMALL = { unzippedBytes: 5_000, files: 4 };
 import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 
 const PNG = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
@@ -71,12 +72,12 @@ describe("readImportFile", () => {
 
   it("rejects a zip with more entries than allowed", () => {
     const files = Object.fromEntries(Array.from({ length: 5 }, (_, n) => [`f${n}.md`, "x"]));
-    const error = rejection(() => readImportFile("x.zip", zip(files)));
+    const error = rejection(() => readImportFile("x.zip", zip(files), SMALL));
     expect(error.status).toBe(413);
   });
 
   it("rejects a zip that unpacks past the size limit from its headers", () => {
-    const error = rejection(() => readImportFile("x.zip", zip({ "doc.md": "x", "big.png": new Uint8Array(6_000) })));
+    const error = rejection(() => readImportFile("x.zip", zip({ "doc.md": "x", "big.png": new Uint8Array(6_000) }), SMALL));
     expect(error.status).toBe(413);
   });
 
@@ -88,7 +89,7 @@ describe("readImportFile", () => {
 describe("importLimitFor", () => {
   it("allows a zip more than a text file", () => {
     expect(importLimitFor("a.md")).toBe(MAX_UPLOAD_BYTES);
-    expect(importLimitFor("a.ZIP")).toBe(5_000);
+    expect(importLimitFor("a.ZIP")).toBe(IMPORT_ZIP_BYTES);
   });
 });
 

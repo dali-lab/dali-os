@@ -8,14 +8,13 @@ vi.mock("~/lib/auth", () => ({
   isNonMember: vi.fn(),
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
-vi.mock("~/lib/drive-download.server", () => ({ MAX_ZIP_BYTES: 50, MAX_ZIP_FILES: 100 }));
 vi.mock("~/lib/markdown-import.server", async () => {
   class ImportError extends Error {
     constructor(message: string, public status: number) {
       super(message);
     }
   }
-  return { ImportError, importMarkdownFile: vi.fn(), importLimitFor: (name: string) => (name.endsWith(".zip") ? 50 : 10) };
+  return { ImportError, IMPORT_ZIP_BYTES: 50, importMarkdownFile: vi.fn(), importLimitFor: (name: string) => (name.endsWith(".zip") ? 50 : 10) };
 });
 
 import { prisma } from "~/lib/db.server";

@@ -3,8 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth, isPartnerAccount, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
-import { MAX_ZIP_BYTES } from "~/lib/drive-download.server";
-import { ImportError, importLimitFor, importMarkdownFile } from "~/lib/markdown-import.server";
+import { IMPORT_ZIP_BYTES, ImportError, importLimitFor, importMarkdownFile } from "~/lib/markdown-import.server";
 
 const BODY_SLACK_BYTES = 1024 * 1024;
 
@@ -20,7 +19,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const access = await getPageAccess(auth.user.sub, page.id, request);
   if (!access.canEdit) return new Response("Not found", { status: 404 });
 
-  if (Number(request.headers.get("content-length")) > MAX_ZIP_BYTES + BODY_SLACK_BYTES) {
+  if (Number(request.headers.get("content-length")) > IMPORT_ZIP_BYTES + BODY_SLACK_BYTES) {
     return Response.json({ error: "That file is too large." }, { status: 413 });
   }
   const file = (await request.formData()).get("file");

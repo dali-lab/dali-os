@@ -1,6 +1,6 @@
 import { unzipSync } from "fflate";
 import { markdownToBlocks, type DocBlock } from "~/collab/blocknote-server";
-import { MAX_ZIP_BYTES, MAX_ZIP_FILES } from "~/lib/drive-download.server";
+import { MAX_ZIP_FILES } from "~/lib/drive-download.server";
 import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { MAX_IMPORT_IMAGES, rewriteMarkdownImages, type ImageDeps } from "~/lib/markdown-images.server";
 
@@ -23,22 +23,31 @@ export interface ImportSource {
   baseDir: string;
 }
 
-export const importLimitFor = (fileName: string) => (/\.zip$/i.test(fileName) ? MAX_ZIP_BYTES : MAX_UPLOAD_BYTES);
+export const IMPORT_ZIP_BYTES = 50 * 1024 * 1024;
+
+export interface ZipLimits {
+  unzippedBytes: number;
+  files: number;
+}
+
+const ZIP_LIMITS: ZipLimits = { unzippedBytes: 100 * 1024 * 1024, files: MAX_ZIP_FILES };
+
+export const importLimitFor = (fileName: string) => (/\.zip$/i.test(fileName) ? IMPORT_ZIP_BYTES : MAX_UPLOAD_BYTES);
 
 const clean = (name: string) => name.replaceAll("\\", "/").normalize("NFC");
 const isIgnored = (name: string) => name.split("/").some((part, i) => part.startsWith(".") || (i === 0 && part === "__MACOSX"));
 const decode = (bytes: Uint8Array) => new TextDecoder().decode(bytes).replace(/^﻿/, "");
 
-function readZip(bytes: Uint8Array): ImportSource {
+function readZip(bytes: Uint8Array, limits: ZipLimits): ImportSource {
   let entries = 0;
   let total = 0;
   const unzipped = unzipSync(bytes, {
     filter(file) {
       const name = clean(file.name);
       total += file.originalSize;
-      if (total > MAX_ZIP_BYTES) throw new ImportError("This .zip is too large once unpacked.", 413);
+      if (total > limits.unzippedBytes) throw new ImportError("This .zip is too large once unpacked.", 413);
       if (name.endsWith("/") || isIgnored(name)) return false;
-      if (++entries > MAX_ZIP_FILES) throw new ImportError(`This .zip has more than ${MAX_ZIP_FILES} files.`, 413);
+      if (++entries > limits.files) throw new ImportError(`This .zip has more than ${limits.files} files.`, 413);
       return true;
     },
   });
@@ -55,10 +64,10 @@ function readZip(bytes: Uint8Array): ImportSource {
   return { markdown, files, baseDir: path.split("/").slice(0, -1).join("/") };
 }
 
-export function readImportFile(fileName: string, bytes: Uint8Array): ImportSource {
+export function readImportFile(fileName: string, bytes: Uint8Array, limits: ZipLimits = ZIP_LIMITS): ImportSource {
   if (/\.zip$/i.test(fileName)) {
     try {
-      return readZip(bytes);
+      return readZip(bytes, limits);
     } catch (error) {
       if (error instanceof ImportError) throw error;
       throw new ImportError("This .zip could not be read.", 400);
