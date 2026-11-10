@@ -601,12 +601,6 @@ html:has([data-tab-workspace]) {
   scrollbar-gutter: auto;
 }
 
-@media (min-width: 48rem) {
-  html:has([data-side-panel-page]) {
-    scrollbar-gutter: auto;
-  }
-}
-
 /* The sidebar shell is dark navy in both color modes. Force a dark scrollbar
    for its scroll area so the (light-mode) browser scrollbar track doesn't paint
    a pale strip against the dark nav. `color-scheme: dark` covers WebKit/Blink;
@@ -767,36 +761,6 @@ select:not(:disabled) {
   }
   70%, 100% {
     transform: rotate(180deg);
-  }
-}
-
-@keyframes slide-reaction-float {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-60vh);
-  }
-}
-
-@keyframes slide-reaction-fade {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-.slide-reaction {
-  animation: slide-reaction-float 3s ease-out forwards;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .slide-reaction {
-    animation: slide-reaction-fade 3s ease-out forwards;
   }
 }
 

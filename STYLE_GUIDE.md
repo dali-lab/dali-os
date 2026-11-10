@@ -371,9 +371,6 @@ in-progress work, and clearing a configured binding.
   segments and the container fill on the active one.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
-- Empty states: `EmptyState` (`ui/EmptyState.tsx`), a small dashed card drawn
-  in CSS above one muted line, with optional actions below. Use it for an
-  empty folder, board, list or filter result instead of a bare line of text.
 
 ### 6.7 Rail
 
