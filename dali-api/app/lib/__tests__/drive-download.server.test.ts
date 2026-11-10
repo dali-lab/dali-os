@@ -43,6 +43,13 @@ describe("zipSources", () => {
     expect(read(zip)).toEqual({ "a.txt": "hello world", "b.txt": "second" });
   });
 
+  it("writes an in-memory entry beside stored files", async () => {
+    storedAs({ "a.txt": ["stored"] });
+    const memory = { name: "Doc.md", data: new TextEncoder().encode("# Doc"), modified };
+    const zip = await collect(zipSources([memory, source("a.txt")], () => {}));
+    expect(read(zip)).toEqual({ "Doc.md": "# Doc", "a.txt": "stored" });
+  });
+
   it("keeps non-ASCII names", async () => {
     storedAs({ k: ["x"] });
     const zip = await collect(zipSources([source("Résumé 日本語.pdf", "k")], () => {}));
@@ -85,6 +92,17 @@ describe("zipSources", () => {
     );
     await collect(zipSources([source("a"), source("b"), source("c")], () => {}));
     expect(peak).toBe(1);
+  });
+});
+
+describe("buildDriveZip names", () => {
+  it("names the download link after the archive it was asked for", async () => {
+    storedAs({ k: ["x"] });
+    vi.mocked(putObjectStream).mockImplementation(async (_key, chunks) => {
+      for await (const _chunk of chunks) void _chunk;
+    });
+    await buildDriveZip([source("a.txt", "k")], "Plan.zip");
+    expect(getDownloadUrl).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ fileName: "Plan.zip" }));
   });
 });
 
