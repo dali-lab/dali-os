@@ -63,6 +63,16 @@ export function parseFileAnswer(raw: unknown): string[] {
   }
 }
 
+// Why `count` files doesn't fit the question, or null. Zero is left to the
+// required check.
+export function fileCountError(q: Question, count: number): string | null {
+  const max = maxFilesFor(q);
+  if (count === 0) return null;
+  if (q.data.exactFiles && max > 1 && count !== max) return `add exactly ${max} files.`;
+  if (count > max) return max === 1 ? "takes one file." : `takes up to ${max} files.`;
+  return null;
+}
+
 export function serializeFileAnswer(keys: string[], maxFiles: number): string {
   if (keys.length === 0) return "";
   return maxFiles > 1 ? JSON.stringify(keys) : keys[0];
@@ -106,6 +116,11 @@ export function validateAnswerFormats(
     if (raw == null || raw === "") continue;
     const fail = (message: string) =>
       errors.push({ key: q.key, message: `"${q.data.label}": ${message}` });
+    if (q.type === "file") {
+      const countError = fileCountError(q, parseFileAnswer(raw).length);
+      if (countError) fail(countError);
+      continue;
+    }
     if (typeof raw !== "string") {
       if (["radio", "scale", "date", "number", "email"].includes(q.type)) {
         fail("couldn't read the answer.");

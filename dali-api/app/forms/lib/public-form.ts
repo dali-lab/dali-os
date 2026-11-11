@@ -29,6 +29,7 @@ import { isFormUploadKeyFor } from "~/lib/file-validation";
 import {
   OTHER_ANSWER_MAX_LENGTH,
   isValidOtherText,
+  fileCountError,
   maxFilesFor,
   parseFileAnswer,
   normalizeAnswerFormats,
@@ -267,14 +268,8 @@ export async function validateAnswers(
       continue;
     }
     const max = maxFilesFor(q);
-    if (keys.length > max) {
-      return {
-        error: max === 1
-          ? `"${q.data.label}" takes one file.`
-          : `"${q.data.label}" takes up to ${max} files.`,
-        status: 400,
-      };
-    }
+    const countError = fileCountError(q, keys.length);
+    if (countError) return { error: `"${q.data.label}": ${countError}`, status: 400 };
     // Keys already on the response pass as-is, so an older upload survives an edit.
     const kept = new Set(parseFileAnswer(stored?.[q.key]));
     if (keys.some((k) => !kept.has(k) && !isFormUploadKeyFor(k, q.key))) {
