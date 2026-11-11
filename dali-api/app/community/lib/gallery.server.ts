@@ -59,6 +59,7 @@ const IMAGE_URL_WINDOW_S = 3600;
 // the browser loads a photo once rather than on every visit. Without S3 (local
 // dev) the session-authed redirect route still works.
 export async function galleryImageUrl(key: string) {
+  if (/^https?:\/\//.test(key)) return key;
   if (!isS3Configured()) return `/api/upload/raw?key=${encodeURIComponent(key)}`;
   return getDownloadUrl(key, { cacheFor: IMAGE_URL_WINDOW_S });
 }
