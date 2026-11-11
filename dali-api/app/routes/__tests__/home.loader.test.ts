@@ -12,8 +12,12 @@ vi.mock("~/lib/shell-user.server", () => ({ loadShellUser: vi.fn(async () => ({ 
 vi.mock("~/lib/tasks", () => ({ listMyProjectTasks: vi.fn(async () => []), listOpenTasks: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ currentTermStrict: vi.fn(async () => null) }));
 vi.mock("~/components/CommandPalette", () => ({ resultIcon: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn(async () => false) }));
 
 import { requireAuth } from "~/lib/auth";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
+import { currentTermStrict } from "~/lib/roles";
 import { loader } from "../home";
 
 beforeEach(() => {
@@ -25,5 +29,34 @@ describe("home loader", () => {
     const res = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
     expect(res).not.toBeInstanceOf(Response);
     expect(res).toMatchObject({ tasks: [], birthdays: [], week: null });
+  });
+
+  it("shows alumni the Baker tower home when the flag is on", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValueOnce(true);
+    const res = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
+    expect(res).toMatchObject({ alumniHome: true });
+    expect(isFeatureEnabled).toHaveBeenCalledWith("alumni-home", "u1", { isAlumni: true }, expect.any(Request));
+  });
+
+  it("keeps alumni on the usual home while the flag is off", async () => {
+    const res = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
+    expect(res).toMatchObject({ alumniHome: false });
+  });
+
+  it("never shows the Baker tower home to members, even with the flag on", async () => {
+    vi.mocked(readOnlyRoles).mockResolvedValueOnce({ isAlumni: false } as never);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    const res = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
+    expect(res).toMatchObject({ alumniHome: false });
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+  });
+
+  it("names the term with the week for the hero's detail line", async () => {
+    vi.mocked(currentTermStrict).mockResolvedValueOnce({
+      code: "26F",
+      startDate: new Date(Date.UTC(2026, 8, 14)),
+    } as never);
+    const res = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
+    expect(res).toMatchObject({ week: { term: "26F" } });
   });
 });
