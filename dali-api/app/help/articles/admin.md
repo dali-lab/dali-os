@@ -37,7 +37,7 @@ The [Admin overview](/admin) shows what needs attention right now. Each sidebar 
 
 ## Accounts
 
-**Site users** lists every account. Admins can sign in as another person for support and testing. This tab and **Payroll** are only visible to admins.
+**Site users** lists every account. Admins can sign in as another person for support and testing. The session lasts an hour, then you're back as yourself on the page you were viewing. In the desktop app you get a fresh set of tabs while signed in as someone else, and your own tabs come back when you stop. This tab and **Payroll** are only visible to admins.
 
 **Security** lists blocked addresses and trusted networks for sign-in. Core can read the rules, and only admins can change them.
 

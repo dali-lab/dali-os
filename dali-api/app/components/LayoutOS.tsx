@@ -126,7 +126,7 @@ export function LayoutOS({
   children,
 }: LayoutOSProps) {
   const location = useLocation()
-  const showTabs = useDesktopTabs(true, tabStripHint)
+  const showTabs = useDesktopTabs(true, tabStripHint, impersonating)
   // The rail is full width or hidden, nothing in between; collapsing it
   // (button, edge, ⌘\) hides it entirely, leaving only the expand button in
   // the tab strip / page bar.

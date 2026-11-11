@@ -45,7 +45,7 @@ const mockPrisma = prisma as unknown as {
 const ACTOR_ID = "admin-user-1";
 const TARGET_ID = "target-user-2";
 
-function makeRequest(body: Record<string, string> = { userId: TARGET_ID }): Request {
+function makeRequest(body: Record<string, string> = { userId: TARGET_ID }, referer?: string): Request {
   const formData = new FormData();
   for (const [k, v] of Object.entries(body)) {
     formData.append(k, v);
@@ -53,8 +53,11 @@ function makeRequest(body: Record<string, string> = { userId: TARGET_ID }): Requ
   return new Request("http://localhost/admin/impersonate", {
     method: "POST",
     body: formData,
+    headers: referer ? { Referer: referer } : {},
   });
 }
+
+const location = (res: Response) => res.headers.get("Location");
 
 // Default impersonateUser mock returns a Headers with a Set-Cookie.
 function makeImpersonateHeaders(cookie = "dali.session=impersonate-token; Path=/; HttpOnly"): Headers {
@@ -89,48 +92,44 @@ beforeEach(() => {
 });
 
 describe("POST /admin/impersonate — session gate", () => {
-  it("returns 401 when there is no session", async () => {
+  it("sends a signed-out request to login", async () => {
     mockGetUser.mockResolvedValue(null);
     const res = await action({ request: makeRequest() } as any);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(302);
+    expect(location(res)).toBe("/login");
     expect(mockImpersonate).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /admin/impersonate — admin gate", () => {
-  it("returns 403 when session exists but user is not admin", async () => {
+  it("sends a non-admin home", async () => {
     mockIsAdmin.mockResolvedValue(false);
     const res = await action({ request: makeRequest() } as any);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(302);
+    expect(location(res)).toBe("/");
     expect(mockImpersonate).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /admin/impersonate — input validation", () => {
-  it("returns 400 when userId is missing", async () => {
+  it("returns to site users with an error when userId is missing", async () => {
     const res = await action({ request: makeRequest({}) } as any);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toMatch(/Missing userId/i);
+    expect(location(res)).toBe("/admin/site-users?impersonateError=missing");
     expect(mockImpersonate).not.toHaveBeenCalled();
   });
 
-  it("returns 400 when target userId equals actor (self-impersonation)", async () => {
+  it("returns to site users with an error on self-impersonation", async () => {
     const res = await action({ request: makeRequest({ userId: ACTOR_ID }) } as any);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toMatch(/Cannot impersonate self/i);
+    expect(location(res)).toBe("/admin/site-users?impersonateError=self");
     expect(mockImpersonate).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /admin/impersonate — target existence", () => {
-  it("returns 404 when the target user does not exist", async () => {
+  it("returns to site users with an error when the target user does not exist", async () => {
     mockPrisma.user.findUnique = vi.fn().mockResolvedValue(null);
     const res = await action({ request: makeRequest() } as any);
-    expect(res.status).toBe(404);
-    const body = await res.json();
-    expect(body.error).toMatch(/No such user/i);
+    expect(location(res)).toBe("/admin/site-users?impersonateError=missing");
     expect(mockImpersonate).not.toHaveBeenCalled();
   });
 
@@ -210,11 +209,27 @@ describe("POST /admin/impersonate — happy path", () => {
     expect(setCookie).toContain("dali.session=abc123");
   });
 
-  it("returns 400 when impersonateUser throws", async () => {
+  it("returns to site users with an error when impersonateUser throws", async () => {
     mockImpersonate.mockRejectedValue(new Error("plugin error"));
     const res = await action({ request: makeRequest() } as any);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toBeDefined();
+    expect(location(res)).toBe("/admin/site-users?impersonateError=failed");
+    expect(mockLogAudit).not.toHaveBeenCalled();
   });
+
+  it("keeps the admin's search and filter when returning with an error", async () => {
+    mockImpersonate.mockRejectedValue(new Error("plugin error"));
+    const res = await action({
+      request: makeRequest({ userId: TARGET_ID }, "http://localhost/admin/site-users?q=ada&kind=Member"),
+    } as any);
+    expect(location(res)).toBe("/admin/site-users?q=ada&kind=Member&impersonateError=failed");
+  });
+
+  it.each(["https://evil.example/admin/site-users?q=x", "http://localhost/admin/members?q=x", "not a url"])(
+    "ignores a Referer of %s",
+    async (referer) => {
+      mockImpersonate.mockRejectedValue(new Error("plugin error"));
+      const res = await action({ request: makeRequest({ userId: TARGET_ID }, referer) } as any);
+      expect(location(res)).toBe("/admin/site-users?impersonateError=failed");
+    },
+  );
 });
