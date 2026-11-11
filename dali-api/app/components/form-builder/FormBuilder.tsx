@@ -138,12 +138,19 @@ export const BADGE = {
 const PALETTE_PREFIX = 'palette:'
 const CANVAS_ID = 'canvas'
 
-const ACCEPT_PRESETS = [
+export const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
+  { label: 'Images', value: 'image/*' },
+  { label: 'Video', value: 'video/*' },
+  { label: 'Audio', value: 'audio/*' },
+  { label: 'Docs', value: '.doc,.docx,.odt,.rtf,.txt' },
+  { label: 'Slides', value: '.ppt,.pptx,.key,.odp' },
+  { label: 'Sheets', value: '.xls,.xlsx,.csv,.numbers,.ods' },
+  { label: 'ZIP', value: '.zip' },
   { label: 'CAD / 3D', value: '.f3z,.f3d' },
 ] as const
 
-function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
+export function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
   const parts: string[] = []
   for (const { value } of ACCEPT_PRESETS) {
     if (presets.has(value)) parts.push(...value.split(',').map((s) => s.trim()))
@@ -154,7 +161,7 @@ function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
   return [...new Set(parts)].join(', ')
 }
 
-function parseAcceptIntoPresets(accept: string): { presets: Set<string>; custom: string } {
+export function parseAcceptIntoPresets(accept: string): { presets: Set<string>; custom: string } {
   const tokens = new Set(accept.split(',').map((s) => s.trim()).filter(Boolean))
   const selected = new Set<string>()
   const remaining = new Set(tokens)
@@ -1014,7 +1021,7 @@ export function FormBuilderTab({
                 placeholder="Additional types, e.g. .f3z, text/plain"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Toggle common presets above, or enter extra MIME types / extensions below (comma-separated).
+                Leave all of these empty to accept any file type. Add other types as extensions or MIME types, separated by commas.
               </p>
             </div>
           )}
