@@ -1,5 +1,6 @@
 import { getAppEnv } from "./app-env";
 import { VIDEO_EMBED_ORIGINS } from "./video-embed";
+import { MAP_TILES_ORIGIN } from "~/members/lib/community";
 
 const isDeployed = getAppEnv() !== "dev";
 
@@ -50,8 +51,9 @@ function cspDirectives(): Directives {
         // Google sign-in / APIs (additive; the desktop pairing login runs in
         // the system browser, so this is a forward-compat allowance).
         "https://accounts.google.com",
+        MAP_TILES_ORIGIN,
       ]
-    : ["'self'", "ws:", "wss:"];
+    : ["'self'", "ws:", "wss:", MAP_TILES_ORIGIN];
 
   const directives: Directives = {
     "default-src": ["'self'"],

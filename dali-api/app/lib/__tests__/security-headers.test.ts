@@ -106,6 +106,14 @@ describe("securityHeaders / contentSecurityPolicy", () => {
     expect(csp).not.toMatch(/connect-src[^;]* wss: /);
   });
 
+  it("lets the community map load its tiles in every environment", async () => {
+    for (const env of ["dev", "prod"]) {
+      const { contentSecurityPolicy } = await loadHeaders({ DALI_APP_ENV: env });
+      expect(contentSecurityPolicy()).toMatch(/connect-src[^;]* https:\/\/tiles\.openfreemap\.org/);
+      vi.resetModules();
+    }
+  });
+
   it("falls back to 'self' only in production when COLLAB_URL is unset", async () => {
     const { contentSecurityPolicy } = await loadHeaders({
       DALI_APP_ENV: "prod",
