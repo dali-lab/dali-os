@@ -70,7 +70,7 @@ Some details:
 
 ## Students and partners
 
-Dartmouth students in the portal and partners get a simpler version. Their bell opens one **Notifications** list, with no project work or meetings tabs. They choose what reaches them in a **Notifications** section on their own settings page, [portal settings](/portal/settings) or [partner settings](/partner/settings), with just **In-app** and **Email** (**Instantly** or off).
+Dartmouth students in the portal and partners get a simpler version. Their bell opens one **Notifications** list, with no project work or meetings tabs. Portal students choose what reaches them in a **Notifications** section on [portal settings](/portal/settings), with just **In-app** and **Email** (**Instantly** or off). Partners get one switch on [partner settings](/partner/settings): **Email me replies to my comments**.
 
 - Students see their course notifications: announcements, assignments, discussion replies, feedback requests, certificates, session reminders and grades.
 - Partners see replies to their comments on shared project documents. The link opens the document in the partner portal.
