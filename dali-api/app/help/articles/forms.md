@@ -65,6 +65,8 @@ Open a version and use the switch at the top to move between **Questions**, **Su
 
 Forms tied to staffing slots add **Slot** to the filter bar in both views.
 
+In Responses, **Member columns** adds columns about each respondent's time in the lab: **Project history** (every project and the terms they worked on it), **Terms in lab** (the count and each term) and **Current role** (each domain and level, plus any Core title, from their latest term). They fill in only for members who were signed in when they responded, and they aren't part of **Export**.
+
 ### Filter by answer
 
 Select **Filter** under the switch in Summary or Responses, pick a question, then choose what to match. Each active filter shows as a pill beside the button. Select the middle of a pill to change it, **×** to remove it, or **Clear all** to remove every filter. Filters stay when you switch between Summary and Responses, and they start over when you switch to another version.

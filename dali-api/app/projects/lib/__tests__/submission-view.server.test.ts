@@ -8,6 +8,8 @@ vi.mock("~/lib/db.server", () => ({
     project: { findMany: vi.fn() },
     domain: { findMany: vi.fn() },
     domainEligibility: { findMany: vi.fn() },
+    projectAssignment: { findMany: vi.fn() },
+    coreAssignment: { findMany: vi.fn() },
     staffingCycle: { findUnique: vi.fn() },
   },
 }));
@@ -44,6 +46,8 @@ beforeEach(() => {
   db.project.findMany.mockResolvedValue([]);
   db.domain.findMany.mockResolvedValue([]);
   db.domainEligibility.findMany.mockResolvedValue([]);
+  db.projectAssignment.findMany.mockResolvedValue([]);
+  db.coreAssignment.findMany.mockResolvedValue([]);
   db.staffingCycle.findUnique.mockResolvedValue({ term: { code: "27S" } });
 });
 
@@ -55,7 +59,13 @@ describe("buildSubmissionView lookups", () => {
     expect(db.formVersion.findFirst).not.toHaveBeenCalled();
     expect(view.mapping).toBeNull();
     expect(view.allColumns).toEqual([]);
-    expect(view.rows[0].detailFields.map((f) => f.key)).toEqual(["builtin:submitter", "builtin:hiredRoles"]);
+    expect(view.rows[0].detailFields.map((f) => f.key)).toEqual([
+      "builtin:submitter",
+      "builtin:hiredRoles",
+      "builtin:projectHistory",
+      "builtin:termsInLab",
+      "builtin:currentRole",
+    ]);
   });
 
   it("reads the binding for the given cycles and slot, and the newest form version", async () => {
@@ -154,7 +164,49 @@ describe("buildSubmissionView rows", () => {
       ["q:q3", "question", true],
       ["builtin:submitter", "builtin", true],
       ["builtin:hiredRoles", "builtin", false],
+      ["builtin:projectHistory", "builtin", false],
+      ["builtin:termsInLab", "builtin", false],
+      ["builtin:currentRole", "builtin", false],
     ]);
+  });
+
+  it("fills project history, terms in lab and current role from each member's own assignments", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-11"), toFake: ["Date"] });
+    db.staffingCycleFormBinding.findFirst.mockResolvedValue({
+      columnMapping: {
+        version: 1,
+        entries: [
+          { role: "projectHistory", label: "Projects", source: "builtin", builtin: "projectHistory", order: 0 },
+          { role: "termsInLab", label: "Terms", source: "builtin", builtin: "termsInLab", order: 1 },
+          { role: "currentRole", label: "Role", source: "builtin", builtin: "currentRole", order: 2 },
+        ],
+      },
+    });
+    db.formSubmission.findMany.mockResolvedValue([sub("u1", "Ada", "Lovelace", {}), sub("u2", "Grace", "Hopper", {})]);
+    const f26 = { code: "26F", sortKey: 264, startDate: new Date("2026-09-14") };
+    const w26 = { code: "26W", sortKey: 261, startDate: new Date("2026-01-05") };
+    db.projectAssignment.findMany.mockResolvedValue([
+      { userId: "u1", level: "P2", domainId: "eng", project: { name: "Evergreen" }, domain: { displayName: "Engineering" }, term: f26 },
+      { userId: "u1", level: "P1", domainId: "eng", project: { name: "Ripple" }, domain: { displayName: "Engineering" }, term: w26 },
+    ]);
+    db.coreAssignment.findMany.mockResolvedValue([{ userId: "u1", leadTitle: "Education Lead", term: f26 }]);
+
+    const view = await buildSubmissionView({ cycleIds: ["c1"], slot: "intent-to-work" as never, formId: "f1" });
+    vi.useRealTimers();
+
+    expect(db.projectAssignment.findMany.mock.calls[0][0].where).toEqual({ userId: { in: ["u1", "u2"] } });
+    expect(db.coreAssignment.findMany.mock.calls[0][0].where).toEqual({ userId: { in: ["u1", "u2"] } });
+    const ada = view.rows.find((r) => r.userId === "u1")!;
+    expect(ada.cells).toEqual({
+      "builtin:projectHistory": "Evergreen (26F); Ripple (26W)",
+      "builtin:termsInLab": "2 terms: 26W, 26F",
+      "builtin:currentRole": "26F: Engineering (P2), Education Lead",
+    });
+    expect(view.rows.find((r) => r.userId === "u2")!.cells).toEqual({
+      "builtin:projectHistory": "",
+      "builtin:termsInLab": "",
+      "builtin:currentRole": "",
+    });
   });
 });
 
