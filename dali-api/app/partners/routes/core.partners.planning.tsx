@@ -9,7 +9,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { setTermPi } from "../lib/partner-renewals.server";
-import { setTermSpots } from "../lib/planning-spots.server";
+import { setApplicationSpots, setTermSpots } from "../lib/planning-spots.server";
 import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server";
 import { startProjectReturn } from "../lib/partner-returns.server";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
@@ -88,6 +88,45 @@ export async function action({ request }: Route.ActionArgs) {
     const result = await setPlanningNote(prisma, { owner, body, userId: auth.user.sub });
     if (result === "not-found") {
       return Response.json({ error: `That ${ownerKind} no longer exists.` }, { status: 404 });
+    }
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "application-summary" || intent === "application-pi" || intent === "application-spots") {
+    const applicationId = String(form.get("applicationId") ?? "");
+    if (!applicationId) return Response.json({ error: "Missing application." }, { status: 400 });
+    const gone = Response.json({ error: "That application no longer exists." }, { status: 404 });
+
+    if (intent === "application-summary") {
+      const summary = String(form.get("summary") ?? "").trim();
+      if (summary.length > DESCRIPTION_MAX) {
+        return Response.json({ error: `Keep the summary under ${DESCRIPTION_MAX} characters.` }, { status: 400 });
+      }
+      const { count } = await prisma.partnerApplication.updateMany({
+        where: { id: applicationId },
+        data: { summary: summary || null },
+      });
+      return count === 0 ? gone : Response.json({ ok: true });
+    }
+
+    if (intent === "application-pi") {
+      const piUserId = String(form.get("piUserId") ?? "") || null;
+      if (piUserId && !(await isCore(piUserId, request))) {
+        return Response.json({ error: "A PI must be a Core member." }, { status: 400 });
+      }
+      const { count } = await prisma.partnerApplication.updateMany({
+        where: { id: applicationId },
+        data: { piUserId },
+      });
+      return count === 0 ? gone : Response.json({ ok: true });
+    }
+
+    const roles = parseRoles(form.get("roles"));
+    if (!roles) return Response.json({ error: "Spots were not readable. Try again." }, { status: 400 });
+    const result = await setApplicationSpots(prisma, { applicationId, roles });
+    if (result === "not-found") return gone;
+    if (result === "unknown-domain") {
+      return Response.json({ error: "One of those domains is no longer available." }, { status: 400 });
     }
     return Response.json({ ok: true });
   }
@@ -314,6 +353,8 @@ export default function PartnersPlanning() {
         <PlanningApplicationModal
           applicationId={openApplicationId}
           info={openApplication}
+          coreMembers={data.coreMembers}
+          domains={data.spotDomains}
           canEdit
           onClose={() => setOpenRow(null)}
         />

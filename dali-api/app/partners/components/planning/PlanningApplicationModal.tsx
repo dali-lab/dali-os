@@ -4,19 +4,25 @@ import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { PlanningApplicationInfo } from "../../lib/planning-gap.server";
 import { applicationHref } from "./DomainBreakdown";
+import { PlanBlock, spotsKey, type CoreMember, type DomainOption } from "./PlanBlock";
 import { noteMeta, SavedTextField } from "./SavedTextField";
 
 export function PlanningApplicationModal({
   applicationId,
   info,
+  coreMembers,
+  domains,
   canEdit,
   onClose,
 }: {
   applicationId: string;
   info: PlanningApplicationInfo;
+  coreMembers: CoreMember[];
+  domains: DomainOption[];
   canEdit: boolean;
   onClose: () => void;
 }) {
+  const terms = info.targetTermCodes;
   return (
     <Modal open onClose={onClose} labelledBy="planning-application-title">
       <ModalHeader
@@ -50,6 +56,18 @@ export function PlanningApplicationModal({
         )}
 
         <SavedTextField
+          key={`summary:${info.summary ?? ""}`}
+          title="Summary"
+          label="Application summary"
+          placeholder="Add a short summary of the pitch"
+          value={info.summary}
+          fields={{ intent: "application-summary", applicationId }}
+          bodyField="summary"
+          saveLabel="Save summary"
+          canEdit={canEdit}
+        />
+
+        <SavedTextField
           key={`note:${info.note?.updatedAt ?? ""}`}
           title="Planning notes"
           label="Planning notes"
@@ -62,6 +80,24 @@ export function PlanningApplicationModal({
           saveLabel="Save notes"
           canEdit={canEdit}
         />
+
+        <section className="flex flex-col gap-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">If it goes ahead</h3>
+          <PlanBlock
+            key={spotsKey(info.spots)}
+            title={terms.length > 0 ? `Wants ${terms.join(", ")}` : "No target terms yet"}
+            label="Application"
+            hint="The PI and spots carry over to the project when it is created."
+            pi={info.pi}
+            spots={info.spots}
+            coreMembers={coreMembers}
+            domains={domains}
+            canEdit={canEdit}
+            piFields={{ intent: "application-pi", applicationId }}
+            spotsFields={{ intent: "application-spots", applicationId }}
+            saveSpotsLabel="Save spots"
+          />
+        </section>
 
         <div className="flex items-center justify-between pt-2">
           <Link to={applicationHref(applicationId)} className="text-sm font-medium text-os-accent hover:underline">

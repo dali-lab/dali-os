@@ -33,7 +33,9 @@ A principal investigator (PI) is the Core member responsible for a partner proje
 
 Click a project to open it without leaving the page. You can edit its description, and for each upcoming term set the PI and the spots it needs in each domain. Add a domain with **+ Domain**, use the minus and plus buttons to change how many spots, then click **Save** for that term. Mentor and other higher-level spots a project already has stay as they are; new spots are added as learner spots, and spots you remove come off the learner spots first.
 
-The popup also has **Planning notes**: a short status for what's going on with the project right now. Notes show only on the planning page, not on the project page, and the popup says who last edited them. Click an application to open the same kind of popup with its own planning notes and a link to its card on the Partners board. Clear the text and save to remove a note. When an application is turned into a project, its planning notes move to the new project.
+The popup also has **Planning notes**: a short status for what's going on with the project right now. Notes show only on the planning page, not on the project page, and the popup says who last edited them. Clear the text and save to remove a note. When an application is turned into a project, its planning notes move to the new project.
+
+Potential and backlog work opens the same kind of popup, so you can read it and assign a PI before it is confirmed. Click an application, at any stage, to see its summary, the terms it wants, its PI, its expected spots per domain and its planning notes, with a link to its card on the Partners board. You can edit all of them there, and the PI and spots carry over when it becomes a project. An undecided renewal shows the term it last ran, with that term's spots. The PI you set there carries forward if the project continues; decide its terms and spots in Renewals.
 
 ## Returning projects
 
