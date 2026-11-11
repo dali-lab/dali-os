@@ -95,7 +95,7 @@ export default function CommunityGallery() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="sr-only">Gallery</h1>
-      <NewPostsPill newestAt={data.posts[0]?.createdAt ?? null} enabled={!filtered} />
+      <NewPostsPill newestAt={data.posts[0]?.feedAt ?? null} enabled={!filtered} />
       <section className="flex flex-col gap-6">
         <div className="flex flex-col gap-4">
           <GalleryNavRow

@@ -10,6 +10,9 @@ import {
   isGalleryImageKey,
   layoutMasonry,
   parseNewPosts,
+  parseTakenAt,
+  takenAtFromDate,
+  takenDateValue,
   scaledGalleryCopy,
   encodeGalleryImage,
   galleryDisplaySize,
@@ -72,7 +75,7 @@ describe("isGalleryOriginalKey", () => {
 describe("parseNewPosts", () => {
   it("trims captions, lowercases colours and keeps composer order", () => {
     const posts = parseNewPosts(JSON.stringify([row(), row({ caption: "", width: 10 })]), "u1");
-    const base = { imageKey: key(), displayKey: null, thumbKey: null, height: 800, color: "#aabbcc" };
+    const base = { imageKey: key(), displayKey: null, thumbKey: null, height: 800, color: "#aabbcc", takenAt: null };
     expect(posts).toEqual([
       { ...base, width: 1200, caption: "Demo day" },
       { ...base, width: 10, caption: null },
@@ -109,6 +112,9 @@ describe("parseNewPosts", () => {
     ["a named colour", JSON.stringify([row({ color: "red" })])],
     ["a numeric caption", JSON.stringify([row({ caption: 5 })])],
     ["a long caption", JSON.stringify([row({ caption: "x".repeat(GALLERY_CAPTION_MAX + 1) })])],
+    ["an unreadable taken date", JSON.stringify([row({ takenAt: "last spring" })])],
+    ["a numeric taken date", JSON.stringify([row({ takenAt: 1551741725000 })])],
+    ["a future taken date", JSON.stringify([row({ takenAt: "2999-01-01T00:00:00Z" })])],
     ["too many photos", JSON.stringify(Array.from({ length: GALLERY_MAX_PHOTOS + 1 }, () => row()))],
   ])("rejects %s", (_, raw) => {
     expect(parseNewPosts(raw, "u1")).toBeNull();
@@ -116,6 +122,11 @@ describe("parseNewPosts", () => {
 
   it("rejects the whole batch when one row is bad", () => {
     expect(parseNewPosts(JSON.stringify([row(), row({ color: "#12" })]), "u1")).toBeNull();
+  });
+
+  it("keeps the date a photo was taken as ISO", () => {
+    const [post] = parseNewPosts(JSON.stringify([row({ takenAt: "2019-03-04T18:22:05-05:00" })]), "u1")!;
+    expect(post.takenAt).toBe("2019-03-04T23:22:05.000Z");
   });
 
   it("accepts the maximum batch", () => {
@@ -330,5 +341,47 @@ describe("scaledGalleryCopy", () => {
     expect(ctx.globalCompositeOperation).toBe("destination-over");
     expect(ctx.fillStyle).toBe("#fff");
     expect(ctx.fillRect).toHaveBeenCalledWith(0, 0, 300, 200);
+  });
+});
+
+describe("parseTakenAt", () => {
+  const now = Date.parse("2026-11-11T12:00:00Z");
+
+  it("treats a missing date as none", () => {
+    expect(parseTakenAt(undefined, now)).toBeNull();
+    expect(parseTakenAt(null, now)).toBeNull();
+    expect(parseTakenAt("", now)).toBeNull();
+  });
+
+  it("allows a day of clock skew but nothing later", () => {
+    expect(parseTakenAt("2026-11-12T11:00:00Z", now)).toBe("2026-11-12T11:00:00.000Z");
+    expect(parseTakenAt("2026-11-12T13:00:00Z", now)).toBeUndefined();
+  });
+
+  it("refuses dates before 1900", () => {
+    expect(parseTakenAt("1899-12-31T00:00:00Z", now)).toBeUndefined();
+    expect(parseTakenAt("1900-01-01T00:00:00Z", now)).toBe("1900-01-01T00:00:00.000Z");
+  });
+});
+
+describe("taken date picker", () => {
+  it("shows the poster's own day and is blank without a date", () => {
+    expect(takenDateValue(new Date(2019, 2, 4, 23, 30).toISOString())).toBe("2019-03-04");
+    expect(takenDateValue(null)).toBe("");
+  });
+
+  it("keeps the photo's own time when the day doesn't change", () => {
+    const exif = new Date(2019, 2, 4, 18, 22, 5).toISOString();
+    expect(takenAtFromDate("2019-03-04", exif)).toBe(exif);
+  });
+
+  it("puts a newly picked day at noon UTC", () => {
+    const exif = new Date(2019, 2, 4, 18, 22, 5).toISOString();
+    expect(takenAtFromDate("2018-07-01", exif)).toBe("2018-07-01T12:00:00.000Z");
+    expect(takenAtFromDate("2018-07-01", null)).toBe("2018-07-01T12:00:00.000Z");
+  });
+
+  it("clears the date when the picker is emptied", () => {
+    expect(takenAtFromDate("", "2018-07-01T12:00:00.000Z")).toBeNull();
   });
 });

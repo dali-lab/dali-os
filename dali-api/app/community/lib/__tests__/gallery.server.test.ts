@@ -115,6 +115,8 @@ const rowFor = (id: string, thumbKey: string | null = null, displayKey: string |
   caption: null,
   hiddenAt: null,
   createdAt: new Date("2026-10-01T00:00:00Z"),
+  takenAt: null,
+  feedAt: new Date("2026-10-01T00:00:00Z"),
   author: { id: "a", firstName: "Ann", lastName: "Lee", photoUrl: null, classYear: 2027 },
   reactions: [],
   _count: { comments: 0 },
@@ -137,6 +139,26 @@ describe("loadGalleryPage", () => {
       })),
     ]);
     expect(args).toMatchObject({ cursor: { id: "c1" }, skip: 1, take: GALLERY_PAGE_SIZE + 1 });
+  });
+
+  it("orders by when photos were taken, then when they were posted", async () => {
+    db.galleryPost.findMany.mockResolvedValue([]);
+    await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null });
+    expect(db.galleryPost.findMany.mock.calls[0][0].orderBy).toEqual([
+      { feedAt: "desc" },
+      { createdAt: "desc" },
+      { id: "desc" },
+    ]);
+  });
+
+  it("gives each tile its taken date and sort time", async () => {
+    const taken = new Date("2019-03-04T23:22:05Z");
+    db.galleryPost.findMany.mockResolvedValue([{ ...rowFor("old"), takenAt: taken, feedAt: taken }, rowFor("new")]);
+    const { posts } = await loadGalleryPage(member, { by: null, mine: false, q: "", cursor: null });
+    expect(posts.map((p) => [p.takenAt, p.feedAt])).toEqual([
+      ["2019-03-04T23:22:05.000Z", "2019-03-04T23:22:05.000Z"],
+      [null, "2026-10-01T00:00:00.000Z"],
+    ]);
   });
 
   it("returns a next cursor only when there is another page", async () => {
@@ -191,11 +213,11 @@ describe("loadGalleryPage", () => {
 });
 
 describe("countNewerPosts", () => {
-  it("counts visible posts after the reader's newest", async () => {
+  it("counts visible posts that sort above the reader's top one", async () => {
     const since = new Date("2026-10-22T12:00:00Z");
     await countNewerPosts(member, since);
     expect(db.galleryPost.count).toHaveBeenCalledWith({
-      where: { AND: [visibleTo(member), { createdAt: { gt: since } }] },
+      where: { AND: [visibleTo(member), { feedAt: { gt: since } }] },
     });
   });
 });
@@ -227,6 +249,19 @@ describe("galleryAction create", () => {
     const res = await run({ intent: "create", posts: JSON.stringify([{ ...photo("x"), ...keys }]) });
     expect(res).toMatchObject({ ok: true, created: 1 });
     expect(db.galleryPost.createMany.mock.calls[0][0].data[0]).toMatchObject(keys);
+  });
+
+  it("sorts a photo by when it was taken and the rest by when they were posted", async () => {
+    const res = await run({
+      intent: "create",
+      posts: JSON.stringify([{ ...photo("old"), takenAt: "2019-03-04T23:22:05Z" }, photo("new")]),
+    });
+    expect(res).toMatchObject({ ok: true, created: 2 });
+    const [old, fresh] = db.galleryPost.createMany.mock.calls[0][0].data;
+    expect(old.takenAt).toEqual(new Date("2019-03-04T23:22:05Z"));
+    expect(old.feedAt).toEqual(old.takenAt);
+    expect(fresh.takenAt).toBeNull();
+    expect(fresh.feedAt).toEqual(fresh.createdAt);
   });
 
   it("refuses photos uploaded under someone else's prefix", async () => {
