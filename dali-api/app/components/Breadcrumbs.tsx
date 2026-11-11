@@ -118,6 +118,7 @@ const SEGMENT_LABELS: Record<string, string> = {
 
   partners: 'Partners',
   education: 'Education',
+  resources: 'Stories',
 
   'internal-processes': 'Lab Processes',
   core: 'Core',
@@ -165,6 +166,8 @@ const UNROUTED_SEGMENTS = new Set([
   'assignments', // /education/manage/assignments/:assignmentId
   'page',
   'certificates',
+  'coffee-chats',
+  'write', // /resources/write/:postId
 ])
 
 // Structural URL segments that carry no location of their own — the sibling
@@ -178,6 +181,7 @@ const DROPPED_SEGMENTS = new Set([
   'application', // /hiring/{reviewer,domain-lead}/application/:id — the :id leaf names the applicant
   // /calendar/check-in/:id — no /calendar/check-in index; leaf breadcrumb names the meeting
   'check-in',
+  'blog', // /resources/blog/:postId
 ])
 
 // Opaque database ids that would render as gibberish in a trail: cuids
