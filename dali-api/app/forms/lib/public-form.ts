@@ -25,9 +25,12 @@ import {
 import { pickStaffingBinding, type Slot } from "~/projects/lib/form-slots";
 import { interpolateVars } from "~/lib/template-variables";
 import { resolveFormVariables } from "./form-variables";
+import { isFormUploadKeyFor } from "~/lib/file-validation";
 import {
   OTHER_ANSWER_MAX_LENGTH,
   isValidOtherText,
+  maxFilesFor,
+  parseFileAnswer,
   normalizeAnswerFormats,
   validateAnswerFormats,
 } from "~/lib/form-answers";
@@ -53,10 +56,6 @@ export type PublicForm = {
   // Block JSON shown on the done screens in place of the default copy; null
   // when the author hasn't written one.
   confirmationMessage: unknown;
-  // `file` questions need an authenticated upload presign, so they're not
-  // fillable anonymously — they're returned but flagged unsupported and the
-  // UI renders them disabled. Required file questions are reported so we can
-  // surface "this form can't be completed publicly" rather than silently drop.
   questions: Question[];
   // Starting answers from the filler's own records, keyed by question key.
   prefill: Record<string, string>;
@@ -259,22 +258,37 @@ export async function validateAnswers(
     answers[q.key] = [...new Set(parsed)];
   }
 
+  for (const q of questions) {
+    if (q.type !== "file") continue;
+    if (stored && answers[q.key] === stored[q.key]) continue;
+    const keys = [...new Set(parseFileAnswer(answers[q.key]))];
+    if (keys.length === 0) {
+      delete answers[q.key];
+      continue;
+    }
+    const max = maxFilesFor(q);
+    if (keys.length > max) {
+      return {
+        error: max === 1
+          ? `"${q.data.label}" takes one file.`
+          : `"${q.data.label}" takes up to ${max} files.`,
+        status: 400,
+      };
+    }
+    // Keys already on the response pass as-is, so an older upload survives an edit.
+    const kept = new Set(parseFileAnswer(stored?.[q.key]));
+    if (keys.some((k) => !kept.has(k) && !isFormUploadKeyFor(k, q.key))) {
+      return { error: `"${q.data.label}": a file didn't upload. Add it again.`, status: 400 };
+    }
+    answers[q.key] = max > 1 ? keys : keys[0];
+  }
+
   const formatErrors = validateAnswerFormats(questions, answers);
   if (formatErrors.length > 0) return { error: formatErrors[0].message, status: 400 };
   normalizeAnswerFormats(questions, answers);
 
-  // Enforce required answers. `file` questions can't be completed without an
-  // authenticated upload presign, so a required file question makes the form
-  // unsubmittable here — say so explicitly instead of rejecting an otherwise
-  // -complete submission.
   for (const q of questions) {
     if (!q.required) continue;
-    if (q.type === "file") {
-      return {
-        error: "This form has a required file upload and can't be submitted here.",
-        status: 422,
-      };
-    }
     const v = answers[q.key];
     const empty =
       v == null ||

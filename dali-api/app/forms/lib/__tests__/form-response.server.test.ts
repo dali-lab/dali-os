@@ -43,6 +43,9 @@ const FREE = {
   partnerSurveyFor: null,
 };
 
+const CV_KEY = "uploads/applications/cv/0b6f8a52-1c1e-4d38-9a51-2f3c6d7e8f90-cv.pdf";
+const NEW_CV_KEY = "uploads/applications/cv/7d1e2f3a-4b5c-4d6e-8f70-112233445566-cv2.pdf";
+
 const V1_QUESTIONS = [
   { key: "name", type: "text", required: true, data: { label: "Name" } },
   { key: "tags", type: "checkbox", required: false, data: { label: "Tags", options: ["a", "b"] } },
@@ -67,7 +70,7 @@ function formRow(over: Record<string, unknown> = {}) {
 function submissionRow(over: Record<string, unknown> = {}) {
   return {
     id: "s1",
-    answers: { name: "Ada", tags: ["a"], proj: "p1", cv: { key: "files/cv.pdf" } },
+    answers: { name: "Ada", tags: ["a"], proj: "p1", cv: CV_KEY },
     formVersion: {
       id: "v1",
       questions: V1_QUESTIONS,
@@ -227,15 +230,31 @@ describe("editOwnResponse", () => {
     expect(await edit({ name: "Ada L", tags: JSON.stringify(["b"]), proj: "p2" })).toEqual({ ok: true });
     expect(db.formSubmission.update).toHaveBeenCalledWith({
       where: { id: "s1" },
-      data: { answers: { name: "Ada L", tags: ["b"], proj: "p2", cv: { key: "files/cv.pdf" } } },
+      data: { answers: { name: "Ada L", tags: ["b"], proj: "p2", cv: CV_KEY } },
     });
   });
 
-  it("ignores posted keys that aren't editable questions, files included", async () => {
-    await edit({ name: "Ada", cv: "evil", extra: "x" });
+  it("ignores posted keys that aren't questions", async () => {
+    await edit({ name: "Ada", extra: "x" });
     const saved = db.formSubmission.update.mock.calls[0][0].data.answers;
-    expect(saved.cv).toEqual({ key: "files/cv.pdf" });
     expect(saved).not.toHaveProperty("extra");
+  });
+
+  it("replaces a file with a new upload for that question", async () => {
+    expect(await edit({ name: "Ada", cv: NEW_CV_KEY })).toEqual({ ok: true });
+    expect(db.formSubmission.update.mock.calls[0][0].data.answers.cv).toBe(NEW_CV_KEY);
+  });
+
+  it("rejects a file key that wasn't uploaded for that question", async () => {
+    expect(await edit({ name: "Ada", cv: "uploads/avatars/someone-else.png" })).toMatchObject({ status: 400 });
+    expect(db.formSubmission.update).not.toHaveBeenCalled();
+  });
+
+  it("requires the file again once it's removed", async () => {
+    expect(await edit({ name: "Ada", cv: "" })).toMatchObject({
+      status: 400,
+      error: '"CV" is required.',
+    });
   });
 
   it("validates against the stored version, not the latest", async () => {
@@ -285,7 +304,7 @@ describe("loadResponseForEditing", () => {
     if ("error" in out) throw new Error(out.error);
     expect(out.form.versionId).toBe("v1");
     expect(out.form.questions.map((q) => q.key)).toEqual(["name", "tags", "proj", "cv"]);
-    expect(out.answers).toEqual({ name: "Ada", tags: '["a"]', proj: "p1" });
+    expect(out.answers).toEqual({ name: "Ada", tags: '["a"]', proj: "p1", cv: CV_KEY });
   });
 
   it("resolves reference options for the stored version", async () => {
@@ -302,10 +321,17 @@ describe("loadResponseForEditing", () => {
 });
 
 describe("answersToFillState", () => {
-  it("stringifies arrays and numbers and drops files and unknown shapes", () => {
+  it("stringifies arrays and numbers and drops unknown shapes", () => {
     expect(
       answersToFillState(V1_QUESTIONS as never, { name: "A", tags: ["a", "b"], proj: 3, cv: {} }),
     ).toEqual({ name: "A", tags: '["a","b"]', proj: "3" });
+  });
+
+  it("keeps file answers so the edit screen shows them", () => {
+    expect(answersToFillState(V1_QUESTIONS as never, { cv: CV_KEY })).toEqual({ cv: CV_KEY });
+    expect(answersToFillState(V1_QUESTIONS as never, { cv: [CV_KEY, NEW_CV_KEY] })).toEqual({
+      cv: JSON.stringify([CV_KEY, NEW_CV_KEY]),
+    });
   });
 });
 
@@ -335,20 +361,20 @@ describe("editOwnResponse with rules", () => {
   const saved = () => db.formSubmission.update.mock.calls[0][0].data.answers;
 
   it("removes stored answers an edit has hidden, files included", async () => {
-    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    stored({ returning: "No", why: "moving", cv: CV_KEY });
     expect(await edit({ returning: "Yes" })).toEqual({ ok: true });
     expect(saved()).toEqual({ returning: "Yes" });
   });
 
   it("does not require a question the edit has hidden", async () => {
-    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    stored({ returning: "No", why: "moving", cv: CV_KEY });
     expect(await edit({ returning: "Yes", why: "" })).toEqual({ ok: true });
   });
 
   it("keeps the stored upload satisfying a shown required file", async () => {
-    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    stored({ returning: "No", why: "moving", cv: CV_KEY });
     expect(await edit({ returning: "No", why: "still moving" })).toEqual({ ok: true });
-    expect(saved()).toEqual({ returning: "No", why: "still moving", cv: { key: "files/cv.pdf" } });
+    expect(saved()).toEqual({ returning: "No", why: "still moving", cv: CV_KEY });
   });
 
   it("still requires a question the edit has shown", async () => {

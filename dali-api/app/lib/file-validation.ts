@@ -16,8 +16,20 @@ export const MAX_FORM_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 export const MAX_FORM_UPLOAD_LABEL = "50 MB";
 
-// The prefix QuestionField builds for every form file-upload answer.
 const FORM_UPLOAD_PREFIX = "applications/";
+
+export function formUploadKeyPrefix(questionKey: string): string {
+  return `${FORM_UPLOAD_PREFIX}${questionKey}/`;
+}
+
+export function isFormUploadKeyFor(key: string, questionKey: string): boolean {
+  if (questionKey.includes("/") || resolveKeySegments(key) !== key.replace(/^\/+/, "")) return false;
+  const unscoped = key.replace(/^\/+/, "").replace(/^uploads\//, "");
+  const prefix = formUploadKeyPrefix(questionKey);
+  if (!unscoped.startsWith(prefix)) return false;
+  const name = unscoped.slice(prefix.length);
+  return name !== "" && !name.includes("/");
+}
 
 const RELEASE_NOTE_PREFIX = "release-notes/";
 

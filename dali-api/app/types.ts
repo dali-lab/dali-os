@@ -149,6 +149,8 @@ export interface Question {
     max?: number
     afterDomains?: boolean
     accept?: string
+    // file only: how many files one answer can hold (1 to 10, default 1).
+    maxFiles?: number
     maxWords?: number
     // Set only for `type: 'reference'`. A key into REFERENCE_SOURCES.
     referenceSource?: string

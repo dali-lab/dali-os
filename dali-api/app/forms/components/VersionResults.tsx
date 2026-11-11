@@ -58,7 +58,23 @@ function ResponseDetailBody({ response }: { response: ResponseRow }) {
               {row.label}
             </dt>
             <dd className="text-sm text-foreground whitespace-pre-wrap">
-              {row.value || "—"}
+              {row.files?.length ? (
+                <span className="flex flex-col gap-1">
+                  {row.files.map((f) => (
+                    <a
+                      key={f.key}
+                      href={`/api/upload/raw?key=${encodeURIComponent(f.key)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-os-accent hover:underline break-all"
+                    >
+                      {f.name}
+                    </a>
+                  ))}
+                </span>
+              ) : (
+                row.value || "—"
+              )}
             </dd>
           </div>
         ))}

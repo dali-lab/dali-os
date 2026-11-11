@@ -420,6 +420,7 @@ export default [
   // / close the recipient's task.
   route("forms/fill/:token", "routes/forms.fill.$token.tsx"),
   route("api/forms/fill/:token", "routes/api.forms.fill.$token.ts"),
+  route("api/forms/fill/:token/upload", "routes/api.forms.fill.$token.upload.ts"),
 
   // Education certificates (no layout — portal users open these too; the PDF
   // is a resource route that streams a bare body).

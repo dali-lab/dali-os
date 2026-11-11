@@ -1,7 +1,11 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow } from "~/lib/pagination";
-import { buildReferenceLabelMaps, buildResponseGrid } from "~/forms/lib/answer-rows.server";
+import {
+  buildReferenceLabelMaps,
+  buildResponseGrid,
+  type FormAnswerRow,
+} from "~/forms/lib/answer-rows.server";
 import { RESPONSE_LOCK_SELECT, responseLockReason } from "~/forms/lib/response-lock";
 import type { Question } from "~/types";
 import { filterableQuestions, type AnswerFilter } from "~/forms/lib/answer-filters";
@@ -94,7 +98,7 @@ export type ResponseRow = {
   // Only anonymous (Public-audience) fills carry an IP.
   submitterIp: string | null;
   partnerApplication: { id: string; title: string } | null;
-  rows: { key: string; label: string; value: string }[];
+  rows: FormAnswerRow[];
 };
 
 export type VersionResponses = Awaited<ReturnType<typeof loadVersionResponses>>;

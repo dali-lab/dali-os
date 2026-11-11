@@ -73,9 +73,12 @@ describe("validateAnswers with rules", () => {
     expect(await run(form, { returning: "Yes" })).toBeNull();
   });
 
-  it("still blocks on a shown required file", async () => {
+  it("requires a shown required file", async () => {
     const form = [returning, q("resume", "file", when("returning", "is", "No"), true)];
-    expect(await run(form, { returning: "No" })).toMatchObject({ status: 422 });
+    expect(await run(form, { returning: "No" })).toMatchObject({
+      status: 400,
+      error: '"resume" is required.',
+    });
   });
 
   it("hides a whole chain", async () => {

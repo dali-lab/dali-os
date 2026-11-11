@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import { useSubmit, useActionData, useNavigation } from "react-router";
-import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { FormFieldList } from "~/forms/components/FormField";
 import {
   useFormPager,
@@ -41,7 +40,7 @@ export function OfferingApplyForm({
   const navigation = useNavigation();
   const submit = useSubmit();
   const pages = useMemo(() => visiblePages(questions, answers), [questions, answers]);
-  const pager = useFormPager(pages, { excludeFileType: true });
+  const pager = useFormPager(pages);
 
   function set(key: string, v: string) {
     setAnswers((a) => ({ ...a, [key]: v }));
@@ -50,9 +49,7 @@ export function OfferingApplyForm({
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setClientError(null);
-    const missing = findMissingRequired(visibleQuestions(questions, answers), (q) => answers[q.key], {
-      excludeFileType: true,
-    });
+    const missing = findMissingRequired(visibleQuestions(questions, answers), (q) => answers[q.key]);
     if (missing.length > 0) {
       setClientError(`"${missing[0].data.label}" is required.`);
       return;
@@ -87,19 +84,6 @@ export function OfferingApplyForm({
           questions={pager.page.questions}
           values={answers}
           onChange={set}
-          renderField={(q) =>
-            q.type === "file" ? (
-              <div className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md px-3 py-2">
-                File uploads aren&apos;t available on applications.
-              </div>
-            ) : (
-              <FormQuestionField
-                question={q}
-                value={answers[q.key] ?? ""}
-                onChange={(v) => set(q.key, v)}
-              />
-            )
-          }
         />
         <FormPagerNav
           pager={pager}
