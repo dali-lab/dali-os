@@ -14,6 +14,13 @@ import { FormTracker } from "~/forms/components/FormTracker";
 import { ExportCsvLink } from "~/forms/components/ResultsControls";
 import { ResultsFilterBar, responseCountText, useAnswerFilters } from "~/forms/components/ResultsFilterBar";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
+import { MultiSelect } from "~/components/ui/floating";
+import { ChevronDown } from "lucide-react";
+import {
+  MEMBER_COLUMNS_PARAM,
+  MEMBER_HISTORY_COLUMNS,
+  parseMemberColumns,
+} from "~/projects/lib/member-history";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -91,6 +98,38 @@ function ResponseDelete({ response }: { response: ResponseRow }) {
       </Button>
       {error && <span className="text-xs text-destructive">{error}</span>}
     </fetcher.Form>
+  );
+}
+
+function MemberColumnsPicker() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  return (
+    <MultiSelect
+      ariaLabel="Member columns"
+      values={parseMemberColumns(searchParams)}
+      options={MEMBER_HISTORY_COLUMNS.map((c) => ({ value: c.key, label: c.label }))}
+      onChange={(next) =>
+        setSearchParams(
+          (prev) => {
+            const params = new URLSearchParams(prev);
+            const keys = MEMBER_HISTORY_COLUMNS.map((c) => c.key).filter((k) => next.includes(k));
+            if (keys.length) params.set(MEMBER_COLUMNS_PARAM, keys.join(","));
+            else params.delete(MEMBER_COLUMNS_PARAM);
+            return params;
+          },
+          { replace: true, preventScrollReset: true },
+        )
+      }
+      chips={false}
+      renderTrigger={({ chosen }) => (
+        <>
+          <span className="truncate">
+            Member columns{chosen.length > 0 ? ` (${chosen.length})` : ""}
+          </span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        </>
+      )}
+    />
   );
 }
 
@@ -209,6 +248,7 @@ export function VersionResults({
                 size="sm"
                 containerClassName="w-full sm:w-64 min-w-[12rem]"
               />
+              <MemberColumnsPicker />
               <ExportCsvLink
                 formId={formId}
                 versionNumber={versionNumber}

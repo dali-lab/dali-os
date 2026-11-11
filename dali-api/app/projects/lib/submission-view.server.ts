@@ -14,6 +14,8 @@ import {
   visibleColumns,
   type ColumnDescriptor,
 } from "./submission-columns";
+import { memberHistoryText } from "./member-history";
+import { loadMemberHistories } from "./member-history.server";
 
 export type ResolvedRow = {
   userId: string;
@@ -134,7 +136,8 @@ export async function buildSubmissionView(args: {
     }
   }
   const idList = [...refIds];
-  const [projects, domains, eligibilities] = await Promise.all([
+  const rowUserIds = rowsRaw.map((r) => r.userId!);
+  const [projects, domains, eligibilities, histories] = await Promise.all([
     idList.length
       ? prisma.project.findMany({
           where: { id: { in: idList } },
@@ -148,7 +151,7 @@ export async function buildSubmissionView(args: {
         })
       : Promise.resolve([]),
     prisma.domainEligibility.findMany({
-      where: { userId: { in: rowsRaw.map((r) => r.userId!) } },
+      where: { userId: { in: rowUserIds } },
       select: {
         userId: true,
         level: true,
@@ -156,7 +159,9 @@ export async function buildSubmissionView(args: {
         domain: { select: { displayName: true } },
       },
     }),
+    loadMemberHistories(rowUserIds),
   ]);
+  const now = new Date();
   const refName = new Map<string, string>();
   for (const p of projects) refName.set(p.id, p.name);
   for (const d of domains) refName.set(d.id, d.displayName);
@@ -191,6 +196,9 @@ export async function buildSubmissionView(args: {
   const BUILTIN_LABELS: Record<string, string> = {
     submitter: "Submitter",
     hiredRoles: "Hired roles",
+    projectHistory: "Project history",
+    termsInLab: "Terms in lab",
+    currentRole: "Current role",
   };
 
   const rows: ResolvedRow[] = rowsRaw.map((s) => {
@@ -204,6 +212,7 @@ export async function buildSubmissionView(args: {
     const builtinText: Record<string, string> = {
       submitter: `${s.user!.firstName} ${s.user!.lastName}`,
       hiredRoles: hiredByUser.get(s.userId!) ?? "",
+      ...memberHistoryText(histories.get(s.userId!) ?? { projects: [], core: [] }, now),
     };
 
     // Detail-page field list: every question in form order, then builtins.

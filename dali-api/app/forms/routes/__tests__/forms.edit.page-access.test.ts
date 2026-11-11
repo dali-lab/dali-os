@@ -78,7 +78,7 @@ describe("forms.edit loader results paging", () => {
       workspaceType: "Project",
     } as never);
     vi.mocked(loadVersionResponses).mockResolvedValue({ versionId: "v2" } as never);
-    const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&show=responses&page=3&q=ada&slot=Tue");
+    const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&show=responses&page=3&q=ada&slot=Tue&member=termsInLab");
     await loader({ request: req, params: { formId: "f1" } } as never);
     expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", {
       page: 3,
@@ -86,6 +86,7 @@ describe("forms.edit loader results paging", () => {
       slot: "Tue",
       answers: [],
       questions: [],
+      memberColumns: ["termsInLab"],
     });
   });
 
@@ -104,6 +105,7 @@ describe("forms.edit loader results paging", () => {
       slot: "",
       answers: [],
       questions: [],
+      memberColumns: [],
     });
   });
 });
@@ -434,6 +436,7 @@ describe("forms.edit summary", () => {
       slot: "",
       answers: [{ key: "a", kind: "blank" }],
       questions: version.questions,
+      memberColumns: [],
     });
   });
 
