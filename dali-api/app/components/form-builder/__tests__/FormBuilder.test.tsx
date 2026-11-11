@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildQuestion, repairQuestions } from '../FormBuilder'
+import {
+  ACCEPT_PRESETS,
+  buildAcceptFromPresets,
+  buildQuestion,
+  parseAcceptIntoPresets,
+  repairQuestions,
+} from '../FormBuilder'
+import { fileMatchesAccept, isBlockedUpload } from '~/lib/file-validation'
 import type { Question } from '~/types'
 
 describe('buildQuestion (form builder save logic)', () => {
@@ -258,5 +265,41 @@ describe('buildQuestion maxFiles', () => {
 
   it('drops the limit from other question types', () => {
     expect(buildQuestion({ ...file, type: 'text', maxFiles: 3 }).data.maxFiles).toBeUndefined()
+  })
+})
+
+describe('file type presets', () => {
+  const samples: Record<string, [string, string][]> = {
+    PDF: [['a.pdf', 'application/pdf']],
+    Images: [['a.png', 'image/png'], ['a.heic', 'image/heic'], ['a.webp', 'image/webp']],
+    Video: [['a.mov', 'video/quicktime'], ['a.mp4', 'video/mp4']],
+    Audio: [['a.m4a', 'audio/mp4'], ['a.mp3', 'audio/mpeg']],
+    Docs: [['a.docx', ''], ['a.doc', 'application/msword'], ['a.txt', 'text/plain']],
+    Slides: [['a.pptx', ''], ['a.key', '']],
+    Sheets: [['a.xlsx', ''], ['a.csv', 'text/csv'], ['a.numbers', '']],
+    ZIP: [['a.zip', 'application/zip']],
+    'CAD / 3D': [['a.f3d', '']],
+  }
+
+  it.each(ACCEPT_PRESETS.map((p) => [p.label, p.value] as const))(
+    '%s accepts its own files and nothing else',
+    (label, value) => {
+      const accept = buildAcceptFromPresets(new Set([value]), '')
+      for (const [name, type] of samples[label]) {
+        expect(fileMatchesAccept(name, type, accept)).toBe(true)
+        expect(isBlockedUpload(name, type)).toBe(false)
+      }
+      for (const [other, otherSamples] of Object.entries(samples)) {
+        if (other === label) continue
+        for (const [name, type] of otherSamples) expect(fileMatchesAccept(name, type, accept)).toBe(false)
+      }
+    },
+  )
+
+  it('round-trips selected presets and keeps custom types separate', () => {
+    const selected = new Set<string>(['image/*', '.zip'])
+    const accept = buildAcceptFromPresets(selected, '.sketch')
+    expect(accept).toBe('image/*, .zip, .sketch')
+    expect(parseAcceptIntoPresets(accept)).toEqual({ presets: selected, custom: '.sketch' })
   })
 })
