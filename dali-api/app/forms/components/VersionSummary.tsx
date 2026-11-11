@@ -1,5 +1,7 @@
 import { useSearchParams } from "react-router";
 import { Select } from "~/components/ui/floating";
+import { AnswerFilterButton, AnswerFilterChips, useAnswerFilters } from "~/forms/components/AnswerFilters";
+import { Button } from "~/components/ui/Button";
 import { FormTracker } from "~/forms/components/FormTracker";
 import { ExportCsvLink, ResultsViewToggle, setResultsTab, type ResultsTab } from "~/forms/components/ResultsControls";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
@@ -142,7 +144,15 @@ export function VersionSummary({
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const slot = searchParams.get("slot") ?? "";
-  const { summary, slotOptions } = data;
+  const { summary, slotOptions, filterQuestions } = data;
+  const answerFilters = useAnswerFilters(filterQuestions);
+  const narrowed = Boolean(slot || answerFilters.active.length);
+
+  function clearFilters() {
+    const next = new URLSearchParams(searchParams);
+    for (const key of ["slot", "a"]) next.delete(key);
+    setSearchParams(next, { replace: true, preventScrollReset: true });
+  }
 
   function switchTab(tab: ResultsTab) {
     setSearchParams(setResultsTab(searchParams, tab), {
@@ -162,7 +172,13 @@ export function VersionSummary({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <ResultsViewToggle value="summary" onChange={switchTab} />
-        <ExportCsvLink formId={formId} versionNumber={versionNumber} />
+        <ExportCsvLink
+          formId={formId}
+          versionNumber={versionNumber}
+          searchParams={searchParams}
+          search={false}
+          matching={narrowed ? summary.total : undefined}
+        />
         {slotOptions.length > 0 && (
           <Select
             ariaLabel="Filter by slot"
@@ -176,15 +192,27 @@ export function VersionSummary({
             buttonClassName="px-3 py-1.5 text-sm border border-os-container rounded-full bg-os-well text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:border-os-container-hi"
           />
         )}
+        <AnswerFilterButton questions={filterQuestions} />
         <span className="text-sm text-os-grey sm:ml-auto">
           {summary.total} {plural(summary.total, "response", "responses")}
         </span>
       </div>
 
+      <AnswerFilterChips questions={filterQuestions} />
+
       {tracker && <FormTracker formId={formId} counts={tracker} />}
 
       {summary.total === 0 ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">No responses yet.</p>
+        narrowed ? (
+          <div className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+            No responses match the current filters.
+            <Button variant="secondary" size="sm" onClick={clearFilters}>
+              Clear filters
+            </Button>
+          </div>
+        ) : (
+          <p className="py-12 text-center text-sm text-muted-foreground">No responses yet.</p>
+        )
       ) : (
         <div className="divide-y divide-os-container">
           {summary.questions.map((q) => (

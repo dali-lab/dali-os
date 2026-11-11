@@ -7,6 +7,8 @@ import { createMemoryRouter, RouterProvider, useLocation } from "react-router";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock("~/components/ui/floating", () => ({
+  Popover: ({ trigger, children }: { trigger: React.ReactElement; children: React.ReactNode | ((close: () => void) => React.ReactNode) }) =>
+    createElement("div", null, trigger, typeof children === "function" ? children(() => {}) : children),
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   Select: ({ options }: { options: { value: string; label: string }[] }) =>
     createElement("ul", { "aria-label": "slots" }, options.map((o) => createElement("li", { key: o.value }, o.label))),
@@ -22,7 +24,7 @@ let root: Root;
 
 const base = { answered: 12, skipped: 4 };
 const data = (questions: unknown[], over: Record<string, unknown> = {}) =>
-  ({ versionId: "v1", slotOptions: [], summary: { total: 16, questions }, ...over }) as never;
+  ({ versionId: "v1", slotOptions: [], filterQuestions: [], summary: { total: 16, questions }, ...over }) as never;
 
 function Where() {
   return createElement("output", null, useLocation().search);

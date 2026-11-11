@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { createRoutesStub } from "react-router";
+import { createRoutesStub, useLocation } from "react-router";
 
 const history = vi.hoisted(() => ({ undo: vi.fn(), redo: vi.fn() }));
 
@@ -104,6 +104,10 @@ function Bar() {
   );
 }
 
+function SearchProbe() {
+  return createElement("output", { "data-testid": "search" }, useLocation().search);
+}
+
 async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1") {
   const Stub = createRoutesStub([
     {
@@ -115,7 +119,7 @@ async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1"
           createElement(
             DialogProvider,
             null,
-            createElement(PageBarSlotProvider, { children: createElement("div", null, createElement(Bar), createElement(FormDetail)) }),
+            createElement(PageBarSlotProvider, { children: createElement("div", null, createElement(Bar), createElement(FormDetail), createElement(SearchProbe)) }),
           ),
         ),
       loader: () => data,
@@ -209,6 +213,7 @@ describe("FormDetail", () => {
       hasNext: false,
       columns: [{ key: "q1", label: "Name" }],
       slotOptions: [],
+      filterQuestions: [],
       responses: [
         {
           id: "s1",
@@ -227,6 +232,7 @@ describe("FormDetail", () => {
     const summary = {
       versionId: "v1",
       slotOptions: [],
+      filterQuestions: [],
       summary: {
         total: 4,
         questions: [{ kind: "text", key: "q1", number: 1, label: "Name", answered: 3, skipped: 1 }],
@@ -525,6 +531,15 @@ describe("FormDetail", () => {
       data.form.draft = { questions: [question], description: null } as never;
       await mount(data);
       expect(actionLabels()).toEqual(["Preview", "Publish"]);
+    });
+
+    it("leaves the results view with the answer filters cleared", async () => {
+      await mount(loaderData(), "/forms/edit/f1?view=results&version=1&show=responses&q=ada&a=k:is:A");
+      const questions = [...container.querySelectorAll("[role=radiogroup][aria-label='Form view'] [role=radio]")].find(
+        (el) => el.textContent === "Questions",
+      );
+      await act(async () => void questions!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      expect(container.querySelector("[data-testid=search]")!.textContent).toBe("");
     });
 
     it("uses the Segmented control for Questions and Results", async () => {

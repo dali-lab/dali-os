@@ -49,22 +49,55 @@ export function ResultsViewToggle({
   );
 }
 
+export function exportCsvHref(
+  formId: string,
+  versionNumber: number,
+  searchParams: URLSearchParams,
+  { search = true }: { search?: boolean } = {},
+): string {
+  const out = new URLSearchParams({ version: String(versionNumber) });
+  const q = search ? (searchParams.get("q") ?? "").trim() : "";
+  if (q) out.set("q", q);
+  const slot = searchParams.get("slot");
+  if (slot) out.set("slot", slot);
+  for (const entry of searchParams.getAll("a")) out.append("a", entry);
+  return `/forms/responses/${formId}/export.csv?${out}`;
+}
+
 export function ExportCsvLink({
   formId,
   versionNumber,
+  searchParams,
+  matching,
+  search = true,
 }: {
   formId: string;
   versionNumber: number;
+  searchParams: URLSearchParams;
+  // Set when a search or filter is on: how many responses the file will hold.
+  matching?: number;
+  search?: boolean;
 }) {
+  const label = matching === undefined ? "Export CSV" : `Export ${matching} matching`;
   return (
-    <Tooltip content="Export every response to this version as CSV">
+    <Tooltip
+      content={
+        matching === undefined
+          ? "Export every response to this version as CSV"
+          : "Export the responses that match the current search and filters as CSV"
+      }
+    >
       <a
-        href={`/forms/responses/${formId}/export.csv?version=${versionNumber}`}
+        href={exportCsvHref(formId, versionNumber, searchParams, { search })}
         download
-        aria-label="Export CSV"
-        className="inline-flex items-center justify-center p-2 rounded-full border border-os-container text-os-grey hover:text-foreground hover:border-os-container-hi transition-colors"
+        aria-label={label}
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5 rounded-full border border-os-container text-os-grey hover:text-foreground hover:border-os-container-hi transition-colors",
+          matching === undefined ? "p-2" : "px-3 py-1.5 text-sm",
+        )}
       >
         <Download className="w-4 h-4" />
+        {matching !== undefined && label}
       </a>
     </Tooltip>
   );

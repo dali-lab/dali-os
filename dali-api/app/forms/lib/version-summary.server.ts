@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { buildReferenceLabelMaps } from "~/forms/lib/answer-rows.server";
-import { responsesWhere } from "~/forms/lib/version-responses.server";
+import { versionResponsesWhere } from "~/forms/lib/version-responses.server";
+import { filterableQuestions, type AnswerFilter } from "~/forms/lib/answer-filters";
 import { summarizeResponses } from "~/forms/lib/version-summary";
 import type { Question } from "~/types";
 
@@ -9,13 +10,12 @@ import type { Question } from "~/types";
 export async function loadVersionSummary(
   formId: string,
   version: { id: string; questions: Question[] },
-  { slot = "" }: { slot?: string } = {},
+  { slot = "", answers = [] }: { slot?: string; answers?: AnswerFilter[] } = {},
 ) {
   const [submissions, slots, refLabels] = await Promise.all([
-    prisma.formSubmission.findMany({
-      where: responsesWhere(formId, version.id, { slot }),
-      select: { answers: true },
-    }),
+    versionResponsesWhere(formId, version.id, { slot, answers, questions: version.questions }).then(
+      (where) => prisma.formSubmission.findMany({ where, select: { answers: true } }),
+    ),
     prisma.formSubmission.findMany({
       where: { formId, formVersionId: version.id, slot: { not: null } },
       distinct: ["slot"],
@@ -27,6 +27,7 @@ export async function loadVersionSummary(
   return {
     versionId: version.id,
     slotOptions: slots.flatMap((s) => (s.slot ? [s.slot] : [])),
+    filterQuestions: filterableQuestions(version.questions, refLabels),
     summary: summarizeResponses(
       version.questions,
       submissions.map((s) => (s.answers as Record<string, unknown>) ?? {}),
