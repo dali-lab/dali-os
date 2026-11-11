@@ -1,10 +1,12 @@
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
-import { parseColumnMapping } from "~/projects/lib/slot-roles";
+import { parseColumnMapping, type ColumnMapping } from "~/projects/lib/slot-roles";
+import { interpretIntentForm } from "~/projects/lib/intent-form-interpreter";
 import { listActiveCoreMembers, personName, type CoreMemberOption } from "./core-members.server";
 import { PLANNING_NOTE_SELECT, toPlanningNoteView, type PlanningNoteView } from "./planning-notes.server";
 import { listReturnableProjects, type ReturnableProject } from "./partner-returns.server";
+import type { MaintenancePlan } from "~/generated/prisma/enums";
 import {
   effectivePi,
   hasSpots,
@@ -33,6 +35,15 @@ export type PlanningProjectInfo = {
   // renewal): the project's last term, its PI and spots, so the popup can
   // still show and assign the PI that carries forward if it continues.
   lastTerm: { id: string; code: string; pi: PlanningPerson | null; spots: PlanningSpot[] } | null;
+  maintenance: { plan: MaintenancePlan; feeCents: number | null } | null;
+};
+
+export type PlanningMaintainingRow = {
+  projectId: string;
+  name: string;
+  iconEmoji: string | null;
+  plan: MaintenancePlan;
+  piName: string | null;
 };
 
 export type PlanningSpot = { domainId: string; name: string; slots: number };
@@ -66,6 +77,7 @@ export type PlanningData = {
   projectInfo: Record<string, PlanningProjectInfo>;
   applicationInfo: Record<string, PlanningApplicationInfo>;
   returnableProjects: ReturnableProject[];
+  maintaining: PlanningMaintainingRow[];
   coreMembers: CoreMemberOption[];
 };
 
@@ -128,6 +140,7 @@ export async function loadPlanningData(
       projectInfo: {},
       applicationInfo: {},
       returnableProjects: [],
+      maintaining: [],
       coreMembers: [],
     };
   }
@@ -159,6 +172,12 @@ export async function loadPlanningData(
         },
         termStatuses: { where: { termId: term.id }, select: { isContinuing: true } },
         planningNote: PLANNING_NOTE_SELECT,
+        maintenancePlans: {
+          where: { endedAt: null },
+          orderBy: { startedAt: "desc" },
+          take: 1,
+          select: { plan: true, feeCents: true },
+        },
         roleRequests: {
           where: { term: { sortKey: { gte: (prevTerm ?? term).sortKey } } },
           select: { termId: true, domainId: true, slots: true },
@@ -244,6 +263,7 @@ export async function loadPlanningData(
       spotsByTerm,
       note: toPlanningNoteView(p.planningNote),
       lastTerm: last ? { id: last.id, code: last.code, pi: piAt(last.sortKey), spots: spotsIn(last.id) } : null,
+      maintenance: p.maintenancePlans[0] ?? null,
     };
   }
   const [coreMembers, returnableProjects] = await Promise.all([
@@ -317,25 +337,15 @@ export async function loadPlanningData(
     (hasSpots(item) ? items : listOnlyItems).push(item);
   }
 
-  let returning: ReturningPerson[] = [];
-  let replied = 0;
-  if (cycle) {
-    const rows = await prisma.intentToWork.findMany({
-      where: { staffingCycleId: cycle.id, termId: term.id },
-      select: {
-        userId: true,
-        status: true,
-        user: { select: { domainEligibilities: { select: { domainId: true } } } },
-      },
-    });
-    replied = new Set(rows.map((r) => r.userId)).size;
-    returning = rows
-      .filter((r) => r.status === "Returning")
-      .map((r) => ({
-        userId: r.userId,
-        domainIds: [...new Set(r.user.domainEligibilities.map((e) => e.domainId))],
-      }));
-  }
+  const intentMapping = cycle?.formBindings[0] ? parseColumnMapping(cycle.formBindings[0].columnMapping) : null;
+  const { returning, replied } = cycle
+    ? await loadIntentFromSubmissions({
+        cycleId: cycle.id,
+        cycleTermId: term.id,
+        mapping: intentMapping,
+        allTermIds: allTerms.map((t) => t.id),
+      })
+    : { returning: [] as ReturningPerson[], replied: 0 };
 
   return {
     terms,
@@ -350,13 +360,64 @@ export async function loadPlanningData(
     hasIntentData: replied > 0,
     intentSetup: intentSetupState({
       bound: !!cycle && cycle.formBindings.length > 0,
-      mapping: cycle?.formBindings[0] ? parseColumnMapping(cycle.formBindings[0].columnMapping) : null,
+      mapping: intentMapping,
       submissions: cycle?._count.formSubmissions ?? 0,
       replied,
     }),
     projectInfo,
     applicationInfo,
     returnableProjects,
+    maintaining: projects
+      .filter((p) => p.maintenancePlans.length > 0)
+      .map((p) => ({
+        projectId: p.id,
+        name: p.name,
+        iconEmoji: p.iconEmoji,
+        plan: p.maintenancePlans[0].plan,
+        piName: piNameFor(p.projectTerms, sortKeyById, term.sortKey),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
     coreMembers,
   };
+}
+
+// Who intends to work the planned term, read from each member's latest
+// intent-to-work submission with the binding's current mapping: the same
+// answers the Intent to Work page lists. IntentToWork rows are only written
+// when the mapping was valid at submit time, so they can lag the answers.
+export async function loadIntentFromSubmissions(input: {
+  cycleId: string;
+  cycleTermId: string;
+  mapping: ColumnMapping | null;
+  allTermIds: string[];
+}): Promise<{ returning: ReturningPerson[]; replied: number }> {
+  const submissions = await prisma.formSubmission.findMany({
+    where: { staffingCycleId: input.cycleId, slot: "intent-to-work", userId: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: {
+      userId: true,
+      answers: true,
+      user: { select: { domainEligibilities: { select: { domainId: true } } } },
+    },
+  });
+  const latest = new Map<string, (typeof submissions)[number]>();
+  for (const sub of submissions) if (sub.userId && !latest.has(sub.userId)) latest.set(sub.userId, sub);
+
+  const returning: ReturningPerson[] = [];
+  let replied = 0;
+  for (const [userId, sub] of latest) {
+    if (!input.mapping) continue;
+    const answers = sub.answers && typeof sub.answers === "object" ? (sub.answers as Record<string, unknown>) : {};
+    const result = interpretIntentForm(answers, input.mapping, input.allTermIds, input.cycleTermId);
+    if (!result.ok) continue;
+    const forTerm = result.rows.find((r) => r.termId === input.cycleTermId);
+    if (!forTerm) continue;
+    replied += 1;
+    if (forTerm.status !== "Returning") continue;
+    returning.push({
+      userId,
+      domainIds: [...new Set(sub.user?.domainEligibilities.map((e) => e.domainId) ?? [])],
+    });
+  }
+  return { returning, replied };
 }

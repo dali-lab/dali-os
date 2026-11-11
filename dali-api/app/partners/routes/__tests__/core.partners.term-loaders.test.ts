@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const prisma = vi.hoisted(() => ({
   term: { findMany: vi.fn() },
   domain: { findMany: vi.fn() },
+  partnerCrmSettings: { findUnique: vi.fn().mockResolvedValue(null) },
 }));
 vi.mock("~/lib/db.server", () => ({ prisma }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn() }));
@@ -12,6 +13,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("../../lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
 vi.mock("../../lib/partner-renewals.server", () => ({
   applyContinue: vi.fn(),
+  applyMaintain: vi.fn(),
   applyNotContinuing: vi.fn(),
   applyUndecided: vi.fn(),
   loadRenewalCards: vi.fn(),
