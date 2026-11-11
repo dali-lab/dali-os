@@ -61,7 +61,7 @@ async function open(over: Record<string, unknown> = {}) {
         element: createElement(
           DialogProvider,
           null,
-          createElement(VersionResults, { formId: "f1", versionNumber: 1, results: data as never }),
+          createElement(VersionResults, { formId: "f1", versionNumber: 1, results: data as never, lead: null }),
         ),
       },
     ],

@@ -58,25 +58,25 @@ Open the three-dot menu at the top and choose **Form settings**.
 
 ## Read responses
 
-Choose **Results** for a version. It has two views.
+Open a version and use the switch at the top to move between **Questions**, **Summary** and **Responses**. The count beside Responses is how many people answered.
 
 - **Summary** charts each question. Scale and number questions show count, average, lowest and highest. Choice questions show how many picked each option.
 - **Responses** lists each submission. Search by name, email or answer, open a row to read the full answer, or use **Delete response** (this can't be undone).
 
-Forms tied to staffing slots add a slot filter to both views.
+Forms tied to staffing slots add **Slot** to the filter bar in both views.
 
 ### Filter by answer
 
-Select **Filter** in either view, pick a question, then choose what to match. Active filters show as chips under the toolbar, and you can select a chip to remove it. Filters stay when you switch between Summary and Responses, and they start over when you switch to another version.
+Select **Filter** under the switch in Summary or Responses, pick a question, then choose what to match. Each active filter shows as a pill beside the button. Select the middle of a pill to change it, **×** to remove it, or **Clear all** to remove every filter. Filters stay when you switch between Summary and Responses, and they start over when you switch to another version.
 
 - Choice, scale and project questions: pick one or more options. A response matches if it has any of them. If the question has an Other choice, you can pick **Other** to find typed-in answers.
 - Text, email and link questions: **Contains** finds a word or phrase, ignoring capitals.
-- Number and date questions: **Between** takes a lowest and highest value, and either can be left empty.
+- Number and date questions: **Min** and **Max** (or **From** and **To** for dates) take a lowest and highest value, and either can be left empty.
 - Any question: **Answered** or **No answer**. A question that was hidden for someone by a rule counts as **No answer** for them.
 
 Each question gets one filter, and a response has to match every filter you set. File and skills rating questions can't be filtered. The Summary counts and charts follow the filters. The search box looks for names, emails and answers, but not project names, because those answers are stored as ids.
 
-**Export CSV** downloads the responses that match your search and filters, and reads **Export 12 matching** when any are on. With nothing applied it downloads every response to that version.
+**Export** downloads the responses that match your search and filters, and reads **Export 12** when any are on. With nothing applied it downloads every response to that version.
 
 ## Follow up with people who haven't answered
 

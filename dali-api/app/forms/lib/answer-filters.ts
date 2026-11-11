@@ -1,5 +1,6 @@
 import type { Question } from "~/types";
 import { NUMBER_PATTERN } from "~/forms/lib/version-summary";
+import { questionNumbers } from "~/lib/form-logic";
 
 export const OTHER_VALUE = "__other__";
 export const ANSWER_PARAM = "a";
@@ -149,6 +150,7 @@ export type FilterableQuestion = {
   key: string;
   label: string;
   type: Question["type"];
+  number?: number;
   primary: FilterKind;
   options?: FilterOption[];
 };
@@ -188,6 +190,7 @@ export function filterableQuestions(
   questions: ReadonlyArray<Question>,
   refLabels?: RefLabels,
 ): FilterableQuestion[] {
+  const numbers = questionNumbers([...questions]);
   return questions.flatMap((q) => {
     const primary = primaryKind(q.type);
     if (!primary) return [];
@@ -197,6 +200,7 @@ export function filterableQuestions(
         key: q.key,
         label: q.data.label,
         type: q.type,
+        ...(numbers.has(q.key) ? { number: numbers.get(q.key) } : {}),
         primary,
         ...(options ? { options } : {}),
       },
@@ -204,26 +208,22 @@ export function filterableQuestions(
   });
 }
 
-export function filterChipText(filter: AnswerFilter, question: FilterableQuestion): string {
-  const label = question.label;
+export function filterSummary(filter: AnswerFilter, question: FilterableQuestion): string {
   switch (filter.kind) {
     case "is": {
       const names = new Map((question.options ?? []).map((o) => [o.value, o.label]));
-      return `${label}: ${filter.values.map((v) => names.get(v) ?? v).join(", ")}`;
+      const labels = filter.values.map((v) => names.get(v) ?? v);
+      return labels.length <= 2 ? labels.join(", ") : `${labels[0]} +${labels.length - 1}`;
     }
     case "contains":
-      return `${label} contains "${filter.text}"`;
+      return `"${filter.text}"`;
     case "range":
-      if (filter.min !== undefined && filter.max !== undefined) {
-        return `${label}: ${filter.min} to ${filter.max}`;
-      }
-      return filter.min !== undefined
-        ? `${label}: ${filter.min} or more`
-        : `${label}: ${filter.max} or less`;
+      if (filter.min !== undefined && filter.max !== undefined) return `${filter.min} to ${filter.max}`;
+      return filter.min !== undefined ? `${filter.min} or more` : `${filter.max} or less`;
     case "answered":
-      return `${label}: answered`;
+      return "Answered";
     case "blank":
-      return `${label}: no answer`;
+      return "No answer";
   }
 }
 

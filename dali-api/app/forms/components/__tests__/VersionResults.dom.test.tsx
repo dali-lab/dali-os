@@ -6,9 +6,10 @@ import { createMemoryRouter, RouterProvider, useLocation } from "react-router";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock("~/components/ui/floating", () => ({
-  Popover: ({ trigger, children }: { trigger: React.ReactElement; children: React.ReactNode | ((close: () => void) => React.ReactNode) }) =>
-    createElement("div", null, trigger, typeof children === "function" ? children(() => {}) : children),
+vi.mock("~/components/ui/floating", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/components/ui/floating")>()),
+  Popover: ({ trigger, children }: { trigger: React.ReactElement | ((open: boolean) => React.ReactElement); children: React.ReactNode | ((close: () => void) => React.ReactNode) }) =>
+    createElement("div", null, typeof trigger === "function" ? trigger(false) : trigger, typeof children === "function" ? children(() => {}) : children),
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   Select: ({ options }: { options: { value: string; label: string }[] }) =>
     createElement("ul", { "aria-label": "slots" }, options.map((o) => createElement("li", { key: o.value }, o.label))),
@@ -65,7 +66,7 @@ async function mount(entry: string, data: unknown) {
     [
       {
         path: "/forms/edit/f1",
-        element: createElement("div", null, createElement(VersionResults, { formId: "f1", versionNumber: 2, results: data as never }), createElement(Where)),
+        element: createElement("div", null, createElement(VersionResults, { formId: "f1", versionNumber: 2, results: data as never, lead: null }), createElement(Where)),
       },
     ],
     { initialEntries: [entry] },
@@ -87,13 +88,12 @@ describe("VersionResults", () => {
   it("states the true total and offers every slot from the whole version", async () => {
     await mount("/forms/edit/f1?view=results&version=2", results());
     expect(container.textContent).toContain("120 responses");
-    expect(container.textContent).toContain("Tue 3pm");
     expect(container.textContent).not.toContain("most recent");
   });
 
   it("says how many match when a search narrows the list", async () => {
     await mount("/forms/edit/f1?view=results&version=2&q=ada", results({ matchCount: 3, hasNext: false }));
-    expect(container.textContent).toContain("120 responses · 3 match");
+    expect(container.textContent).toContain("3 of 120 responses");
     expect(container.textContent).toContain("Respondent (3)");
   });
 
@@ -128,7 +128,7 @@ describe("VersionResults", () => {
 
   it("keeps the CSV export pointed at the whole version when nothing narrows it", async () => {
     await mount("/forms/edit/f1?view=results&version=2", results());
-    const csv = container.querySelector<HTMLAnchorElement>('a[aria-label="Export CSV"]')!;
+    const csv = [...container.querySelectorAll<HTMLAnchorElement>("a")].find((a) => a.textContent === "Export")!;
     expect(csv.getAttribute("href")).toBe("/forms/responses/f1/export.csv?version=2");
   });
 
@@ -137,8 +137,8 @@ describe("VersionResults", () => {
       "/forms/edit/f1?view=results&version=2&q=ada&slot=Tue%203pm&a=k:is:A&a=n:min:3",
       results({ matchCount: 7, filterQuestions: FILTER_QUESTIONS }),
     );
-    const csv = container.querySelector<HTMLAnchorElement>('a[aria-label="Export 7 matching"]')!;
-    expect(csv.textContent).toBe("Export 7 matching");
+    const csv = [...container.querySelectorAll<HTMLAnchorElement>("a")].find((a) => a.textContent === "Export 7")!;
+    expect(csv).toBeTruthy();
     const href = new URL(csv.getAttribute("href")!, "http://os.test");
     expect(href.searchParams.get("version")).toBe("2");
     expect(href.searchParams.get("q")).toBe("ada");

@@ -1,9 +1,9 @@
 import { useSearchParams } from "react-router";
-import { Select } from "~/components/ui/floating";
-import { AnswerFilterButton, AnswerFilterChips, useAnswerFilters } from "~/forms/components/AnswerFilters";
+import type { ReactNode } from "react";
+import { ResultsFilterBar, responseCountText, useAnswerFilters } from "~/forms/components/ResultsFilterBar";
 import { Button } from "~/components/ui/Button";
 import { FormTracker } from "~/forms/components/FormTracker";
-import { ExportCsvLink, ResultsViewToggle, setResultsTab, type ResultsTab } from "~/forms/components/ResultsControls";
+import { ExportCsvLink, resultsViewParams } from "~/forms/components/ResultsControls";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
 import type { VersionSummary as VersionSummaryData } from "~/forms/lib/version-summary.server";
 import type { Bar, QuestionSummary, SkillRow } from "~/forms/lib/version-summary";
@@ -136,11 +136,16 @@ export function VersionSummary({
   versionNumber,
   data,
   tracker = null,
+  lead,
+  totalCount,
 }: {
   formId: string;
   versionNumber: number;
   data: VersionSummaryData;
   tracker?: TrackerCounts | null;
+  lead: ReactNode;
+  // Every response to the version, before filters; defaults to what the summary covers.
+  totalCount?: number;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const slot = searchParams.get("slot") ?? "";
@@ -154,51 +159,33 @@ export function VersionSummary({
     setSearchParams(next, { replace: true, preventScrollReset: true });
   }
 
-  function switchTab(tab: ResultsTab) {
-    setSearchParams(setResultsTab(searchParams, tab), {
+  function readResponses() {
+    setSearchParams(resultsViewParams(searchParams, "responses", versionNumber), {
       replace: true,
       preventScrollReset: true,
     });
   }
 
-  function setSlot(value: string) {
-    const next = new URLSearchParams(searchParams);
-    if (value) next.set("slot", value);
-    else next.delete("slot");
-    setSearchParams(next, { replace: true, preventScrollReset: true });
-  }
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <ResultsViewToggle value="summary" onChange={switchTab} />
-        <ExportCsvLink
-          formId={formId}
-          versionNumber={versionNumber}
-          searchParams={searchParams}
-          search={false}
-          matching={narrowed ? summary.total : undefined}
-        />
-        {slotOptions.length > 0 && (
-          <Select
-            ariaLabel="Filter by slot"
-            value={slot}
-            onChange={setSlot}
-            placeholder="All slots"
-            options={[
-              { value: "", label: "All slots" },
-              ...slotOptions.map((s) => ({ value: s, label: s })),
-            ]}
-            buttonClassName="px-3 py-1.5 text-sm border border-os-container rounded-full bg-os-well text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:border-os-container-hi"
+        {lead}
+        <div className="sm:ml-auto">
+          <ExportCsvLink
+            formId={formId}
+            versionNumber={versionNumber}
+            searchParams={searchParams}
+            search={false}
+            matching={narrowed ? summary.total : undefined}
           />
-        )}
-        <AnswerFilterButton questions={filterQuestions} />
-        <span className="text-sm text-os-grey sm:ml-auto">
-          {summary.total} {plural(summary.total, "response", "responses")}
-        </span>
+        </div>
       </div>
 
-      <AnswerFilterChips questions={filterQuestions} />
+      <ResultsFilterBar
+        questions={filterQuestions}
+        slotOptions={slotOptions}
+        count={responseCountText(summary.total, Math.max(totalCount ?? summary.total, summary.total))}
+      />
 
       {tracker && <FormTracker formId={formId} counts={tracker} />}
 
@@ -234,7 +221,7 @@ export function VersionSummary({
                   </p>
                 )}
               </div>
-              <Answers q={q} onRead={() => switchTab("responses")} />
+              <Answers q={q} onRead={readResponses} />
             </section>
           ))}
         </div>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  filterChipText,
+  filterSummary,
   filterableQuestions,
   parseAnswerFilters,
   serializeAnswerFilters,
@@ -206,23 +206,29 @@ describe("filterableQuestions", () => {
   });
 });
 
-describe("filterChipText", () => {
+describe("filterSummary", () => {
   const by = Object.fromEntries(filterableQuestions(questions, new Map([["proj", new Map([["p1", "Alpha"]])]])).map((o) => [o.key, o]));
 
-  it("names options by label", () => {
-    expect(filterChipText({ key: "proj", kind: "is", values: ["p1", "gone"] }, by.proj)).toBe(
-      "proj label: Alpha, gone",
-    );
-    expect(filterChipText({ key: "fav", kind: "is", values: ["__other__"] }, by.fav)).toBe("fav label: Other");
+  it("names options by label and abbreviates past two", () => {
+    expect(filterSummary({ key: "proj", kind: "is", values: ["p1", "gone"] }, by.proj)).toBe("Alpha, gone");
+    expect(filterSummary({ key: "fav", kind: "is", values: ["__other__"] }, by.fav)).toBe("Other");
+    expect(filterSummary({ key: "proj", kind: "is", values: ["p1", "a", "b"] }, by.proj)).toBe("Alpha +2");
   });
 
   it("reads each other kind in plain words", () => {
-    expect(filterChipText({ key: "bio", kind: "contains", text: "hi" }, by.bio)).toBe('bio label contains "hi"');
-    expect(filterChipText({ key: "age", kind: "range", min: "1", max: "5" }, by.age)).toBe("age label: 1 to 5");
-    expect(filterChipText({ key: "age", kind: "range", min: "1" }, by.age)).toBe("age label: 1 or more");
-    expect(filterChipText({ key: "age", kind: "range", max: "5" }, by.age)).toBe("age label: 5 or less");
-    expect(filterChipText({ key: "age", kind: "answered" }, by.age)).toBe("age label: answered");
-    expect(filterChipText({ key: "age", kind: "blank" }, by.age)).toBe("age label: no answer");
+    expect(filterSummary({ key: "bio", kind: "contains", text: "hi" }, by.bio)).toBe('"hi"');
+    expect(filterSummary({ key: "age", kind: "range", min: "1", max: "5" }, by.age)).toBe("1 to 5");
+    expect(filterSummary({ key: "age", kind: "range", min: "1" }, by.age)).toBe("1 or more");
+    expect(filterSummary({ key: "age", kind: "range", max: "5" }, by.age)).toBe("5 or less");
+    expect(filterSummary({ key: "age", kind: "answered" }, by.age)).toBe("Answered");
+    expect(filterSummary({ key: "age", kind: "blank" }, by.age)).toBe("No answer");
+  });
+});
+
+describe("filterableQuestions numbering", () => {
+  it("carries each question's display number", () => {
+    const out = filterableQuestions(questions);
+    expect(out.every((o) => typeof o.number === "number")).toBe(true);
   });
 });
 

@@ -52,21 +52,21 @@ test('forms: filter responses by what people answered', async ({ page, stage, lo
   await stage.pause(800);
 
   await stage.click(page.getByRole('button', { name: 'Filter' }));
-  await stage.click(page.getByRole('button', { name: 'Role' }));
-  await stage.click(page.getByRole('button', { name: 'Designer' }));
-  await expect(page.getByText('6 responses · 3 match')).toBeVisible();
+  await stage.click(page.getByRole('menuitem', { name: 'Role' }));
+  await stage.click(page.getByRole('option', { name: 'Designer' }));
+  await expect(page.getByText('3 of 6 responses')).toBeVisible();
   await stage.pause(800);
 
   await page.keyboard.press('Escape');
-  await stage.zoomTo(page.getByRole('list', { name: 'Active answer filters' }), 1.5);
+  await stage.zoomTo(page.getByRole('button', { name: /^Role: Designer/ }), 1.5);
   await stage.pause(1200);
   await stage.resetZoom();
 
   await stage.type(page.getByLabel('Search responses by name, email or answer'), 'rust');
-  await expect(page.getByText('6 responses · 1 match')).toBeVisible();
+  await expect(page.getByText('1 of 6 responses')).toBeVisible();
   await stage.pause(800);
 
-  const exportLink = page.getByRole('link', { name: 'Export 1 matching' });
+  const exportLink = page.getByRole('link', { name: 'Export 1' });
   await stage.zoomTo(exportLink, 1.8);
   await stage.pause(1600);
   await stage.resetZoom();

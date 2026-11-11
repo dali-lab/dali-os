@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { Segmented } from "~/components/ui/Segmented";
+import { ResultsSwitch, resultsViewParams, type ResultsView } from "~/forms/components/ResultsControls";
 import { PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
@@ -350,6 +350,26 @@ export function FormDetail() {
         }`
       : "Versions";
 
+  const resultsView: ResultsView = view === "results" ? (showSummary ? "summary" : "responses") : "questions";
+  const lead = selectedVersion ? (
+    <ResultsSwitch
+      view={resultsView}
+      responseCount={selectedVersion.submissionCount}
+      byline={`v${selectedVersion.versionNumber} · published by ${selectedVersion.createdByName}, ${formatInTimeZone(
+        selectedVersion.createdAt,
+        tz,
+        { month: "short", day: "numeric", year: "numeric" },
+      )}`}
+      onChange={(next) => {
+        setIsEditing(false);
+        setSearchParams(resultsViewParams(searchParams, next, selectedVersion.versionNumber), {
+          replace: true,
+          preventScrollReset: true,
+        });
+      }}
+    />
+  ) : null;
+
   const fillUrl =
     form.published && form.publicToken
       ? `${typeof window !== "undefined" ? window.location.origin : ""}/forms/fill/${form.publicToken}`
@@ -555,20 +575,7 @@ export function FormDetail() {
         />
       ) : selectedVersion ? (
         <div className="space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Segmented
-              ariaLabel="Form view"
-              value={view}
-              onChange={(v) => showVersion(selectedVersion.id, v)}
-              options={[
-                { value: "questions", label: "Questions" },
-                { value: "results", label: "Results", count: selectedVersion.submissionCount },
-              ]}
-            />
-            <span className="text-sm text-os-grey">
-              {selectedVersion.createdByName} · {formatDateTime(selectedVersion.createdAt, tz)}
-            </span>
-          </div>
+          {view !== "results" && lead}
 
           {view === "results" && showSummary ? (
             summary && summary.versionId === selectedVersion.id ? (
@@ -578,11 +585,16 @@ export function FormDetail() {
                 versionNumber={selectedVersion.versionNumber}
                 data={summary}
                 tracker={tracker}
+                lead={lead}
+                totalCount={selectedVersion.submissionCount}
               />
             ) : (
-              <div className="py-12 flex justify-center">
-                <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
-              </div>
+              <>
+                {lead}
+                <div className="py-12 flex justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
+                </div>
+              </>
             )
           ) : view === "results" ? (
             results && results.versionId === selectedVersion.id ? (
@@ -592,11 +604,15 @@ export function FormDetail() {
                 versionNumber={selectedVersion.versionNumber}
                 results={results}
                 tracker={tracker}
+                lead={lead}
               />
             ) : (
-              <div className="py-12 flex justify-center">
-                <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
-              </div>
+              <>
+                {lead}
+                <div className="py-12 flex justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
+                </div>
+              </>
             )
           ) : (
             <div className="rounded-os-card bg-os-card p-5 space-y-4">
