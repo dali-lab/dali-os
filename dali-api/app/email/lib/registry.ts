@@ -49,6 +49,9 @@ export type EmailTemplateDef = {
   // several call sites this is their INTERSECTION, so an operator can rely on
   // every listed variable rendering on every path.
   variables: readonly TemplateVariableName[];
+  // Variables the body may not be saved without, because dropping one breaks
+  // the recipient (e.g. an acceptance with no password to log in with).
+  requiredVariables?: readonly TemplateVariableName[];
   // Shown in the editor preview and the test send.
   sample: Record<string, string>;
   footer: EmailFooterKind;
@@ -147,18 +150,47 @@ export const EMAIL_TEMPLATES = {
     },
   },
 
-  // Appended to the Accepted letter above, so an accepted applicant gets one
-  // email rather than two. It exists as its own template because its content and
-  // the decision letter's have different owners and different lifetimes: the
-  // letter is cycle-specific prose a lead rewrites, this is the standing "here's
-  // what happens next" that changes when the dates change.
-  //
-  // Code keeps two pieces deliberately. The credentials paragraph is conditional
-  // (new account / existing password / still provisioning) and carries a live
-  // password, so an operator deleting the wrong line would ship a member a login
-  // they can't use. The logo is an <img>, which no email sanitizer allows through.
-  // Everything that goes stale — the deadline, the required-event day, the term,
-  // the sign-off — is here.
+  // The credentials block appended to the Accepted letter when accepting
+  // created a DALI account. This is the ONLY surface the one-time password
+  // renders into, so {{daliEmail}} and {{tempPassword}} are requiredVariables —
+  // a save that drops either is refused, because the member then can't log in.
+  // The other two states (account already existed, provisioning still running)
+  // stay in code: they carry no credentials and must not be editable into
+  // promising one.
+  "hiring:onboarding:Credentials": {
+    area: "Hiring",
+    label: "Accepted: account credentials",
+    description:
+      "Appended to the Accepted decision email when accepting created a new DALI account. Renders the login address and one-time password; both placeholders must stay in the body.",
+    purpose: "Hiring",
+    variables: ["loginUrl", "daliEmail", "tempPassword"],
+    requiredVariables: ["daliEmail", "tempPassword"],
+    sample: {
+      loginUrl: "https://os.dali.dartmouth.edu/login",
+      daliEmail: "alex.chen.28@dali.dartmouth.edu",
+      tempPassword: "kite-Mango-42-river",
+    },
+    footer: "transactional",
+    // Clearing it would strip the credentials from every acceptance email, so
+    // it falls back rather than vanishing.
+    whenMissing: "default",
+    defaults: {
+      // Unused: appended to the Accepted letter, which carries the subject.
+      subject: "Your DALI account",
+      body: [
+        'As your first onboarding step, log in to <a href="{{loginUrl}}">DALI OS</a> with your new credentials:',
+        "DALI email: <code><strong>{{daliEmail}}</strong></code>\nPassword: <code><strong>{{tempPassword}}</strong></code>\n(You'll be asked to set a password on first login.)",
+      ].join("\n\n"),
+    },
+  },
+
+  // Appended to the Accepted letter above, after the credentials block, so an
+  // accepted applicant gets one email rather than two. It exists as its own
+  // template because its content and the decision letter's have different
+  // owners and different lifetimes: the letter is cycle-specific prose a lead
+  // rewrites, this is the standing "here's what happens next" that changes when
+  // the dates change. The DALI logo stays in code: it is an <img>, which the
+  // email sanitizer does not allow through.
   "hiring:onboarding:NextSteps": {
     area: "Hiring",
     label: "Accepted: onboarding and next steps",
@@ -510,6 +542,15 @@ export const EMAIL_TEMPLATE_KEYS: EmailTemplateKey[] = [
   ...(Object.keys(EMAIL_TEMPLATES) as (keyof typeof EMAIL_TEMPLATES)[]),
   ...NOTIFICATION_COPY_KEYS.map(notifyTemplateKey),
 ];
+
+// Blocks code appends to a letter at send time, in order, so the editor's
+// preview can show the whole email the recipient gets. Each appended key is
+// edited under its own template.
+export const EMAIL_TEMPLATE_APPENDS: Partial<
+  Record<EmailTemplateKey, readonly EmailTemplateKey[]>
+> = {
+  "hiring:decision:Accepted": ["hiring:onboarding:Credentials", "hiring:onboarding:NextSteps"],
+};
 
 export function isEmailTemplateKey(value: unknown): value is EmailTemplateKey {
   // hasOwnProperty, not `in`: `in` walks the prototype chain, so "toString" and

@@ -8,6 +8,7 @@
 import { prisma } from "~/lib/db.server";
 import { renderEmail, type EmailTemplateVars } from "~/lib/email";
 import { logAuditEvent } from "~/lib/audit";
+import { extractPlaceholders } from "~/lib/template-variables";
 
 import {
   EMAIL_TEMPLATES,
@@ -16,6 +17,17 @@ import {
 } from "~/email/lib/registry";
 
 export type EmailTemplateCopy = { subject: string; body: string };
+
+export class EmailTemplateRequiredVarsError extends Error {
+  constructor(key: EmailTemplateKey, missing: readonly string[]) {
+    super(
+      `The body must keep ${missing.map((v) => `{{${v}}}`).join(" and ")} — ${
+        emailTemplateDef(key).label
+      } doesn't work without ${missing.length > 1 ? "them" : "it"}.`,
+    );
+    this.name = "EmailTemplateRequiredVarsError";
+  }
+}
 
 export type StoredEmailTemplate = EmailTemplateCopy & {
   key: EmailTemplateKey;
@@ -66,6 +78,13 @@ async function writeEmailTemplate(
   if (!subject && !body) {
     await prisma.emailTemplate.deleteMany({ where: { key } });
     return { cleared: true, versionNumber: null };
+  }
+
+  const required = emailTemplateDef(key).requiredVariables ?? [];
+  if (required.length > 0) {
+    const used = new Set(extractPlaceholders(body));
+    const missing = required.filter((v) => !used.has(v));
+    if (missing.length > 0) throw new EmailTemplateRequiredVarsError(key, missing);
   }
 
   return prisma.$transaction(async (tx) => {
