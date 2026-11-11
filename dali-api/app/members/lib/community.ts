@@ -276,11 +276,10 @@ export function groupByPlace<T extends Located>(people: readonly T[]): Community
   );
 }
 
-// The Web Mercator latitude where the tile world ends.
-export const MAX_LAT = 85.0511;
-const TILE_SIZE = 256;
+export const MAP_TILES_ORIGIN = "https://tiles.openfreemap.org";
+const WORLD_PX_AT_ZOOM_0 = 512;
 
-/** Smallest zoom whose world is at least as tall as the map, so no grey shows above or below it. */
+/** Smallest zoom whose world is at least as tall as the map, so no blank shows above or below it. */
 export function minZoomToFill(heightPx: number): number {
-  return Math.max(2, Math.ceil(Math.log2(Math.max(heightPx, 1) / TILE_SIZE)));
+  return Math.max(1, Math.log2(Math.max(heightPx, 1) / WORLD_PX_AT_ZOOM_0));
 }

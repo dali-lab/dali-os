@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
-import type { Map as LeafletMap, LayerGroup, Marker } from "leaflet";
-import "leaflet/dist/leaflet.css";
+import type { Map as MapLibreMap, Marker } from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { cn } from "~/lib/cn";
-import { MAX_LAT, minZoomToFill, type CommunityPerson, type CommunityPlace, type MapBounds } from "~/members/lib/community";
+import { MAP_TILES_ORIGIN, minZoomToFill, type CommunityPerson, type CommunityPlace, type MapBounds } from "~/members/lib/community";
 import { eventDateBlock } from "~/members/lib/community-view";
 import type { CommunityEvent } from "~/members/lib/community.server";
 
@@ -15,14 +16,12 @@ export function normalizeBounds(b: { south: number; west: number; north: number;
   return { ...b, west: wrap(b.west), east: wrap(b.east) };
 }
 
-// OpenStreetMap's own tile server: keyless. It only draws a light map, so the
-// dark theme inverts the tile pane (hue-rotated back so water stays blue).
-const TILES = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-const DARK_FILTER = "invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9)";
+export const mapStyleUrl = (dark: boolean) => `${MAP_TILES_ORIGIN}/styles/${dark ? "dark" : "positron"}`;
+const isDark = () => !document.documentElement.classList.contains("light");
 
 const AVATAR = 30;
+const EVENT_PIN = { width: 44, height: 48, lift: 18 };
+const Z = { event: 1, place: 2, selectedPlace: 3, selectedEvent: 4, hover: 5 };
 
 function initials(name: string): string {
   return name
@@ -32,13 +31,9 @@ function initials(name: string): string {
     .join("");
 }
 
-// A pin is the photos of the people there (up to three, overlapping) and a
-// name label. Built as DOM nodes, not an HTML string, so a name or photo URL
-// can never be read as markup.
+// Built as DOM nodes, not an HTML string, so a name or photo URL can never be read as markup.
 function pinElement(place: MapPlace, selected: boolean): HTMLElement {
   const root = document.createElement("div");
-  // Leaflet positions the marker with a transform on its own wrapper, so the
-  // hover scale goes on this inner node, growing from the first photo's centre.
   root.dataset.faded = String(Boolean(place.faded));
   root.style.cssText = `opacity:${place.faded ? 0.35 : 1};display:flex;align-items:center;gap:6px;width:max-content;cursor:pointer;transition:transform 150ms ease-out;transform-origin:${AVATAR / 2}px 50%`;
 
@@ -84,8 +79,21 @@ function eventPinElement(e: MapEvent, tz: string, selected: boolean): HTMLElemen
   return root;
 }
 
-const pinRoot = (marker: Marker): HTMLElement =>
-  marker.getElement()!.firstElementChild as HTMLElement;
+const placeSignature = (p: MapPlace, selected: boolean) =>
+  JSON.stringify([
+    p.lat,
+    p.lng,
+    p.label,
+    selected,
+    Boolean(p.faded),
+    p.people.length,
+    p.people.slice(0, 3).map((a) => [a.name, a.photoUrl]),
+  ]);
+
+const eventSignature = (e: MapEvent, tz: string, selected: boolean) =>
+  JSON.stringify([e.lat, e.lng, e.title, e.source, e.startsAt, tz, selected]);
+
+type Pin = { marker: Marker; signature: string };
 
 export function CommunityMap({
   places,
@@ -109,62 +117,93 @@ export function CommunityMap({
   className?: string;
 }) {
   const el = useRef<HTMLDivElement | null>(null);
-  const map = useRef<LeafletMap | null>(null);
-  const pins = useRef<LayerGroup | null>(null);
-  const leaflet = useRef<typeof import("leaflet") | null>(null);
+  const map = useRef<MapLibreMap | null>(null);
+  const lib = useRef<typeof import("maplibre-gl") | null>(null);
+  const placePins = useRef(new Map<string, Pin>());
+  const eventPins = useRef(new Map<string, Pin>());
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
   const onSelectEventRef = useRef(onSelectEvent);
   onSelectEventRef.current = onSelectEvent;
   const onBoundsRef = useRef(onBoundsChange);
   onBoundsRef.current = onBoundsChange;
-  // The fit-to-pins only happens when the set of places changes, not on select.
   const fittedFor = useRef<string | null>(null);
 
+  function sync<T>(
+    pins: Map<string, Pin>,
+    items: { key: string; item: T; lng: number; lat: number; signature: string }[],
+    build: (item: T) => { element: HTMLElement; offset: [number, number]; z: number },
+  ) {
+    const L = lib.current;
+    if (!L || !map.current) return;
+    const seen = new Set<string>();
+    for (const { key, item, lng, lat, signature } of items) {
+      seen.add(key);
+      const existing = pins.get(key);
+      if (existing?.signature === signature) continue;
+      existing?.marker.remove();
+      const { element, offset, z } = build(item);
+      const wrapper = document.createElement("div");
+      wrapper.style.zIndex = String(z);
+      wrapper.append(element);
+      const marker = new L.Marker({ element: wrapper, anchor: "top-left", offset })
+        .setLngLat([lng, lat])
+        .addTo(map.current);
+      pins.set(key, { marker, signature });
+    }
+    for (const [key, pin] of pins) {
+      if (seen.has(key)) continue;
+      pin.marker.remove();
+      pins.delete(key);
+    }
+  }
+
   function draw() {
-    const L = leaflet.current;
-    if (!L || !map.current || !pins.current) return;
-    pins.current.clearLayers();
-    for (const p of places) {
-      const selected = p.key === selectedKey;
-      L.marker([p.lat, p.lng], {
-        // Anchored on the first photo's centre; the label runs off to the right.
-        icon: L.divIcon({
-          html: pinElement(p, selected),
-          className: "",
-          iconSize: [AVATAR, AVATAR],
-          iconAnchor: [AVATAR / 2, AVATAR / 2],
-        }),
-        title: p.label,
-        zIndexOffset: selected ? 1000 : 0,
-      })
-        .on("click", () => onSelectRef.current(selected ? null : p.key))
-        .on("mouseover", (e) => {
-          e.target.setZIndexOffset(2000);
-          pinRoot(e.target).style.transform = "scale(1.15)";
-        })
-        .on("mouseout", (e) => {
-          e.target.setZIndexOffset(selected ? 1000 : 0);
-          pinRoot(e.target).style.transform = "";
-        })
-        .addTo(pins.current);
-    }
-    for (const e of events) {
-      if (e.lat == null || e.lng == null) continue;
-      const selected = e.id === selectedEventId;
-      L.marker([e.lat, e.lng], {
-        icon: L.divIcon({
-          html: eventPinElement(e, tz, selected),
-          className: "",
-          iconSize: [44, 48],
-          iconAnchor: [22, 66],
-        }),
-        title: e.title,
-        zIndexOffset: selected ? 1500 : 500,
-      })
-        .on("click", () => onSelectEventRef.current(e.id))
-        .addTo(pins.current);
-    }
+    sync(
+      placePins.current,
+      places.map((p) => ({ key: p.key, item: p, lng: p.lng, lat: p.lat, signature: placeSignature(p, p.key === selectedKey) })),
+      (p) => {
+        const selected = p.key === selectedKey;
+        const element = pinElement(p, selected);
+        element.title = p.label;
+        const z = selected ? Z.selectedPlace : Z.place;
+        element.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          onSelectRef.current(selected ? null : p.key);
+        });
+        element.addEventListener("mouseenter", () => {
+          element.parentElement!.style.zIndex = String(Z.hover);
+          element.style.transform = "scale(1.15)";
+        });
+        element.addEventListener("mouseleave", () => {
+          element.parentElement!.style.zIndex = String(z);
+          element.style.transform = "";
+        });
+        return { element, offset: [-AVATAR / 2, -AVATAR / 2], z };
+      },
+    );
+    sync(
+      eventPins.current,
+      events.flatMap((e) =>
+        e.lat == null || e.lng == null
+          ? []
+          : [{ key: e.id, item: e, lng: e.lng, lat: e.lat, signature: eventSignature(e, tz, e.id === selectedEventId) }],
+      ),
+      (e) => {
+        const selected = e.id === selectedEventId;
+        const element = eventPinElement(e, tz, selected);
+        element.title = e.title;
+        element.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          onSelectEventRef.current(e.id);
+        });
+        return {
+          element,
+          offset: [-EVENT_PIN.width / 2, -(EVENT_PIN.height + EVENT_PIN.lift)],
+          z: selected ? Z.selectedEvent : Z.event,
+        };
+      },
+    );
     fitIfNeeded();
   }
 
@@ -177,23 +216,20 @@ export function CommunityMap({
     }
   }
 
-  // Separate from draw() so the resize observer can run a pending fit without
-  // rebuilding every marker. A fit against a 0-height container (the page can
-  // mount inside a hidden kept tab) computes a garbage zoom, so it waits until
-  // the container has a size.
+  // A fit against a 0-height container (the page can mount inside a hidden kept tab) computes a garbage zoom.
   function fitIfNeeded() {
-    const L = leaflet.current;
+    const L = lib.current;
     if (!L || !map.current || !el.current || el.current.clientHeight === 0) return;
     const fitKey = places.map((p) => p.key).join("|");
     if (fittedFor.current === fitKey) return;
+    const first = fittedFor.current === null;
     fittedFor.current = fitKey;
     if (places.length > 0) {
-      map.current.fitBounds(L.latLngBounds(places.map((p) => [p.lat, p.lng])), {
-        padding: [48, 48],
-        maxZoom: 6,
-      });
+      const bounds = new L.LngLatBounds();
+      for (const p of places) bounds.extend([p.lng, p.lat]);
+      map.current.fitBounds(bounds, { padding: 48, maxZoom: 5, duration: first ? 0 : undefined });
     } else {
-      map.current.setView([25, 0], 2);
+      map.current.jumpTo({ center: [0, 25], zoom: 1 });
     }
   }
   const drawRef = useRef(draw);
@@ -203,44 +239,52 @@ export function CommunityMap({
   const fitRef = useRef(fitIfNeeded);
   fitRef.current = fitIfNeeded;
 
-  // Leaflet reads `window` at import, so it loads in the browser only.
   useEffect(() => {
     let cancelled = false;
-    void import("leaflet").then((mod) => {
+    let themeObserver: MutationObserver | null = null;
+    void import("maplibre-gl").then((L) => {
       if (cancelled || !el.current) return;
-      const L = mod.default ?? mod;
-      leaflet.current = L;
-      const dark = !document.documentElement.classList.contains("light");
-      map.current = L.map(el.current, {
-        worldCopyJump: true,
+      lib.current = L;
+      L.setWorkerUrl(workerUrl);
+      let dark = isDark();
+      const m = new L.Map({
+        container: el.current,
+        style: mapStyleUrl(dark),
+        center: [0, 25],
+        zoom: 1,
         minZoom: minZoomToFill(el.current.clientHeight),
-        // Pan sideways forever, but never past the poles into the grey void.
-        maxBounds: L.latLngBounds([-MAX_LAT, -540], [MAX_LAT, 540]),
-        maxBoundsViscosity: 1,
-      }).setView([25, 0], 2);
-      map.current.on("resize", (e) => {
-        map.current?.setMinZoom(minZoomToFill(e.newSize.y));
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+        maxPitch: 0,
+        attributionControl: { compact: true },
       });
-      map.current.on("moveend", () => emitRef.current());
-      L.tileLayer(TILES, { attribution: ATTRIBUTION, maxZoom: 19 }).addTo(map.current);
-      if (dark) map.current.getPane("tilePane")!.style.filter = DARK_FILTER;
-      pins.current = L.layerGroup().addTo(map.current);
+      m.touchZoomRotate.disableRotation();
+      m.keyboard.disableRotation();
+      m.on("resize", () => m.setMinZoom(minZoomToFill(m.getContainer().clientHeight)));
+      m.on("moveend", () => emitRef.current());
+      map.current = m;
+      themeObserver = new MutationObserver(() => {
+        if (isDark() === dark) return;
+        dark = isDark();
+        m.setStyle(mapStyleUrl(dark));
+      });
+      themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
       drawRef.current();
       emitRef.current();
     });
-    // Leaflet only re-measures itself on window resize. The map can initialize
-    // at 0×0 (hidden kept tab, display:none ancestor) or get resized by layout
-    // alone (pane changes), and without this it stays a grey void until the
-    // window itself resizes.
+    // The map can mount at 0×0 in a hidden kept tab; the first fit waits until it has a size.
     const ro = new ResizeObserver(() => {
-      if (!map.current || !el.current || el.current.clientHeight === 0) return;
-      map.current.invalidateSize();
+      if (!el.current || el.current.clientHeight === 0) return;
       fitRef.current();
     });
     if (el.current) ro.observe(el.current);
     return () => {
       cancelled = true;
       ro.disconnect();
+      themeObserver?.disconnect();
+      placePins.current.clear();
+      eventPins.current.clear();
       map.current?.remove();
       map.current = null;
     };
@@ -251,10 +295,6 @@ export function CommunityMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [places, events, tz, selectedKey, selectedEventId]);
 
-  // isolate: Leaflet stacks its panes at z-index 400–700, which would
-  // otherwise float the map (and pins at 600+) over the app's own fixed
-  // overlays — the ⌘K palette sits at z-50. Trapping them in their own
-  // stacking context keeps every overlay above the map.
   return (
     <div
       ref={el}
