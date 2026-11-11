@@ -150,6 +150,13 @@ export const ACCEPT_PRESETS = [
   { label: 'CAD / 3D', value: '.f3z,.f3d' },
 ] as const
 
+export function fileCountHint(max: number, exact: boolean, required: boolean): string {
+  const n = (k: number) => (k === 1 ? '1 file' : `${k} files`)
+  if (max === 1) return required ? 'People add 1 file.' : 'People can add 1 file or none.'
+  if (exact) return required ? `People add exactly ${n(max)}.` : `People add exactly ${n(max)}, or none.`
+  return required ? `People add 1 to ${max} files.` : `People can add up to ${n(max)}, or none.`
+}
+
 export function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
   const parts: string[] = []
   for (const { value } of ACCEPT_PRESETS) {
@@ -189,6 +196,7 @@ export interface BuildQuestionInput {
   maxValue?: number | string
   accept?: string
   maxFiles?: number
+  exactFiles?: boolean
   afterDomains?: boolean
   isGeneralForm?: boolean
   maxWordsEnabled?: boolean
@@ -221,6 +229,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     maxValue,
     accept,
     maxFiles,
+    exactFiles,
     afterDomains,
     isGeneralForm,
     maxWordsEnabled,
@@ -259,6 +268,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
       max: type === 'number' ? parseBound(maxValue) : undefined,
       accept: type === 'file' ? accept || undefined : undefined,
       maxFiles: type === 'file' && maxFiles && maxFiles > 1 ? maxFiles : undefined,
+      exactFiles: type === 'file' && maxFiles && maxFiles > 1 && exactFiles ? true : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
       referenceSource:
@@ -576,6 +586,7 @@ export function FormBuilderTab({
       maxValue: maxText,
       accept: buildAcceptFromPresets(acceptPresets, acceptCustom),
       maxFiles: editForm.data?.maxFiles,
+      exactFiles: editForm.data?.exactFiles,
       afterDomains: editForm.data?.afterDomains,
       isGeneralForm,
       maxWordsEnabled,
@@ -968,20 +979,42 @@ export function FormBuilderTab({
               <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Files per answer
               </label>
-              <Select
-                value={String(editForm.data?.maxFiles ?? 1)}
-                onChange={(v) =>
-                  setEditForm({
-                    ...editForm,
-                    data: { ...editForm.data!, maxFiles: Number(v) },
-                  })
-                }
-                options={Array.from({ length: MAX_FILES_PER_QUESTION }, (_, i) => ({
-                  value: String(i + 1),
-                  label: i === 0 ? '1 file' : `Up to ${i + 1} files`,
-                }))}
-                buttonClassName={formTrigger}
-              />
+              <div className="flex items-center gap-3">
+                <Segmented
+                  ariaLabel="Files per answer"
+                  size="md"
+                  value={editForm.data?.exactFiles ? 'exactly' : 'upTo'}
+                  onChange={(next) =>
+                    setEditForm({
+                      ...editForm,
+                      data: { ...editForm.data!, exactFiles: next === 'exactly' },
+                    })
+                  }
+                  options={[
+                    { value: 'upTo', label: 'Up to' },
+                    { value: 'exactly', label: 'Exactly' },
+                  ]}
+                />
+                <div className="flex-1">
+                  <Select
+                    value={String(editForm.data?.maxFiles ?? 1)}
+                    onChange={(v) =>
+                      setEditForm({
+                        ...editForm,
+                        data: { ...editForm.data!, maxFiles: Number(v) },
+                      })
+                    }
+                    options={Array.from({ length: MAX_FILES_PER_QUESTION }, (_, i) => ({
+                      value: String(i + 1),
+                      label: i === 0 ? '1 file' : `${i + 1} files`,
+                    }))}
+                    buttonClassName={formTrigger}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {fileCountHint(editForm.data?.maxFiles ?? 1, !!editForm.data?.exactFiles, !!editForm.required)}
+              </p>
             </div>
           )}
 

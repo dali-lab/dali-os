@@ -3,6 +3,7 @@ import {
   ACCEPT_PRESETS,
   buildAcceptFromPresets,
   buildQuestion,
+  fileCountHint,
   parseAcceptIntoPresets,
   repairQuestions,
 } from '../FormBuilder'
@@ -301,5 +302,27 @@ describe('file type presets', () => {
     const accept = buildAcceptFromPresets(selected, '.sketch')
     expect(accept).toBe('image/*, .zip, .sketch')
     expect(parseAcceptIntoPresets(accept)).toEqual({ presets: selected, custom: '.sketch' })
+  })
+})
+
+describe('exactFiles', () => {
+  const file = { key: 'q1', type: 'file' as const, required: true, label: 'Screenshots' }
+
+  it('keeps exactly on a multi-file question', () => {
+    expect(buildQuestion({ ...file, maxFiles: 3, exactFiles: true }).data).toMatchObject({ maxFiles: 3, exactFiles: true })
+  })
+
+  it('drops exactly when the question takes one file or is not a file question', () => {
+    expect(buildQuestion({ ...file, maxFiles: 1, exactFiles: true }).data.exactFiles).toBeUndefined()
+    expect(buildQuestion({ ...file, maxFiles: 3, exactFiles: false }).data.exactFiles).toBeUndefined()
+    expect(buildQuestion({ ...file, type: 'text', maxFiles: 3, exactFiles: true }).data.exactFiles).toBeUndefined()
+  })
+
+  it('spells out what each setting allows', () => {
+    expect(fileCountHint(3, false, true)).toBe('People add 1 to 3 files.')
+    expect(fileCountHint(3, false, false)).toBe('People can add up to 3 files, or none.')
+    expect(fileCountHint(3, true, true)).toBe('People add exactly 3 files.')
+    expect(fileCountHint(3, true, false)).toBe('People add exactly 3 files, or none.')
+    expect(fileCountHint(1, true, true)).toBe('People add 1 file.')
   })
 })

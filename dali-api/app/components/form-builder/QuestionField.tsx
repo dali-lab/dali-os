@@ -556,12 +556,23 @@ function SkillsRatingField({
   );
 }
 
+function fileButtonLabel(count: number, max: number, exact: boolean): string {
+  if (max === 1) return "Choose file to upload";
+  if (exact) {
+    const left = max - count;
+    if (count === 0) return `Choose ${max} files`;
+    return left === 1 ? "Add 1 more file" : `Add ${left} more files`;
+  }
+  return count === 0 ? `Choose up to ${max} files` : "Add another file";
+}
+
 function FileUploadField({
   value,
   onChange,
   accept,
   questionKey,
   maxFiles,
+  exact = false,
   uploadUrl,
   disabled = false,
 }: {
@@ -570,6 +581,7 @@ function FileUploadField({
   accept?: string;
   questionKey: string;
   maxFiles: number;
+  exact?: boolean;
   uploadUrl?: string;
   disabled?: boolean;
 }) {
@@ -583,7 +595,13 @@ function FileUploadField({
   async function handleFiles(files: File[]) {
     setError(null);
     if (files.length > room) {
-      setError(maxFiles === 1 ? "Choose one file" : `You can add up to ${maxFiles} files`);
+      setError(
+        maxFiles === 1
+          ? "Choose one file"
+          : exact
+            ? `This question takes exactly ${maxFiles} files`
+            : `You can add up to ${maxFiles} files`,
+      );
       return;
     }
     setUploading(true);
@@ -642,9 +660,7 @@ function FileUploadField({
           className={`flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground transition w-full ${disabled ? "cursor-not-allowed" : "hover:border-os-accent hover:text-os-accent"}`}
         >
           <Upload className="w-5 h-5" aria-hidden />
-          {keys.length === 0
-            ? maxFiles > 1 ? `Choose up to ${maxFiles} files` : "Choose file to upload"
-            : "Add another file"}
+          {fileButtonLabel(keys.length, maxFiles, exact)}
         </button>
       ) : null}
       <input
@@ -831,6 +847,7 @@ export function FormQuestionField({
         accept={question.data.accept}
         questionKey={question.key}
         maxFiles={maxFilesFor(question)}
+        exact={!!question.data.exactFiles}
         uploadUrl={uploadUrl}
         disabled={disabled}
       />

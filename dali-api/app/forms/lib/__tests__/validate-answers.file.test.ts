@@ -34,13 +34,33 @@ describe.each([
 
   it("rejects more files than the question takes", async () => {
     expect(await run(fileQ(), { shots: JSON.stringify([KEY_A, KEY_B]) })).toEqual({
-      error: '"Screenshots" takes one file.',
+      error: '"Screenshots": takes one file.',
       status: 400,
     });
     expect(await run(fileQ({ maxFiles: 2 }), { shots: [KEY_A, KEY_B, KEY_C] })).toEqual({
-      error: '"Screenshots" takes up to 2 files.',
+      error: '"Screenshots": takes up to 2 files.',
       status: 400,
     });
+  });
+
+  it("needs exactly N files when the question says exactly", async () => {
+    const exact = fileQ({ maxFiles: 3, exactFiles: true });
+    expect(await run(exact, { shots: [KEY_A, KEY_B] })).toEqual({
+      error: '"Screenshots": add exactly 3 files.',
+      status: 400,
+    });
+    const answers: Record<string, unknown> = { shots: [KEY_A, KEY_B, KEY_C] };
+    expect(await run(exact, answers)).toBeNull();
+    expect(answers.shots).toEqual([KEY_A, KEY_B, KEY_C]);
+  });
+
+  it("requires at least one file for a required up-to question", async () => {
+    expect(await run(fileQ({ maxFiles: 3 }), { shots: "[]" })).toMatchObject({ status: 400 });
+    expect(await run(fileQ({ maxFiles: 3 }), { shots: [KEY_A] })).toBeNull();
+  });
+
+  it("lets an optional exactly question be left empty", async () => {
+    expect(await run(fileQ({ maxFiles: 3, exactFiles: true }, false), { shots: "" })).toBeNull();
   });
 
   it("rejects a key that wasn't uploaded for this question", async () => {
