@@ -27,6 +27,20 @@ export function normalizeBounds(b: { south: number; west: number; north: number;
 export const mapStyleUrl = (dark: boolean) => `${MAP_TILES_ORIGIN}/styles/${dark ? "dark" : "positron"}`;
 const isDark = () => !document.documentElement.classList.contains("light");
 
+// OpenFreeMap hides state borders below zoom 8 in light and draws them near-black in dark.
+const STATE_BORDERS: Record<string, { minzoom?: number; color: string }> = {
+  boundary_3: { minzoom: 3, color: "hsl(0,0%,62%)" },
+  boundary_state: { color: "hsl(0,0%,38%)" },
+};
+
+export function showStateBorders(m: Pick<MapLibreMap, "getLayer" | "setLayerZoomRange" | "setPaintProperty">) {
+  for (const [id, { minzoom, color }] of Object.entries(STATE_BORDERS)) {
+    if (!m.getLayer(id)) continue;
+    if (minzoom != null) m.setLayerZoomRange(id, minzoom, 24);
+    m.setPaintProperty(id, "line-color", color);
+  }
+}
+
 const AVATAR = 30;
 const EVENT_PIN = { width: 44, height: 48, lift: 18 };
 const Z = { event: 1, place: 2, selectedPlace: 3, selectedEvent: 4, hover: 5 };
@@ -286,6 +300,7 @@ export function CommunityMap({
       m.touchZoomRotate.disableRotation();
       m.keyboard.disableRotation();
       m.on("resize", () => m.setMinZoom(minZoomToFill(m.getContainer().clientHeight)));
+      m.on("style.load", () => showStateBorders(m));
       m.on("moveend", () => emitRef.current());
       m.on("zoomend", () => {
         const bucket = Math.floor(m.getZoom());

@@ -40,6 +40,12 @@ const fake = vi.hoisted(() => {
     fire(type: string) {
       for (const fn of this.handlers.get(type) ?? []) fn();
     }
+    layers = new Set(["boundary_3"]);
+    getLayer(id: string) {
+      return this.layers.has(id) ? { id } : undefined;
+    }
+    setLayerZoomRange = vi.fn();
+    setPaintProperty = vi.fn();
     getZoom() {
       return this.zoom;
     }
@@ -117,7 +123,7 @@ vi.mock("maplibre-gl", () => fake.module);
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 vi.mock("maplibre-gl/dist/maplibre-gl-worker.mjs?url", () => ({ default: "/assets/maplibre-worker.mjs" }));
 
-const { CommunityMap, mapStyleUrl } = await import("../CommunityMap");
+const { CommunityMap, mapStyleUrl, showStateBorders } = await import("../CommunityMap");
 type Props = Parameters<typeof CommunityMap>[0];
 
 const person = (id: string, over: Partial<CommunityPerson> = {}): CommunityPerson => ({
@@ -247,6 +253,22 @@ describe("CommunityMap", () => {
       await Promise.resolve();
     });
     expect(theMap().styles).toHaveLength(2);
+  });
+
+  it("shows state borders at country zoom whenever a style loads", async () => {
+    await mount();
+    expect(theMap().setPaintProperty).not.toHaveBeenCalled();
+    theMap().fire("style.load");
+    expect(theMap().setLayerZoomRange).toHaveBeenCalledWith("boundary_3", 3, 24);
+    expect(theMap().setPaintProperty).toHaveBeenCalledWith("boundary_3", "line-color", "hsl(0,0%,62%)");
+  });
+
+  it("brightens the dark style's state borders and skips layers a style doesn't have", () => {
+    const m = { getLayer: (id: string) => (id === "boundary_state" ? {} : undefined), setLayerZoomRange: vi.fn(), setPaintProperty: vi.fn() };
+    showStateBorders(m as never);
+    expect(m.setLayerZoomRange).not.toHaveBeenCalled();
+    expect(m.setPaintProperty).toHaveBeenCalledTimes(1);
+    expect(m.setPaintProperty).toHaveBeenCalledWith("boundary_state", "line-color", "hsl(0,0%,38%)");
   });
 
   it("puts one pin on each place and each located event", async () => {
