@@ -2,13 +2,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router";
+import { createMemoryRouter, RouterProvider } from "react-router";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock("~/components/ui/floating", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
 }));
+vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn() }) }));
+vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn() }) }));
 vi.mock("~/components/ui/Drawer", () => ({
   Drawer: ({ title, children }: { title: string; children: React.ReactNode }) =>
     createElement("div", null, createElement("h2", null, title), children),
@@ -24,11 +26,10 @@ function mount(props: Partial<React.ComponentProps<typeof TasksDrawer>>) {
   document.body.appendChild(container);
   root = createRoot(container);
   const tasks = Array.from({ length: 50 }, (_, i) => ({ id: `n${i}`, title: `Task ${i}`, link: null }));
-  act(() =>
-    root.render(
-      createElement(
-        MemoryRouter,
-        null,
+  const router = createMemoryRouter([
+    {
+      path: "/",
+      Component: () =>
         createElement(TasksDrawer, {
           open: true,
           onClose: vi.fn(),
@@ -37,9 +38,9 @@ function mount(props: Partial<React.ComponentProps<typeof TasksDrawer>>) {
           projectTasks: [],
           ...props,
         }),
-      ),
-    ),
-  );
+    },
+  ]);
+  act(() => root.render(createElement(RouterProvider, { router })));
 }
 
 afterEach(() => {
@@ -49,7 +50,7 @@ afterEach(() => {
 
 describe("TasksDrawer", () => {
   it("shows the true count and a link to My Tasks when rows are not shown", () => {
-    mount({ total: 120 });
+    mount({ totals: { generalTasks: 120 } });
     expect(container.querySelector("h2")?.textContent).toBe("Tasks (120)");
     expect(container.textContent).toContain("Showing 50 of 120");
     expect(container.querySelector('a[href="/notifications"]')).not.toBeNull();
@@ -57,20 +58,37 @@ describe("TasksDrawer", () => {
 
   it("opens My Tasks through onOpen", () => {
     const onOpen = vi.fn();
-    mount({ total: 120, onOpen });
+    mount({ totals: { generalTasks: 120 }, onOpen });
     act(() => container.querySelector<HTMLAnchorElement>('a[href="/notifications"]')!.click());
     expect(onOpen).toHaveBeenCalledWith("/notifications", "My Tasks");
   });
 
   it("says nothing extra when every row is shown", () => {
-    mount({ total: 50 });
+    mount({ totals: { generalTasks: 50 } });
     expect(container.textContent).not.toContain("Showing");
   });
 
   it("leaves out the link where My Tasks is not reachable", () => {
-    mount({ total: 120, allTasksLink: false });
+    mount({ totals: { generalTasks: 120 }, allTasksLink: false });
     expect(container.textContent).toContain("Showing 50 of 120");
     expect(container.querySelector('a[href="/notifications"]')).toBeNull();
+  });
+
+  it("counts each tab with its unloaded rows, matching the title", () => {
+    const pings = Array.from({ length: 48 }, (_, i) => ({
+      id: `p${i}`,
+      title: `Ping ${i}`,
+      link: `/projects/p1?tab=board&task=w${i}`,
+      eventType: "task.assigned",
+    }));
+    const general = [
+      { id: "g1", title: "Invite", link: null, eventType: "meeting.invite" },
+      { id: "g2", title: "Mention", link: null, eventType: "pagedoc.mention" },
+    ];
+    mount({ tasks: [...general, ...pings], totals: { generalTasks: 10 } });
+    const tabs = [...container.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
+    expect(tabs).toEqual(["Project work48", "General10"]);
+    expect(container.querySelector("h2")?.textContent).toBe("Tasks (58)");
   });
 
   it("titles a portal feed Notifications, with one list and its own empty state", () => {
