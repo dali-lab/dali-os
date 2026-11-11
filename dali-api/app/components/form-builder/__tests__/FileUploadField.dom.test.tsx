@@ -18,8 +18,8 @@ let container: HTMLDivElement;
 let root: Root;
 let latest = "";
 
-function fileQ(maxFiles?: number): Question {
-  return { key: "shots", type: "file", required: true, data: { label: "Shots", accept: "image/*", maxFiles } };
+function fileQ(maxFiles?: number, exactFiles?: boolean): Question {
+  return { key: "shots", type: "file", required: true, data: { label: "Shots", accept: "image/*", maxFiles, exactFiles } };
 }
 
 function Harness({ question, initial }: { question: Question; initial: string }) {
@@ -108,5 +108,23 @@ describe("file question field", () => {
     await choose("a.png", "big.png");
     expect(JSON.parse(latest)).toEqual([keyFor("a.png")]);
     expect(text()).toContain("File too large (max 50 MB)");
+  });
+
+  it("counts down to an exact number of files", async () => {
+    render(fileQ(3, true));
+    expect(text()).toContain("Choose 3 files");
+    await choose("a.png");
+    expect(text()).toContain("Add 2 more files");
+    await choose("b.png");
+    expect(text()).toContain("Add 1 more file");
+    await choose("c.png");
+    expect(text()).not.toContain("more file");
+  });
+
+  it("says how many an exact question takes when too many are picked", async () => {
+    render(fileQ(2, true));
+    await choose("a.png", "b.png", "c.png");
+    expect(upload).not.toHaveBeenCalled();
+    expect(text()).toContain("This question takes exactly 2 files");
   });
 });

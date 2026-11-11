@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   MAX_FILES_PER_QUESTION,
   fileAnswerName,
+  fileCountError,
   isAnswered,
   findMissingRequired,
   maxFilesFor,
@@ -418,5 +419,41 @@ describe("file answers", () => {
     expect(isAnswered("[]", fileQ())).toBe(false);
     expect(isAnswered(KEY_A, fileQ())).toBe(true);
     expect(isAnswered(JSON.stringify([KEY_A]), fileQ())).toBe(true);
+  });
+});
+
+describe("fileCountError", () => {
+  const fq = (data: Partial<Question["data"]>): Question => ({
+    key: "shots",
+    type: "file",
+    required: true,
+    data: { label: "Shots", ...data },
+  });
+
+  it("allows 1 to N for up to N", () => {
+    const q = fq({ maxFiles: 3 });
+    expect([1, 2, 3].map((n) => fileCountError(q, n))).toEqual([null, null, null]);
+    expect(fileCountError(q, 4)).toBe("takes up to 3 files.");
+    expect(fileCountError(fq({}), 2)).toBe("takes one file.");
+  });
+
+  it("allows only N for exactly N", () => {
+    const q = fq({ maxFiles: 3, exactFiles: true });
+    expect(fileCountError(q, 3)).toBeNull();
+    expect(fileCountError(q, 1)).toBe("add exactly 3 files.");
+    expect(fileCountError(q, 4)).toBe("add exactly 3 files.");
+  });
+
+  it("leaves zero files to the required check", () => {
+    expect(fileCountError(fq({ maxFiles: 3, exactFiles: true }), 0)).toBeNull();
+  });
+
+  it("reports the count through validateAnswerFormats", () => {
+    const q = fq({ maxFiles: 3, exactFiles: true });
+    expect(validateAnswerFormats([q], { shots: JSON.stringify(["a", "b"]) })).toEqual([
+      { key: "shots", message: '"Shots": add exactly 3 files.' },
+    ]);
+    expect(validateAnswerFormats([q], { shots: ["a", "b", "c"] })).toEqual([]);
+    expect(validateAnswerFormats([q], { shots: "" })).toEqual([]);
   });
 });

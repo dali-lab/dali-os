@@ -151,6 +151,8 @@ export interface Question {
     accept?: string
     // file only: how many files one answer can hold (1 to 10, default 1).
     maxFiles?: number
+    // file only: an answer needs exactly maxFiles files, not up to that many.
+    exactFiles?: boolean
     maxWords?: number
     // Set only for `type: 'reference'`. A key into REFERENCE_SOURCES.
     referenceSource?: string
