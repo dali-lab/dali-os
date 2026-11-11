@@ -36,6 +36,7 @@ import {
 } from "../lib/slot-roles";
 import { buildSubmissionView } from "../lib/submission-view.server";
 import type { Question } from "~/types";
+import { conditionalKeys } from "~/lib/form-logic";
 import { regroupRedirect } from "~/core/lib/regroup-redirect.server";
 
 const SLOT = "project-bids" as const;
@@ -152,7 +153,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       select: { questions: true },
     });
     const qs = (latest?.questions as unknown as Question[]) ?? [];
-    formQuestions = qs.filter((q) => !q.data.showIf).map((q) => ({
+    const conditional = conditionalKeys(qs);
+    formQuestions = qs.filter((q) => !conditional.has(q.key)).map((q) => ({
       key: q.key,
       label: q.data.label,
       type: q.type,

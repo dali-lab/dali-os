@@ -1,8 +1,8 @@
 import type { Question } from "~/types";
 import { NUMBER_PATTERN } from "~/forms/lib/version-summary";
-import { questionNumbers } from "~/lib/form-logic";
+import { OTHER_VALUE, questionNumbers } from "~/lib/form-logic";
 
-export const OTHER_VALUE = "__other__";
+export { OTHER_VALUE };
 export const ANSWER_PARAM = "a";
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 

@@ -113,4 +113,37 @@ describe("validateAnswers with rules", () => {
     expect(answers).toEqual({ returning: "Yes", why: "kept", extra: "x" });
     expect(await run(form, { returning: "Yes" })).toEqual({ error: '"why" is required.', status: 400 });
   });
+
+  it("drops answers on a page whose rule hides it, and requires them once shown", async () => {
+    const form = [
+      returning,
+      q("pb", "pageBreak", when("returning", "is", "No")),
+      q("why", "textarea", {}, true),
+      q("pb2", "pageBreak"),
+      q("after", "text", {}, true),
+    ];
+    const answers: Record<string, unknown> = { returning: "Yes", why: "stale", after: "kept" };
+    expect(await run(form, answers)).toBeNull();
+    expect(answers).toEqual({ returning: "Yes", after: "kept" });
+    expect(await run(form, { returning: "No", after: "kept" })).toEqual({ error: '"why" is required.', status: 400 });
+  });
+
+  it("reads a rating range and several conditions", async () => {
+    const form = [
+      returning,
+      q("score", "scale", {}, true),
+      q("fix", "textarea", {
+        showIf: {
+          match: "all",
+          conditions: [
+            { questionKey: "returning", op: "is", values: ["Yes"] },
+            { questionKey: "score", op: "atMost", values: ["2"] },
+          ],
+        },
+      }, true),
+    ];
+    expect(await run(form, { returning: "Yes", score: "4" })).toBeNull();
+    expect(await run(form, { returning: "Yes", score: "2" })).toEqual({ error: '"fix" is required.', status: 400 });
+    expect(await run(form, { returning: "No", score: "1" })).toBeNull();
+  });
 });

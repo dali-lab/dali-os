@@ -56,16 +56,14 @@ import { QuestionSourceNote } from './QuestionSourceNote'
 import { Checkbox } from '~/components/ui/Checkbox'
 import { Segmented } from '~/components/ui/Segmented'
 import {
-  OP_LABELS,
-  canBeSource,
-  opsForSource,
+  conditionalKeys,
   questionNumbers,
   ruleDepths,
   showIfProblems,
   showIfSentence,
-  valuesForSource,
   type ShowIf,
 } from '~/lib/form-logic'
+import { ShowIfEditor } from './ShowIfEditor'
 import { MAX_FILES_PER_QUESTION, isLayoutOnly } from '~/lib/form-answers'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
@@ -138,12 +136,26 @@ export const BADGE = {
 const PALETTE_PREFIX = 'palette:'
 const CANVAS_ID = 'canvas'
 
-const ACCEPT_PRESETS = [
+export const ACCEPT_PRESETS = [
   { label: 'PDF', value: 'application/pdf' },
+  { label: 'Images', value: 'image/*' },
+  { label: 'Video', value: 'video/*' },
+  { label: 'Audio', value: 'audio/*' },
+  { label: 'Docs', value: '.doc,.docx,.odt,.rtf,.txt' },
+  { label: 'Slides', value: '.ppt,.pptx,.key,.odp' },
+  { label: 'Sheets', value: '.xls,.xlsx,.csv,.numbers,.ods' },
+  { label: 'ZIP', value: '.zip' },
   { label: 'CAD / 3D', value: '.f3z,.f3d' },
 ] as const
 
-function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
+export function fileCountHint(max: number, exact: boolean, required: boolean): string {
+  const n = (k: number) => (k === 1 ? '1 file' : `${k} files`)
+  if (max === 1) return required ? 'People add 1 file.' : 'People can add 1 file or none.'
+  if (exact) return required ? `People add exactly ${n(max)}.` : `People add exactly ${n(max)}, or none.`
+  return required ? `People add 1 to ${max} files.` : `People can add up to ${n(max)}, or none.`
+}
+
+export function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
   const parts: string[] = []
   for (const { value } of ACCEPT_PRESETS) {
     if (presets.has(value)) parts.push(...value.split(',').map((s) => s.trim()))
@@ -154,7 +166,7 @@ function buildAcceptFromPresets(presets: Set<string>, custom: string): string {
   return [...new Set(parts)].join(', ')
 }
 
-function parseAcceptIntoPresets(accept: string): { presets: Set<string>; custom: string } {
+export function parseAcceptIntoPresets(accept: string): { presets: Set<string>; custom: string } {
   const tokens = new Set(accept.split(',').map((s) => s.trim()).filter(Boolean))
   const selected = new Set<string>()
   const remaining = new Set(tokens)
@@ -182,6 +194,7 @@ export interface BuildQuestionInput {
   maxValue?: number | string
   accept?: string
   maxFiles?: number
+  exactFiles?: boolean
   afterDomains?: boolean
   isGeneralForm?: boolean
   maxWordsEnabled?: boolean
@@ -214,6 +227,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     maxValue,
     accept,
     maxFiles,
+    exactFiles,
     afterDomains,
     isGeneralForm,
     maxWordsEnabled,
@@ -252,6 +266,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
       max: type === 'number' ? parseBound(maxValue) : undefined,
       accept: type === 'file' ? accept || undefined : undefined,
       maxFiles: type === 'file' && maxFiles && maxFiles > 1 ? maxFiles : undefined,
+      exactFiles: type === 'file' && maxFiles && maxFiles > 1 && exactFiles ? true : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
       referenceSource:
@@ -540,7 +555,7 @@ export function FormBuilderTab({
   // Page breaks are ordinary array items (so dnd reorder + delete already work)
   // but layout-only: edited inline via their own title/subtitle inputs rather
   // than the question edit buffer.
-  const updatePageBreak = (key: string, patch: { label?: string; description?: string }) => {
+  const updatePageBreak = (key: string, patch: { label?: string; description?: string; showIf?: ShowIf }) => {
     replaceQuestion(key, (q) => ({ ...q, data: { ...q.data, ...patch } }))
   }
   // Text blocks edit inline too; their body is the whole row.
@@ -569,6 +584,7 @@ export function FormBuilderTab({
       maxValue: maxText,
       accept: buildAcceptFromPresets(acceptPresets, acceptCustom),
       maxFiles: editForm.data?.maxFiles,
+      exactFiles: editForm.data?.exactFiles,
       afterDomains: editForm.data?.afterDomains,
       isGeneralForm,
       maxWordsEnabled,
@@ -618,13 +634,14 @@ export function FormBuilderTab({
   const problemByKey = new Map(
     showIfProblems(questions, new Map(Object.entries(mappedQuestions))).map((p) => [p.key, p.message]),
   )
-  const setRule = (showIf: ShowIf | undefined) =>
-    setEditForm({ ...editForm, data: { ...editForm.data!, showIf } })
-  const ruleFor = (source: Question): ShowIf => ({
-    questionKey: source.key,
-    op: opsForSource(source)[0],
-    value: valuesForSource(source)[0] ?? '',
-  })
+  const mappedOnPage = (breakKey: string) => {
+    const start = questions.findIndex((q) => q.key === breakKey)
+    for (const q of questions.slice(start + 1)) {
+      if (q.type === 'pageBreak') return undefined
+      if (mappedQuestions[q.key]) return mappedQuestions[q.key]
+    }
+    return undefined
+  }
   const renderEditForm = () => {
     // Soft lint, shared with the email and signing editors: a token this
     // surface doesn't offer stays literal text, so say so rather than letting
@@ -721,7 +738,7 @@ export function FormBuilderTab({
                     required: e.target.checked,
                   })
                 }
-                label={editForm.data?.showIf ? 'Required when shown' : 'Required field'}
+                label={editForm.key && conditionalKeys(questions).has(editForm.key) ? 'Required when shown' : 'Required field'}
               />
               <InfoTip content="Respondents must answer this question before they can submit. Shown as * in the fill view." />
             </span>
@@ -961,20 +978,42 @@ export function FormBuilderTab({
               <label className="block text-sm font-medium text-foreground/80 mb-1">
                 Files per answer
               </label>
-              <Select
-                value={String(editForm.data?.maxFiles ?? 1)}
-                onChange={(v) =>
-                  setEditForm({
-                    ...editForm,
-                    data: { ...editForm.data!, maxFiles: Number(v) },
-                  })
-                }
-                options={Array.from({ length: MAX_FILES_PER_QUESTION }, (_, i) => ({
-                  value: String(i + 1),
-                  label: i === 0 ? '1 file' : `Up to ${i + 1} files`,
-                }))}
-                buttonClassName={formTrigger}
-              />
+              <div className="flex items-center gap-3">
+                <Segmented
+                  ariaLabel="Files per answer"
+                  size="md"
+                  value={editForm.data?.exactFiles ? 'exactly' : 'upTo'}
+                  onChange={(next) =>
+                    setEditForm({
+                      ...editForm,
+                      data: { ...editForm.data!, exactFiles: next === 'exactly' },
+                    })
+                  }
+                  options={[
+                    { value: 'upTo', label: 'Up to' },
+                    { value: 'exactly', label: 'Exactly' },
+                  ]}
+                />
+                <div className="flex-1">
+                  <Select
+                    value={String(editForm.data?.maxFiles ?? 1)}
+                    onChange={(v) =>
+                      setEditForm({
+                        ...editForm,
+                        data: { ...editForm.data!, maxFiles: Number(v) },
+                      })
+                    }
+                    options={Array.from({ length: MAX_FILES_PER_QUESTION }, (_, i) => ({
+                      value: String(i + 1),
+                      label: i === 0 ? '1 file' : `${i + 1} files`,
+                    }))}
+                    buttonClassName={formTrigger}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {fileCountHint(editForm.data?.maxFiles ?? 1, !!editForm.data?.exactFiles, !!editForm.required)}
+              </p>
             </div>
           )}
 
@@ -1014,7 +1053,7 @@ export function FormBuilderTab({
                 placeholder="Additional types, e.g. .f3z, text/plain"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Toggle common presets above, or enter extra MIME types / extensions below (comma-separated).
+                Leave all of these empty to accept any file type. Add other types as extensions or MIME types, separated by commas.
               </p>
             </div>
           )}
@@ -1028,87 +1067,19 @@ export function FormBuilderTab({
           />
         )}
 
-        {editForm.type !== undefined && (() => {
-          const own = questions.findIndex((q) => q.key === editForm.key)
-          const sources = questions.slice(0, Math.max(own, 0)).filter(canBeSource)
-          const rule = editForm.data?.showIf
-          const source = rule ? questions.find((q) => q.key === rule.questionKey) : undefined
-          const feature = editForm.key ? mappedQuestions[editForm.key] : undefined
-          const noSources = sources.length === 0 && !rule
-          const problem = editForm.key ? problemByKey.get(editForm.key) : undefined
-          return (
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-foreground/80">Show this question</span>
-                <Segmented
-                  ariaLabel="Show this question"
-                  size="md"
-                  value={rule ? 'when' : 'always'}
-                  onChange={(next) =>
-                    setRule(next === 'when' && sources[0] ? ruleFor(sources[0]) : undefined)
-                  }
-                  options={[
-                    { value: 'always', label: 'Always' },
-                    { value: 'when', label: 'Only when', disabled: !!feature || noSources },
-                  ]}
-                />
-              </div>
-              {feature && (
-                <p className="text-xs text-muted-foreground">
-                  {feature} reads this answer, so the question is always shown.
-                </p>
-              )}
-              {!feature && noSources && (
-                <p className="text-xs text-muted-foreground">
-                  There is no earlier dropdown, multiple choice, scale or checkbox question to depend on.
-                </p>
-              )}
-              {rule && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="min-w-[12rem] flex-1">
-                    <Select
-                      value={rule.questionKey}
-                      onChange={(key) => {
-                        const next = questions.find((q) => q.key === key)
-                        if (next) setRule(ruleFor(next))
-                      }}
-                      placeholder="Pick a question…"
-                      options={sources.map((q) => ({
-                        value: q.key,
-                        label: `Q${numbers.get(q.key)} ${q.data.label || 'Untitled question'}`,
-                      }))}
-                      buttonClassName={formTrigger}
-                    />
-                  </div>
-                  <div className="w-36 shrink-0">
-                    <Select
-                      value={rule.op}
-                      onChange={(op) => setRule({ ...rule, op: op as ShowIf['op'] })}
-                      options={(source ? opsForSource(source) : [rule.op]).map((op) => ({
-                        value: op,
-                        label: OP_LABELS[op],
-                      }))}
-                      buttonClassName={formTrigger}
-                    />
-                  </div>
-                  <div className="w-44 shrink-0">
-                    <Select
-                      value={rule.value}
-                      onChange={(value) => setRule({ ...rule, value })}
-                      placeholder="Pick an answer…"
-                      options={(source ? valuesForSource(source) : []).map((v) => ({
-                        value: v,
-                        label: v,
-                      }))}
-                      buttonClassName={formTrigger}
-                    />
-                  </div>
-                </div>
-              )}
-              {problem && <p className="text-xs text-os-amber">{problem}</p>}
-            </div>
-          )
-        })()}
+        {editForm.type !== undefined && editForm.key && (
+          <ShowIfEditor
+            subject="question"
+            questions={questions}
+            ownKey={editForm.key}
+            showIf={editForm.data?.showIf}
+            onChange={(showIf) => setEditForm({ ...editForm, data: { ...editForm.data!, showIf } })}
+            numbers={numbers}
+            lockedBy={mappedQuestions[editForm.key]}
+            problem={problemByKey.get(editForm.key)}
+            formId={formId}
+          />
+        )}
 
         <div className="flex justify-between items-center gap-3 pt-2">
           <Tooltip content="Remove question">
@@ -1246,6 +1217,17 @@ export function FormBuilderTab({
                               className="block w-full"
                               placeholder="Subtitle (optional)"
                             />
+                            <ShowIfEditor
+                              subject="page"
+                              questions={questions}
+                              ownKey={q.key}
+                              showIf={q.data.showIf}
+                              onChange={(showIf) => updatePageBreak(q.key, { showIf })}
+                              numbers={numbers}
+                              lockedBy={q.data.showIf ? undefined : mappedOnPage(q.key)}
+                              problem={problemByKey.get(q.key)}
+                              formId={formId}
+                            />
                           </div>
                           <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
                             <button
@@ -1309,7 +1291,7 @@ export function FormBuilderTab({
 
                             {q.data.showIf && (
                               <p className="text-sm text-os-accent mb-2">
-                                Shown when {showIfSentence(q.data.showIf, numbers)}
+                                Shown when {showIfSentence(q.data.showIf, numbers, questions)}
                               </p>
                             )}
                             <QuestionSourceNote question={q} />
