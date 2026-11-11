@@ -1,19 +1,23 @@
 import { useRef, useState } from "react";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, ExternalLink, Paperclip, Upload } from "lucide-react";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Radio } from "~/components/ui/Radio";
 import type { Question } from "~/types";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { countWords } from "~/lib/word-count";
-import {
-  fileMatchesAccept,
-  uploadCapForKey,
-} from "~/lib/file-validation";
+import { formUploadKeyPrefix } from "~/lib/file-validation";
 import { SKILLS_RATING_UNRATED, parseSkillsRating } from "~/lib/skills-rating";
 import type { ReferenceOption } from "~/forms/lib/reference-sources.shared";
 import { Combobox, MultiSelect, SEARCH_THRESHOLD, Select } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
-import { OTHER_ANSWER_MAX_LENGTH } from "~/lib/form-answers";
+import {
+  OTHER_ANSWER_MAX_LENGTH,
+  fileAnswerName,
+  maxFilesFor,
+  parseFileAnswer,
+  serializeFileAnswer,
+} from "~/lib/form-answers";
+import { uploadFileToS3 } from "~/lib/upload-client";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 
 const INPUT_BASE =
@@ -557,155 +561,103 @@ function FileUploadField({
   onChange,
   accept,
   questionKey,
+  maxFiles,
+  uploadUrl,
   disabled = false,
 }: {
   value: string;
   onChange: (v: string) => void;
   accept?: string;
   questionKey: string;
+  maxFiles: number;
+  uploadUrl?: string;
   disabled?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fileName = value ? value.split("/").pop() ?? "Uploaded file" : null;
+  const keys = parseFileAnswer(value);
+  const room = maxFiles - keys.length;
 
-  async function handleFile(file: File) {
+  async function handleFiles(files: File[]) {
     setError(null);
-
-    const uploadKey = `applications/${questionKey}/${crypto.randomUUID()}-${file.name}`;
-    const cap = uploadCapForKey(uploadKey);
-    if (file.size > cap.maxBytes) {
-      setError(`File too large (max ${cap.label})`);
-      if (fileRef.current) fileRef.current.value = "";
+    if (files.length > room) {
+      setError(maxFiles === 1 ? "Choose one file" : `You can add up to ${maxFiles} files`);
       return;
     }
-    if (!fileMatchesAccept(file.name, file.type, accept)) {
-      setError(
-        accept
-          ? `File type not allowed. Accepted: ${accept}`
-          : "File type not allowed",
-      );
-      if (fileRef.current) fileRef.current.value = "";
-      return;
-    }
-
     setUploading(true);
+    const added: string[] = [];
     try {
-      const presignRes = await fetch("/api/upload/presign", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: uploadKey,
-          contentType: file.type || 'application/octet-stream',
-          contentLength: file.size,
-          accept,
-        }),
-      });
-      if (!presignRes.ok) {
-        const text = await presignRes.text();
-        let message = "Failed to get upload URL";
-        try { message = JSON.parse(text).error ?? message; } catch {}
-        throw new Error(message);
+      for (const file of files) {
+        const meta = await uploadFileToS3(file, formUploadKeyPrefix(questionKey), accept, uploadUrl);
+        added.push(meta.s3Key);
       }
-      const { url, fields, key } = await presignRes.json();
-
-      const formData = new FormData();
-      for (const [name, value] of Object.entries(fields as Record<string, string>)) {
-        formData.append(name, value);
-      }
-      formData.append("file", file);
-      const uploadRes = await fetch(url, { method: "POST", body: formData });
-      if (!uploadRes.ok) {
-        const body = await uploadRes.text().catch(() => "");
-        if (uploadRes.status === 403 && /EntityTooLarge/i.test(body)) {
-          throw new Error(`File too large (max ${cap.label})`);
-        }
-        throw new Error("Upload failed");
-      }
-
-      onChange(key);
-    } catch (err: any) {
-      setError(err.message ?? "Upload failed");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
+      if (added.length > 0) onChange(serializeFileAnswer([...keys, ...added], maxFiles));
     }
   }
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (files.length > 0) handleFiles(files);
   }
 
-  if (uploading) {
-    return (
-      <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card text-sm text-muted-foreground">
-        <span className="inline-block w-4 h-4 border-2 border-border border-t-os-accent rounded-full animate-spin" />
-        Uploading...
-      </div>
-    );
-  }
-
-  if (fileName) {
-    return (
-      <div className={`flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card ${disabled ? "opacity-60" : ""}`}>
-        <svg className="w-5 h-5 text-os-accent shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-        </svg>
-        <span className="text-sm text-foreground truncate flex-1">{fileName}</span>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => { if (disabled) return; onChange(""); if (fileRef.current) fileRef.current.value = ""; }}
-          className={`text-xs text-muted-foreground transition ${disabled ? "cursor-not-allowed" : "hover:text-red-500"}`}
-        >
-          Remove
-        </button>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => { if (disabled) return; fileRef.current?.click(); }}
-          className={`text-xs text-os-accent transition ${disabled ? "cursor-not-allowed" : "hover:text-os-accent/80"}`}
-        >
-          Replace
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={accept}
-          onChange={handleInputChange}
-          disabled={disabled}
-          className="hidden"
-        />
-      </div>
-    );
+  function remove(key: string) {
+    if (disabled) return;
+    onChange(serializeFileAnswer(keys.filter((k) => k !== key), maxFiles));
   }
 
   return (
-    <div className={disabled ? "opacity-60" : ""}>
-      <button
-        type="button"
-        disabled={disabled}
-        aria-disabled={disabled || undefined}
-        onClick={() => { if (disabled) return; fileRef.current?.click(); }}
-        className={`flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground transition w-full ${disabled ? "cursor-not-allowed" : "hover:border-os-accent hover:text-os-accent"}`}
-      >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-        </svg>
-        Choose file to upload
-      </button>
+    <div className={`flex flex-col gap-2 ${disabled ? "opacity-60" : ""}`}>
+      {keys.map((key) => (
+        <div key={key} className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
+          <Paperclip className="w-4 h-4 text-os-accent shrink-0" aria-hidden />
+          <span className="text-sm text-foreground truncate flex-1">{fileAnswerName(key)}</span>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => remove(key)}
+            className={`text-xs text-muted-foreground transition ${disabled ? "cursor-not-allowed" : "hover:text-destructive"}`}
+          >
+            Remove
+          </button>
+        </div>
+      ))}
+      {uploading ? (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-lg border border-border bg-card text-sm text-muted-foreground">
+          <span className="inline-block w-4 h-4 border-2 border-border border-t-os-accent rounded-full animate-spin" />
+          Uploading...
+        </div>
+      ) : room > 0 ? (
+        <button
+          type="button"
+          disabled={disabled}
+          aria-disabled={disabled || undefined}
+          onClick={() => { if (!disabled) fileRef.current?.click(); }}
+          className={`flex items-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed border-border bg-card text-sm text-muted-foreground transition w-full ${disabled ? "cursor-not-allowed" : "hover:border-os-accent hover:text-os-accent"}`}
+        >
+          <Upload className="w-5 h-5" aria-hidden />
+          {keys.length === 0
+            ? maxFiles > 1 ? `Choose up to ${maxFiles} files` : "Choose file to upload"
+            : "Add another file"}
+        </button>
+      ) : null}
       <input
         ref={fileRef}
         type="file"
         accept={accept}
+        multiple={maxFiles > 1}
         onChange={handleInputChange}
         disabled={disabled}
         className="hidden"
+        data-testid={`file-input-${questionKey}`}
       />
-      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
@@ -716,6 +668,8 @@ export interface FormQuestionFieldProps {
   onChange: (v: string) => void;
   urlCheckState?: UrlCheckState;
   onUrlBlur?: () => void;
+  // Presign endpoint for file questions; defaults to the signed-in one.
+  uploadUrl?: string;
   disabled?: boolean;
 }
 
@@ -725,6 +679,7 @@ export function FormQuestionField({
   onChange,
   urlCheckState,
   onUrlBlur,
+  uploadUrl,
   disabled = false,
 }: FormQuestionFieldProps) {
   const inputBase = INPUT_BASE;
@@ -875,6 +830,8 @@ export function FormQuestionField({
         onChange={onChange}
         accept={question.data.accept}
         questionKey={question.key}
+        maxFiles={maxFilesFor(question)}
+        uploadUrl={uploadUrl}
         disabled={disabled}
       />
     );

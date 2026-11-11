@@ -66,7 +66,7 @@ import {
   valuesForSource,
   type ShowIf,
 } from '~/lib/form-logic'
-import { isLayoutOnly } from '~/lib/form-answers'
+import { MAX_FILES_PER_QUESTION, isLayoutOnly } from '~/lib/form-answers'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
 import { useUndoKeys } from '~/hooks/useUndoKeys'
@@ -181,6 +181,7 @@ export interface BuildQuestionInput {
   minValue?: number | string
   maxValue?: number | string
   accept?: string
+  maxFiles?: number
   afterDomains?: boolean
   isGeneralForm?: boolean
   maxWordsEnabled?: boolean
@@ -212,6 +213,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
     minValue,
     maxValue,
     accept,
+    maxFiles,
     afterDomains,
     isGeneralForm,
     maxWordsEnabled,
@@ -249,6 +251,7 @@ export function buildQuestion(input: BuildQuestionInput): Question {
       min: type === 'number' ? parseBound(minValue) : undefined,
       max: type === 'number' ? parseBound(maxValue) : undefined,
       accept: type === 'file' ? accept || undefined : undefined,
+      maxFiles: type === 'file' && maxFiles && maxFiles > 1 ? maxFiles : undefined,
       afterDomains: isGeneralForm && afterDomains ? true : undefined,
       maxWords,
       referenceSource:
@@ -565,6 +568,7 @@ export function FormBuilderTab({
       minValue: minText,
       maxValue: maxText,
       accept: buildAcceptFromPresets(acceptPresets, acceptCustom),
+      maxFiles: editForm.data?.maxFiles,
       afterDomains: editForm.data?.afterDomains,
       isGeneralForm,
       maxWordsEnabled,
@@ -949,6 +953,28 @@ export function FormBuilderTab({
                   </p>
                 </div>
               )}
+            </div>
+          )}
+
+          {editForm.type === 'file' && (
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-foreground/80 mb-1">
+                Files per answer
+              </label>
+              <Select
+                value={String(editForm.data?.maxFiles ?? 1)}
+                onChange={(v) =>
+                  setEditForm({
+                    ...editForm,
+                    data: { ...editForm.data!, maxFiles: Number(v) },
+                  })
+                }
+                options={Array.from({ length: MAX_FILES_PER_QUESTION }, (_, i) => ({
+                  value: String(i + 1),
+                  label: i === 0 ? '1 file' : `Up to ${i + 1} files`,
+                }))}
+                buttonClassName={formTrigger}
+              />
             </div>
           )}
 

@@ -243,3 +243,20 @@ describe('buildQuestion prefill', () => {
     expect(buildQuestion({ ...base, type: 'text', prefill: 'me.password' }).data.prefill).toBeUndefined()
   })
 })
+
+describe('buildQuestion maxFiles', () => {
+  const file = { key: 'q1', type: 'file' as const, required: true, label: 'Screenshots' }
+
+  it('keeps a multi-file limit on a file question', () => {
+    expect(buildQuestion({ ...file, maxFiles: 3 }).data.maxFiles).toBe(3)
+  })
+
+  it('leaves one file as the default instead of storing it', () => {
+    expect(buildQuestion({ ...file, maxFiles: 1 }).data.maxFiles).toBeUndefined()
+    expect(buildQuestion(file).data.maxFiles).toBeUndefined()
+  })
+
+  it('drops the limit from other question types', () => {
+    expect(buildQuestion({ ...file, type: 'text', maxFiles: 3 }).data.maxFiles).toBeUndefined()
+  })
+})
