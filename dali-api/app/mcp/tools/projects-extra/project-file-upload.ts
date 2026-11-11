@@ -26,7 +26,8 @@ import {
 } from "~/lib/file-validation";
 import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "./errors";
 import { canEditProject } from "../access";
-import { createProjectFileWithVersion, rawUploadSrc } from "../upload-project-file";
+import { createProjectFileWithVersion } from "../upload-project-file";
+import { rawUploadSrc } from "~/lib/upload-src";
 import { curlCommand } from "../presigned-upload";
 
 export const CREATE_PROJECT_FILE_UPLOAD_TOOL = {

@@ -1,3 +1,4 @@
+import { matchesAllWords } from "~/lib/person-search";
 import { readSortParams, writeSortParams } from "~/lib/sort-params";
 
 // Client-side view state for the Applications list. Lives apart from the
@@ -133,4 +134,11 @@ export function sortApplications<T extends SortableApplication>(
     if (y === null) return -1;
     return sign * x.localeCompare(y);
   });
+}
+
+export function matchesApplicationQuery(
+  row: { name: string; email: string | null },
+  query: string,
+): boolean {
+  return matchesAllWords(`${row.name} ${row.email ?? ""}`, query);
 }

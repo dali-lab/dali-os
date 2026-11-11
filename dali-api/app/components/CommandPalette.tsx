@@ -47,7 +47,7 @@ import { iconForCategory } from "~/lib/file-icon";
 import { ADMIN_SECTIONS } from "~/admin/adminNav";
 import { CORE_CLUSTERS } from "~/core/coreNav";
 import type { NavCluster } from "~/lib/cluster-nav";
-import { homeNavItem, pinnedNavItems, ROOM_BOOKING_NAV_ITEM, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
+import { HOME_NAV_ITEM, pinnedNavItems, ROOM_BOOKING_NAV_ITEM, visibleAreas, visibleSubtabs, type RoleFlags } from "~/lib/nav-areas";
 import type { PortalNavItem } from "~/lib/portal-nav";
 import type { FeatureFlagMap } from "~/lib/feature-flags";
 
@@ -261,7 +261,7 @@ export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, fla
       };
     }
 
-    const home = homeNavItem(roles);
+    const home = HOME_NAV_ITEM;
     const nav: PaletteItem[] = [
       navItem(home.label, home.href, home.icon),
       navItem("My Tasks", "/notifications", ListTodo),

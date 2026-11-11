@@ -10,7 +10,8 @@ import {
   isAreaSubtabPath,
   isPinnedActive,
   pinnedNavItems,
-  homeNavItem,
+  HOME_NAV_ITEM,
+  owningSubtab,
   ROOM_BOOKING_NAV_ITEM,
   shellPageIcon,
   visibleAreas,
@@ -480,6 +481,7 @@ describe("refer-a-partner flag", () => {
   it("keeps the alumni community pages filtered independently of the refer flag", () => {
     expect(labHrefs(ALUM, COMMUNITY)).toEqual([
       "/projects",
+      "/community",
       "/community/opportunities",
       "/community/gallery",
       "/resources",
@@ -504,6 +506,7 @@ describe("alumni nav", () => {
     const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
+      "/community",
       "/community/opportunities",
       "/community/gallery",
       "/resources",
@@ -511,13 +514,14 @@ describe("alumni nav", () => {
     ]);
   });
 
-  it("drops the community pages from the alumni Lab while the community flag is off", () => {
+  it("keeps only Community from the community pages in the alumni Lab while the community flag is off", () => {
     const lab = visibleAreas(ALUM, REFER)[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/projects",
+      "/community",
       "/refer",
     ]);
-    expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();
+    expect(activeSubtabHref(areaForPath("/community/gallery", REGROUP, ALUM)!, "/community/gallery")).toBe("/community");
   });
 
   it("files the community pages under Lab for alumni only", () => {
@@ -526,7 +530,19 @@ describe("alumni nav", () => {
       expect(areaForPath(path, COMMUNITY, NOBODY)?.key).toBe("community");
     }
     expect(areaForPath("/resources", REGROUP, NOBODY)).toBeUndefined();
-    expect(areaForPath("/community", COMMUNITY, ALUM)).toBeUndefined();
+    for (const flags of [REGROUP, COMMUNITY]) expect(areaForPath("/community", flags, ALUM)?.key).toBe("projects");
+  });
+
+  it("files member profiles under Community for alumni, and the directory nowhere", () => {
+    for (const flags of [REGROUP, COMMUNITY]) {
+      const lab = areaForPath("/members/u1", flags, ALUM);
+      expect(lab?.key).toBe("projects");
+      expect(activeSubtabHref(lab!, "/members/u1")).toBe("/community");
+      expect(areaForPath("/members", flags, ALUM)).toBeUndefined();
+      expect(owningSubtab("/members/u1", flags, ALUM)?.href).toBe("/community");
+      expect(owningSubtab("/members/u1", flags, NOBODY)).toBeUndefined();
+    }
+    expect(activeSubtabHref(areaForPath("/members/u1", COMMUNITY, NOBODY)!, "/members/u1")).toBe("/members");
   });
 
   it("hides Education from alumni only", () => {
@@ -540,9 +556,8 @@ describe("alumni nav", () => {
     expect(pinnedNavItems(NOBODY).map((i) => i.href)).toEqual(["/drive"]);
   });
 
-  it("labels Connect as Home for alumni and keeps Home at / for everyone else", () => {
-    expect(homeNavItem(ALUM)).toMatchObject({ label: "Home", href: "/community" });
-    expect(homeNavItem(NOBODY)).toMatchObject({ label: "Home", href: "/" });
+  it("keeps Home at / for everyone", () => {
+    expect(HOME_NAV_ITEM).toMatchObject({ label: "Home", href: "/" });
   });
 });
 

@@ -48,6 +48,7 @@ Interviews are booked by applicants from open time on interviewers' DALI OS cale
 
 - On **My work**, **Interviews**, click **Open interview** on a card.
 - The interview page shows the applicant, the reviews on file, the room or a **Join Google Meet** link, your co-interviewer, and any **Interview prep note** the domain leads left during the first delibs.
+- You can edit each review's **Rejection rationale** from the **Reviews** card. Changes save as you type and the reviewer sees them too.
 - Take notes in **Interview notes**. They are shared with your co-interviewer as you type. You can record and enhance notes with the recorder if it is shown.
 - When you finish, choose a **Joint recommendation** and click **Mark complete**. It is one recommendation for both interviewers, and either of you can complete it. Only Core sees **Reopen** on a completed interview; ask Core if it needs changing.
 - If you can't make a slot, click **Mark unavailable** on the card. The system looks for a replacement. If none is free, you are asked to contact the hiring lead.

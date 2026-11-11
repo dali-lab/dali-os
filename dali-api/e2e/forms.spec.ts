@@ -36,13 +36,13 @@ test.describe('Forms', () => {
     );
     await page.getByRole('button', { name: 'Publish', exact: true }).click();
     await saved;
-    await expect(page.getByText('v1 · Published')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('button', { name: 'v1 · Published' })).toBeVisible({ timeout: 20_000 });
 
     await page.reload();
     await expect(page.getByText(NAME_Q)).toBeVisible({ timeout: 20_000 });
     await expect(page.getByText(COLOR_Q)).toBeVisible();
     await expect(page.getByText('Required', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('v1 · Published')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'v1 · Published' })).toBeVisible();
     fillToken = await fillTokenFor(formId);
   });
 
@@ -94,6 +94,6 @@ test.describe('Forms', () => {
 
     await loginAs({ daliEmail: FORM_CREATOR });
     await page.goto(`/forms/edit/${formId}`);
-    await expect(page.getByText('v1 · Published')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'v1 · Published' })).toBeVisible();
   });
 });

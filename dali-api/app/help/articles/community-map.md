@@ -9,7 +9,7 @@ Community shows where DALI alumni and current students are, and the events they 
 
 ## Where to find it
 
-[Community](/community) is under **Lab** in the sidebar. If your workspace has the Community area, it is the first page there instead. For alumni, Community is the Home page. See [Alumni](/help/articles/alumni).
+[Community](/community) is under **Lab** in the sidebar. If your workspace has the Community area, it is the first page there instead. Alumni find it under **Lab** too. See [Alumni](/help/articles/alumni).
 
 ## Find people
 

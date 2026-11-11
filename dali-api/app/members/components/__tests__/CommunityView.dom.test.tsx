@@ -99,7 +99,6 @@ const baseData = () => ({
   unplaced: 0,
   filterOptions: { classYears: [{ value: 2020, count: 2 }], roles: [], projects: [] },
   events: [event("ev1"), event("on1", { online: true, location: "Online", lat: null, lng: null, title: "Online chat" })],
-  title: "Home",
   tz: "America/New_York",
   openTo: { coffeeChats: false, resumeReviews: false },
 });
@@ -237,7 +236,7 @@ describe("hosting", () => {
     expect(button("Host an event")).toBeDefined();
     await act(async () => root.unmount());
     container.remove();
-    await mount({ viewer: { ...baseData().viewer, isAlumni: false, canHost: false }, title: "Community" });
+    await mount({ viewer: { ...baseData().viewer, isAlumni: false, canHost: false } });
     expect(button("Host an event")).toBeUndefined();
     expect(button("I'm open to")).toBeUndefined();
   });

@@ -193,7 +193,7 @@ export function GallerySearch({
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <p className="px-2.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-widest text-os-muted first:pt-1">
+    <p className="px-2.5 pb-1 pt-2 text-xs font-semibold uppercase tracking-widest text-os-grey first:pt-1">
       {children}
     </p>
   );

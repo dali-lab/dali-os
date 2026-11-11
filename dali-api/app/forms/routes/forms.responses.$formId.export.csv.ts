@@ -9,6 +9,8 @@ import {
   buildResponseGrid,
   responsesCsvRows,
 } from "~/forms/lib/answer-rows.server";
+import { parseAnswerFilters } from "~/forms/lib/answer-filters";
+import { versionResponsesWhere } from "~/forms/lib/version-responses.server";
 import type { Question } from "~/types";
 
 // Resource route — no default export, no layout wrapping. Returning a Response
@@ -16,8 +18,9 @@ import type { Question } from "~/types";
 // around it; registering the download under its own non-layout path keeps it
 // a pure byte stream.
 //
-// Unlike the paged results view, this exports EVERY submission. `?version=N` limits
-// the export to one version.
+// Unlike the paged results view, this exports every matching submission.
+// `?version=N` limits the export to one version, and only then do `q`, `slot`
+// and `a` (the results filters) apply, since they are read against its questions.
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
@@ -32,14 +35,26 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   if (!form) return redirect("/forms");
 
-  const version = Number(new URL(request.url).searchParams.get("version"));
+  const query = new URL(request.url).searchParams;
+  const version = Number(query.get("version"));
+  const versionRow =
+    Number.isInteger(version) && version > 0
+      ? await prisma.formVersion.findFirst({
+          where: { formId: form.id, versionNumber: version },
+          select: { id: true, questions: true },
+        })
+      : null;
+  const questions = (versionRow?.questions as unknown as Question[]) ?? [];
+  const where = versionRow
+    ? await versionResponsesWhere(form.id, versionRow.id, {
+        q: query.get("q") ?? "",
+        slot: query.get("slot") ?? "",
+        answers: parseAnswerFilters(query, questions),
+        questions,
+      })
+    : { formId: form.id, ...(version > 0 ? { formVersion: { versionNumber: version } } : {}) };
   const submissions = await prisma.formSubmission.findMany({
-    where: {
-      formId: form.id,
-      ...(Number.isInteger(version) && version > 0
-        ? { formVersion: { versionNumber: version } }
-        : {}),
-    },
+    where,
     orderBy: { createdAt: "desc" },
     select: {
       createdAt: true,

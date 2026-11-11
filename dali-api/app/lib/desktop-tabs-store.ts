@@ -40,6 +40,7 @@ const TAB_STEP = { tabSwitch: true, keepPanel: true } as const;
 
 let state: DesktopTabsState = emptyTabsState();
 let navigator: Navigator | null = null;
+let persisting = true;
 let pendingScroll: { url: string; y: number } | null = null;
 const listeners = new Set<() => void>();
 
@@ -57,6 +58,7 @@ function read(key: string): unknown {
 }
 
 function persist() {
+  if (!persisting) return;
   try {
     window.localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(state));
   } catch {
@@ -133,13 +135,21 @@ export function tabStripShowing(): boolean {
  * Start tabs for this window: restore the saved set (or the iframe workspace's,
  * the first time), reconcile it with the url the window loaded on, and take the
  * navigator every tab move goes through. Returns the stop function.
+ *
+ * An impersonated session gets a throwaway set: the saved tabs are the admin's.
  */
 export function startTabs(
   arrival: { url: string; label: string },
   navigate: Navigator,
+  opts: { impersonating?: boolean } = {},
 ): () => void {
-  const saved = read(TABS_STORAGE_KEY);
-  const restored = saved ? parseTabsState(saved) : migrateWorkspaceState(read(LEGACY_WORKSPACE_KEY));
+  persisting = !opts.impersonating;
+  const saved = persisting ? read(TABS_STORAGE_KEY) : null;
+  const restored = !persisting
+    ? emptyTabsState()
+    : saved
+      ? parseTabsState(saved)
+      : migrateWorkspaceState(read(LEGACY_WORKSPACE_KEY));
   const { state: arrived, navigateTo } = arriveAt(restored, arrival.url, arrival.label, {
     id: newId(),
     now: Date.now(),

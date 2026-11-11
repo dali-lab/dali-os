@@ -77,6 +77,8 @@ const tile = {
   caption: "Demo day",
   hidden: false,
   createdAt: "2026-10-01T00:00:00.000Z",
+  takenAt: "2019-03-04T23:22:05.000Z",
+  feedAt: "2019-03-04T23:22:05.000Z",
   author,
   reactions: [{ emoji: "🎉", count: 1, mine: false }],
   commentCount: 1,
@@ -156,6 +158,7 @@ describe("list_gallery_posts", () => {
       hidden: false,
       mine: false,
       createdAt: tile.createdAt,
+      takenAt: tile.takenAt,
     });
   });
 
@@ -259,6 +262,27 @@ describe("manage_gallery_post", () => {
     ]);
     expect(out).toEqual({ ok: true, posts: [{ id: "new1", link: "/community/gallery/new1" }] });
   });
+
+  it("passes the date a photo was taken through to the web's intent", async () => {
+    gallery.applyGalleryIntent.mockResolvedValue({ ok: true, created: 1 });
+    db.galleryPost.findMany.mockResolvedValue([{ id: "new1", imageKey }]);
+    await runManageGalleryPost(ctx, {
+      action: "create",
+      posts: [{ imageKey, width: 1, height: 1, takenAt: "2019-03-04T18:22:05-05:00" }],
+    });
+    const [, , fields] = gallery.applyGalleryIntent.mock.calls[0];
+    expect(JSON.parse(fields.posts)[0].takenAt).toBe("2019-03-04T18:22:05-05:00");
+  });
+
+  it.each(["last spring", "1850-01-01T00:00:00Z", "2999-01-01T00:00:00Z"])(
+    "refuses a takenAt of %s with a reason",
+    async (takenAt) => {
+      await expect(
+        runManageGalleryPost(ctx, { action: "create", posts: [{ imageKey, width: 1, height: 1, takenAt }] }),
+      ).rejects.toMatchObject({ status: 400, message: expect.stringContaining("takenAt") });
+      expect(gallery.applyGalleryIntent).not.toHaveBeenCalled();
+    },
+  );
 
   it("refuses to post an original whose upload never happened", async () => {
     s3.headObject.mockResolvedValue(null);

@@ -1,31 +1,51 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow } from "~/lib/pagination";
-import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
+import { buildReferenceLabelMaps, buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import { RESPONSE_LOCK_SELECT, responseLockReason } from "~/forms/lib/response-lock";
 import type { Question } from "~/types";
+import { filterableQuestions, type AnswerFilter } from "~/forms/lib/answer-filters";
+import {
+  NO_ANSWER_MATCHES,
+  resolveAnswerMatches,
+  type AnswerMatches,
+} from "~/forms/lib/answer-filters.server";
 
 export const RESPONSES_PAGE_SIZE = 50;
 
-export type ResponseFilters = { page?: number; q?: string; slot?: string };
+export type ResponseFilters = {
+  page?: number;
+  q?: string;
+  slot?: string;
+  answers?: AnswerFilter[];
+  // The version's questions; answer filters are built against them.
+  questions?: Question[];
+};
+
+export function searchWords(q = ""): string[] {
+  return q.split(/\s+/).filter(Boolean);
+}
 
 // A submission matches when every word of the query is found in the
-// respondent's name or email, the same fields the table shows. Signed-in fills
-// carry them on the user, anonymous ones on the submission.
+// respondent's name or email (signed-in fills carry them on the user,
+// anonymous ones on the submission) or in one of its answers. `matches` holds
+// the ids the answer lookup found; see versionResponsesWhere for building it.
 export function responsesWhere(
   formId: string,
   versionId: string,
-  { q = "", slot = "" }: ResponseFilters = {},
+  { q = "", slot = "" }: Pick<ResponseFilters, "q" | "slot"> = {},
+  matches: AnswerMatches = NO_ANSWER_MATCHES,
 ): Prisma.FormSubmissionWhereInput {
   const contains = (value: string) => ({ contains: value, mode: "insensitive" as const });
-  const words = q.split(/\s+/).filter(Boolean);
+  const words = searchWords(q);
   return {
     formId,
     formVersionId: versionId,
     ...(slot ? { slot } : {}),
+    ...(matches.filterIds ? { id: { in: matches.filterIds } } : {}),
     ...(words.length
       ? {
-          AND: words.map((word) => ({
+          AND: words.map((word, i) => ({
             OR: [
               { submitterName: contains(word) },
               { submitterEmail: contains(word) },
@@ -33,11 +53,26 @@ export function responsesWhere(
               { user: { is: { lastName: contains(word) } } },
               { user: { is: { daliEmail: contains(word) } } },
               { user: { is: { personalEmail: contains(word) } } },
+              ...(matches.wordIds[i]?.length ? [{ id: { in: matches.wordIds[i] } }] : []),
             ],
           })),
         }
       : {}),
   };
+}
+
+// The one place the results view, the Summary and the CSV export build their
+// submission filter, so all three agree on what "matching" means.
+export async function versionResponsesWhere(
+  formId: string,
+  versionId: string,
+  filters: ResponseFilters = {},
+) {
+  const matches = await resolveAnswerMatches(versionId, filters.questions ?? [], {
+    answers: filters.answers,
+    words: searchWords(filters.q),
+  });
+  return responsesWhere(formId, versionId, filters, matches);
 }
 
 export type ResponseRow = {
@@ -66,8 +101,8 @@ export async function loadVersionResponses(
   filters: ResponseFilters = {},
 ) {
   const page = filters.page ?? 1;
-  const where = responsesWhere(formId, versionId, filters);
-  const [partnerBinding, totalCount, matchCount, slots, fetched] = await Promise.all([
+  const where = await versionResponsesWhere(formId, versionId, filters);
+  const [partnerBinding, totalCount, matchCount, slots, fetched, refLabels] = await Promise.all([
     // When this form is the bound partner application form, the applications
     // board is the canonical review surface — this view is just the raw data.
     prisma.partnerApplicationFormBinding.findFirst({
@@ -110,6 +145,7 @@ export async function loadVersionResponses(
         ...RESPONSE_LOCK_SELECT,
       },
     }),
+    filters.questions ? buildReferenceLabelMaps(filters.questions) : null,
   ]);
 
   const { items: submissions, hasNext } = offsetPage(fetched, RESPONSES_PAGE_SIZE);
@@ -149,6 +185,7 @@ export async function loadVersionResponses(
     hasNext,
     columns: grid.columns,
     slotOptions: slots.flatMap((s) => (s.slot ? [s.slot] : [])),
+    filterQuestions: filters.questions ? filterableQuestions(filters.questions, refLabels ?? undefined) : [],
     responses,
   };
 }

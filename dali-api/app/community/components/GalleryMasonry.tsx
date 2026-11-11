@@ -3,6 +3,7 @@ import { Link, useFetcher } from "react-router";
 import { EyeOff, MessageCircle } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { Avatar } from "~/components/ui/Avatar";
+import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { ReactionEmoji, ReactionPicker } from "~/components/ReactionBar";
 import { hasRoomForReaction, toggleReaction } from "~/lib/reactions";
 import type { GalleryTileData } from "~/community/lib/gallery.server";
@@ -110,13 +111,15 @@ function GalleryTile({
                 );
               }}
             />
-            <Link
-              to={href}
-              aria-label="Comment"
-              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-            >
-              <MessageCircle className="h-4 w-4" aria-hidden />
-            </Link>
+            <Tooltip content="Comment" placement="bottom">
+              <Link
+                to={href}
+                aria-label="Comment"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent focus-visible:ring-offset-1"
+              >
+                <MessageCircle className="h-4 w-4" aria-hidden />
+              </Link>
+            </Tooltip>
           </div>
           <div className="rounded-full bg-os-card/95 p-0.5 shadow-sm">
             <GalleryPostMenu post={post} />

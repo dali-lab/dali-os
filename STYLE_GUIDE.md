@@ -350,6 +350,11 @@ in-progress work, and clearing a configured binding.
 `chrome.popover` (`OS_SURFACE_CLASS`). Page toolbar filters use
 `OS_FILTER_PILL_CLASS` plus a width.
 
+A row of per-column filters (Filter button with count badge, pills, Clear all,
+result count) is `FilterBar` in `app/components/FilterBar.tsx`. Pass it columns
+with a `renderPicker`; `ColumnFilters` (value lists over rows) and the form
+results bar (`ResultsFilterBar`) are built on it.
+
 ### 6.5 Status badges and chips
 
 - Status is **one neutral pill with a colored dot**: `Pill` from

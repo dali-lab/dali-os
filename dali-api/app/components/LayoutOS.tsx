@@ -38,7 +38,7 @@ import {
   areaInk,
   areaTint,
   pinnedNavItems,
-  homeNavItem,
+  HOME_NAV_ITEM,
   shellPageIcon,
   activeSubtabHref,
   visibleAreas,
@@ -126,7 +126,7 @@ export function LayoutOS({
   children,
 }: LayoutOSProps) {
   const location = useLocation()
-  const showTabs = useDesktopTabs(true, tabStripHint)
+  const showTabs = useDesktopTabs(true, tabStripHint, impersonating)
   // The rail is full width or hidden, nothing in between; collapsing it
   // (button, edge, ⌘\) hides it entirely, leaving only the expand button in
   // the tab strip / page bar.
@@ -235,7 +235,7 @@ export function LayoutOS({
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags, roleFlags)
   const pinned = pinnedNavItems(roleFlags, navFlags)
-  const home = homeNavItem(roleFlags)
+  const home = HOME_NAV_ITEM
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   // Calendar, email and drive have no area of their own, so their page accent
   // follows the rail's selected mode (home keeps the default accent).
@@ -262,14 +262,8 @@ export function LayoutOS({
   }
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
-  // The badge counts what the drawer says needs attention — open tasks, unread
-  // feed rows that aren't already a task, and assigned project work — so the
-  // two can't disagree.
-  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, {
-    tasks: taskTotal,
-    projectTasks: projectTaskTotal,
-  })
+  const { tasks: openTasks, items: feedItems, projectTasks, totals: feedTotals } = useAttentionFeed()
+  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, feedTotals)
   const upcoming = useUpcomingMeetings(true)
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
@@ -315,7 +309,7 @@ export function LayoutOS({
       tasks={openTasks}
       notifications={feedItems}
       projectTasks={projectTasks}
-      total={taskCount}
+      totals={feedTotals}
       singleFeed={isAlumni}
       onOpen={(url, label) => {
         closeBellPanel()
@@ -532,6 +526,7 @@ export function LayoutOS({
             icon={routeArea ? undefined : shellPageIcon(path, home.href)}
             star={pageStar}
             onCopyLink={() => void copyCurrentPageLink()}
+            nav={{ flags: navFlags, roles: roleFlags }}
           />
           {showTabs && <DockedNavigationProgress />}
         </div>

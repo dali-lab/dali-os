@@ -74,25 +74,37 @@ describe("forms.edit loader results paging", () => {
     vi.mocked(loadFormForEdit).mockResolvedValue({
       id: "f1",
       folderPageId: null,
-      versions: [{ id: "v2", versionNumber: 2 }],
+      versions: [{ id: "v2", versionNumber: 2, questions: [] }],
       workspaceType: "Project",
     } as never);
     vi.mocked(loadVersionResponses).mockResolvedValue({ versionId: "v2" } as never);
     const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&show=responses&page=3&q=ada&slot=Tue");
     await loader({ request: req, params: { formId: "f1" } } as never);
-    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", { page: 3, q: "ada", slot: "Tue" });
+    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", {
+      page: 3,
+      q: "ada",
+      slot: "Tue",
+      answers: [],
+      questions: [],
+    });
   });
 
   it("reads a bad page as the first", async () => {
     vi.mocked(loadFormForEdit).mockResolvedValue({
       id: "f1",
       folderPageId: null,
-      versions: [{ id: "v2", versionNumber: 2 }],
+      versions: [{ id: "v2", versionNumber: 2, questions: [] }],
       workspaceType: "Project",
     } as never);
     const req = new Request("http://os.test/forms/edit/f1?view=results&show=responses&page=-4");
     await loader({ request: req, params: { formId: "f1" } } as never);
-    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", { page: 1, q: "", slot: "" });
+    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", {
+      page: 1,
+      q: "",
+      slot: "",
+      answers: [],
+      questions: [],
+    });
   });
 });
 
@@ -287,7 +299,7 @@ describe("forms.edit tracker", () => {
     vi.mocked(loadFormForEdit).mockResolvedValue({
       id: "f1",
       folderPageId: null,
-      versions: [{ id: "v1", versionNumber: 1 }],
+      versions: [{ id: "v1", versionNumber: 1, questions: [] }],
       workspaceType: "Project",
     } as never);
 
@@ -372,7 +384,14 @@ describe("forms.edit action send-form-reminder", () => {
 });
 
 describe("forms.edit summary", () => {
-  const version = { id: "v1", versionNumber: 1, questions: [{ key: "a" }] };
+  const version = {
+    id: "v1",
+    versionNumber: 1,
+    questions: [
+      { key: "a", type: "select", data: { label: "A", options: ["Yes"] } },
+      { key: "f", type: "file", data: { label: "F" } },
+    ],
+  };
   const call = (query: string) =>
     loader({
       request: new Request(`http://os.test/forms/edit/f1?${query}`),
@@ -393,10 +412,29 @@ describe("forms.edit summary", () => {
 
   it("loads the summary, not the table, on Results", async () => {
     const data = await call("view=results&version=1&slot=level-up");
-    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "level-up" });
+    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "level-up", answers: [] });
     expect(loadVersionResponses).not.toHaveBeenCalled();
     expect(data.summary).toEqual({ versionId: "v1" });
     expect(data.results).toBeNull();
+  });
+
+  it("passes the answer filters to the summary, dropping unusable ones", async () => {
+    await call("view=results&version=1&a=a:is:Yes&a=f:answered&a=gone:blank");
+    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, {
+      slot: "",
+      answers: [{ key: "a", kind: "is", values: ["Yes"] }],
+    });
+  });
+
+  it("passes the answer filters and the version's questions to the table", async () => {
+    await call("view=results&version=1&show=responses&q=ada&a=a:blank");
+    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v1", {
+      page: 1,
+      q: "ada",
+      slot: "",
+      answers: [{ key: "a", kind: "blank" }],
+      questions: version.questions,
+    });
   });
 
   it("loads the table, not the summary, on the Responses view", async () => {

@@ -1042,6 +1042,7 @@ export function TaskModal({
               onChange={handleAssigneesChange}
               emptyLabel="Assign someone"
               clearLabel="Clear"
+              ariaLabel="Assignees"
             />
           </PropRow>
           <PropRow label="Domain">

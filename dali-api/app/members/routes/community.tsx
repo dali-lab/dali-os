@@ -9,10 +9,10 @@ import { loadCommunity } from "~/members/lib/community.server";
 import { cancelEvent, createEvent, setRsvp, updateEvent } from "~/members/lib/community-events.server";
 import { eventInputFromForm } from "~/members/lib/community-view";
 
-export const meta: Route.MetaFunction = ({ data }) => [{ title: `${data?.title ?? "Community"} · DALI OS` }];
+export const meta: Route.MetaFunction = () => [{ title: "Community · DALI OS" }];
 
 export const handle = {
-  breadcrumb: (data: unknown) => (data as { title?: string } | undefined)?.title ?? "Community",
+  breadcrumb: () => "Community",
   fitViewport: true,
   bleedPane: true,
 };
@@ -34,7 +34,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   return {
     ...community,
     events: viewer.isAlumni ? community.events : community.events.filter((e) => e.source !== "dali"),
-    title: viewer.isAlumni ? "Home" : "Community",
     tz: resolveUserTimeZone(me),
     openTo: { coffeeChats: me?.openToCoffeeChats ?? false, resumeReviews: me?.openToResumeReviews ?? false },
   };

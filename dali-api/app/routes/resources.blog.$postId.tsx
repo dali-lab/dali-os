@@ -23,6 +23,10 @@ function reader(viewer: Awaited<ReturnType<typeof requireResourcesViewer>>) {
   return { id: viewer.user.sub, core: viewer.core, name: viewer.userName };
 }
 
+export const handle = {
+  breadcrumb: (data: unknown) => (data as { post?: { title?: string } }).post?.title || "Untitled",
+};
+
 // The reading page. Editing happens on /resources/write/:postId.
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { viewer, post, canEdit, canApprove } = await loadBlogPost(request, params.postId!);

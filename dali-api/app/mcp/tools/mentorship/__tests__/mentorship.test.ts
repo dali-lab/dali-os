@@ -617,7 +617,7 @@ describe("manage_mentor_note_template", () => {
     });
 
     expect(out).toMatchObject({ id: TEMPLATE_ID });
-    expect(markdownToBlocks).toHaveBeenCalledWith("# Weekly check-in");
+    expect(markdownToBlocks).toHaveBeenCalledWith("# Weekly check-in", { inlineRefs: true });
     expect(replaceCollabDocContent).toHaveBeenCalledWith(
       `mentorNoteTemplate:${TEMPLATE_ID}:body`,
       [{ type: "paragraph" }],
@@ -630,6 +630,34 @@ describe("manage_mentor_note_template", () => {
         data: expect.objectContaining({ contentJson: [{ type: "paragraph" }] }),
       }),
     );
+  });
+
+  it("create with an inline image moves it to its own block and returns the warning", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.$transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        mentorNoteTemplate: {
+          updateMany: vi.fn().mockResolvedValue({}),
+          create: vi.fn().mockResolvedValue({ id: TEMPLATE_ID }),
+        },
+      }),
+    );
+    mockPrisma.mentorNoteTemplate.update.mockResolvedValue({});
+
+    const out = await runManageMentorNoteTemplate(ME, {
+      action: "create",
+      name: "Week Template",
+      content: "See ![q](/api/upload/raw?key=uploads/q.png) now",
+    });
+
+    expect(markdownToBlocks).toHaveBeenCalledWith(
+      "See  now\n\n![q](/api/upload/raw?key=uploads/q.png)",
+      { inlineRefs: true },
+    );
+    expect(out).toEqual({
+      id: TEMPLATE_ID,
+      warnings: ['Image "q" was inside a paragraph and was moved to its own block after it'],
+    });
   });
 
   it("Core can set isDefault on create (clears others in tx)", async () => {

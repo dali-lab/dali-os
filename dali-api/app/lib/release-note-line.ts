@@ -1,4 +1,3 @@
-// No imports: demo-write.yml's gate runs this with plain Node before npm install.
 const RELEASE_NOTE_HEADING = /^#{1,6}\s*release\s+notes?\s*:?\s*$/i;
 const EMPTY_NOTE = /^(none|n\/?a|-+)\.?$/i;
 // Text bots append below the last section: the Claude attribution line and the

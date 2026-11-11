@@ -1687,6 +1687,10 @@ model GalleryPost {
   hiddenAt   DateTime?
   hiddenById String?
   createdAt  DateTime  @default(now())
+  // From the photo's EXIF, or set by the poster. Null when neither said.
+  takenAt    DateTime?
+  // takenAt, else createdAt: what the feed sorts on.
+  feedAt     DateTime  @default(now())
 
   author    User              @relation("GalleryPostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
   hiddenBy  User?             @relation("GalleryPostHider", fields: [hiddenById], references: [id], onDelete: SetNull)
@@ -1696,6 +1700,7 @@ model GalleryPost {
 
   @@index([createdAt])
   @@index([authorId, createdAt])
+  @@index([feedAt])
 }
 
 model GalleryReaction {
