@@ -138,6 +138,46 @@ describe("people search", () => {
   });
 });
 
+describe("application search", () => {
+  const CORE: UserRoles = { ...MEMBER, isCore: true };
+  const adaApplication = {
+    id: "da1",
+    domain: { displayName: "Data Dev" },
+    application: { user: { firstName: "Ada", lastName: "Lovelace" } },
+  };
+
+  beforeEach(() => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([{ id: "c1" }]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([adaApplication]);
+  });
+
+  const nameWhere = () =>
+    mockPrisma.domainApplication.findMany.mock.calls[0][0].where.application.user;
+
+  it.each(["ada l", "Ada Lovelace", "lovelace ada"])(
+    "finds an applicant when %j spans first and last name",
+    async (q) => {
+      const results = await runCategorySearch({ userId: "u1", roles: CORE, q, category: "application", skip: 0, limit: 5 });
+
+      expect(results.map((r) => r.title)).toEqual(["Ada Lovelace"]);
+      const words = q.toLowerCase().split(" ");
+      expect(nameWhere().AND).toHaveLength(words.length);
+      words.forEach((word, i) => {
+        expect(nameWhere().AND[i].OR).toEqual([
+          { firstName: { contains: word, mode: "insensitive" } },
+          { lastName: { contains: word, mode: "insensitive" } },
+        ]);
+      });
+    },
+  );
+
+  it("drops an applicant when a word matches neither name", async () => {
+    const results = await runCategorySearch({ userId: "u1", roles: CORE, q: "ada x", category: "application", skip: 0, limit: 5 });
+
+    expect(results).toEqual([]);
+  });
+});
+
 describe("runCategorySearch", () => {
   it("queries only that category, in id order, with the larger candidate bound", async () => {
     mockPrisma.user.findMany.mockResolvedValue(people(3));

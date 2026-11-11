@@ -65,7 +65,7 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
     { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(opts, q, b) },
     { type: "document", enabled: true, run: (b) => searchProjectFiles(opts.userId, q, like, b, opts.request) },
-    { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
+    { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
     { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b, opts.request) },
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
@@ -588,7 +588,6 @@ async function searchApplications(
   userId: string,
   roles: UserRoles,
   q: string,
-  like: Like,
   b: SearchBudget,
 ): Promise<SearchResult[]> {
   const reviewerRows = await prisma.cycleReviewer.findMany({
@@ -618,7 +617,7 @@ async function searchApplications(
       ).filter((id): id is string => id !== null);
   if (signedCycleIds.length === 0) return [];
 
-  const nameMatch = { user: { OR: [{ firstName: like }, { lastName: like }] } };
+  const nameMatch = { user: userTextWhere(q, ["firstName", "lastName"]) };
   let where: Prisma.DomainApplicationWhereInput;
   if (visibility.all) {
     where = {
