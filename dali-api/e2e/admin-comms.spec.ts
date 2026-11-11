@@ -69,7 +69,7 @@ test.describe.serial('Core announcements', () => {
     await member.page.getByRole('button', { name: /^Notifications,/ }).click();
     const bell = member.page.getByRole('dialog');
     // With project work the panel splits into tabs; announcements sit under the second.
-    const adminTab = bell.getByText('Meetings & events');
+    const adminTab = bell.getByRole('tab', { name: /^General/ });
     if (await adminTab.count()) await adminTab.click();
     const card = bell
       .locator('div')

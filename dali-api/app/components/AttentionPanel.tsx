@@ -25,7 +25,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { LoadMore, type LoadMoreProps } from "~/components/ui/Pager";
 import { cn } from "~/lib/cn";
 import { projectWorkMeta, type ProjectWorkItem } from "~/lib/project-work";
-import { EVENT_TYPES, isEventType } from "~/lib/notification-events";
+import { isProjectWorkEvent } from "~/lib/notification-events";
 // The client mirror of ~/lib/tasks' `Task`, so the shell's panel pulls in no
 // server code (see NotificationBell).
 import type { OpenTask } from "~/components/NotificationBell";
@@ -35,8 +35,8 @@ import { ANSWER_TO_CLEAR_EVENTS } from "~/members/lib/coffee-chat";
 /* The attention stack: open tasks, notifications (incl. meeting-invite */
 /* RSVP) still waiting on the user and their assigned project tasks.     */
 /* Rendered by the shell's bell                                         */
-/* drawer and the My Tasks page, split into Project work and Meetings & */
-/* events tabs.                                                         */
+/* drawer and the My Tasks page, split into Project work and General    */
+/* tabs.                                                                */
 /*                                                                      */
 /* The drawer is poll-driven, not loader-driven: the shell feeds it     */
 /* from the same /api/notifications poll that backs the bell's count    */
@@ -128,38 +128,71 @@ export function hasAttentionContent(
   return tasks.length > 0 || extraNotifications(tasks, notifications).length > 0;
 }
 
+/** Server totals behind the first pages: General-tab tasks and project tasks. */
+export type FeedTotals = { generalTasks?: number; projectTasks?: number };
+
+/** Open tasks that land on the General tab. */
+export function generalTaskCount(tasks: { eventType?: string | null }[]): number {
+  return tasks.filter((t) => !isProjectWorkEvent(t.eventType)).length;
+}
+
 /**
- * Count for the bell badge and the drawer header: every card the drawer shows,
- * less read invites kept only for their RSVP. Pings folded into their project
- * task's card don't count twice.
+ * Cards past the loaded pages, per tab. `tasks` and `projectTasks` are every row
+ * loaded so far, cleared ones included, so clearing a card doesn't also shrink
+ * the unloaded remainder. Task pings past the first page aren't counted: most
+ * fold into a project card once loaded.
  */
+export function unloadedCounts(
+  tasks: { eventType?: string | null }[],
+  projectTasks: unknown[],
+  totals: FeedTotals = {},
+): Record<FeedTab, number> {
+  const general = generalTaskCount(tasks);
+  return {
+    work: Math.max(0, (totals.projectTasks ?? projectTasks.length) - projectTasks.length),
+    admin: Math.max(0, (totals.generalTasks ?? general) - general),
+  };
+}
+
+/**
+ * Per-tab counts: the tab's cards, less read invites kept only for their RSVP,
+ * plus what that tab holds beyond the loaded pages. Pings folded into their
+ * project task's card don't count twice.
+ */
+export function feedTabCounts(
+  feed: Record<FeedTab, FeedCard[]>,
+  unloaded: Partial<Record<FeedTab, number>> = {},
+): Record<FeedTab, number> {
+  const counted = (cards: FeedCard[]) =>
+    cards.filter((c) => c.type !== "notification" || !c.notification.readAt).length;
+  return {
+    work: counted(feed.work) + (unloaded.work ?? 0),
+    admin: counted(feed.admin) + (unloaded.admin ?? 0),
+  };
+}
+
+/** Count of the loaded cards across both tabs (the drawer's "Showing N"). */
 export function attentionCount(
   tasks: OpenTask[],
   notifications: AttentionNotification[],
   projectTasks: ProjectWorkItem[] = [],
 ): number {
-  const { work, admin } = splitFeed(tasks, notifications, projectTasks);
-  return [...work, ...admin].filter(
-    (c) => c.type !== "notification" || !c.notification.readAt,
-  ).length;
+  const counts = feedTabCounts(splitFeed(tasks, notifications, projectTasks));
+  return counts.work + counts.admin;
 }
 
-/**
- * attentionCount plus the open and project tasks the feed holds but has not
- * loaded, so the badge and titles show the real number once a list outgrows
- * its first page.
- */
+/** The bell badge and titles: both tab counts, unloaded pages included. */
 export function attentionTotal(
   tasks: OpenTask[],
   notifications: AttentionNotification[],
   projectTasks: ProjectWorkItem[],
-  totals: { tasks?: number; projectTasks?: number } = {},
+  totals: FeedTotals = {},
 ): number {
-  return (
-    attentionCount(tasks, notifications, projectTasks) +
-    Math.max(0, (totals.tasks ?? tasks.length) - tasks.length) +
-    Math.max(0, (totals.projectTasks ?? projectTasks.length) - projectTasks.length)
+  const counts = feedTabCounts(
+    splitFeed(tasks, notifications, projectTasks),
+    unloadedCounts(tasks, projectTasks, totals),
   );
+  return counts.work + counts.admin;
 }
 
 /* ------------------------------------------------------------------ */
@@ -182,14 +215,8 @@ export type OnCleared = (id: string, kind: ClearedKind) => void;
 
 export const FEED_TAB_LABELS: Record<FeedTab, string> = {
   work: "Project work",
-  admin: "Meetings & events",
+  admin: "General",
 };
-
-// The registry's "Tasks" area is the project-work events: task.* and sprint
-// wrap-ups. Everything else (meetings, forms, announcements, hiring…) is admin.
-function isProjectWorkEvent(eventType: string | null | undefined): boolean {
-  return isEventType(eventType) && EVENT_TYPES[eventType].area === "Tasks";
-}
 
 // Which project task a ping is about: task.* events link to the board with
 // `?task=<id>`.
@@ -270,7 +297,7 @@ export function TasksDrawer({
   onOpen,
   seeAll,
   singleFeed = false,
-  total,
+  totals,
   allTasksLink = true,
   title = "Tasks",
 }: {
@@ -282,8 +309,7 @@ export function TasksDrawer({
   onOpen?: OpenLink;
   seeAll?: ReactNode;
   singleFeed?: boolean;
-  // The true number of cards, when more exist than the feed carries.
-  total?: number;
+  totals?: FeedTotals;
   // False where /notifications is not reachable (the partner portal).
   allTasksLink?: boolean;
   title?: string;
@@ -291,13 +317,14 @@ export function TasksDrawer({
   const [tab, setTab] = useState<FeedTab>("work");
   const feed = splitFeed(tasks, notifications, projectTasks);
   const shown = attentionCount(tasks, notifications, projectTasks);
-  const count = Math.max(shown, total ?? shown);
+  const counts = feedTabCounts(feed, unloadedCounts(tasks, projectTasks, totals));
+  const count = counts.work + counts.admin;
 
   return (
     <Drawer open={open} onClose={onClose} title={`${title} (${count})`} headerActions={seeAll} width={480}>
       {!singleFeed && (
         <div className="px-5 pb-3.5">
-          <FeedTabs tab={tab} onChange={setTab} feed={feed} stretch />
+          <FeedTabs tab={tab} onChange={setTab} counts={counts} stretch />
         </div>
       )}
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-5 pb-6">
@@ -336,12 +363,12 @@ export function TasksDrawer({
 export function FeedTabs({
   tab,
   onChange,
-  feed,
+  counts,
   stretch,
 }: {
   tab: FeedTab;
   onChange: (tab: FeedTab) => void;
-  feed: Record<FeedTab, FeedCard[]>;
+  counts: Record<FeedTab, number>;
   stretch?: boolean;
 }) {
   return (
@@ -350,7 +377,7 @@ export function FeedTabs({
       stretch={stretch}
       items={(["work", "admin"] as const).map((key) => ({
         label: FEED_TAB_LABELS[key],
-        count: feed[key].length,
+        count: counts[key],
         active: tab === key,
         onClick: () => onChange(key),
       }))}
@@ -386,7 +413,7 @@ export function TaskFeed({
             (tab === "work"
               ? "New project tasks will show up here."
               : tab === "admin"
-                ? "New invites and events will show up here."
+                ? "Invites, mentions and requests will show up here."
                 : "New tasks will show up here.")}
         </span>
       </div>

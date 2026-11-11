@@ -16,6 +16,7 @@ import {
   projectTaskLink,
   type ProjectWorkItem,
 } from "~/lib/project-work";
+import { PROJECT_WORK_EVENT_TYPES, isProjectWorkEvent } from "~/lib/notification-events";
 
 // A "task" (todo) is any unread notification — every NotificationKind counts.
 // The Tasks sidebar, Home attention banner, and sidebar count all read this
@@ -201,6 +202,17 @@ const TASK_WHERE = (
 export async function countOpenTasks(userId: string, request?: Request): Promise<number> {
   const [notifs, applyTasks] = await Promise.all([
     prisma.notification.count({ where: TASK_WHERE(userId) }),
+    getInternalCycleApplyTasks(userId, request),
+  ]);
+  return notifs + applyTasks.length;
+}
+
+/** Open tasks outside the Tasks area: what the General tab holds. */
+export async function countOpenGeneralTasks(userId: string, request?: Request): Promise<number> {
+  const [notifs, applyTasks] = await Promise.all([
+    prisma.notification.count({
+      where: { AND: [TASK_WHERE(userId), { eventType: { notIn: PROJECT_WORK_EVENT_TYPES } }] },
+    }),
     getInternalCycleApplyTasks(userId, request),
   ]);
   return notifs + applyTasks.length;
@@ -466,6 +478,17 @@ export async function openTasksTotal(
   request?: Request,
 ): Promise<number> {
   return page.nextCursor ? countOpenTasks(userId, request) : page.items.length;
+}
+
+/** The true General-tab task total, given the first page (a count only when more exist). */
+export async function generalTasksTotal(
+  userId: string,
+  page: TasksPage<Task>,
+  request?: Request,
+): Promise<number> {
+  return page.nextCursor
+    ? countOpenGeneralTasks(userId, request)
+    : page.items.filter((t) => !isProjectWorkEvent(t.eventType)).length;
 }
 
 export interface NotificationHistoryOptions {
