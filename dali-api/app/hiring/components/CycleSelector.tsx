@@ -1,4 +1,5 @@
 import { useSearchParams } from "react-router";
+import { SegmentedTabButtons } from "~/components/AreaPillNav";
 
 export function CycleSelector({
   cycles,
@@ -10,28 +11,18 @@ export function CycleSelector({
   const [searchParams, setSearchParams] = useSearchParams();
   if (cycles.length < 2) return null;
   return (
-    <div className="inline-flex rounded-md border border-border bg-card p-0.5 text-xs">
-      {cycles.map((c) => {
-        const isActive = c.id === activeId;
-        return (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => {
-              const next = new URLSearchParams(searchParams);
-              next.set("cycle", c.id);
-              setSearchParams(next, { replace: true });
-            }}
-            className={`px-3 py-1.5 rounded font-medium transition ${
-              isActive
-                ? "bg-os-accent/15 text-os-accent"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {c.name}
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedTabButtons
+      label="Cycle"
+      size="toolbar"
+      items={cycles.map((c) => ({
+        label: c.name,
+        active: c.id === activeId,
+        onClick: () => {
+          const next = new URLSearchParams(searchParams);
+          next.set("cycle", c.id);
+          setSearchParams(next, { replace: true });
+        },
+      }))}
+    />
   );
 }

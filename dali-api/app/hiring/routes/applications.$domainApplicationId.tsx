@@ -22,6 +22,7 @@ import {
   InterviewNotesCard,
   type InterviewNotesData,
 } from "~/hiring/components/InterviewNotesCard";
+import { ReplaceCoInterviewer } from "~/hiring/components/ReplaceCoInterviewer";
 import {
   ApplicationTimeline,
   FinalizeDraftButton,
@@ -105,7 +106,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
             },
           },
           statusUpdates: { select: { newStatus: true, createdAt: true } },
-          user: { select: { id: true, firstName: true, lastName: true } },
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              dartmouthEmail: true,
+              personalEmail: true,
+              daliEmail: true,
+            },
+          },
         },
       },
     },
@@ -378,6 +388,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         return {
           id: a.id,
           role: a.role,
+          interviewerUserId: a.cycleInterviewer.userId,
           interviewerName:
             [a.cycleInterviewer.user.firstName, a.cycleInterviewer.user.lastName]
               .filter(Boolean)
@@ -535,9 +546,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     hiringEventEngagement,
     priorApplications,
     emailEngagement,
+    // blindUser nulls every email field, so this stays null under blinding.
+    applicantEmail:
+      da.application.user.dartmouthEmail ??
+      da.application.user.personalEmail ??
+      da.application.user.daliEmail ??
+      null,
     blinded,
     cycleId,
     cycleName: da.application.applicationCycle.name,
+    domainId: effectiveDomainId,
     domainName,
     application,
     applicationId: da.application.id,
@@ -642,6 +660,7 @@ export default function ApplicationReadOnlyDetail() {
             engagement={data.emailEngagement}
             blinded={data.blinded}
             applicationId={data.applicationId}
+            composeTo={data.applicantEmail}
             defaultOpen={false}
           />
         </div>
@@ -669,6 +688,8 @@ export default function ApplicationReadOnlyDetail() {
         interviews={data.interviews}
         rounds={data.interviewRounds}
         interviewPrepNote={data.interviewPrepNote}
+        cycleId={data.cycleId}
+        domainId={data.domainId}
       />
       <DecisionsSection
         timeline={data.timeline}
@@ -688,10 +709,14 @@ function InterviewsSection({
   interviews,
   rounds,
   interviewPrepNote,
+  cycleId,
+  domainId,
 }: {
   interviews: InterviewRow[];
   rounds: { roundId: string; label: string }[];
   interviewPrepNote: string | null;
+  cycleId: string;
+  domainId: string;
 }) {
   // One round reads as before; several get a heading and interviewer line each.
   const showRounds = rounds.length > 1;
@@ -732,7 +757,9 @@ function InterviewsSection({
                 <ul className="flex flex-col gap-3">
                   {inRound.map((iv) => (
                     <li key={iv.id} className="rounded-os-item bg-os-well">
-                      <InterviewNotesCard interview={toInterviewNotesData(iv)} />
+                      <InterviewNotesCard
+                        interview={toInterviewNotesData(iv, { cycleId, domainId })}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -746,7 +773,17 @@ function InterviewsSection({
 }
 
 // Map the rich loader row into the shared InterviewNotesCard prop shape.
-function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
+function toInterviewNotesData(
+  iv: InterviewRow,
+  ctx?: { cycleId: string; domainId: string },
+): InterviewNotesData {
+  // The viewer can hand off the other seat(s) on their own scheduled
+  // interview — a no-show co-interviewer — but never their own.
+  const viewerSeat = iv.assignments.find((a) => a.canEditNotes);
+  const replaceable =
+    ctx && viewerSeat && iv.status === "Scheduled"
+      ? iv.assignments.filter((a) => a.id !== viewerSeat.id)
+      : [];
   return {
     id: iv.id,
     startTime: iv.startTime,
@@ -761,6 +798,22 @@ function toInterviewNotesData(iv: InterviewRow): InterviewNotesData {
     openInInterviewerHref: iv.assignments.some((a) => a.canEditNotes)
       ? `/hiring/interviews/${iv.id}`
       : undefined,
+    interviewersAction:
+      ctx && replaceable.length > 0 ? (
+        <ReplaceCoInterviewer
+          interviewId={iv.id}
+          cycleId={ctx.cycleId}
+          interviewRoundId={iv.interviewRoundId}
+          applicantDomainId={ctx.domainId}
+          seats={replaceable.map((a) => ({
+            assignmentId: a.id,
+            role: a.role,
+            interviewerName: a.interviewerName,
+            interviewerUserId: a.interviewerUserId,
+          }))}
+          seatedUserIds={iv.assignments.map((a) => a.interviewerUserId)}
+        />
+      ) : undefined,
     interviewers: iv.assignments.map((a) => ({
       id: a.id,
       name: a.interviewerName,

@@ -80,7 +80,13 @@ export default function EmailPage() {
   const toast = useToast();
   const [accountsOpen, setAccountsOpen] = useState(false);
   const [consentOpen, setConsentOpen] = useState(false);
-  const [composing, setComposing] = useState<string | null>(null);
+  // ?compose=<address> opens a new message to that address; ?from=<address>
+  // picks the sending inbox when the viewer has it. Both are deep-link entry
+  // points (e.g. "Write email" on an applicant page).
+  const [composing, setComposing] = useState<string | null>(
+    params.get("compose") != null ? "new" : null,
+  );
+  const composeTo = params.get("compose");
   const [search, setSearch] = useState(data.ask || data.query);
   const [searching, setSearching] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
@@ -206,6 +212,16 @@ export default function EmailPage() {
       navigate({ search: next.toString() }, { replace: true });
     }
   }, [params, navigate, toast]);
+
+  // One-shot params: once the composer is open they'd otherwise ride along on
+  // every later navigation and reopen it on refresh.
+  useEffect(() => {
+    if (params.get("compose") == null && params.get("from") == null) return;
+    const next = new URLSearchParams(params);
+    next.delete("compose");
+    next.delete("from");
+    navigate(`?${next.toString()}`, { replace: true });
+  }, [params, navigate]);
 
   const withParams = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -531,9 +547,16 @@ export default function EmailPage() {
                 <Composer
                   key={composing}
                   accounts={inboxes}
-                  accountId={openDraft?.accountId ?? data.inbox ?? connected[0]?.id ?? ""}
+                  accountId={
+                    openDraft?.accountId ??
+                    connected.find((a) => a.address.toLowerCase() === params.get("from")?.toLowerCase())?.id ??
+                    data.inbox ??
+                    connected[0]?.id ??
+                    ""
+                  }
                   threadId={null}
                   draft={openDraft}
+                  replyTo={openDraft ? undefined : composeTo ?? undefined}
                   aiEnabled={data.aiEnabled}
                   directory={directory}
                   onDone={() => setComposing(null)}

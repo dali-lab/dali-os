@@ -26,10 +26,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  if (!(await isCore(auth.user.sub))) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
-  }
-
   const body = await parseJson(request, ReassignSchema);
   if (body instanceof Response) return body;
   const { assignmentId, newCycleInterviewerId, override = false } = body;
@@ -42,6 +38,27 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (!assignment || assignment.interview.id !== params.id) {
     return Response.json({ error: "Assignment not found" }, { status: 404 });
+  }
+
+  // Core can reassign any seat. An interviewer on this interview can hand off
+  // the OTHER seat (a no-show co-interviewer); their own seat stays on the
+  // decline flow so an interview never loses both via self-service.
+  if (!(await isCore(auth.user.sub))) {
+    if (assignment.status !== "Active" || assignment.interview.status !== "Scheduled") {
+      return Response.json({ error: "This seat can no longer be handed off" }, { status: 400 });
+    }
+    const ownOtherSeat = await prisma.interviewAssignment.findFirst({
+      where: {
+        interviewId: assignment.interviewId,
+        status: "Active",
+        id: { not: assignmentId },
+        cycleInterviewer: { userId: auth.user.sub },
+      },
+      select: { id: true },
+    });
+    if (!ownOtherSeat) {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   const gate = await requireApiSignedOrForbidden(
