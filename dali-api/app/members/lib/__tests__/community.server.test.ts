@@ -48,6 +48,7 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
 const assignment = (projectId: string, name: string, code: string, sortKey: number, domain: string) => ({
   project: { id: projectId, name },
   term: { code, sortKey },
+  domainId: domain === "Legacy" ? "domain_legacy" : `d-${domain}`,
   domain: { displayName: domain },
 });
 
@@ -149,6 +150,22 @@ describe("loadCommunityPeople", () => {
       { value: "Core team", count: 1 },
     ]);
     expect(filterOptions.projects).toEqual([{ id: "p1", name: "Atlas", term: "20F", count: 2 }]);
+  });
+
+  it("leaves the Legacy history bucket out of roles but keeps its projects", async () => {
+    db.user.findMany.mockResolvedValue([
+      row("a", {
+        projectAssignments: [
+          assignment("p1", "Atlas", "15F", 100, "Legacy"),
+          assignment("p2", "Beacon", "20F", 200, "Design"),
+        ],
+      }),
+      row("b", { projectAssignments: [assignment("p1", "Atlas", "15F", 100, "Legacy")] }),
+    ]);
+    const { people, filterOptions } = await loadCommunityPeople("viewer", NOW);
+    expect(people.map((p) => p.roles)).toEqual([["Design"], []]);
+    expect(filterOptions.roles).toEqual([{ value: "Design", count: 1 }]);
+    expect(people[1].projects).toEqual([{ id: "p1", name: "Atlas", term: "15F" }]);
   });
 
   it("describes the viewer for matching", async () => {
