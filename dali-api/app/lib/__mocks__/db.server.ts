@@ -272,6 +272,7 @@ export const prisma = {
   partnerOrg: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    update: vi.fn(),
   },
   projectPartner: {
     findFirst: vi.fn(),
