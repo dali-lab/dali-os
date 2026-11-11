@@ -5,6 +5,7 @@ import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { IconButton } from "~/components/ui/IconButton";
+import { DateField } from "~/components/ui/DateField";
 import { useToast } from "~/components/ui/toast";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { runPool } from "~/lib/run-pool";
@@ -19,17 +20,21 @@ import {
   scaledGalleryCopy,
   galleryKeyPrefix,
   galleryOriginalKeyPrefix,
+  takenAtFromDate,
+  takenDateValue,
   type NewGalleryPost,
 } from "~/community/lib/gallery";
+import { readTakenAt } from "~/community/lib/exif";
 
 type Row = {
   id: string;
   name: string;
   previewUrl: string;
   caption: string;
+  takenAt: string | null;
   status: "uploading" | "ready" | "failed";
   error?: string;
-  upload?: Omit<NewGalleryPost, "caption">;
+  upload?: Omit<NewGalleryPost, "caption" | "takenAt">;
 };
 
 // Size, average colour and the two smaller copies, read before upload so the
@@ -130,10 +135,18 @@ export function NewGalleryPostsDialog({
         name: file.name,
         previewUrl: URL.createObjectURL(file),
         caption: "",
+        takenAt: null,
         status: "uploading" as const,
       },
     }));
     setRows((rs) => [...rs, ...added.map((a) => a.row)]);
+    for (const { file, row } of added) {
+      void readTakenAt(file).then((taken) => {
+        if (taken && !rowsRef.current.find((r) => r.id === row.id)?.takenAt) {
+          patch(row.id, { takenAt: taken.toISOString() });
+        }
+      });
+    }
     await runPool(added, MAX_CONCURRENT_UPLOADS, async ({ file, row }) => {
       try {
         const prefix = galleryKeyPrefix(userId);
@@ -172,7 +185,11 @@ export function NewGalleryPostsDialog({
   const canPost = ready.length > 0 && !busy && !posting;
 
   function post() {
-    const posts: NewGalleryPost[] = ready.map((r) => ({ ...r.upload!, caption: r.caption.trim() || null }));
+    const posts: NewGalleryPost[] = ready.map((r) => ({
+      ...r.upload!,
+      caption: r.caption.trim() || null,
+      takenAt: r.takenAt,
+    }));
     fetcher.submit(
       { intent: "create", posts: JSON.stringify(posts) },
       { method: "post", action: "/community/gallery" },
@@ -244,22 +261,36 @@ export function NewGalleryPostsDialog({
                     </div>
                   )}
                 </div>
-                <label className="flex min-w-0 flex-1 flex-col gap-1.5 text-sm text-os-grey">
-                  Caption
-                  <textarea
-                    rows={2}
-                    value={r.caption}
-                    maxLength={GALLERY_CAPTION_MAX}
-                    placeholder="Optional"
-                    onChange={(e) => patch(r.id, { caption: e.target.value })}
-                    className="resize-none"
-                  />
+                <div className="flex min-w-0 flex-1 flex-col gap-3 text-sm text-os-grey">
+                  <label className="flex flex-col gap-1.5">
+                    Caption
+                    <textarea
+                      rows={2}
+                      value={r.caption}
+                      maxLength={GALLERY_CAPTION_MAX}
+                      placeholder="Optional"
+                      onChange={(e) => patch(r.id, { caption: e.target.value })}
+                      className="resize-none"
+                    />
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <span>Taken</span>
+                    <DateField
+                      mode="date"
+                      value={takenDateValue(r.takenAt)}
+                      max={takenDateValue(new Date().toISOString())}
+                      placeholder="Not set"
+                      ariaLabel="Date taken"
+                      onChange={(v) => patch(r.id, { takenAt: takenAtFromDate(v, r.takenAt) })}
+                      className="min-w-0 flex-1"
+                    />
+                  </div>
                   {r.status === "failed" && (
                     <span className="text-xs text-destructive">
                       {r.name}: {r.error}
                     </span>
                   )}
-                </label>
+                </div>
                 <IconButton
                   label="Remove photo"
                   icon={Trash2}

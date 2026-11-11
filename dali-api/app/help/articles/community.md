@@ -17,17 +17,19 @@ The Community area groups the places where members and alumni share things: Comm
 1. Click **Post**.
 2. Choose photos or drop them into the window. You can add up to 10 at a time. PNG, JPEG, WebP and GIF work.
 3. Add an optional caption to each photo, up to 500 characters.
-4. Click **Post**, or **Post 3** if you picked three photos. Each photo becomes its own post.
+4. Check the **Taken** date. It fills in from the photo when the file has one. Set or change it for older photos, such as scans or pictures saved from chat apps that dropped the date.
+5. Click **Post**, or **Post 3** if you picked three photos. Each photo becomes its own post.
 
 ### Browse and search
 
 - **All** and **Mine** switch between everyone's posts and your own.
 - The search box finds posts by caption and people by name. Pick a person to see only their posts, and clear the chip to go back.
+- The feed is ordered by when photos were taken, so an old photo posted today sits with others from its time. Posts with no taken date go by when they were posted.
 - The feed loads more as you scroll. A **new posts** button appears at the top when others post.
 
 ### Open a post
 
-Click a photo to open it with its caption, author, reactions and comments. The **More** menu has:
+Click a photo to open it with its caption, author, the date it was taken, reactions and comments. The **More** menu has:
 
 - **Copy link**
 - **Download**
