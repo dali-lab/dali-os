@@ -8,6 +8,7 @@ import {
   CYCLE_SCOPED_PARAMS,
   ENGAGEMENT_FILTERS,
   filtersFromParams,
+  matchesApplicationQuery,
   sortApplications,
   sortFromParams,
   writeViewParams,
@@ -415,15 +416,13 @@ export default function ApplicationsDatabase() {
   // The pie counts every filter but its own, so picking a slice doesn't
   // collapse the chart to that one slice.
   const pieRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return rows.filter((r) => {
       if (activeDomainIds.length && !activeDomainIds.includes(r.domainId)) return false;
       if (statuses.length && !statuses.includes(r.status)) return false;
       if (engagement.some((k) => !r[k])) return false;
       if (activeEventIds.length && !activeEventIds.some((id) => r.attendedEventIds.includes(id)))
         return false;
-      if (q && !`${r.name} ${r.email ?? ""}`.toLowerCase().includes(q))
-        return false;
+      if (!matchesApplicationQuery(r, query)) return false;
       return true;
     });
   }, [rows, activeDomainIds, statuses, engagement, activeEventIds, query]);
