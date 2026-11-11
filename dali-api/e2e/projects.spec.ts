@@ -126,7 +126,7 @@ test.describe('Projects: epics, stories and tasks', () => {
     await openTask(page, id);
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: 'Edit task' }).click();
-    await dialog.getByRole('button', { name: 'Assign someone' }).click();
+    await dialog.getByLabel('Assignees', { exact: true }).click();
     await page.getByRole('option').filter({ hasText: MEMBER_B.name }).click();
     // Not Escape: that reaches the modal and asks to discard the edit.
     await dialog.getByText('Assignees', { exact: true }).click();

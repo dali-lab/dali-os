@@ -38,6 +38,7 @@ import { FolderPicker } from "~/components/drive/FolderPicker";
 import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
 import { useMovePage } from "~/components/drive/use-move-page";
 import { useToast } from "~/components/ui/toast";
+import { MARKDOWN_IMPORT_ACCEPT, importMarkdownFile } from "~/lib/markdown-import-client";
 import { createNotebookRequest, notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { ImportTemplateDialog } from "./doc-chrome/ImportTemplateDialog";
 import { labMeetingNoteDefaultOptions, templateToggleLabel, type MeetingNoteType } from "./doc-chrome/template-menu";
@@ -205,6 +206,7 @@ export function DocumentEditor({
   const editorRef = useRef<DocEditorInstance | null>(null);
   // Hidden file input for the Import Markdown menu action.
   const mdImportInputRef = useRef<HTMLInputElement | null>(null);
+  const [importingMarkdown, setImportingMarkdown] = useState(false);
   // FIX 5: title is uncontrolled — we never feed state back into the DOM while
   // the h1 is focused, which prevents caret-at-0 "backwards typing" caused by
   // React re-rendering contentEditable with the controlled value on every input.
@@ -634,13 +636,18 @@ export function DocumentEditor({
     if (editorRef.current) appendBlocks(editorRef.current, newBlocks);
   }
 
-  // Import Markdown: reads the picked .md/.markdown/.txt file client-side and
-  // converts to blocks via editor.tryParseMarkdownToBlocks (BlockNote 0.52 API —
-  // synchronous).
   async function handleMarkdownImport(file: File) {
-    const editor = editorRef.current;
-    if (!editor) return;
-    insertImportedBlocks(editor.tryParseMarkdownToBlocks(await file.text()));
+    if (importingMarkdown) return;
+    setImportingMarkdown(true);
+    try {
+      await importMarkdownFile<Parameters<typeof insertImportedBlocks>[0][number]>(pageId, file, {
+        fetch: window.fetch.bind(window),
+        insert: (blocks) => insertImportedBlocks(stripBlockIds(blocks) as Parameters<typeof insertImportedBlocks>[0]),
+        toast,
+      });
+    } finally {
+      setImportingMarkdown(false);
+    }
   }
 
   // ⋯ More menu dismiss on outside click.
@@ -741,7 +748,7 @@ export function DocumentEditor({
         ),
       )}
       {row("print", <Printer className={smallIcon} />, "Print / Save as PDF", () => window.print())}
-      {canEdit && row("import-md", <Upload className={smallIcon} />, "Import Markdown", () => mdImportInputRef.current?.click())}
+      {canEdit && row("import-md", <Upload className={smallIcon} />, importingMarkdown ? "Importing…" : "Import Markdown", () => { if (!importingMarkdown) mdImportInputRef.current?.click(); })}
       {canEdit && row("import-template", <LayoutTemplate className={smallIcon} />, "Import template", () => setTemplateImportOpen(true))}
             {canEdit && (
               <>
@@ -1153,12 +1160,12 @@ export function DocumentEditor({
           </div>
 
           {/* Hidden file input for "Import Markdown" ⋯ menu action.
-              Accepts .md/.markdown/.txt; value is reset after each pick so
+              Accepts .md/.markdown/.txt/.zip; value is reset after each pick so
               selecting the same file twice still triggers onChange. */}
           <input
             ref={mdImportInputRef}
             type="file"
-            accept=".md,.markdown,.txt,text/plain,text/markdown"
+            accept={MARKDOWN_IMPORT_ACCEPT}
             className="hidden"
             onChange={(e) => {
               const file = e.currentTarget.files?.[0];
