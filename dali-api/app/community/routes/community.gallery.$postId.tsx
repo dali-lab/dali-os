@@ -41,6 +41,8 @@ export const handle = {
     (data as { post?: { author: { name: string } } } | undefined)?.post?.author.name ?? "Post",
 };
 
+const TAKEN_DATE = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" });
+
 export async function loader({ request, params }: Route.LoaderArgs) {
   const viewer = await requireGalleryViewer(request);
   const [post, more] = await Promise.all([
@@ -131,7 +133,9 @@ function PostCloseup({ post }: { post: GalleryPostDetail }) {
               {galleryByline(post.author.name, post.author.classYear)}
             </Link>
             <p className="text-xs text-os-grey" suppressHydrationWarning>
-              {relativeTime(post.createdAt)}
+              {post.takenAt
+                ? `Taken ${TAKEN_DATE.format(new Date(post.takenAt))} · Posted ${relativeTime(post.createdAt)}`
+                : relativeTime(post.createdAt)}
             </p>
           </div>
           <GalleryPostMenu post={post} leaveOnDelete />

@@ -14,7 +14,7 @@ function fakeDb() {
       findMany: vi.fn().mockResolvedValue([]),
       deleteMany: vi.fn(),
     },
-    projectTerm: { upsert: vi.fn() },
+    projectTerm: { upsert: vi.fn(), deleteMany: vi.fn() },
     projectRoleRequest: { deleteMany: vi.fn(), createMany: vi.fn() },
     projectAssignment: { count: vi.fn().mockResolvedValue(0) },
   };
@@ -85,17 +85,17 @@ describe("next step on decisions", () => {
   });
 
   it("writes the next step with a not-continuing decision", async () => {
-    const { db, raw } = fakeDb();
+    const { db, tx } = fakeDb();
     await applyNotContinuing(db, { projectId: "p", decisionTermId: "t1", reason: "x", userId: "u", nextStep: "Thank them" });
-    expect(raw.projectTermStatus.upsert.mock.calls[0][0].create).toMatchObject({ nextStep: "Thank them" });
+    expect(tx.projectTermStatus.upsert.mock.calls[0][0].create).toMatchObject({ nextStep: "Thank them" });
   });
 });
 
 describe("applyNotContinuing", () => {
   it("upserts a false status with the reason", async () => {
-    const { db, raw } = fakeDb();
+    const { db, tx } = fakeDb();
     await applyNotContinuing(db, { projectId: "p", decisionTermId: "t1", reason: "No budget", userId: "u" });
-    expect(raw.projectTermStatus.upsert.mock.calls[0][0].create).toMatchObject({
+    expect(tx.projectTermStatus.upsert.mock.calls[0][0].create).toMatchObject({
       isContinuing: false,
       reason: "No budget",
     });
@@ -116,6 +116,7 @@ describe("applyUndecided", () => {
     await applyUndecided(db, { projectId: "p", decisionTermId: "t1" });
     expect(tx.projectTermStatus.deleteMany).toHaveBeenCalledWith({ where: { projectId: "p", termId: "t1" } });
     expect(tx.projectRoleRequest.deleteMany).toHaveBeenCalledWith({ where: { projectId: "p", termId: "t1" } });
+    expect(tx.projectTerm.deleteMany).toHaveBeenCalledWith({ where: { projectId: "p", termId: "t1", piUserId: null } });
   });
 
   it("keeps role requests when staffing assignments exist", async () => {
@@ -124,6 +125,7 @@ describe("applyUndecided", () => {
     tx.projectAssignment.count.mockResolvedValue(2);
     await applyUndecided(db, { projectId: "p", decisionTermId: "t1" });
     expect(tx.projectRoleRequest.deleteMany).not.toHaveBeenCalled();
+    expect(tx.projectTerm.deleteMany).not.toHaveBeenCalled();
   });
 
   it("creates an undecided row when a next step is set and no row exists", async () => {

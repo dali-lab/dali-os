@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData } from "react-router";
 import { Bell, SquareCheck } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -12,6 +12,10 @@ import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";
 import MilestoneHero from "~/components/home/MilestoneHero";
+import BakerHero from "~/components/home/baker/BakerHero";
+import { buttonClasses } from "~/components/ui/Button";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { BirthdayBounce, type BirthdayPerson } from "~/components/home/BirthdayBounce";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import {
@@ -19,7 +23,6 @@ import {
   scheduledLandingWeek,
 } from "~/components/home/landing/backgrounds/schedule";
 import { currentTermStrict } from "~/lib/roles";
-import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { termWeekNumber } from "~/lib/terms.shared";
 import { resultIcon } from "~/components/CommandPalette";
 import { MIN_QUERY_LENGTH, type SearchResult } from "~/lib/search";
@@ -38,17 +41,17 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-  if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/community");
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
 
   // Home shows the first few of the viewer's tasks; the full list, with its
   // actions and unread notifications, lives on My Tasks and in the bell panel.
-  const [tasks, week, birthdays] = await Promise.all([
+  const [tasks, week, birthdays, alumniHome] = await Promise.all([
     timed(request, 'home.tasks', () => loadHomeTasks(auth.user.sub, request)),
     loadCurrentWeek(tz, request),
     timed(request, 'home.birthdays', () => loadBirthdaysToday()),
+    showsAlumniHome(auth.user.sub, request),
   ]);
 
   const __loaderTotal = performance.now() - __loaderStart;
@@ -81,7 +84,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     user: auth.user,
     tasks,
     birthdays,
+    alumniHome,
+    now: Date.now(),
   };
+}
+
+async function showsAlumniHome(userId: string, request: Request): Promise<boolean> {
+  const roles = await readOnlyRoles(userId, request);
+  return roles.isAlumni && (await isFeatureEnabled("alumni-home", userId, roles, request));
 }
 
 async function loadBirthdaysToday(): Promise<BirthdayPerson[]> {
@@ -151,7 +161,7 @@ async function loadCurrentWeek(tz: string, request: Request) {
     month(first) === month(last)
       ? `${month(first)} ${first.getUTCDate()} – ${last.getUTCDate()}`
       : `${month(first)} ${first.getUTCDate()} – ${month(last)} ${last.getUTCDate()}`;
-  return { index: number, dates };
+  return { index: number, dates, term: term.code };
 }
 
 const DAY_MS = 86_400_000;
@@ -165,9 +175,26 @@ const HOME_TASK_LIMIT = 6;
 export const handle = { fitViewport: true, bleedPane: true };
 
 export default function Home() {
-  const { user, greeting, week, milestoneTitle, background, tasks, birthdays } =
+  const { user, greeting, week, milestoneTitle, background, tasks, birthdays, alumniHome, now } =
     useLoaderData<typeof loader>();
   const firstName = user.firstName || user.email.split("@")[0];
+
+  if (alumniHome) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+        <BakerHero
+          now={now}
+          greeting={`${greeting}, ${firstName}`}
+          detail={week ? `Week ${week.index} of ${week.term}` : undefined}
+          action={
+            <Link to="/projects" className={buttonClasses("primary", "md")}>
+              See this term's projects
+            </Link>
+          }
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">

@@ -118,11 +118,8 @@ export function LayoutPortalOS({
   }
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
-  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, {
-    tasks: taskTotal,
-    projectTasks: projectTaskTotal,
-  })
+  const { tasks: openTasks, items: feedItems, projectTasks, totals: feedTotals } = useAttentionFeed()
+  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, feedTotals)
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
   const [bellOpen, setBellOpen] = useState(false)
@@ -305,7 +302,7 @@ export function LayoutPortalOS({
         tasks={openTasks}
         notifications={feedItems}
         projectTasks={projectTasks}
-        total={taskCount}
+        totals={feedTotals}
         allTasksLink={false}
         singleFeed
         title="Notifications"

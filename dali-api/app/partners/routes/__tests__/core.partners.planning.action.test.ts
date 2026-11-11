@@ -1,20 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/db.server", () => ({ prisma: { project: { updateMany: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({
+  prisma: { project: { updateMany: vi.fn() }, partnerApplication: { updateMany: vi.fn() } },
+}));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/partners/lib/partner-renewals.server", () => ({ setTermPi: vi.fn() }));
-vi.mock("~/partners/lib/planning-spots.server", () => ({ setTermSpots: vi.fn() }));
+vi.mock("~/partners/lib/planning-spots.server", () => ({ setTermSpots: vi.fn(), setApplicationSpots: vi.fn() }));
 vi.mock("~/partners/lib/planning-notes.server", () => ({ PLANNING_NOTE_MAX: 5000, setPlanningNote: vi.fn() }));
+vi.mock("~/partners/lib/partner-returns.server", () => ({ startProjectReturn: vi.fn() }));
 vi.mock("~/partners/lib/planning-gap.server", () => ({ loadPlanningData: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
-import { setTermSpots } from "~/partners/lib/planning-spots.server";
+import { setApplicationSpots, setTermSpots } from "~/partners/lib/planning-spots.server";
 import { setPlanningNote } from "~/partners/lib/planning-notes.server";
+import { startProjectReturn } from "~/partners/lib/partner-returns.server";
 import { action } from "~/partners/routes/core.partners.planning";
 
 async function post(body: Record<string, string>) {
@@ -190,5 +194,119 @@ describe("note intent", () => {
     vi.mocked(setPlanningNote).mockResolvedValue("not-found");
     const res = await post({ intent: "note", ownerKind: "application", ownerId: "gone", body: "x" });
     expect(res).toMatchObject({ status: 404, body: { error: expect.stringContaining("application") } });
+  });
+});
+
+describe("start-return intent", () => {
+  async function postReturn(termIds: string[]) {
+    const form = new FormData();
+    form.set("intent", "start-return");
+    form.set("projectId", "proj-old");
+    for (const id of termIds) form.append("targetTermId", id);
+    const request = new Request("http://localhost/core/partners/planning", { method: "POST", body: form });
+    const res = (await action({ request, params: {}, context: {} } as never)) as Response;
+    return { status: res.status, body: await res.json() };
+  }
+
+  it("starts a return for every picked term and returns the new application", async () => {
+    vi.mocked(startProjectReturn).mockResolvedValue({ ok: true, applicationId: "app-9" });
+    expect(await postReturn(["t27w", "t27s"])).toEqual({ status: 200, body: { ok: true, applicationId: "app-9" } });
+    expect(startProjectReturn).toHaveBeenCalledWith({
+      projectId: "proj-old",
+      targetTermIds: ["t27w", "t27s"],
+      actorUserId: "core-1",
+    });
+  });
+
+  it.each([
+    ["not-found", 404, "no longer exists"],
+    ["no-terms", 400, "Pick at least one term"],
+    ["no-contact", 400, "no partner contact"],
+    ["already-open", 400, "already has an open return"],
+  ] as const)("explains %s", async (error, status, text) => {
+    vi.mocked(startProjectReturn).mockResolvedValue({ ok: false, error });
+    const res = await postReturn(["t27w"]);
+    expect(res.status).toBe(status);
+    expect(res.body.error).toContain(text);
+  });
+
+  it("is Core-only", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    expect((await postReturn(["t27w"])).status).toBe(403);
+    expect(startProjectReturn).not.toHaveBeenCalled();
+  });
+});
+
+describe("application intents", () => {
+  const appUpdate = vi.mocked(prisma.partnerApplication.updateMany);
+
+  beforeEach(() => {
+    appUpdate.mockResolvedValue({ count: 1 } as never);
+    vi.mocked(setApplicationSpots).mockResolvedValue("ok");
+  });
+
+  it("saves a trimmed summary, or clears it when blank", async () => {
+    expect(await post({ intent: "application-summary", applicationId: "a1", summary: "  A kiosk  " })).toEqual({
+      status: 200,
+      body: { ok: true },
+    });
+    expect(appUpdate).toHaveBeenCalledWith({ where: { id: "a1" }, data: { summary: "A kiosk" } });
+    await post({ intent: "application-summary", applicationId: "a1", summary: " " });
+    expect(appUpdate).toHaveBeenLastCalledWith({ where: { id: "a1" }, data: { summary: null } });
+  });
+
+  it("rejects a summary over 5000 characters", async () => {
+    expect((await post({ intent: "application-summary", applicationId: "a1", summary: "x".repeat(5001) })).status).toBe(400);
+    expect(appUpdate).not.toHaveBeenCalled();
+  });
+
+  it("sets and clears the application PI", async () => {
+    await post({ intent: "application-pi", applicationId: "a1", piUserId: "core-2" });
+    expect(appUpdate).toHaveBeenCalledWith({ where: { id: "a1" }, data: { piUserId: "core-2" } });
+    await post({ intent: "application-pi", applicationId: "a1", piUserId: "" });
+    expect(appUpdate).toHaveBeenLastCalledWith({ where: { id: "a1" }, data: { piUserId: null } });
+  });
+
+  it("refuses a PI who is not Core", async () => {
+    vi.mocked(isCore).mockImplementation(async (id: string) => id === "core-1");
+    expect((await post({ intent: "application-pi", applicationId: "a1", piUserId: "member" })).status).toBe(400);
+    expect(appUpdate).not.toHaveBeenCalled();
+  });
+
+  it("404s an application that is gone", async () => {
+    appUpdate.mockResolvedValue({ count: 0 } as never);
+    expect((await post({ intent: "application-summary", applicationId: "gone", summary: "x" })).status).toBe(404);
+    expect((await post({ intent: "application-pi", applicationId: "gone", piUserId: "" })).status).toBe(404);
+    vi.mocked(setApplicationSpots).mockResolvedValue("not-found");
+    expect((await post({ intent: "application-spots", applicationId: "gone", roles: "[]" })).status).toBe(404);
+  });
+
+  it("saves expected spots per domain", async () => {
+    const res = await post({
+      intent: "application-spots",
+      applicationId: "a1",
+      roles: JSON.stringify([{ domainId: "eng", slots: 2 }]),
+    });
+    expect(res).toEqual({ status: 200, body: { ok: true } });
+    expect(setApplicationSpots).toHaveBeenCalledWith(prisma, { applicationId: "a1", roles: [{ domainId: "eng", slots: 2 }] });
+  });
+
+  it("rejects unreadable spots and unavailable domains", async () => {
+    expect((await post({ intent: "application-spots", applicationId: "a1", roles: "{" })).status).toBe(400);
+    vi.mocked(setApplicationSpots).mockResolvedValue("unknown-domain");
+    expect((await post({ intent: "application-spots", applicationId: "a1", roles: "[]" })).status).toBe(400);
+  });
+
+  it("requires an application id", async () => {
+    expect((await post({ intent: "application-pi", piUserId: "" })).status).toBe(400);
+  });
+
+  it("is Core-only", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    for (const intent of ["application-summary", "application-pi", "application-spots"]) {
+      expect((await post({ intent, applicationId: "a1", summary: "x", piUserId: "", roles: "[]" })).status).toBe(403);
+    }
+    expect(appUpdate).not.toHaveBeenCalled();
+    expect(setApplicationSpots).not.toHaveBeenCalled();
   });
 });

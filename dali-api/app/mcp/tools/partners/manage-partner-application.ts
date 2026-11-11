@@ -21,6 +21,8 @@
 // model — there is no meeter to assign.
 
 import { prisma } from "~/lib/db.server";
+import { logAuditEvent } from "~/lib/audit";
+import { startProjectReturn } from "~/partners/lib/partner-returns.server";
 import { isCore } from "~/lib/roles";
 import {
   PARTNER_STAGES,
@@ -61,7 +63,10 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
     "set_form (formId), clear_form, " +
     "add_domain (applicationId+domainId), " +
     "update_domain_scope (applicationDomainId; expectedMembers and/or expectedChallenges as plain text — NOTE: expectedChallenges is a collab block doc on the web; MCP writes a plain-text paragraph block), " +
-    "remove_domain (applicationDomainId).",
+    "remove_domain (applicationDomainId), " +
+    "start_return (projectId+targetTermIds; opens an application for a past project coming back, carrying over its partner org, primary contact and last term's spots; promoting it reopens that project), " +
+    "delete (applicationId; permanently removes an application that was never promoted). " +
+    "create also accepts continuesProjectId to mark the application as a return of that project.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -80,6 +85,8 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
           "add_domain",
           "update_domain_scope",
           "remove_domain",
+          "start_return",
+          "delete",
         ],
         description: "What to do.",
       },
@@ -104,6 +111,14 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
         type: "string",
         description: "PartnerOrg id. Optional on create; required if you want to link an org immediately.",
       },
+      projectId: {
+        type: "string",
+        description: "Required for start_return: the past Project.id coming back.",
+      },
+      continuesProjectId: {
+        type: "string",
+        description: "Optional on create: Project.id this application is a return of. Promotion then reopens that project.",
+      },
       stage: {
         type: "string",
         enum: PARTNER_STAGES as unknown as string[],
@@ -113,7 +128,7 @@ export const MANAGE_PARTNER_APPLICATION_TOOL = {
       targetTermIds: {
         type: "array",
         items: { type: "string" },
-        description: "Replace all target terms (update_details).",
+        description: "Replace all target terms (update_details), or the terms a return would run (start_return).",
       },
       evalScores: {
         type: "object",
@@ -190,7 +205,49 @@ export async function runManagePartnerApplication(
     add_domain: ["applicationId", "domainId"],
     update_domain_scope: ["applicationDomainId"],
     remove_domain: ["applicationDomainId"],
+    start_return: ["projectId", "targetTermIds"],
+    delete: ["applicationId"],
   });
+
+  // ── start_return ──────────────────────────────────────────────────────────
+  if (action === "start_return") {
+    const targetTermIds = Array.isArray(input.targetTermIds) ? input.targetTermIds.map(String) : [];
+    const result = await startProjectReturn({
+      projectId: input.projectId as string,
+      targetTermIds,
+      actorUserId: callerId,
+    });
+    if (result.ok) return { id: result.applicationId };
+    if (result.error === "not-found") throw new McpNotFoundError(`Project ${input.projectId} not found`);
+    throw new McpInvalidError(
+      {
+        "no-terms": "Pass at least one targetTermId.",
+        "no-contact": "That project's partner has no active contact to carry over.",
+        "already-open": "That project already has an open return application.",
+      }[result.error],
+    );
+  }
+
+  // ── delete ────────────────────────────────────────────────────────────────
+  if (action === "delete") {
+    const applicationId = input.applicationId as string;
+    const existing = await prisma.partnerApplication.findUnique({
+      where: { id: applicationId },
+      select: { id: true, title: true, stage: true, resultingProjectId: true },
+    });
+    if (!existing) throw new McpNotFoundError(`Partner application ${applicationId} not found`);
+    if (existing.resultingProjectId) {
+      throw new McpInvalidError("This application became a project, so it can't be deleted.");
+    }
+    await prisma.partnerApplication.delete({ where: { id: applicationId } });
+    await logAuditEvent({
+      action: "partner.application.delete",
+      userId: callerId,
+      targetId: applicationId,
+      metadata: { title: existing.title, stage: existing.stage },
+    });
+    return { deleted: true, id: applicationId, title: existing.title };
+  }
 
   // ── create ────────────────────────────────────────────────────────────────
   if (action === "create") {
@@ -236,13 +293,24 @@ export async function runManagePartnerApplication(
       partnerOrgId = org.id;
     }
 
+    let continuesProjectId: string | null = null;
+    if (typeof input.continuesProjectId === "string" && input.continuesProjectId) {
+      const project = await prisma.project.findUnique({
+        where: { id: input.continuesProjectId },
+        select: { id: true },
+      });
+      if (!project) throw new McpNotFoundError(`Project ${input.continuesProjectId} not found`);
+      continuesProjectId = project.id;
+    }
+
     const app = await prisma.partnerApplication.create({
       data: {
         title: (input.title as string).trim(),
         applicantContactId,
         partnerOrgId,
+        continuesProjectId,
         stage: "New",
-        source: "Manual",
+        source: continuesProjectId ? "Renewal" : "Manual",
       },
       select: { id: true },
     });

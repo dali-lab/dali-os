@@ -44,6 +44,8 @@ const TILE_SELECT = {
   caption: true,
   hiddenAt: true,
   createdAt: true,
+  takenAt: true,
+  feedAt: true,
   author: { select: AUTHOR_SELECT },
   reactions: { select: { emoji: true, userId: true, createdAt: true } },
   _count: { select: { comments: true } },
@@ -95,6 +97,8 @@ async function toTiles(rows: TileRow[], viewer: GalleryViewer) {
       caption: r.caption,
       hidden: r.hiddenAt !== null,
       createdAt: r.createdAt.toISOString(),
+      takenAt: r.takenAt?.toISOString() ?? null,
+      feedAt: r.feedAt.toISOString(),
       author: await person(r.author),
       reactions: summarizeReactions(r.reactions, viewer.id),
       commentCount: r._count.comments,
@@ -145,11 +149,11 @@ function feedWhere(viewer: GalleryViewer, query: FeedQuery): Prisma.GalleryPostW
   return { AND: and };
 }
 
-/** One page of the feed, newest first, plus the cursor for the next page. */
+/** One page of the feed, most recently taken first, plus the cursor for the next page. */
 export async function loadGalleryPage(viewer: GalleryViewer, query: FeedQuery) {
   const rows = await prisma.galleryPost.findMany({
     where: feedWhere(viewer, query),
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    orderBy: [{ feedAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
     take: GALLERY_PAGE_SIZE + 1,
     ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
     select: TILE_SELECT,
@@ -239,10 +243,10 @@ export async function firstPostAt(viewer: GalleryViewer) {
   return first?.createdAt.toISOString() ?? null;
 }
 
-/** Visible posts newer than `since`, for the "N new posts" pill. */
+/** Visible posts that would sort above `since`, for the "N new posts" pill. */
 export async function countNewerPosts(viewer: GalleryViewer, since: Date) {
   return prisma.galleryPost.count({
-    where: { AND: [visibleTo(viewer), { createdAt: { gt: since } }] },
+    where: { AND: [visibleTo(viewer), { feedAt: { gt: since } }] },
   });
 }
 
@@ -339,11 +343,11 @@ export async function applyGalleryIntent(
       // first photo in the composer stays first in the feed.
       const now = Date.now();
       await prisma.galleryPost.createMany({
-        data: posts.map((p, i) => ({
-          ...p,
-          authorId: viewer.id,
-          createdAt: new Date(now + (posts.length - 1 - i)),
-        })),
+        data: posts.map((p, i) => {
+          const createdAt = new Date(now + (posts.length - 1 - i));
+          const takenAt = p.takenAt ? new Date(p.takenAt) : null;
+          return { ...p, takenAt, feedAt: takenAt ?? createdAt, authorId: viewer.id, createdAt };
+        }),
       });
       return { ok: true, created: posts.length };
     }

@@ -79,6 +79,92 @@ describe("pageBarCrumbs", () => {
   });
 });
 
+describe("pageBarCrumbs for alumni", () => {
+  const ALUM = { isAlumni: true, isNewMember: false };
+  const ID = "clxyzabcdefghijklmnop";
+  const leaf = (pathname: string, label: string) => [{ pathname, handle: { breadcrumb: () => label }, data: {} }];
+  const crumbsAt = (path: string, matches: unknown[], title: string, roles?: typeof ALUM, community = true) =>
+    pageBarCrumbs({
+      path,
+      trail: resolvePageBarTrail(matches as never, path, "")?.crumbs ?? [],
+      title,
+      flags: { community, "refer-a-partner": true },
+      roles,
+    }).map((c) => (c.to ? `${c.label} → ${c.to}` : c.label));
+
+  it("shows Home only on /", () => {
+    expect(crumbsAt("/", [], "", ALUM)).toEqual(["Home"]);
+  });
+
+  it("puts Community under Lab, like the rail", () => {
+    for (const community of [true, false]) {
+      expect(crumbsAt("/community", leaf("/community", "Community"), "Community", ALUM, community)).toEqual([
+        "Lab → /currently",
+        "Community",
+      ]);
+    }
+  });
+
+  it("files the community pages under Community, which claims /community/*", () => {
+    expect(crumbsAt("/community/gallery", leaf("/community/gallery", "Gallery"), "Gallery", ALUM)).toEqual([
+      "Lab → /currently",
+      "Community → /community",
+      "Gallery",
+    ]);
+    expect(
+      crumbsAt(`/community/gallery/${ID}`, [...leaf("/community/gallery", "Gallery"), ...leaf(`/community/gallery/${ID}`, "Spring demo")], "Spring demo", ALUM),
+    ).toEqual(["Lab → /currently", "Community → /community", "Gallery → /community/gallery", "Spring demo"]);
+    expect(crumbsAt("/community/opportunities", leaf("/community/opportunities", "Opportunities"), "Opportunities", ALUM)).toEqual([
+      "Lab → /currently",
+      "Opportunities",
+    ]);
+  });
+
+  it("files a story under Stories by its title, off the Lab trail", () => {
+    expect(crumbsAt(`/resources/blog/${ID}`, leaf(`/resources/blog/${ID}`, "Demo day"), "Demo day", ALUM)).toEqual([
+      "Stories → /resources",
+      "Demo day",
+    ]);
+  });
+
+  it("files a member's profile under Community", () => {
+    expect(crumbsAt(`/members/${ID}`, leaf(`/members/${ID}`, "Ada Lovelace"), "Ada Lovelace", ALUM)).toEqual([
+      "Lab → /currently",
+      "Community → /community",
+      "Ada Lovelace",
+    ]);
+  });
+
+  it("keeps the member trails for everyone else", () => {
+    expect(crumbsAt(`/members/${ID}`, leaf(`/members/${ID}`, "Ada Lovelace"), "Ada Lovelace")).toEqual([
+      "Lab → /projects",
+      "People → /members",
+      "Ada Lovelace",
+    ]);
+    expect(crumbsAt("/community", leaf("/community", "Community"), "Community")).toEqual(["Community"]);
+    expect(
+      crumbsAt(`/community/gallery/${ID}`, [...leaf("/community/gallery", "Gallery"), ...leaf(`/community/gallery/${ID}`, "Spring demo")], "Spring demo"),
+    ).toEqual(["Community → /community", "Gallery → /community/gallery", "Spring demo"]);
+    expect(crumbsAt(`/resources/blog/${ID}`, leaf(`/resources/blog/${ID}`, "Demo day"), "Demo day")).toEqual([
+      "Community → /community",
+      "Stories → /resources",
+      "Demo day",
+    ]);
+  });
+
+  it("never links a page with no index", () => {
+    expect(crumbsAt(`/coffee-chats/${ID}`, leaf(`/coffee-chats/${ID}`, "Coffee chat with Ada"), "", ALUM)).toEqual([
+      "Coffee Chats",
+      "Coffee chat with Ada",
+    ]);
+    expect(crumbsAt(`/resources/write/${ID}`, [], "Draft", ALUM)).toEqual([
+      "Stories → /resources",
+      "Write",
+      "Details",
+    ]);
+  });
+});
+
 describe("fallbackPageLabel", () => {
   it("names the destinations and home", () => {
     expect(fallbackPageLabel("/calendar?view=week")).toBe("Calendar");

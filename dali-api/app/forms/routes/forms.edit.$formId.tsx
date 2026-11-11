@@ -21,6 +21,7 @@ import {
 import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
+import { parseMemberColumns } from "~/projects/lib/member-history";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { parseAnswerFilters } from "~/forms/lib/answer-filters";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
@@ -145,6 +146,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slot: url.searchParams.get("slot") ?? "",
         answers,
         questions: resultsVersion.questions,
+        memberColumns: parseMemberColumns(url.searchParams),
       })
     : null;
   const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;

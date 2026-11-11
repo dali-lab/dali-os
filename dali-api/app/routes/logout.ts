@@ -44,6 +44,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   } catch {
     // A failed BetterAuth sign-out must not block the legacy logout.
   }
+  // Signing out mid-impersonation must not leave the admin's session for /login to restore.
+  try {
+    const { clearAdminSessionCookieHeader } = await import("~/lib/impersonation-restore.server");
+    headers.append("Set-Cookie", await clearAdminSessionCookieHeader());
+  } catch {
+    // Same fault isolation as the sign-out above.
+  }
 
   headers.set("Location", "/login");
   return new Response(null, { status: 302, headers });
