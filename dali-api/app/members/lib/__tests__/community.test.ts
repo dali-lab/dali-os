@@ -45,17 +45,16 @@ describe("groupByPlace", () => {
 });
 
 describe("minZoomToFill", () => {
-  it("never goes below zoom 2", () => {
-    expect(minZoomToFill(0)).toBe(2);
-    expect(minZoomToFill(400)).toBe(2);
-    expect(minZoomToFill(1024)).toBe(2);
+  it("never goes below zoom 1", () => {
+    expect(minZoomToFill(0)).toBe(1);
+    expect(minZoomToFill(400)).toBe(1);
+    expect(minZoomToFill(1024)).toBe(1);
   });
 
-  it("zooms in until the world is at least as tall as the map", () => {
-    // 256 * 2^z must reach the height: 1025px needs z=3 (2048px), 2049px needs z=4.
-    expect(minZoomToFill(1025)).toBe(3);
-    expect(minZoomToFill(2048)).toBe(3);
-    expect(minZoomToFill(2049)).toBe(4);
+  it("zooms in until the world is exactly as tall as the map", () => {
+    expect(minZoomToFill(2048)).toBe(2);
+    expect(minZoomToFill(4096)).toBe(3);
+    expect(minZoomToFill(1536)).toBeCloseTo(Math.log2(3));
   });
 });
 
