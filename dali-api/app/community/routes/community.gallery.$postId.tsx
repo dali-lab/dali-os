@@ -3,11 +3,9 @@ import {
   Link,
   useFetcher,
   useLoaderData,
-  useLocation,
-  useNavigate,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { ArrowLeft, EyeOff } from "lucide-react";
+import { EyeOff } from "lucide-react";
 import type { Route } from "./+types/community.gallery.$postId";
 import {
   galleryAction,
@@ -32,6 +30,7 @@ import { GalleryMasonry } from "~/community/components/GalleryMasonry";
 import { GalleryNavRow } from "~/community/components/GalleryNavRow";
 import { GalleryPostMenu } from "~/community/components/GalleryPostMenu";
 import { NewGalleryPostsDialog } from "~/community/components/NewGalleryPostsDialog";
+import { useOsChrome } from "~/components/os-chrome";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.post.caption ?? "Photo"} · Gallery · DALI OS` },
@@ -76,22 +75,18 @@ export function shouldRevalidate({
 export default function GalleryPostPage() {
   const { post, more, userId } = useLoaderData<typeof loader>();
   const [composing, setComposing] = useState(false);
+  const chrome = useOsChrome();
 
   return (
     <div className="flex flex-col gap-4">
-      <section className="flex flex-col gap-6 rounded-os-card bg-os-card p-5">
+      <section className="flex flex-col gap-6">
         <GalleryNavRow onPost={() => setComposing(true)} />
 
-        <div className="relative lg:px-14">
-          <BackButton />
-          <PostCloseup key={post.id} post={post} />
-        </div>
+        <PostCloseup key={post.id} post={post} />
 
         {more.length > 0 && (
-          <div className="flex flex-col gap-4 pt-4">
-            <h2 className="text-center font-heading text-[19px] font-semibold text-foreground">
-              More to explore
-            </h2>
+          <div className={`${chrome.sectionShell} pt-4`}>
+            <h2 className={chrome.sectionTitle}>More to explore</h2>
             <GalleryMasonry posts={more} />
           </div>
         )}
@@ -101,36 +96,13 @@ export default function GalleryPostPage() {
   );
 }
 
-// Back to wherever the reader came from (a scrolled or filtered feed); straight
-// to the feed when the post was opened from a link.
-function BackButton() {
-  const location = useLocation();
-  const navigate = useNavigate();
-  // One element on server and client; the history check waits for the click,
-  // since the server can't know whether there's a page to go back to.
-  return (
-    <Link
-      to="/community/gallery"
-      aria-label="Back to Gallery"
-      onClick={(e) => {
-        if (location.key === "default") return;
-        e.preventDefault();
-        navigate(-1);
-      }}
-      className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-os-container text-foreground transition-colors hover:bg-os-container-hi lg:absolute lg:left-0 lg:top-0 lg:mb-0"
-    >
-      <ArrowLeft className="h-5 w-5" aria-hidden />
-    </Link>
-  );
-}
-
 function PostCloseup({ post }: { post: GalleryPostDetail }) {
   const { reactions, react } = useReactionToggle(post.id, post.reactions);
   const restore = useFetcher();
   const portrait = post.height > post.width;
 
   return (
-    <article className="mx-auto grid max-w-[1040px] overflow-hidden rounded-os-card border border-os-container bg-os-bg md:grid-cols-[minmax(0,1.25fr)_minmax(320px,1fr)]">
+    <article className="mx-auto grid w-full max-w-[1040px] overflow-hidden rounded-os-card bg-os-card md:grid-cols-[minmax(0,1.25fr)_minmax(320px,1fr)]">
       <div
         className="flex items-center justify-center"
         style={{ backgroundColor: post.color }}
