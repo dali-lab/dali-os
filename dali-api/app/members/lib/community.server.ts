@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
-import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { LAB_MEMBER_WHERE, LEGACY_DOMAIN_ID, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";
 import {
@@ -142,6 +142,7 @@ export async function loadCommunityPeople(
           select: {
             project: { select: { id: true, name: true } },
             term: { select: { code: true, sortKey: true } },
+            domainId: true,
             domain: { select: { displayName: true } },
           },
         },
@@ -185,7 +186,11 @@ export async function loadCommunityPeople(
           });
         }
       }
-      const domains = [...new Set(u.projectAssignments.map((a) => a.domain.displayName))].sort();
+      const domains = [
+        ...new Set(
+          u.projectAssignments.filter((a) => a.domainId !== LEGACY_DOMAIN_ID).map((a) => a.domain.displayName),
+        ),
+      ].sort();
       people.push({
         id: u.id,
         name: fullName(u) || (isStudent ? "Student" : "Alum"),
