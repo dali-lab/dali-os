@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
-import type { AttentionNotification } from "~/components/AttentionPanel";
+import type { AttentionNotification, FeedTotals } from "~/components/AttentionPanel";
 import type { ProjectWorkItem } from "~/lib/project-work";
 
 // Same-window event that forces an immediate poll, so an action that changes
@@ -33,6 +33,8 @@ export type OpenTask = {
 
 type Polled = {
   taskCount: number;
+  // Open tasks on the General tab; undefined from a server that predates it.
+  generalTaskCount?: number;
   tasks: OpenTask[];
   // The notification feed itself. The bell's panel renders these alongside the
   // tasks (meeting invites awaiting an RSVP, anything unread that isn't a
@@ -69,6 +71,7 @@ function usePolledCounts(): Polled {
         if (!res.ok) return;
         const json = (await res.json()) as {
           taskCount?: number;
+          generalTaskCount?: number;
           tasks?: OpenTask[];
           items?: AttentionNotification[];
           projectTasks?: ProjectWorkItem[];
@@ -80,6 +83,8 @@ function usePolledCounts(): Polled {
         setState({
           taskCount:
             typeof json.taskCount === "number" ? json.taskCount : tasks.length,
+          generalTaskCount:
+            typeof json.generalTaskCount === "number" ? json.generalTaskCount : undefined,
           tasks,
           items: Array.isArray(json.items) ? json.items : [],
           projectTasks,
@@ -137,9 +142,13 @@ export function useAttentionFeed(): {
   tasks: OpenTask[];
   items: AttentionNotification[];
   projectTasks: ProjectWorkItem[];
-  taskTotal: number;
-  projectTaskTotal: number;
+  totals: FeedTotals;
 } {
-  const { tasks, items, projectTasks, taskCount, projectTaskCount } = usePolledCounts();
-  return { tasks, items, projectTasks, taskTotal: taskCount, projectTaskTotal: projectTaskCount };
+  const { tasks, items, projectTasks, generalTaskCount, projectTaskCount } = usePolledCounts();
+  return {
+    tasks,
+    items,
+    projectTasks,
+    totals: { generalTasks: generalTaskCount, projectTasks: projectTaskCount },
+  };
 }

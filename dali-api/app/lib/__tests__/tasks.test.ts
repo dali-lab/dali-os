@@ -7,6 +7,8 @@ import {
   listOpenTasks,
   listOpenTasksPage,
   openTasksTotal,
+  generalTasksTotal,
+  countOpenGeneralTasks,
   countMyProjectTasks,
   listMyProjectTasksPage,
   projectTasksTotal,
@@ -610,6 +612,40 @@ describe("openTasksTotal", () => {
     const page = { items: [{ id: "a" }], nextCursor: "x|y" } as any;
     expect(await openTasksTotal("user-1", page)).toBe(120);
     expect(mockPrisma.notification.count).toHaveBeenCalledWith({ where: expectedWhere("user-1") });
+  });
+});
+
+describe("countOpenGeneralTasks", () => {
+  it("counts open tasks outside the Tasks area, keeping the open-task filters", async () => {
+    mockPrisma.notification.count.mockResolvedValue(9);
+    expect(await countOpenGeneralTasks("user-1")).toBe(9);
+    const { where } = mockPrisma.notification.count.mock.calls[0][0];
+    expect(where.AND[0]).toEqual(expectedWhere("user-1"));
+    expect([...where.AND[1].eventType.notIn].sort()).toEqual([
+      "project.sprint_closed",
+      "task.assigned",
+      "task.comment",
+      "task.due_reminder",
+      "task.github_update",
+      "task.status_changed",
+    ]);
+  });
+});
+
+describe("generalTasksTotal", () => {
+  it("counts the loaded General tasks when the page was the whole list", async () => {
+    const page = {
+      items: [{ eventType: "meeting.invite" }, { eventType: null }, { eventType: "task.assigned" }],
+      nextCursor: null,
+    } as any;
+    expect(await generalTasksTotal("user-1", page)).toBe(2);
+    expect(mockPrisma.notification.count).not.toHaveBeenCalled();
+  });
+
+  it("counts on the server when more rows exist", async () => {
+    mockPrisma.notification.count.mockResolvedValue(40);
+    const page = { items: [{ eventType: "meeting.invite" }], nextCursor: "x|y" } as any;
+    expect(await generalTasksTotal("user-1", page)).toBe(40);
   });
 });
 

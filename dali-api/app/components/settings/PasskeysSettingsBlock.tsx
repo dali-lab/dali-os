@@ -202,7 +202,7 @@ export function PasskeysList({ state }: { state: PasskeysState }) {
       <ul className={settingsList}>
         {passkeys === null && <SettingsEmptyRow>Loading…</SettingsEmptyRow>}
         {passkeys?.length === 0 && (
-          <SettingsEmptyRow>No passkeys yet. You sign in with Dartmouth SSO or an email link.</SettingsEmptyRow>
+          <SettingsEmptyRow>No passkeys yet.</SettingsEmptyRow>
         )}
         {passkeys?.map((pk) => {
           const added = formatAdded(pk.createdAt);
