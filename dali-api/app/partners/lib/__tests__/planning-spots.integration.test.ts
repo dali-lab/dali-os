@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "~/lib/db.server";
-import { setTermSpots } from "../planning-spots.server";
+import { setApplicationSpots, setTermSpots } from "../planning-spots.server";
 
 async function seed() {
   const term = await prisma.term.create({
@@ -90,5 +90,36 @@ describe("setTermSpots against Postgres", () => {
     });
     expect(result).toBe("unknown-domain");
     expect(await spots(project.id, term.id)).toEqual([]);
+  });
+});
+
+describe("setApplicationSpots against Postgres", () => {
+  async function app() {
+    const eng = await prisma.domain.create({ data: { name: "Engineering", code: "ENG", displayName: "Engineering" } });
+    const des = await prisma.domain.create({ data: { name: "Design", code: "DES", displayName: "Design" } });
+    const contact = await prisma.partnerContact.create({ data: { name: "Pat", email: "pat@example.org" } });
+    const application = await prisma.partnerApplication.create({ data: { title: "Kiosk", applicantContactId: contact.id } });
+    await prisma.partnerApplicationDomain.create({
+      data: { applicationId: application.id, domainId: des.id, expectedMembers: 2, expectedChallenges: { note: "keep me" } },
+    });
+    return { eng, des, application };
+  }
+
+  it("sets counts, adds new domains, and zeroes dropped ones without losing their notes", async () => {
+    const { eng, des, application } = await app();
+    expect(await setApplicationSpots(prisma, { applicationId: application.id, roles: [{ domainId: eng.id, slots: 3 }] })).toBe("ok");
+    const rows = await prisma.partnerApplicationDomain.findMany({ where: { applicationId: application.id } });
+    expect(rows.find((r) => r.domainId === eng.id)?.expectedMembers).toBe(3);
+    expect(rows.find((r) => r.domainId === des.id)).toMatchObject({ expectedMembers: 0, expectedChallenges: { note: "keep me" } });
+  });
+
+  it("refuses an inactive domain and a missing application", async () => {
+    const { application } = await app();
+    const old = await prisma.domain.create({ data: { name: "Old", code: "OLD", displayName: "Old", active: false } });
+    expect(await setApplicationSpots(prisma, { applicationId: application.id, roles: [{ domainId: old.id, slots: 1 }] })).toBe(
+      "unknown-domain",
+    );
+    expect(await setApplicationSpots(prisma, { applicationId: "gone", roles: [] })).toBe("not-found");
+    expect(await prisma.partnerApplicationDomain.count({ where: { domainId: old.id } })).toBe(0);
   });
 });

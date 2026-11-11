@@ -21,6 +21,7 @@ export type PlanningItem = {
   source: PlanningSource;
   state: PlanningState;
   spotsByDomain: Record<string, number>;
+  returning?: boolean;
 };
 
 export type PlanningDomain = { id: string; name: string };
@@ -64,8 +65,8 @@ export function isPotentialState(state: PlanningState): boolean {
 
 /** The row's state alone: every table that shows it already groups rows under
  *  a Renewing / New heading, so repeating the source here just added noise. */
-export function planningStateLabel(item: Pick<PlanningItem, "state">): string {
-  return item.state;
+export function planningStateLabel(item: Pick<PlanningItem, "state" | "returning">): string {
+  return item.returning ? `${item.state} (return)` : item.state;
 }
 
 export type GapPill = { tone: "bad" | "idle" | "ok"; label: string };

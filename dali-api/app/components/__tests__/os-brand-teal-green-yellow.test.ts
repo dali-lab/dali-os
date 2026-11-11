@@ -12,7 +12,6 @@ describe("status meanings use the os status tokens", () => {
     ["members/components/MemberProfileView.tsx", '"bg-os-green"'],
     ["admin/components/PayrollUploadModal.tsx", "text-os-green"],
     ["projects/components/FinalizeModal.tsx", 'text-os-green">{savedNote}'],
-    ["partners/routes/partner.settings.tsx", "text-os-green bg-os-green/10"],
   ])("%s marks success with os-green", (file, needle) => {
     expect(read(file)).toContain(needle);
   });

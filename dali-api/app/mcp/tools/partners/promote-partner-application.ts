@@ -12,12 +12,13 @@ import { isCore } from "~/lib/roles";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { setApplicationStage } from "~/partners/lib/partner-activity.server";
 import { movePlanningNoteToProject } from "~/partners/lib/planning-notes.server";
-import { McpForbiddenError, McpNotFoundError } from "../../registry";
+import { reopenProjectFromApplication } from "~/partners/lib/partner-returns.server";
+import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../registry";
 
 export const PROMOTE_PARTNER_APPLICATION_TOOL = {
   name: "promote_partner_application",
   description:
-    "Promote a partner application to a Project. Seeds the project from the application's title, summary, target terms, and domain scope. Creates ProjectRoleRequest rows (level P1) for domains with expectedMembers > 0 in every target term. Idempotent: if the application was already promoted, returns the existing projectId with alreadyExisted=true. Requires Core access.",
+    "Promote a partner application to a Project. Seeds the project from the application's title, summary, target terms, and domain scope. Creates ProjectRoleRequest rows (level P1) for domains with expectedMembers > 0 in every target term. A returning application (one that continues a past project) instead reopens that project: adds the target terms back, seeds spots where a term has none, marks those terms continuing, and returns reopened=true. Idempotent: if the application was already promoted, returns the existing projectId with alreadyExisted=true. Requires Core access.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -51,6 +52,7 @@ export async function runPromotePartnerApplication(
       piUserId: true,
       summary: true,
       resultingProjectId: true,
+      continuesProjectId: true,
       partnerOrgId: true,
       applicantContactId: true,
       applicantContact: { select: { id: true, name: true } },
@@ -68,6 +70,26 @@ export async function runPromotePartnerApplication(
 
   if (app.resultingProjectId) {
     return { projectId: app.resultingProjectId, alreadyExisted: true };
+  }
+  if (app.continuesProjectId) {
+    if (app.targetTerms.length === 0) {
+      throw new McpInvalidError("Set at least one target term before reopening the project.");
+    }
+    const continuesProjectId = app.continuesProjectId;
+    const reopened = await prisma.$transaction((tx) =>
+      reopenProjectFromApplication(tx, {
+        app: {
+          id: app.id,
+          continuesProjectId,
+          partnerOrgId: app.partnerOrgId,
+          piUserId: app.piUserId,
+          targetTermIds: app.targetTerms.map((t) => t.termId),
+          domains: app.domains,
+        },
+        actorUserId: callerId,
+      }),
+    );
+    return { projectId: reopened.id, alreadyExisted: false, reopened: true };
   }
 
   const firstTermId = app.targetTerms[0]?.termId ?? null;
