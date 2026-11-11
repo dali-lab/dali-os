@@ -13,7 +13,7 @@ Community shows where DALI alumni and current students are, and the events they 
 
 ## Find people
 
-The page has a list on the left and the map filling the rest. On a small screen the map is on top and the list is below it.
+The page has a list on the left and the map filling the rest. On a small screen the map is on top and the list is below it. The map opens on the area around where you are based. If you haven't set **Based in** on your profile, it shows everyone.
 
 - Switch between **People** and **Events** at the top of the list. Each shows how many match.
 - Search people by name, company or city.
@@ -40,6 +40,8 @@ Under the search box:
 **List what's on the map** is on by default. The list then shows only the people and events in the part of the map you are looking at, and it changes as you pan and zoom. Turn it off to list everyone.
 
 Places with no one matching your filters fade on the map. Click a place to see just the people and events there. The top of the list names the place and says how many people are there and how many are from your class. Click **All places** to go back.
+
+Places close together share one marker that says how many people are there, such as **12 people**. Zoom in and it splits into its places. Click it to see everyone in all of those places and zoom to them.
 
 ### Who was active lately
 

@@ -24,6 +24,7 @@ const fake = vi.hoisted(() => {
     fits: { bounds: FakeBounds; options: Record<string, unknown> }[] = [];
     jumps: unknown[] = [];
     removed = false;
+    zoom = 1;
     touchZoomRotate = { disableRotation: vi.fn() };
     keyboard = { disableRotation: vi.fn() };
     constructor(options: Record<string, unknown> & { container: HTMLElement; style: string }) {
@@ -38,6 +39,9 @@ const fake = vi.hoisted(() => {
     }
     fire(type: string) {
       for (const fn of this.handlers.get(type) ?? []) fn();
+    }
+    getZoom() {
+      return this.zoom;
     }
     getContainer() {
       return this.container;
@@ -176,7 +180,8 @@ async function mount(over: Partial<Props> = {}) {
     places: [HANOVER, LONDON],
     events: [EVENT],
     tz: "America/New_York",
-    selectedKey: null,
+    home: null,
+    selectedKeys: null,
     selectedEventId: null,
     onSelect: vi.fn(),
     onSelectEvent: vi.fn(),
@@ -270,7 +275,7 @@ describe("CommunityMap", () => {
     await mount();
     const london = pinFor("Ada london");
     const event = pinFor("NOV");
-    await render({ selectedKey: "hanover" });
+    await render({ selectedKeys: ["hanover"] });
     expect(live()).toHaveLength(3);
     expect(pinFor("Ada london")).toBe(london);
     expect(pinFor("NOV")).toBe(event);
@@ -289,9 +294,10 @@ describe("CommunityMap", () => {
   it("clicking a pin selects it and clicking the selected pin clears it", async () => {
     await mount();
     (pinFor("Ada hanover").element.firstElementChild as HTMLElement).click();
-    expect(props.onSelect).toHaveBeenLastCalledWith("hanover");
+    expect(props.onSelect).toHaveBeenLastCalledWith(["hanover"]);
+    expect(theMap().fits).toHaveLength(1);
 
-    await render({ selectedKey: "hanover" });
+    await render({ selectedKeys: ["hanover"] });
     (pinFor("Ada hanover").element.firstElementChild as HTMLElement).click();
     expect(props.onSelect).toHaveBeenLastCalledWith(null);
   });
@@ -323,7 +329,13 @@ describe("CommunityMap", () => {
     fake.state.bounds = { south: 10, west: 170, north: 50, east: 200 };
   });
 
-  it("fits to the places once per set of places, instantly the first time", async () => {
+  it("opens on the viewer's home at regional zoom", async () => {
+    await mount({ home: { lat: 43.7, lng: -72.29 } });
+    expect(theMap().jumps).toEqual([{ center: [-72.29, 43.7], zoom: 7 }]);
+    expect(theMap().fits).toHaveLength(0);
+  });
+
+  it("without a home, fits every place once, instantly", async () => {
     await mount();
     expect(theMap().fits).toHaveLength(1);
     expect(theMap().fits[0].bounds.points).toEqual([
@@ -332,23 +344,19 @@ describe("CommunityMap", () => {
     ]);
     expect(theMap().fits[0].options).toMatchObject({ padding: 48, maxZoom: 5, duration: 0 });
 
-    await render({ selectedKey: "london" });
-    expect(theMap().fits).toHaveLength(1);
-
     await render({ places: [LONDON] });
-    expect(theMap().fits).toHaveLength(2);
-    expect(theMap().fits[1].options.duration).toBeUndefined();
+    expect(theMap().fits).toHaveLength(1);
   });
 
-  it("shows the whole world when there are no places", async () => {
+  it("shows the whole world when there is no home and no places", async () => {
     await mount({ places: [] });
     expect(theMap().jumps).toEqual([{ center: [0, 25], zoom: 1 }]);
   });
 
-  it("waits for the map to have a height before fitting", async () => {
+  it("waits for the map to have a height before setting the view", async () => {
     height = 0;
-    await mount();
-    expect(theMap().fits).toHaveLength(0);
+    await mount({ home: { lat: 43.7, lng: -72.29 } });
+    expect(theMap().jumps).toHaveLength(0);
   });
 
   it("keeps the minimum zoom tall enough to fill the map on resize", async () => {
@@ -356,6 +364,56 @@ describe("CommunityMap", () => {
     height = 2048;
     theMap().fire("resize");
     expect(theMap().setMinZoom).toHaveBeenLastCalledWith(2);
+  });
+
+  describe("clusters", () => {
+    const BOSTON = place("boston", -71.06, 42.36, [person("b1"), person("b2"), person("b3")]);
+    const CAMBRIDGE = place("cambridge", -71.11, 42.37, [person("c1")]);
+
+    async function zoomTo(zoom: number) {
+      theMap().zoom = zoom;
+      await act(async () => theMap().fire("zoomend"));
+    }
+
+    it("draws nearby places as one pin on the biggest, counting everyone", async () => {
+      await mount({ places: [CAMBRIDGE, BOSTON, LONDON], events: [] });
+      expect(live()).toHaveLength(2);
+      const cluster = pinFor("4 people");
+      expect(cluster.lngLat).toEqual([-71.06, 42.36]);
+      expect(cluster.element.querySelectorAll("span, img").length).toBe(4);
+    });
+
+    it("splits apart as the map zooms in and merges again zooming out", async () => {
+      await mount({ places: [CAMBRIDGE, BOSTON], events: [] });
+      expect(live()).toHaveLength(1);
+      await zoomTo(12.4);
+      expect(live().map((m) => m.element.firstElementChild!.lastElementChild!.textContent)).toEqual(["Ada b1 +2", "Ada c1"]);
+      await zoomTo(3);
+      expect(live()).toHaveLength(1);
+    });
+
+    it("counts only people who match the filters, unless none do", async () => {
+      await mount({ places: [{ ...CAMBRIDGE, faded: true }, BOSTON], events: [] });
+      expect(pinFor("3 people").element.firstElementChild!.getAttribute("data-faded")).toBe("false");
+      await render({ places: [{ ...CAMBRIDGE, faded: true }, { ...BOSTON, faded: true }] });
+      expect(pinFor("4 people").element.firstElementChild!.getAttribute("data-faded")).toBe("true");
+    });
+
+    it("clicking a cluster selects all its places and zooms to them", async () => {
+      await mount({ places: [CAMBRIDGE, BOSTON], events: [], home: { lat: 43.7, lng: -72.29 } });
+      (pinFor("4 people").element.firstElementChild as HTMLElement).click();
+      expect(props.onSelect).toHaveBeenLastCalledWith(["boston", "cambridge"]);
+      expect(theMap().fits).toHaveLength(1);
+      expect(theMap().fits[0].options).toMatchObject({ maxZoom: 10 });
+    });
+
+    it("keeps each piece of a selected cluster highlighted after it splits", async () => {
+      await mount({ places: [CAMBRIDGE, BOSTON], events: [], selectedKeys: ["boston", "cambridge"] });
+      await zoomTo(12);
+      expect(live().map((m) => m.element.style.zIndex)).toEqual(["3", "3"]);
+      (pinFor("Ada c1").element.firstElementChild as HTMLElement).click();
+      expect(props.onSelect).toHaveBeenLastCalledWith(null);
+    });
   });
 
   it("removes the map on unmount", async () => {

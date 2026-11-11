@@ -11,6 +11,8 @@ import {
   haversineKm,
   locatePerson,
   minZoomToFill,
+  clusterPlaces,
+  placesLabel,
   sortPeople,
   whyLine,
   type CommunityAlum,
@@ -264,5 +266,50 @@ describe("groupByPlace counts", () => {
     ]);
     expect(places).toHaveLength(1);
     expect(places[0]).toMatchObject({ label: "Hanover, NH", alumniCount: 1, studentCount: 2 });
+  });
+});
+
+describe("clusterPlaces", () => {
+  const at = (key: string, lat: number, lng: number, size = 1) => ({ key, lat, lng, people: Array(size).fill(0) });
+  const BOSTON = at("boston", 42.36, -71.06, 5);
+  const CAMBRIDGE = at("cambridge", 42.37, -71.11, 2);
+  const NYC = at("nyc", 40.71, -74.0, 9);
+  const keys = (clusters: { key: string }[][]) => clusters.map((c) => c.map((p) => p.key));
+
+  it("merges places within the radius, anchored on the biggest", () => {
+    expect(keys(clusterPlaces([CAMBRIDGE, BOSTON, NYC], 7))).toEqual([["nyc"], ["boston", "cambridge"]]);
+  });
+
+  it("merges whole regions zoomed out and splits cities zoomed in", () => {
+    expect(keys(clusterPlaces([CAMBRIDGE, BOSTON, NYC], 3))).toEqual([["nyc", "boston", "cambridge"]]);
+    expect(keys(clusterPlaces([CAMBRIDGE, BOSTON, NYC], 12))).toEqual([["nyc"], ["boston"], ["cambridge"]]);
+  });
+
+  it("measures from the anchor, so a chain of places doesn't snowball", () => {
+    const line = [at("a", 0, 0, 3), at("b", 0, 0.1, 2), at("c", 0, 0.2, 1)];
+    expect(keys(clusterPlaces(line, 8, 64))).toEqual([["a", "b"], ["c"]]);
+  });
+
+  it("merges across the antimeridian", () => {
+    expect(keys(clusterPlaces([at("w", -17, 179.9, 2), at("e", -17, -179.9)], 7))).toEqual([["w", "e"]]);
+  });
+
+  it("breaks ties by key so the result is stable", () => {
+    expect(keys(clusterPlaces([at("b", 10, 10), at("a", 10, 10.01)], 5))).toEqual([["a", "b"]]);
+  });
+});
+
+describe("placesLabel", () => {
+  const p = (label: string, n: number) => ({ label, people: Array(n).fill(0) });
+
+  it("names a single place", () => {
+    expect(placesLabel([p("Boston, MA", 2)])).toBe("Boston, MA");
+  });
+
+  it("names a cluster after its biggest place", () => {
+    expect(placesLabel([p("Cambridge, MA", 1), p("Boston, MA", 4)])).toBe("Boston, MA and 1 more place");
+    expect(placesLabel([p("Cambridge, MA", 1), p("Boston, MA", 4), p("Somerville, MA", 1)])).toBe(
+      "Boston, MA and 2 more places",
+    );
   });
 });
