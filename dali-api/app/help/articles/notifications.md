@@ -22,7 +22,7 @@ Items you have to act on stay until you deal with them. Other notifications clea
 [My Tasks](/notifications) is the full list. It has three tabs:
 
 - **Project work**: tasks assigned to you on projects.
-- **Meetings & events**: invites and other things waiting on you.
+- **General**: everything else waiting on you, such as meeting invites, mentions, partner opportunities, forms and timesheet reminders.
 - **History**: everything you were sent. Filter it by **All**, **Open** and **Cleared**.
 
 Each row has the buttons to deal with it right there. A project task has **Mark done**. A form reminder opens the form, and you can dismiss it. A plain notification has **Dismiss**.

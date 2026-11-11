@@ -83,6 +83,7 @@ const base = {
   tasks: [],
   tasksCursor: null,
   taskTotal: 0,
+  generalTaskTotal: 0,
 };
 
 const text = () => container.textContent ?? "";
@@ -97,6 +98,55 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const tabs = () => [...container.querySelectorAll('[role="tab"]')].map((t) => t.textContent);
+
+describe("My Tasks tab counts", () => {
+  it("counts only General tasks past the first page on General, and the header sums the tabs", async () => {
+    const ping = (id: string, taskId: string) => ({
+      ...task(id),
+      eventType: "task.assigned",
+      link: `/projects/proj?tab=board&task=${taskId}`,
+    });
+    await mount("/notifications?tab=open", {
+      ...base,
+      tasks: [{ ...task("n1"), eventType: "meeting.invite" }, ping("n2", "p1"), ping("n3", "p1")],
+      tasksCursor: "c",
+      taskTotal: 77,
+      generalTaskTotal: 10,
+      projectTasks: [work("p1")],
+      projectTotal: 1,
+    });
+    expect(tabs()).toEqual(["Project work1", "General10", "History"]);
+    expect(text()).toContain("My Tasks (11)");
+  });
+
+  it("leaves a read invite kept for its RSVP out of the tab and the header", async () => {
+    await mount("/notifications?tab=open", {
+      ...base,
+      tasks: [task("n1")],
+      taskTotal: 1,
+      generalTaskTotal: 1,
+      notifications: [
+        {
+          id: "inv",
+          kind: "MeetingInvite",
+          eventType: "meeting.invite",
+          title: "Standup",
+          body: null,
+          link: null,
+          readAt: "2026-05-20T11:00:00.000Z",
+          createdAt: "2026-05-20T10:00:00.000Z",
+          scheduledMeetingId: "m1",
+          rsvp: null,
+        },
+      ],
+    });
+    expect(text()).toContain("Standup");
+    expect(tabs()).toEqual(["Project work0", "General1", "History"]);
+    expect(text()).toContain("My Tasks (1)");
+  });
+});
+
 describe("My Tasks paging", () => {
   it("shows the true totals and loads the next open page", async () => {
     const fetchMock = vi.fn(async () =>
@@ -108,6 +158,7 @@ describe("My Tasks paging", () => {
       tasks: [task("n1"), task("n2")],
       tasksCursor: "2026-05-20T10:00:00.000Z|n2",
       taskTotal: 4,
+      generalTaskTotal: 4,
       projectTotal: 7,
     });
     expect(text()).toContain("My Tasks (11)");
