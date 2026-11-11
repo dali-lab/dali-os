@@ -507,6 +507,23 @@ export default function InterviewDetailPage() {
             criteria={criteriaByKey}
             selectedId={selectedReviewId}
             onSelect={setSelectedReviewId}
+            renderRejectionRationale={(review) =>
+              collabToken ? (
+                <DocEditor
+                  key={review.id}
+                  features="notes"
+                  density="compact"
+                  placeholder="If we reject this candidate, what feedback should we provide?"
+                  className="rounded-lg border border-transparent bg-os-well focus-within:ring-2 focus-within:ring-os-accent/40"
+                  collab={{
+                    documentName: `review:${review.id}:rejectionRationale`,
+                    token: collabToken,
+                    userName,
+                    userId: currentUserId,
+                  }}
+                />
+              ) : sessionExpired
+            }
           />
         </div>
       </div>

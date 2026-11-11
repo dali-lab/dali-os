@@ -158,6 +158,55 @@ describe("authorizeCollabDoc", () => {
       mockPrisma.applicationReview.findUnique.mockResolvedValue(null);
       expect(await authorizeCollabDoc("user1", "review:missing:feedback")).toMatchObject(denied());
     });
+
+    it("allows an active interviewer of the application to edit the rejection rationale", async () => {
+      mockPrisma.applicationReview.findUnique.mockResolvedValue({
+        id: "r1",
+        domainApplicationId: "da1",
+        cycleReviewer: { userId: "other-user" },
+      });
+      mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "ia1" });
+      expect(await authorizeCollabDoc("user1", "review:r1:rejectionRationale")).toEqual(allowed());
+      expect(mockPrisma.interviewAssignment.findFirst).toHaveBeenCalledWith({
+        where: {
+          status: "Active",
+          cycleInterviewer: { userId: "user1" },
+          interview: { domainApplicationId: "da1" },
+        },
+        select: { id: true },
+      });
+    });
+
+    it("rejects a user with no active interview on the application", async () => {
+      mockPrisma.applicationReview.findUnique.mockResolvedValue({
+        id: "r1",
+        domainApplicationId: "da1",
+        cycleReviewer: { userId: "other-user" },
+      });
+      mockPrisma.interviewAssignment.findFirst.mockResolvedValue(null);
+      expect(await authorizeCollabDoc("user1", "review:r1:rejectionRationale")).toMatchObject(denied());
+    });
+
+    it("keeps interviewers out of the review's internal feedback", async () => {
+      mockPrisma.applicationReview.findUnique.mockResolvedValue({
+        id: "r1",
+        domainApplicationId: "da1",
+        cycleReviewer: { userId: "other-user" },
+      });
+      mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "ia1" });
+      expect(await authorizeCollabDoc("user1", "review:r1:feedback")).toMatchObject(denied());
+    });
+
+    it("rejects an interviewer who has not signed the cycle's confidentiality agreement", async () => {
+      mockPrisma.applicationReview.findUnique.mockResolvedValue({
+        id: "r1",
+        domainApplicationId: "da1",
+        cycleReviewer: { userId: "other-user", applicationCycleId: "c1" },
+      });
+      mockPrisma.interviewAssignment.findFirst.mockResolvedValue({ id: "ia1" });
+      (getCycleConfidentialityState as any).mockResolvedValue({ status: "unsigned", activeVersionId: "v1", exempt: false });
+      expect(await authorizeCollabDoc("user1", "review:r1:rejectionRationale")).toMatchObject(denied());
+    });
   });
 
   describe("interview docs", () => {
