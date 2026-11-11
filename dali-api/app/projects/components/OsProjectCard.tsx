@@ -56,8 +56,16 @@ export function PublicPill({ status }: { status: ShowcaseStatusValue | null }) {
    the term and partner reduced to one line each. Same fields as ProjectCard —
    status, publication state, term, partners — so nothing the list view can tell
    you is missing here; only the emphasis changes. */
-export function OsProjectCard({ project }: { project: OsProjectCardProject }) {
+export function OsProjectCard({
+  project,
+  fill = false,
+}: {
+  project: OsProjectCardProject;
+  /** Stretch to the parent's height, the cover absorbing the flex. */
+  fill?: boolean;
+}) {
   const [first, ...restPartners] = project.partners;
+  const coverSize = fill ? "h-full min-h-24 w-full" : "h-[183px] w-full";
   return (
     // Hover: lift and shadow move together so the card reads as rising rather
     // than sliding, and the cover scales on a slower curve than the frame so
@@ -65,14 +73,14 @@ export function OsProjectCard({ project }: { project: OsProjectCardProject }) {
     // the settle back out (300ms), which is what keeps it from feeling stepped.
     <Link
       to={`/projects/${project.id}`}
-      className="group flex flex-col overflow-hidden rounded-os-card bg-os-card transition-[background-color,transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:bg-os-card-hover hover:shadow-[0_12px_28px_-10px_var(--color-os-shadow)] hover:duration-200 motion-safe:hover:-translate-y-1"
+      className={`group flex flex-col overflow-hidden rounded-os-card bg-os-card transition-[background-color,transform,box-shadow] duration-300 ease-[cubic-bezier(0.2,0.8,0.3,1)] hover:bg-os-card-hover hover:shadow-[0_12px_28px_-10px_var(--color-os-shadow)] hover:duration-200 motion-safe:hover:-translate-y-1 ${fill ? "h-full" : ""}`}
     >
-      <div className="relative overflow-hidden">
+      <div className={`relative overflow-hidden ${fill ? "min-h-0 flex-1" : ""}`}>
         <ProjectCoverImage
           name={project.name}
           imageUrl={project.imageUrl}
-          className="h-[183px] w-full object-cover transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]"
-          placeholderClassName="h-[183px] w-full transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]"
+          className={`${coverSize} object-cover transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]`}
+          placeholderClassName={`${coverSize} transition-transform duration-500 ease-out motion-safe:group-hover:scale-[1.04]`}
         />
         <div className="absolute right-3 top-3 flex items-center gap-1.5">
           <PublicPill status={project.showcaseStatus} />

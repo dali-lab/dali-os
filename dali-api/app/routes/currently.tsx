@@ -1,10 +1,20 @@
+import { useEffect, useState } from "react";
 import { Link, useLoaderData } from "react-router";
-import { ArrowRight, Globe } from "lucide-react";
+import {
+  ArrowRight,
+  Clock,
+  FolderKanban,
+  Globe,
+  Handshake,
+  Images,
+  UsersRound,
+  type LucideIcon,
+} from "lucide-react";
 import type { Route } from "./+types/currently";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
-import { getUserRoles, currentTerm } from "~/lib/roles";
+import { getUserRoles, currentTerm, currentTermMemberWhere } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadGalleryHighlights, type GalleryTileData } from "~/community/lib/gallery.server";
 import { BLOG_LISTING_ORDER } from "~/lib/blog-post.server";
@@ -12,12 +22,14 @@ import { blogListing, DEFAULT_BLOG_COVER } from "~/lib/blog-preview";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { formatDateShort, fullName } from "~/lib/display";
 import { cn } from "~/lib/cn";
-import { GalleryMasonry } from "~/community/components/GalleryMasonry";
+import { galleryPostHref } from "~/community/components/GalleryMasonry";
 import { OsProjectCard } from "~/projects/components/OsProjectCard";
+import { ShowcaseCard } from "~/projects/components/ShowcaseCard";
+import { listShowcaseCards } from "~/projects/lib/showcase-view.server";
 
-export const meta: Route.MetaFunction = () => [{ title: "Currently in DALI · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Currently at DALI · DALI OS" }];
 
-export const handle = { breadcrumb: () => "Currently in DALI" };
+export const handle = { breadcrumb: () => "Currently at DALI", fitViewport: true };
 
 const STORY_COUNT = 4;
 const GALLERY_COUNT = 8;
@@ -33,13 +45,28 @@ export async function loader({ request }: Route.LoaderArgs) {
   const community = await isFeatureEnabled("community", auth.user.sub, roles, request);
   const term = await currentTerm(request);
   const viewer = { id: auth.user.sub, core: roles.isCore, name: "" };
+  const alumni = roles.isAlumni;
+  const projectWhere = {
+    status: "Active" as const,
+    ...(term ? { projectTerms: { some: { termId: term.id } } } : {}),
+  };
 
-  const [projectRows, storyRows, storiesTotal, gallery] = await Promise.all([
-    prisma.project.findMany({
-      where: {
-        status: "Active",
-        ...(term ? { projectTerms: { some: { termId: term.id } } } : {}),
-      },
+  const [
+    projectRows,
+    storyRows,
+    storiesTotal,
+    gallery,
+    showcaseProjects,
+    members,
+    projectsTotal,
+    partnerRows,
+    hoursAgg,
+    photosTotal,
+  ] = await Promise.all([
+    alumni
+      ? []
+      : prisma.project.findMany({
+      where: projectWhere,
       orderBy: { name: "asc" },
       take: PROJECT_COUNT,
       select: {
@@ -77,11 +104,35 @@ export async function loader({ request }: Route.LoaderArgs) {
       : [],
     community ? prisma.blogPost.count({ where: { publishedAt: { not: null } } }) : 0,
     community ? loadGalleryHighlights(viewer, GALLERY_COUNT) : [],
+    alumni ? listShowcaseCards(PROJECT_COUNT) : [],
+    prisma.user.count({ where: await currentTermMemberWhere(request) }),
+    prisma.project.count({ where: projectWhere }),
+    prisma.projectPartner.findMany({
+      where: { project: projectWhere },
+      distinct: ["partnerOrgId"],
+      select: { partnerOrgId: true },
+    }),
+    term
+      ? prisma.timeEntry.aggregate({
+          _sum: { hours: true },
+          where: { date: { gte: term.startDate, lte: term.endDate } },
+        })
+      : null,
+    community ? prisma.galleryPost.count({ where: { hiddenAt: null } }) : 0,
   ]);
 
   return {
     community,
+    alumni,
     termCode: term?.code ?? null,
+    stats: {
+      members,
+      projects: projectsTotal,
+      partners: partnerRows.length,
+      hours: hoursAgg?._sum.hours ? Math.round(hoursAgg._sum.hours) : null,
+      photos: photosTotal,
+    },
+    showcaseProjects,
     projects: await Promise.all(
       projectRows.map(async (p) => ({
         id: p.id,
@@ -123,50 +174,57 @@ type Story = {
 };
 
 export default function Currently() {
-  const { community, termCode, projects, stories, storiesTotal, gallery } =
-    useLoaderData<typeof loader>();
-  const [lead, ...rest] = stories;
-  const side = rest.slice(0, 3);
+  const {
+    community,
+    alumni,
+    termCode,
+    stats,
+    projects,
+    showcaseProjects,
+    stories,
+    storiesTotal,
+    gallery,
+  } = useLoaderData<typeof loader>();
+  const projectCount = alumni ? showcaseProjects.length : projects.length;
+  const tiles: Tile[] = [
+    { label: "Members this term", value: stats.members, icon: UsersRound, tint: "accent" },
+    { label: "Projects this term", value: stats.projects, icon: FolderKanban, tint: "green" },
+    { label: "Partners this term", value: stats.partners, icon: Handshake, tint: "amber" },
+    ...(stats.hours !== null
+      ? [{ label: "Hours logged this term", value: stats.hours, icon: Clock, tint: "accent" } as Tile]
+      : []),
+    ...(community
+      ? [{ label: "Photos shared", value: stats.photos, icon: Images, tint: "red" } as Tile]
+      : []),
+  ];
 
   return (
-    <div className="flex flex-col gap-12">
-      <header>
-        <h1 className="font-heading text-4xl font-medium text-foreground">Currently in DALI</h1>
-      </header>
+    <div className="flex flex-col gap-8 md:min-h-0 md:flex-1 md:gap-4">
+      <StatBand tiles={tiles} />
 
       {community && (
-        <section className="flex flex-col gap-6" aria-labelledby="stories-h">
+        <Section id="stories-h" grow={1.1}>
           <SectionHeader
             id="stories-h"
             title="Stories"
-            meta={lead ? `${storiesTotal} published` : null}
+            meta={stories.length > 0 ? `${storiesTotal} published` : null}
             cta="See all stories"
             to="/resources"
           />
-          {lead ? (
-            <div className="grid gap-8 xl:grid-cols-3">
-              <div className="xl:col-span-2">
-                <StoryCard post={lead} size="lead" />
-              </div>
-              <div className="flex flex-col divide-y divide-os-container xl:border-l xl:border-os-container xl:pl-8">
-                {side.map((p) => (
-                  <div key={p.id} className="py-5 first:pt-0 last:pb-0">
-                    <StoryCard post={p} size="side" />
-                  </div>
-                ))}
-              </div>
-            </div>
+          {stories.length > 0 ? (
+            <Row>
+              {stories.map((p) => (
+                <StoryCard key={p.id} post={p} />
+              ))}
+            </Row>
           ) : (
             <Empty text="Nothing published yet. New stories from the lab will show up here." />
           )}
-        </section>
+        </Section>
       )}
 
       {community && (
-        <section
-          className={cn("flex flex-col gap-6", "border-t border-os-container pt-10")}
-          aria-labelledby="gallery-h"
-        >
+        <Section id="gallery-h" grow={1} divider>
           <SectionHeader
             id="gallery-h"
             title="Gallery"
@@ -175,38 +233,173 @@ export default function Currently() {
             to="/community/gallery"
           />
           {gallery.length > 0 ? (
-            <GalleryMasonry posts={gallery as GalleryTileData[]} />
+            <Row>
+              {(gallery as GalleryTileData[]).map((post) => (
+                <Link
+                  key={post.id}
+                  to={galleryPostHref(post.id)}
+                  className="group shrink-0 snap-start overflow-hidden rounded-os-card md:h-full"
+                >
+                  <img
+                    src={post.imageUrl}
+                    alt={post.caption ?? ""}
+                    style={{ aspectRatio: `${post.width} / ${post.height}` }}
+                    className="h-48 w-auto object-cover transition-transform duration-300 ease-out motion-safe:group-hover:scale-[1.03] md:h-full"
+                  />
+                </Link>
+              ))}
+            </Row>
           ) : (
             <Empty text="Nothing posted yet. Photos from the lab will show up here." />
           )}
-        </section>
+        </Section>
       )}
 
-      <section
-        className={cn("flex flex-col gap-6", community && "border-t border-os-container pt-10")}
-        aria-labelledby="projects-h"
-      >
+      <Section id="projects-h" grow={1.3} divider={community}>
         <SectionHeader
           id="projects-h"
           title="Projects"
           meta={
-            projects.length > 0
-              ? `In progress this term${termCode ? ` · ${termCode}` : ""}`
+            projectCount > 0
+              ? alumni
+                ? "From the DALI showcase"
+                : `In progress this term${termCode ? ` · ${termCode}` : ""}`
               : null
           }
           cta="See all projects"
           to="/projects"
         />
-        {projects.length > 0 ? (
-          <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
-            {projects.map((p) => (
-              <OsProjectCard key={p.id} project={p} />
-            ))}
-          </div>
+        {projectCount > 0 ? (
+          <Row>
+            {alumni
+              ? showcaseProjects.map((p) => (
+                  <div key={p.id} className="w-[280px] shrink-0 snap-start md:h-full">
+                    <ShowcaseCard showcase={p} />
+                  </div>
+                ))
+              : projects.map((p) => (
+                  <div key={p.id} className="w-[280px] shrink-0 snap-start md:h-full">
+                    <OsProjectCard project={p} fill />
+                  </div>
+                ))}
+          </Row>
         ) : (
-          <Empty text={`No projects running${termCode ? ` in ${termCode}` : ""} yet.`} />
+          <Empty
+            text={
+              alumni
+                ? "Nothing published yet. Showcased projects will show up here."
+                : `No projects running${termCode ? ` in ${termCode}` : ""} yet.`
+            }
+          />
         )}
-      </section>
+      </Section>
+    </div>
+  );
+}
+
+function compact(n: number): string {
+  if (n >= 10000) return `${Math.round(n / 100) / 10}K`;
+  return n.toLocaleString("en-US");
+}
+
+type Tile = {
+  label: string;
+  value: number;
+  icon: LucideIcon;
+  tint: "accent" | "green" | "amber" | "red";
+};
+
+const TINT = {
+  accent: "bg-os-accent/15 text-os-accent",
+  green: "bg-os-green/15 text-os-green",
+  amber: "bg-os-amber/15 text-os-amber",
+  red: "bg-os-red/15 text-os-red",
+} as const;
+
+function StatBand({ tiles }: { tiles: Tile[] }) {
+  return (
+    <div className="no-scrollbar flex shrink-0 items-stretch gap-0 overflow-x-auto rounded-os-card bg-gradient-to-r from-os-accent/15 via-os-accent/5 to-os-green/10">
+      {tiles.map((t, i) => (
+        <div
+          key={t.label}
+          className={cn(
+            "flex min-w-44 flex-1 items-center gap-4 px-6 py-4",
+            i > 0 && "border-l border-os-container/60",
+          )}
+        >
+          <span
+            className={cn(
+              "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
+              TINT[t.tint],
+            )}
+            aria-hidden
+          >
+            <t.icon className="h-5 w-5" />
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <CountUp value={t.value} />
+            <span className="whitespace-nowrap text-sm text-os-grey">{t.label}</span>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CountUp({ value }: { value: number }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setShown(value);
+      return;
+    }
+    const start = performance.now();
+    const duration = 900;
+    let raf = 0;
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      setShown(Math.round(value * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return (
+    <span className="font-heading text-4xl font-semibold leading-none text-foreground tabular-nums">
+      {compact(shown)}
+    </span>
+  );
+}
+
+function Section({
+  id,
+  grow,
+  divider = false,
+  children,
+}: {
+  id: string;
+  grow: number;
+  divider?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      style={{ "--grow": grow } as React.CSSProperties}
+      className={cn(
+        "flex flex-col gap-4 md:min-h-0 md:flex-[var(--grow)]",
+        divider && "border-t border-os-container pt-6 md:pt-4",
+      )}
+      aria-labelledby={id}
+    >
+      {children}
+    </section>
+  );
+}
+
+function Row({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="no-scrollbar -mx-2 flex snap-x items-stretch gap-5 overflow-x-auto px-2 py-1 md:min-h-0 md:flex-1">
+      {children}
     </div>
   );
 }
@@ -246,47 +439,27 @@ function SectionHeader({
   );
 }
 
-function StoryCard({ post, size }: { post: Story; size: "lead" | "side" }) {
+function StoryCard({ post }: { post: Story }) {
   return (
     <Link
       to={`/resources/blog/${post.id}`}
-      className={cn(
-        "group",
-        size === "lead" && "grid items-start gap-6 md:grid-cols-5",
-        size === "side" && "flex items-start gap-4",
-      )}
+      className="group flex w-72 shrink-0 snap-start flex-col gap-3 md:h-full"
     >
-      <div
-        className={cn(
-          "flex min-w-0 flex-col gap-2 px-2 py-1",
-          size === "lead" ? "md:col-span-2" : "flex-1",
-        )}
-      >
-        <h3
-          className={cn(
-            "font-heading font-semibold leading-tight text-foreground group-hover:underline",
-            size === "lead" ? "text-3xl xl:text-4xl" : "text-lg",
-          )}
-        >
+      <img
+        src={post.coverImageUrl ?? DEFAULT_BLOG_COVER}
+        alt=""
+        className="aspect-[3/2] w-full rounded-lg object-cover md:aspect-auto md:min-h-0 md:flex-1"
+      />
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <h3 className="line-clamp-2 font-heading text-lg font-semibold leading-tight text-foreground group-hover:underline">
           {post.title}
         </h3>
-        {post.excerpt && size === "lead" && (
-          <p className="line-clamp-5 text-base text-os-grey">{post.excerpt}</p>
-        )}
         <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wider text-os-grey">
           {post.author}
           {post.date && <span className="font-normal normal-case tracking-normal">{post.date}</span>}
           {post.isPublic && <Globe className="h-3.5 w-3.5" aria-label="Also on the DALI website" />}
         </p>
       </div>
-      <img
-        src={post.coverImageUrl ?? DEFAULT_BLOG_COVER}
-        alt=""
-        className={cn(
-          "rounded-lg object-cover",
-          size === "lead" ? "aspect-[3/2] w-full md:col-span-3" : "h-20 w-28 shrink-0",
-        )}
-      />
     </Link>
   );
 }

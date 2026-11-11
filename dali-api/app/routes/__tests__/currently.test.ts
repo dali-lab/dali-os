@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const prisma = vi.hoisted(() => ({
-  project: { findMany: vi.fn() },
+  project: { findMany: vi.fn(), count: vi.fn() },
   blogPost: { findMany: vi.fn(), count: vi.fn() },
+  user: { count: vi.fn() },
+  projectPartner: { findMany: vi.fn() },
+  timeEntry: { aggregate: vi.fn() },
+  galleryPost: { count: vi.fn() },
 }));
 vi.mock("~/lib/db.server", () => ({ prisma }));
 vi.mock("~/lib/auth", () => ({
@@ -12,6 +16,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/roles", () => ({
   getUserRoles: vi.fn(),
   currentTerm: vi.fn(),
+  currentTermMemberWhere: vi.fn(),
 }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/photo", () => ({
@@ -19,11 +24,13 @@ vi.mock("~/lib/photo", () => ({
 }));
 vi.mock("~/lib/blog-post.server", () => ({ BLOG_LISTING_ORDER: [{ publishedAt: "desc" }] }));
 vi.mock("~/community/lib/gallery.server", () => ({ loadGalleryHighlights: vi.fn() }));
+vi.mock("~/projects/lib/showcase-view.server", () => ({ listShowcaseCards: vi.fn() }));
 
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { getUserRoles, currentTerm } from "~/lib/roles";
+import { getUserRoles, currentTerm, currentTermMemberWhere } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadGalleryHighlights } from "~/community/lib/gallery.server";
+import { listShowcaseCards } from "~/projects/lib/showcase-view.server";
 import { loader } from "~/routes/currently";
 
 const run = () =>
@@ -39,10 +46,25 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
   vi.mocked(redirectNonMemberToPortal).mockResolvedValue(null as never);
-  vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: true, isCore: false } as never);
-  vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26F" } as never);
+  vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: false, isCore: false } as never);
+  vi.mocked(currentTerm).mockResolvedValue({
+    id: "t1",
+    code: "26F",
+    startDate: new Date("2026-09-14T00:00:00Z"),
+    endDate: new Date("2026-11-24T00:00:00Z"),
+  } as never);
+  vi.mocked(currentTermMemberWhere).mockResolvedValue({ membershipStatus: "Active" } as never);
   vi.mocked(isFeatureEnabled).mockResolvedValue(true);
   vi.mocked(loadGalleryHighlights).mockResolvedValue([TILE] as never);
+  vi.mocked(listShowcaseCards).mockResolvedValue([] as never);
+  prisma.user.count.mockResolvedValue(74);
+  prisma.project.count.mockResolvedValue(18);
+  prisma.projectPartner.findMany.mockResolvedValue([
+    { partnerOrgId: "o1" },
+    { partnerOrgId: "o2" },
+  ]);
+  prisma.timeEntry.aggregate.mockResolvedValue({ _sum: { hours: 1234.4 } });
+  prisma.galleryPost.count.mockResolvedValue(321);
   prisma.project.findMany.mockResolvedValue([
     {
       id: "p1",
@@ -71,7 +93,7 @@ beforeEach(() => {
   prisma.blogPost.count.mockResolvedValue(12);
 });
 
-describe("Currently in DALI loader", () => {
+describe("Currently at DALI loader", () => {
   it("returns this term's active projects shaped for the project card", async () => {
     const data = await run();
     expect(prisma.project.findMany).toHaveBeenCalledWith(
@@ -151,5 +173,61 @@ describe("Currently in DALI loader", () => {
     vi.mocked(redirectNonMemberToPortal).mockResolvedValue(portal as never);
     const res = await run();
     expect(res).toBe(portal);
+  });
+
+  it("gives an alumni viewer showcase cards instead of internal projects", async () => {
+    vi.mocked(getUserRoles).mockResolvedValue({ isAlumni: true, isCore: false } as never);
+    const card = { id: "p1", name: "Beacon", tagline: "A thing", year: 2026, partners: [], coverUrl: null };
+    vi.mocked(listShowcaseCards).mockResolvedValue([card] as never);
+    const data = await run();
+    expect(data.alumni).toBe(true);
+    expect(data.showcaseProjects).toEqual([card]);
+    expect(data.projects).toEqual([]);
+    expect(listShowcaseCards).toHaveBeenCalledWith(6);
+    expect(prisma.project.findMany).not.toHaveBeenCalled();
+  });
+
+  it("leaves showcase cards unloaded for a member viewer", async () => {
+    const data = await run();
+    expect(data.alumni).toBe(false);
+    expect(data.showcaseProjects).toEqual([]);
+    expect(listShowcaseCards).not.toHaveBeenCalled();
+  });
+
+  it("counts members, projects, distinct partners, hours and photos for the stat row", async () => {
+    const data = await run();
+    expect(data.stats).toEqual({
+      members: 74,
+      projects: 18,
+      partners: 2,
+      hours: 1234,
+      photos: 321,
+    });
+    expect(prisma.user.count).toHaveBeenCalledWith({ where: { membershipStatus: "Active" } });
+    expect(prisma.project.count).toHaveBeenCalledWith({
+      where: { status: "Active", projectTerms: { some: { termId: "t1" } } },
+    });
+    expect(prisma.projectPartner.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ distinct: ["partnerOrgId"] }),
+    );
+    expect(prisma.timeEntry.aggregate).toHaveBeenCalledWith({
+      _sum: { hours: true },
+      where: {
+        date: {
+          gte: new Date("2026-09-14T00:00:00Z"),
+          lte: new Date("2026-11-24T00:00:00Z"),
+        },
+      },
+    });
+  });
+
+  it("skips term-scoped hours and keeps photos private while term and community are off", async () => {
+    vi.mocked(currentTerm).mockResolvedValue(null as never);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+    const data = await run();
+    expect(data.stats.hours).toBeNull();
+    expect(data.stats.photos).toBe(0);
+    expect(prisma.timeEntry.aggregate).not.toHaveBeenCalled();
+    expect(prisma.galleryPost.count).not.toHaveBeenCalled();
   });
 });

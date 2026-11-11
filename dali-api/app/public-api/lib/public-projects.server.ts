@@ -110,7 +110,7 @@ function toPublicProject(row: ShowcaseRow, teamMembers: string[]): PublicProject
 
 // Credit lines for a set of projects in one query, rather than one per
 // project — the list endpoint serves every published project at once.
-async function teamMembersByProject(
+export async function teamMembersByProject(
   projectIds: string[],
 ): Promise<Map<string, string[]>> {
   if (projectIds.length === 0) return new Map();

@@ -410,7 +410,7 @@ const ALUMNI_AREAS: NavArea[] = [
     hubPath: "/currently",
     subtabs: [
       // Projects, Stories and the Gallery are reached from this page's links.
-      { label: "Currently in DALI", href: "/currently", icon: Sparkles },
+      { label: "Currently at DALI", href: "/currently", icon: Sparkles },
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       REFER_NAV_ITEM,

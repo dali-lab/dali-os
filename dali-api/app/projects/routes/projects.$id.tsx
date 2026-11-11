@@ -157,9 +157,15 @@ export const handle = {
     return [{ label: p.name, to: `/projects/${p.id}`, icon: <ProjectIcon iconEmoji={p.iconEmoji} />, emoji: p.iconEmoji }];
   },
   headerAction: (data: unknown) => {
-    const d = data as { project?: { id: string } } | undefined;
+    const d = data as { project?: { id: string }; showcasePublished?: boolean } | undefined;
     if (!d?.project) return null;
-    return <ProjectViewSwitch projectId={d.project.id} current="internal" />;
+    return (
+      <ProjectViewSwitch
+        projectId={d.project.id}
+        current="internal"
+        showcasePublished={d.showcasePublished === true}
+      />
+    );
   },
   favoriteRoute: true,
 };
@@ -484,6 +490,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   if (!project) throw new Response("Not found", { status: 404 });
   if (project.kind === "CoreBoard") return redirect(coreBoardPathFor(request.url));
+
+  // A published showcase is the project's public dali.website card. Alumni are
+  // sent straight to it; everyone else keeps the internal hub and gets a
+  // "Website card" link in the view switch instead.
+  const publishedShowcase = await prisma.projectShowcase.findFirst({
+    where: { projectId: project.id, status: "Published" },
+    select: { projectId: true },
+  });
+  if (roles.isAlumni && publishedShowcase) {
+    return redirect(`/projects/${project.id}/showcase`);
+  }
 
   // After the gate, so a 404 never lands in someone's recents. Detached —
   // a failed bookkeeping write must not cost the reader their project.
@@ -1218,6 +1235,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   return {
     infra,
+    showcasePublished: publishedShowcase !== null,
     // Core-only fields are redacted server-side, not just hidden in JSX: this
     // payload goes to every viewer who can open the project, so gating only
     // the edit form would still ship the value to any lab member.

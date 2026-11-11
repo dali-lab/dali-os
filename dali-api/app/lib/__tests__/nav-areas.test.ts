@@ -499,7 +499,7 @@ describe("alumni nav", () => {
     }
   });
 
-  it("gives alumni Currently in DALI, People and Opportunities, but not Community", () => {
+  it("gives alumni Currently at DALI, People and Opportunities, but not Community", () => {
     const lab = visibleAreas(ALUM, { ...COMMUNITY, ...REFER })[0];
     expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toEqual([
       "/currently",
@@ -527,7 +527,7 @@ describe("alumni nav", () => {
     expect(areaForPath("/community/gallery", REGROUP, ALUM)).toBeUndefined();
   });
 
-  it("files Currently in DALI and Opportunities under Lab for alumni", () => {
+  it("files Currently at DALI and Opportunities under Lab for alumni", () => {
     expect(areaForPath("/currently", COMMUNITY, ALUM)?.key).toBe("projects");
     expect(areaForPath("/community/opportunities", COMMUNITY, ALUM)?.key).toBe("projects");
     expect(areaForPath("/community/opportunities", COMMUNITY, NOBODY)?.key).toBe("community");

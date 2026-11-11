@@ -187,6 +187,7 @@ export default [
       "projects/routes/projects.level-up.$userId.tsx",
     ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
+    route("projects/:id/showcase", "projects/routes/projects.$id.showcase.tsx"),
     route(
       "projects/:id/partner-view",
       "projects/routes/projects.$id.partner-view.tsx",
