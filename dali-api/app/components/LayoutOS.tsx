@@ -38,7 +38,7 @@ import {
   areaInk,
   areaTint,
   pinnedNavItems,
-  homeNavItem,
+  HOME_NAV_ITEM,
   shellPageIcon,
   activeSubtabHref,
   visibleAreas,
@@ -234,7 +234,7 @@ export function LayoutOS({
   const areas = visibleAreas(roleFlags, navFlags)
   const routeArea = areaForPath(path, navFlags, roleFlags)
   const pinned = pinnedNavItems(roleFlags, navFlags)
-  const home = homeNavItem(roleFlags)
+  const home = HOME_NAV_ITEM
   const activeArea = routeArea ?? areas.find((a) => a.key === lastAreaKey) ?? areas[0]
   // Calendar, email and drive have no area of their own, so their page accent
   // follows the rail's selected mode (home keeps the default accent).
@@ -525,6 +525,7 @@ export function LayoutOS({
             icon={routeArea ? undefined : shellPageIcon(path, home.href)}
             star={pageStar}
             onCopyLink={() => void copyCurrentPageLink()}
+            nav={{ flags: navFlags, roles: roleFlags }}
           />
           {showTabs && <DockedNavigationProgress />}
         </div>

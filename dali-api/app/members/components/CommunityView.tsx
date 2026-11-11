@@ -23,7 +23,6 @@ import type { CommunityData, CommunityEvent } from "~/members/lib/community.serv
 import { classmatesAt, eventsAtPlace, splitEventsByPlace } from "~/members/lib/community-view";
 
 export type CommunityViewData = CommunityData & {
-  title: string;
   tz: string;
   openTo: { coffeeChats: boolean; resumeReviews: boolean };
 };
@@ -81,7 +80,7 @@ function OpenToMenu({ openTo }: { openTo: CommunityViewData["openTo"] }) {
 }
 
 export function CommunityView({ data }: { data: CommunityViewData }) {
-  const { viewer, people, events, filterOptions, unplaced, tz, title, openTo } = data;
+  const { viewer, people, events, filterOptions, unplaced, tz, openTo } = data;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<CommunityTab>("people");
@@ -167,7 +166,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
         className="flex max-h-[55%] min-h-0 shrink-0 flex-col bg-os-card lg:max-h-none lg:w-[400px]"
       >
         <CommunityColumn
-          title={title}
+          title="Community"
           canHost={viewer.canHost}
           onHost={() => setHosting({ event: null })}
           headerExtra={viewer.isAlumni ? <OpenToMenu openTo={openTo} /> : null}
