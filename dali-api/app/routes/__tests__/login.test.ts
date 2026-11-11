@@ -21,6 +21,9 @@ vi.mock("~/lib/betterauth.server", () => ({
   },
 }));
 
+const mockRedirectRestoringAdmin = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/impersonation-restore.server", () => ({ redirectRestoringAdmin: mockRedirectRestoringAdmin }));
+
 import { _resetForTests } from "~/lib/rate-limit";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
@@ -75,11 +78,31 @@ describe("POST /login legacy providers", () => {
 });
 
 describe("GET /login loader routing", () => {
+  beforeEach(() => {
+    mockRedirectRestoringAdmin.mockResolvedValue(null);
+  });
+
   it("renders the login page for an unauthenticated visitor", async () => {
     mockRequireAuth.mockResolvedValue({ ok: false } as any);
     const result = await loader({ request: loaderRequest() } as any);
     expect(result).toBeNull();
     expect(mockMemberFind).not.toHaveBeenCalled();
+  });
+
+  it("restores an admin whose impersonation lapsed and returns them to next", async () => {
+    mockRequireAuth.mockResolvedValue({ ok: false } as any);
+    const restored = new Response(null, { status: 302, headers: { Location: "/projects" } });
+    mockRedirectRestoringAdmin.mockResolvedValue(restored);
+    const request = new Request("http://localhost/login?next=%2Fprojects");
+    expect(await loader({ request } as any)).toBe(restored);
+    expect(mockRedirectRestoringAdmin).toHaveBeenCalledWith(request, "/projects");
+  });
+
+  it("restores to home when next is unsafe", async () => {
+    mockRequireAuth.mockResolvedValue({ ok: false } as any);
+    const request = new Request("http://localhost/login?next=%2F%2Fevil.example");
+    await loader({ request } as any);
+    expect(mockRedirectRestoringAdmin).toHaveBeenCalledWith(request, "/");
   });
 
   it("sends a non-member (applicant) to the portal", async () => {

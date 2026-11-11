@@ -14,6 +14,7 @@ import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
+import { redirectRestoringAdmin } from '~/lib/impersonation-restore.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { PageViewReporter } from '~/components/PageViewReporter'
@@ -58,7 +59,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // bounce such a visitor (login, /portal, /partner) checks for one first.
   const pathname = new URL(request.url).pathname
   const publicDoc = () => publicDocRedirectForPath(pathname)
-  if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request)
+  if (!auth.ok) {
+    const url = new URL(request.url)
+    return (await publicDoc()) ?? (await redirectRestoringAdmin(request, url.pathname + url.search)) ?? redirectToLogin(request)
+  }
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that
@@ -237,7 +241,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
   const tabStripHint = tabStripHintFromRequest(request)
-  const tabsSnapshot = tabStripHint ? tabsSnapshotFromRequest(request) : null
 
   // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Cookie-backed
   // so there's no flash of the sidebar.
@@ -252,6 +255,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const tzDismissedZone = readDismissedTimeZone(request)
 
   const impersonating = isImpersonating(auth)
+  // The snapshot cookie mirrors the admin's own tabs, not the impersonated session's.
+  const tabsSnapshot = tabStripHint && !impersonating ? tabsSnapshotFromRequest(request) : null
   const impersonationWrites = impersonationAllowsWrites()
 
   const __loaderTotal = performance.now() - __loaderStart

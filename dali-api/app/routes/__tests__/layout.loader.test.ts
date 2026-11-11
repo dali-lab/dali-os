@@ -33,6 +33,7 @@ vi.mock("~/lib/server-timing", () => ({
   timed: (_request: Request, _name: string, run: () => unknown) => run(),
 }));
 vi.mock("~/lib/public-doc.server", () => ({ publicDocRedirectForPath: vi.fn() }));
+vi.mock("~/lib/impersonation-restore.server", () => ({ redirectRestoringAdmin: vi.fn() }));
 
 import { isNonMember, redirectPartnerToPortal, requireAuth } from "~/lib/auth";
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server";
@@ -43,6 +44,9 @@ import { resolveFeatureFlags } from "~/lib/feature-flags.server";
 import { resolveActiveActivitiesForUser } from "~/lib/activities.server";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { redirectToLogin } from "~/lib/login-next";
+import { redirectRestoringAdmin } from "~/lib/impersonation-restore.server";
+import { isImpersonating } from "~/lib/auth";
+import { encodeTabsSnapshot } from "~/lib/desktop-tabs-pref";
 import { loader } from "~/routes/layout";
 
 const auth = { ok: true, user: { sub: "ada", email: "ada@example.edu" } };
@@ -63,6 +67,8 @@ beforeEach(() => {
   vi.mocked(redirectPartnerToPortal).mockResolvedValue(null as never);
   vi.mocked(maybeUpgradeLegacyToBetterAuth).mockResolvedValue(null as never);
   vi.mocked(publicDocRedirectForPath).mockResolvedValue(null as never);
+  vi.mocked(redirectRestoringAdmin).mockResolvedValue(null);
+  vi.mocked(isImpersonating).mockReturnValue(false);
   vi.mocked(getActiveCycles).mockResolvedValue([] as never);
   vi.mocked(layoutFavorites).mockResolvedValue({} as never);
   vi.mocked(loadShellUser).mockResolvedValue({ photoUrl: null } as never);
@@ -72,6 +78,23 @@ beforeEach(() => {
 });
 
 describe("layout loader gate order", () => {
+  it("restores the admin in place when an impersonation session has lapsed", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
+    vi.mocked(redirectRestoringAdmin).mockResolvedValue(to("/projects?view=grid"));
+    const { request, result } = run();
+    expect(location(await result)).toBe("/projects?view=grid");
+    expect(redirectRestoringAdmin).toHaveBeenCalledWith(request, "/projects?view=grid");
+    expect(redirectToLogin).not.toHaveBeenCalled();
+  });
+
+  it("prefers a public document over restoring an admin", async () => {
+    vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
+    vi.mocked(publicDocRedirectForPath).mockResolvedValue(to("/d/public") as never);
+    const { result } = run();
+    expect(location(await result)).toBe("/d/public");
+    expect(redirectRestoringAdmin).not.toHaveBeenCalled();
+  });
+
   it("sends a signed-out visitor to login without running the shell reads", async () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
     const { result } = run();
@@ -158,6 +181,27 @@ describe("layout loader gate order", () => {
         expect(data.instructorChrome).toBe(true);
       },
     );
+
+    describe("tab strip snapshot", () => {
+      const cookie = `dali_tabstrip=1; dali_tabs=${encodeTabsSnapshot({
+        tabs: [{ id: "t1", url: "/admin/site-users", origin: "/admin/site-users", label: "Site users", pinned: false, ephemeral: false, lastActivatedAt: 0, scrollY: 0, backStack: [], forwardStack: [] }],
+        activeId: "t1",
+        closed: [],
+      })}`;
+      const load = () =>
+        loader({ request: new Request("https://os.test/education/offerings", { headers: { Cookie: cookie } }) } as never) as Promise<{
+          tabsSnapshot: { tabs: { url: string }[] } | null;
+        }>;
+
+      it("draws the saved tabs", async () => {
+        expect((await load()).tabsSnapshot?.tabs.map((t) => t.url)).toEqual(["/admin/site-users"]);
+      });
+
+      it("skips the admin's saved tabs while impersonating", async () => {
+        vi.mocked(isImpersonating).mockReturnValue(true);
+        expect((await load()).tabsSnapshot).toBeNull();
+      });
+    });
 
     it("skip the member-only signing and form gates", async () => {
       await run("/education/manage/o1").result;

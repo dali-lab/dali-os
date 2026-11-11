@@ -55,7 +55,7 @@ function pageTitle(): string {
  * the first paint already has the strip's space; the client corrects it once
  * it knows whether it is inside the desktop app.
  */
-export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
+export function useDesktopTabs(enabled: boolean, hint: boolean, impersonating = false): boolean {
   const [show, setShow] = useState(enabled && hint)
   useEffect(() => {
     if (!enabled || desktopVersion() === null) {
@@ -80,10 +80,12 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
 
   useEffect(() => {
     if (!show) return
-    return startTabs({ url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' }, (to, opts) =>
-      navigateRef.current(to, { replace: true, state: opts }),
+    return startTabs(
+      { url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' },
+      (to, opts) => navigateRef.current(to, { replace: true, state: opts }),
+      { impersonating },
     )
-  }, [show])
+  }, [show, impersonating])
 
   useEffect(() => {
     if (!show) return
