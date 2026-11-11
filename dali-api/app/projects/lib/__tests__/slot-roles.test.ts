@@ -532,6 +532,19 @@ describe("validateMapping with conditional questions", () => {
     if (!r.ok) expect(r.reason).toMatch(/only shown sometimes/);
   });
 
+  it("rejects a mapping to a question on a page that is only shown sometimes", () => {
+    const page = q("pb", "pageBreak", { showIf: { match: "all", conditions: [{ questionKey: "p", op: "answered", values: [] }] } });
+    const r = validateMapping(
+      "project-bids",
+      [projQ("p"), ...REQ_PROJ_QS, page, q("n", "textarea")],
+      withBidRequirements([
+        { source: "question", questionKey: "n", role: "display", label: "Notes", order: 0 },
+      ]),
+    );
+    expect(r).toMatchObject({ ok: false });
+    if (!r.ok) expect(r.reason).toMatch(/"n" is only shown sometimes/);
+  });
+
   it("still accepts a mapping to an unconditional question", () => {
     const r = validateMapping(
       "project-bids",

@@ -679,7 +679,7 @@ export function FormDetail() {
                     )}
                     {q.data.showIf && (
                       <p className="text-sm text-os-accent mb-2">
-                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions))}
+                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions), selectedVersion.questions)}
                       </p>
                     )}
                     <QuestionSourceNote question={q} />

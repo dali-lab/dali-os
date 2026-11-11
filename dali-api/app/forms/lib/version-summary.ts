@@ -1,7 +1,7 @@
 import type { Question } from "~/types";
 import { isLayoutOnly } from "~/lib/form-answers";
 import { parseSkillsRating } from "~/lib/skills-rating";
-import { audienceSentence, questionNumbers, visibleKeys } from "~/lib/form-logic";
+import { conditionalKeys, questionNumbers, shownWhenSentence, visibleKeys } from "~/lib/form-logic";
 
 export type Bar = { label: string; count: number; percent: number; other?: boolean };
 
@@ -177,12 +177,13 @@ export function summarizeResponses(
   const total = answersList.length;
   const numbers = questionNumbers(questions);
   const shown = answersList.map((a) => visibleKeys(questions, a ?? {}));
+  const conditional = conditionalKeys(questions);
   const out: QuestionSummary[] = [];
   for (const q of questions) {
     if (isLayoutOnly(q.type)) continue;
     const number = numbers.get(q.key) ?? 0;
-    const rule = q.data.showIf;
-    const askedList = rule ? answersList.filter((_, i) => shown[i].has(q.key)) : answersList;
+    const asked = conditional.has(q.key);
+    const askedList = asked ? answersList.filter((_, i) => shown[i].has(q.key)) : answersList;
     const answers = askedList.map((a) => a?.[q.key]);
     const answered = answeredCount(q, answers);
     const base: Base = {
@@ -191,7 +192,7 @@ export function summarizeResponses(
       label: q.data.label,
       answered,
       skipped: askedList.length - answered,
-      ...(rule ? { asked: { count: askedList.length, who: audienceSentence(rule, numbers) } } : {}),
+      ...(asked ? { asked: { count: askedList.length, who: `when ${shownWhenSentence(questions, q.key)}` } } : {}),
     };
     switch (q.type) {
       case "select":

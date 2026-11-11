@@ -12,6 +12,7 @@
 
 import { isIntentStatus, type IntentStatusValue } from "./intent-status";
 import type { Question } from "~/types";
+import { conditionalKeys } from "~/lib/form-logic";
 import type { Slot } from "./form-slots";
 
 // `QuestionTypeConstraint` still declares each role's intended shape (and
@@ -315,6 +316,7 @@ export function validateMapping(
 ): MappingCheck {
   const roleDefs = SLOT_ROLES[slot];
   const byKey = new Map(questions.map((q) => [q.key, q]));
+  const conditional = conditionalKeys(questions);
   // Only per-term roles (intent-status) still reject a duplicate: two status
   // columns for the same term is a real conflict. Repeatable roles don't.
   const seenPerTerm = new Set<string>();
@@ -343,7 +345,7 @@ export function validateMapping(
             "The form was changed and the column mapping is out of date — re-map its questions.",
         };
       }
-      if (q.data.showIf) {
+      if (conditional.has(q.key)) {
         return {
           ok: false,
           reason: `Question "${q.data.label}" is only shown sometimes, so it can't fill the "${def.defaultLabel}" column.`,

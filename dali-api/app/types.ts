@@ -178,15 +178,36 @@ export interface Question {
     // ProseMirror JSON (old TipTap editor) or, before the rich-text upgrade,
     // a plain string — readers format-sniff all three.
     body?: unknown
-    // Show this question only when an earlier select, radio, scale or
-    // checkbox answer matches. See app/lib/form-logic.ts.
-    showIf?: {
-      questionKey: string
-      op: 'is' | 'isNot' | 'includes' | 'excludes'
-      value: string
-    }
+    // Show this question (or, on a pageBreak, its whole page) only when
+    // earlier answers match. See app/lib/form-logic.ts.
+    showIf?: ShowIfRule
   }
 }
+
+export type ShowIfOp =
+  | 'is'
+  | 'isNot'
+  | 'includes'
+  | 'excludes'
+  | 'atLeast'
+  | 'atMost'
+  | 'contains'
+  | 'answered'
+  | 'blank'
+
+export interface ShowIfCondition {
+  questionKey: string
+  op: ShowIfOp
+  values?: string[]
+  // Rules saved before any-of held one value here; read as values: [value].
+  value?: string
+  // reference sources only: the picked rows' labels, for the sentences.
+  labels?: string[]
+}
+
+export type ShowIfRule =
+  | ShowIfCondition
+  | { match: 'all' | 'any'; conditions: ShowIfCondition[] }
 
 export type ChallengeType = 'General' | 'UI/UX' | 'Fullstack' | 'Data' | 'AR/VR' | 'PM' | 'Engines'
 

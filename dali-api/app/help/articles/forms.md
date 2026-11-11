@@ -35,7 +35,20 @@ Anyone who can edit the folder can create a form there. Outside a folder, any la
 - **Links and files**: GitHub link, Figma link, Drive link, File upload.
 - **Layout**: Text block (prose shown to respondents) and Page break. These aren't counted as questions and don't appear in responses.
 
-Multiple choice and Checkboxes can include an **Other** option. A Dropdown or Database list with more than 8 choices lets respondents type to search it. Checkboxes with more than 12 choices show as a searchable list where respondents pick several. Skills rating takes one skill per line. File upload takes up to 10 files per answer. Under **Files per answer**, pick **Up to** or **Exactly** and a number. A required question needs at least one file, and **Exactly** means that many, so an optional **Exactly 3** takes three files or none, up to 50 MB each, and anyone who can fill the form can upload, including people who aren't signed in when the form is open to anyone with the link. In Responses, each file opens from the response. Each question can be shown only when an earlier answer matches, using **Show this question**.
+Multiple choice and Checkboxes can include an **Other** option. A Dropdown or Database list with more than 8 choices lets respondents type to search it. Checkboxes with more than 12 choices show as a searchable list where respondents pick several. Skills rating takes one skill per line. File upload takes up to 10 files per answer, up to 50 MB each. Under **Files per answer**, pick **Up to** or **Exactly** and a number. A required question needs at least one file, and **Exactly** means that many, so an optional **Exactly 3** takes three files or none. Anyone who can fill the form can upload, including people who aren't signed in when the form is open to anyone with the link. In Responses, each file opens from the response.
+
+### Show a question only sometimes
+
+Open a question and set **Show this question** to **Only when**, then pick an earlier question and what its answer has to be. A page break has **Show this page**, which shows or hides every question on that page at once.
+
+- Choices and Database lists: **is** or **is not**, with one or more answers. Pick **Other** to match a typed-in answer.
+- Checkboxes: **includes** or **doesn't include**, with one or more answers.
+- 1 to 5 scale: **is**, **is not**, **is at least** or **is at most**.
+- Number: **is at least** or **is at most**. Date: **is on or after** or **is on or before**.
+- Short answer, Long answer, Email and links: **contains** some text.
+- Any of these, and File upload: **is answered** or **is blank**.
+
+Select **Add condition** to check more than one answer, then choose whether **all** or **any** of them have to match. A hidden question is never required, and its answer isn't saved. Questions a staffing view reads, such as Project Bids columns, are always shown, so neither they nor their page can have a condition.
 
 ### Versions, preview and publish
 
