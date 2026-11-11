@@ -87,6 +87,12 @@ describe("GalleryMasonry image loading", () => {
     });
   });
 
+  it("links each tile's comment button to its post", () => {
+    act(() => root.render(<GalleryMasonry posts={[post("a")]} />));
+    const comment = container.querySelector('a[aria-label="Comment"]');
+    expect(comment?.getAttribute("href")).toBe("/community/gallery/a");
+  });
+
   it("follows the column count as the feed resizes", () => {
     const posts = ["a", "b", "c", "d"].map(post);
     act(() => root.render(<GalleryMasonry posts={posts} />));

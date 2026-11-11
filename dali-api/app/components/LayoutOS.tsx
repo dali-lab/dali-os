@@ -126,7 +126,7 @@ export function LayoutOS({
   children,
 }: LayoutOSProps) {
   const location = useLocation()
-  const showTabs = useDesktopTabs(true, tabStripHint)
+  const showTabs = useDesktopTabs(true, tabStripHint, impersonating)
   // The rail is full width or hidden, nothing in between; collapsing it
   // (button, edge, ⌘\) hides it entirely, leaving only the expand button in
   // the tab strip / page bar.
@@ -261,14 +261,8 @@ export function LayoutOS({
   }
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
-  // The badge counts what the drawer says needs attention — open tasks, unread
-  // feed rows that aren't already a task, and assigned project work — so the
-  // two can't disagree.
-  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, {
-    tasks: taskTotal,
-    projectTasks: projectTaskTotal,
-  })
+  const { tasks: openTasks, items: feedItems, projectTasks, totals: feedTotals } = useAttentionFeed()
+  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, feedTotals)
   const upcoming = useUpcomingMeetings(true)
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
@@ -314,7 +308,7 @@ export function LayoutOS({
       tasks={openTasks}
       notifications={feedItems}
       projectTasks={projectTasks}
-      total={taskCount}
+      totals={feedTotals}
       singleFeed={isAlumni}
       onOpen={(url, label) => {
         closeBellPanel()

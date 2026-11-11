@@ -19,6 +19,7 @@ import { Tooltip } from "~/components/ui/floating";
 import { PagerLinks } from "~/components/ui/Pager";
 import { offsetPage, offsetWindow, parsePageParam } from "~/lib/pagination";
 import { ImpersonateButton } from "~/admin/components/admin-shared";
+import { useImpersonateErrorToast } from "~/admin/components/useImpersonateErrorToast";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 
@@ -189,6 +190,7 @@ export default function AdminSiteUsers() {
   const submit = useSubmit();
   const [, setSearchParams] = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
+  useImpersonateErrorToast();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Replace so the back button isn't buried under every keystroke.

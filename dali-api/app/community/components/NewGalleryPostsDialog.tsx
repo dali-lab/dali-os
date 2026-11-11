@@ -6,6 +6,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { IconButton } from "~/components/ui/IconButton";
 import { DateField } from "~/components/ui/DateField";
+import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { runPool } from "~/lib/run-pool";
@@ -256,14 +257,14 @@ export function NewGalleryPostsDialog({
                 <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-os-item bg-os-container">
                   <img src={r.previewUrl} alt="" className="h-full w-full object-cover" />
                   {r.status === "uploading" && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 text-white">
+                    <div className="absolute inset-0 flex items-center justify-center bg-os-card/70 text-foreground">
                       <Loader2 className="h-5 w-5 animate-spin" aria-label="Uploading" />
                     </div>
                   )}
                 </div>
-                <div className="flex min-w-0 flex-1 flex-col gap-3 text-sm text-os-grey">
+                <div className="flex min-w-0 flex-1 flex-col gap-3">
                   <label className="flex flex-col gap-1.5">
-                    Caption
+                    <span>Caption</span>
                     <textarea
                       rows={2}
                       value={r.caption}
@@ -273,7 +274,7 @@ export function NewGalleryPostsDialog({
                       className="resize-none"
                     />
                   </label>
-                  <div className="flex items-center gap-3">
+                  <label className="flex flex-col gap-1.5">
                     <span>Taken</span>
                     <DateField
                       mode="date"
@@ -282,9 +283,8 @@ export function NewGalleryPostsDialog({
                       placeholder="Not set"
                       ariaLabel="Date taken"
                       onChange={(v) => patch(r.id, { takenAt: takenAtFromDate(v, r.takenAt) })}
-                      className="min-w-0 flex-1"
                     />
-                  </div>
+                  </label>
                   {r.status === "failed" && (
                     <span className="text-xs text-destructive">
                       {r.name}: {r.error}
@@ -306,14 +306,10 @@ export function NewGalleryPostsDialog({
 
         <div className="mt-6 flex items-center gap-2">
           {rows.length > 0 && rows.length < GALLERY_MAX_PHOTOS && (
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold text-os-grey hover:text-foreground"
-            >
+            <Button variant="ghost" onClick={() => fileRef.current?.click()}>
               <ImagePlus className="h-4 w-4" aria-hidden />
               Add photos
-            </button>
+            </Button>
           )}
           <button type="button" onClick={onClose} className="os-btn-ghost ml-auto">
             Cancel
