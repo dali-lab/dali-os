@@ -43,7 +43,7 @@ describe("shouldTrackPath", () => {
     "/help",
     "/blog/some-post",
     "/wallet",
-    "/connect",
+    "/community",
     "/users",
     "/admin/analytics",
     "/loginhelp",

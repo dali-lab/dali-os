@@ -645,6 +645,13 @@ export const EVENT_TYPES = {
     coalesceNoun: "reaction",
     defaults: { inApp: true, desktop: false, slackDm: false, email: "Off" },
   },
+  "community.event_nearby": {
+    kind: "General",
+    area: "Community",
+    label: "Alumni events near you",
+    description: "When an alum hosts an event within 50 km of where you're based.",
+    defaults: { inApp: false, desktop: false, slackDm: false, email: "Off" },
+  },
   // Fallback stamped on rows that predate the registry (schema column
   // default). Never emitted by code; hidden from the settings page.
   general: {

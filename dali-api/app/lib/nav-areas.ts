@@ -235,7 +235,7 @@ const REGROUPED_AREAS: NavArea[] = [
       { label: "Projects", href: "/projects", icon: FolderKanban },
       { label: "People", href: "/members", icon: UsersRound },
       { label: "Groups", href: "/members/groups", icon: Users, gate: (r) => r.canViewForms },
-      { label: "Connect", href: "/connect", icon: MapPinned },
+      { label: "Community", href: "/community", icon: MapPinned },
       { label: "Mentorship", href: "/mentorship", icon: Heart, gate: (r) => !r.isAlumni && (r.isLabMentor || r.isCore) },
       // Lab-wide Attendance: every meeting/event you're invited to, with each
       // event's roster (invited-scoped, see app/routes/attendance.tsx).
@@ -248,10 +248,10 @@ const REGROUPED_AREAS: NavArea[] = [
     key: "community",
     label: "Community",
     icon: Sparkles,
-    hubPath: "/connect",
-    description: "Connect, gallery, events",
+    hubPath: "/community",
+    description: "Alumni map, gallery, events",
     subtabs: [
-      { label: "Connect", href: "/connect", icon: MapPinned },
+      { label: "Community", href: "/community", icon: MapPinned },
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
       { label: "Stories", href: "/resources", icon: Newspaper },
@@ -371,7 +371,7 @@ export function areaIconFor(key: string): LucideIcon | undefined {
  */
 export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   const hidden = new Set<string>();
-  if (flags.community) hidden.add("/connect");
+  if (flags.community) hidden.add("/community");
   if (!flags["onboarding-journeys"]) hidden.add(ONBOARDING_NAV_ITEM.href);
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
   if (!flags["core-taskboard"]) {
@@ -393,15 +393,15 @@ export function pinnedNavItems(
   return r.isNewMember && flags["onboarding-journeys"] ? [drive, ONBOARDING_NAV_ITEM] : [drive];
 }
 
-/** Where the wordmark and the workspace's first tab land. Connect is the alumni Home. */
+/** Where the wordmark and the workspace's first tab land. Community is the alumni Home. */
 export function homeNavItem(r: Pick<RoleFlags, "isAlumni">): SubTab {
   return r.isAlumni
-    ? { label: "Home", href: "/connect", icon: Home }
+    ? { label: "Home", href: "/community", icon: Home }
     : { label: "Home", href: "/", icon: Home };
 }
 
 // Alumni get one area, so the sidebar shows no section switcher for them.
-// Connect is left out because it is their home (see homeNavItem).
+// Community is left out because it is their home (see homeNavItem).
 const ALUMNI_AREAS: NavArea[] = [
   {
     key: "projects",

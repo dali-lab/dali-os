@@ -251,10 +251,12 @@ export default [
     route("members", "members/routes/members.tsx"),
     route("members/groups", "members/routes/members.groups.tsx"),
     route("members/:id", "members/routes/members.$id.tsx"),
-    // Connect: map of where alumni are based (members + alumni).
-    route("connect", "members/routes/connect.tsx"),
+    // Community: map of where alumni are based (members + alumni).
+    route("community", "members/routes/community.tsx"),
+    route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
+    route("connect/*", "members/routes/connect-redirect.ts"),
     route("currently", "routes/currently.tsx"),
-    // Community: Connect lives here in the sidebar, alongside these.
+    // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
     route("community/gallery/new-count", "community/routes/community.gallery.new-count.ts"),
@@ -795,6 +797,7 @@ export default [
 
   // Document export (server-rendered PDF / Word)
   route("documents/:pageId/export", "routes/documents.$pageId.export.ts"),
+  route("documents/:pageId/import", "routes/documents.$pageId.import.ts"),
   route("slides/:pageId/export.pptx", "routes/slides.$pageId.export-pptx.ts"),
 
   // Public read-only render for "Anyone with the link" documents — registered

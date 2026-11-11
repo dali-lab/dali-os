@@ -82,7 +82,7 @@ export type ProfileMember = {
   gradProgram: string | null;
   major: string | null;
   hometown: string | null;
-  /** Where they live now ("Based in"); pins them on the Connect map. */
+  /** Where they live now ("Based in"); pins them on the Community map. */
   currentLocation: string | null;
   workExperiences: WorkExperienceItem[];
   linkedinUrl: string | null;
@@ -921,7 +921,7 @@ export async function runProfileAction({
     data.birthday = d;
   }
 
-  // Re-place the Connect map pin only when the location text actually changed,
+  // Re-place the Community map pin only when the location text actually changed,
   // so an unrelated save never costs a geocoding lookup.
   const before = await prisma.user.findUnique({
     where: { id: targetId },

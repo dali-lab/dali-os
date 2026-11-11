@@ -6,7 +6,10 @@ import { createMemoryRouter, RouterProvider, useLocation } from "react-router";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock("~/components/ui/floating", () => ({
+vi.mock("~/components/ui/floating", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/components/ui/floating")>()),
+  Popover: ({ trigger, children }: { trigger: React.ReactElement | ((open: boolean) => React.ReactElement); children: React.ReactNode | ((close: () => void) => React.ReactNode) }) =>
+    createElement("div", null, typeof trigger === "function" ? trigger(false) : trigger, typeof children === "function" ? children(() => {}) : children),
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   Select: ({ options }: { options: { value: string; label: string }[] }) =>
     createElement("ul", { "aria-label": "slots" }, options.map((o) => createElement("li", { key: o.value }, o.label))),
@@ -22,13 +25,13 @@ let root: Root;
 
 const base = { answered: 12, skipped: 4 };
 const data = (questions: unknown[], over: Record<string, unknown> = {}) =>
-  ({ versionId: "v1", slotOptions: [], summary: { total: 16, questions }, ...over }) as never;
+  ({ versionId: "v1", slotOptions: [], filterQuestions: [], summary: { total: 16, questions }, ...over }) as never;
 
 function Where() {
   return createElement("output", null, useLocation().search);
 }
 
-async function mount(d: unknown, entry = "/forms/edit/f1?view=results&version=2", tracker: unknown = null) {
+async function mount(d: unknown, entry = "/forms/edit/f1?view=results&version=2", tracker: unknown = null, totalCount?: number) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -39,7 +42,7 @@ async function mount(d: unknown, entry = "/forms/edit/f1?view=results&version=2"
         element: createElement(
           "div",
           null,
-          createElement(VersionSummary, { formId: "f1", versionNumber: 2, data: d as never, tracker: tracker as never }),
+          createElement(VersionSummary, { formId: "f1", versionNumber: 2, data: d as never, tracker: tracker as never, lead: null, totalCount }),
           createElement(Where),
         ),
       },
@@ -157,27 +160,29 @@ describe("VersionSummary", () => {
     expect(search).toContain("slot=Tue");
   });
 
-  it("switches to Responses from the toggle and offers CSV export", async () => {
+  it("offers the CSV export", async () => {
     await mount(data([{ kind: "text", key: "t", number: 1, label: "Why", ...base }]));
-    expect(container.querySelector('a[aria-label="Export CSV"]')!.getAttribute("href")).toBe(
-      "/forms/responses/f1/export.csv?version=2",
-    );
-    expect(button("Summary")!.getAttribute("aria-pressed")).toBe("true");
-    await click(button("Responses"));
-    expect(container.querySelector("output")!.textContent).toContain("show=responses");
+    const csv = [...container.querySelectorAll("a")].find((a) => a.textContent === "Export")!;
+    expect(csv.getAttribute("href")).toBe("/forms/responses/f1/export.csv?version=2");
   });
 
-  it("has no search box, offers the slot filter, and keeps the tracker above the rows", async () => {
+  it("has no search box, puts the slot in the filter bar, and keeps the tracker above the rows", async () => {
     await mount(
       data([{ kind: "text", key: "t", number: 1, label: "Why", ...base }], { slotOptions: ["level-up", "Tue 3pm"] }),
       undefined,
       { expected: 5, responded: 3 },
     );
     expect(container.querySelector("input")).toBeNull();
-    expect(container.textContent).toContain("level-up");
+    expect(button("Filter")).toBeTruthy();
     const tracker = container.querySelector('[data-testid="tracker"]')!;
     const section = container.querySelector("section")!;
     expect(tracker.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("counts against the whole version when filters narrow the summary", async () => {
+    await mount(data([], { summary: { total: 12, questions: [] }, slotOptions: ["Tue 3pm"] }), "/forms/edit/f1?view=results&version=2&slot=Tue%203pm", null, 40);
+    expect(container.textContent).toContain("12 of 40 responses");
+    expect([...container.querySelectorAll("a")].some((a) => a.textContent === "Export 12")).toBe(true);
   });
 });
 

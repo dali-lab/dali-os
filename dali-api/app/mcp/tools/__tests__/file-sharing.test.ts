@@ -50,6 +50,10 @@ describe("file sharing tools", () => {
       "share_file",
       "unshare_file",
       "set_file_link_access",
+      "share_page",
+      "unshare_page",
+      "set_page_general_access",
+      "set_folder_access",
     ]);
     for (const existing of ["pageId", "partnerVisible", "publicVisible", "pinned", "fileId"]) {
       expect(props[existing]).toBeDefined();
@@ -181,6 +185,16 @@ describe("file sharing tools", () => {
       linkPermission: "Comment",
     });
     expect(res).toEqual({ ok: true, linkAccess: "LabMembers", linkPermission: "Comment" });
+  });
+
+  it("set_file_link_access refuses a public or signed-in link", async () => {
+    for (const linkAccess of ["Public", "SignedIn", "Partners"]) {
+      await expect(
+        MANAGE_DOCUMENT_SHARING_TOOL.run(ctx, { action: "set_file_link_access", fileId: "f1", linkAccess }),
+      ).rejects.toBeInstanceOf(McpInvalidError);
+    }
+    expect(requireFileShareManager).not.toHaveBeenCalled();
+    expect(setFileGeneralAccess).not.toHaveBeenCalled();
   });
 
   it("set_file_link_access does not write for a non-manager", async () => {

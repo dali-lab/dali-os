@@ -98,11 +98,11 @@ beforeEach(() => {
 });
 
 describe("loadCalendarData", () => {
-  it("sends an alumni viewer to Connect before reading anything", async () => {
+  it("sends an alumni viewer to Community before reading anything", async () => {
     vi.mocked(readOnlyRoles).mockResolvedValue({ isAlumni: true } as never);
     const res = await run();
     expect(res).toBeInstanceOf(Response);
-    expect(res.headers.get("Location")).toBe("/connect");
+    expect(res.headers.get("Location")).toBe("/community");
     expect(prisma.user.findUnique).not.toHaveBeenCalled();
     expect(getValidAccessTokenForLink).not.toHaveBeenCalled();
   });

@@ -163,7 +163,7 @@ describe("profile field save", () => {
   });
 });
 
-describe("Connect map pin", () => {
+describe("Community map pin", () => {
   it("geocodes only when the location text changed", async () => {
     db.user.findUnique.mockResolvedValue({ currentLocation: "Hanover, NH" });
     await run(profile({ currentLocation: "Hanover, NH" }));

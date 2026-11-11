@@ -52,9 +52,13 @@ The three-dot menu on a document also has:
 
 - **Duplicate**, **Reveal in Drive** and **Move to…** (if you manage the document's sharing).
 - **Mark as template** and **Unmark as template** (if you can edit).
-- **Import Markdown** and **Import template** (if you can edit).
+- **Import Markdown** and **Import template** (if you can edit). **Import Markdown** accepts a .md file or a .zip.
 - **Page style** (if you can edit): choose Default, Serif or Mono, and turn on small text or full width.
 
 ## Export and print
 
-In the document's three-dot menu, choose **Download PDF**, **Download Word** or **Download Markdown**. Where the page shows a **Download** button instead, it offers PDF, Word and Markdown. **Print / Save as PDF** uses your browser's print dialog. Exports include only what you can already open.
+In the document's three-dot menu, choose **Download PDF**, **Download Word** or **Download Markdown**. Where the page shows a **Download** button instead, it offers PDF, Word and Markdown. **Print / Save as PDF** uses your browser's print dialog. A document with images or other uploads downloads as a .zip with the Markdown file and a folder of its files, so the images show up in other apps. Without uploads it downloads as a single .md file. Exports include only what you can already open.
+
+## Import Markdown
+
+Choose **Import Markdown** in the three-dot menu and pick a .md, .markdown or .txt file, or a .zip like the one **Download Markdown** makes. The content is added to the document. Images are copied into DALI from the .zip, from other sites and from Google Docs downloads. An image inside a sentence or a table moves to its own line after it. If an image can't be copied, it stays as a link and you see how many.

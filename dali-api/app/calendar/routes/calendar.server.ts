@@ -1576,7 +1576,7 @@ export async function loadCalendarData(
   if (!opts.portal) {
     const portalRedirect = await redirectNonMemberToPortal(auth, request);
     if (portalRedirect) return portalRedirect;
-    if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/connect");
+    if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/community");
     const meetingPage = await meetingLinkRedirect(new URL(request.url));
     if (meetingPage) return meetingPage;
   }

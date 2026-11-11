@@ -125,6 +125,30 @@ function withCaption(element: HTMLElement, caption: string) {
   return { dom: wrapper };
 }
 
+export const MD_WIDTH_MARK = "\uE005";
+export const MD_URL_MARKS = { " ": "\uE002", "(": "\uE003", ")": "\uE004" } as const;
+
+const escapeAttr = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+export const markdownImageTag = (url: string, alt: string, width?: string | number) =>
+  `<img src="${escapeAttr(url)}" alt="${escapeAttr(alt)}"${width ? ` width="${width}"` : ""}>`;
+
+export function markdownImageAlt(name: string): string {
+  return name.replace(/[[\]]/g, (c) => (c === "[" ? "(" : ")")).replaceAll("\\", "/").replace(/\s+/g, " ").trim();
+}
+
+function markdownImage(block: MediaBlock, editor: MediaEditor) {
+  const out = imageToExternalHTML({})(block, editor);
+  const img = out.dom.tagName === "IMG" ? out.dom : out.dom.querySelector("img");
+  if (!img) return out;
+  if (out.dom !== img) return out;
+  const width = block.props.previewWidth;
+  const marked = img.getAttribute("src")!.replace(/[ ()]/g, (c) => MD_URL_MARKS[c as keyof typeof MD_URL_MARKS]);
+  img.setAttribute("src", marked);
+  img.setAttribute("alt", `${width ? `${MD_WIDTH_MARK}${width}${MD_WIDTH_MARK}` : ""}${markdownImageAlt(img.getAttribute("alt") ?? "")}`);
+  return out;
+}
+
 export const createMediaImageSpec = (options: MediaOptions = {}) =>
   createBlockSpec(createImageBlockConfig({}), {
     meta: { fileBlockAccept: ["image/*"] },
@@ -137,9 +161,8 @@ export const createMediaImageSpec = (options: MediaOptions = {}) =>
     },
     toExternalHTML(block, editor) {
       const embed = parseVideoEmbed(block.props.url);
-      return embed && !options.markdown
-        ? withCaption(watchLink(block.props.url, embed), block.props.caption)
-        : imageToExternalHTML({})(block, editor);
+      if (embed && !options.markdown) return withCaption(watchLink(block.props.url, embed), block.props.caption);
+      return options.markdown ? markdownImage(block, editor) : imageToExternalHTML({})(block, editor);
     },
     runsBefore: ["file"],
   })();

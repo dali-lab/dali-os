@@ -9,6 +9,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/forms/lib/form-access.server", () => ({
   canBuildForm: vi.fn(),
+  canCreateForm: vi.fn(),
   canSeeForm: vi.fn(),
 }));
 vi.mock("~/forms/lib/forms-data", () => ({ loadFormForEdit: vi.fn(), runFormsAction: vi.fn() }));
@@ -33,11 +34,11 @@ vi.mock("~/components/PageIcon", () => ({ PageIcon: () => null }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
+import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
 import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
-import { loadFormHiringLinks } from "~/hiring/lib/form-links.server";
+import { loadFormHiringLinks, unlinkHiringForm } from "~/hiring/lib/form-links.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
@@ -73,25 +74,37 @@ describe("forms.edit loader results paging", () => {
     vi.mocked(loadFormForEdit).mockResolvedValue({
       id: "f1",
       folderPageId: null,
-      versions: [{ id: "v2", versionNumber: 2 }],
+      versions: [{ id: "v2", versionNumber: 2, questions: [] }],
       workspaceType: "Project",
     } as never);
     vi.mocked(loadVersionResponses).mockResolvedValue({ versionId: "v2" } as never);
     const req = new Request("http://os.test/forms/edit/f1?view=results&version=2&show=responses&page=3&q=ada&slot=Tue");
     await loader({ request: req, params: { formId: "f1" } } as never);
-    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", { page: 3, q: "ada", slot: "Tue" });
+    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", {
+      page: 3,
+      q: "ada",
+      slot: "Tue",
+      answers: [],
+      questions: [],
+    });
   });
 
   it("reads a bad page as the first", async () => {
     vi.mocked(loadFormForEdit).mockResolvedValue({
       id: "f1",
       folderPageId: null,
-      versions: [{ id: "v2", versionNumber: 2 }],
+      versions: [{ id: "v2", versionNumber: 2, questions: [] }],
       workspaceType: "Project",
     } as never);
     const req = new Request("http://os.test/forms/edit/f1?view=results&show=responses&page=-4");
     await loader({ request: req, params: { formId: "f1" } } as never);
-    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", { page: 1, q: "", slot: "" });
+    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v2", {
+      page: 1,
+      q: "",
+      slot: "",
+      answers: [],
+      questions: [],
+    });
   });
 });
 
@@ -194,6 +207,45 @@ describe("forms.edit action", () => {
     expect(canBuildForm).toHaveBeenCalledWith("u1", "f1", expect.any(Request));
     expect(runFormsAction).toHaveBeenCalled();
   });
+
+  it("refuses a second id value smuggled behind this route's", async () => {
+    // get() reads the first value but the action parser keeps the last, so
+    // every value must be this form's id.
+    vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
+    const body = new FormData();
+    body.set("intent", "delete-form");
+    body.append("id", "f1");
+    body.append("id", "someone-elses");
+    const res = (await action({
+      request: new Request("http://os.test/forms/edit/f1", { method: "POST", body }),
+      params: { formId: "f1" },
+    } as never)) as Response;
+    expect(res.status).toBe(403);
+    expect(runFormsAction).not.toHaveBeenCalled();
+  });
+
+  it("gates create-form on the destination folder, not this form", async () => {
+    vi.mocked(canCreateForm).mockResolvedValue(false);
+    expect(
+      (await post({ intent: "create-form", name: "x", folderPageId: "folder-1" })).status,
+    ).toBe(403);
+    expect(canCreateForm).toHaveBeenCalledWith("u1", "folder-1", expect.any(Request));
+    expect(runFormsAction).not.toHaveBeenCalled();
+
+    vi.mocked(canCreateForm).mockResolvedValue(true);
+    vi.mocked(runFormsAction).mockResolvedValue({ ok: true });
+    await post({ intent: "create-form", name: "x", folderPageId: "folder-1" });
+    expect(runFormsAction).toHaveBeenCalled();
+  });
+
+  it("scopes unlink-hiring-form to this route's form", async () => {
+    vi.mocked(unlinkHiringForm).mockResolvedValue({ ok: true } as never);
+    await post({ intent: "unlink-hiring-form", linkType: "application", cycleId: "c1" });
+    expect(unlinkHiringForm).toHaveBeenCalledWith(
+      { formId: "f1", linkType: "application", cycleId: "c1" },
+      "u1",
+    );
+  });
 });
 
 describe("forms.edit action delete-form-response", () => {
@@ -247,7 +299,7 @@ describe("forms.edit tracker", () => {
     vi.mocked(loadFormForEdit).mockResolvedValue({
       id: "f1",
       folderPageId: null,
-      versions: [{ id: "v1", versionNumber: 1 }],
+      versions: [{ id: "v1", versionNumber: 1, questions: [] }],
       workspaceType: "Project",
     } as never);
 
@@ -332,7 +384,14 @@ describe("forms.edit action send-form-reminder", () => {
 });
 
 describe("forms.edit summary", () => {
-  const version = { id: "v1", versionNumber: 1, questions: [{ key: "a" }] };
+  const version = {
+    id: "v1",
+    versionNumber: 1,
+    questions: [
+      { key: "a", type: "select", data: { label: "A", options: ["Yes"] } },
+      { key: "f", type: "file", data: { label: "F" } },
+    ],
+  };
   const call = (query: string) =>
     loader({
       request: new Request(`http://os.test/forms/edit/f1?${query}`),
@@ -353,10 +412,29 @@ describe("forms.edit summary", () => {
 
   it("loads the summary, not the table, on Results", async () => {
     const data = await call("view=results&version=1&slot=level-up");
-    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "level-up" });
+    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, { slot: "level-up", answers: [] });
     expect(loadVersionResponses).not.toHaveBeenCalled();
     expect(data.summary).toEqual({ versionId: "v1" });
     expect(data.results).toBeNull();
+  });
+
+  it("passes the answer filters to the summary, dropping unusable ones", async () => {
+    await call("view=results&version=1&a=a:is:Yes&a=f:answered&a=gone:blank");
+    expect(loadVersionSummary).toHaveBeenCalledWith("f1", version, {
+      slot: "",
+      answers: [{ key: "a", kind: "is", values: ["Yes"] }],
+    });
+  });
+
+  it("passes the answer filters and the version's questions to the table", async () => {
+    await call("view=results&version=1&show=responses&q=ada&a=a:blank");
+    expect(loadVersionResponses).toHaveBeenCalledWith("f1", "v1", {
+      page: 1,
+      q: "ada",
+      slot: "",
+      answers: [{ key: "a", kind: "blank" }],
+      questions: version.questions,
+    });
   });
 
   it("loads the table, not the summary, on the Responses view", async () => {

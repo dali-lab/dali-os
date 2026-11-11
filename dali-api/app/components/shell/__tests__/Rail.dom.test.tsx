@@ -114,20 +114,20 @@ describe("Rail", () => {
     expect(q("button[aria-label='DALI OS home']")).not.toBeNull();
   });
 
-  it("hides Calendar, Email and Drive for alumni and sends Home to Connect", async () => {
+  it("hides Calendar, Email and Drive for alumni and sends Home to Community", async () => {
     const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
     await mount({
       isAlumni: true,
       home: homeNavItem({ isAlumni: true }),
       pinned: pinnedNavItems({ isAlumni: true }),
-      path: "/connect",
+      path: "/community",
       tabClickProps,
     });
     expect(q("button[aria-label='Calendar']")).toBeNull();
     expect(q("button[aria-label='Email']")).toBeNull();
     expect(q("button[aria-label='Drive']")).toBeNull();
-    // The wordmark carries the alumni home (Connect).
-    expect(tabClickProps).toHaveBeenCalledWith({ url: "/connect", label: "Home" });
+    // The wordmark carries the alumni home (Community).
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/community", label: "Home" });
   });
 
   it("renders a lone area as a small section label, not a tab-like row", async () => {

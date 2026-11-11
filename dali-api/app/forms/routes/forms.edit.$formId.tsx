@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canBuildForm, canSeeForm } from "~/forms/lib/form-access.server";
+import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
 import type { DriveNoticeKey } from "~/lib/drive-notices";
 import { prisma } from "~/lib/db.server";
 import {
@@ -22,6 +22,7 @@ import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
+import { parseAnswerFilters } from "~/forms/lib/answer-filters";
 import { driveRootCrumbs } from "~/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
@@ -127,10 +128,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : undefined;
   const summaryActive =
     resultsVersion != null && url.searchParams.get("show") !== "responses";
+  const answers = resultsVersion
+    ? parseAnswerFilters(url.searchParams, resultsVersion.questions)
+    : [];
   const summary =
     summaryActive && resultsVersion
       ? await loadVersionSummary(form.id, resultsVersion, {
           slot: url.searchParams.get("slot") ?? "",
+          answers,
         })
       : null;
   const results = resultsVersion && !summaryActive
@@ -138,6 +143,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         page: parsePageParam(url.searchParams.get("page")),
         q: url.searchParams.get("q") ?? "",
         slot: url.searchParams.get("slot") ?? "",
+        answers,
+        questions: resultsVersion.questions,
       })
     : null;
   const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;
@@ -172,10 +179,22 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get("intent") as string | null;
 
   // The gate above is for this route's form; a builder of one form must not
-  // reach another through a crafted id.
-  const targetId = formData.get("id");
-  if (typeof targetId === "string" && targetId && targetId !== params.formId)
+  // reach another through a crafted id. Check EVERY id value — the action
+  // parser keeps the last one, get() would only vet the first.
+  if (
+    formData
+      .getAll("id")
+      .some((v) => typeof v !== "string" || (v !== "" && v !== params.formId))
+  )
     return forbidden(request);
+
+  // Creating lands in a folder, not in this form — gate on the destination
+  // like /api/forms does (the id guard above can't cover an id-less intent).
+  if (intent === "create-form") {
+    const folder = (formData.get("folderPageId") as string | null) || null;
+    if (!(await canCreateForm(auth.user.sub, folder, request)))
+      return forbidden(request);
+  }
 
   if (intent === "unlink-hiring-form") {
     const linkType = formData.get("linkType") as "application" | "challenge";
@@ -183,7 +202,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const cycleDomainFormId =
       (formData.get("cycleDomainFormId") as string) || undefined;
     const result = await unlinkHiringForm(
-      { linkType, cycleId, cycleDomainFormId },
+      { formId: params.formId, linkType, cycleId, cycleDomainFormId },
       auth.user.sub,
     );
     return Response.json(result, { status: "error" in result ? 400 : 200 });

@@ -9,6 +9,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 vi.mock("~/components/ui/floating", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   Select: () => null,
+  Popover: () => null,
 }));
 vi.mock("~/components/os-chrome", () => ({ useOsChrome: () => ({ iconBtn: "" }), modalCardClass: () => "" }));
 vi.mock("~/components/Modal", () => ({
@@ -49,6 +50,7 @@ async function open(over: Record<string, unknown> = {}) {
     hasNext: false,
     columns: [],
     slotOptions: [],
+    filterQuestions: [],
     responses: [response(over)],
   };
   const router = createMemoryRouter(
@@ -59,7 +61,7 @@ async function open(over: Record<string, unknown> = {}) {
         element: createElement(
           DialogProvider,
           null,
-          createElement(VersionResults, { formId: "f1", versionNumber: 1, results: data as never }),
+          createElement(VersionResults, { formId: "f1", versionNumber: 1, results: data as never, lead: null }),
         ),
       },
     ],

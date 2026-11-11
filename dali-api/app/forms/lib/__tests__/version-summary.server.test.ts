@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({
-  prisma: { formSubmission: { findMany: vi.fn() } },
+  prisma: { formSubmission: { findMany: vi.fn() }, $queryRawUnsafe: vi.fn() },
 }));
 vi.mock("~/forms/lib/answer-rows.server", () => ({
   buildReferenceLabelMaps: vi.fn(),
@@ -64,5 +64,19 @@ describe("loadVersionSummary", () => {
     expect(out.summary.total).toBe(3);
     const ref = out.summary.questions[1];
     expect(ref).toMatchObject({ kind: "choice", bars: [{ label: "Alpha", count: 2 }] });
+  });
+
+  it("counts only the submissions the answer filters matched, and ignores no search", async () => {
+    stub([{ a: "Yes" }]);
+    (prisma as unknown as { $queryRawUnsafe: ReturnType<typeof vi.fn> }).$queryRawUnsafe.mockResolvedValue([{ id: "s1" }]);
+    const out = await loadVersionSummary(
+      "f1",
+      { id: "v1", questions },
+      { answers: [{ key: "a", kind: "is", values: ["Yes"] }] },
+    );
+    const call = findMany.mock.calls.find(([a]) => !a.distinct)![0];
+    expect(call.where).toEqual({ formId: "f1", formVersionId: "v1", id: { in: ["s1"] } });
+    expect(out.filterQuestions.map((f) => f.key)).toEqual(["a", "r"]);
+    expect(out.filterQuestions[1].options).toEqual([{ value: "p1", label: "Alpha" }]);
   });
 });

@@ -43,7 +43,6 @@ vi.mock("../../lib/form-slots", () => ({
 vi.mock("../../lib/submission-view.server", () => ({
   buildSubmissionView: vi.fn(),
 }));
-vi.mock("../../lib/slot-status.server", () => ({ deriveSlotStatus: vi.fn() }));
 vi.mock("../../components/SlotAdvancedSettingsModal", () => ({
   SlotAdvancedSettingsModal: () => null,
 }));
@@ -55,7 +54,6 @@ import { ALL_TERMS } from "~/lib/terms.shared";
 import { ensureStaffingCycle } from "../../lib/staffing-cycle";
 import { getSlotBinding, listSelectableForms } from "../../lib/form-slots";
 import { buildSubmissionView } from "../../lib/submission-view.server";
-import { deriveSlotStatus } from "../../lib/slot-status.server";
 import * as intentToWork from "../projects.intent-to-work";
 import * as projectBids from "../projects.project-bids";
 import * as levelUp from "../projects.level-up";
@@ -183,7 +181,6 @@ beforeEach(() => {
     rows: [],
     tableColumns: [],
   } as never);
-  vi.mocked(deriveSlotStatus).mockResolvedValue([] as never);
   prisma.term.findMany.mockResolvedValue(TERMS);
   prisma.staffingCycle.findMany.mockResolvedValue([
     { id: "cycle-t-26f" },

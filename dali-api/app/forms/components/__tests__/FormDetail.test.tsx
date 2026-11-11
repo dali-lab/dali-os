@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createElement, act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { createRoutesStub } from "react-router";
+import { createRoutesStub, useLocation } from "react-router";
 
 const history = vi.hoisted(() => ({ undo: vi.fn(), redo: vi.fn() }));
 
@@ -104,6 +104,10 @@ function Bar() {
   );
 }
 
+function SearchProbe() {
+  return createElement("output", { "data-testid": "search" }, useLocation().search);
+}
+
 async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1") {
   const Stub = createRoutesStub([
     {
@@ -115,7 +119,7 @@ async function mount(data: ReturnType<typeof loaderData>, url = "/forms/edit/f1"
           createElement(
             DialogProvider,
             null,
-            createElement(PageBarSlotProvider, { children: createElement("div", null, createElement(Bar), createElement(FormDetail)) }),
+            createElement(PageBarSlotProvider, { children: createElement("div", null, createElement(Bar), createElement(FormDetail), createElement(SearchProbe)) }),
           ),
         ),
       loader: () => data,
@@ -209,6 +213,7 @@ describe("FormDetail", () => {
       hasNext: false,
       columns: [{ key: "q1", label: "Name" }],
       slotOptions: [],
+      filterQuestions: [],
       responses: [
         {
           id: "s1",
@@ -227,6 +232,7 @@ describe("FormDetail", () => {
     const summary = {
       versionId: "v1",
       slotOptions: [],
+      filterQuestions: [],
       summary: {
         total: 4,
         questions: [{ kind: "text", key: "q1", number: 1, label: "Name", answered: 3, skipped: 1 }],
@@ -234,17 +240,61 @@ describe("FormDetail", () => {
     };
     const buttons = () => [...container.querySelectorAll("button")].map((b) => b.textContent);
 
-    it("shows the summary with the Summary | Responses toggle", async () => {
+    it("shows the summary under the three-way switch", async () => {
       await mount(loaderData({ results: null, summary } as never), url);
       expect(container.querySelector("table")).toBeNull();
-      expect(buttons()).toEqual(expect.arrayContaining(["Summary", "Responses"]));
+      const radios = [...container.querySelectorAll("[role=radiogroup][aria-label='Form view'] [role=radio]")];
+      expect(radios.map((r) => r.textContent?.replace(/\d+$/, ""))).toEqual(["Questions", "Summary", "Responses"]);
+      expect(radios.filter((r) => r.getAttribute("aria-checked") === "true").map((r) => r.textContent)).toEqual(["Summary"]);
       expect(container.textContent).toContain("3 answered, 1 skipped");
     });
 
     it("shows the table under the toggle on the Responses view", async () => {
       await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`);
       expect(container.querySelector("table")).not.toBeNull();
-      expect(buttons()).toContain("Summary");
+      const checked = container.querySelector("[role=radiogroup][aria-label='Form view'] [aria-checked=true]");
+      expect(checked?.textContent).toMatch(/^Responses/);
+    });
+
+    const pick = async (label: string) => {
+      const radio = [...container.querySelectorAll("[role=radiogroup][aria-label='Form view'] [role=radio]")].find((el) =>
+        el.textContent?.startsWith(label),
+      );
+      await act(async () => void radio!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    };
+    const search = () => new URLSearchParams(container.querySelector("[data-testid=search]")!.textContent!);
+
+    it("switches Summary to Responses with show=responses, keeping the version", async () => {
+      await mount(loaderData({ results: null, summary } as never), url);
+      await pick("Responses");
+      expect(search().get("show")).toBe("responses");
+      expect(search().get("view")).toBe("results");
+      expect(search().get("version")).toBe("1");
+    });
+
+    it("switches Responses to Summary dropping show and page", async () => {
+      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses&page=3&q=ada`);
+      await pick("Summary");
+      expect(search().get("show")).toBeNull();
+      expect(search().get("page")).toBeNull();
+      expect(search().get("version")).toBe("1");
+      expect(search().get("q")).toBe("ada");
+    });
+
+    it("drops every results param when switching to Questions", async () => {
+      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses&a=q1:is:x`);
+      await pick("Questions");
+      expect(container.querySelector("[data-testid=search]")!.textContent).toBe("");
+    });
+
+    it("shows the version and who published it beside the switch", async () => {
+      await mount(loaderData({ results: null, summary } as never), url);
+      expect(container.textContent).toMatch(/v1 · published by .+, [A-Z][a-z]{2} \d{1,2}, \d{4}/);
+    });
+
+    it("shows the search box on Responses only", async () => {
+      await mount(loaderData({ results: table, summary: null } as never), `${url}&show=responses`);
+      expect(container.querySelector("input[type=search], input[placeholder^='Search by name']")).not.toBeNull();
     });
   });
 
@@ -337,8 +387,8 @@ describe("FormDetail", () => {
       await click(confirm);
       await wait(50);
       expect(submitted).toEqual([{ intent: "discard-draft", id: "f1" }]);
-      await until(() => text().includes("Results"));
-      expect(text()).toContain("Results");
+      await until(() => text().includes("Responses"));
+      expect(text()).toContain("Responses");
     });
 
     it("does not discard when the confirm is cancelled", async () => {
@@ -527,11 +577,21 @@ describe("FormDetail", () => {
       expect(actionLabels()).toEqual(["Preview", "Publish"]);
     });
 
-    it("uses the Segmented control for Questions and Results", async () => {
+    it("leaves the results view with the answer filters cleared", async () => {
+      await mount(loaderData(), "/forms/edit/f1?view=results&version=1&show=responses&q=ada&a=k:is:A");
+      const questions = [...container.querySelectorAll("[role=radiogroup][aria-label='Form view'] [role=radio]")].find(
+        (el) => el.textContent === "Questions",
+      );
+      await act(async () => void questions!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+      expect(container.querySelector("[data-testid=search]")!.textContent).toBe("");
+    });
+
+    it("uses one Segmented control for Questions, Summary and Responses", async () => {
       await mount(loaderData());
       const group = container.querySelector("[role=radiogroup][aria-label='Form view']")!;
       expect(group.textContent).toContain("Questions");
-      expect(group.textContent).toContain("Results");
+      expect(group.textContent).toContain("Summary");
+      expect(group.textContent).toContain("Responses");
     });
   });
 });

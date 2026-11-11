@@ -31,10 +31,10 @@ describe("activeQuickItem", () => {
     expect(activeQuickItem("/journeys", { pinned: newMemberPinned, flags, roles })).toBe("/journeys");
   });
 
-  it("treats Connect as Home for alumni and pins nothing", () => {
+  it("treats Community as Home for alumni and pins nothing", () => {
     const roles = { isAlumni: true, isNewMember: false };
     const home = homeNavItem(roles).href;
-    expect(activeQuickItem("/connect", { home, pinned: pinnedNavItems(roles), roles })).toBe("home");
+    expect(activeQuickItem("/community", { home, pinned: pinnedNavItems(roles), roles })).toBe("home");
     expect(activeQuickItem("/", { home, pinned: pinnedNavItems(roles), roles })).toBeNull();
     expect(activeQuickItem("/drive", { home, pinned: pinnedNavItems(roles), roles })).toBeNull();
   });

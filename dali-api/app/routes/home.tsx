@@ -38,7 +38,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (await isNonMember(auth, request)) return redirect("/portal");
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) return partnerRedirect;
-  if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/connect");
+  if ((await readOnlyRoles(auth.user.sub, request)).isAlumni) return redirect("/community");
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
