@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useFetcher, useSearchParams } from "react-router";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PagerLinks } from "~/components/ui/Pager";
-import { Select } from "~/components/ui/floating";
 import { Modal, ModalHeader } from "~/components/Modal";
 import type {
   ResponseRow,
@@ -12,7 +11,8 @@ import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { FormTracker } from "~/forms/components/FormTracker";
-import { ExportCsvLink, ResultsViewToggle, setResultsTab } from "~/forms/components/ResultsControls";
+import { ExportCsvLink } from "~/forms/components/ResultsControls";
+import { ResultsFilterBar, responseCountText, useAnswerFilters } from "~/forms/components/ResultsFilterBar";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
 
 function formatDate(iso: string): string {
@@ -95,19 +95,21 @@ function ResponseDelete({ response }: { response: ResponseRow }) {
 }
 
 // One version's responses: a page of submissions with a detail modal, a slot
-// filter when staffing fills are present, and CSV export of the full set for
-// this version. Page, search and slot filter live in the URL and are applied by
-// the loader.
+// filter when staffing fills are present, answer filters, and CSV export of
+// what matches. Page, search, slot and answer filters live in the URL and are
+// applied by the loader.
 export function VersionResults({
   formId,
   versionNumber,
   results,
   tracker = null,
+  lead,
 }: {
   formId: string;
   versionNumber: number;
   results: VersionResponses;
   tracker?: TrackerCounts | null;
+  lead: ReactNode;
 }) {
   const {
     isPartnerApplicationForm,
@@ -117,6 +119,7 @@ export function VersionResults({
     hasNext,
     columns,
     slotOptions,
+    filterQuestions,
     responses,
   } = results;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -124,6 +127,15 @@ export function VersionResults({
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
   const [openId, setOpenId] = useState<string | null>(null);
+  const answerFilters = useAnswerFilters(filterQuestions);
+  const narrowed = Boolean(urlQuery || slot || answerFilters.active.length);
+
+  function clearFilters() {
+    setQuery("");
+    const next = new URLSearchParams(searchParams);
+    for (const key of ["q", "slot", "a", "page"]) next.delete(key);
+    setSearchParams(next, { replace: true, preventScrollReset: true });
+  }
 
   // Filters start over at the first page; every other param (view, version) stays.
   function updateParams(changes: Record<string, string>) {
@@ -162,18 +174,6 @@ export function VersionResults({
   const selected = responses.find((r) => r.id === openId) ?? null;
   const hasSlotColumn = slotOptions.length > 0;
   const trackerLine = tracker && <FormTracker formId={formId} counts={tracker} />;
-  const viewToggle = (
-    <ResultsViewToggle
-      value="responses"
-      onChange={(tab) =>
-        setSearchParams(setResultsTab(searchParams, tab), {
-          replace: true,
-          preventScrollReset: true,
-        })
-      }
-    />
-  );
-
   return (
     <div className="space-y-4">
       {isPartnerApplicationForm && (
@@ -188,7 +188,7 @@ export function VersionResults({
 
       {totalCount === 0 ? (
         <>
-          {viewToggle}
+          {lead}
           {trackerLine}
           <div className="text-center py-12 rounded-os-card bg-os-card">
             <p className="text-sm text-muted-foreground">
@@ -198,42 +198,43 @@ export function VersionResults({
         </>
       ) : (
         <>
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            {viewToggle}
-            <span className="text-sm text-os-grey">
-              {totalCount} {totalCount === 1 ? "response" : "responses"}
-              {matchCount !== totalCount && ` · ${matchCount} match`}
-            </span>
-            {hasSlotColumn && (
-              <Select
-                ariaLabel="Filter by slot"
-                value={slot}
-                onChange={(v) => updateParams({ slot: v })}
-                placeholder="All slots"
-                options={[
-                  { value: "", label: "All slots" },
-                  ...slotOptions.map((s) => ({ value: s, label: s })),
-                ]}
-                buttonClassName="px-3 py-1.5 text-sm border border-os-container rounded-full bg-os-well text-foreground sm:w-48 inline-flex items-center justify-between gap-1 transition-colors hover:border-os-container-hi"
+          <div className="flex flex-wrap items-center gap-2">
+            {lead}
+            <div className="flex w-full flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
+              <SearchInput
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by name, email or answer"
+                aria-label="Search responses by name, email or answer"
+                size="sm"
+                containerClassName="w-full sm:w-64 min-w-[12rem]"
               />
-            )}
-            <SearchInput
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by name or email"
-              aria-label="Search responses by name or email"
-              size="sm"
-              containerClassName="w-full sm:ml-auto sm:w-64 min-w-[12rem]"
-            />
-            <ExportCsvLink formId={formId} versionNumber={versionNumber} />
+              <ExportCsvLink
+                formId={formId}
+                versionNumber={versionNumber}
+                searchParams={searchParams}
+                matching={narrowed ? matchCount : undefined}
+              />
+            </div>
           </div>
+
+          <ResultsFilterBar
+            questions={filterQuestions}
+            slotOptions={slotOptions}
+            count={responseCountText(matchCount, totalCount)}
+          />
 
           {trackerLine}
 
           <div className="rounded-os-card bg-os-card overflow-hidden">
             {rows.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+              <div className="flex flex-col items-center gap-3 px-4 py-8 text-center text-sm text-muted-foreground">
                 No responses match the current filters.
+                {narrowed && (
+                  <Button variant="secondary" size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                )}
               </div>
             ) : (
               <div className="overflow-x-auto">

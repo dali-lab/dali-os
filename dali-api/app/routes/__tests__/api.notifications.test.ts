@@ -13,6 +13,7 @@ vi.mock("~/lib/tasks", async (importOriginal) => ({
   listOpenTasksPage: vi.fn(),
   listMyProjectTasksPage: vi.fn(),
   openTasksTotal: vi.fn(),
+  generalTasksTotal: vi.fn(),
   projectTasksTotal: vi.fn(),
   listNotificationHistory: vi.fn(),
 }));
@@ -31,6 +32,7 @@ import {
   listOpenTasksPage,
   listMyProjectTasksPage,
   openTasksTotal,
+  generalTasksTotal,
   projectTasksTotal,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
@@ -61,6 +63,7 @@ beforeEach(() => {
     nextCursor: null,
   } as any);
   vi.mocked(openTasksTotal).mockResolvedValue(1);
+  vi.mocked(generalTasksTotal).mockResolvedValue(1);
   vi.mocked(projectTasksTotal).mockResolvedValue(1);
   vi.mocked(listRetiredMeetingPingIds).mockResolvedValue(["stale-1"]);
   vi.mocked(listMyProjectTasksPage).mockResolvedValue({ items: [{ id: "w1" }], nextCursor: null } as any);
@@ -88,6 +91,7 @@ describe("GET /api/notifications", () => {
       ],
       unreadCount: 2,
       taskCount: 1,
+      generalTaskCount: 1,
       tasks: [{ id: "t1", title: "Do it", link: "/x" }],
       // Stale-unread rows the feed hid: the desktop shell retires the banners
       // it already delivered for them.
@@ -107,10 +111,12 @@ describe("GET /api/notifications", () => {
 
   it("reports the true task count, not the length of the page it returns", async () => {
     vi.mocked(openTasksTotal).mockResolvedValue(120);
+    vi.mocked(generalTasksTotal).mockResolvedValue(40);
     vi.mocked(projectTasksTotal).mockResolvedValue(75);
     const json = await (await loader({ request: req() } as any)).json();
     expect(json.tasks).toHaveLength(1);
     expect(json.taskCount).toBe(120);
+    expect(json.generalTaskCount).toBe(40);
     expect(json.projectTaskCount).toBe(75);
   });
 

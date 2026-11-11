@@ -1,6 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { markdownToBlocks, type DocBlock, type DocInline } from "~/collab/blocknote-server";
 import { collectInlineRefs, downgradeInlineRefs, type DowngradedInlineRef } from "~/collab/inline-refs";
+import { rewriteMarkdownImages } from "~/lib/markdown-images.server";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { McpInvalidError } from "./errors";
 
@@ -43,14 +44,21 @@ export async function checkInlineRefs(blocks: DocBlock[]): Promise<CheckedBlocks
   return { blocks: result.blocks, warnings: result.downgraded.map(describeDowngrade) };
 }
 
+export const MCP_IMAGE_PREFIX = "uploads/doc-images/mcp/";
+export const MCP_MAX_IMAGES = 10;
+
 export async function parseMarkdown(markdown: string): Promise<CheckedBlocks> {
   let blocks: DocBlock[];
+  let imageNotes: string[];
   try {
-    blocks = await markdownToBlocks(markdown, { inlineRefs: true });
+    const images = await rewriteMarkdownImages(markdown, { uploadPrefix: MCP_IMAGE_PREFIX, maxImages: MCP_MAX_IMAGES });
+    imageNotes = images.notes;
+    blocks = await markdownToBlocks(images.markdown, { inlineRefs: true });
   } catch {
     throw new McpInvalidError("Markdown could not be parsed");
   }
-  return checkInlineRefs(blocks);
+  const checked = await checkInlineRefs(blocks);
+  return { blocks: checked.blocks, warnings: [...imageNotes, ...checked.warnings] };
 }
 
 export async function parseInlineMarkdown(markdown: string): Promise<{ content: DocInline[]; warnings: string[] }> {

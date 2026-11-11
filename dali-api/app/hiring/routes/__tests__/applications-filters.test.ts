@@ -5,6 +5,7 @@ import {
   CYCLE_SCOPED_PARAMS,
   DEFAULT_SORT,
   filtersFromParams,
+  matchesApplicationQuery,
   sortApplications,
   sortFromParams,
   writeViewParams,
@@ -176,5 +177,40 @@ describe("visibleSort", () => {
   it("falls back to the default when the sorted column is hidden for this cycle", () => {
     expect(visibleSort({ key: "reviewers", dir: "desc" }, applicationColumns("Open"))).toEqual(DEFAULT_SORT);
     expect(visibleSort({ key: "submittedAt", dir: "asc" }, applicationColumns("UnderReview"))).toEqual(DEFAULT_SORT);
+  });
+});
+
+describe("matchesApplicationQuery", () => {
+  const ada = { name: "Ada Lovelace", email: "ada.lovelace@example.edu" };
+
+  it("matches every row on an empty or blank query", () => {
+    expect(matchesApplicationQuery(ada, "")).toBe(true);
+    expect(matchesApplicationQuery(ada, "   ")).toBe(true);
+  });
+
+  it("matches a first name with a trailing space", () => {
+    expect(matchesApplicationQuery(ada, "ada ")).toBe(true);
+  });
+
+  it("matches a first name plus the start of a last name", () => {
+    expect(matchesApplicationQuery(ada, "ada l")).toBe(true);
+  });
+
+  it("matches the full name in either order, case-insensitively", () => {
+    expect(matchesApplicationQuery(ada, "Ada Lovelace")).toBe(true);
+    expect(matchesApplicationQuery(ada, "lovelace ada")).toBe(true);
+  });
+
+  it("matches on the email", () => {
+    expect(matchesApplicationQuery(ada, "lovelace@example")).toBe(true);
+  });
+
+  it("matches a row with no email by name", () => {
+    expect(matchesApplicationQuery({ ...ada, email: null }, "ada l")).toBe(true);
+  });
+
+  it("rejects a query with any word that isn't in the name or email", () => {
+    expect(matchesApplicationQuery(ada, "ada q")).toBe(false);
+    expect(matchesApplicationQuery(ada, "grace")).toBe(false);
   });
 });

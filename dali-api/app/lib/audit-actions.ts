@@ -159,6 +159,7 @@ export const AUDIT_ACTIONS = [
   "account.linked",
   "document.delete",
   "document.export",
+  "document.import",
   "projectFile.create",
   "projectFile.version",
   "projectFile.delete",

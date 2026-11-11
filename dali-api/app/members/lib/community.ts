@@ -276,11 +276,61 @@ export function groupByPlace<T extends Located>(people: readonly T[]): Community
   );
 }
 
-// The Web Mercator latitude where the tile world ends.
-export const MAX_LAT = 85.0511;
-const TILE_SIZE = 256;
+export const MAP_TILES_ORIGIN = "https://tiles.openfreemap.org";
+const WORLD_PX_AT_ZOOM_0 = 512;
 
-/** Smallest zoom whose world is at least as tall as the map, so no grey shows above or below it. */
+/** Smallest zoom whose world is at least as tall as the map, so no blank shows above or below it. */
 export function minZoomToFill(heightPx: number): number {
-  return Math.max(2, Math.ceil(Math.log2(Math.max(heightPx, 1) / TILE_SIZE)));
+  return Math.max(1, Math.log2(Math.max(heightPx, 1) / WORLD_PX_AT_ZOOM_0));
+}
+
+export const CLUSTER_RADIUS_PX = 64;
+export const HOME_ZOOM = 7;
+
+function worldPx(p: { lat: number; lng: number }, zoom: number): { x: number; y: number; size: number } {
+  const size = WORLD_PX_AT_ZOOM_0 * 2 ** zoom;
+  const sin = Math.sin((Math.max(-85.0511, Math.min(85.0511, p.lat)) * Math.PI) / 180);
+  return {
+    x: ((p.lng + 180) / 360) * size,
+    y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * size,
+    size,
+  };
+}
+
+/**
+ * Places close enough on screen at this zoom to draw as one pin. The biggest
+ * place anchors each cluster and comes first, so the pin sits on a real city.
+ */
+export function clusterPlaces<P extends { key: string; lat: number; lng: number; people: readonly unknown[] }>(
+  places: readonly P[],
+  zoom: number,
+  radiusPx: number = CLUSTER_RADIUS_PX,
+): P[][] {
+  const ranked = [...places].sort((a, b) => b.people.length - a.people.length || a.key.localeCompare(b.key));
+  const px = new Map(ranked.map((p) => [p.key, worldPx(p, zoom)]));
+  const taken = new Set<string>();
+  const clusters: P[][] = [];
+  for (const anchor of ranked) {
+    if (taken.has(anchor.key)) continue;
+    const a = px.get(anchor.key)!;
+    const cluster = [anchor];
+    taken.add(anchor.key);
+    for (const p of ranked) {
+      if (taken.has(p.key)) continue;
+      const b = px.get(p.key)!;
+      const dx = Math.abs(a.x - b.x);
+      if (Math.hypot(Math.min(dx, a.size - dx), a.y - b.y) > radiusPx) continue;
+      cluster.push(p);
+      taken.add(p.key);
+    }
+    clusters.push(cluster);
+  }
+  return clusters;
+}
+
+/** "Boston, MA", or "Boston, MA and 2 more places" for a cluster. */
+export function placesLabel(places: readonly { label: string; people: readonly unknown[] }[]): string {
+  const [first, ...rest] = [...places].sort((a, b) => b.people.length - a.people.length);
+  if (rest.length === 0) return first.label;
+  return `${first.label} and ${rest.length} more ${rest.length === 1 ? "place" : "places"}`;
 }

@@ -29,6 +29,30 @@ describe("ReviewSummary", () => {
     expect(html).toContain("N/A");
   });
 
+  it("renders the rejection rationale slot in place of the read-only text", () => {
+    const html = renderToStaticMarkup(
+      createElement(ReviewSummary, {
+        rejectionRationale: "Old text",
+        rejectionRationaleSlot: createElement("div", { "data-testid": "editor" }),
+      }),
+    );
+    expect(html).toContain("Rejection Rationale");
+    expect(html).toContain('data-testid="editor"');
+    expect(html).not.toContain("Old text");
+  });
+
+  it("shows the rationale heading for an empty rationale when a slot is given", () => {
+    const withSlot = renderToStaticMarkup(
+      createElement(ReviewSummary, {
+        rejectionRationale: "",
+        rejectionRationaleSlot: createElement("div", null, "editor"),
+      }),
+    );
+    const withoutSlot = renderToStaticMarkup(createElement(ReviewSummary, { rejectionRationale: "" }));
+    expect(withSlot).toContain("Rejection Rationale");
+    expect(withoutSlot).not.toContain("Rejection Rationale");
+  });
+
   it("falls back to the raw criterion key when no label is provided", () => {
     const html = renderToStaticMarkup(
       createElement(ReviewSummary, {

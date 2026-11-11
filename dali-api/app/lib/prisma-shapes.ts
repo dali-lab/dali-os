@@ -1,5 +1,8 @@
 import type { Prisma } from "~/generated/prisma/client";
 
+// Holds imported pre-domain history; not a role anyone holds.
+export const LEGACY_DOMAIN_ID = "domain_legacy";
+
 // Minimal "name card" — user:{ select:{ id, firstName, lastName }}
 export const USER_NAME_SELECT = {
   id: true,

@@ -5,7 +5,8 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
 import { buildExportHtml } from "~/collab/export";
 import { readDocAsBlocks } from "~/collab/read";
-import { blocksToHtml, blocksToMarkdown } from "~/collab/blocknote-server";
+import { blocksToHtml } from "~/collab/blocknote-server";
+import { exportMarkdown } from "~/lib/markdown-export.server";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import { normalizePageTypography } from "~/lib/page-typography";
 
@@ -53,10 +54,10 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     });
 
   if (format === "md") {
-    const body = blocks.length ? await blocksToMarkdown(blocks) : "";
-    const markdown = `# ${page.title}\n\n${body}`;
+    const result = await exportMarkdown({ title: page.title, fileName: filename, blocks, origin: url.origin });
     await logExport();
-    return new Response(markdown, {
+    if (result.kind === "zip") return Response.redirect(result.url, 302);
+    return new Response(result.markdown, {
       headers: {
         "Content-Type": "text/markdown; charset=utf-8",
         "Content-Disposition": `attachment; filename="${filename}.md"`,

@@ -3,9 +3,13 @@ import {
   extraNotifications,
   attentionCount,
   attentionTotal,
+  feedTabCounts,
+  generalTaskCount,
   hasAttentionContent,
   mergedFeed,
   splitFeed,
+  unloadedCounts,
+  FEED_TAB_LABELS,
   type AttentionNotification,
 } from "~/components/AttentionPanel";
 import type { ProjectWorkItem } from "~/lib/project-work";
@@ -192,15 +196,92 @@ describe("attentionTotal", () => {
   it("equals attentionCount when everything is loaded", () => {
     const tasks = [task("a"), task("b")];
     expect(attentionTotal(tasks, [], [project("p1")])).toBe(attentionCount(tasks, [], [project("p1")]));
-    expect(attentionTotal(tasks, [], [project("p1")], { tasks: 2, projectTasks: 1 })).toBe(3);
+    expect(attentionTotal(tasks, [], [project("p1")], { generalTasks: 2, projectTasks: 1 })).toBe(3);
   });
 
-  it("adds the open and project tasks that were not loaded", () => {
-    const total = attentionTotal([task("a")], [], [project("p1")], { tasks: 120, projectTasks: 75 });
+  it("adds the General and project tasks that were not loaded", () => {
+    const total = attentionTotal([task("a")], [], [project("p1")], { generalTasks: 120, projectTasks: 75 });
     expect(total).toBe(2 + 119 + 74);
   });
 
   it("ignores a total smaller than what is loaded", () => {
-    expect(attentionTotal([task("a"), task("b")], [], [], { tasks: 1 })).toBe(2);
+    expect(attentionTotal([task("a"), task("b")], [], [], { generalTasks: 1 })).toBe(2);
+  });
+
+  it("equals the sum of the tab counts", () => {
+    const tasks = [task("a"), pingFor("w1"), pingFor("gone")];
+    const totals = { generalTasks: 40, projectTasks: 3 };
+    const counts = feedTabCounts(splitFeed(tasks, [], [project("w1")]), unloadedCounts(tasks, [project("w1")], totals));
+    expect(attentionTotal(tasks, [], [project("w1")], totals)).toBe(counts.work + counts.admin);
+  });
+});
+
+const pingFor = (taskId: string): OpenTask => ({
+  ...task(`ping-${taskId}`),
+  eventType: "task.assigned",
+  link: `/projects/p1?tab=board&task=${taskId}`,
+});
+
+describe("generalTaskCount", () => {
+  it("counts tasks outside the Tasks area, including ones with no event", () => {
+    expect(
+      generalTaskCount([
+        { eventType: "meeting.invite" },
+        { eventType: null },
+        { eventType: undefined },
+        { eventType: "task.due_reminder" },
+        { eventType: "project.sprint_closed" },
+      ]),
+    ).toBe(3);
+  });
+});
+
+describe("unloadedCounts", () => {
+  it("puts unloaded General tasks on General, not the task pings past the page", () => {
+    // 77 open tasks, 50 loaded (2 of them General); 10 General in all.
+    const loaded = [
+      { eventType: "meeting.invite" },
+      { eventType: "pagedoc.mention" },
+      ...Array.from({ length: 48 }, () => ({ eventType: "task.assigned" })),
+    ];
+    expect(unloadedCounts(loaded, [], { generalTasks: 10 })).toEqual({ work: 0, admin: 8 });
+  });
+
+  it("adds unloaded project tasks to Project work", () => {
+    expect(unloadedCounts([], [work("w1")], { projectTasks: 6 })).toEqual({ work: 5, admin: 0 });
+  });
+
+  it("is zero without server totals", () => {
+    expect(unloadedCounts([{ eventType: "meeting.invite" }], [work("w1")])).toEqual({ work: 0, admin: 0 });
+  });
+});
+
+describe("feedTabCounts", () => {
+  it("leaves out a read invite kept only for its RSVP, like the header", () => {
+    const invite = notif({
+      id: "n1",
+      kind: "MeetingInvite",
+      scheduledMeetingId: "m1",
+      readAt: "2026-09-12T13:00:00.000Z",
+    });
+    const feed = splitFeed([task("t1")], [invite], []);
+    expect(feed.admin).toHaveLength(2);
+    expect(feedTabCounts(feed)).toEqual({ work: 0, admin: 1 });
+  });
+
+  it("does not count a ping folded into its project card", () => {
+    const feed = splitFeed([pingFor("w1")], [], [work("w1")]);
+    expect(feedTabCounts(feed)).toEqual({ work: 1, admin: 0 });
+  });
+
+  it("adds each tab's unloaded remainder", () => {
+    const feed = splitFeed([task("t1")], [], [work("w1")]);
+    expect(feedTabCounts(feed, { work: 4, admin: 9 })).toEqual({ work: 5, admin: 10 });
+  });
+});
+
+describe("FEED_TAB_LABELS", () => {
+  it("names the non-project tab General", () => {
+    expect(FEED_TAB_LABELS).toEqual({ work: "Project work", admin: "General" });
   });
 });

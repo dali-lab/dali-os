@@ -41,6 +41,8 @@ const post = (id: string) =>
     caption: null,
     hidden: false,
     createdAt: "2026-10-23T00:00:00.000Z",
+    takenAt: null,
+    feedAt: "2026-10-23T00:00:00.000Z",
     author: { id: "u1", name: "Maya Chen", classYear: 2026, photoUrl: null },
     reactions: [],
     commentCount: 0,
@@ -85,6 +87,12 @@ describe("GalleryMasonry image loading", () => {
       "/img/f": ["lazy", "auto"],
       "/img/g": ["lazy", "auto"],
     });
+  });
+
+  it("links each tile's comment button to its post", () => {
+    act(() => root.render(<GalleryMasonry posts={[post("a")]} />));
+    const comment = container.querySelector('a[aria-label="Comment"]');
+    expect(comment?.getAttribute("href")).toBe("/community/gallery/a");
   });
 
   it("follows the column count as the feed resizes", () => {

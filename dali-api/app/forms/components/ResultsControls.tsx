@@ -1,70 +1,98 @@
 import { Download } from "lucide-react";
+import { Segmented } from "~/components/ui/Segmented";
+import { buttonClasses } from "~/components/ui/Button";
 import { Tooltip } from "~/components/ui/floating";
-import { cn } from "~/lib/cn";
 
-export type ResultsTab = "summary" | "responses";
+export type ResultsView = "questions" | "summary" | "responses";
 
-const TABS: { value: ResultsTab; label: string }[] = [
-  { value: "summary", label: "Summary" },
-  { value: "responses", label: "Responses" },
-];
-
-export function setResultsTab(
+export function resultsViewParams(
   searchParams: URLSearchParams,
-  tab: ResultsTab,
+  view: ResultsView,
+  versionNumber: number,
 ): URLSearchParams {
+  if (view === "questions") return new URLSearchParams();
   const next = new URLSearchParams(searchParams);
+  next.set("view", "results");
+  if (!next.has("version")) next.set("version", String(versionNumber));
   next.delete("page");
-  if (tab === "responses") next.set("show", "responses");
+  if (view === "responses") next.set("show", "responses");
   else next.delete("show");
   return next;
 }
 
-export function ResultsViewToggle({
-  value,
+export function ResultsSwitch({
+  view,
+  responseCount,
+  byline,
   onChange,
 }: {
-  value: ResultsTab;
-  onChange: (tab: ResultsTab) => void;
+  view: ResultsView;
+  responseCount: number;
+  byline: string;
+  onChange: (view: ResultsView) => void;
 }) {
   return (
-    <div className="inline-flex p-1 rounded-full bg-os-container">
-      {TABS.map((tab) => (
-        <button
-          key={tab.value}
-          type="button"
-          onClick={() => onChange(tab.value)}
-          aria-pressed={value === tab.value}
-          className={cn(
-            "px-4 py-1.5 rounded-full text-sm font-semibold transition-colors",
-            value === tab.value
-              ? "bg-os-card text-foreground shadow-sm"
-              : "text-os-grey hover:text-foreground",
-          )}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className="flex items-center gap-3">
+      <Segmented
+        ariaLabel="Form view"
+        value={view}
+        onChange={onChange}
+        options={[
+          { value: "questions", label: "Questions" },
+          { value: "summary", label: "Summary" },
+          { value: "responses", label: "Responses", count: responseCount },
+        ]}
+      />
+      <span className="text-xs text-muted-foreground">{byline}</span>
     </div>
   );
+}
+
+export function exportCsvHref(
+  formId: string,
+  versionNumber: number,
+  searchParams: URLSearchParams,
+  { search = true }: { search?: boolean } = {},
+): string {
+  const out = new URLSearchParams({ version: String(versionNumber) });
+  const q = search ? (searchParams.get("q") ?? "").trim() : "";
+  if (q) out.set("q", q);
+  const slot = searchParams.get("slot");
+  if (slot) out.set("slot", slot);
+  for (const entry of searchParams.getAll("a")) out.append("a", entry);
+  return `/forms/responses/${formId}/export.csv?${out}`;
 }
 
 export function ExportCsvLink({
   formId,
   versionNumber,
+  searchParams,
+  matching,
+  search = true,
 }: {
   formId: string;
   versionNumber: number;
+  searchParams: URLSearchParams;
+  // Set when a search or filter is on: how many responses the file will hold.
+  matching?: number;
+  search?: boolean;
 }) {
+  const label = matching === undefined ? "Export" : `Export ${matching}`;
   return (
-    <Tooltip content="Export every response to this version as CSV">
+    <Tooltip
+      content={
+        matching === undefined
+          ? "Export every response to this version as CSV"
+          : "Export the responses that match the current search and filters as CSV"
+      }
+    >
       <a
-        href={`/forms/responses/${formId}/export.csv?version=${versionNumber}`}
+        href={exportCsvHref(formId, versionNumber, searchParams, { search })}
         download
-        aria-label="Export CSV"
-        className="inline-flex items-center justify-center p-2 rounded-full border border-os-container text-os-grey hover:text-foreground hover:border-os-container-hi transition-colors"
+        className={buttonClasses("secondary", "sm", "h-8")}
       >
-        <Download className="w-4 h-4" />
+        <Download className="h-4 w-4" aria-hidden />
+        {label}
       </a>
     </Tooltip>
   );

@@ -30,6 +30,7 @@ import {
   GALLERY_THUMB_WIDTH,
   galleryKeyPrefix,
   galleryOriginalKeyPrefix,
+  parseTakenAt,
 } from "~/community/lib/gallery";
 import type { McpCtx } from "../../registry";
 import {
@@ -47,7 +48,7 @@ const DEFAULT_COLOR = "#808080";
 export const LIST_GALLERY_POSTS_DEF = {
   name: "list_gallery_posts",
   description:
-    "Page through the Community gallery feed, newest first, as the web feed shows it: 40 posts a page with a nextCursor for the next one. Filter to your own posts (show 'mine'), to one person's (byUserId), or by words in the caption or the poster's name (query). imageUrl is the feed-sized copy; use get_gallery_post for the full-size image, the original and comments.",
+    "Page through the Community gallery feed as the web feed shows it, most recently taken first (takenAt, else when posted): 40 posts a page with a nextCursor for the next one. Filter to your own posts (show 'mine'), to one person's (byUserId), or by words in the caption or the poster's name (query). imageUrl is the feed-sized copy; use get_gallery_post for the full-size image, the original and comments.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -138,6 +139,11 @@ export const MANAGE_GALLERY_POST_DEF = {
               description: "The photo's average colour as #rrggbb, painted while it loads. Defaults to grey.",
             },
             caption: { type: "string", maxLength: GALLERY_CAPTION_MAX },
+            takenAt: {
+              type: "string",
+              description:
+                "When the photo was taken, as ISO 8601. Read it from the file's EXIF DateTimeOriginal (e.g. `mdls -name kMDItemContentCreationDate` or `exiftool -DateTimeOriginal`). The feed sorts by it; without it the post sorts by when it was posted.",
+            },
           },
           required: ["imageKey", "width", "height"],
           additionalProperties: false,
@@ -182,6 +188,7 @@ function tile(t: GalleryTileData) {
     hidden: t.hidden,
     mine: t.mine,
     createdAt: t.createdAt,
+    takenAt: t.takenAt,
   };
 }
 
@@ -263,7 +270,7 @@ export async function runCreateGalleryUpload(
     original,
     ...(display ? { display } : {}),
     ...(thumb ? { thumb } : {}),
-    next: "Replace /path/to/… with each local file and run its curl (a final line of HTTP 204 means stored). Then call manage_gallery_post with action 'create' and posts: [{ imageKey: original.key, displayKey, thumbKey, width, height, caption }].",
+    next: "Replace /path/to/… with each local file and run its curl (a final line of HTTP 204 means stored). Then call manage_gallery_post with action 'create' and posts: [{ imageKey: original.key, displayKey, thumbKey, width, height, caption, takenAt }].",
   };
 }
 
@@ -275,6 +282,7 @@ type NewPostArg = {
   height: number;
   color?: string;
   caption?: string;
+  takenAt?: string;
 };
 
 type ManageArgs = {
@@ -350,6 +358,11 @@ export async function runManageGalleryPost(ctx: McpCtx, args: ManageArgs) {
     reason: args.reason ?? "",
   };
   if (args.posts) {
+    for (const p of args.posts) {
+      if (parseTakenAt(p.takenAt) === undefined) {
+        throw new McpInvalidError(`takenAt "${p.takenAt}" isn't a date between 1900 and today.`);
+      }
+    }
     await checkUploaded(args.posts);
     fields.posts = JSON.stringify(
       args.posts.map((p) => ({ ...p, color: p.color ?? DEFAULT_COLOR })),

@@ -9,7 +9,7 @@ export const MAX_ZIP_BYTES = 500 * 1024 * 1024;
 const ZIP_NAME = "Drive files.zip";
 const ZIP_LINK_SECONDS = 15 * 60;
 
-export type ZipSource = { name: string; s3Key: string; modified: Date };
+export type ZipSource = { name: string; modified: Date } & ({ s3Key: string } | { data: Uint8Array });
 
 /** A ZIP of stored (uncompressed) entries, yielded as it is read so memory stays flat. */
 export async function* zipSources(
@@ -25,7 +25,7 @@ export async function* zipSources(
   const names = uniqueNames(sources.map((s) => s.name));
 
   for (const [i, source] of sources.entries()) {
-    const body = await getObjectStream(source.s3Key);
+    const body = "data" in source ? [source.data] : await getObjectStream(source.s3Key);
     if (!body) {
       onMissing(source);
       continue;
@@ -54,6 +54,7 @@ export async function* zipSources(
  */
 export async function buildDriveZip(
   sources: ZipSource[],
+  fileName = ZIP_NAME,
 ): Promise<{ url: string; included: number } | null> {
   const key = `${DRIVE_DOWNLOAD_PREFIX}${randomUUID()}.zip`;
   let missing = 0;
@@ -63,6 +64,6 @@ export async function buildDriveZip(
     await deleteObject(key);
     return null;
   }
-  const url = await getDownloadUrl(key, { fileName: ZIP_NAME, expiresIn: ZIP_LINK_SECONDS });
+  const url = await getDownloadUrl(key, { fileName, expiresIn: ZIP_LINK_SECONDS });
   return { url, included };
 }

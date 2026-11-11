@@ -40,7 +40,7 @@ export type ResponsesSummary = { total: number; questions: QuestionSummary[] };
 
 type RefLabels = ReadonlyMap<string, ReadonlyMap<string, string>>;
 
-const NUMBER_PATTERN = /^-?\d+(\.\d+)?$/;
+export const NUMBER_PATTERN = /^-?\d+(\.\d+)?$/;
 const SCALE_VALUES = ["1", "2", "3", "4", "5"];
 
 function percentOf(count: number, answered: number): number {

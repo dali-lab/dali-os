@@ -13,7 +13,8 @@ import type { CommunityEvent } from "~/members/lib/community.server";
 vi.mock("~/members/components/CommunityMap", () => ({
   CommunityMap: (props: {
     places: { key: string; faded?: boolean }[];
-    onSelect: (k: string | null) => void;
+    home: { lat: number; lng: number } | null;
+    onSelect: (keys: string[] | null) => void;
     onBoundsChange: (b: unknown) => void;
     onSelectEvent: (id: string) => void;
   }) =>
@@ -22,7 +23,9 @@ vi.mock("~/members/components/CommunityMap", () => ({
       { "data-testid": "map" },
       createElement("span", { "data-testid": "faded" }, props.places.filter((p) => p.faded).map((p) => p.key).join(",")),
       createElement("button", { onClick: () => props.onBoundsChange({ south: 40, west: -75, north: 45, east: -70 }) }, "view New England"),
-      createElement("button", { onClick: () => props.onSelect("43.70,-72.29") }, "pin Hanover"),
+      createElement("button", { onClick: () => props.onSelect(["43.70,-72.29"]) }, "pin Hanover"),
+      createElement("button", { onClick: () => props.onSelect(["43.70,-72.29", "42.36,-71.06"]) }, "pin New England"),
+      createElement("span", { "data-testid": "home" }, JSON.stringify(props.home)),
       createElement("button", { onClick: () => props.onSelectEvent("ev1") }, "pin event"),
     ),
 }));
@@ -99,7 +102,6 @@ const baseData = () => ({
   unplaced: 0,
   filterOptions: { classYears: [{ value: 2020, count: 2 }], roles: [], projects: [] },
   events: [event("ev1"), event("on1", { online: true, location: "Online", lat: null, lng: null, title: "Online chat" })],
-  title: "Home",
   tz: "America/New_York",
   openTo: { coffeeChats: false, resumeReviews: false },
 });
@@ -229,6 +231,30 @@ describe("a selected place", () => {
     expect(names()).toHaveLength(5);
     expect(text()).not.toContain("Events here");
   });
+
+  it("a cluster of places lists everyone in them under the biggest place's name", async () => {
+    await mount();
+    await click(button("pin New England"));
+    expect(text()).toContain("Hanover, NH and 1 more place");
+    expect(text()).toContain("4 people, 2 from your class");
+    expect(text()).toContain("Event ev1");
+    expect(names()).toHaveLength(4);
+    expect(names().join()).not.toContain("Ada london");
+  });
+});
+
+describe("the map's home", () => {
+  const home = () => JSON.parse(document.querySelector('[data-testid="home"]')!.textContent!);
+
+  it("is the viewer's own location", async () => {
+    await mount();
+    expect(home()).toEqual({ lat: 43.7, lng: -72.29 });
+  });
+
+  it("is unset for a viewer with no location", async () => {
+    await mount({ viewer: { ...baseData().viewer, hasLocation: false, lat: null as never, lng: null as never } });
+    expect(home()).toBeNull();
+  });
 });
 
 describe("hosting", () => {
@@ -237,7 +263,7 @@ describe("hosting", () => {
     expect(button("Host an event")).toBeDefined();
     await act(async () => root.unmount());
     container.remove();
-    await mount({ viewer: { ...baseData().viewer, isAlumni: false, canHost: false }, title: "Community" });
+    await mount({ viewer: { ...baseData().viewer, isAlumni: false, canHost: false } });
     expect(button("Host an event")).toBeUndefined();
     expect(button("I'm open to")).toBeUndefined();
   });

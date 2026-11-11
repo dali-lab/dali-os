@@ -77,6 +77,17 @@ export async function authorizeCollabDoc(
     if (review.cycleReviewer.userId === userSub) return allow;
     if (await isDomainLead(userSub)) return allow;
     if (await isCore(userSub)) return allow;
+    if (field === "rejectionRationale") {
+      const interviewer = await prisma.interviewAssignment.findFirst({
+        where: {
+          status: "Active",
+          cycleInterviewer: { userId: userSub },
+          interview: { domainApplicationId: review.domainApplicationId },
+        },
+        select: { id: true },
+      });
+      if (interviewer) return allow;
+    }
     return deny;
   }
 

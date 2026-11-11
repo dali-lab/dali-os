@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher, useLoaderData, useRevalidator } from "react-router";
-import { ArrowUp, ImagePlus, Loader2, Plus } from "lucide-react";
+import { ArrowUp, Loader2 } from "lucide-react";
 import type { Route } from "./+types/community.gallery";
 import {
   firstPostAt,
@@ -13,9 +13,11 @@ import {
   type GalleryTileData,
 } from "~/community/lib/gallery.server";
 import { GalleryMasonry } from "~/community/components/GalleryMasonry";
-import { GalleryNavRow } from "~/community/components/GalleryNavRow";
+import { GalleryNavRow, GalleryPostButton } from "~/community/components/GalleryNavRow";
 import { NewGalleryPostsDialog } from "~/community/components/NewGalleryPostsDialog";
 import { galleryByline, galleryFeedHref } from "~/community/lib/gallery";
+import { EmptyState } from "~/components/ui/EmptyState";
+import { useOsChrome } from "~/components/os-chrome";
 
 export const meta: Route.MetaFunction = () => [{ title: "Gallery · DALI OS" }];
 
@@ -88,11 +90,12 @@ export default function CommunityGallery() {
 
   const filtered = query.mine || query.by !== null || query.q !== "";
   const { person } = data;
+  const chrome = useOsChrome();
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="sr-only">Gallery</h1>
-      <NewPostsPill newestAt={data.posts[0]?.createdAt ?? null} enabled={!filtered} />
+      <NewPostsPill newestAt={data.posts[0]?.feedAt ?? null} enabled={!filtered} />
       <section className="flex flex-col gap-6">
         <div className="flex flex-col gap-4">
           <GalleryNavRow
@@ -103,7 +106,7 @@ export default function CommunityGallery() {
           />
           {person && (
             <p className="flex items-baseline gap-2">
-              <span className="text-[19px] font-bold text-foreground">
+              <span className={chrome.sectionTitle}>
                 {galleryByline(person.name, person.classYear)}
               </span>
               <span className="text-sm text-os-muted">
@@ -115,9 +118,9 @@ export default function CommunityGallery() {
 
         {posts.length === 0 ? (
           person ? (
-            <p className="py-16 text-center text-sm text-os-grey">
+            <EmptyState className="py-16">
               {query.q ? `No posts by ${person.name} match "${query.q}".` : `${person.name} hasn't posted yet.`}
-            </p>
+            </EmptyState>
           ) : (
             <EmptyFeed mine={query.mine} q={query.q} onPost={() => setComposing(true)} />
           )
@@ -154,34 +157,24 @@ function FeedEnd({ firstPostAt, onPost }: { firstPostAt: string | null; onPost: 
         </span>
         <span className="h-px flex-1 bg-os-container" aria-hidden />
       </div>
-      <button type="button" onClick={onPost} className="os-btn-primary os-btn-tint">
-        <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-        Post
-      </button>
+      <GalleryPostButton onClick={onPost} />
     </div>
   );
 }
 
 function EmptyFeed({ mine, q, onPost }: { mine: boolean; q: string; onPost: () => void }) {
   if (q) {
-    return <p className="py-16 text-center text-sm text-os-grey">No posts match "{q}".</p>;
+    return <EmptyState className="py-16">No posts match "{q}".</EmptyState>;
   }
   return (
-    <div className="flex flex-col items-center gap-3 py-20 text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-full bg-os-container text-os-grey">
-        <ImagePlus className="h-6 w-6" aria-hidden />
-      </span>
-      <h2 className="text-lg font-semibold text-foreground">
-        {mine ? "You haven't posted yet" : "Nothing posted yet"}
-      </h2>
-      <p className="max-w-sm text-sm text-os-grey">
-        Share a photo from the lab. Members, staff, and alumni will see it.
-      </p>
-      <button type="button" onClick={onPost} className="os-btn-primary os-btn-tint mt-2">
-        <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-        {mine ? "Post a photo" : "Post the first one"}
-      </button>
-    </div>
+    <EmptyState
+      className="py-16"
+      actions={<GalleryPostButton onClick={onPost} label={mine ? "Post a photo" : "Post the first one"} />}
+    >
+      {mine
+        ? "You haven't posted yet. Share a photo from the lab."
+        : "Nothing posted yet. Share a photo from the lab. Members, staff, and alumni will see it."}
+    </EmptyState>
   );
 }
 
@@ -217,7 +210,7 @@ function NewPostsPill({ newestAt, enabled }: { newestAt: string | null; enabled:
             anchor.current?.scrollIntoView({ behavior: "smooth", block: "start" });
             revalidator.revalidate();
           }}
-          className="pointer-events-auto inline-flex h-9 animate-gallery-pill items-center gap-1.5 rounded-full bg-os-accent px-4 text-sm font-semibold text-os-bg shadow-lg"
+          className="os-btn-primary pointer-events-auto animate-gallery-pill shadow-[0_16px_40px_var(--color-os-shadow)]"
         >
           <ArrowUp className="h-4 w-4" aria-hidden />
           {count === 1 ? "1 new post" : `${count} new posts`}

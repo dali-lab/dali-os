@@ -14,6 +14,7 @@ import {
   filterEvents,
   filterPeople,
   groupByPlace,
+  placesLabel,
   sortPeople,
   type EventFilters,
   type MapBounds,
@@ -23,7 +24,6 @@ import type { CommunityData, CommunityEvent } from "~/members/lib/community.serv
 import { classmatesAt, eventsAtPlace, splitEventsByPlace } from "~/members/lib/community-view";
 
 export type CommunityViewData = CommunityData & {
-  title: string;
   tz: string;
   openTo: { coffeeChats: boolean; resumeReviews: boolean };
 };
@@ -81,7 +81,7 @@ function OpenToMenu({ openTo }: { openTo: CommunityViewData["openTo"] }) {
 }
 
 export function CommunityView({ data }: { data: CommunityViewData }) {
-  const { viewer, people, events, filterOptions, unplaced, tz, title, openTo } = data;
+  const { viewer, people, events, filterOptions, unplaced, tz, openTo } = data;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<CommunityTab>("people");
@@ -89,7 +89,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
   const [peopleFilters, setPeopleFilters] = useState<PeopleFilters>(NO_PEOPLE_FILTERS);
   const [eventFilters, setEventFilters] = useState(DEFAULT_EVENT_FILTERS);
   const [sort, setSort] = useState<PeopleSort>("match");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<string[] | null>(null);
   const [listFollowsMap, setListFollowsMap] = useState(true);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [hosting, setHosting] = useState<{ event: CommunityEvent | null } | null>(null);
@@ -130,7 +130,14 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
       return matches.length > 0 ? { ...place, people: matches } : { ...place, faded: true };
     });
   }, [allPlaces, filteredPeople]);
-  const selectedPlace = selectedKey ? (mapPlaces.find((p) => p.key === selectedKey) ?? null) : null;
+  const selectedPlaces = useMemo(
+    () => (selectedKeys ? mapPlaces.filter((p) => selectedKeys.includes(p.key)) : []),
+    [mapPlaces, selectedKeys],
+  );
+  const selectedPlace =
+    selectedPlaces.length > 0
+      ? { label: placesLabel(selectedPlaces), people: selectedPlaces.flatMap((p) => p.people) }
+      : null;
 
   const visibleEvents = useMemo(
     () => filterEvents(events, { ...eventFilters, query }),
@@ -151,7 +158,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
       : sorted;
   const nextEvent = [...eventsOnMapInView, ...eventsOnline].sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
 
-  const clearPlace = () => setSelectedKey(null);
+  const clearPlace = () => setSelectedKeys(null);
   const placeHead = selectedPlace
     ? {
         label: selectedPlace.label,
@@ -167,7 +174,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
         className="flex max-h-[55%] min-h-0 shrink-0 flex-col bg-os-card lg:max-h-none lg:w-[400px]"
       >
         <CommunityColumn
-          title={title}
+          title="Community"
           canHost={viewer.canHost}
           onHost={() => setHosting({ event: null })}
           headerExtra={viewer.isAlumni ? <OpenToMenu openTo={openTo} /> : null}
@@ -195,7 +202,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
           people={listPeople}
           placeHead={placeHead}
           onClearPlace={clearPlace}
-          placeEvents={selectedPlace ? eventsAtPlace(eventsOnMap, selectedPlace) : []}
+          placeEvents={selectedPlaces.flatMap((p) => eventsAtPlace(eventsOnMap, p))}
           nextEvent={nextEvent}
           eventsOnMap={eventsOnMapInView}
           eventsOnline={eventsOnline}
@@ -221,9 +228,10 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
             places={mapPlaces}
             events={eventsOnMap}
             tz={tz}
-            selectedKey={selectedPlace?.key ?? null}
+            home={viewer.lat != null && viewer.lng != null ? { lat: viewer.lat, lng: viewer.lng } : null}
+            selectedKeys={selectedKeys}
             selectedEventId={openEvent?.id ?? null}
-            onSelect={setSelectedKey}
+            onSelect={setSelectedKeys}
             onSelectEvent={openEventById}
             onBoundsChange={setBounds}
             className="h-full w-full"

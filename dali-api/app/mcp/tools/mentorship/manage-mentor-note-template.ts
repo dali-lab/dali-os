@@ -15,8 +15,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { markdownToBlocks } from "~/collab/blocknote-server";
 import { replaceCollabDocContent } from "~/collab/write";
+import { parseMarkdown } from "../../doc-markdown.server";
 import type { McpCtx, McpTool } from "../../registry";
 import {
   McpForbiddenError,
@@ -30,14 +30,18 @@ const MAX_MARKDOWN_LENGTH = 300_000;
 // Write a template's body via the collab pipeline (so open editors update and
 // the onStoreDocument hook fires), then mirror the blocks into contentJson so
 // new notes seed from it even if no collab server runs in this process.
-async function writeTemplateBody(id: string, markdown: string, callerId: string): Promise<void> {
-  const blocks = await markdownToBlocks(markdown);
+async function writeTemplateBody(id: string, markdown: string, callerId: string): Promise<string[]> {
+  const { blocks, warnings } = await parseMarkdown(markdown);
   await replaceCollabDocContent(`mentorNoteTemplate:${id}:body`, blocks, callerId);
   await prisma.mentorNoteTemplate.update({
     where: { id },
     data: { contentJson: blocks as unknown as object, lastUpdatedBy: callerId },
   });
+  return warnings;
 }
+
+const withWarnings = <T extends object>(result: T, warnings: string[]) =>
+  warnings.length ? { ...result, warnings } : result;
 
 export const MANAGE_MENTOR_NOTE_TEMPLATE_TOOL = {
   name: "manage_mentor_note_template",
@@ -122,10 +126,11 @@ export async function runManageMentorNoteTemplate(
         select: { id: true },
       });
     });
-    if (input.content !== undefined && input.content !== "") {
-      await writeTemplateBody(created.id, input.content, callerId);
-    }
-    return { id: created.id };
+    const warnings =
+      input.content !== undefined && input.content !== ""
+        ? await writeTemplateBody(created.id, input.content, callerId)
+        : [];
+    return withWarnings({ id: created.id }, warnings);
   }
 
   // ── update / delete — load and verify ────────────────────────────────────────
@@ -164,10 +169,11 @@ export async function runManageMentorNoteTemplate(
     }
     await tx.mentorNoteTemplate.update({ where: { id: tpl.id }, data });
   });
-  if (input.content !== undefined && input.content !== "") {
-    await writeTemplateBody(tpl.id, input.content, callerId);
-  }
-  return { ok: true };
+  const warnings =
+    input.content !== undefined && input.content !== ""
+      ? await writeTemplateBody(tpl.id, input.content, callerId)
+      : [];
+  return withWarnings({ ok: true }, warnings);
 }
 
 export const MANAGE_MENTOR_NOTE_TEMPLATE: McpTool = {
