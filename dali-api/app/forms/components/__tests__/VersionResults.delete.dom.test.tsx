@@ -9,6 +9,7 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 vi.mock("~/components/ui/floating", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   Select: () => null,
+  MultiSelect: () => null,
   Popover: () => null,
 }));
 vi.mock("~/components/os-chrome", () => ({ useOsChrome: () => ({ iconBtn: "" }), modalCardClass: () => "" }));

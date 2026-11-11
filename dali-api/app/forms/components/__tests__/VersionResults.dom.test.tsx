@@ -11,6 +11,19 @@ vi.mock("~/components/ui/floating", async (importOriginal) => ({
   Popover: ({ trigger, children }: { trigger: React.ReactElement | ((open: boolean) => React.ReactElement); children: React.ReactNode | ((close: () => void) => React.ReactNode) }) =>
     createElement("div", null, typeof trigger === "function" ? trigger(false) : trigger, typeof children === "function" ? children(() => {}) : children),
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
+  MultiSelect: ({ values, options, onChange, renderTrigger }: { values: string[]; options: { value: string; label: string }[]; onChange: (next: string[]) => void; renderTrigger: (s: { chosen: unknown[]; open: boolean }) => React.ReactNode }) =>
+    createElement(
+      "div",
+      { "data-testid": "member-columns" },
+      renderTrigger({ chosen: options.filter((o) => values.includes(o.value)), open: false }),
+      options.map((o) =>
+        createElement("button", {
+          key: o.value,
+          type: "button",
+          onClick: () => onChange(values.includes(o.value) ? values.filter((v) => v !== o.value) : [...values, o.value]),
+        }, o.label),
+      ),
+    ),
   Select: ({ options }: { options: { value: string; label: string }[] }) =>
     createElement("ul", { "aria-label": "slots" }, options.map((o) => createElement("li", { key: o.value }, o.label))),
 }));
@@ -161,6 +174,23 @@ describe("VersionResults", () => {
     await act(async () => void clear.dispatchEvent(new MouseEvent("click", { bubbles: true })));
     expect(container.querySelector("output")!.textContent).toBe("?view=results&version=2");
     expect(container.querySelector("input")!.value).toBe("");
+  });
+
+  it("adds and removes member columns through the URL, keeping the view", async () => {
+    await mount("/forms/edit/f1?view=results&version=2", results());
+    const picker = container.querySelector('[data-testid="member-columns"]')!;
+    expect(picker.textContent).toContain("Member columns");
+    const button = (label: string) => [...picker.querySelectorAll("button")].find((b) => b.textContent === label)!;
+    await act(async () => void button("Terms in lab").dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => void button("Project history").dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    let search = new URLSearchParams(container.querySelector("output")!.textContent!);
+    expect(search.get("member")).toBe("projectHistory,termsInLab");
+    expect(search.get("view")).toBe("results");
+    expect(picker.textContent).toContain("Member columns (2)");
+    await act(async () => void button("Terms in lab").dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await act(async () => void button("Project history").dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    search = new URLSearchParams(container.querySelector("output")!.textContent!);
+    expect(search.has("member")).toBe(false);
   });
 
   it("offers no Clear filters when nothing is narrowing the list", async () => {

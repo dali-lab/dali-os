@@ -37,6 +37,9 @@ export const BUILTIN_SOURCES = {
   // server-side at render time. View-only: it informs no staffing write, it's
   // just shown so a manager sees what the member is eligible for.
   hiredRoles: { defaultLabel: "Hired roles", constraint: "display" as const },
+  projectHistory: { defaultLabel: "Project history", constraint: "display" as const },
+  termsInLab: { defaultLabel: "Terms in lab", constraint: "display" as const },
+  currentRole: { defaultLabel: "Current role", constraint: "display" as const },
 } as const;
 
 export type BuiltinSource = keyof typeof BUILTIN_SOURCES;
@@ -99,6 +102,15 @@ export const HIRED_ROLES_ROLE: RoleDef = {
   constraint: "display",
 };
 
+const HISTORY_ROLES: RoleDef[] = (
+  ["projectHistory", "termsInLab", "currentRole"] as const
+).map((role) => ({
+  role,
+  defaultLabel: BUILTIN_SOURCES[role].defaultLabel,
+  required: false,
+  constraint: "display",
+}));
+
 // The role PALETTE each slot exposes — meanings a column MAY carry, none
 // required. A column mapped to project/domain/intent-status feeds staffing;
 // anything else (or "display") is view-only. Adding a slot is a registry
@@ -122,6 +134,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
+    ...HISTORY_ROLES,
   ],
   "intent-to-work": [
     {
@@ -134,6 +147,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
+    ...HISTORY_ROLES,
   ],
   "level-up": [
     {
@@ -157,6 +171,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
+    ...HISTORY_ROLES,
   ],
 };
 
