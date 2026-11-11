@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Settings } from "lucide-react";
 import { activeQuickItem, badgeLabel, orderRailAreas, splitFavorites, upcomingWhen, userMenuEntries } from "~/components/shell/rail-model";
-import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
+import { HOME_NAV_ITEM, pinnedNavItems } from "~/lib/nav-areas";
 
 const member = { isAlumni: false, isNewMember: false };
 const pinned = pinnedNavItems(member);
@@ -31,12 +31,12 @@ describe("activeQuickItem", () => {
     expect(activeQuickItem("/journeys", { pinned: newMemberPinned, flags, roles })).toBe("/journeys");
   });
 
-  it("treats Connect as Home for alumni and pins nothing", () => {
+  it("gives alumni Home at / with Community off the quick row, and pins nothing", () => {
     const roles = { isAlumni: true, isNewMember: false };
-    const home = homeNavItem(roles).href;
-    expect(activeQuickItem("/community", { home, pinned: pinnedNavItems(roles), roles })).toBe("home");
-    expect(activeQuickItem("/", { home, pinned: pinnedNavItems(roles), roles })).toBeNull();
-    expect(activeQuickItem("/drive", { home, pinned: pinnedNavItems(roles), roles })).toBeNull();
+    const opts = { home: HOME_NAV_ITEM.href, pinned: pinnedNavItems(roles), roles };
+    expect(activeQuickItem("/", opts)).toBe("home");
+    expect(activeQuickItem("/community", opts)).toBeNull();
+    expect(activeQuickItem("/drive", opts)).toBeNull();
   });
 
   it("matches nothing on a plain area page", () => {

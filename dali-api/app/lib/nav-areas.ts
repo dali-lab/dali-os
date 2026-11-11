@@ -86,6 +86,8 @@ export type SubTab = {
   gate?: (r: RoleFlags) => boolean;
   // Shows the matching count from useAdminAttention() beside the label.
   alert?: AdminAlertKey;
+  // Pages under another section's path that this tab claims for its viewer.
+  owns?: string;
 };
 
 export type NavArea = {
@@ -393,15 +395,12 @@ export function pinnedNavItems(
   return r.isNewMember && flags["onboarding-journeys"] ? [drive, ONBOARDING_NAV_ITEM] : [drive];
 }
 
-/** Where the wordmark and the workspace's first tab land. Community is the alumni Home. */
-export function homeNavItem(r: Pick<RoleFlags, "isAlumni">): SubTab {
-  return r.isAlumni
-    ? { label: "Home", href: "/community", icon: Home }
-    : { label: "Home", href: "/", icon: Home };
-}
+/** Where the wordmark and the workspace's first tab land. */
+export const HOME_NAV_ITEM: SubTab = { label: "Home", href: "/", icon: Home };
+
+const ALUMNI_COMMUNITY_NAV_ITEM: SubTab = { label: "Community", href: "/community", icon: MapPinned, owns: "/members" };
 
 // Alumni get one area, so the sidebar shows no section switcher for them.
-// Community is left out because it is their home (see homeNavItem).
 const ALUMNI_AREAS: NavArea[] = [
   {
     key: "projects",
@@ -410,6 +409,7 @@ const ALUMNI_AREAS: NavArea[] = [
     hubPath: "/projects",
     subtabs: [
       { label: "Projects", href: "/projects", icon: FolderKanban },
+      ALUMNI_COMMUNITY_NAV_ITEM,
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
       { label: "Gallery", href: "/community/gallery", icon: Images },
       { label: "Stories", href: "/resources", icon: Newspaper },
@@ -418,7 +418,23 @@ const ALUMNI_AREAS: NavArea[] = [
   },
 ];
 
-function areasForViewer(
+function ownedLen(pathname: string, t: SubTab): number {
+  return t.owns && pathname.startsWith(t.owns + "/") ? t.owns.length : -1;
+}
+
+/** The sub-tab that claims a path from another section (an alumnus's Community owns /members/:id). */
+export function owningSubtab(
+  path: string,
+  flags: Partial<FeatureFlagMap> = {},
+  r?: Pick<RoleFlags, "isAlumni" | "isNewMember">,
+): SubTab | undefined {
+  const p = pathnameOf(path);
+  return areasForViewer(r, flags)
+    .flatMap((a) => a.subtabs)
+    .find((t) => t.owns && (p === t.owns || ownedLen(p, t) >= 0));
+}
+
+export function areasForViewer(
   r: Pick<RoleFlags, "isAlumni" | "isNewMember"> | undefined,
   flags: Partial<FeatureFlagMap>,
 ): NavArea[] {
@@ -431,7 +447,11 @@ function areasForViewer(
   }
   if (!r?.isAlumni) return areasFor(flags);
   const hidden = new Set<string>(
-    flags.community ? [] : REGROUPED_AREAS.find((a) => a.key === "community")!.subtabs.map((t) => t.href),
+    flags.community
+      ? []
+      : REGROUPED_AREAS.find((a) => a.key === "community")!
+          .subtabs.map((t) => t.href)
+          .filter((href) => href !== ALUMNI_COMMUNITY_NAV_ITEM.href),
   );
   if (!flags["refer-a-partner"]) hidden.add(REFER_NAV_ITEM.href);
   return ALUMNI_AREAS.map((a) => ({
@@ -510,6 +530,10 @@ export function areaForPath(
         best = a;
         bestLen = t.href.length;
       }
+      if (ownedLen(p, t) > bestLen) {
+        best = a;
+        bestLen = ownedLen(p, t);
+      }
       // A query-scoped deep-link (e.g. /drive?type=agreement) is owned by this
       // sub-tab's area, not the hub its path belongs to.
       const qLen = queryHrefMatchLen(path, t.href);
@@ -557,6 +581,10 @@ export function activeSubtabHref(area: NavArea, path: string): string | undefine
     if (matches && t.href.length > bestLen) {
       best = t.href;
       bestLen = t.href.length;
+    }
+    if (ownedLen(p, t) > bestLen) {
+      best = t.href;
+      bestLen = ownedLen(p, t);
     }
     // Highlight a query-scoped deep-link (e.g. Core ▸ Agreements at
     // /drive?type=agreement) when the current url carries its filter, matching

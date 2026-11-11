@@ -10,7 +10,8 @@ import { PageBarTrail, useDocumentTitle, usePageTrail } from '~/components/Bread
 import { TablessHistoryNav } from '~/components/TablessHistoryNav'
 import { usePageBarTargetSetters } from '~/components/shell/page-bar-slot'
 import { pageBarCrumbs } from '~/components/shell/page-bar-model'
-import { useFeatureFlag } from '~/components/FeatureFlags'
+import type { FeatureFlagMap } from '~/lib/feature-flags'
+import type { RoleFlags } from '~/lib/nav-areas'
 import { AskButton } from '~/ask/components/AskButton'
 import { UNSAFE_DataRouterStateContext, UNSAFE_LocationContext, UNSAFE_RouteContext, useLocation } from 'react-router'
 import { useDisplayedTab } from '~/components/shell/displayed-tab'
@@ -46,27 +47,29 @@ function DisplayedPage({ children }: { children: ReactNode }) {
   )
 }
 
-function usePageBarHeading() {
+/** Whose nav the trail follows: the shell's resolved flags and roles. */
+export type PageBarNav = {
+  flags: Partial<FeatureFlagMap>
+  roles: Pick<RoleFlags, 'isAlumni' | 'isNewMember'>
+}
+
+function PageBarCrumbs({ nav }: { nav?: PageBarNav }) {
   const displayed = useDisplayedTab()
   const trail = usePageTrail()
   const documentTitle = useDocumentTitle()
   const { pathname, search } = useLocation()
-  const community = useFeatureFlag('community')
   const crumbs = pageBarCrumbs({
     path: pathname + search,
     trail: trail?.crumbs ?? [],
     title: displayed ? displayed.label : documentTitle,
-    flags: { community },
+    flags: nav?.flags,
+    roles: nav?.roles,
   })
-  return { trail, crumbs }
-}
-
-function PageBarCrumbs() {
-  return <PageBarTrail crumbs={usePageBarHeading().crumbs} />
+  return <PageBarTrail crumbs={crumbs} />
 }
 
 function PageBarTrailAction() {
-  return <>{usePageBarHeading().trail?.action}</>
+  return <>{usePageTrail()?.action}</>
 }
 
 export function PageBar({
@@ -76,6 +79,7 @@ export function PageBar({
   icon,
   star,
   onCopyLink,
+  nav,
 }: {
   tabs: boolean
   leading?: ReactNode
@@ -85,6 +89,7 @@ export function PageBar({
   icon?: LucideIcon
   star: PageStar
   onCopyLink: () => void
+  nav?: PageBarNav
 }) {
   const { statusRef, actionsRef, presenceRef } = usePageBarTargetSetters()
   const labels = starLabels(star)
@@ -110,7 +115,7 @@ export function PageBar({
         </div>
         {(areaKey || icon) && <AreaTile areaKey={areaKey ?? 'default'} size={22} icon={icon} />}
         <DisplayedPage>
-          <PageBarCrumbs />
+          <PageBarCrumbs nav={nav} />
         </DisplayedPage>
         <div ref={statusRef} className="flex min-w-0 items-center empty:hidden" />
       </div>
