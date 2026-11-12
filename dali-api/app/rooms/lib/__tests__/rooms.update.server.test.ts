@@ -17,7 +17,7 @@ vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { currentTerm, isCore } from "~/lib/roles";
-import { cancelRoomBookingAsMember, updateRoomBookingAsMember } from "~/lib/rooms.server";
+import { cancelRoomBookingAsMember, updateRoomBookingAsMember } from "~/rooms/lib/rooms.server";
 
 const m = prisma as unknown as {
   room: { findUnique: ReturnType<typeof vi.fn> };

@@ -81,7 +81,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({
   updateScheduledMeeting: vi.fn(),
 }));
 vi.mock("~/lib/note-path.server", () => ({ meetingNotePath: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => ({
+vi.mock("~/rooms/lib/rooms.server", () => ({
   bookRoomsForEvent: vi.fn(),
   claimEventRoomBookings: vi.fn(),
   releaseEventRoomBookings: vi.fn(),

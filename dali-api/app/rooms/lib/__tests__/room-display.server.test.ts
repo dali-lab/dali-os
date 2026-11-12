@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { hashCode } from "~/lib/pairing";
-import { displayRoom, redeemDisplaySetupCode, requireRoomDisplay } from "~/lib/room-display.server";
+import { displayRoom, redeemDisplaySetupCode, requireRoomDisplay } from "~/rooms/lib/room-display.server";
 
 const rd = prisma.roomDisplay as unknown as {
   findUnique: ReturnType<typeof vi.fn>;

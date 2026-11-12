@@ -7,7 +7,7 @@ import { createScheduledMeeting, type ScheduledMeetingScope } from "~/lib/schedu
 import { isCore, canViewForms, isLabMember } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
 import { notebookChoiceSchema } from "~/lib/notebook-choice";
-import { assertMeetingRoomsFree } from "~/lib/rooms.server";
+import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 
 export const SCHEDULE_MEETING_TOOL = {
   name: "schedule_meeting",

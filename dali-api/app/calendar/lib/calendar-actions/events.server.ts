@@ -3,7 +3,7 @@ import { NotAGuestError, createGoogleCalendarEvent, deleteGoogleCalendarEvent, g
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { type ScheduledMeetingScope, cancelScheduledMeeting, ownsGoogleEvent, updateScheduledMeeting } from "~/lib/scheduled-meeting";
 import { followingRule, googleInstanceOriginalStart, rruleWithUntil } from "~/lib/meeting-occurrences";
-import { bookRoomsForEvent, claimEventRoomBookings, releaseEventRoomBookings, releaseRoomBookings, retimeEventRoomBookings, truncateEventRoomBookings } from "~/lib/rooms.server";
+import { bookRoomsForEvent, claimEventRoomBookings, releaseEventRoomBookings, releaseRoomBookings, retimeEventRoomBookings, truncateEventRoomBookings } from "~/rooms/lib/rooms.server";
 import { resolveEventWorkLog, retimeEventWorkLog, workLogShapeError, writeEventWorkLog } from "~/calendar/lib/calendar-actions/event-work-log.server";
 import { assertLinkOwned } from "~/calendar/lib/calendar-actions/shared.server";
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("~/lib/room-display.server", async (importOriginal) => ({
-  displayRoom: (await importOriginal<typeof import("~/lib/room-display.server")>()).displayRoom,
+vi.mock("~/rooms/lib/room-display.server", async (importOriginal) => ({
+  displayRoom: (await importOriginal<typeof import("~/rooms/lib/room-display.server")>()).displayRoom,
   requireRoomDisplay: vi.fn(),
   displayUnauthorized: vi.fn(() => Response.json({ error: "Display not paired" }, { status: 401 })),
 }));
@@ -11,7 +11,7 @@ vi.mock("~/lib/display-check-ins.server", () => ({ isCheckedIn: vi.fn() }));
 vi.mock("~/wallet/lib/wallet-token.server", () => ({ walletTokensConfigured: vi.fn() }));
 vi.mock("~/wallet/lib/wallet-scan.server", () => ({ resolveScannedMember: vi.fn() }));
 vi.mock("~/lib/scheduled-meeting", () => ({ markMeetingAttendance: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => ({
+vi.mock("~/rooms/lib/rooms.server", () => ({
   getRoomSchedule: vi.fn(),
   currentEvent: vi.fn(),
   createRoomBooking: vi.fn(),
@@ -21,11 +21,11 @@ vi.mock("~/lib/rooms.server", () => ({
 vi.mock("~/lib/validate", () => ({ parseJson: vi.fn() }));
 vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn() }));
 
-import { requireRoomDisplay } from "~/lib/room-display.server";
+import { requireRoomDisplay } from "~/rooms/lib/room-display.server";
 import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { resolveScannedMember } from "~/wallet/lib/wallet-scan.server";
 import { markMeetingAttendance } from "~/lib/scheduled-meeting";
-import { cancelRoomBooking, createRoomBooking, currentEvent, extendRoomBooking, getRoomSchedule } from "~/lib/rooms.server";
+import { cancelRoomBooking, createRoomBooking, currentEvent, extendRoomBooking, getRoomSchedule } from "~/rooms/lib/rooms.server";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { isCheckedIn } from "~/lib/display-check-ins.server";

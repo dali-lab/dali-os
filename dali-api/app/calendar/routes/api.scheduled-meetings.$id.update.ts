@@ -9,7 +9,7 @@ import {
   type ScheduledMeetingScope,
 } from "~/lib/scheduled-meeting";
 import { prisma } from "~/lib/db.server";
-import { assertMeetingRoomsFree } from "~/lib/rooms.server";
+import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 
 // Edit is deliberately narrower than create: title, time, location, description,
 // and the guest list. Meeting type, project, note, and attendance mode are fixed

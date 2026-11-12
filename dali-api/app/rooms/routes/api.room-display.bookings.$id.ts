@@ -5,8 +5,8 @@ import { isCore } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { resolveScannedMember } from "~/wallet/lib/wallet-scan.server";
-import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
-import { cancelRoomBooking, extendRoomBooking, getRoomSchedule } from "~/lib/rooms.server";
+import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/rooms/lib/room-display.server";
+import { cancelRoomBooking, extendRoomBooking, getRoomSchedule } from "~/rooms/lib/rooms.server";
 
 const EXTEND_MINUTES = 15;
 

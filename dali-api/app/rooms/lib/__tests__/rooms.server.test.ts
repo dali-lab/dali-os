@@ -40,7 +40,7 @@ import {
   blockedBy,
   withoutCoveredHolds,
   type RoomScheduleItem,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 
 const m = prisma as unknown as {
   room: { findUnique: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };

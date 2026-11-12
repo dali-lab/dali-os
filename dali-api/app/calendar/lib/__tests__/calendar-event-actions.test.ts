@@ -81,7 +81,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({
   updateScheduledMeeting: vi.fn(),
 }));
 vi.mock("~/lib/note-path.server", () => ({ meetingNotePath: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => ({
+vi.mock("~/rooms/lib/rooms.server", () => ({
   bookRoomsForEvent: vi.fn(),
   claimEventRoomBookings: vi.fn(),
   releaseEventRoomBookings: vi.fn(),
@@ -114,7 +114,7 @@ import {
   releaseRoomBookings,
   retimeEventRoomBookings,
   truncateEventRoomBookings,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;

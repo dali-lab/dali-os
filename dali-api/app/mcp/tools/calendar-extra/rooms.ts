@@ -14,7 +14,7 @@ import {
   parseWindowParams,
   serializeScheduleItem,
   type RoomWriteResult,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 import { McpError, McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../errors";
 
 const OFFSET_ISO = /T.*(Z|[+-]\d{2}:?\d{2})$/i;

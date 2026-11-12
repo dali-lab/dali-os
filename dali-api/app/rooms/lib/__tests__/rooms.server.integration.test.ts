@@ -10,7 +10,7 @@ import {
   releaseEventRoomBookings,
   retimeEventRoomBookings,
   truncateEventRoomBookings,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;

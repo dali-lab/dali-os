@@ -3,7 +3,7 @@ import { z } from "zod";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { requireRoomBookingUser } from "~/rooms/lib/access.server";
-import { updateRoomBookingAsMember } from "~/lib/rooms.server";
+import { updateRoomBookingAsMember } from "~/rooms/lib/rooms.server";
 
 const BodySchema = z.object({
   start: z.coerce.date(),

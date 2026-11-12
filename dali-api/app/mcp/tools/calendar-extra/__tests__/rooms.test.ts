@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server", () => ({ prisma: { room: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
 vi.mock("~/lib/meeting-occurrences", () => ({ buildRule: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => {
+vi.mock("~/rooms/lib/rooms.server", () => {
   const parseWindowParams = (start: string, end: string) => {
     const window = { start: new Date(start), end: new Date(end) };
     return window.end > window.start ? window : null;
@@ -28,7 +28,7 @@ import {
   getRoomSchedule,
   listBookableRooms,
   listRoomAvailability,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 import {
   BOOK_ROOM_DEF,
   CANCEL_ROOM_BOOKING_DEF,

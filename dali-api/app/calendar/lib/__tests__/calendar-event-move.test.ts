@@ -20,8 +20,8 @@ vi.mock("~/lib/google-calendar", () => ({
   respondToGoogleEventAsSelf: vi.fn(),
   NotAGuestError: class NotAGuestError extends Error {},
 }));
-vi.mock("~/lib/rooms.server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/rooms.server")>()),
+vi.mock("~/rooms/lib/rooms.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/rooms/lib/rooms.server")>()),
   retimeEventRoomBookings: vi.fn(async () => ({ ok: true })),
 }));
 vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({

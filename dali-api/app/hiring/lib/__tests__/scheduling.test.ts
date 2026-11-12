@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server");
 // interviewer's calendar is free for the whole window (every fixture here is);
 // a test narrows it with setCalendarFree.
 vi.mock("~/hiring/lib/interview-availability.server", () => ({ interviewerCalendars: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => ({
+vi.mock("~/rooms/lib/rooms.server", () => ({
   createRoomBooking: vi.fn(),
   cancelRoomBooking: vi.fn(),
   getRoomSchedule: vi.fn(),
@@ -22,7 +22,7 @@ import { prisma } from "~/lib/db.server";
 import { sendReassignmentEmails } from "~/hiring/lib/interview-emails";
 import { notifyInterviewAssigned } from "~/hiring/lib/interview-notifications";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
-import { createRoomBooking, getRoomSchedule, blockedBy } from "~/lib/rooms.server";
+import { createRoomBooking, getRoomSchedule, blockedBy } from "~/rooms/lib/rooms.server";
 
 const ALWAYS_FREE = [{ startTime: new Date("2000-01-01T00:00:00Z"), endTime: new Date("2100-01-01T00:00:00Z") }];
 let calendarFree: Map<string, { startTime: Date; endTime: Date }[]> = new Map();

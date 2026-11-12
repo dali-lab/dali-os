@@ -21,7 +21,7 @@ import {
   previewBookingSeries,
   releaseCycleRoomBookings,
   type RoomScheduleItem,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 import { notify } from "~/lib/notify.server";
 
 export type HoldConfig = {

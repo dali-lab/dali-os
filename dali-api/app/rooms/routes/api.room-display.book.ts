@@ -3,8 +3,8 @@ import { z } from "zod";
 import { parseJson } from "~/lib/validate";
 import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { resolveScannedMember } from "~/wallet/lib/wallet-scan.server";
-import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
-import { createRoomBooking } from "~/lib/rooms.server";
+import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/rooms/lib/room-display.server";
+import { createRoomBooking } from "~/rooms/lib/rooms.server";
 
 // Either "now for N minutes" (the Book now buttons; the server's clock picks
 // the start so a skewed iPad can't shift it) or an explicit slot dragged out on
