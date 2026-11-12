@@ -7,6 +7,7 @@
 // `.status`) and the dispatcher does the rest.
 
 import type { JsonSchema } from "~/lib/mcp-input";
+import type { FeatureFlagKey } from "~/lib/feature-flags";
 
 export type McpScope = "mcp:read" | "mcp:write" | "mcp:admin";
 
@@ -34,6 +35,7 @@ export type McpToolDef = {
 export type McpTool = {
   def: McpToolDef;
   run: (ctx: McpCtx, args: Record<string, unknown>) => Promise<unknown>;
+  featureFlag?: FeatureFlagKey;
 };
 
 // ─── Errors ──────────────────────────────────────────────────────────────────

@@ -150,6 +150,6 @@ export async function runManageCoreMilestone(ctx: McpCtx, args: Record<string, u
 }
 
 export const CORE_MILESTONE_TOOLS: McpTool[] = [
-  { def: LIST_CORE_MILESTONES_TOOL, run: runListCoreMilestones },
-  { def: MANAGE_CORE_MILESTONE_TOOL, run: runManageCoreMilestone },
+  { def: LIST_CORE_MILESTONES_TOOL, run: runListCoreMilestones, featureFlag: "core-taskboard" },
+  { def: MANAGE_CORE_MILESTONE_TOOL, run: runManageCoreMilestone, featureFlag: "core-taskboard" },
 ];

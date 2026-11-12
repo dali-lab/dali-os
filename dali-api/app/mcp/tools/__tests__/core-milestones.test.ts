@@ -123,3 +123,9 @@ describe("manage_core_milestone", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 });
+
+describe("core milestone tool flag", () => {
+  it("gates every registry entry on core-taskboard", () => {
+    expect(CORE_MILESTONE_TOOLS.map((t) => t.featureFlag)).toEqual(["core-taskboard", "core-taskboard"]);
+  });
+});

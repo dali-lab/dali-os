@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
 import { REGISTRY_TOOLS, registryToolDefs } from "../registry";
+import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { validateInput } from "~/lib/mcp-input";
 import { ASK_TOOL_NAMES } from "~/ask/tools.server";
 
@@ -86,6 +87,11 @@ describe("MCP registry invariants", () => {
   it("resolves every Ask DALI tool name to a registered read tool", () => {
     const byName = new Map(REGISTRY_TOOLS.map((t) => [t.def.name, t.def.requiredScope]));
     expect(ASK_TOOL_NAMES.filter((n) => byName.get(n) !== "mcp:read")).toEqual([]);
+  });
+
+  it("only gates tools on registered feature flags", () => {
+    const keys = new Set<string>(FEATURE_FLAGS.map((f) => f.key));
+    expect(REGISTRY_TOOLS.filter((t) => t.featureFlag && !keys.has(t.featureFlag)).map((t) => t.def.name)).toEqual([]);
   });
 
   it("advertises every registry tool", () => {
