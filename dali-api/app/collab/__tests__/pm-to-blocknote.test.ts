@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import * as Y from "yjs";
 import { mapPmDocToBlocks, ensureBlocks } from "../legacy/pm-to-blocknote";
-import { blocksToPmDoc } from "../legacy/blocknote-to-pm";
 import { blocksToFragment, fragmentToBlocks, type DocBlock } from "../blocknote-server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import type { PMNode } from "../export-html";
@@ -422,8 +421,8 @@ describe("ensureBlocks format sniffing", () => {
   });
 });
 
-describe("blocksToPmDoc (compat reverse mapper)", () => {
-  it("reconstructs legacy structures for read-only PM renderers", () => {
+describe("mapPmDocToBlocks structure", () => {
+  it("maps legacy structures to one block per top-level node", () => {
     const { blocks } = map(
       { type: "heading", attrs: { level: 3 }, content: [{ type: "text", text: "T" }] },
       {
@@ -437,29 +436,16 @@ describe("blocksToPmDoc (compat reverse mapper)", () => {
         type: "taskList",
         content: [{ type: "taskItem", attrs: { checked: true }, content: [p("t")] }],
       },
-      { type: "horizontalRule" },
-      { type: "image", attrs: { src: "https://x.test/i.png", alt: "pic", width: 200, align: "left" } },
-      {
-        type: "paragraph",
-        content: [
-          { type: "text", text: "see ", marks: [] },
-          { type: "text", text: "docs", marks: [{ type: "link", attrs: { href: "https://d.test" } }] },
-          { type: "mention", attrs: { id: "u1", label: "k" } },
-        ],
-      },
+      { type: "image", attrs: { src: "https://x.test/i.png", alt: "pic" } },
     );
-    const pm = blocksToPmDoc(blocks);
-    expect(pm.type).toBe("doc");
-    const types = (pm.content ?? []).map((n) => n.type);
-    expect(types).toEqual(["heading", "bulletList", "taskList", "horizontalRule", "image", "paragraph"]);
-    const list = pm.content![1]!;
-    expect(list.content).toHaveLength(2);
-    expect(list.content![0]!.type).toBe("listItem");
-    const image = pm.content![4]!;
-    expect(image.attrs).toMatchObject({ src: "https://x.test/i.png", alt: "pic", width: 200, align: "left" });
-    const para = pm.content![5]!;
-    const link = para.content!.find((n) => n.marks?.some((m) => m.type === "link"));
-    expect(link?.marks?.[0]?.attrs?.href).toBe("https://d.test");
-    expect(para.content!.some((n) => n.type === "mention")).toBe(true);
+    expect(blocks.map((b) => b.type)).toEqual([
+      "heading",
+      "bulletListItem",
+      "bulletListItem",
+      "checkListItem",
+      "image",
+    ]);
+    expect(blocks[0]!.props).toMatchObject({ level: 3 });
+    expect(blocks[3]!.props).toMatchObject({ checked: true });
   });
 });

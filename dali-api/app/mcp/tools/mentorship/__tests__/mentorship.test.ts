@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isLabMentor: vi.fn() };
@@ -49,6 +50,7 @@ vi.mock("~/mcp/registry", () => {
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMentor } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 
 import {
   runListMentorNotes,
@@ -111,7 +113,6 @@ const BASE_NOTE = {
   termId: "term-1",
   domainId: "dom-1",
   weekOf: new Date("2026-08-04"),
-  contentJson: {},
   vibe: null,
   updatedAt: new Date("2026-08-04"),
   mentor: { id: ME, firstName: "Alice", lastName: "Mentor" },
@@ -286,12 +287,11 @@ describe("get_mentor_note", () => {
     await expect(runGetMentorNote(ME, { id: "nope" })).rejects.toMatchObject({ status: 404 });
   });
 
-  it("reads the body from the page's room, not contentJson, once the note has a page", async () => {
+  it("reads the body from the page's room", async () => {
     const roomBlocks = [{ type: "paragraph", content: "from the room" }];
     mockPrisma.mentorNote.findUnique.mockResolvedValue({
       ...BASE_NOTE,
       pageId: "page-1",
-      contentJson: [{ type: "paragraph", content: "stale" }],
     });
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: false, canComment: false });
     vi.mocked(readDocAsBlocks).mockResolvedValue(roomBlocks as never);
@@ -302,14 +302,14 @@ describe("get_mentor_note", () => {
     expect(out.contentJson).toEqual(roomBlocks);
   });
 
-  it("falls back to contentJson while the note has no page", async () => {
-    const blocks = [{ type: "paragraph", content: "column" }];
-    mockPrisma.mentorNote.findUnique.mockResolvedValue({ ...BASE_NOTE, pageId: null, contentJson: blocks });
+  it("reads an empty body while the note has no page, never selecting contentJson", async () => {
+    mockPrisma.mentorNote.findUnique.mockResolvedValue({ ...BASE_NOTE, pageId: null });
 
     const out = (await runGetMentorNote(ME, { id: NOTE_ID })) as Record<string, unknown>;
 
     expect(readDocAsBlocks).not.toHaveBeenCalled();
-    expect(out.contentJson).toEqual(blocks);
+    expect(out.contentJson).toEqual([]);
+    expect(mockPrisma.mentorNote.findUnique.mock.calls[0][0].select).not.toHaveProperty("contentJson");
   });
 
   it("forbids a caller the note's page does not admit", async () => {
@@ -405,15 +405,18 @@ describe("manage_mentor_note", () => {
       weekOf: "2026-08-04",
     });
     expect(out).toMatchObject({ id: "note-new", created: true });
-    expect(mockPrisma.mentorNote.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ contentJson: { blocks: [] } }),
-      }),
+    const call = mockPrisma.mentorNote.create.mock.calls[0][0];
+    expect(call.data).not.toHaveProperty("contentJson");
+    expect(call.select).not.toHaveProperty("contentJson");
+    expect(ensureMentorNotePage).toHaveBeenCalledWith(
+      { id: "note-new", mentorId: ME },
+      ME,
+      { seed: { blocks: [] } },
     );
   });
 
   it("upsert gives a newly created note its notebook tab, as the caller", async () => {
-    const created = { id: "note-new", mentorId: ME, pageId: null, contentJson: { blocks: [] } };
+    const created = { id: "note-new", mentorId: ME, pageId: null };
     mockPrisma.mentorNote.findUnique.mockResolvedValue(null);
     mockPrisma.mentorNoteTemplate.findFirst.mockResolvedValue(null);
     mockPrisma.mentorNote.create.mockResolvedValue(created);
@@ -427,7 +430,7 @@ describe("manage_mentor_note", () => {
       weekOf: "2026-08-04",
     });
 
-    expect(ensureMentorNotePage).toHaveBeenCalledWith(created, ME);
+    expect(ensureMentorNotePage).toHaveBeenCalledWith(created, ME, { seed: undefined });
   });
 
   it("upsert of an existing note creates no second tab", async () => {
@@ -557,10 +560,44 @@ describe("manage_mentorship_pair", () => {
   it("Core can delete an existing pair", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.mentorshipPair.findUnique.mockResolvedValue({ id: PAIR_ID });
-    mockPrisma.mentorshipPair.delete.mockResolvedValue({});
+    mockPrisma.mentorshipPair.deleteMany.mockResolvedValue({ count: 1 });
 
     const out = await runManageMentorshipPair(ME, { action: "delete", id: PAIR_ID });
     expect(out).toMatchObject({ ok: true });
+  });
+
+  it("create writes a mentorship.pair.create audit event with the request", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.mentorshipPair.findMany.mockResolvedValue([]);
+    mockPrisma.mentorshipPair.create.mockResolvedValue({ id: PAIR_ID });
+    const request = new Request("http://localhost/mcp");
+    await runManageMentorshipPair(
+      ME,
+      { action: "create", menteeUserId: MENTEE, mentorUserId: ME, projectId: "p", termId: "t", domainId: "d" },
+      { request },
+    );
+    expect(logAuditEvent).toHaveBeenCalledWith({
+      action: "mentorship.pair.create",
+      userId: ME,
+      targetId: PAIR_ID,
+      metadata: { menteeUserId: MENTEE, mentorUserId: ME, projectId: "p", termId: "t", domainId: "d" },
+      request,
+    });
+  });
+
+  it("delete writes a mentorship.pair.delete audit event", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.mentorshipPair.findUnique.mockResolvedValue({ id: PAIR_ID });
+    mockPrisma.mentorshipPair.deleteMany.mockResolvedValue({ count: 1 });
+    await runManageMentorshipPair(ME, { action: "delete", id: PAIR_ID });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "mentorship.pair.delete",
+        userId: ME,
+        targetId: PAIR_ID,
+        metadata: { ids: [PAIR_ID], deleted: 1 },
+      }),
+    );
   });
 
   it("delete 404s on missing pair", async () => {

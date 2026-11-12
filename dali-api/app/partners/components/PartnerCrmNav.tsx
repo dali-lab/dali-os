@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "react-router";
 import { BarChart3, Building2, CalendarRange, Kanban, RefreshCcw, UserPlus } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 
 const TABS = [
   { label: "Applications", href: "/core/partners", icon: Kanban },

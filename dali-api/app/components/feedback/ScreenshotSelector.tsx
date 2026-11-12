@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { cn } from "~/lib/cn";
 import { Button } from "~/components/ui/Button";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
+import { Z } from "~/components/ui/z";
 import {
   RESIZE_HANDLES,
   moveRect,
@@ -193,7 +194,7 @@ export function ScreenshotSelector({
       role="dialog"
       aria-modal="true"
       aria-label="Select a screenshot area"
-      className="fixed inset-0 z-[100] flex select-none items-center justify-center bg-black"
+      className={`fixed inset-0 ${Z.top} flex select-none items-center justify-center bg-black`}
     >
       {src && (
         <div

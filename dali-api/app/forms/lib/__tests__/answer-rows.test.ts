@@ -297,3 +297,35 @@ describe("answer rows with rules", () => {
     expect(second.slice(4)).toEqual(["No", "moving"]);
   });
 });
+
+describe("file answers", () => {
+  const KEY_A = "uploads/applications/shots/0b6f8a52-1c1e-4d38-9a51-2f3c6d7e8f90-a.png";
+  const KEY_B = "uploads/applications/shots/7d1e2f3a-4b5c-4d6e-8f70-112233445566-b.png";
+  const shots = q({ key: "shots", type: "file", data: { label: "Screenshots", maxFiles: 3 } });
+
+  it("shows file names in the cell and carries each key for a link", async () => {
+    const rows = await formAnswerRows([shots], { shots: [KEY_A, KEY_B] });
+    expect(rows).toEqual([
+      {
+        key: "shots",
+        label: "Screenshots",
+        value: "a.png, b.png",
+        files: [
+          { name: "a.png", key: KEY_A },
+          { name: "b.png", key: KEY_B },
+        ],
+      },
+    ]);
+  });
+
+  it("reads a single stored key", async () => {
+    expect(formatAnswerValue(shots, KEY_A)).toBe("a.png");
+    const [row] = await formAnswerRows([shots], { shots: KEY_A });
+    expect(row.files).toEqual([{ name: "a.png", key: KEY_A }]);
+  });
+
+  it("has no files for an unanswered question", async () => {
+    const [row] = await formAnswerRows([shots], {});
+    expect(row).toMatchObject({ value: "", files: [] });
+  });
+});

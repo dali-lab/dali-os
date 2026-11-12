@@ -19,8 +19,12 @@ import { canRecordInto } from "~/lib/meeting-recording.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
 import { prisma } from "~/lib/db.server";
-import { generateAndVerifyEnhancePlan, EnhanceBlocksSchema } from "~/lib/meeting-notes-enhance.server";
-import { AI_BURST_MAX, AI_BURST_WINDOW_MS } from "./api.ai.meeting-notes";
+import {
+  generateAndVerifyEnhancePlan,
+  EnhanceBlocksSchema,
+  AI_BURST_MAX,
+  AI_BURST_WINDOW_MS,
+} from "~/lib/meeting-notes-enhance.server";
 
 const RequestSchema = z.object({
   recordingId: z.string().min(1),
@@ -28,7 +32,7 @@ const RequestSchema = z.object({
   untouchedTemplate: z.boolean(),
   // Set by the client from hasEnhanceMarks(editor.document) — the server
   // can't cheaply read the live doc from this route, so it trusts the
-  // client's own scan (specs/meeting-recording-rail.md Step 2: "Server
+  // client's own scan (specs/archive/meeting-recording-rail.md Step 2: "Server
   // write paths refuse while marks exist").
   hasMarks: z.boolean().optional(),
 });

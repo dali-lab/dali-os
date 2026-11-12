@@ -159,6 +159,12 @@ export const FEATURE_FLAGS = [
     description:
       "Form questions can start filled in from what DALI OS already knows about the person filling them (their name and email, and for partners their organization and project). The answer stays editable. Also adds a \"Partners\" option to a form's sharing. Ships off.",
   },
+  {
+    key: "alumni-home",
+    label: "Alumni: Baker tower Home",
+    description:
+      "Alumni see Baker tower over the Green on Home, in Hanover's current season, by day or night, with the clock showing Hanover time. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

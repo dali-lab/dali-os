@@ -8,6 +8,7 @@
 // Neon daily rows re-read the full 60-day window once per UTC day and only the
 // last two days on other runs, which keeps hourly runs to a few hundred upserts.
 
+import { logError } from "~/lib/log.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
@@ -234,8 +235,8 @@ export async function runInfraSnapshot(ctx: JobContext): Promise<JobResult> {
 export async function refreshProjectInfra(projectId: string): Promise<void> {
   const creds = await getProjectInfraCreds(projectId);
   if (!creds?.infraEnabled) return;
-  if (creds.flyOrgSlug) await adoptOrgSnapshot(projectId, "fly", creds.flyOrgSlug).catch(() => {});
-  if (creds.neonOrgId) await adoptOrgSnapshot(projectId, "neon", creds.neonOrgId).catch(() => {});
+  if (creds.flyOrgSlug) await adoptOrgSnapshot(projectId, "fly", creds.flyOrgSlug).catch((err) => logError("infra.adopt-snapshot", err, { projectId, provider: "fly" }));
+  if (creds.neonOrgId) await adoptOrgSnapshot(projectId, "neon", creds.neonOrgId).catch((err) => logError("infra.adopt-snapshot", err, { projectId, provider: "neon" }));
   void sweepProjects([creds], { now: new Date(), lastSuccessAt: null, settings: {} }).catch((err) =>
     console.error("infra refresh failed", projectId, err instanceof Error ? err.message : err),
   );

@@ -11,8 +11,9 @@
 // over-cap sends to the next UTC day, and dead-lettering exhausted messages for
 // an operator to inspect in Admin → Communications.
 //
-// See specs/communication-idempotency.md.
+// See specs/archive/communication-idempotency.md.
 
+import { isUniqueViolation } from "~/lib/prisma-errors";
 import { prisma, Prisma } from "~/lib/db.server";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
@@ -26,6 +27,7 @@ import {
 import { getObjectBytes } from "~/lib/s3";
 import type { KnownBlock } from "@slack/web-api";
 import { getAppEnv } from "~/lib/app-env";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
@@ -82,18 +84,6 @@ const DEFAULT_DRAIN: DrainConfig = {
   lockSeconds: 120,
 };
 
-// Slack is prod-only: the staging DB is a prod snapshot, so real Slack ids live
-// there and a staging send would reach real people. Mirrors notify.server.ts.
-function slackAllowed(): boolean {
-  return getAppEnv() === "prod" || process.env.NOTIFY_SLACK_DM_OVERRIDE === "1";
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  // Duck-type on the Prisma error code rather than instanceof — robust whether
-  // Prisma is the real namespace or a test mock, and avoids a value-import of
-  // the generated client.
-  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002";
-}
 
 type StoredAttachment = { filename: string; mimeType: string; contentBase64: string };
 
@@ -333,7 +323,7 @@ async function sendOne(
   if (row.channel === "slack_dm" || row.channel === "slack_channel") {
     // Defense-in-depth: never reach real Slack ids from dev/staging even if a
     // producer enqueued one. Cancel rather than retry forever.
-    if (!slackConfigured() || !slackAllowed()) {
+    if (!slackConfigured() || !slackSendAllowed()) {
       return { cancel: true, reason: `slack not allowed in ${getAppEnv()}` };
     }
     const text = row.slackText ?? row.bodyText ?? row.subject ?? "";

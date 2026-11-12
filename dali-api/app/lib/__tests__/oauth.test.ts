@@ -268,7 +268,7 @@ describe("exchangeAuthorizationCode", () => {
     );
   });
 
-  it("succeeds and returns userId/provider/accountType", async () => {
+  it("succeeds and returns the user, scopes and client", async () => {
     const { createHash } = await import("node:crypto");
     const challenge = createHash("sha256")
       .update(baseParams.codeVerifier)
@@ -282,15 +282,11 @@ describe("exchangeAuthorizationCode", () => {
       codeChallenge: challenge,
       codeChallengeMethod: "S256",
       userId: "user-abc",
-      provider: "cas",
-      accountType: "dartmouth",
     });
 
     const result = await exchangeAuthorizationCode(baseParams);
     expect(result).toEqual({
       userId: "user-abc",
-      provider: "cas",
-      accountType: "dartmouth",
       scopes: [],
       clientId: baseParams.clientId,
     });

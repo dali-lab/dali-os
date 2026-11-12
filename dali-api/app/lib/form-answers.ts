@@ -13,16 +13,13 @@ export function isLayoutOnly(type: Question["type"]): boolean {
 // a skills_rating answer counts as answered only when every skill is rated.
 export function isAnswered(value: string | undefined, question?: Question): boolean {
   if (question && isLayoutOnly(question.type)) return true; // not an answer
+  if (question?.type === "file") return parseFileAnswer(value).length > 0;
   if (question?.type === "skills_rating") {
     return isSkillsRatingComplete(value, question.data.options ?? []);
   }
   return typeof value === "string" && value.trim() !== "";
 }
 
-// Required, unanswered questions in their original order. Layout-only blocks
-// (`info`, `pageBreak`) are always excluded (never a real answer). `file` is
-// optionally excluded for fill surfaces that can't upload (e.g. the member
-// form-fill view).
 // A Database list whose choices resolved to nothing can never be answered, so
 // it never blocks submitting. Unresolved lists (no referenceOptions) still count.
 export function hasNothingToPick(q: Question): boolean {
@@ -32,19 +29,59 @@ export function hasNothingToPick(q: Question): boolean {
 export function findMissingRequired(
   questions: Question[],
   getValue: (q: Question) => string | undefined,
-  opts?: { excludeFileType?: boolean },
 ): Question[] {
   return questions.filter(
     (q) =>
       !isLayoutOnly(q.type) &&
       q.required &&
       !hasNothingToPick(q) &&
-      !(opts?.excludeFileType && q.type === "file") &&
       !isAnswered(getValue(q), q),
   );
 }
 
 export const OTHER_ANSWER_MAX_LENGTH = 200;
+
+export const MAX_FILES_PER_QUESTION = 10;
+
+export function maxFilesFor(q: Question): number {
+  const n = q.data.maxFiles;
+  return typeof n === "number" && Number.isInteger(n) && n >= 1
+    ? Math.min(n, MAX_FILES_PER_QUESTION)
+    : 1;
+}
+
+// A file answer is one upload key, a string[] of keys, or (in fill state) that
+// array JSON-stringified.
+export function parseFileAnswer(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.filter((k): k is string => typeof k === "string" && k !== "");
+  if (typeof raw !== "string" || raw.trim() === "") return [];
+  if (!raw.startsWith("[")) return [raw];
+  try {
+    return parseFileAnswer(JSON.parse(raw));
+  } catch {
+    return [];
+  }
+}
+
+// Why `count` files doesn't fit the question, or null. Zero is left to the
+// required check.
+export function fileCountError(q: Question, count: number): string | null {
+  const max = maxFilesFor(q);
+  if (count === 0) return null;
+  if (q.data.exactFiles && max > 1 && count !== max) return `add exactly ${max} files.`;
+  if (count > max) return max === 1 ? "takes one file." : `takes up to ${max} files.`;
+  return null;
+}
+
+export function serializeFileAnswer(keys: string[], maxFiles: number): string {
+  if (keys.length === 0) return "";
+  return maxFiles > 1 ? JSON.stringify(keys) : keys[0];
+}
+
+export function fileAnswerName(key: string): string {
+  const last = key.split("/").pop() ?? key;
+  return last.replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i, "") || last;
+}
 
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 const NUMBER_PATTERN = /^-?\d+(\.\d+)?$/;
@@ -79,6 +116,11 @@ export function validateAnswerFormats(
     if (raw == null || raw === "") continue;
     const fail = (message: string) =>
       errors.push({ key: q.key, message: `"${q.data.label}": ${message}` });
+    if (q.type === "file") {
+      const countError = fileCountError(q, parseFileAnswer(raw).length);
+      if (countError) fail(countError);
+      continue;
+    }
     if (typeof raw !== "string") {
       if (["radio", "scale", "date", "number", "email"].includes(q.type)) {
         fail("couldn't read the answer.");

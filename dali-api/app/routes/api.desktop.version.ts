@@ -1,7 +1,7 @@
 // GET /api/desktop/version — unauthenticated, no DB. Advertises the minimum and
 // latest supported desktop shell versions so the Tauri app can force a security
 // update (appVersion < minVersion) or nudge a soft update (appVersion <
-// latestVersion). Env-driven with safe fallbacks. See TAURI_DESKTOP_PLAN.md.
+// latestVersion). Env-driven with safe fallbacks. See specs/archive/TAURI_DESKTOP_PLAN.md.
 
 import type { Route } from "./+types/api.desktop.version";
 

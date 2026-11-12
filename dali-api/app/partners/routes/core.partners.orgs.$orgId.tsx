@@ -60,6 +60,7 @@ import { PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
 import { EditableSection } from "~/components/EditableSection";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
 import { loadPartnerActivityPage } from "../lib/partner-activity-page.server";
+import { maintenanceLabel } from "../lib/partner-renewals";
 import { OrgAvatar } from "../components/org/OrgAvatar";
 import { ContactAvatar } from "../components/contact/ContactAvatar";
 import {
@@ -161,7 +162,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           projectId: true,
           startedAt: true,
           endedAt: true,
-          project: { select: { id: true, name: true, status: true, iconEmoji: true } },
+          project: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              iconEmoji: true,
+              maintenancePlans: { where: { endedAt: null }, take: 1, select: { plan: true } },
+            },
+          },
         },
       },
       applications: {
@@ -1702,6 +1711,11 @@ export default function PartnerOrgDetail() {
                                   ? "Archived"
                                   : "Ended"}
                             </DotPill>
+                            {pp.project.maintenancePlans[0] && (
+                              <DotPill dot="bg-os-accent">
+                                {maintenanceLabel(pp.project.maintenancePlans[0].plan)}
+                              </DotPill>
+                            )}
                           </span>
                           <div className="text-xs text-os-grey">
                             {pp.startedAt

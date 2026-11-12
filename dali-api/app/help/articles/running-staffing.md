@@ -23,6 +23,7 @@ Intent to Work, Project Bids and Level Up each read from a form you connect for 
    - Project Bids: three **Project** picks, in order, plus **Submitted by** and **Hired roles**. The mapping is not complete until all three picks and both of those are placed.
    - Level Up: **Applying In** (the domain) and **Applying For** (the level), which enable the Level Up button, plus **Submitted by**.
    - Anything else can be a view-only column.
+   - Any slot can also add automatic columns that fill themselves from the member's record: **Project history** (every project and the terms they worked on it), **Terms in lab** (the count and each term) and **Current role** (each domain and level, plus any Core title, from their latest term).
 6. Optionally use **Lock the app** to require an audience to fill the form before they can use the rest of the app. The choices are everyone active this term, returning members, new members or mentors. A member fills a locked form once.
 
 A banner on a page warns you if the mapping has a problem. Submissions are still recorded, but the affected columns won't feed staffing until you fix it. The Staffing board shows a warning when no Project Bids form is connected.

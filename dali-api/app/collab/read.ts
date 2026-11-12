@@ -20,6 +20,7 @@ import {
   fragmentToBlocks,
   type DocBlock,
 } from "./blocknote-server";
+import { stripCommentFormats } from "./comment-formats";
 import { mapPmDocToBlocks } from "./legacy/pm-to-blocknote";
 
 export type DocBlockSource = "blocknote" | "legacy" | "empty";
@@ -30,9 +31,11 @@ export interface YDocBlocks {
   losses: string[];
 }
 
-/** Read an in-memory Y.Doc as blocks, preferring the BlockNote fragment and
- * falling back to a legacy-PM in-memory conversion. Never mutates the doc. */
-export function ydocToBlocks(doc: Y.Doc): YDocBlocks {
+function decodeOwned(doc: Y.Doc): YDocBlocks {
+  doc.transact(() => {
+    stripCommentFormats(doc.getXmlFragment(BLOCKNOTE_FRAGMENT));
+    stripCommentFormats(doc.getXmlFragment(LEGACY_PM_FRAGMENT));
+  });
   const blocknote = doc.getXmlFragment(BLOCKNOTE_FRAGMENT);
   if (blocknote.length > 0) {
     return { blocks: fragmentToBlocks(blocknote), source: "blocknote", losses: [] };
@@ -46,12 +49,22 @@ export function ydocToBlocks(doc: Y.Doc): YDocBlocks {
   return { blocks: [], source: "empty", losses: [] };
 }
 
+export function ydocToBlocks(live: Y.Doc): YDocBlocks {
+  const clone = new Y.Doc();
+  try {
+    Y.applyUpdate(clone, Y.encodeStateAsUpdate(live));
+    return decodeOwned(clone);
+  } finally {
+    clone.destroy();
+  }
+}
+
 /** Decode a persisted CollabDocument state into blocks. */
 export function stateToBlocks(state: Uint8Array): YDocBlocks {
   const ydoc = new Y.Doc();
   try {
     Y.applyUpdate(ydoc, state);
-    return ydocToBlocks(ydoc);
+    return decodeOwned(ydoc);
   } catch {
     return { blocks: [], source: "empty", losses: ["stored state failed to decode"] };
   } finally {

@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  MAX_FILES_PER_QUESTION,
+  fileAnswerName,
+  fileCountError,
   isAnswered,
   findMissingRequired,
+  maxFilesFor,
+  parseFileAnswer,
+  serializeFileAnswer,
   hasNothingToPick,
   isLayoutOnly,
   isValidIsoDate,
@@ -135,14 +141,11 @@ describe("findMissingRequired", () => {
     expect(missing).toEqual([]);
   });
 
-  it("honors excludeFileType", () => {
-    const withFile = findMissingRequired([text, file], () => "");
-    expect(withFile.map((m) => m.key)).toEqual(["name", "resume"]);
-
-    const withoutFile = findMissingRequired([text, file], () => "", {
-      excludeFileType: true,
-    });
-    expect(withoutFile.map((m) => m.key)).toEqual(["name"]);
+  it("counts a required file as missing until it has an upload", () => {
+    expect(findMissingRequired([text, file], () => "").map((m) => m.key)).toEqual(["name", "resume"]);
+    expect(findMissingRequired([file], () => "[]").map((m) => m.key)).toEqual(["resume"]);
+    expect(findMissingRequired([file], () => '["uploads/applications/resume/a.pdf"]')).toEqual([]);
+    expect(findMissingRequired([file], () => "uploads/applications/resume/a.pdf")).toEqual([]);
   });
 
   it("uses skills-rating awareness for required skills questions", () => {
@@ -367,5 +370,90 @@ describe("hasNothingToPick", () => {
   it("keeps an empty list out of the missing answers, but not an unresolved one", () => {
     expect(findMissingRequired([ref([])], () => undefined)).toEqual([]);
     expect(findMissingRequired([ref(undefined)], () => undefined)).toHaveLength(1);
+  });
+});
+
+describe("file answers", () => {
+  const KEY_A = "uploads/applications/shots/0b6f8a52-1c1e-4d38-9a51-2f3c6d7e8f90-home screen.png";
+  const KEY_B = "uploads/applications/shots/7d1e2f3a-4b5c-4d6e-8f70-112233445566-b.png";
+  const fileQ = (data: Partial<Question["data"]> = {}): Question => ({
+    key: "shots",
+    type: "file",
+    required: true,
+    data: { label: "Screenshots", ...data },
+  });
+
+  it("reads a single key, a stored array and a fill-state JSON array", () => {
+    expect(parseFileAnswer(KEY_A)).toEqual([KEY_A]);
+    expect(parseFileAnswer([KEY_A, KEY_B])).toEqual([KEY_A, KEY_B]);
+    expect(parseFileAnswer(JSON.stringify([KEY_A, KEY_B]))).toEqual([KEY_A, KEY_B]);
+  });
+
+  it("reads blanks, bad JSON and other shapes as no files", () => {
+    for (const raw of [undefined, null, "", "  ", "[", "[]", {}, 3, [1, ""]]) {
+      expect(parseFileAnswer(raw)).toEqual([]);
+    }
+  });
+
+  it("writes a plain key for one-file questions and a JSON array for more", () => {
+    expect(serializeFileAnswer([KEY_A], 1)).toBe(KEY_A);
+    expect(serializeFileAnswer([KEY_A, KEY_B], 3)).toBe(JSON.stringify([KEY_A, KEY_B]));
+    expect(serializeFileAnswer([], 3)).toBe("");
+  });
+
+  it("defaults to one file and caps at the per-question limit", () => {
+    expect(maxFilesFor(fileQ())).toBe(1);
+    expect(maxFilesFor(fileQ({ maxFiles: 3 }))).toBe(3);
+    expect(maxFilesFor(fileQ({ maxFiles: 0 }))).toBe(1);
+    expect(maxFilesFor(fileQ({ maxFiles: 2.5 }))).toBe(1);
+    expect(maxFilesFor(fileQ({ maxFiles: 50 }))).toBe(MAX_FILES_PER_QUESTION);
+  });
+
+  it("names a file without its upload id", () => {
+    expect(fileAnswerName(KEY_A)).toBe("home screen.png");
+    expect(fileAnswerName("uploads/applications/shots/plain.png")).toBe("plain.png");
+  });
+
+  it("counts a file question as answered only with an upload", () => {
+    expect(isAnswered("", fileQ())).toBe(false);
+    expect(isAnswered("[]", fileQ())).toBe(false);
+    expect(isAnswered(KEY_A, fileQ())).toBe(true);
+    expect(isAnswered(JSON.stringify([KEY_A]), fileQ())).toBe(true);
+  });
+});
+
+describe("fileCountError", () => {
+  const fq = (data: Partial<Question["data"]>): Question => ({
+    key: "shots",
+    type: "file",
+    required: true,
+    data: { label: "Shots", ...data },
+  });
+
+  it("allows 1 to N for up to N", () => {
+    const q = fq({ maxFiles: 3 });
+    expect([1, 2, 3].map((n) => fileCountError(q, n))).toEqual([null, null, null]);
+    expect(fileCountError(q, 4)).toBe("takes up to 3 files.");
+    expect(fileCountError(fq({}), 2)).toBe("takes one file.");
+  });
+
+  it("allows only N for exactly N", () => {
+    const q = fq({ maxFiles: 3, exactFiles: true });
+    expect(fileCountError(q, 3)).toBeNull();
+    expect(fileCountError(q, 1)).toBe("add exactly 3 files.");
+    expect(fileCountError(q, 4)).toBe("add exactly 3 files.");
+  });
+
+  it("leaves zero files to the required check", () => {
+    expect(fileCountError(fq({ maxFiles: 3, exactFiles: true }), 0)).toBeNull();
+  });
+
+  it("reports the count through validateAnswerFormats", () => {
+    const q = fq({ maxFiles: 3, exactFiles: true });
+    expect(validateAnswerFormats([q], { shots: JSON.stringify(["a", "b"]) })).toEqual([
+      { key: "shots", message: '"Shots": add exactly 3 files.' },
+    ]);
+    expect(validateAnswerFormats([q], { shots: ["a", "b", "c"] })).toEqual([]);
+    expect(validateAnswerFormats([q], { shots: "" })).toEqual([]);
   });
 });

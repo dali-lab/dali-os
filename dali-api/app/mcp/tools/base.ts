@@ -1,6 +1,6 @@
 // MCP tool area: base — the original member, task, page and project tools.
 
-import type { McpTool } from "../registry";
+import type { McpCtx, McpTool } from "../registry";
 
 import { WHOAMI_TOOL, runWhoami } from "./whoami";
 import { LIST_MY_NOTIFICATIONS_TOOL, runListMyNotifications } from "./list-my-notifications";
@@ -61,10 +61,10 @@ import { LIST_DOCUMENT_SHARING_TOOL, runListDocumentSharing } from "./document-c
 import { LIST_FILE_SHARES_TOOL, runListFileShares } from "./file-sharing";
 import { LIST_PAGE_SHARES_TOOL, runListPageShares } from "./page-sharing";
 
-type CallerTool = (callerId: string, args: never) => Promise<unknown>;
+type CallerTool = (callerId: string, args: never, ctx: McpCtx) => Promise<unknown>;
 
 function asCaller(def: McpTool["def"], run: CallerTool): McpTool {
-  return { def, run: (ctx, args) => run(ctx.user.id, args as never) };
+  return { def, run: (ctx, args) => run(ctx.user.id, args as never, ctx) };
 }
 
 export const BASE_TOOLS: McpTool[] = [

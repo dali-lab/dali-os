@@ -1,5 +1,5 @@
 // Compile-time constants and derived URLs. The shell is hardcoded to the prod
-// origin (single build, prod-only — see TAURI_DESKTOP_PLAN.md).
+// origin (single build, prod-only — see specs/archive/TAURI_DESKTOP_PLAN.md).
 
 pub const PROD_ORIGIN: &str = "https://os.dali.dartmouth.edu";
 pub const DEEP_LINK_SCHEME: &str = "dalios";

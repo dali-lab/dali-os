@@ -3,12 +3,8 @@
 // identity/relationship-based and unchanged by the 3-way-door model: account
 // type comes from which door the user used (member/dartmouth/partner), not
 // from auto-classification of email domains.
-//
-// Phase 1 call-sites can swap `requireAuth` → `requireUser` and
-// `auth.user` → `user` with minimal diffs.
 
 import { auth } from "~/lib/betterauth.server";
-import { isCore } from "~/lib/roles";
 
 import type { AuthType } from "~/lib/auth";
 
@@ -35,20 +31,6 @@ function deriveType(
   if (daliEmail) return "member";
   if (netId || dartmouthEmail) return "dartmouth";
   return "partner";
-}
-
-function unauthorizedJson(): Response {
-  return new Response(JSON.stringify({ error: "Unauthorized" }), {
-    status: 401,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function forbiddenJson(): Response {
-  return new Response(JSON.stringify({ error: "Forbidden" }), {
-    status: 403,
-    headers: { "Content-Type": "application/json" },
-  });
 }
 
 // BetterAuth's TypeScript definitions for additionalFields are incomplete —
@@ -139,26 +121,4 @@ export async function verifyBetterAuthBearerToken(
   const headers = new Headers({ authorization: `Bearer ${token}` });
   const session = await auth.api.getSession({ headers });
   return session?.user.id ?? null;
-}
-
-// Require a valid BetterAuth session. Returns { ok: true; user } or
-// { ok: false; response } with a 401.
-export async function requireUser(
-  request: Request,
-): Promise<{ ok: true; user: AuthUser } | { ok: false; response: Response }> {
-  const user = await getBetterAuthUser(request);
-  if (!user) return { ok: false, response: unauthorizedJson() };
-  return { ok: true, user };
-}
-
-// Require a valid BetterAuth session AND Core membership. Returns
-// { ok: true; user } or { ok: false; response } with a 401/403.
-export async function requireCore(
-  request: Request,
-): Promise<{ ok: true; user: AuthUser } | { ok: false; response: Response }> {
-  const result = await requireUser(request);
-  if (!result.ok) return result;
-  const core = await isCore(result.user.sub);
-  if (!core) return { ok: false, response: forbiddenJson() };
-  return { ok: true, user: result.user };
 }

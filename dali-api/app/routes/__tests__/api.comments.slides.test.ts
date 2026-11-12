@@ -94,10 +94,17 @@ describe("slide anchors on create", () => {
     expect(db.docComment.create).not.toHaveBeenCalled();
   });
 
-  it("still takes plain doc anchors on any page", async () => {
+  it("still takes inline blocknote anchors on any page", async () => {
+    pageIs("Doc");
+    const res = await post(slideComment({ anchor: { kind: "blocknote" } }));
+    expect(res.status).toBe(201);
+  });
+
+  it("rejects a legacy {from, to} anchor", async () => {
     pageIs("Doc");
     const res = await post(slideComment({ anchor: { from: "a", to: "b" } }));
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(400);
+    expect(db.docComment.create).not.toHaveBeenCalled();
   });
 });
 

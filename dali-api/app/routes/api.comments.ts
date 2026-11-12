@@ -3,18 +3,14 @@ import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
 import { isLabMember, isProjectMember } from "~/lib/roles";
-import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth";
 import { withEmojiImages } from "~/lib/reactions.server";
-import { notify } from "~/lib/notify.server";
-import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { publishCommentChange } from "~/lib/comment-events.server";
+import { createDocComment, CommentCreateError, type CommentTarget } from "~/lib/doc-comments.server";
 import type { BodySegment } from "~/lib/comment-body";
-import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
-import { docCommentContext } from "~/lib/comment-links.server";
+import { commentAnchorSchema } from "~/lib/slide-comments";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
@@ -62,32 +58,6 @@ const CreateSchema = z.object({
   // is pinned to the iteration it was written against.
   versionId: z.string().min(1).nullable().optional(),
 });
-
-type CommentTarget = "doc" | "file" | "pagedoc";
-
-// Confirm the target exists and is live. Accepts ALL page workspace types
-// (not just Project) so Lab/Education/personal pages don't 404.
-async function targetExists(targetType: CommentTarget, targetId: string): Promise<boolean> {
-  if (targetType === "doc") {
-    const page = await prisma.page.findUnique({
-      where: { id: targetId },
-      select: { archivedAt: true },
-    });
-    return !!page && page.archivedAt === null;
-  }
-  if (targetType === "pagedoc") {
-    const doc = await prisma.pageDoc.findUnique({
-      where: { id: targetId },
-      select: { id: true },
-    });
-    return doc !== null;
-  }
-  const file = await prisma.projectFile.findUnique({
-    where: { id: targetId },
-    select: { archivedAt: true },
-  });
-  return !!file && file.archivedAt === null;
-}
 
 // Auth split by target type:
 //   pagedoc — any lab member (open FAQ)
@@ -171,7 +141,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     authorPhotoUrl: photoById.get(r.authorId) ?? null,
     body: r.body,
     bodyJson: r.bodyJson as BodySegment[] | null,
-    anchor: r.anchor as { from: string; to: string } | null,
+    anchor: r.anchor as Record<string, unknown> | null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,
@@ -198,217 +168,23 @@ export async function action({ request }: Route.ActionArgs) {
     return forbidden(request);
   }
 
-  if (!(await targetExists(body.targetType, body.targetId))) {
-    return withCors(request, Response.json({ error: "Target not found" }, { status: 404 }));
-  }
-  // Replies must point at an existing root comment on the same target. Only one
-  // level of threading: reject replying to a reply.
-  if (body.parentId) {
-    const parent = await prisma.docComment.findUnique({
-      where: { id: body.parentId },
-      select: { targetType: true, targetId: true, parentId: true },
-    });
-    if (
-      !parent ||
-      parent.targetType !== body.targetType ||
-      parent.targetId !== body.targetId ||
-      parent.parentId !== null
-    ) {
-      return withCors(request, Response.json({ error: "Invalid parent comment" }, { status: 400 }));
-    }
-  }
-  // Anchors only make sense on documents.
-  const anchor = body.targetType === "doc" ? (body.anchor ?? null) : null;
-  if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
-    const page = await prisma.page.findUnique({ where: { id: body.targetId }, select: { kind: true } });
-    if (page?.kind !== "Slides") {
-      return withCors(request, Response.json({ error: "Slide anchors only apply to slide decks" }, { status: 400 }));
-    }
-  }
-
-  // File comments are pinned to a version so feedback reads against the
-  // right iteration: the one the commenter was viewing (sent by the file
-  // page), falling back to the current version for callers that don't say.
-  let versionId: string | null = null;
-  if (body.targetType === "file") {
-    if (body.versionId) {
-      const version = await prisma.projectFileVersion.findFirst({
-        where: { id: body.versionId, fileId: body.targetId },
-        select: { id: true },
-      });
-      if (!version) {
-        return withCors(request, Response.json({ error: "Invalid version" }, { status: 400 }));
-      }
-      versionId = version.id;
-    } else {
-      versionId =
-        (
-          await prisma.projectFile.findUnique({
-            where: { id: body.targetId },
-            select: { currentVersionId: true },
-          })
-        )?.currentVersionId ?? null;
-    }
-  }
-
-  const created = await prisma.docComment.create({
-    data: {
+  try {
+    const created = await createDocComment({
       targetType: body.targetType,
       targetId: body.targetId,
-      parentId: body.parentId ?? null,
+      parentId: body.parentId,
       authorId: auth.user.sub,
       body: body.body,
-      // Store rich segments when provided; null for legacy plain-text comments.
-      bodyJson: body.bodyJson ?? undefined,
-      anchor: anchor === null ? undefined : anchor,
-      // Real FK only on the file side (see schema note).
-      fileId: body.targetType === "file" ? body.targetId : null,
-      versionId,
-    },
-    select: { id: true },
-  });
-
-  // Nudge any open comment-stream listeners for this page so they refetch.
-  if (body.targetType === "doc") {
-    publishCommentChange(body.targetId);
-  }
-
-  // Root comments on a file notify its audience (uploaders + linked-task
-  // assignees). Replies are covered by the thread-reply path below.
-  if (body.targetType === "file" && !body.parentId) {
-    void notifyFileComment({
-      fileId: body.targetId,
-      authorId: auth.user.sub,
-      body: body.body,
-    }).catch((err) =>
-      console.error(`comment ${created.id}: file comment notify failed`, err),
-    );
-  }
-
-  if (body.parentId) {
-    void notifyThreadReply({
-      targetType: body.targetType,
-      targetId: body.targetId,
-      rootId: body.parentId,
-      authorId: auth.user.sub,
-      body: body.body,
+      bodyJson: body.bodyJson,
+      anchor: body.anchor,
+      versionId: body.versionId,
       path: body.path,
-    }).catch((err) =>
-      console.error(`comment ${created.id}: reply notify failed`, err),
-    );
-  }
-
-  // @-mentions in any comment (document, file, or page-doc FAQ) notify the
-  // tagged members. Root or reply.
-  // Two paths, deduped:
-  //   1. bodyJson mention segments — exact userId, no handle resolution needed.
-  //   2. Legacy @handle tokens in plain body — resolves handles for comments
-  //      that arrive without bodyJson (old clients, file comments, pagedoc FAQ).
-  void (async () => {
-    const allIds = new Set<string>();
-
-    // Path 1: userId from bodyJson mention segments (preferred, exact).
-    if (body.bodyJson) {
-      for (const seg of body.bodyJson) {
-        if (seg.type === "mention" && seg.userId) allIds.add(seg.userId);
-      }
-    }
-
-    // Path 2: handle-based for pagedoc/file targets and legacy plain-text.
-    // Skip if bodyJson already gave us the full set (all doc targets with bodyJson).
-    if (body.targetType !== "doc" || !body.bodyJson || body.bodyJson.length === 0) {
-      const handleIds = await resolveHandles(extractHandlesFromText(body.body));
-      for (const id of handleIds) allIds.add(id);
-    }
-
-    if (allIds.size === 0) return;
-
-    let link: string;
-    if (body.targetType === "doc") {
-      link = (await docCommentContext(body.targetId, body.parentId ?? created.id, created.id, body.parentId ? undefined : anchor)).link;
-    } else {
-      const base = body.targetType === "pagedoc" ? pageDocLink(body.path) : `/documents/file/${body.targetId}`;
-      link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
-    }
-    await notifyMentions({
-      recipientUserIds: [...allIds],
-      actorId: auth.user.sub,
-      link,
-      copyKey: "mention.comment",
-      preview: body.body,
     });
-  })().catch((err) =>
-    console.error(`comment ${created.id}: mention notify failed`, err),
-  );
-
-  return withCors(request, Response.json({ id: created.id }, { status: 201 }));
-}
-
-// A reply notifies everyone already in the thread (root author + prior
-// repliers), except the reply's own author.
-async function notifyThreadReply(args: {
-  targetType: CommentTarget;
-  targetId: string;
-  rootId: string;
-  authorId: string;
-  body: string;
-  path?: string;
-}): Promise<void> {
-  const thread = await prisma.docComment.findMany({
-    where: { OR: [{ id: args.rootId }, { parentId: args.rootId }] },
-    select: { authorId: true },
-  });
-  const recipients = [...new Set(thread.map((c) => c.authorId))].filter(
-    (id) => id !== args.authorId,
-  );
-  if (recipients.length === 0) return;
-
-  let title: string | null | undefined;
-  let link: string;
-  let partnerLink: string | null = null;
-  let partnerIds = new Set<string>();
-  if (args.targetType === "doc") {
-    const context = await docCommentContext(args.targetId, args.rootId, args.rootId);
-    title = context.title;
-    link = context.replyLink;
-    partnerLink = context.partnerReplyLink;
-    if (partnerLink) partnerIds = await partnerAccountIds(recipients);
-  } else if (args.targetType === "pagedoc") {
-    title = (
-      await prisma.pageDoc.findUnique({
-        where: { id: args.targetId },
-        select: { title: true },
-      })
-    )?.title;
-    link = pageDocLink(args.path);
-  } else {
-    title = (
-      await prisma.projectFile.findUnique({
-        where: { id: args.targetId },
-        select: { title: true },
-      })
-    )?.title;
-    link = `/documents/file/${args.targetId}`;
+    return withCors(request, Response.json({ id: created.id }, { status: 201 }));
+  } catch (err) {
+    if (err instanceof CommentCreateError) {
+      return withCors(request, Response.json({ error: err.message }, { status: err.status }));
+    }
+    throw err;
   }
-  const preview = args.body.length > 200 ? `${args.body.slice(0, 200)}…` : args.body;
-
-  await notify({
-    eventType: "collab.comment_reply",
-    createdByUserId: args.authorId,
-    message: {
-      vars: { itemTitle: title ?? "a document", itemDetail: preview },
-      link,
-    },
-    recipients: recipients.map((userId) =>
-      partnerLink && partnerIds.has(userId) ? { userId, link: partnerLink } : { userId },
-    ),
-  });
-}
-
-async function partnerAccountIds(userIds: string[]): Promise<Set<string>> {
-  const contacts = await prisma.partnerContact.findMany({
-    where: { userId: { in: userIds }, user: { daliMember: { is: null } } },
-    select: { userId: true },
-  });
-  return new Set(contacts.flatMap((c) => (c.userId ? [c.userId] : [])));
 }

@@ -14,6 +14,7 @@ import {
   filterEvents,
   filterPeople,
   groupByPlace,
+  placesLabel,
   sortPeople,
   type EventFilters,
   type MapBounds,
@@ -88,7 +89,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
   const [peopleFilters, setPeopleFilters] = useState<PeopleFilters>(NO_PEOPLE_FILTERS);
   const [eventFilters, setEventFilters] = useState(DEFAULT_EVENT_FILTERS);
   const [sort, setSort] = useState<PeopleSort>("match");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<string[] | null>(null);
   const [listFollowsMap, setListFollowsMap] = useState(true);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [hosting, setHosting] = useState<{ event: CommunityEvent | null } | null>(null);
@@ -129,7 +130,14 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
       return matches.length > 0 ? { ...place, people: matches } : { ...place, faded: true };
     });
   }, [allPlaces, filteredPeople]);
-  const selectedPlace = selectedKey ? (mapPlaces.find((p) => p.key === selectedKey) ?? null) : null;
+  const selectedPlaces = useMemo(
+    () => (selectedKeys ? mapPlaces.filter((p) => selectedKeys.includes(p.key)) : []),
+    [mapPlaces, selectedKeys],
+  );
+  const selectedPlace =
+    selectedPlaces.length > 0
+      ? { label: placesLabel(selectedPlaces), people: selectedPlaces.flatMap((p) => p.people) }
+      : null;
 
   const visibleEvents = useMemo(
     () => filterEvents(events, { ...eventFilters, query }),
@@ -150,7 +158,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
       : sorted;
   const nextEvent = [...eventsOnMapInView, ...eventsOnline].sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
 
-  const clearPlace = () => setSelectedKey(null);
+  const clearPlace = () => setSelectedKeys(null);
   const placeHead = selectedPlace
     ? {
         label: selectedPlace.label,
@@ -194,7 +202,7 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
           people={listPeople}
           placeHead={placeHead}
           onClearPlace={clearPlace}
-          placeEvents={selectedPlace ? eventsAtPlace(eventsOnMap, selectedPlace) : []}
+          placeEvents={selectedPlaces.flatMap((p) => eventsAtPlace(eventsOnMap, p))}
           nextEvent={nextEvent}
           eventsOnMap={eventsOnMapInView}
           eventsOnline={eventsOnline}
@@ -220,9 +228,10 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
             places={mapPlaces}
             events={eventsOnMap}
             tz={tz}
-            selectedKey={selectedPlace?.key ?? null}
+            home={viewer.lat != null && viewer.lng != null ? { lat: viewer.lat, lng: viewer.lng } : null}
+            selectedKeys={selectedKeys}
             selectedEventId={openEvent?.id ?? null}
-            onSelect={setSelectedKey}
+            onSelect={setSelectedKeys}
             onSelectEvent={openEventById}
             onBoundsChange={setBounds}
             className="h-full w-full"

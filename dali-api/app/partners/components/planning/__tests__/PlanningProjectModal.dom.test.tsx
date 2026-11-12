@@ -16,6 +16,8 @@ const info: PlanningProjectInfo = {
   pisByTerm: { t26s: null },
   spotsByTerm: { t26s: [{ domainId: "eng", name: "Engineering", slots: 2 }] },
   note: { body: "Waiting on budget", updatedAt: "2026-11-05T15:00:00.000Z", updatedByName: "Ada Lovelace" },
+  lastTerm: null,
+  maintenance: null,
 };
 
 const domains = [
@@ -27,12 +29,12 @@ let container: HTMLDivElement;
 let root: Root;
 let posted: FormData[];
 
-async function mount(canEdit = true) {
+async function mount(canEdit = true, projectInfo: PlanningProjectInfo = info) {
   posted = [];
   const Page = () =>
     createElement(PlanningProjectModal, {
       project: { id: "p1", name: "Example", iconEmoji: null },
-      info,
+      info: projectInfo,
       coreMembers: [{ userId: "c1", name: "Core Person" }],
       domains,
       currentTermId: "t26s",
@@ -164,5 +166,40 @@ describe("sameSpots", () => {
       ),
     ).toBe(true);
     expect(sameSpots([{ domainId: "a", name: "A", slots: 1 }], [{ domainId: "a", name: "A", slots: 2 }])).toBe(false);
+  });
+});
+
+describe("PlanningProjectModal for an undecided renewal", () => {
+  const undecided: PlanningProjectInfo = {
+    ...info,
+    plannedTerms: [],
+    pisByTerm: {},
+    spotsByTerm: {},
+    lastTerm: {
+      id: "t26w",
+      code: "26W",
+      pi: { userId: "c1", name: "Core Person" },
+      spots: [{ domainId: "eng", name: "Engineering", slots: 4 }],
+    },
+  };
+
+  it("shows the last term with its PI and spots, read-only spots", async () => {
+    await mount(true, undecided);
+    expect(document.body.textContent).toContain("Last ran 26W");
+    expect(document.body.textContent).toContain("Not decided yet");
+    expect(document.body.textContent).toContain("4 spots");
+    expect(document.body.querySelector("button[aria-label='PI for 26W']")).not.toBeNull();
+    expect(document.body.querySelector("button[aria-label='26W: More Engineering']")).toBeNull();
+  });
+
+  it("assigns the PI on the last term so it carries forward", async () => {
+    await mount(true, undecided);
+    await act(async () => document.body.querySelector<HTMLButtonElement>("button[aria-label='PI for 26W']")!.click());
+    await act(async () =>
+      Array.from(document.body.querySelectorAll<HTMLButtonElement>("button[role='option']"))
+        .find((o) => o.textContent === "No PI")!
+        .click(),
+    );
+    expect(Object.fromEntries(posted[0])).toEqual({ intent: "pi", projectId: "p1", termId: "t26w", piUserId: "" });
   });
 });

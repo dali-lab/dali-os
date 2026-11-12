@@ -619,7 +619,7 @@ describe("runSearch — guides", () => {
       id: "projects.staffing",
       title: "Staffing",
       subtitle: "Guide",
-      url: "/projects/staffing?doc=1",
+      url: "/core/staffing?doc=1",
     });
   });
 
@@ -628,7 +628,6 @@ describe("runSearch — guides", () => {
       {
         pageKey: "drive.mine",
         title: "My Drive",
-        body: null,
         sections: [
           {
             id: "s1",

@@ -4,6 +4,7 @@ import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
+import { linkTaskFile, TaskFileError, unlinkTaskFile } from "../lib/task-files.server";
 
 // POST   /api/tasks/:id/files { fileId } — link a project file (work artifact)
 //        to the task. Idempotent: re-linking an already-linked file is a no-op.
@@ -36,54 +37,17 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (body instanceof Response) return withCors(request, body);
 
   if (request.method === "DELETE") {
-    const { count } = await prisma.taskFileLink.deleteMany({
-      where: { taskId: task.id, fileId: body.fileId },
-    });
-    // Attaching or detaching work is an update to the task like any other, so
-    // it feeds the board's new-updates indicator (see Task.activityAt). Only
-    // when something actually changed — an unlink of an already-unlinked file
-    // shouldn't re-flag the card for everyone.
-    if (count > 0) {
-      await prisma.task.update({
-        where: { id: task.id },
-        data: { activityAt: new Date() },
-      });
-    }
+    await unlinkTaskFile({ taskId: task.id, fileId: body.fileId });
     return withCors(request, Response.json({ ok: true }));
   }
 
-  const file = await prisma.projectFile.findUnique({
-    where: { id: body.fileId },
-    select: {
-      id: true,
-      title: true,
-      projectId: true,
-      archivedAt: true,
-      _count: { select: { versions: true } },
-    },
-  });
-  if (!file || file.archivedAt !== null || file.projectId !== task.projectId) {
-    return withCors(request, Response.json({ error: "File not found" }, { status: 404 }));
+  try {
+    const { file } = await linkTaskFile({ taskId: task.id, fileId: body.fileId });
+    return withCors(request, Response.json(file, { status: 201 }));
+  } catch (err) {
+    if (err instanceof TaskFileError) {
+      return withCors(request, Response.json({ error: err.message }, { status: err.status }));
+    }
+    throw err;
   }
-
-  const { count } = await prisma.taskFileLink.createMany({
-    data: [{ taskId: task.id, fileId: file.id }],
-    skipDuplicates: true,
-  });
-  if (count > 0) {
-    await prisma.task.update({
-      where: { id: task.id },
-      data: { activityAt: new Date() },
-    });
-  }
-
-  // The linked-artifact shape TaskCardModel carries, so the modal can update
-  // its local list without a refetch.
-  return withCors(
-    request,
-    Response.json(
-      { id: file.id, title: file.title, versionCount: file._count.versions },
-      { status: 201 },
-    ),
-  );
 }

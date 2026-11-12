@@ -7,14 +7,14 @@ import {
 import { logAuditEvent } from "~/lib/audit";
 import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
 import { withCors } from "~/lib/cors";
-import { isCore, isDomainLead, isLabMember, isProjectMember } from "~/lib/roles";
+import { getUserRoles, isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
 import { getAppEnv } from "~/lib/app-env";
 import { sampleDuration } from "~/lib/perf-stats";
 
-// Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
+// Session-backed auth middleware. See specs/archive/SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
 // callers (`auth.user.sub` is used across calendar/, collab/, etc.) keep
 // working without per-file edits.
@@ -306,7 +306,7 @@ export async function requireCore(
 ): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
   const auth = await requireAuth(request);
   if (!auth.ok) return { ok: false, response: auth.response };
-  const core = await isCore(auth.user.sub);
+  const core = await isCore(auth.user.sub, request);
   if (!core) return { ok: false, response: forbidden(request) };
   return { ok: true, auth };
 }
@@ -316,11 +316,8 @@ export async function requireCoreOrDomainLead(
 ): Promise<{ ok: true; auth: AuthSuccess } | { ok: false; response: Response }> {
   const auth = await requireAuth(request);
   if (!auth.ok) return { ok: false, response: auth.response };
-  const [core, domainLead] = await Promise.all([
-    isCore(auth.user.sub),
-    isDomainLead(auth.user.sub),
-  ]);
-  if (!core && !domainLead) return { ok: false, response: forbidden(request) };
+  const roles = await getUserRoles(auth.user.sub, request);
+  if (!roles.isCore && !roles.isDomainLead) return { ok: false, response: forbidden(request) };
   return { ok: true, auth };
 }
 

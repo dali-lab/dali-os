@@ -2,10 +2,8 @@ import { describe, it, expect, vi } from "vitest";
 
 // The route module pulls in its own server half (Prisma, Google) at import
 // time. Only shouldRevalidate is under test here, so stub that half out.
-vi.mock("~/calendar/routes/calendar.server", () => ({
-  loadCalendarData: vi.fn(),
-  submitCalendarAction: vi.fn(),
-}));
+vi.mock("~/calendar/lib/calendar-loader.server", () => ({ loadCalendarData: vi.fn() }));
+vi.mock("~/calendar/lib/calendar-actions.server", () => ({ submitCalendarAction: vi.fn() }));
 
 import { shouldRevalidate } from "~/calendar/routes/calendar";
 

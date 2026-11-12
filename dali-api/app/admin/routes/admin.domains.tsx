@@ -5,7 +5,7 @@ import { prisma } from "~/lib/db.server";
 import { ensureDomainGroup } from "~/lib/groups";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
-import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "./api.domains.$domainId";
+import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "~/admin/lib/domain-usage";
 import { parseLevel } from "~/admin/lib/eligibility";
 import {
   applyEligibilityWithNotify,

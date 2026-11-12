@@ -87,7 +87,8 @@ describe("buildPlanningGap", () => {
       ["eng", 2, 7],
       ["des", 1, 5],
     ]);
-    expect(m.totals.intent).toBe(2);
+    expect(m.totals.intent).toBe(3);
+    expect(m.totals.people).toBe(2);
     expect(m.totals.noDomain).toBe(1);
   });
 
@@ -108,7 +109,7 @@ describe("buildPlanningGap", () => {
     expect(m.totals.intent).toBe(2);
   });
 
-  it("counts a person eligible in two domains once in the total", () => {
+  it("counts a person eligible in two domains once per domain in the total, and once as a person", () => {
     const m = buildPlanningGap({
       domains,
       items: [],
@@ -116,7 +117,8 @@ describe("buildPlanningGap", () => {
       includePotential: false,
       includeBacklog: false,
     });
-    expect(m.totals.intent).toBe(1);
+    expect(m.totals.intent).toBe(2);
+    expect(m.totals.people).toBe(1);
     expect(m.rows.map((r) => r.intent)).toEqual([1, 1]);
   });
 
@@ -407,5 +409,36 @@ describe("effectivePi", () => {
 
   it("never reads a later term's PI", () => {
     expect(effectivePi(rows, 0)).toBeNull();
+  });
+});
+
+describe("planningStateLabel for returns", () => {
+  it("marks a returning application", async () => {
+    const { planningStateLabel } = await import("../planning-gap");
+    expect(planningStateLabel({ state: "Interview", returning: true })).toBe("Interview (return)");
+    expect(planningStateLabel({ state: "Interview" })).toBe("Interview");
+  });
+});
+
+describe("findPlanningProject", () => {
+  it("finds a counted or listed project row", async () => {
+    const { findPlanningProject } = await import("../planning-gap");
+    expect(
+      findPlanningProject("p1", [{ kind: "project", refId: "p1", name: "Atlas", iconEmoji: null }], []),
+    ).toEqual({ id: "p1", name: "Atlas", iconEmoji: null });
+  });
+
+  it("finds a project on a maintenance plan, which has no planning row", async () => {
+    const { findPlanningProject } = await import("../planning-gap");
+    expect(findPlanningProject("kept", [], [{ projectId: "kept", name: "Kept", iconEmoji: "🛠" }])).toEqual({
+      id: "kept",
+      name: "Kept",
+      iconEmoji: "🛠",
+    });
+  });
+
+  it("ignores an application with the same id and returns null when nothing matches", async () => {
+    const { findPlanningProject } = await import("../planning-gap");
+    expect(findPlanningProject("a1", [{ kind: "application", refId: "a1", name: "App", iconEmoji: null }], [])).toBeNull();
   });
 });

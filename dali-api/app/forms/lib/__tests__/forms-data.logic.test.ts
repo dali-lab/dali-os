@@ -88,7 +88,7 @@ describe.each([
   });
 
   it("rejects a source of a type that cannot be a source", async () => {
-    const res = await save([q("a", "text"), q("why", "textarea", rule("a", "is", "x"))]);
+    const res = await save([q("a", "skills_rating"), q("why", "textarea", rule("a", "is", "x"))]);
     expect(res).toMatchObject({ status: 400, error: expect.stringContaining("can't be used in a condition") });
   });
 
@@ -102,9 +102,40 @@ describe.each([
     expect(res).toMatchObject({ status: 400, error: expect.stringContaining("doesn't fit") });
   });
 
-  it("rejects a rule on a page break", async () => {
-    const res = await save([dropdown, q("pb", "pageBreak", rule("returning", "is", "No"))]);
-    expect(res).toEqual({ error: "A page break can't have a condition.", status: 400 });
+  it("saves a rule on a page break and rules with several conditions", async () => {
+    const res = await save([
+      dropdown,
+      q("score", "scale"),
+      q("pb", "pageBreak", rule("returning", "is", "No")),
+      q("why", "textarea", {
+        showIf: {
+          match: "any",
+          conditions: [
+            { questionKey: "returning", op: "is", values: ["Yes", "No"] },
+            { questionKey: "score", op: "atMost", values: ["2"] },
+          ],
+        },
+      }),
+    ]);
+    expect(res).toEqual({ ok: true });
+  });
+
+  it("rejects a page rule when the mapping reads a question on that page", async () => {
+    db.staffingCycleFormBinding.findMany.mockResolvedValue([
+      {
+        slot: "level-up",
+        columnMapping: {
+          version: 1,
+          entries: [{ role: "display", label: "Why", source: "question", questionKey: "why" }],
+        },
+      },
+    ]);
+    const res = await save([
+      dropdown,
+      q("pb", "pageBreak", { label: "More", ...rule("returning", "is", "No") }),
+      q("why", "textarea"),
+    ]);
+    expect(res).toMatchObject({ status: 400, error: expect.stringContaining("on its page is used by Level Up") });
   });
 
   it("rejects a question mapped on any binding, whatever its slot", async () => {

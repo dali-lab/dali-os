@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { prismaMock, audit, refresh, flyMock, neonMock, infraMock } = vi.hoisted(() => ({
+const { logError, prismaMock, audit, refresh, flyMock, neonMock, infraMock } = vi.hoisted(() => ({
+  logError: vi.fn(),
   prismaMock: { project: { update: vi.fn() } },
   audit: vi.fn(),
   refresh: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: audit }));
 vi.mock("~/jobs/infra-snapshot.server", () => ({ refreshProjectInfra: refresh }));
 vi.mock("../fly.server", () => flyMock);
 vi.mock("../neon.server", () => neonMock);
+vi.mock("~/lib/log.server", () => ({ logError }));
 vi.mock("../project-infra.server", () => infraMock);
 
 import {
@@ -118,6 +120,20 @@ describe("provisionProjectInfra", () => {
     });
     expect(audit.mock.calls[0][0]).toMatchObject({ action: "infra.neon.project.create", targetId: "np-new", userId: "u1" });
     expect(refresh).toHaveBeenCalledWith("p1");
+  });
+
+  it("logs a failed Neon poll and still links the database", async () => {
+    const boom = new Error("poll timed out");
+    neonMock.pollOperations.mockRejectedValue(boom);
+    const out = await provisionProjectInfra({
+      userId: "u1",
+      projectId: "p1",
+      request,
+      want: { neon: { orgId: "org-dali-1", name: "Ultrasound" } },
+    });
+    expect(out).toEqual({ errors: [] });
+    expect(logError).toHaveBeenCalledWith("infra.neon-poll", boom, { projectId: "p1", neonId: "np-new" });
+    expect(prismaMock.project.update).toHaveBeenCalled();
   });
 
   it("creates a Fly app with an org member's write token and links it", async () => {

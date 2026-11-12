@@ -19,7 +19,7 @@ export function isAdminViaEnv(userId: string): boolean {
 
 // Phase 2 rewrite: role flags derived from the new typed assignment tables
 // (AdminMembership, CoreAssignment, DomainLeadAssignment) rather than the
-// dropped DALIMember.roles[] enum. See V0_PLAN.md §"Identity model".
+// dropped DALIMember.roles[] enum. See specs/archive/V0_PLAN.md §"Identity model".
 //
 // API shape preserves field names where the value semantics still apply
 // (`isCore`, `isAdmin`, `isDomainLead`) and renames `memberId` →

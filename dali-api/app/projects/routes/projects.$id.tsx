@@ -13,7 +13,7 @@ import {
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
 import { Select, Menu, Popover, InfoTip } from "~/components/ui/floating";
-import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, Handshake, History, Pencil, Pin, X, Settings, Folder, FolderInput, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Star, Mail, Github, Slack, Layers, Figma, NotebookPen, Presentation, Shapes } from "lucide-react";
+import { CalendarDays, CalendarPlus, CalendarX, Check, Globe, History, Pencil, X, Settings, Folder, FolderPlus, ChevronRight, ChevronDown, FileText, Info, Users, Paperclip, Plus, Trash2, Upload, Unlink, MoreHorizontal, ExternalLink, Mail, Github, Slack, Layers, Figma, NotebookPen, Presentation, Shapes } from "lucide-react";
 import type { DriveTypeFilter } from "~/components/drive/type-filter";
 import { useOsChrome } from "~/components/os-chrome";
 import { setPageFavorite } from "~/components/favorites-live";
@@ -36,18 +36,15 @@ import {
   PROJECT_FUNDING_TYPES,
 } from "~/lib/chart-string.server";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
-import { useMovePage } from "~/components/drive/use-move-page";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { EditableSection } from "~/components/EditableSection";
 import { PageIcon } from "~/components/PageIcon";
-import { favoritePageIds, recordRouteVisit } from "~/lib/user-pages.server";
+import { recordRouteVisit } from "~/lib/user-pages.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
-import { uploadFileToS3, formatBytes } from "~/lib/upload-client";
 import type { Route } from "./+types/projects.$id";
 import { buildProjectCalendar } from "~/projects/lib/project-calendar.server";
 import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
@@ -81,6 +78,7 @@ import {
 } from "~/partners/lib/partner-access";
 import { listActiveCoreMembers, personName } from "~/partners/lib/core-members.server";
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
+import { maintenanceLabel } from "~/partners/lib/partner-renewals";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard, type TaskCreateSeed } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
@@ -114,7 +112,6 @@ import {
 } from "../lib/project-status";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isAiEnabled } from "~/lib/ai.server";
-import { groupFilesByEpic } from "../lib/file-groups";
 import { loadProjectDriveScope } from "~/lib/drive-scopes.server";
 import type { DriveTreeScope } from "~/lib/drive-scopes.server";
 import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
@@ -136,9 +133,9 @@ import {
 } from "~/components/drive/use-drive-history";
 import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
-import { summarizeFailures, uploadAll } from "~/lib/upload-batch";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
+import { LEGACY_TAB_TO_TAB } from "../lib/project-tabs";
 import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -171,11 +168,6 @@ type ProjectStatus = (typeof STATUSES)[number];
 // The status plate's colours, shared by the read-only StatusBadge and the
 // hero's editable status dropdown so a project's status reads the same whether
 // or not you can change it.
-const STATUS_PILL_CLASSIC: Record<ProjectStatus, string> = {
-  Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
-  Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
-  Archived: "bg-muted/50 text-muted-foreground border-border",
-};
 const STATUS_PILL_OS: Record<ProjectStatus, string> = {
   Active: "bg-os-bg/85 text-os-green border-os-green/35",
   Paused: "bg-os-bg/85 text-os-amber border-os-amber/35",
@@ -193,11 +185,6 @@ function isTab(x: string | null): x is Tab {
   return (TABS as readonly string[]).includes(x ?? "");
 }
 
-// The dali.os cut of the same page. Nothing new is computed for it — the
-// content is the classic tabs redealt: the planning timeline and the task
-// board are one "Progress" surface, the project's files get their own "Drive"
-// tab, and what's left of Overview is the project's details. Meetings are no
-// longer a tab — they ride the Progress timeline as day-pinned chips.
 const OS_TABS = ["progress", "drive", "details", "mentorship"] as const;
 type OsTab = (typeof OS_TABS)[number];
 function isOsTab(x: string | null): x is OsTab {
@@ -208,29 +195,6 @@ const OS_TAB_LABELS: Record<OsTab, string> = {
   progress: "Progress",
   drive: "Drive",
   details: "Project details",
-  mentorship: "Mentorship",
-};
-
-// Links already in the wild carry ?tab=overview / ?tab=board, and openTaskFrom
-// Timeline still writes "board". Translate rather than 404 into the default:
-// the board folded into Progress, Overview became Project details.
-const CLASSIC_TO_OS: Record<Tab, OsTab> = {
-  overview: "details",
-  board: "progress",
-  mentorship: "mentorship",
-};
-// And back, for a member who lands on an os link with the flag off. Drive has
-// no classic equivalent — its files live in Overview there.
-const OS_TO_CLASSIC: Record<OsTab, Tab> = {
-  progress: "board",
-  drive: "overview",
-  details: "overview",
-  mentorship: "mentorship",
-};
-
-const TAB_LABELS: Record<Tab, string> = {
-  overview: "Overview",
-  board: "Tasks",
   mentorship: "Mentorship",
 };
 
@@ -295,6 +259,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       kind: true,
       description: true,
       status: true,
+      maintenancePlans: { where: { endedAt: null }, take: 1, select: { plan: true } },
       aiTldr: true,
       aiTldrGeneratedAt: true,
       aiTldrInputHash: true,
@@ -511,7 +476,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const [
     pageRows,
     fileRows,
-    favoriteIds,
     taskViews,
     scopeRows,
     bidDomains,
@@ -520,9 +484,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     presenceUser,
     activityRows,
   ] = await Promise.all([
-    // Project documents — non-archived Pages scoped to this project's
-    // workspace, top-level and one level of children (folders only ever nest
-    // one level deep — see the 2-level cap on Page.parentPageId).
+    // Project pages, reused as `preloadedProjectPages` for the Drive tab below.
     prisma.page.findMany({
       where: {
         workspaceType: "Project",
@@ -530,35 +492,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         archivedAt: null,
       },
       orderBy: { position: "asc" },
-      // Widened to match `PROJECT_PAGE_SELECT` (drive.server.ts) so these rows
-      // can be reused as `preloadedProjectPages` for the project Drive tab
-      // below, instead of loadDriveScope re-querying the same pages.
-      select: {
-        ...PROJECT_PAGE_SELECT,
-        publicVisible: true,
-        pinnedAt: true,
-      },
+      select: PROJECT_PAGE_SELECT,
     }),
-    // Project files — standalone uploads with their current version.
-    // Tags are edited in the file/document editor, not on this list.
+    // Project files, reused as `preloadedProjectFiles` for the Drive tab below.
     prisma.projectFile.findMany({
       where: { projectId: project.id, archivedAt: null },
       orderBy: { createdAt: "asc" },
-      // Widened to match `PROJECT_FILE_SELECT` (drive.server.ts) so these rows
-      // can be reused as `preloadedProjectFiles` for the project Drive tab
-      // below, instead of loadDriveScope re-querying the same files.
-      select: {
-        ...PROJECT_FILE_SELECT,
-        // Placement in the Drive folder tree — null = tree root, else nested
-        // under the Page with this id (must be a Folder-kind Page).
-        currentVersion: { select: { fileName: true, sizeBytes: true } },
-        _count: { select: { versions: true } },
-        // Which epics this file's linked tasks belong to — used for the deferred
-        // epic-grouping feature (kept on the DTO so the data is available later).
-        taskLinks: { select: { task: { select: { epicId: true } } } },
-      },
+      select: PROJECT_FILE_SELECT,
     }),
-    favoritePageIds(auth.user.sub),
     // Viewer's "last opened" stamp per task for board unread dots.
     project.tasks.length
       ? prisma.taskView.findMany({
@@ -642,62 +583,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
     auth.user.email;
   const userName = presenceUser?.name ?? fallbackName;
-
-  // Forms are Pages too but are listed by the Drive tab, not as documents here.
-  const docRows = pageRows.filter((p) => p.kind !== "Form");
-  const childrenByParent = new Map<string, typeof pageRows>();
-  for (const p of docRows) {
-    if (!p.parentPageId) continue;
-    const list = childrenByParent.get(p.parentPageId);
-    if (list) list.push(p);
-    else childrenByParent.set(p.parentPageId, [p]);
-  }
-  const toDocumentDto = (d: (typeof pageRows)[number]) => ({
-    id: d.id,
-    title: d.title,
-    kind: d.kind,
-    partnerVisible: d.partnerVisible,
-    publicVisible: d.publicVisible,
-    pinned: d.pinnedAt !== null,
-    iconEmoji: d.iconEmoji,
-    favorited: favoriteIds.has(d.id),
-  });
-  // Top-level docs for the main list. Pinned ones are lifted into
-  // `pinnedDocuments` (rendered above), so they don't appear twice.
-  const documents = docRows
-    .filter((p) => p.parentPageId === null && p.pinnedAt === null)
-    .map((p) => ({
-      ...toDocumentDto(p),
-      children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
-    }));
-
-  // Pinned docs — any page a teammate pinned, most-recent pin first, rendered
-  // at the top of the Documents block (and lifted out of the list above).
-  const pinnedDocuments = docRows
-    .filter((p) => p.pinnedAt !== null && p.parentPageId === null)
-    .sort((a, b) => (b.pinnedAt?.getTime() ?? 0) - (a.pinnedAt?.getTime() ?? 0))
-    .map((p) => ({
-      ...toDocumentDto(p),
-      children: (childrenByParent.get(p.id) ?? []).map(toDocumentDto),
-    }));
-
-  const files = fileRows.map((f) => ({
-    id: f.id,
-    title: f.title,
-    folderPageId: f.folderPageId,
-    fileName: f.currentVersion?.fileName ?? null,
-    sizeBytes: f.currentVersion?.sizeBytes ?? null,
-    versionCount: f._count.versions,
-    partnerVisible: f.partnerVisible,
-    taskLinked: f.taskLinks.length > 0,
-    epicIds: [
-      ...new Set(
-        f.taskLinks
-          .map((l) => l.task.epicId)
-          .filter((id): id is string => id !== null),
-      ),
-    ],
-  }));
 
   // ─── Timeline model (epic → story → task) ────────────────────────────────
   // Every level is nested containment: a story bar sits inside its epic bar, a
@@ -1007,7 +892,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     stories: project.epics.flatMap((e) =>
       e.stories.map((st) => ({ id: st.id, title: st.title, epicId: e.id })),
     ),
-    projectFiles: files.map((f) => ({ id: f.id, title: f.title })),
+    projectFiles: fileRows.map((f) => ({ id: f.id, title: f.title })),
     termSpans,
     terms: boardTerms,
     currentTermId: boardCurrentTermId,
@@ -1181,7 +1066,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // already loaded (the current sprint is derived from term spans), so the bar
   // costs no extra query. aiTldrStale compares the current facts fingerprint
   // against the one the cached summary was written from; the client regenerates
-  // when it differs (see ProjectStatusBar).
+  // when it differs.
   const statusNow = new Date();
   const statusFacts = computeProjectStatus(
     {
@@ -1255,6 +1140,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         partners: partnerships,
         domains: declaredDomains,
         derivedDomains,
+        maintenancePlan: project.maintenancePlans[0]?.plan ?? null,
       },
       canEditScope,
     ),
@@ -1275,9 +1161,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     domainScopeGrid,
     teams,
     termStatuses,
-    documents,
-    pinnedDocuments,
-    files,
     upcomingMeetings,
     projectCalendar,
     recentActivity,
@@ -1713,9 +1596,6 @@ export default function ProjectDetail() {
   const {
     project,
     teams,
-    documents,
-    pinnedDocuments,
-    files,
     upcomingMeetings,
     projectCalendar,
     recentActivity,
@@ -1808,7 +1688,7 @@ export default function ProjectDetail() {
     const want = isOsTab(tabParam)
       ? tabParam
       : isTab(tabParam)
-        ? CLASSIC_TO_OS[tabParam]
+        ? LEGACY_TAB_TO_TAB[tabParam]
         : "progress";
     if (want === "mentorship" && !canViewMentorshipTab) return "progress";
     return want;
@@ -1958,13 +1838,8 @@ export default function ProjectDetail() {
           // so Project details renders without it.
           planning={null}
           showMeetings={false}
-          showDocuments={false}
           project={project}
           teams={teams}
-          documents={documents}
-          pinnedDocuments={pinnedDocuments}
-          files={files}
-          fileEpics={boardOptions.epics}
           upcomingMeetings={upcomingMeetings}
           recentActivity={recentActivity}
           canEdit={canEdit}
@@ -2044,8 +1919,7 @@ export default function ProjectDetail() {
         )}
 
         {/* Drive (os): the project's files and collab-doc pages in the shared
-            DriveBrowser, embedded and scoped to this project. Replaces the
-            bespoke DocumentsBlock for the os tab set. */}
+            DriveBrowser, embedded and scoped to this project. */}
         {tab === "drive" && (
           <ProjectDriveTab
             projectId={project.id}
@@ -2239,6 +2113,14 @@ function ProjectHeader({
           />
         )}
       </HeroClusterLabel>
+
+      {project.maintenancePlan && (
+        <HeroClusterLabel label="Maintenance">
+          <span className="rounded-full border border-os-accent/40 bg-os-accent/10 px-2.5 py-0.5 text-[13px] font-medium text-os-accent">
+            {maintenanceLabel(project.maintenancePlan)}
+          </span>
+        </HeroClusterLabel>
+      )}
     </div>
   );
 
@@ -3587,13 +3469,8 @@ function OverviewTab({
   planning,
   project,
   teams,
-  documents,
-  pinnedDocuments,
-  files,
-  fileEpics,
   upcomingMeetings,
   showMeetings = true,
-  showDocuments = true,
   recentActivity,
   canEdit,
   canEditFinance,
@@ -3616,16 +3493,9 @@ function OverviewTab({
   planning: ReactNode;
   project: LoaderData["project"];
   teams: LoaderData["teams"];
-  documents: LoaderData["documents"];
-  pinnedDocuments: LoaderData["pinnedDocuments"];
-  files: LoaderData["files"];
-  fileEpics: LoaderData["boardOptions"]["epics"];
   upcomingMeetings: LoaderData["upcomingMeetings"];
   // False under the os tab set, where meetings ride the Progress timeline.
   showMeetings?: boolean;
-  // False under the os tab set, where the project's files are their own
-  // "Drive" tab rather than a block at the bottom of Project details.
-  showDocuments?: boolean;
   recentActivity: LoaderData["recentActivity"];
   canEdit: boolean;
   canEditFinance: boolean;
@@ -3820,22 +3690,6 @@ function OverviewTab({
       {/* Next scheduled meetings for this project. Under the os tabs this is a
           tab of its own, so Overview stops rendering it here. */}
       {showMeetings && <MeetingsSection meetings={upcomingMeetings} />}
-
-      {/* Drive — the project's one file surface: collab-doc pages and uploaded
-          files together in one folder tree. Files render inline (root-level
-          at the bottom, folder-placed nested under the matching folder). Under
-          the os tab set this is lifted out to a "Drive" tab of its own. */}
-      {showDocuments && (
-        <DocumentsBlock
-          projectId={project.id}
-          documents={documents}
-          pinnedDocuments={pinnedDocuments}
-          files={files}
-          fileEpics={fileEpics}
-          canEdit={canEdit}
-          hasActivePartner={hasActivePartner}
-        />
-      )}
 
       {/* Recent project-scoped audit activity — editors only (the loader
           returns an empty list otherwise). Read-only. */}
@@ -4336,181 +4190,8 @@ function PartnersSection({
   );
 }
 
-// Row-level doc type (folder children and top-level docs are structurally
-// compatible for the row UI).
-type DocRowItem = LoaderData["documents"][number]["children"][number];
-
-// Callbacks + drag state a document row needs. Bundled so the row components
-// can live at module scope: defining them inside DocumentsBlock gave them a new
-// identity on every render, which remounted the whole list and detached any
-// open "⋯" floating menu mid-interaction (Playwright saw "element detached").
-type DocRowCtx = {
-  canEdit: boolean;
-  drag: { id: string; isFolder: boolean } | null;
-  dropTarget: string | "root" | null;
-  setDrag: (d: { id: string; isFolder: boolean } | null) => void;
-  setDropTarget: React.Dispatch<React.SetStateAction<string | "root" | null>>;
-  onDropBefore: (targetId: string, parentId: string | null) => void;
-  toggleFavorite: (id: string, next: boolean) => void;
-  togglePartnerVisible: (id: string, next: boolean) => void;
-  togglePin: (id: string, next: boolean) => void;
-  setMoveDoc: (d: { id: string; title: string } | null) => void;
-  deleteDocument: (id: string, title: string) => void;
-  openDocument: (id: string, title: string) => void;
-};
-
-// Row "⋯" menu (Drive redesign) — every per-row action (favorite, partner
-// share, pin, move, delete) lives here instead of as loose inline icons.
-function DocRowMenu({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ctx: DocRowCtx }) {
-  return (
-    <Menu
-      align="right"
-      ariaLabel="Document actions"
-      trigger={
-        <button
-          type="button"
-          aria-label="Document actions"
-          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
-      }
-    >
-      {doc.kind !== "Folder" && (
-        <Menu.Item
-          icon={<Star className={`w-3.5 h-3.5 ${doc.favorited ? "fill-current text-os-accent" : ""}`} />}
-          onSelect={() => ctx.toggleFavorite(doc.id, !doc.favorited)}
-        >
-          {doc.favorited ? "Remove from favorites" : "Add to favorites"}
-        </Menu.Item>
-      )}
-      {ctx.canEdit && (
-        <Menu.Item
-          icon={<Handshake className="w-3.5 h-3.5" />}
-          onSelect={() => ctx.togglePartnerVisible(doc.id, !doc.partnerVisible)}
-        >
-          {doc.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
-        </Menu.Item>
-      )}
-      {ctx.canEdit && !indent && (
-        <Menu.Item
-          icon={<Pin className={`w-3.5 h-3.5 ${doc.pinned ? "fill-current" : ""}`} />}
-          onSelect={() => ctx.togglePin(doc.id, !doc.pinned)}
-        >
-          {doc.pinned ? "Unpin" : "Pin to top"}
-        </Menu.Item>
-      )}
-      {ctx.canEdit && (
-        <Menu.Item
-          icon={<FolderInput className="w-3.5 h-3.5" />}
-          onSelect={() => ctx.setMoveDoc({ id: doc.id, title: doc.title })}
-        >
-          Move to…
-        </Menu.Item>
-      )}
-      {ctx.canEdit && (
-        <>
-          <Menu.Separator />
-          <Menu.Item icon={<Trash2 className="w-3.5 h-3.5" />} onSelect={() => ctx.deleteDocument(doc.id, doc.title)}>
-            Delete
-          </Menu.Item>
-        </>
-      )}
-    </Menu>
-  );
-}
-
-function DocRowInner({ doc, indent, ctx }: { doc: DocRowItem; indent: boolean; ctx: DocRowCtx }) {
-  return (
-    <div className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
-      <button
-        type="button"
-        onClick={() => ctx.openDocument(doc.id, doc.title)}
-        className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-os-accent"
-      >
-        <PageIcon iconEmoji={doc.iconEmoji} />
-        <span className="truncate">{doc.title}</span>
-      </button>
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {/* Read-only status badges stay inline; all actions live in "⋯". */}
-        {doc.partnerVisible && (
-          <Tooltip content="Shared with partner">
-            <span className="flex items-center text-accent-teal">
-              <Handshake className="w-3.5 h-3.5" />
-            </span>
-          </Tooltip>
-        )}
-        {doc.publicVisible && (
-          <Tooltip content="Public write-up — rendered on this project's page on dali.website">
-            <span className="flex items-center text-os-accent">
-              <Globe className="w-3.5 h-3.5" />
-            </span>
-          </Tooltip>
-        )}
-        <DocRowMenu doc={doc} indent={indent} ctx={ctx} />
-      </div>
-    </div>
-  );
-}
-
-function DocRow({
-  doc,
-  indent,
-  parentId,
-  ctx,
-}: {
-  doc: DocRowItem;
-  indent: boolean;
-  parentId: string | null;
-  ctx: DocRowCtx;
-}) {
-  const dragProps = ctx.canEdit
-    ? {
-        draggable: true,
-        onDragStart: (e: React.DragEvent) => {
-          ctx.setDrag({ id: doc.id, isFolder: false });
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/plain", doc.id);
-        },
-        onDragEnd: () => ctx.setDrag(null),
-        onDragOver: (e: React.DragEvent) => {
-          if (!ctx.drag) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          if (ctx.dropTarget !== doc.id) ctx.setDropTarget(doc.id);
-        },
-        onDragLeave: () => ctx.setDropTarget((t) => (t === doc.id ? null : t)),
-        onDrop: (e: React.DragEvent) => {
-          e.preventDefault();
-          e.stopPropagation();
-          ctx.onDropBefore(doc.id, parentId);
-        },
-      }
-    : {};
-  return (
-    <div {...dragProps} className={ctx.drag && ctx.dropTarget === doc.id ? "border-t-2 border-os-accent" : ""}>
-      <DocRowInner doc={doc} indent={indent} ctx={ctx} />
-    </div>
-  );
-}
-
 // ── ProjectDriveTab ──────────────────────────────────────────────────────────
-// Renders the shared DriveBrowser locked to this project's scope. Replaces the
-// bespoke DocumentsBlock for the os tab set's "Drive" tab.
-//
-// Trade-off (callers must be aware):
-//   • Epic-grouping of uploaded files (previously via `fileEpics` in
-//     DocumentsBlock) is NOT present here. Files are positioned in the folder
-//     tree by their real Drive placement (folderPageId), which is the consistent
-//     Drive model across the whole app. Epic-grouping was a DocumentsBlock-only
-//     feature and is intentionally not ported into the shared browser.
-//
-// What IS preserved:
-//   • Partner-visibility toggle (Share with partner / Stop sharing) on docs and
-//     files, shown when the project has an active partner and canEdit is true.
-//   • Doc title change sync via postMessage revalidation.
-//   • All DriveBrowser capabilities: list/grid/columns, DnD, context menus,
-//     multi-select, bulk, tags, search, rename, move, delete, favorites.
+// Renders the shared DriveBrowser locked to this project's scope.
 
 // Project drives hold docs, folders and files. Folders are always shown (the
 // browser never filters them out), so the filter only needs the leaf kinds.
@@ -4607,7 +4288,6 @@ function ProjectDriveTab({
   }, []);
 
   // Sync doc-title changes made in the split-pane editor back to this listing.
-  // DocumentsBlock used the same mechanism (postMessage from the editor shell).
   useEffect(() => {
     function onMessage(e: MessageEvent) {
       if (e.origin !== window.location.origin) return;
@@ -4621,8 +4301,8 @@ function ProjectDriveTab({
     return () => window.removeEventListener("message", onMessage);
   }, [projectDriveScope.items, revalidator]);
 
-  // Toggle partner visibility for a page (doc/folder). Posts to the same
-  // endpoint DocumentsBlock used, then revalidates so the badge updates.
+  // Toggle partner visibility for a page (doc/folder). Posts to the
+  // partner-visibility endpoint, then revalidates so the badge updates.
   const togglePagePartnerVisible = useCallback(async (item: DriveItem, next: boolean) => {
     if (item.type !== "doc" && item.type !== "file") return;
     if (next) {
@@ -5022,799 +4702,6 @@ function ProjectDriveTab({
         />
       )}
     </DriveHistoryContext.Provider>
-  );
-}
-
-function DocumentsBlock({
-  projectId,
-  documents,
-  pinnedDocuments,
-  files,
-  fileEpics,
-  canEdit,
-  hasActivePartner,
-}: {
-  projectId: string;
-  documents: LoaderData["documents"];
-  pinnedDocuments: LoaderData["pinnedDocuments"];
-  files: LoaderData["files"];
-  fileEpics: LoaderData["boardOptions"]["epics"];
-  canEdit: boolean;
-  hasActivePartner: boolean;
-}) {
-  const openBeside = useOpenBeside();
-  const openDocument = (id: string, title: string) => {
-    openBeside({ href: `/documents/${id}` });
-  };
-  const dialog = useDialog();
-  const toast = useToast();
-  const revalidator = useRevalidator();
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  // When set, next pick uploads a new version of this file id; null = new file.
-  const versionForId = useRef<string | null>(null);
-  // The folder context for the next upload — set when user clicks Upload inside
-  // a specific folder, so the new file lands inside that folder (via folderPageId).
-  const uploadFolderIdRef = useRef<string | null>(null);
-  // "Move to…" dialog state — tracks which doc the user wants to move.
-  const [moveDoc, setMoveDoc] = useState<{ id: string; title: string } | null>(null);
-  const moveDestinations = useDriveDestinations({
-    enabled: !!moveDoc,
-    movingIds: moveDoc ? [moveDoc.id] : [],
-    onError: () => {
-      toast.error("Couldn't load destinations.");
-      setMoveDoc(null);
-    },
-  });
-  const movePage = useMovePage({
-    pageId: moveDoc?.id ?? "",
-    title: moveDoc?.title ?? "",
-    current: { type: "Project", id: projectId },
-    rows: moveDestinations.rows,
-    onMoved: () => {
-      setMoveDoc(null);
-      revalidator.revalidate();
-    },
-  });
-  // Folders start collapsed (Finder/Drive convention). Newly created folders are
-  // added to this set so their contents show right after creation.
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
-  function toggleExpanded(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  // A document's title is edited in the side panel, which has its own loader —
-  // it can't touch this route's data directly. DocumentEditor posts a
-  // `dali:documentTitleChanged` message; revalidate here so the row label
-  // updates without waiting for the user to leave and reopen the doc.
-  useEffect(() => {
-    const knownIds = new Set(
-      documents.flatMap((d) => [d.id, ...d.children.map((c) => c.id)]),
-    );
-    function onMessage(e: MessageEvent) {
-      if (e.origin !== window.location.origin) return;
-      const data = e.data as { type?: string; pageId?: string } | undefined;
-      if (data?.type !== "dali:documentTitleChanged") return;
-      if (!data.pageId || !knownIds.has(data.pageId)) return;
-      revalidator.revalidate();
-    }
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [documents, revalidator]);
-
-  // Share/unshare a page with the project's partner org(s). The public
-  // write-up is not toggled from here — the Public view owns nominating it
-  // (ensurePublicWriteupPage), so there's no second control for it in the
-  // Documents list. Persisted via its own API route; the badge state comes
-  // back through the loader.
-  async function togglePartnerVisible(id: string, next: boolean) {
-    if (next) {
-      const confirmed = await dialog.confirm({
-        title: "Share with partner?",
-        description:
-          "Partner organization members will be able to view this document. This takes effect immediately.",
-        confirmLabel: "Share",
-      });
-      if (!confirmed) return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/pages/${id}/partner-visible`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partnerVisible: next }),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to update sharing");
-      }
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Pin/unpin a doc to the top of the Documents block. Same persist-then-
-  // revalidate shape as sharing.
-  async function togglePin(id: string, next: boolean) {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/pages/${id}/pin`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pinned: next }),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to update pin");
-      }
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleFavorite(id: string, next: boolean) {
-    setBusy(true);
-    setError(null);
-    try {
-      if (!(await setPageFavorite(id, next))) throw new Error("Failed to update favorite");
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Add document: create an "Untitled" page immediately, then open it as a
-  // split-screen tab beside the project. The title is renamed inline in the
-  // editor (auto-saves), so there's no separate title prompt first. When
-  // parentPageId is set, the document is nested under that folder.
-  async function createDocument(parentPageId?: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      const title = "Untitled";
-      const res = await fetch(`/api/projects/${projectId}/documents`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, parentPageId }),
-      });
-      const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
-      if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create document");
-      openDocument(b.id, title);
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function createFolder() {
-    const title = await dialog.prompt({ title: "New folder", label: "Folder name" });
-    if (!title || !title.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/documents`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), kind: "Folder" }),
-      });
-      const b = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
-      if (!res.ok || !b.id) throw new Error(b.error ?? "Failed to create folder");
-      setExpanded((prev) => new Set(prev).add(b.id!));
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function deleteDocument(id: string, title: string) {
-    if (
-      !(await dialog.confirm({
-        title: `Delete document "${title}"?`,
-        description:
-          "It moves to Trash. Restore it from there, or purge it permanently.",
-        confirmLabel: "Delete",
-        tone: "destructive",
-      }))
-    )
-      return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/documents/${id}`, { method: "DELETE", credentials: "include" });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to delete");
-      }
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Drag-and-drop: reorder documents and move them into/out of folders.
-  // `drag` tracks the item being dragged; `dropTarget` highlights the current
-  // drop zone (a page id, or "root" for the top-level list).
-  const [drag, setDrag] = useState<{ id: string; isFolder: boolean } | null>(null);
-  const [dropTarget, setDropTarget] = useState<string | "root" | null>(null);
-  async function moveDocument(id: string, parentPageId: string | null, beforeId: string | null) {
-    setDrag(null);
-    setDropTarget(null);
-    if (id === beforeId) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/pages/${id}/move`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentPageId, beforeId }),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to move document");
-      }
-      if (parentPageId) setExpanded((prev) => new Set(prev).add(parentPageId));
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-  // Drop onto a document row → reorder before it, into that row's parent.
-  function onDropBefore(targetId: string, targetParentId: string | null) {
-    if (drag) void moveDocument(drag.id, targetParentId, targetId);
-  }
-  // Drop onto a folder header → a doc moves into the folder; a folder reorders
-  // before that folder at the top level (folders never nest).
-  function onDropOnFolder(folderId: string) {
-    if (!drag) return;
-    if (drag.isFolder) void moveDocument(drag.id, null, folderId);
-    else void moveDocument(drag.id, folderId, null);
-  }
-
-  // ── File upload (new file or new version) ────────────────────────────────
-  // The hidden <input> is shared for both flows; refs decide what to do on pick.
-  async function addProjectFile(file: File, folderId: string | null) {
-    const meta = await uploadFileToS3(file, `project-files/${projectId}`);
-    const res = await fetch(`/api/projects/${projectId}/files`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        title: file.name,
-        ...(folderId ? { folderPageId: folderId } : {}),
-        ...meta,
-      }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(b.error ?? "Failed to add file");
-    }
-  }
-
-  async function addProjectFileVersion(file: File, fileId: string) {
-    const meta = await uploadFileToS3(file, `project-files/${projectId}`);
-    const res = await fetch(`/api/files/${fileId}`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ intent: "version", ...meta }),
-    });
-    if (!res.ok) {
-      const b = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(b.error ?? "Failed to upload new version");
-    }
-  }
-
-  async function onFilePick(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = Array.from(e.target.files ?? []);
-    e.target.value = "";
-    if (picked.length === 0) return;
-    const targetId = versionForId.current;
-    const folderId = uploadFolderIdRef.current;
-    versionForId.current = null;
-    uploadFolderIdRef.current = null;
-
-    setBusy(true);
-    setError(null);
-    const failed = await uploadAll(picked, (file) =>
-      targetId ? addProjectFileVersion(file, targetId) : addProjectFile(file, folderId),
-    );
-    if (failed.length < picked.length) revalidator.revalidate();
-    setError(summarizeFailures(failed, picked.length));
-    setBusy(false);
-  }
-
-  function openFilePicker(multiple: boolean) {
-    const input = fileInputRef.current;
-    if (!input) return;
-    input.multiple = multiple;
-    input.click();
-  }
-
-  function triggerUpload(folderId?: string) {
-    versionForId.current = null;
-    uploadFolderIdRef.current = folderId ?? null;
-    openFilePicker(true);
-  }
-
-  function triggerVersionUpload(fileId: string) {
-    versionForId.current = fileId;
-    uploadFolderIdRef.current = null;
-    openFilePicker(false);
-  }
-
-  async function deleteFile(id: string, title: string) {
-    if (
-      !(await dialog.confirm({
-        title: `Delete file "${title}"?`,
-        description: "All versions will be removed.",
-        confirmLabel: "Delete",
-        tone: "destructive",
-      }))
-    )
-      return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/files/${id}`, { method: "DELETE", credentials: "include" });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to delete");
-      }
-      revalidator.revalidate();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function toggleFilePartnerVisible(id: string, next: boolean) {
-    if (next) {
-      const confirmed = await dialog.confirm({
-        title: "Share with partner?",
-        description:
-          "Partner organization members will be able to view this file. This takes effect immediately.",
-        confirmLabel: "Share",
-      });
-      if (!confirmed) return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/files/${id}/partner-visible`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ partnerVisible: next }),
-      });
-      if (!res.ok) {
-        const b = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(b.error ?? "Failed to update sharing");
-      }
-      revalidator.revalidate();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // "Folders" = the default folder tree; "epics" = files grouped by epic.
-  const [fileView, setFileView] = useState<"folders" | "epics">("folders");
-
-  // Derived: files split by folder placement so the tree can render them inline.
-  const rootFiles = files.filter((f) => f.folderPageId === null);
-  const filesByFolder = new Map<string, LoaderData["files"]>();
-  for (const f of files) {
-    if (!f.folderPageId) continue;
-    const bucket = filesByFolder.get(f.folderPageId);
-    if (bucket) bucket.push(f);
-    else filesByFolder.set(f.folderPageId, [f]);
-  }
-
-  // Epic-grouped view — only computed when the toggle is active or there are
-  // files to group (avoids the import being dead weight on every render).
-  const epicGroups = groupFilesByEpic(files, fileEpics);
-
-  function renderFileRow(f: LoaderData["files"][number], indent: boolean) {
-    return (
-      <div key={f.id} className={`group py-2.5 flex items-center justify-between gap-3 text-sm ${indent ? "pl-6" : ""}`}>
-        <Link
-          to={`/documents/file/${f.id}`}
-          className="flex items-center gap-2 min-w-0 text-left font-medium text-foreground hover:text-os-accent"
-        >
-          <Paperclip className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-          <span className="truncate">{f.title}</span>
-          <span className="text-muted-foreground text-xs font-normal flex-shrink-0">
-            {f.fileName}
-            {f.sizeBytes != null ? ` · ${formatBytes(f.sizeBytes)}` : ""}
-            {f.versionCount > 1 ? ` · v${f.versionCount}` : ""}
-          </span>
-        </Link>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {f.partnerVisible && !canEdit && (
-            <Tooltip content="Shared with partner">
-              <span className="flex items-center text-accent-teal">
-                <Handshake className="w-3.5 h-3.5" />
-              </span>
-            </Tooltip>
-          )}
-          {canEdit && (
-            <Menu
-              align="right"
-              ariaLabel="File actions"
-              trigger={
-                <button
-                  type="button"
-                  aria-label="File actions"
-                  className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-              }
-            >
-              <Menu.Item
-                icon={<Handshake className="w-3.5 h-3.5" />}
-                onSelect={() => void toggleFilePartnerVisible(f.id, !f.partnerVisible)}
-              >
-                {f.partnerVisible ? "Stop sharing with partner" : "Share with partner"}
-              </Menu.Item>
-              <Menu.Item
-                icon={<Upload className="w-3.5 h-3.5" />}
-                onSelect={() => triggerVersionUpload(f.id)}
-              >
-                Upload new version
-              </Menu.Item>
-              <Menu.Separator />
-              <Menu.Item
-                icon={<Trash2 className="w-3.5 h-3.5" />}
-                onSelect={() => void deleteFile(f.id, f.title)}
-              >
-                Delete
-              </Menu.Item>
-            </Menu>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Row callbacks + drag state, bundled for the module-scope row components.
-  // Kept as one object (not spread props) so hoisting the rows didn't balloon
-  // into a dozen individual props at every call site.
-  const rowCtx: DocRowCtx = {
-    canEdit,
-    drag,
-    dropTarget,
-    setDrag,
-    setDropTarget,
-    onDropBefore,
-    toggleFavorite,
-    togglePartnerVisible,
-    togglePin,
-    setMoveDoc,
-    deleteDocument,
-    openDocument,
-  };
-
-  const isEmpty = documents.length === 0 && files.length === 0;
-
-  return (
-    <section className="bg-card border border-border rounded-lg p-4">
-      {/* Hidden file input shared for new-file and new-version uploads. */}
-      <input ref={fileInputRef} type="file" multiple className="hidden" onChange={onFilePick} />
-
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
-          <Folder className="w-4 h-4" /> Drive
-        </h2>
-        {/* This block is an embed of the project's Drive folder. An
-            Open-in-Drive link jumps to it in the main Drive; create actions
-            consolidate into one New ▾ menu. */}
-        <div className="flex items-center gap-2">
-          {/* View toggle — only shown when there are uploaded files to group. */}
-          {files.length > 0 && (
-            <div className="flex items-center rounded-md border border-border text-xs font-medium overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setFileView("folders")}
-                className={`px-2 py-1 transition-colors ${
-                  fileView === "folders"
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                }`}
-              >
-                Folders
-              </button>
-              <button
-                type="button"
-                onClick={() => setFileView("epics")}
-                className={`px-2 py-1 transition-colors border-l border-border ${
-                  fileView === "epics"
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                }`}
-              >
-                By epic
-              </button>
-            </div>
-          )}
-          <Link
-            to={`/drive?scope=${projectId}`}
-            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-os-accent transition-colors"
-          >
-            Open in Drive <ExternalLink className="w-3.5 h-3.5" />
-          </Link>
-          {canEdit && (
-            <Menu
-              align="right"
-              ariaLabel="New in project Drive"
-              trigger={
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-muted/60 transition-colors"
-                >
-                  <Plus className="w-3.5 h-3.5" /> New
-                  <ChevronDown className="w-3 h-3 opacity-70" />
-                </button>
-              }
-            >
-              <Menu.Item icon={<FileText className="w-3.5 h-3.5" />} onSelect={() => void createDocument()}>
-                New document
-              </Menu.Item>
-              <Menu.Item icon={<FolderPlus className="w-3.5 h-3.5" />} onSelect={() => void createFolder()}>
-                New folder
-              </Menu.Item>
-              <Menu.Separator />
-              <Menu.Item icon={<Upload className="w-3.5 h-3.5" />} onSelect={() => triggerUpload()}>
-                Upload files
-              </Menu.Item>
-            </Menu>
-          )}
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-xs rounded-md px-3 py-2 mb-3">
-          {error}
-        </div>
-      )}
-
-      {isEmpty ? (
-        <p className="text-sm text-muted-foreground italic">No documents yet.</p>
-      ) : fileView === "epics" ? (
-        /* ── By-epic view: files only, clustered under their linked epic. ── */
-        <div className="flex flex-col gap-4">
-          {epicGroups.epicGroups.map((g) => (
-            <div key={g.id}>
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-                {g.title}
-                <span className="ml-1.5 normal-case tracking-normal">({g.files.length})</span>
-              </h3>
-              <div className="flex flex-col divide-y divide-border">
-                {g.files.map((f) => renderFileRow(f, false))}
-              </div>
-            </div>
-          ))}
-          {epicGroups.otherWorkFiles.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-                Other work files
-                <span className="ml-1.5 normal-case tracking-normal">({epicGroups.otherWorkFiles.length})</span>
-              </h3>
-              <div className="flex flex-col divide-y divide-border">
-                {epicGroups.otherWorkFiles.map((f) => renderFileRow(f, false))}
-              </div>
-            </div>
-          )}
-          {epicGroups.generalFiles.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">
-                Other files
-                <span className="ml-1.5 normal-case tracking-normal">({epicGroups.generalFiles.length})</span>
-              </h3>
-              <div className="flex flex-col divide-y divide-border">
-                {epicGroups.generalFiles.map((f) => renderFileRow(f, false))}
-              </div>
-            </div>
-          )}
-          {files.length > 0 &&
-            epicGroups.epicGroups.length === 0 &&
-            epicGroups.otherWorkFiles.length === 0 &&
-            epicGroups.generalFiles.length === 0 && (
-              <p className="text-sm text-muted-foreground italic">No files to group.</p>
-            )}
-        </div>
-      ) : (
-        <div
-          onDragOver={
-            canEdit && drag
-              ? (e) => {
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = "move";
-                  if (dropTarget !== "root") setDropTarget("root");
-                }
-              : undefined
-          }
-          onDragLeave={
-            canEdit ? () => setDropTarget((t) => (t === "root" ? null : t)) : undefined
-          }
-          onDrop={
-            canEdit && drag
-              ? (e) => {
-                  e.preventDefault();
-                  void moveDocument(drag.id, null, null);
-                }
-              : undefined
-          }
-          className={`flex flex-col divide-y divide-border rounded-md ${
-            dropTarget === "root" ? "ring-2 ring-os-accent/40" : ""
-          }`}
-        >
-          {/* Pinned docs on top — full document rows (share/pin/delete), just
-              lifted above the rest. The filled coral pin marks them pinned. */}
-          {pinnedDocuments.map((d) => (
-            <DocRow key={d.id} doc={d} indent={false} parentId={null} ctx={rowCtx} />
-          ))}
-          {documents.map((doc) =>
-            doc.kind === "Folder" ? (
-              <div
-                key={doc.id}
-                draggable={canEdit}
-                onDragStart={
-                  canEdit
-                    ? (e) => {
-                        setDrag({ id: doc.id, isFolder: true });
-                        e.dataTransfer.effectAllowed = "move";
-                        e.dataTransfer.setData("text/plain", doc.id);
-                      }
-                    : undefined
-                }
-                onDragEnd={canEdit ? () => setDrag(null) : undefined}
-                className={`py-2.5 flex flex-col gap-1 ${canEdit ? "cursor-grab active:cursor-grabbing" : ""}`}
-              >
-                <div
-                  onDragOver={
-                    canEdit && drag
-                      ? (e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                          if (dropTarget !== doc.id) setDropTarget(doc.id);
-                        }
-                      : undefined
-                  }
-                  onDragLeave={
-                    canEdit ? () => setDropTarget((t) => (t === doc.id ? null : t)) : undefined
-                  }
-                  onDrop={
-                    canEdit && drag
-                      ? (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onDropOnFolder(doc.id);
-                        }
-                      : undefined
-                  }
-                  className={`flex items-center justify-between gap-3 text-sm rounded-md ${
-                    dropTarget === doc.id ? "ring-2 ring-os-accent/60 bg-os-accent/5" : ""
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleExpanded(doc.id)}
-                    className="flex items-center gap-1.5 text-left font-medium text-foreground min-w-0"
-                  >
-                    {expanded.has(doc.id) ? (
-                      <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-                    )}
-                    <Folder className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-                    <span className="truncate">{doc.title}</span>
-                  </button>
-                  {canEdit && (
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <Tooltip content="Add document">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => void createDocument(doc.id)}
-                          aria-label="Add document"
-                          className="p-1 rounded text-os-accent hover:bg-os-accent/10 disabled:opacity-60"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      </Tooltip>
-                      <Tooltip content="Upload files into folder">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() => triggerUpload(doc.id)}
-                          aria-label="Upload files into folder"
-                          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-60"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                        </button>
-                      </Tooltip>
-                      <button
-                        type="button"
-                        disabled={busy || doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0}
-                        title={
-                          doc.children.length > 0 || (filesByFolder.get(doc.id)?.length ?? 0) > 0
-                            ? "Move or delete the items inside this folder first"
-                            : "Delete folder"
-                        }
-                        aria-label="Delete folder"
-                        onClick={() => void deleteDocument(doc.id, doc.title)}
-                        className="p-1 rounded text-destructive hover:text-destructive/80 disabled:opacity-60"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {expanded.has(doc.id) && (() => {
-                  const folderFiles = filesByFolder.get(doc.id) ?? [];
-                  const hasContent = doc.children.length > 0 || folderFiles.length > 0;
-                  return hasContent ? (
-                    <div className="flex flex-col divide-y divide-border">
-                      {doc.children.map((child) => (
-                        <DocRow key={child.id} doc={child} indent parentId={doc.id} ctx={rowCtx} />
-                      ))}
-                      {folderFiles.map((f) => renderFileRow(f, true))}
-                    </div>
-                  ) : (
-                    <p className="pl-6 text-xs text-muted-foreground italic">Empty</p>
-                  );
-                })()}
-              </div>
-            ) : (
-              <DocRow key={doc.id} doc={doc} indent={false} parentId={null} ctx={rowCtx} />
-            ),
-          )}
-          {/* Root-level uploaded files (no folder) appear after all docs. */}
-          {rootFiles.map((f) => renderFileRow(f, false))}
-        </div>
-      )}
-
-      {moveDoc && moveDestinations.status === "ready" && (
-        <FolderPicker
-          open
-          heading={`Move “${moveDoc.title}”`}
-          {...movePage.pickerProps}
-          onClose={() => setMoveDoc(null)}
-        />
-      )}
-    </section>
   );
 }
 

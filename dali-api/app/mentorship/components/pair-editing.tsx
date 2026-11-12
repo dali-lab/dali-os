@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { Select } from "~/components/ui/floating";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 
 // Shared client helpers for the Core-only manual pair editor, used inline on the
 // Notes grid and on each project's Mentorship tab. All writes go through
@@ -182,7 +180,6 @@ export function AddPairForm({
   busy: boolean;
   onAdd: (body: AddPairInput) => void;
 }) {
-  const { os } = useOsChrome();
   const [domainId, setDomainId] = useState("");
   const [menteeId, setMenteeId] = useState("");
   const [mentorId, setMentorId] = useState("");
@@ -247,12 +244,7 @@ export function AddPairForm({
           });
           reset();
         }}
-        className={cn(
-          os
-            ? "os-btn-primary"
-            : "inline-flex items-center gap-1 px-3 py-1 rounded-md bg-os-accent text-os-bg text-sm hover:opacity-90",
-          "disabled:opacity-50",
-        )}
+        className="os-btn-primary disabled:opacity-50"
       >
         <Plus className="w-4 h-4" aria-hidden />
         Add pair

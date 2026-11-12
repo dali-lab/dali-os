@@ -19,6 +19,12 @@ import {
   type PartnerCardSort,
 } from "../lib/partner-board";
 import type { loader } from "../routes/core.partners.settings";
+import {
+  centsToDollars,
+  MAINTENANCE_PLANS,
+  maintenanceLabel,
+  type MaintenancePrices,
+} from "../lib/partner-renewals";
 
 const SETTINGS_PATH = "/core/partners/settings";
 
@@ -70,6 +76,11 @@ export function PartnerSettingsModal({
         <div className="flex flex-col divide-y divide-os-container">
           {board && <BoardDisplaySection board={board} />}
           <FollowUpSection key={JSON.stringify(d.settings)} data={d} onSaved={reload} />
+          <MaintenancePricesSection
+            key={`maintenance:${JSON.stringify(d.settings.maintenancePrices)}`}
+            prices={d.settings.maintenancePrices}
+            onSaved={reload}
+          />
           <section className="flex flex-col gap-5 py-6 last:pb-0">
             <h3 className="font-heading text-[15px] font-semibold text-foreground">Partner forms</h3>
             <FormBindingRow
@@ -194,6 +205,47 @@ function FollowUpSection({ data, onSaved }: { data: SettingsData; onSaved: () =>
       {save.data?.error && <p className="text-sm text-destructive">{save.data.error}</p>}
       <Button type="submit" variant="primary" size="sm" disabled={save.state !== "idle"} className="self-end">
         {save.state !== "idle" ? "Saving…" : "Save"}
+      </Button>
+    </save.Form>
+  );
+}
+
+function MaintenancePricesSection({
+  prices,
+  onSaved,
+}: {
+  prices: MaintenancePrices;
+  onSaved: () => void;
+}) {
+  const save = useFetcher<ActionResult>();
+  useOnSaved(save, onSaved);
+  return (
+    <save.Form method="post" action={SETTINGS_PATH} className="flex flex-col gap-4 py-6">
+      <div>
+        <h3 className="font-heading text-[15px] font-semibold text-foreground">Maintenance prices</h3>
+        <p className="text-sm text-os-grey">
+          Price per term for each maintenance plan. Choosing a plan on Renewals fills in this price, and you can change
+          it per project.
+        </p>
+      </div>
+      <input type="hidden" name="intent" value="maintenance-prices" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        {MAINTENANCE_PLANS.map((plan) => (
+          <label key={plan} className="flex flex-col gap-1.5">
+            <span className="text-sm text-os-grey">{maintenanceLabel(plan)}</span>
+            <input
+              name={plan}
+              inputMode="decimal"
+              placeholder="Dollars"
+              defaultValue={centsToDollars(prices[plan])}
+              aria-label={`${maintenanceLabel(plan)} price`}
+            />
+          </label>
+        ))}
+      </div>
+      {save.data?.error && <p className="text-sm text-destructive">{save.data.error}</p>}
+      <Button type="submit" variant="primary" size="sm" disabled={save.state !== "idle"} className="self-end">
+        {save.state !== "idle" ? "Saving…" : "Save prices"}
       </Button>
     </save.Form>
   );

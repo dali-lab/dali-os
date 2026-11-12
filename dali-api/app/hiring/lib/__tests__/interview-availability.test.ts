@@ -8,7 +8,7 @@ vi.mock("~/lib/availability", async (importOriginal) => ({
 
 import { prisma } from "~/lib/db.server";
 import { computeUserFreeBusy } from "~/lib/availability";
-import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
+import { interviewerCalendars, interviewCalendarCacheSizeForTests } from "~/hiring/lib/interview-availability.server";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 
@@ -116,5 +116,15 @@ describe("interviewerCalendars", () => {
     await expect(interviewerCalendars([user], config)).rejects.toThrow("google down");
     vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
     await expect(interviewerCalendars([user], config)).resolves.toBeInstanceOf(Map);
+  });
+
+  it("evicts calendars past their lifetime when the cache is next used", async () => {
+    vi.mocked(computeUserFreeBusy).mockResolvedValue(freeBusy([], true));
+    await interviewerCalendars([`u${n}-a`, `u${n}-b`], config);
+    expect(interviewCalendarCacheSizeForTests()).toBeGreaterThanOrEqual(2);
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 600_000);
+    await interviewerCalendars([`u${n}-c`], config);
+    clock.mockRestore();
+    expect(interviewCalendarCacheSizeForTests()).toBe(1);
   });
 });

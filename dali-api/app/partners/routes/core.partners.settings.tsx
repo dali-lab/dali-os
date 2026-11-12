@@ -12,6 +12,7 @@ import {
   getApplicationFormBinding,
   setApplicationFormBinding,
 } from "../lib/application-form.server";
+import { dollarsToCents, MAINTENANCE_PLANS, type MaintenancePrices } from "../lib/partner-renewals";
 import {
   clearSurveyFormBinding,
   getSurveyFormBinding,
@@ -34,7 +35,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     await Promise.all([
     prisma.partnerCrmSettings.findUnique({
       where: { id: "default" },
-      select: { interviewPanelUserIds: true, staleDays: true },
+      select: {
+        interviewPanelUserIds: true,
+        staleDays: true,
+        maintenanceHostingCents: true,
+        maintenanceMildCents: true,
+        maintenanceMediumCents: true,
+      },
     }),
     getActiveCoreCycleTermIds(request),
     getApplicationFormBinding(),
@@ -58,6 +65,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     settings: {
       interviewPanelUserIds: settings?.interviewPanelUserIds ?? [],
       staleDays: settings?.staleDays ?? DEFAULT_STALE_DAYS,
+      maintenancePrices: {
+        Hosting: settings?.maintenanceHostingCents ?? null,
+        Mild: settings?.maintenanceMildCents ?? null,
+        Medium: settings?.maintenanceMediumCents ?? null,
+      } satisfies MaintenancePrices,
     },
     coreMembers: coreMembers
       .map((a) => ({
@@ -108,6 +120,34 @@ export async function action({ request }: Route.ActionArgs) {
         staleDays: { before: before?.staleDays ?? null, after: staleDays },
         interviewPanelUserIds: { before: before?.interviewPanelUserIds ?? null, after: interviewPanelUserIds },
       },
+      request,
+    });
+    return { ok: true };
+  }
+
+  if (intent === "maintenance-prices") {
+    const prices: Record<string, number | null> = {};
+    for (const plan of MAINTENANCE_PLANS) {
+      const raw = String(form.get(plan) ?? "").trim();
+      const cents = raw === "" ? null : dollarsToCents(raw);
+      if (raw !== "" && cents == null) return { error: `${plan} price is not a valid amount.` };
+      prices[plan] = cents;
+    }
+    const data = {
+      maintenanceHostingCents: prices.Hosting,
+      maintenanceMildCents: prices.Mild,
+      maintenanceMediumCents: prices.Medium,
+    };
+    await prisma.partnerCrmSettings.upsert({
+      where: { id: "default" },
+      create: { id: "default", ...data },
+      update: data,
+    });
+    await logAuditEvent({
+      action: "partner.settings.save",
+      userId: auth.user.sub,
+      targetId: "default",
+      metadata: { maintenancePrices: prices },
       request,
     });
     return { ok: true };

@@ -10,7 +10,7 @@
 //     Google mirror there too would duplicate every block. It's a portable view
 //     for the user's Google Calendar, off their primary.
 //
-// Entry points for the route wiring (calendar.server.ts time-entry handlers):
+// Entry points for the route wiring (calendar-actions meeting-log and settings handlers):
 //   on create  → await syncTimeEntryToGoogle(entry)
 //   on update  → await syncTimeEntryToGoogle(entry)   // patches if already mirrored
 //   on delete  → await removeTimeEntryFromGoogle(entry)
@@ -166,7 +166,7 @@ export interface TimesheetEntryInput {
  * Best-effort: Google failures are swallowed (logged). The caller's Postgres write
  * must already have succeeded before this is called.
  *
- * Wiring point (calendar.server.ts):
+ * Wiring point (calendar-actions):
  *   After `prisma.timeEntry.create(...)` or `prisma.timeEntry.update(...)`:
  *     await syncTimeEntryToGoogle(entry).catch(() => {});
  *   (The `.catch(() => {})` is belt-and-suspenders — the function already
@@ -273,7 +273,7 @@ export async function syncTimeEntryToGoogle(entry: TimesheetEntryInput): Promise
  * No-ops when googleTimesheetEventId is absent (entry was never mirrored).
  * Best-effort: Google failures are swallowed.
  *
- * Wiring point (calendar.server.ts):
+ * Wiring point (calendar-actions):
  *   Before (or after — best-effort) `prisma.timeEntry.delete(...)`:
  *     await removeTimeEntryFromGoogle(entry).catch(() => {});
  */

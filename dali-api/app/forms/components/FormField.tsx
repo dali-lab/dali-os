@@ -26,7 +26,7 @@ export interface FormFieldProps {
   labelSuffix?: React.ReactNode;
   // e.g. portal.apply's url-warning / word-count line
   belowField?: React.ReactNode;
-  // Override the field renderer (e.g. MemberFormFillView's "no uploads here" notice).
+  // Override the field renderer, for a field that needs props this wrapper doesn't pass.
   renderField?: (q: Question) => React.ReactNode;
 }
 

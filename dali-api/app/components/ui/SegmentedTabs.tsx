@@ -1,0 +1,116 @@
+import type { LucideIcon } from "lucide-react";
+import { cn } from "~/lib/cn";
+
+// The dali.os section switcher. The design navigates areas from the sidebar
+// rail and has no underline tab bar; the few pages whose sections aren't sidebar
+// destinations — calendar's three views, settings' sections — switch with a
+// segmented pill: one track, the active segment filled, sized to its content.
+
+export type SegmentedTab = {
+  label: string;
+  active?: boolean;
+  onClick: () => void;
+  icon?: LucideIcon;
+  count?: number;
+};
+
+/** "sm" is the switcher at rail width — same pill, one size down, for places
+ *  that can't spare 44px of height (the calendar's left rail). "toolbar" sits
+ *  between the two: md's text, trimmed to the h-9 of the search field and
+ *  filter pills it shares a controls row with. */
+export type SegmentedSize = "sm" | "toolbar" | "md";
+
+function osSegmentedTrackClass(size: SegmentedSize) {
+  return cn(
+    "inline-flex w-fit max-w-full items-center overflow-x-auto no-scrollbar rounded-[10px] border border-border bg-os-card",
+    size === "md" ? "gap-1 p-1" : "gap-0.5 p-0.5",
+  );
+}
+
+function osSegmentedItemClass(active: boolean, size: SegmentedSize) {
+  return cn(
+    "inline-flex shrink-0 items-center gap-1.5 rounded-[8px] font-medium transition-colors",
+    size === "sm" && "px-3 py-1 text-xs",
+    size === "toolbar" && "h-[30px] px-3.5 text-sm",
+    size === "md" && "px-[14px] py-[6px] text-[13px]/[calc(1.25/0.875)]",
+    active
+      ? "bg-os-container text-foreground"
+      : "text-muted-foreground hover:text-foreground",
+  );
+}
+
+function SubtabLabel({
+  label,
+  icon: Icon,
+  count,
+  active,
+}: {
+  label: string;
+  icon?: LucideIcon;
+  count?: number;
+  active?: boolean;
+}) {
+  return (
+    <>
+      {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden />}
+      {label}
+      {count !== undefined && (
+        <span
+          className={cn(
+            "grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold",
+            active ? "bg-os-accent text-os-bg" : "bg-os-card text-os-grey",
+          )}
+        >
+          {count}
+        </span>
+      )}
+    </>
+  );
+}
+
+// The os switcher on its own, for pages that host it inside a controls row they
+// already have (the Partners hub puts it beside its search field) rather than
+// on a row of its own above the page title.
+export function SegmentedTabButtons({
+  items,
+  label = "Section",
+  className,
+  stretch = false,
+  size = "md",
+}: {
+  items: SegmentedTab[];
+  label?: string;
+  className?: string;
+  /** Fill the container, segments sharing the width equally. */
+  stretch?: boolean;
+  size?: SegmentedSize;
+}) {
+  return (
+    <div
+      className={cn(osSegmentedTrackClass(size), stretch && "w-full", className)}
+      role="tablist"
+      aria-label={label}
+    >
+      {items.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          role="tab"
+          aria-selected={item.active ?? false}
+          onClick={item.onClick}
+          className={cn(
+            osSegmentedItemClass(!!item.active, size),
+            stretch && "flex-1 justify-center",
+          )}
+        >
+          <SubtabLabel
+            label={item.label}
+            icon={item.icon}
+            count={item.count}
+            active={item.active}
+          />
+        </button>
+      ))}
+    </div>
+  );
+}

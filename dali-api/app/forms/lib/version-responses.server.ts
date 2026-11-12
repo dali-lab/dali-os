@@ -1,7 +1,11 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { offsetPage, offsetWindow } from "~/lib/pagination";
-import { buildReferenceLabelMaps, buildResponseGrid } from "~/forms/lib/answer-rows.server";
+import {
+  buildReferenceLabelMaps,
+  buildResponseGrid,
+  type FormAnswerRow,
+} from "~/forms/lib/answer-rows.server";
 import { RESPONSE_LOCK_SELECT, responseLockReason } from "~/forms/lib/response-lock";
 import type { Question } from "~/types";
 import { filterableQuestions, type AnswerFilter } from "~/forms/lib/answer-filters";
@@ -10,6 +14,12 @@ import {
   resolveAnswerMatches,
   type AnswerMatches,
 } from "~/forms/lib/answer-filters.server";
+import {
+  MEMBER_HISTORY_COLUMNS,
+  memberHistoryText,
+  type MemberHistoryColumn,
+} from "~/projects/lib/member-history";
+import { loadMemberHistories } from "~/projects/lib/member-history.server";
 
 export const RESPONSES_PAGE_SIZE = 50;
 
@@ -20,6 +30,7 @@ export type ResponseFilters = {
   answers?: AnswerFilter[];
   // The version's questions; answer filters are built against them.
   questions?: Question[];
+  memberColumns?: MemberHistoryColumn[];
 };
 
 export function searchWords(q = ""): string[] {
@@ -87,7 +98,7 @@ export type ResponseRow = {
   // Only anonymous (Public-audience) fills carry an IP.
   submitterIp: string | null;
   partnerApplication: { id: string; title: string } | null;
-  rows: { key: string; label: string; value: string }[];
+  rows: FormAnswerRow[];
 };
 
 export type VersionResponses = Awaited<ReturnType<typeof loadVersionResponses>>;
@@ -123,6 +134,7 @@ export async function loadVersionResponses(
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       ...offsetWindow(page, RESPONSES_PAGE_SIZE),
       select: {
+        ...RESPONSE_LOCK_SELECT,
         id: true,
         createdAt: true,
         updatedAt: true,
@@ -130,7 +142,7 @@ export async function loadVersionResponses(
         submitterName: true,
         submitterEmail: true,
         submitterIp: true,
-        slot: true,
+        userId: true,
         user: {
           select: {
             firstName: true,
@@ -142,7 +154,6 @@ export async function loadVersionResponses(
         formVersion: { select: { versionNumber: true, questions: true } },
         partnerApplication: { select: { id: true, title: true } },
         form: { select: { name: true } },
-        ...RESPONSE_LOCK_SELECT,
       },
     }),
     filters.questions ? buildReferenceLabelMaps(filters.questions) : null,
@@ -159,6 +170,16 @@ export async function loadVersionResponses(
     })),
   );
 
+  const memberColumns = MEMBER_HISTORY_COLUMNS.filter((c) =>
+    filters.memberColumns?.includes(c.key),
+  ).map((c) => ({ key: `member:${c.key}`, label: c.label, column: c.key }));
+  const histories = memberColumns.length
+    ? await loadMemberHistories([
+        ...new Set(submissions.flatMap((s) => (s.userId ? [s.userId] : []))),
+      ])
+    : null;
+  const now = new Date();
+
   const responses: ResponseRow[] = submissions.map((s, i) => ({
     id: s.id,
     createdAt: s.createdAt.toISOString(),
@@ -173,8 +194,18 @@ export async function loadVersionResponses(
     slot: s.slot,
     submitterIp: s.submitterIp,
     partnerApplication: s.partnerApplication,
-    rows: grid.rowsBySubmission[i],
+    rows: [...grid.rowsBySubmission[i], ...memberRows(s.userId)],
   }));
+
+  function memberRows(userId: string | null) {
+    const history = userId ? histories?.get(userId) : undefined;
+    const text = history ? memberHistoryText(history, now) : null;
+    return memberColumns.map((c) => ({
+      key: c.key,
+      label: c.label,
+      value: text?.[c.column] ?? "",
+    }));
+  }
 
   return {
     versionId,
@@ -183,7 +214,7 @@ export async function loadVersionResponses(
     matchCount,
     page,
     hasNext,
-    columns: grid.columns,
+    columns: [...grid.columns, ...memberColumns.map(({ key, label }) => ({ key, label }))],
     slotOptions: slots.flatMap((s) => (s.slot ? [s.slot] : [])),
     filterQuestions: filters.questions ? filterableQuestions(filters.questions, refLabels ?? undefined) : [],
     responses,

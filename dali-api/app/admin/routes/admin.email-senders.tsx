@@ -3,6 +3,8 @@
 // the connected state and what actually happens today. Below them, the
 // shared-inbox categories for the Email tab (see ~/email/lib/categories.server).
 
+import { formatMonthDayTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import { PowerOff } from "lucide-react";
 import { useDialog } from "~/components/ui/dialog";
@@ -136,16 +138,6 @@ export async function action({ request }: Route.ActionArgs) {
   return Response.json({ error: "Invalid intent" }, { status: 400 });
 }
 
-function formatTime(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 const PCT_CLASS: Record<Tone, string> = {
   ok: "text-os-muted",
   idle: "text-os-muted",
@@ -234,6 +226,7 @@ function senderState(s: SenderInfo): { tone: Tone; label: string } {
 // One automated-email sender: the Gmail account DALI OS sends this area's mail
 // from (interview invites, partner invites, digests, sign-in links).
 function SenderRow({ sender: s }: { sender: SenderInfo }) {
+  const timeZone = useUserTimeZone();
   const fetcher = useFetcher();
   const dialog = useDialog();
   const { actionBtn, actionBtnPrimary, iconBtn } = useOsChrome();
@@ -268,7 +261,7 @@ function SenderRow({ sender: s }: { sender: SenderInfo }) {
         )}
         {s.sendAsEmail && (
           <p className="mt-1 text-xs text-os-muted">
-            Connected {formatTime(s.linkedAt)} · last used {formatTime(s.lastUsedAt)}
+            Connected {formatMonthDayTime(s.linkedAt, timeZone)} · last used {formatMonthDayTime(s.lastUsedAt, timeZone)}
             {s.readsInbox ? " · reads inbox" : ""}
             {s.purpose === "Hiring" && s.hostsMeet ? " · hosts interview Meet links" : ""}
           </p>

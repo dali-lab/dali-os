@@ -11,7 +11,7 @@
 //    already stored, so restyling installed passes needs the Wallet REST API. We
 //    mint an OAuth token from the same SA (google-auth-library) and PATCH each
 //    existing object in place; Google pushes the refreshed design to phones. See
-//    patchAllGoogleWalletObjects (invoked by scripts/wallet-broadcast-restyle.ts).
+//    patchAllGoogleWalletObjects (invoked by the wallet-restyle-broadcast job).
 
 import crypto from "node:crypto";
 import { JWT } from "google-auth-library";

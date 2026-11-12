@@ -27,6 +27,9 @@ primary_region = "iad"
 [env]
   NODE_ENV = "development"
 
+[build]
+  build-target = "preview"
+
 [build.args]
   OMIT_DEV = "false"
 

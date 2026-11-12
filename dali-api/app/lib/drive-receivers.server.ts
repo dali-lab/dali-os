@@ -1,3 +1,4 @@
+import { isUniqueViolation } from "~/lib/prisma-errors";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { MAX_PAGE_DEPTH } from "~/lib/pages";
@@ -78,10 +79,6 @@ const ROOT_KEY_FOR_PROCESS: Partial<Record<ProcessType, RootKey>> = {
   HiringCycle: "hiring",
   Mentorship: "mentorship",
 };
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002";
-}
 
 function sameSlot(a: ReceiverSlot, b: ReceiverSlot): boolean {
   return a.processType === b.processType && a.processId === b.processId && a.folderType === b.folderType;

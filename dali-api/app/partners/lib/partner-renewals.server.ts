@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db.server";
+import type { MaintenancePlan } from "~/generated/prisma/enums";
 import { personName } from "./core-members.server";
 import { effectivePi } from "./planning-gap";
 import {
@@ -19,11 +20,22 @@ export async function loadRenewalCards(
 ): Promise<{ decisionTerm: TermRef | null; cards: RenewalCardModel[] }> {
   const decisionTerm = nextTerm(allTerms, pickedTerm.sortKey);
   const projects = await prisma.project.findMany({
-    where: { projectTerms: { some: { termId: pickedTerm.id } } },
+    where: {
+      OR: [
+        { projectTerms: { some: { termId: pickedTerm.id } } },
+        { maintenancePlans: { some: { endedAt: null } } },
+      ],
+    },
     select: {
       id: true,
       name: true,
       iconEmoji: true,
+      maintenancePlans: {
+        where: { endedAt: null },
+        orderBy: { startedAt: "desc" },
+        take: 1,
+        select: { plan: true, feeCents: true, startTerm: { select: { code: true } } },
+      },
       projectTerms: {
         select: {
           termId: true,
@@ -88,7 +100,10 @@ export async function loadRenewalCards(
       .filter((x): x is { s: (typeof mine)[number]; t: TermRef } => !!x.t)
       .filter((x) => x.t.sortKey >= decisionTerm.sortKey)
       .map((x) => ({ sortKey: x.t.sortKey, code: x.t.code, isContinuing: x.s.isContinuing }));
-    const verdict = classifyDecision(rows, decisionTerm.sortKey);
+    const plan = p.maintenancePlans[0] ?? null;
+    const verdict = plan
+      ? { column: "maintaining" as const, fromTermCode: null, effectiveCode: null }
+      : classifyDecision(rows, decisionTerm.sortKey);
     const effectiveTerm = verdict.effectiveCode
       ? allTerms.find((t) => t.code === verdict.effectiveCode)
       : null;
@@ -123,6 +138,9 @@ export async function loadRenewalCards(
       feeCents: detail?.feeCents ?? null,
       lastRoles: rolesFor(p.id, pickedTerm.id),
       decidedRoles: effectiveTerm ? rolesFor(p.id, effectiveTerm.id) : [],
+      maintenance: plan
+        ? { plan: plan.plan, feeCents: plan.feeCents, startTermCode: plan.startTerm?.code ?? null }
+        : null,
     };
   });
   return { decisionTerm, cards };
@@ -155,6 +173,11 @@ export async function applyContinue(
   const roles = normalizeRoles(input.roles);
   const writes = continueStatusWrites(input.decisionTermId, input.chosenTermId);
   await db.$transaction(async (tx) => {
+    await endMaintenance(tx, input.projectId, input.userId);
+    const staleReturn = await skipReturnTerm(tx, input.projectId, input.decisionTermId);
+    if (staleReturn && staleReturn !== input.chosenTermId) {
+      await releaseTerm(tx, input.projectId, staleReturn);
+    }
     for (const w of writes) {
       const isChosen = w.isContinuing;
       const data = {
@@ -211,10 +234,14 @@ export async function applyNotContinuing(
     setBy: input.userId,
     setAt: new Date(),
   };
-  await db.projectTermStatus.upsert({
-    where: { projectId_termId: { projectId: input.projectId, termId: input.decisionTermId } },
-    create: { projectId: input.projectId, termId: input.decisionTermId, ...data },
-    update: data,
+  await db.$transaction(async (tx) => {
+    await endMaintenance(tx, input.projectId, input.userId);
+    await releaseFormerDecision(tx, input.projectId, input.decisionTermId);
+    await tx.projectTermStatus.upsert({
+      where: { projectId_termId: { projectId: input.projectId, termId: input.decisionTermId } },
+      create: { projectId: input.projectId, termId: input.decisionTermId, ...data },
+      update: data,
+    });
   });
 }
 
@@ -233,6 +260,7 @@ export async function applyUndecided(
     setAt: new Date(),
   };
   await db.$transaction(async (tx) => {
+    await endMaintenance(tx, input.projectId, input.userId ?? null);
     const decision = await tx.projectTermStatus.findUnique({
       where: { projectId_termId: { projectId: input.projectId, termId: input.decisionTermId } },
       select: { isContinuing: true, term: { select: { sortKey: true } } },
@@ -272,14 +300,137 @@ export async function applyUndecided(
       } else {
         await tx.projectTermStatus.deleteMany({ where: { projectId: input.projectId, termId } });
       }
-      if (status?.isContinuing) {
-        const assigned = await tx.projectAssignment.count({
-          where: { projectId: input.projectId, termId },
-        });
-        if (assigned === 0) {
-          await tx.projectRoleRequest.deleteMany({ where: { projectId: input.projectId, termId } });
-        }
-      }
+      if (status?.isContinuing) await releaseStaffing(tx, input.projectId, termId);
     }
   });
+}
+
+type Tx = Parameters<Parameters<Db["$transaction"]>[0]>[0];
+
+// Puts the project on (or switches its tier of) the maintenance plan. The
+// decision term is marked not continuing, so it drops out of term planning.
+export async function applyMaintain(
+  db: Db,
+  input: {
+    projectId: string;
+    decisionTermId: string;
+    plan: MaintenancePlan;
+    feeCents: number | null;
+    userId: string;
+  } & Partial<NextStepFields>,
+): Promise<void> {
+  const data = {
+    isContinuing: false,
+    reason: null,
+    feeCents: null,
+    nextStep: input.nextStep ?? null,
+    nextStepDueAt: input.nextStepDueAt ?? null,
+    setBy: input.userId,
+    setAt: new Date(),
+  };
+  await db.$transaction(async (tx) => {
+    await releaseFormerDecision(tx, input.projectId, input.decisionTermId);
+    await tx.projectTermStatus.upsert({
+      where: { projectId_termId: { projectId: input.projectId, termId: input.decisionTermId } },
+      create: { projectId: input.projectId, termId: input.decisionTermId, ...data },
+      update: data,
+    });
+    const open = await tx.projectMaintenance.findFirst({
+      where: { projectId: input.projectId, endedAt: null },
+      select: { id: true },
+    });
+    if (open) {
+      await tx.projectMaintenance.update({
+        where: { id: open.id },
+        data: { plan: input.plan, feeCents: input.feeCents },
+      });
+    } else {
+      await tx.projectMaintenance.create({
+        data: {
+          projectId: input.projectId,
+          plan: input.plan,
+          feeCents: input.feeCents,
+          startTermId: input.decisionTermId,
+          startedById: input.userId,
+        },
+      });
+    }
+  });
+}
+
+export async function setMaintenancePlan(
+  db: Db,
+  input: { projectId: string; plan: MaintenancePlan },
+): Promise<"ok" | "not-on-plan"> {
+  const open = await db.projectMaintenance.findFirst({
+    where: { projectId: input.projectId, endedAt: null },
+    select: { id: true },
+  });
+  if (!open) return "not-on-plan";
+  const settings = await db.partnerCrmSettings.findUnique({
+    where: { id: "default" },
+    select: { maintenanceHostingCents: true, maintenanceMildCents: true, maintenanceMediumCents: true },
+  });
+  const price = {
+    Hosting: settings?.maintenanceHostingCents,
+    Mild: settings?.maintenanceMildCents,
+    Medium: settings?.maintenanceMediumCents,
+  }[input.plan];
+  await db.projectMaintenance.update({
+    where: { id: open.id },
+    data: { plan: input.plan, ...(price != null ? { feeCents: price } : {}) },
+  });
+  return "ok";
+}
+
+async function endMaintenance(tx: Tx, projectId: string, userId: string | null): Promise<void> {
+  await tx.projectMaintenance.updateMany({
+    where: { projectId, endedAt: null },
+    data: { endedAt: new Date(), endedById: userId },
+  });
+}
+
+// Before a decision that stops term work: undo the term a skip pointed at,
+// or the decision term itself when it had been marked continuing.
+async function releaseFormerDecision(tx: Tx, projectId: string, decisionTermId: string): Promise<void> {
+  const staleReturn = await skipReturnTerm(tx, projectId, decisionTermId);
+  if (staleReturn) {
+    await releaseTerm(tx, projectId, staleReturn);
+    return;
+  }
+  const decision = await tx.projectTermStatus.findUnique({
+    where: { projectId_termId: { projectId, termId: decisionTermId } },
+    select: { isContinuing: true },
+  });
+  if (decision?.isContinuing) await releaseStaffing(tx, projectId, decisionTermId);
+}
+
+// The later term an earlier "continue from a later term" decision pointed at:
+// set only when the decision term is marked not continuing.
+async function skipReturnTerm(tx: Tx, projectId: string, decisionTermId: string): Promise<string | null> {
+  const decision = await tx.projectTermStatus.findUnique({
+    where: { projectId_termId: { projectId, termId: decisionTermId } },
+    select: { isContinuing: true, term: { select: { sortKey: true } } },
+  });
+  if (decision?.isContinuing !== false) return null;
+  const later = await tx.projectTermStatus.findFirst({
+    where: { projectId, isContinuing: true, term: { sortKey: { gt: decision.term.sortKey } } },
+    orderBy: { term: { sortKey: "asc" } },
+    select: { termId: true },
+  });
+  return later?.termId ?? null;
+}
+
+async function releaseTerm(tx: Tx, projectId: string, termId: string): Promise<void> {
+  await tx.projectTermStatus.deleteMany({ where: { projectId, termId } });
+  await releaseStaffing(tx, projectId, termId);
+}
+
+// Undoes a renewal-planned term unless people are already staffed on it; the
+// term itself stays when Core gave it a PI.
+async function releaseStaffing(tx: Tx, projectId: string, termId: string): Promise<void> {
+  const assigned = await tx.projectAssignment.count({ where: { projectId, termId } });
+  if (assigned > 0) return;
+  await tx.projectRoleRequest.deleteMany({ where: { projectId, termId } });
+  await tx.projectTerm.deleteMany({ where: { projectId, termId, piUserId: null } });
 }

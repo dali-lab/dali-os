@@ -1,5 +1,5 @@
 // Device-pairing helpers for the Tauri desktop sign-in flow. Mirrors the
-// hashing/encoding conventions in lib/session.ts. See TAURI_DESKTOP_PLAN.md.
+// hashing/encoding conventions in lib/session.ts. See specs/archive/TAURI_DESKTOP_PLAN.md.
 //
 // Two kinds of code travel in this flow:
 //   - deviceCode / handoffCode: high-entropy bearer secrets (32 random bytes,

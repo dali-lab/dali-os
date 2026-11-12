@@ -1,3 +1,4 @@
+import { isUniqueViolation } from "~/lib/prisma-errors";
 import { prisma } from "~/lib/db.server";
 import {
   CORE_PROCESS_ID,
@@ -47,10 +48,6 @@ export const ROOTS: Record<RootKey, RootDef> = {
 export const ROOT_KEYS = Object.keys(ROOTS) as RootKey[];
 
 export { isRoot } from "~/lib/drive-roots";
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002";
-}
 
 async function groupIdByKey(systemKey: string): Promise<string | null> {
   const group = await prisma.groupDefinition.findUnique({

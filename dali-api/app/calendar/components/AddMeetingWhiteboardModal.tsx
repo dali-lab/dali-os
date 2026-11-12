@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shapes, X } from "lucide-react";
+import { Z } from "~/components/ui/z";
 
 // Post-hoc counterpart to the create modal's whiteboard toggle: adds a whiteboard
 // to a meeting that doesn't have one, posting the `add-meeting-whiteboard`
@@ -92,7 +93,7 @@ function AddMeetingWhiteboardModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
+      className={`fixed inset-0 ${Z.popover} flex items-center justify-center bg-black/55 backdrop-blur-sm p-4`}
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

@@ -71,7 +71,7 @@ async function run(ctx: McpCtx, args: Record<string, unknown>) {
     case "set_checklist":
       return runSetTaskChecklist(id, pick(args, ["taskId", "items"]));
     case "delete":
-      return runDeleteTask(id, pick(args, ["taskId"]));
+      return runDeleteTask(id, pick(args, ["taskId"]), ctx);
     case "link_github":
       return runLinkTaskToGithub(id, pick(args, ["taskId", "repo"]));
     case "unlink_github":

@@ -46,7 +46,7 @@ export const meta: Route.MetaFunction = () => [
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) return redirect("/");
 
   const entries = await listActiveWaitlistEntries();
@@ -144,7 +144,6 @@ export default function WaitlistsPage() {
       {cycleOptions.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
           <FilterPill
-            os
             size="md"
             selected={!filtering}
             onClick={() => setCycleFilter("all")}
@@ -154,7 +153,6 @@ export default function WaitlistsPage() {
           {cycleOptions.map((c) => (
             <FilterPill
               key={c.id}
-              os
               size="md"
               selected={cycleFilter === c.id}
               onClick={() => setCycleFilter(c.id)}

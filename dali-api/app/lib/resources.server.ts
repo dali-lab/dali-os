@@ -10,7 +10,7 @@ export async function resourcesAccess(
   userId: string,
   request?: Request,
 ): Promise<{ core: boolean } | null> {
-  const roles = await getUserRoles(userId);
+  const roles = await getUserRoles(userId, request);
   if (!(await isFeatureEnabled("community", userId, roles, request))) return null;
   const [core, labMember] = await Promise.all([
     isCore(userId, request),

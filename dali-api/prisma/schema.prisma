@@ -1112,7 +1112,7 @@ enum AssignmentStatus {
 
 // MemberRole enum dropped in Phase 2. Admin → AdminMembership row;
 // HiringLead → CoreAssignment row with leadTitle="Hiring Lead". See
-// V0_PHASE2_PLAN.md M3 backfill.
+// specs/archive/V0_PHASE2_PLAN.md M3 backfill.
 
 model InterviewAssignment {
   id        String   @id @default(cuid())
@@ -1597,6 +1597,7 @@ model DocComment {
 
   @@index([targetType, targetId, createdAt])
   @@index([parentId])
+  @@index([fileId])
 }
 
 // Per-user emoji reactions on a DocComment. Toggle semantics: upsert on add,
@@ -1779,13 +1780,10 @@ model PageDoc {
   id       String  @id @default(cuid())
   pageKey  String  @unique
   title    String
-  // ProseMirror JSON. Null until the maintainer writes the guide.
+  // Retired: no longer read or written; content lives in sections.
   body     Json?
-  // S3 key of the uploaded walkthrough video (read via presigned URL). Null =
-  // no video yet. Kept in sync with sections[0].videoKey for older clients.
   videoKey String?
-  // Ordered sidebar sections: [{ id, title, body, videoKey }, ...]. Null =
-  // legacy single-body docs (API synthesizes an Overview from body/videoKey).
+  // Ordered sidebar sections: [{ id, title, body, videoKey }, ...].
   sections Json?
 
   maintainerId   String?
@@ -1810,7 +1808,7 @@ enum OAuthProvider {
 }
 
 // Phase 2: collapsed to `member` only. MCP clients are members-only (per
-// V0_PLAN.md Q18). The `dartmouth` and `partner` values were never used in
+// specs/archive/V0_PLAN.md Q18). The `dartmouth` and `partner` values were never used in
 // production — first-party login (/auth/callback/*) doesn't go through this
 // type, and the OAuth provider surface (/oauth/*) is MCP-only.
 enum OAuthAccountType {
@@ -1827,10 +1825,8 @@ model OAuthSession {
   // oAuth params preserved across IDP redirect
   redirectUri String
   state       String
-  provider    OAuthProvider
-  // Optional. Set when the OAuthClient row pins a single accountType
-  // (e.g. MCP clients require "member"). Null = any accountType is OK
-  // for this session, decided by the callback's domain branch.
+  // Retired: no longer read or written.
+  provider    OAuthProvider?
   accountType OAuthAccountType?
 
   // set after IDP authenticates user
@@ -1838,7 +1834,6 @@ model OAuthSession {
   authorizationCode String? @unique
   exchanged         Boolean @default(false)
 
-  // for chained Google → CAS account linking
   linkUserId String?
 
   // MCP foundation track: the OAuthClient that initiated this authorization
@@ -1855,7 +1850,7 @@ model OAuthSession {
 }
 
 // Single-credential session record backing both browser cookie logins and
-// OAuth-issued (MCP) sessions. See SESSION_AUTH_PLAN.md for design.
+// OAuth-issued (MCP) sessions. See specs/archive/SESSION_AUTH_PLAN.md for design.
 //
 // The PK `id` stores SHA-256(raw) so a DB read leak does not surface live
 // credentials. The raw id is what travels in the __dali_sid cookie or in
@@ -2909,6 +2904,8 @@ model ScheduledMeeting {
 
   @@index([iCalUID])
   @@index([notebookId])
+  @@index([organizerId])
+  @@index([projectId])
 }
 
 // A PageShare a meeting justifies on its notebook, so uninviting removes
@@ -3066,6 +3063,7 @@ model TimeEntry {
   @@unique([sourceEventId, userId])
   @@index([userId, date])
   @@index([userId, assignmentType])
+  @@index([projectId])
 }
 
 enum TimeEntrySource {
@@ -3169,6 +3167,8 @@ model Notification {
   @@index([recipientUserId, createdAt])
   @@index([interviewAssignmentId])
   @@index([announcementId])
+  @@index([scheduledMeetingId])
+  @@index([formId])
 }
 
 enum NotificationKind {
@@ -3458,7 +3458,7 @@ model CourseOffering {
 // and the auth-side foundation from `dali-os-mcp.md`. Phase 2 (destructive
 // refactor) runs separately after the live 2026-S cycle closes.
 //
-// See V0_PLAN.md for the locked decisions, deploy sequencing, and the
+// See specs/archive/V0_PLAN.md for the locked decisions, deploy sequencing, and the
 // Phase 2 column-drop / FK-rename plan.
 
 // ─── Term ────────────────────────────────────────────────────────────────────
@@ -3503,6 +3503,7 @@ model Term {
   projectChartStrings   ProjectChartString[]
   mentorshipForms       MentorshipTermForm[]
   coreMilestones        CoreMilestone[]
+  maintenanceStarts     ProjectMaintenance[]
 
   @@index([sortKey])
 }
@@ -4034,6 +4035,8 @@ model Project {
   mailAccounts      MailAccount[]
   roleRequests      ProjectRoleRequest[]
   planningNote      PlanningNote?
+  maintenancePlans  ProjectMaintenance[]
+  returnApplications PartnerApplication[] @relation("PartnerApplicationContinues")
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
   epics             Epic[]
@@ -4504,6 +4507,7 @@ model Task {
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
+  @@index([epicId])
   @@index([storyId])
   @@index([sourceRecordingId])
 }
@@ -4576,6 +4580,7 @@ model TaskAssignee {
   user User @relation(fields: [userId], references: [id])
 
   @@id([taskId, userId])
+  @@index([userId])
 }
 
 model TaskComment {
@@ -5805,6 +5810,7 @@ model Page {
   @@unique([defaultMeetingNoteFor])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
+  @@index([parentPageId])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts
   // (`query <% "title"`). Ordinary exact/substring title search still uses the
   // plain ILIKE path.
@@ -6198,7 +6204,7 @@ model FeatureFlag {
   createdAt DateTime @default(now())
 }
 
-// ─── Activities — time-boxed "mode" layer (specs/activities.md) ───────────────
+// ─── Activities — time-boxed "mode" layer (specs/archive/activities.md) ───────────────
 // A generic, term-scoped, audience-targeted experience that changes what the
 // site shows for assigned members during a window, then auto-reverts. The
 // mechanic (Activity.kind) is registry-validated in app code (app/lib/
@@ -6699,7 +6705,7 @@ enum TokenPurpose {
 // one-time handoff code that /auth/handoff redeems into a fresh webview cookie
 // session. All codes are SHA-256 hashed at rest (same scheme as Session.id and
 // OneTimeToken.tokenHash); raw values exist only in transit. See
-// TAURI_DESKTOP_PLAN.md.
+// specs/archive/TAURI_DESKTOP_PLAN.md.
 model DevicePairing {
   id String @id @default(cuid())
 
@@ -6816,7 +6822,7 @@ enum EmailSendPurpose {
 // A best-effort inline drain runs right after enqueue for low latency; the
 // single-leased outbound-drain job sweeps the rest, retrying with backoff,
 // respecting per-sender daily caps, and dead-lettering what it can't deliver.
-// See specs/communication-idempotency.md.
+// See specs/archive/communication-idempotency.md.
 model OutboundMessage {
   id      String @id @default(cuid())
   // "email" | "slack_dm" | "slack_channel"
@@ -6998,6 +7004,9 @@ model PartnerApplication {
   // Set when status moves to Accepted and a Project is spun up. Loose ref to
   // Project.id; no relation to avoid a Project→PartnerApplication cycle.
   resultingProjectId String?
+  // Set when this application is a past project coming back: promotion
+  // reopens that project for the target terms instead of creating a new one.
+  continuesProjectId String?
   // The partner's answers to the lab-configured application form (see
   // PartnerApplicationFormBinding), captured at submit time. Null when no
   // form was bound when they applied. SetNull because deleting the Form
@@ -7018,12 +7027,14 @@ model PartnerApplication {
   meetingRequests  PartnerMeetingRequest[]
   invoices         PartnerInvoice[]
   planningNote     PlanningNote?
+  continuesProject Project?                       @relation("PartnerApplicationContinues", fields: [continuesProjectId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([partnerOrgId])
   @@index([applicantContactId])
+  @@index([continuesProjectId])
   @@index([stage, position])
   @@index([lastActivityAt])
 }
@@ -7143,6 +7154,10 @@ model PartnerCrmSettings {
   // interview. Empty = every active Core member.
   interviewPanelUserIds String[] @default([])
   staleDays             Int      @default(14)
+  // Price per term for each maintenance tier; null = not set yet.
+  maintenanceHostingCents Int?
+  maintenanceMildCents    Int?
+  maintenanceMediumCents  Int?
   updatedAt             DateTime @updatedAt
 }
 
@@ -8324,4 +8339,31 @@ model CommunityEventRsvp {
 
   @@id([eventId, userId])
   @@index([userId])
+}
+
+enum MaintenancePlan {
+  Hosting
+  Mild
+  Medium
+}
+
+// A project on DALI's recurring maintenance plan instead of continuing as
+// active term work. Ongoing until ended; at most one open row per project.
+model ProjectMaintenance {
+  id          String          @id @default(cuid())
+  projectId   String
+  plan        MaintenancePlan
+  // Per-term fee, copied from the tier price when chosen and editable.
+  feeCents    Int?
+  startTermId String?
+  startedAt   DateTime        @default(now())
+  startedById String?
+  endedAt     DateTime?
+  endedById   String?
+  updatedAt   DateTime        @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startTerm Term?   @relation(fields: [startTermId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, endedAt])
 }

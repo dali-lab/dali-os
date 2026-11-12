@@ -11,12 +11,18 @@ import { TermFilter } from "~/components/TermFilter";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { RenewalsBoard } from "../components/RenewalsBoard";
-import { normalizeNextStep, type RenewalCardModel } from "../lib/partner-renewals";
+import {
+  isMaintenancePlan,
+  normalizeNextStep,
+  type MaintenancePrices,
+  type RenewalCardModel,
+} from "../lib/partner-renewals";
 import { listActiveCoreMembers } from "../lib/core-members.server";
 
 type TermRef = { id: string; code: string; sortKey: number };
 import {
   applyContinue,
+  applyMaintain,
   applyNotContinuing,
   applyUndecided,
   loadRenewalCards,
@@ -44,11 +50,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   const g = await gate(request);
   if ("redirect" in g) throw g.redirect;
 
-  const [terms, current, domains] = await Promise.all([
+  const [terms, current, domains, settings] = await Promise.all([
     prisma.term.findMany({ orderBy: { sortKey: "asc" }, select: { id: true, code: true, sortKey: true } }),
     currentTerm(request),
     prisma.domain.findMany({ where: { active: true }, orderBy: { displayName: "asc" }, select: { id: true, displayName: true } }),
+    prisma.partnerCrmSettings.findUnique({
+      where: { id: "default" },
+      select: { maintenanceHostingCents: true, maintenanceMildCents: true, maintenanceMediumCents: true },
+    }),
   ]);
+  const maintenancePrices: MaintenancePrices = {
+    Hosting: settings?.maintenanceHostingCents ?? null,
+    Mild: settings?.maintenanceMildCents ?? null,
+    Medium: settings?.maintenanceMediumCents ?? null,
+  };
   // Older links carry the term code rather than its id.
   const wanted = new URL(request.url).searchParams.get("term");
   const picked =
@@ -69,6 +84,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       cards: [] as RenewalCardModel[],
       domains: [] as { id: string; name: string }[],
       coreMembers: [] as { userId: string; name: string }[],
+      maintenancePrices,
     };
   }
   const [{ decisionTerm, cards }, coreMembers] = await Promise.all([
@@ -83,6 +99,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     cards,
     domains: domains.map((d) => ({ id: d.id, name: d.displayName })),
     coreMembers,
+    maintenancePrices,
   };
 }
 
@@ -133,6 +150,13 @@ export async function action({ request }: Route.ActionArgs) {
     const feeCents = feeRaw === "" ? null : Number(feeRaw);
     if (feeCents != null && !Number.isInteger(feeCents)) return { error: "Fee is not a valid amount." };
     await applyContinue(prisma, { projectId, decisionTermId, chosenTermId: termId, feeCents, roles, userId: g.userId, ...next });
+  } else if (intent === "maintain") {
+    const plan = form.get("plan");
+    if (!isMaintenancePlan(plan)) return { error: "Pick a maintenance plan." };
+    const feeRaw = String(form.get("feeCents") ?? "");
+    const feeCents = feeRaw === "" ? null : Number(feeRaw);
+    if (feeCents != null && (!Number.isInteger(feeCents) || feeCents < 0)) return { error: "Fee is not a valid amount." };
+    await applyMaintain(prisma, { projectId, decisionTermId, plan, feeCents, userId: g.userId, ...next });
   } else if (intent === "not-continuing") {
     const reason = String(form.get("reason") ?? "").trim();
     if (!reason) return { error: "Add a reason." };
@@ -156,7 +180,7 @@ export async function action({ request }: Route.ActionArgs) {
 export default function PartnersRenewals() {
   const data = useLoaderData<typeof loader>();
   const [query, setQuery] = useSearchParamState("q", { debounceMs: 300 });
-  const { terms, termOptions, picked, decisionTerm, cards, domains, coreMembers } = data;
+  const { terms, termOptions, picked, decisionTerm, cards, domains, coreMembers, maintenancePrices } = data;
 
   return (
     <div className="flex flex-col gap-4">
@@ -185,7 +209,7 @@ export default function PartnersRenewals() {
           {picked ? `There is no term after ${picked.code} yet, so renewals cannot be decided.` : "No terms yet."}
         </p>
       ) : cards.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No projects are active in {picked.code}.</p>
+        <p className="text-sm text-muted-foreground">No projects are active or in maintenance in {picked.code}.</p>
       ) : (
         <RenewalsBoard
           key={picked.id}
@@ -197,6 +221,7 @@ export default function PartnersRenewals() {
           domains={domains}
           coreMembers={coreMembers}
           pickedTermId={picked.id}
+          maintenancePrices={maintenancePrices}
         />
       )}
     </div>

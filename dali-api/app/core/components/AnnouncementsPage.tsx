@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useFetcher, useRevalidator, useSearchParams } from "react-router";
 import { Plus, X } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { Drawer } from "~/components/ui/Drawer";

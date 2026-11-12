@@ -4,6 +4,7 @@ import { useDisplayedTab } from "~/components/shell/displayed-tab";
 import { subscribeTabStrip, tabStripShowing } from "~/lib/desktop-tabs-store";
 import { areaForPath, areaInk, areaTint } from "~/lib/nav-areas";
 import { cn } from "~/lib/cn";
+import { Z } from "~/components/ui/z";
 
 // A slim progress bar shown during client-side route transitions. Mounted once
 // at the document root (root.tsx), so it covers every page — the applicant
@@ -19,7 +20,7 @@ export function NavigationProgress() {
   // after the sidebar instead of running over it.
   const underTabStrip = useSyncExternalStore(subscribeTabStrip, tabStripShowing, () => false);
   if (underTabStrip) return null;
-  return <ProgressBar className="fixed inset-x-0 top-0 z-[100]" />;
+  return <ProgressBar className={`fixed inset-x-0 top-0 ${Z.top}`} />;
 }
 
 // Mounted by the shell at the bottom edge of its sticky header while the tab

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
@@ -8,22 +8,24 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
-import { setTermPi } from "../lib/partner-renewals.server";
-import { setTermSpots } from "../lib/planning-spots.server";
+import { setMaintenancePlan, setTermPi } from "../lib/partner-renewals.server";
+import { isMaintenancePlan } from "../lib/partner-renewals";
+import { setApplicationSpots, setTermSpots } from "../lib/planning-spots.server";
 import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server";
+import { startProjectReturn } from "../lib/partner-returns.server";
 import { PartnerCrmNav } from "../components/PartnerCrmNav";
 import { PlanningTable } from "../components/PlanningTable";
 import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
 import { PlanningApplicationModal } from "../components/planning/PlanningApplicationModal";
+import { StartReturnModal } from "../components/planning/StartReturnModal";
+import { Button } from "~/components/ui/Button";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
-import { buildPlanningGap, buildPlanningProjects, type IntentSetup } from "../lib/planning-gap";
+import { buildPlanningGap, buildPlanningProjects, findPlanningProject, type IntentSetup } from "../lib/planning-gap";
 import { TermFilter } from "~/components/TermFilter";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
@@ -45,6 +47,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 const DESCRIPTION_MAX = 5000;
 
+const START_RETURN_ERRORS = {
+  "not-found": "That project no longer exists.",
+  "no-terms": "Pick at least one term for the return.",
+  "no-contact": "This project has no partner contact to carry over. Add one in the Directory first.",
+  "already-open": "This project already has an open return on the partner board.",
+} as const;
+
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -53,6 +62,16 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
+
+  if (intent === "start-return") {
+    const result = await startProjectReturn({
+      projectId: String(form.get("projectId") ?? ""),
+      targetTermIds: form.getAll("targetTermId").map(String),
+      actorUserId: auth.user.sub,
+    });
+    if (result.ok) return Response.json({ ok: true, applicationId: result.applicationId });
+    return Response.json({ error: START_RETURN_ERRORS[result.error] }, { status: result.error === "not-found" ? 404 : 400 });
+  }
 
   if (intent === "note") {
     const ownerKind = String(form.get("ownerKind") ?? "");
@@ -72,8 +91,57 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ ok: true });
   }
 
+  if (intent === "application-summary" || intent === "application-pi" || intent === "application-spots") {
+    const applicationId = String(form.get("applicationId") ?? "");
+    if (!applicationId) return Response.json({ error: "Missing application." }, { status: 400 });
+    const gone = Response.json({ error: "That application no longer exists." }, { status: 404 });
+
+    if (intent === "application-summary") {
+      const summary = String(form.get("summary") ?? "").trim();
+      if (summary.length > DESCRIPTION_MAX) {
+        return Response.json({ error: `Keep the summary under ${DESCRIPTION_MAX} characters.` }, { status: 400 });
+      }
+      const { count } = await prisma.partnerApplication.updateMany({
+        where: { id: applicationId },
+        data: { summary: summary || null },
+      });
+      return count === 0 ? gone : Response.json({ ok: true });
+    }
+
+    if (intent === "application-pi") {
+      const piUserId = String(form.get("piUserId") ?? "") || null;
+      if (piUserId && !(await isCore(piUserId, request))) {
+        return Response.json({ error: "A PI must be a Core member." }, { status: 400 });
+      }
+      const { count } = await prisma.partnerApplication.updateMany({
+        where: { id: applicationId },
+        data: { piUserId },
+      });
+      return count === 0 ? gone : Response.json({ ok: true });
+    }
+
+    const roles = parseRoles(form.get("roles"));
+    if (!roles) return Response.json({ error: "Spots were not readable. Try again." }, { status: 400 });
+    const result = await setApplicationSpots(prisma, { applicationId, roles });
+    if (result === "not-found") return gone;
+    if (result === "unknown-domain") {
+      return Response.json({ error: "One of those domains is no longer available." }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  }
+
   const projectId = String(form.get("projectId") ?? "");
   if (!projectId) return Response.json({ error: "Missing project." }, { status: 400 });
+
+  if (intent === "maintenance-plan") {
+    const plan = form.get("plan");
+    if (!isMaintenancePlan(plan)) return Response.json({ error: "Pick a maintenance plan." }, { status: 400 });
+    const result = await setMaintenancePlan(prisma, { projectId, plan });
+    if (result === "not-on-plan") {
+      return Response.json({ error: "This project is not on a maintenance plan." }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  }
 
   if (intent === "description") {
     const description = String(form.get("description") ?? "").trim();
@@ -140,7 +208,6 @@ const GROUP_BY = ["project", "domain"] as const;
 
 export default function PartnersPlanning() {
   const data = useLoaderData<typeof loader>();
-  const { os } = useOsChrome();
   const [view, setView] = useSearchParamChoice("group", GROUP_BY, "project");
   const [includePotential, setIncludePotential] = useState(false);
   const [includeBacklog, setIncludeBacklog] = useState(false);
@@ -149,18 +216,20 @@ export default function PartnersPlanning() {
   const openProjectId = openRow?.kind === "project" ? openRow.id : null;
   const openApplicationId = openRow?.kind === "application" ? openRow.id : null;
   const openApplication = openApplicationId ? data.applicationInfo[openApplicationId] ?? null : null;
+  const [startingReturn, setStartingReturn] = useState(false);
+  const pickedTermIndex = data.terms.findIndex((t) => t.id === data.termId);
+  const returnTerms = pickedTermIndex < 0 ? [] : data.terms.slice(0, pickedTermIndex + 1).reverse();
+  const onReturnCreated = useCallback((applicationId: string) => {
+    setStartingReturn(false);
+    setOpenRow({ kind: "application", id: applicationId });
+  }, []);
   const openProject = useMemo(() => {
     if (!openProjectId) return null;
-    const match = [...data.items, ...data.listOnlyItems].find(
-      (i) => i.kind === "project" && i.refId === openProjectId,
-    );
+    const match = findPlanningProject(openProjectId, [...data.items, ...data.listOnlyItems], data.maintaining);
     const info = data.projectInfo[openProjectId];
     if (!match || !info) return null;
-    return {
-      project: { id: match.refId, name: match.name, iconEmoji: match.iconEmoji ?? null },
-      info,
-    };
-  }, [openProjectId, data.items, data.listOnlyItems, data.projectInfo]);
+    return { project: match, info };
+  }, [openProjectId, data.items, data.listOnlyItems, data.maintaining, data.projectInfo]);
   const model = useMemo(
     () =>
       buildPlanningGap({
@@ -194,7 +263,7 @@ export default function PartnersPlanning() {
           {view === "domain" && data.hasIntentData && (
             <Link
               to={termHref}
-              className={cn("shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground", !os && "underline")}
+              className="shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground"
             >
               {data.replied} of {data.roster} replied
             </Link>
@@ -229,6 +298,11 @@ export default function PartnersPlanning() {
             </span>
           </Tooltip>
           {data.termId && (
+            <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setStartingReturn(true)}>
+              Start a return
+            </Button>
+          )}
+          {data.termId && (
             <TermFilter
               terms={data.terms}
               selected={data.termId}
@@ -246,6 +320,7 @@ export default function PartnersPlanning() {
           model={projectModel}
           termCode={termCode}
           onRowClick={openRowClick}
+          maintaining={data.maintaining}
         />
       ) : data.intentSetup.kind !== "ready" ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">
@@ -269,10 +344,21 @@ export default function PartnersPlanning() {
           onClose={() => setOpenRow(null)}
         />
       )}
+      {startingReturn && data.termId && (
+        <StartReturnModal
+          projects={data.returnableProjects}
+          terms={returnTerms}
+          defaultTermId={data.termId}
+          onCreated={onReturnCreated}
+          onClose={() => setStartingReturn(false)}
+        />
+      )}
       {openApplicationId && openApplication && (
         <PlanningApplicationModal
           applicationId={openApplicationId}
           info={openApplication}
+          coreMembers={data.coreMembers}
+          domains={data.spotDomains}
           canEdit
           onClose={() => setOpenRow(null)}
         />

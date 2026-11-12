@@ -476,6 +476,8 @@
         </div>
       </div>
       <p class="note">Three visible planes: the nav is recessed below the page, the card sits above it. The shadow color is a token and tints with the mode.</p>
+      <div class="eyebrow">Layers</div>
+      <p class="note">Stacking classes live in <code>Z</code> (<code>ui/z.ts</code>): sticky 10, chrome 30 and 40, takeover 45 and 46, modal 50, popover 60, tooltip 70, top 100. Use them instead of a raw <code>z-[NN]</code>.</p>
     </section>
 
     <section class="c6 l4">
@@ -579,6 +581,15 @@
         <span class="check"><span class="toggle on"></span>On</span>
         <span class="check"><span class="toggle"></span>Off</span>
       </div>
+      <div class="eyebrow">Per-column filters</div>
+      <div class="controls">
+        <span class="filter" style="min-width:0">Filter · 2</span>
+        <span class="filter" style="min-width:0">Domain: Design<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        <span class="filter" style="min-width:0">Term: 26F<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        <span style="font-size:12px;color:var(--grey)">Clear all</span>
+        <span style="font-size:12px;color:var(--grey)">14 results</span>
+      </div>
+      <p class="note">A row of per-column filters (Filter button with count badge, pills, Clear all, result count) is <code>FilterBar</code> in <code>app/components/FilterBar.tsx</code>. Pass it columns with a <code>renderPicker</code>; <code>ColumnFilters</code> (value lists over rows) and the form results bar (<code>ResultsFilterBar</code>) are built on it.</p>
       <p class="note">Fields wear the well fill, a container hairline and an 8px corner, 13px type, 8px 12px padding. Captions sit 8px above, fields 20px apart. Native selects and browser confirms are not used.</p>
     </section>
 

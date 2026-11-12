@@ -12,6 +12,7 @@
 
 import { isIntentStatus, type IntentStatusValue } from "./intent-status";
 import type { Question } from "~/types";
+import { conditionalKeys } from "~/lib/form-logic";
 import type { Slot } from "./form-slots";
 
 // `QuestionTypeConstraint` still declares each role's intended shape (and
@@ -37,6 +38,9 @@ export const BUILTIN_SOURCES = {
   // server-side at render time. View-only: it informs no staffing write, it's
   // just shown so a manager sees what the member is eligible for.
   hiredRoles: { defaultLabel: "Hired roles", constraint: "display" as const },
+  projectHistory: { defaultLabel: "Project history", constraint: "display" as const },
+  termsInLab: { defaultLabel: "Terms in lab", constraint: "display" as const },
+  currentRole: { defaultLabel: "Current role", constraint: "display" as const },
 } as const;
 
 export type BuiltinSource = keyof typeof BUILTIN_SOURCES;
@@ -99,6 +103,15 @@ export const HIRED_ROLES_ROLE: RoleDef = {
   constraint: "display",
 };
 
+const HISTORY_ROLES: RoleDef[] = (
+  ["projectHistory", "termsInLab", "currentRole"] as const
+).map((role) => ({
+  role,
+  defaultLabel: BUILTIN_SOURCES[role].defaultLabel,
+  required: false,
+  constraint: "display",
+}));
+
 // The role PALETTE each slot exposes — meanings a column MAY carry, none
 // required. A column mapped to project/domain/intent-status feeds staffing;
 // anything else (or "display") is view-only. Adding a slot is a registry
@@ -122,6 +135,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
+    ...HISTORY_ROLES,
   ],
   "intent-to-work": [
     {
@@ -134,6 +148,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
+    ...HISTORY_ROLES,
   ],
   "level-up": [
     {
@@ -157,6 +172,7 @@ export const SLOT_ROLES: Record<Slot, RoleDef[]> = {
     DISPLAY_ROLE,
     SUBMITTER_ROLE,
     HIRED_ROLES_ROLE,
+    ...HISTORY_ROLES,
   ],
 };
 
@@ -300,6 +316,7 @@ export function validateMapping(
 ): MappingCheck {
   const roleDefs = SLOT_ROLES[slot];
   const byKey = new Map(questions.map((q) => [q.key, q]));
+  const conditional = conditionalKeys(questions);
   // Only per-term roles (intent-status) still reject a duplicate: two status
   // columns for the same term is a real conflict. Repeatable roles don't.
   const seenPerTerm = new Set<string>();
@@ -328,7 +345,7 @@ export function validateMapping(
             "The form was changed and the column mapping is out of date — re-map its questions.",
         };
       }
-      if (q.data.showIf) {
+      if (conditional.has(q.key)) {
         return {
           ok: false,
           reason: `Question "${q.data.label}" is only shown sometimes, so it can't fill the "${def.defaultLabel}" column.`,

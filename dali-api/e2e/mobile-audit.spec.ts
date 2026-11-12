@@ -42,7 +42,7 @@ const ROUTES: Array<{ path: string; label: string }> = [
   { path: '/admin/members', label: 'admin-members' },
   { path: '/admin/domains', label: 'admin-domains' },
   { path: '/projects', label: 'projects-list' },
-  { path: '/projects/staffing', label: 'projects-staffing' },
+  { path: '/core/staffing', label: 'projects-staffing' },
   { path: '/members', label: 'members' },
   { path: '/core/partners', label: 'partners' },
   // --- expanded routes ---

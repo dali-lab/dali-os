@@ -3,13 +3,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 
 const requireMobileUser = vi.fn();
-const runSearchDirectory = vi.fn();
+const searchDirectory = vi.fn();
 const listMemberSummaries = vi.fn();
 vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/mobile-auth.server")>()),
   requireMobileUser: (...a: unknown[]) => requireMobileUser(...a),
 }));
-vi.mock("~/mcp/tools/search-directory", () => ({ runSearchDirectory: (...a: unknown[]) => runSearchDirectory(...a) }));
+vi.mock("~/members/lib/directory-search.server", () => ({ searchDirectory: (...a: unknown[]) => searchDirectory(...a) }));
 vi.mock("~/lib/mobile-members.server", () => ({ listMemberSummaries: (...a: unknown[]) => listMemberSummaries(...a) }));
 
 import { loader } from "../api.mobile.people";
@@ -19,20 +19,20 @@ const get = (q: string) => loader({ request: new Request(`https://os.example/api
 beforeEach(() => {
   vi.clearAllMocks();
   requireMobileUser.mockResolvedValue({ ok: true, userId: "u1" });
-  runSearchDirectory.mockResolvedValue({ results: [{ id: "u2" }, { id: "u3" }] });
+  searchDirectory.mockResolvedValue([{ id: "u2" }, { id: "u3" }]);
   listMemberSummaries.mockResolvedValue([{ id: "u2", name: "Kiran" }, { id: "u3", name: "Kim" }]);
 });
 
 describe("GET /api/mobile/people", () => {
   it("returns summaries for the directory matches", async () => {
     expect(await (await get("ki")).json()).toEqual({ people: [{ id: "u2", name: "Kiran" }, { id: "u3", name: "Kim" }] });
-    expect(runSearchDirectory).toHaveBeenCalledWith({ query: "ki", limit: 15 });
+    expect(searchDirectory).toHaveBeenCalledWith({ query: "ki", take: 15 });
     expect(listMemberSummaries).toHaveBeenCalledWith(["u2", "u3"]);
   });
 
   it.each(["", "k", "  k  "])("doesn't search for %j", async (q) => {
     expect(await (await get(q)).json()).toEqual({ people: [] });
-    expect(runSearchDirectory).not.toHaveBeenCalled();
+    expect(searchDirectory).not.toHaveBeenCalled();
   });
 
   it("returns the guard's response for a member it doesn't let in", async () => {

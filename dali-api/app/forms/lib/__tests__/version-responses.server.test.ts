@@ -14,8 +14,12 @@ vi.mock("~/forms/lib/answer-rows.server", () => ({
     rowsBySubmission: subs.map(() => [{ key: "q1", label: "Role", value: "x" }]),
   })),
 }));
+vi.mock("~/projects/lib/member-history.server", () => ({
+  loadMemberHistories: vi.fn(),
+}));
 
 import { prisma } from "~/lib/db.server";
+import { loadMemberHistories } from "~/projects/lib/member-history.server";
 import {
   RESPONSES_PAGE_SIZE,
   loadVersionResponses,
@@ -45,6 +49,7 @@ function submission(i: number, over: Record<string, unknown> = {}) {
     submitterEmail: null,
     submitterIp: null,
     slot: null,
+    userId: "u1",
     user: { firstName: "Ada", lastName: "Lovelace", daliEmail: "ada@example.edu", personalEmail: null },
     formVersion: { versionNumber: 1, questions: [] },
     partnerApplication: null,
@@ -232,5 +237,57 @@ describe("loadVersionResponses edit and delete state", () => {
     ["the onboarding profile form", { form: { name: "Welcome to DALI! 👋" } }],
   ])("gives a reason for a response with %s", async (_n, over) => {
     expect((await rowFor(over)).lockReason).toEqual(expect.any(String));
+  });
+});
+
+describe("loadVersionResponses partner application", () => {
+  it("selects the partner application title so the table can name it", async () => {
+    await loadVersionResponses("f1", "v1");
+    const page = db.formSubmission.findMany.mock.calls.find((c) => c[0].select?.partnerApplication)!;
+    expect(page[0].select.partnerApplication).toEqual({ select: { id: true, title: true } });
+    expect(page[0].select.slot).toBe(true);
+  });
+});
+
+describe("loadVersionResponses member columns", () => {
+  const f26 = { code: "26F", sortKey: 264, startDate: new Date("2026-09-14") };
+  const history = {
+    projects: [{ level: "P2", domainId: "eng", project: { name: "Evergreen" }, domain: { displayName: "Engineering" }, term: f26 }],
+    core: [],
+  };
+
+  beforeEach(() => {
+    vi.mocked(loadMemberHistories).mockResolvedValue(new Map([["u1", history]]));
+  });
+
+  it("adds no columns and skips the history lookup when none are chosen", async () => {
+    db.formSubmission.findMany.mockResolvedValue([submission(1)]);
+    const r = await loadVersionResponses("f1", "v1");
+    expect(loadMemberHistories).not.toHaveBeenCalled();
+    expect(r.columns).toEqual([{ key: "q1", label: "Role" }]);
+    expect(r.responses[0].rows.map((x) => x.key)).toEqual(["q1"]);
+  });
+
+  it("appends the chosen columns in a fixed order and fills them for signed-in respondents", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-11"), toFake: ["Date"] });
+    db.formSubmission.findMany.mockResolvedValue([
+      submission(1),
+      submission(2, { userId: "u1" }),
+      submission(3, { userId: null, user: null, submitterName: "Guest" }),
+    ]);
+    const r = await loadVersionResponses("f1", "v1", { memberColumns: ["currentRole", "projectHistory"] });
+    vi.useRealTimers();
+
+    expect(loadMemberHistories).toHaveBeenCalledWith(["u1"]);
+    expect(r.columns).toEqual([
+      { key: "q1", label: "Role" },
+      { key: "member:projectHistory", label: "Project history" },
+      { key: "member:currentRole", label: "Current role" },
+    ]);
+    expect(r.responses[0].rows.slice(1)).toEqual([
+      { key: "member:projectHistory", label: "Project history", value: "Evergreen (26F)" },
+      { key: "member:currentRole", label: "Current role", value: "26F: Engineering (P2)" },
+    ]);
+    expect(r.responses[2].rows.slice(1).map((x) => x.value)).toEqual(["", ""]);
   });
 });

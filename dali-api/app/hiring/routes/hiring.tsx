@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getMyWorkData, hasHiringAccess } from "~/hiring/lib/my-work.server";
 import { useOsChrome } from "~/components/os-chrome";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { ReviewsView } from "~/hiring/components/my-work/ReviewsView";
 import { DelibsView } from "~/hiring/components/my-work/DelibsView";

@@ -1,4 +1,4 @@
-// Server-side Activities resolution + authoring (specs/activities.md §7). The
+// Server-side Activities resolution + authoring (specs/archive/activities.md §7). The
 // layout loader calls resolveActiveActivitiesForUser once per navigation and
 // plumbs the result to the client; the surface
 // route uses getActivityForMember + the mechanic registry; the admin routes use

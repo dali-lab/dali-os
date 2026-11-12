@@ -779,9 +779,12 @@ describe("hiring/onboarding action (remind)", () => {
     });
     expect(notify).not.toHaveBeenCalled();
     expect(sendEmail).not.toHaveBeenCalled();
-    expect(sendDm).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(sendDm).mock.calls[0][0]).toBe("U1");
-    expect(vi.mocked(sendDm).mock.calls[0][1]).toContain("Onboarding reminder: profile form");
+    expect(sendDm).not.toHaveBeenCalled();
+    expect(enqueueOutbound).toHaveBeenCalledTimes(1);
+    const row = vi.mocked(enqueueOutbound).mock.calls[0][0];
+    expect(row.channel).toBe("slack_dm");
+    expect(row.target).toBe("U1");
+    expect(row.slackText).toContain("Onboarding reminder: profile form");
   });
 
   it("rejects an invalid step", async () => {

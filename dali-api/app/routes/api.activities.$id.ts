@@ -1,4 +1,4 @@
-// Activity data endpoint (specs/activities.md §7.7). A resource route — no UI —
+// Activity data endpoint (specs/archive/activities.md §7.7). A resource route — no UI —
 // that the shell's ActivityLauncher modal fetches from: the loader returns the
 // member's progress + results (computed via the SERVER mechanic registry), and
 // the action forwards a submitted form to the mechanic's onAction. The surface
@@ -19,7 +19,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return Response.json({ ok: false }, { status: 401 });
   const userId = auth.user.sub;
-  const roles = await getUserRoles(userId);
+  const roles = await getUserRoles(userId, request);
   const found = await getActivityForMember(params.id, userId, roles);
   if (!found || !found.assigned) throw new Response("Not found", { status: 404 });
   const { activity, active, team } = found;
@@ -74,7 +74,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
-  const roles = await getUserRoles(userId);
+  const roles = await getUserRoles(userId, request);
   const found = await getActivityForMember(params.id, userId, roles);
   if (!found || !found.assigned) {
     return Response.json({ ok: false, message: "Not found." }, { status: 404 });

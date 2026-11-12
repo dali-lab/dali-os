@@ -310,3 +310,54 @@ describe("promote intent", () => {
     });
   });
 });
+
+describe("promote intent for a returning project", () => {
+  const returning = {
+    id: APP_ID,
+    title: "Research Computing",
+    iconEmoji: null,
+    piUserId: null,
+    summary: null,
+    resultingProjectId: null,
+    continuesProjectId: "proj-old",
+    partnerOrgId: "org-1",
+    applicantContactId: "c1",
+    applicantContact: { name: "Ada" },
+    targetTerms: [{ termId: "t27w" }],
+    domains: [{ domainId: "eng", expectedMembers: 2 }],
+  };
+
+  it("reopens the old project and redirects to it", async () => {
+    db.partnerApplication.findUnique.mockResolvedValue(returning);
+    const tx = {
+      project: { create: vi.fn(), update: vi.fn() },
+      projectTerm: { upsert: vi.fn() },
+      projectRoleRequest: { count: vi.fn().mockResolvedValue(0), createMany: vi.fn() },
+      projectTermStatus: { upsert: vi.fn() },
+      projectPartner: { upsert: vi.fn() },
+      planningNote: { findUnique: vi.fn().mockResolvedValue(null) },
+      partnerApplication: { findUnique: vi.fn().mockResolvedValue({ stage: "Accepted" }), update: vi.fn() },
+    };
+    db.$transaction = vi.fn(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+    const res = (await callAction({ intent: "promote" })) as Response;
+
+    expect(res.headers.get("Location")).toBe("/projects/proj-old");
+    expect(tx.project.create).not.toHaveBeenCalled();
+    expect(tx.projectTerm.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { projectId_termId: { projectId: "proj-old", termId: "t27w" } } }),
+    );
+    expect(tx.partnerApplication.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ resultingProjectId: "proj-old" }) }),
+    );
+  });
+
+  it("asks for a target term before reopening", async () => {
+    db.partnerApplication.findUnique.mockResolvedValue({ ...returning, targetTerms: [] });
+    db.$transaction = vi.fn();
+    expect(await callAction({ intent: "promote" })).toEqual({
+      error: "Pick at least one target term before reopening the project.",
+    });
+    expect(db.$transaction).not.toHaveBeenCalled();
+  });
+});

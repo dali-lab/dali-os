@@ -2,7 +2,7 @@
 // device pairing. Creates a Pending DevicePairing row and returns the raw
 // deviceCode (the app polls with it), the human userCode (the user eyeball-
 // compares it on /link), and the verification URL to open in the system
-// browser. See TAURI_DESKTOP_PLAN.md.
+// browser. See specs/archive/TAURI_DESKTOP_PLAN.md.
 
 import type { Route } from "./+types/auth.pair.start";
 import { prisma } from "~/lib/db.server";
@@ -17,15 +17,7 @@ import {
   PAIRING_TTL_MS,
   POLL_INTERVAL_SECONDS,
 } from "~/lib/pairing";
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code?: string }).code === "P2002"
-  );
-}
+import { isUniqueViolation } from "~/lib/prisma-errors";
 
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {

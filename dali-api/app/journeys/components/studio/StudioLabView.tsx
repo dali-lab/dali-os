@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, Clock, FileText, ListChecks, Presentation, RotateCcw, Send } from "lucide-react";
 import { DocEditor } from "~/components/doc";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";

@@ -128,16 +128,14 @@ export async function loadEditableResponse(args: {
   };
 }
 
-/** Stored answers in the string-valued shape the fill UI keeps. Checkbox
- *  arrays go back to their JSON-string form; answers the screen can't show
- *  (files) are left out and survive the merge on save. */
+/** Stored answers in the string-valued shape the fill UI keeps. Arrays
+ *  (checkboxes, multi-file answers) go back to their JSON-string form. */
 export function answersToFillState(
   questions: Question[],
   answers: Record<string, unknown>,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const q of questions) {
-    if (q.type === "file") continue;
     const v = answers[q.key];
     if (typeof v === "string") out[q.key] = v;
     else if (typeof v === "number") out[q.key] = String(v);
@@ -162,9 +160,9 @@ export async function loadResponseForEditing(args: {
   };
 }
 
-/** Replace the respondent's own answers. Posted answers merge over stored ones
- *  (so file answers the screen can't show survive), then validate against the
- *  stored version. None of submitMemberForm's side effects run. */
+/** Replace the respondent's own answers. Posted answers merge over stored
+ *  ones, then validate against the stored version. None of submitMemberForm's
+ *  side effects run. */
 export async function editOwnResponse(args: {
   token: string;
   userId: string | null;
@@ -181,7 +179,7 @@ export async function editOwnResponse(args: {
   );
   const editable = new Set(
     questions
-      .filter((q) => q.type !== "file" && q.type !== "info" && q.type !== "pageBreak")
+      .filter((q) => q.type !== "info" && q.type !== "pageBreak")
       .map((q) => q.key),
   );
   const posted = Object.fromEntries(
@@ -190,14 +188,7 @@ export async function editOwnResponse(args: {
   const stored = loaded.submission.answers;
   const merged: Record<string, unknown> = { ...stored, ...posted };
 
-  // A required file question is satisfied by the stored upload, which this
-  // screen can't replace.
-  const toValidate = questions.map((q) =>
-    q.type === "file" && q.required && stored[q.key] != null
-      ? { ...q, required: false }
-      : q,
-  );
-  const bad = await validateAnswers(toValidate, merged, args.userId, stored);
+  const bad = await validateAnswers(questions, merged, args.userId, stored);
   if (bad) return bad;
 
   await prisma.formSubmission.update({

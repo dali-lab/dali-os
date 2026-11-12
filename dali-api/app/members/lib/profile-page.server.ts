@@ -3,6 +3,7 @@
 // two routes stay byte-for-byte equivalent except for which user id they
 // resolve.
 
+import { isUniqueViolation } from "~/lib/prisma-errors";
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
@@ -937,13 +938,8 @@ export async function runProfileAction({
   try {
     await prisma.user.update({ where: { id: targetId }, data });
   } catch (e) {
-    // P2002 = Prisma unique-constraint violation. Two unique text fields are
-    // saved here (netId, handle); use meta.target to name the right one.
-    const err = e as { code?: string; meta?: { target?: string[] | string } } | null;
-    if (err?.code === "P2002") {
-      const target = err.meta?.target;
-      const fields = Array.isArray(target) ? target : target ? [target] : [];
-      if (fields.some((f) => f.includes("handle"))) {
+    if (isUniqueViolation(e)) {
+      if (isUniqueViolation(e, "handle")) {
         return { error: "That handle is already taken — pick another." };
       }
       return {

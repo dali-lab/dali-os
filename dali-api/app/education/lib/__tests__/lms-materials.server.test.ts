@@ -3,8 +3,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => (u ? `resolved:${u}` : null)) }));
 vi.mock("~/collab/export", () => ({
-  collabDocToProseMirror: vi.fn(async (room: string) => ({ room })),
   collabDocToHtml: vi.fn(async (room: string) => `<p>${room}</p>`),
+}));
+vi.mock("~/collab/read", () => ({
+  readDocAsBlocks: vi.fn(async (room: string) => [{ id: "b1", type: "callout", room }]),
 }));
 vi.mock("../announcements.server", () => ({ listDiscussion: vi.fn(async () => ["ann"]) }));
 vi.mock("../assignments.server", () => ({ listAssignments: vi.fn() }));
@@ -18,7 +20,7 @@ vi.mock("../session-checkin.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { collabDocToProseMirror } from "~/collab/export";
+import { readDocAsBlocks } from "~/collab/read";
 import { listAssignments } from "../assignments.server";
 import { studentVisibleFeedback } from "../student-notes.server";
 import {
@@ -116,19 +118,36 @@ describe("readMaterialPage", () => {
   ])("returns null for a page that is %s and never reads the doc", async (_n, page) => {
     db.page.findUnique.mockResolvedValue(page);
     expect(await readMaterialPage("off-1", "p")).toBeNull();
-    expect(collabDocToProseMirror).not.toHaveBeenCalled();
+    expect(readDocAsBlocks).not.toHaveBeenCalled();
   });
 
-  it("returns the page with content from its body room", async () => {
+  it("returns the blocks from the body room unchanged", async () => {
     db.page.findUnique.mockResolvedValue(
-      inOffering({ id: "p1", title: "Syllabus", archivedAt: null, studentEditable: true }),
+      inOffering({ id: "p1", title: "Syllabus", archivedAt: null, studentEditable: false }),
     );
     expect(await readMaterialPage("off-1", "p1")).toEqual({
       id: "p1",
       title: "Syllabus",
-      studentEditable: true,
-      content: { room: "doc:p1:body" },
+      studentEditable: false,
+      content: [{ id: "b1", type: "callout", room: "doc:p1:body" }],
     });
+  });
+
+  it("skips the read for a shared doc when asked", async () => {
+    db.page.findUnique.mockResolvedValue(
+      inOffering({ id: "p1", title: "Notes", archivedAt: null, studentEditable: true }),
+    );
+    const out = await readMaterialPage("off-1", "p1", { skipShared: true });
+    expect(out?.content).toBeNull();
+    expect(readDocAsBlocks).not.toHaveBeenCalled();
+  });
+
+  it("still reads a shared doc by default", async () => {
+    db.page.findUnique.mockResolvedValue(
+      inOffering({ id: "p1", title: "Notes", archivedAt: null, studentEditable: true }),
+    );
+    const out = await readMaterialPage("off-1", "p1");
+    expect(out?.content).toEqual([{ id: "b1", type: "callout", room: "doc:p1:body" }]);
   });
 });
 

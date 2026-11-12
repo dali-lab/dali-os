@@ -18,7 +18,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName } from "~/lib/display";
 import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
-import { isProjectMember } from "~/lib/roles";
+import { canEditProject } from "~/lib/project-access";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
@@ -466,9 +466,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     | { scope: "lab"; current: MeetingType | null }
     | null = null;
   if (page.kind === "FreeForm" && page.isTemplate && page.workspaceType === "Project" && page.workspaceId) {
-    const canEditProjectSettings =
-      roles.isCore || (await isProjectMember(auth.user.sub, page.workspaceId, request));
-    if (canEditProjectSettings) {
+    if (await canEditProject(auth.user.sub, page.workspaceId, request)) {
       const owningProject = await prisma.project.findUnique({
         where: { id: page.workspaceId },
         select: { name: true, meetingNoteTemplateId: true },
@@ -673,7 +671,7 @@ function DocumentPage() {
   // DocumentEditor is the only component that measures the ≥ 1150px check;
   // the top-bar Record button needs it too, to answer a live recording with
   // a Popover instead of toggling the rail on a narrow canvas
-  // (specs/meeting-recording-rail.md "Wiring").
+  // (specs/archive/meeting-recording-rail.md "Wiring").
   const [containerWide, setContainerWide] = useState(false);
   const toast = useToast();
 
@@ -785,7 +783,7 @@ function DocumentPage() {
 
         // Lets DocSideMenu offer Keep change/Revert change on a marked block
         // without the generic side menu knowing anything about Enhance
-        // (specs/meeting-recording-rail.md Step 2). Null when the recording
+        // (specs/archive/meeting-recording-rail.md Step 2). Null when the recording
         // hook isn't mounted — the side menu then renders nothing extra.
         const enhanceReview = rec
           ? { keepBlock: rec.keepBlock, revertBlock: rec.revertBlock, priorBlocks: rec.enhanceNotes?.priorBlocks }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { freshKey } from "~/lib/outbound-keys";
+import { freshKey, sprintClosedSlackKey, staffingFinalizeWelcomeKey } from "~/lib/outbound-keys";
 
 describe("freshKey", () => {
   it("is unique per call so the (channel, dedupKey) claim never coalesces a resend", () => {
@@ -24,5 +24,15 @@ describe("freshKey", () => {
     const nonce = key.slice("p:s:".length);
     expect(nonce).toMatch(/^[0-9a-f-]{36}$/);
     expect(key).toBe(`p:s:${nonce}`);
+  });
+});
+
+describe("slack post keys", () => {
+  it("scopes the sprint wrap-up to project and sprint band", () => {
+    expect(sprintClosedSlackKey("p1", 1783000000000)).toBe("slack.sprint_closed:p1:1783000000000");
+  });
+
+  it("scopes the staffing welcome to cycle and project", () => {
+    expect(staffingFinalizeWelcomeKey("c1", "p1")).toBe("staffing.finalize_welcome:c1:p1");
   });
 });

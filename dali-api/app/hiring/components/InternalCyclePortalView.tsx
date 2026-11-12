@@ -192,7 +192,7 @@ function FormView({
   });
   const [error, setError] = useState<string | null>(null);
   const pages = useMemo(() => visiblePages(cycle.questions, answers), [cycle.questions, answers]);
-  const pager = useFormPager(pages, { excludeFileType: false });
+  const pager = useFormPager(pages);
 
   const busy = fetcher.state !== "idle";
   const justSaved = fetcher.data && "saved" in fetcher.data && fetcher.state === "idle";

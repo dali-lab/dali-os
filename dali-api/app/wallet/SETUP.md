@@ -107,22 +107,7 @@ so it already has that environment's wallet credentials, database, and
 `API_BASE_URL`. Idempotent — safe to click again. Counts land in the run logs; the
 Jobs row shows Success / the error on failure.
 
-### From the CLI (backfill / dry run)
-
-The same broadcast is also a script — handy for a dry run (counts only) before
-committing, or to run outside the admin UI:
-
-```
-npx tsx scripts/wallet-broadcast-restyle.ts           # dry run (counts only)
-npx tsx scripts/wallet-broadcast-restyle.ts --commit  # patch Google + re-push Apple
-```
-
-Run it **in the target environment** (e.g. `fly ssh console` on the prod app) so
-it uses that environment's wallet credentials, database, and `API_BASE_URL`
-(Google fetches the pass images from that origin, and patched barcodes must verify
-against that environment's `WALLET_PASS_SECRET`).
-
-The job and the script share one implementation (`app/lib/wallet-broadcast.server.ts`).
+The broadcast lives in `app/lib/wallet-broadcast.server.ts`; Admin → Jobs → wallet-restyle-broadcast → Run now is the only way to start it.
 The Google patch also refreshes each pass's barcode to the member's current token,
 so it self-heals passes whose secret rotated since they were saved.
 

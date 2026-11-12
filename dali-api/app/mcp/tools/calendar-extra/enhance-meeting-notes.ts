@@ -31,14 +31,18 @@ import {
 import { speakerFirstNameAt, transcriptParagraphs } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
 import { isUntouchedTemplate } from "~/lib/meeting-note-template";
-import { generateAndVerifyEnhancePlan, resolveMeetingEnhanceContext } from "~/lib/meeting-notes-enhance.server";
+import {
+  generateAndVerifyEnhancePlan,
+  resolveMeetingEnhanceContext,
+  AI_BURST_MAX,
+  AI_BURST_WINDOW_MS,
+} from "~/lib/meeting-notes-enhance.server";
 import {
   applyEnhanceOpsToDocBlocks,
   enhanceSnapshotDocBlocks,
   ensureTranscriptToggle,
   hasEnhanceMarkInTree,
 } from "~/lib/meeting-notes-apply.server";
-import { AI_BURST_MAX, AI_BURST_WINDOW_MS } from "~/routes/api.ai.meeting-notes";
 import type { McpCtx } from "../../registry";
 import { McpError, McpForbiddenError, McpInvalidError, McpNotFoundError } from "../../errors";
 

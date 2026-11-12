@@ -50,12 +50,12 @@ describe("areaForPath", () => {
 describe("activeSubtabHref", () => {
   it("highlights the sub-tab owning the path", () => {
     expect(activeSubtabHref(projects, "/projects")).toBe("/projects");
-    expect(activeSubtabHref(projects, "/projects/staffing")).toBe("/projects/staffing");
+    expect(activeSubtabHref(projects, "/core/staffing")).toBe("/core/staffing");
   });
 
   it("keeps the highlight when the sub-tab url carries a filter query", () => {
-    expect(activeSubtabHref(projects, "/projects/staffing?term=25F")).toBe(
-      "/projects/staffing",
+    expect(activeSubtabHref(projects, "/core/staffing?term=25F")).toBe(
+      "/core/staffing",
     );
     expect(activeSubtabHref(projects, "/projects?term=25F")).toBe("/projects");
   });
@@ -68,8 +68,8 @@ describe("activeSubtabHref", () => {
 
 describe("isAreaSubtabPath", () => {
   it("recognises a sub-tab landing page with or without a query", () => {
-    expect(isAreaSubtabPath("/projects/staffing")).toBe(true);
-    expect(isAreaSubtabPath("/projects/staffing?term=25F")).toBe(true);
+    expect(isAreaSubtabPath("/core/staffing")).toBe(true);
+    expect(isAreaSubtabPath("/core/staffing?term=25F")).toBe(true);
   });
 
   it("excludes hubs and record pages", () => {
@@ -79,7 +79,7 @@ describe("isAreaSubtabPath", () => {
 
   it("recognises sub-tabs from BOTH area sets, so favorites survive the flag flip", () => {
     expect(isAreaSubtabPath("/core/staffing")).toBe(true);
-    expect(isAreaSubtabPath("/projects/staffing")).toBe(true);
+    expect(isAreaSubtabPath("/projects/staffing")).toBe(false);
     expect(isAreaSubtabPath("/members/groups")).toBe(true);
   });
 });
@@ -89,7 +89,7 @@ describe("isAreaSubtabPath", () => {
 // that from `handle.areaPills` alone, which broke both ways — calendar
 // (areaSubnav) got a standalone arrow bar stacked on top of its own subnav
 // row, and under the sidebar redesign areaPills pages hid the bar for a pill
-// row AreaPillNav no longer renders.
+// row no longer rendered.
 describe("hasSubnavRow", () => {
   const m = (handle: unknown) => [{ handle }];
 

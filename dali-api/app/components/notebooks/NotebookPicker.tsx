@@ -5,6 +5,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
 import { SearchInput } from "~/components/ui/SearchInput";
+import { Z } from "~/components/ui/z";
 import {
   fetchNotebookRows,
   notebookStats,
@@ -84,7 +85,7 @@ export function NotebookPicker({
       onClose={onClose}
       labelledBy={titleId}
       initialFocusRef={searchRef}
-      className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto"
+      className={`fixed inset-0 ${Z.tooltip} flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto`}
       containerClassName={modalCardClass("max-w-md flex flex-col max-h-[80vh]")}
     >
       <ModalHeader titleId={titleId} title={heading} onClose={onClose} />

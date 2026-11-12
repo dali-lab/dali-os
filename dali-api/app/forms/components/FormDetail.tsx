@@ -47,6 +47,7 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { useOsChrome } from "~/components/os-chrome";
+import { Z } from "~/components/ui/z";
 
 function formatDateTime(iso: string, tz: string) {
   return (
@@ -679,7 +680,7 @@ export function FormDetail() {
                     )}
                     {q.data.showIf && (
                       <p className="text-sm text-os-accent mb-2">
-                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions))}
+                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions), selectedVersion.questions)}
                       </p>
                     )}
                     <QuestionSourceNote question={q} />
@@ -814,7 +815,7 @@ function FormVersionMenu({
       align="right"
       ariaLabel="Versions"
       panelClassName={cn(
-        "z-[60] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden p-2 focus:outline-none",
+        `${Z.popover} w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden p-2 focus:outline-none`,
         popover,
       )}
       trigger={

@@ -59,7 +59,7 @@ async function uniqueSlug(base: string): Promise<string> {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) return redirect("/");
 
   // Path-keyed: only render the console on the Core URL. The documents/agreement

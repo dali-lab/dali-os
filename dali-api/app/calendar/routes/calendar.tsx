@@ -28,7 +28,8 @@ import {
 import { formatDayRange, formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
-import { loadCalendarData, submitCalendarAction } from "./calendar.server";
+import { loadCalendarData } from "~/calendar/lib/calendar-loader.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 import { entriesInHoursScope, timesheetWeekBounds } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
 import { Tooltip, InfoTip } from "~/components/ui/floating";
@@ -106,8 +107,7 @@ import { fetchParticipantOptions, useParticipantOptions } from "~/calendar/lib/p
 import { useIsMobile } from "~/hooks/useIsMobile";
 
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
-// UnderlineTabButtons row unconditionally — it isn't the flag-gated AreaPillNav,
-// so it reserves the flush top spacing regardless of the sidebar-redesign flag.
+// row unconditionally, so it reserves the flush top spacing.
 export const handle = {
   areaSubnav: true,
   docKey: "calendar",

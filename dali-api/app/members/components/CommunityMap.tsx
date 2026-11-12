@@ -3,7 +3,16 @@ import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { cn } from "~/lib/cn";
-import { MAP_TILES_ORIGIN, minZoomToFill, type CommunityPerson, type CommunityPlace, type MapBounds } from "~/members/lib/community";
+import { initialsFromName } from "~/lib/display";
+import {
+  HOME_ZOOM,
+  MAP_TILES_ORIGIN,
+  clusterPlaces,
+  minZoomToFill,
+  type CommunityPerson,
+  type CommunityPlace,
+  type MapBounds,
+} from "~/members/lib/community";
 import { eventDateBlock } from "~/members/lib/community-view";
 import type { CommunityEvent } from "~/members/lib/community.server";
 
@@ -19,27 +28,36 @@ export function normalizeBounds(b: { south: number; west: number; north: number;
 export const mapStyleUrl = (dark: boolean) => `${MAP_TILES_ORIGIN}/styles/${dark ? "dark" : "positron"}`;
 const isDark = () => !document.documentElement.classList.contains("light");
 
+// OpenFreeMap hides state borders below zoom 8 in light and draws them near-black in dark.
+const STATE_BORDERS: Record<string, { minzoom?: number; color: string }> = {
+  boundary_3: { minzoom: 3, color: "hsl(0,0%,62%)" },
+  boundary_state: { color: "hsl(0,0%,38%)" },
+};
+
+export function showStateBorders(m: Pick<MapLibreMap, "getLayer" | "setLayerZoomRange" | "setPaintProperty">) {
+  for (const [id, { minzoom, color }] of Object.entries(STATE_BORDERS)) {
+    if (!m.getLayer(id)) continue;
+    if (minzoom != null) m.setLayerZoomRange(id, minzoom, 24);
+    m.setPaintProperty(id, "line-color", color);
+  }
+}
+
 const AVATAR = 30;
 const EVENT_PIN = { width: 44, height: 48, lift: 18 };
 const Z = { event: 1, place: 2, selectedPlace: 3, selectedEvent: 4, hover: 5 };
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-}
+const CLUSTER_FIT_MAX_ZOOM = 10;
 
 // Built as DOM nodes, not an HTML string, so a name or photo URL can never be read as markup.
-function pinElement(place: MapPlace, selected: boolean): HTMLElement {
+function pinElement(cluster: MapPlace[], selected: boolean): HTMLElement {
+  const faded = cluster.every((p) => p.faded);
+  const people = (faded ? cluster : cluster.filter((p) => !p.faded)).flatMap((p) => p.people);
   const root = document.createElement("div");
-  root.dataset.faded = String(Boolean(place.faded));
-  root.style.cssText = `opacity:${place.faded ? 0.35 : 1};display:flex;align-items:center;gap:6px;width:max-content;cursor:pointer;transition:transform 150ms ease-out;transform-origin:${AVATAR / 2}px 50%`;
+  root.dataset.faded = String(faded);
+  root.style.cssText = `opacity:${faded ? 0.35 : 1};display:flex;align-items:center;gap:6px;width:max-content;cursor:pointer;transition:transform 150ms ease-out;transform-origin:${AVATAR / 2}px 50%`;
 
   const faces = document.createElement("div");
   faces.style.cssText = "display:flex";
-  place.people.slice(0, 3).forEach((a, i) => {
+  people.slice(0, 3).forEach((a, i) => {
     const ring = `box-shadow:0 0 0 2px ${selected ? "var(--color-os-accent)" : "var(--color-os-card)"}`;
     const base = `width:${AVATAR}px;height:${AVATAR}px;border-radius:9999px;flex:none;${ring};margin-left:${i === 0 ? 0 : -10}px`;
     if (a.photoUrl) {
@@ -50,15 +68,16 @@ function pinElement(place: MapPlace, selected: boolean): HTMLElement {
       faces.append(img);
     } else {
       const span = document.createElement("span");
-      span.textContent = initials(a.name);
+      span.textContent = initialsFromName(a.name);
       span.style.cssText = `${base};display:flex;align-items:center;justify-content:center;background:var(--color-os-accent);color:var(--color-os-bg);font-size:11px;font-weight:700`;
       faces.append(span);
     }
   });
 
   const label = document.createElement("span");
-  const extra = place.people.length - 1;
-  label.textContent = extra > 0 ? `${place.people[0].name} +${extra}` : place.people[0].name;
+  const extra = people.length - 1;
+  label.textContent =
+    cluster.length > 1 ? `${people.length} people` : extra > 0 ? `${people[0].name} +${extra}` : people[0].name;
   label.style.cssText = `padding:2px 8px;border-radius:9999px;background:var(--color-os-card);color:var(--color-foreground);font-size:12px;font-weight:600;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35)${selected ? ",0 0 0 2px var(--color-os-accent)" : ""}`;
 
   root.append(faces, label);
@@ -79,15 +98,11 @@ function eventPinElement(e: MapEvent, tz: string, selected: boolean): HTMLElemen
   return root;
 }
 
-const placeSignature = (p: MapPlace, selected: boolean) =>
+const clusterSignature = (cluster: MapPlace[], selected: boolean) =>
   JSON.stringify([
-    p.lat,
-    p.lng,
-    p.label,
     selected,
-    Boolean(p.faded),
-    p.people.length,
-    p.people.slice(0, 3).map((a) => [a.name, a.photoUrl]),
+    cluster.map((p) => [p.lat, p.lng, p.label, Boolean(p.faded), p.people.length]),
+    cluster.flatMap((p) => p.people.slice(0, 3)).slice(0, 3).map((a) => [a.name, a.photoUrl]),
   ]);
 
 const eventSignature = (e: MapEvent, tz: string, selected: boolean) =>
@@ -99,7 +114,8 @@ export function CommunityMap({
   places,
   events,
   tz,
-  selectedKey,
+  home,
+  selectedKeys,
   selectedEventId,
   onSelect,
   onSelectEvent,
@@ -109,9 +125,10 @@ export function CommunityMap({
   places: MapPlace[];
   events: MapEvent[];
   tz: string;
-  selectedKey: string | null;
+  home: { lat: number; lng: number } | null;
+  selectedKeys: string[] | null;
   selectedEventId: string | null;
-  onSelect: (key: string | null) => void;
+  onSelect: (keys: string[] | null) => void;
   onSelectEvent: (id: string) => void;
   onBoundsChange: (bounds: MapBounds) => void;
   className?: string;
@@ -127,7 +144,8 @@ export function CommunityMap({
   onSelectEventRef.current = onSelectEvent;
   const onBoundsRef = useRef(onBoundsChange);
   onBoundsRef.current = onBoundsChange;
-  const fittedFor = useRef<string | null>(null);
+  const viewSet = useRef(false);
+  const zoomBucket = useRef(1);
 
   function sync<T>(
     pins: Map<string, Pin>,
@@ -159,17 +177,30 @@ export function CommunityMap({
   }
 
   function draw() {
+    const chosen = new Set(selectedKeys ?? []);
+    const isSelected = (cluster: MapPlace[]) => cluster.every((p) => chosen.has(p.key));
     sync(
       placePins.current,
-      places.map((p) => ({ key: p.key, item: p, lng: p.lng, lat: p.lat, signature: placeSignature(p, p.key === selectedKey) })),
-      (p) => {
-        const selected = p.key === selectedKey;
-        const element = pinElement(p, selected);
-        element.title = p.label;
+      clusterPlaces(places, zoomBucket.current).map((cluster) => ({
+        key: cluster.map((p) => p.key).join("|"),
+        item: cluster,
+        lng: cluster[0].lng,
+        lat: cluster[0].lat,
+        signature: clusterSignature(cluster, isSelected(cluster)),
+      })),
+      (cluster) => {
+        const selected = isSelected(cluster);
+        const element = pinElement(cluster, selected);
+        element.title = cluster.map((p) => p.label).join(", ");
         const z = selected ? Z.selectedPlace : Z.place;
         element.addEventListener("click", (ev) => {
           ev.stopPropagation();
-          onSelectRef.current(selected ? null : p.key);
+          if (selected) {
+            onSelectRef.current(null);
+            return;
+          }
+          onSelectRef.current(cluster.map((p) => p.key));
+          if (cluster.length > 1) fitTo(cluster, CLUSTER_FIT_MAX_ZOOM);
         });
         element.addEventListener("mouseenter", () => {
           element.parentElement!.style.zIndex = String(Z.hover);
@@ -204,7 +235,15 @@ export function CommunityMap({
         };
       },
     );
-    fitIfNeeded();
+    setInitialView();
+  }
+
+  function fitTo(points: { lat: number; lng: number }[], maxZoom: number, instant = false) {
+    const L = lib.current;
+    if (!L || !map.current) return;
+    const bounds = new L.LngLatBounds();
+    for (const p of points) bounds.extend([p.lng, p.lat]);
+    map.current.fitBounds(bounds, { padding: 48, maxZoom, duration: instant ? 0 : undefined });
   }
 
   function emitBounds() {
@@ -217,27 +256,19 @@ export function CommunityMap({
   }
 
   // A fit against a 0-height container (the page can mount inside a hidden kept tab) computes a garbage zoom.
-  function fitIfNeeded() {
-    const L = lib.current;
-    if (!L || !map.current || !el.current || el.current.clientHeight === 0) return;
-    const fitKey = places.map((p) => p.key).join("|");
-    if (fittedFor.current === fitKey) return;
-    const first = fittedFor.current === null;
-    fittedFor.current = fitKey;
-    if (places.length > 0) {
-      const bounds = new L.LngLatBounds();
-      for (const p of places) bounds.extend([p.lng, p.lat]);
-      map.current.fitBounds(bounds, { padding: 48, maxZoom: 5, duration: first ? 0 : undefined });
-    } else {
-      map.current.jumpTo({ center: [0, 25], zoom: 1 });
-    }
+  function setInitialView() {
+    if (viewSet.current || !map.current || !el.current || el.current.clientHeight === 0) return;
+    viewSet.current = true;
+    if (home) map.current.jumpTo({ center: [home.lng, home.lat], zoom: HOME_ZOOM });
+    else if (places.length > 0) fitTo(places, 5, true);
+    else map.current.jumpTo({ center: [0, 25], zoom: 1 });
   }
   const drawRef = useRef(draw);
   drawRef.current = draw;
   const emitRef = useRef(emitBounds);
   emitRef.current = emitBounds;
-  const fitRef = useRef(fitIfNeeded);
-  fitRef.current = fitIfNeeded;
+  const initialViewRef = useRef(setInitialView);
+  initialViewRef.current = setInitialView;
 
   useEffect(() => {
     let cancelled = false;
@@ -262,7 +293,14 @@ export function CommunityMap({
       m.touchZoomRotate.disableRotation();
       m.keyboard.disableRotation();
       m.on("resize", () => m.setMinZoom(minZoomToFill(m.getContainer().clientHeight)));
+      m.on("style.load", () => showStateBorders(m));
       m.on("moveend", () => emitRef.current());
+      m.on("zoomend", () => {
+        const bucket = Math.floor(m.getZoom());
+        if (bucket === zoomBucket.current) return;
+        zoomBucket.current = bucket;
+        drawRef.current();
+      });
       map.current = m;
       themeObserver = new MutationObserver(() => {
         if (isDark() === dark) return;
@@ -273,10 +311,10 @@ export function CommunityMap({
       drawRef.current();
       emitRef.current();
     });
-    // The map can mount at 0×0 in a hidden kept tab; the first fit waits until it has a size.
+    // The map can mount at 0×0 in a hidden kept tab; the first view waits until it has a size.
     const ro = new ResizeObserver(() => {
       if (!el.current || el.current.clientHeight === 0) return;
-      fitRef.current();
+      initialViewRef.current();
     });
     if (el.current) ro.observe(el.current);
     return () => {
@@ -293,7 +331,7 @@ export function CommunityMap({
   useEffect(() => {
     draw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [places, events, tz, selectedKey, selectedEventId]);
+  }, [places, events, tz, selectedKeys, selectedEventId]);
 
   return (
     <div

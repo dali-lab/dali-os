@@ -6,6 +6,7 @@
 // Gate: canEditProject (Core or project member).
 
 import { prisma } from "~/lib/db.server";
+import { linkTaskFile, TaskFileError, unlinkTaskFile } from "~/projects/lib/task-files.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError, requireForAction } from "./errors";
 import { canEditProject } from "../access";
 
@@ -52,31 +53,17 @@ export async function runManageTaskFiles(
   }
 
   if (input.action === "unlink") {
-    await prisma.taskFileLink.deleteMany({
-      where: { taskId: task.id, fileId: input.fileId },
-    });
+    await unlinkTaskFile({ taskId: task.id, fileId: input.fileId });
     return { ok: true };
   }
 
-  // link
-  const file = await prisma.projectFile.findUnique({
-    where: { id: input.fileId },
-    select: {
-      id: true,
-      title: true,
-      projectId: true,
-      archivedAt: true,
-      _count: { select: { versions: true } },
-    },
-  });
-  if (!file || file.archivedAt !== null || file.projectId !== task.projectId) {
-    throw new McpNotFoundError("File not found, archived, or belongs to a different project.");
+  try {
+    const { file } = await linkTaskFile({ taskId: task.id, fileId: input.fileId });
+    return { ok: true, id: file.id, title: file.title, versionCount: file.versionCount };
+  } catch (err) {
+    if (err instanceof TaskFileError) {
+      throw new McpNotFoundError("File not found, archived, or belongs to a different project.");
+    }
+    throw err;
   }
-
-  await prisma.taskFileLink.createMany({
-    data: [{ taskId: task.id, fileId: file.id }],
-    skipDuplicates: true,
-  });
-
-  return { ok: true, id: file.id, title: file.title, versionCount: file._count.versions };
 }

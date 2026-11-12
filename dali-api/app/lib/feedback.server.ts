@@ -10,7 +10,7 @@ export async function requireFeedbackViewer(request: Request) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) throw partnerRedirect;
 
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isLabMember && !roles.isCore) throw new Response("Not found", { status: 404 });
 
   return { user: auth.user, core: roles.isCore };

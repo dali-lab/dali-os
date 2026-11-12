@@ -34,7 +34,7 @@ export function useRecordingEditor({ notePath }: { notePath: string }) {
   // collaborators see the notes arrive like any other edit.
   const editorRef = useRef<DocEditorInstance | null>(null);
   // Document-change listeners registered by useMeetingRecording's
-  // subscribeDocumentChanges prop (specs/meeting-recording-rail.md Step 2) —
+  // subscribeDocumentChanges prop (specs/archive/meeting-recording-rail.md Step 2) —
   // a Set so the single editor.onChange subscription below fans out to every
   // registered hook instance. Kept as a ref, not state: registering must
   // never itself trigger a re-render.
