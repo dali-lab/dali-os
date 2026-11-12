@@ -1,6 +1,6 @@
 import type { Question, ShowIfOp, ShowIfRule } from "~/types";
-import { isAnswered, isLayoutOnly, parseFileAnswer } from "~/lib/form-answers";
-import { paginateQuestions, type FormPage } from "~/lib/form-pages";
+import { isAnswered, isLayoutOnly, parseFileAnswer } from "~/forms/lib/form-answers";
+import { paginateQuestions, type FormPage } from "~/forms/lib/form-pages";
 
 export type ShowIf = ShowIfRule;
 export type { ShowIfOp };

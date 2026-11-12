@@ -13,7 +13,7 @@ vi.mock("react-router", () => ({
 vi.mock("~/components/os-chrome", () => ({ useOsChrome: () => ({ formTrigger: "" }) }));
 
 import { ShowIfEditor } from "~/components/form-builder/ShowIfEditor";
-import { OTHER_VALUE, questionNumbers } from "~/lib/form-logic";
+import { OTHER_VALUE, questionNumbers } from "~/forms/lib/form-logic";
 import type { Question, ShowIfRule } from "~/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

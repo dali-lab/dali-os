@@ -39,7 +39,7 @@ import {
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
 import type { Question } from "~/types";
-import { conditionalKeys } from "~/lib/form-logic";
+import { conditionalKeys } from "~/forms/lib/form-logic";
 import { isLevel, type Level } from "~/lib/level";
 
 const SLOT = "level-up" as const;

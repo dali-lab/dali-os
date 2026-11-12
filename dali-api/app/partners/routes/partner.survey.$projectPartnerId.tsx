@@ -17,11 +17,11 @@ import {
   FormPagerNav,
   FormPageHeading,
 } from "~/forms/components/FormPager";
-import { visiblePages, visibleQuestions } from "~/lib/form-logic";
+import { visiblePages, visibleQuestions } from "~/forms/lib/form-logic";
 import { FormQuestionField } from "~/components/form-builder/QuestionField";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
-import { findMissingRequired } from "~/lib/form-answers";
+import { findMissingRequired } from "~/forms/lib/form-answers";
 
 export const meta: Route.MetaFunction = () => [{ title: "Project survey · DALI OS" }];
 
