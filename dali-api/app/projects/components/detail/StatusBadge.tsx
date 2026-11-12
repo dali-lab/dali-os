@@ -1,10 +1,16 @@
-import { type ProjectStatus } from "~/projects/lib/project-lifecycle";
-import { STATUS_PILL_OS } from "~/projects/components/detail/constants";
+import { Pill, type PillTone } from "~/components/ui/Pill";
+import type { ProjectStatus } from "~/projects/lib/project-lifecycle";
+
+export const PROJECT_STATUS_TONES: Record<ProjectStatus, PillTone> = {
+  Active: "success",
+  Paused: "warning",
+  Archived: "neutral",
+};
 
 export function StatusBadge({ status }: { status: ProjectStatus }) {
   return (
-    <span className={`rounded-full border px-3 py-[5px] text-xs font-semibold ${STATUS_PILL_OS[status]}`}>
+    <Pill dot={PROJECT_STATUS_TONES[status]} size="sm">
       {status}
-    </span>
+    </Pill>
   );
 }

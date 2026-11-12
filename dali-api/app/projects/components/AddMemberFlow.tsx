@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { ChevronLeft, UserPlus, X } from "lucide-react";
-import { SearchInput } from "~/components/ui/SearchInput";
+import { PersonPicker } from "~/components/ui/PersonPicker";
 import { OS_SURFACE_CLASS, filterPillClass } from "~/components/ui/floating/styles";
 import { Select } from "~/components/ui/floating";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -231,39 +231,24 @@ export function AddMemberFlow({
           {!selected ? (
             // ── Step 1: pick a person ──────────────────────────────────────
             <>
-              <SearchInput
+              <PersonPicker
+                people={results.map((p) => ({
+                  id: p.userId,
+                  name: p.name,
+                  secondary: [p.email, p.onBoard ? "On board" : "Not on board"].filter(Boolean).join(" · "),
+                }))}
+                value={null}
+                onChange={(id) => setSelected(results.find((p) => p.userId === id) ?? null)}
+                onQueryChange={setQ}
+                filterLocally={false}
                 autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
+                ariaLabel="Search members"
                 placeholder="Search members by name or email…"
-                size="sm"
-                containerClassName="w-full"
+                noMatchesLabel={
+                  q.trim().length < 2 ? "Type two letters to search." : loading ? "Searching…" : "No members found."
+                }
               />
               {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
-              <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">
-                {loading && localResults.length === 0 && (
-                  <p className="text-xs text-muted-foreground px-1 py-1">Searching…</p>
-                )}
-                {!loading && q.trim().length >= 2 && results.length === 0 && !error && (
-                  <p className="text-xs text-muted-foreground px-1 py-1">No members found.</p>
-                )}
-                {results.map((person) => (
-                  <button
-                    key={person.userId}
-                    type="button"
-                    onClick={() => setSelected(person)}
-                    className="text-left px-2 py-1.5 rounded hover:bg-muted flex flex-col gap-0.5"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-sm text-foreground">{person.name}</span>
-                      <BoardBadge onBoard={person.onBoard} />
-                    </span>
-                    {person.email && (
-                      <span className="text-[11px] text-muted-foreground">{person.email}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
             </>
           ) : (
             // ── Step 2: pick a destination ─────────────────────────────────

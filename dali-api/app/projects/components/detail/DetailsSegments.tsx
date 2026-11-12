@@ -31,8 +31,8 @@ import { Toggle } from "~/components/ui/Toggle";
 import { EditableSection } from "~/components/EditableSection";
 import { Markdown } from "~/components/Markdown";
 import { type ProjectStatus } from "~/projects/lib/project-lifecycle";
-import { STATUS_PILL_OS } from "~/projects/components/detail/constants";
-import { StatusBadge } from "~/projects/components/detail/StatusBadge";
+import { DOT_TONES } from "~/components/ui/Pill";
+import { PROJECT_STATUS_TONES, StatusBadge } from "~/projects/components/detail/StatusBadge";
 import { type LoaderData } from "~/projects/components/detail/types";
 
 export function DescriptionSegment({
@@ -117,12 +117,13 @@ export function StatusSegment({
               defaultValue={status}
               ariaLabel="Project status"
               options={PROJECT_STATUSES.map((s) => ({ value: s, label: s }))}
-              // The pill wears the current status's colour; the read view below
-              // uses the same plate, so editing reads as the same badge.
-              buttonClassName={cn(
-                "rounded-full border transition-[filter] hover:brightness-95",
-                cn("px-3 py-[5px] text-xs font-semibold", STATUS_PILL_OS[status]),
-              )}
+              triggerIcon={
+                <span
+                  className={cn("h-2 w-2 shrink-0 rounded-full", DOT_TONES[PROJECT_STATUS_TONES[status]])}
+                  aria-hidden
+                />
+              }
+              buttonClassName="inline-flex items-center gap-1.5 rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium text-foreground transition-[filter] hover:brightness-95"
             />
           </Form>
         ) : (

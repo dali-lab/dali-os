@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Avatar } from "~/components/ui/Avatar";
-import { MultiSelect } from "~/components/ui/floating";
+import { PersonPicker } from "~/components/ui/PersonPicker";
 
 export type InstructorCandidate = { id: string; name: string };
 
@@ -14,16 +13,12 @@ export function InstructorPicker({
   const [selectedIds, setSelectedIds] = useState<string[]>(initialSelectedIds);
 
   return (
-    <MultiSelect
+    <PersonPicker
+      mode="multi"
       name="userIds"
+      people={candidates}
       values={selectedIds}
       onChange={setSelectedIds}
-      options={candidates.map((c) => ({
-        value: c.id,
-        label: c.name,
-        icon: <Avatar name={c.name} size="xs" />,
-      }))}
-      searchable
       ariaLabel="Instructors"
       placeholder="Add instructors"
       searchPlaceholder="Search members by name"
