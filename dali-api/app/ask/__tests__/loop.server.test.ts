@@ -285,7 +285,7 @@ describe("runAsk", () => {
 
   it("runs every tool in a round and returns one result each", async () => {
     const { calls } = await ask([
-      { blocks: [toolUse("a", "read_page"), toolUse("b", "list_my_tasks")], stop: "tool_use" },
+      { blocks: [toolUse("a", "read_page"), toolUse("b", "read_page")], stop: "tool_use" },
       { blocks: [text("Done.")], stop: "end_turn" },
     ]);
     const results = (calls[1].messages as { content: { tool_use_id: string }[] }[])[2].content;
