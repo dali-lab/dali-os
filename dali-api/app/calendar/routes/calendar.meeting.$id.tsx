@@ -35,7 +35,7 @@ import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { expandOccurrences, noteForOccurrence, resolveOccurrence } from "~/calendar/lib/meeting-occurrences";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
-import { ensureOccurrenceRoster, seedMeetingRoster } from "~/calendar/lib/scheduled-meeting.server";
+import { ensureOccurrenceRoster, seedMeetingRoster } from "~/calendar/lib/meeting-roster.server";
 import { CHECK_IN_GRACE_MIN, parseOccurrenceParam } from "~/calendar/lib/meeting-occurrences";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";

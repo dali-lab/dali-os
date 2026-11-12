@@ -4,10 +4,10 @@ import { removeTimeEntryFromGoogle } from "~/calendar/lib/timesheet-mirror.serve
 import {
   attachMeetingNote,
   attachMeetingWhiteboard,
-  resolveMeetingOccurrence,
   setMeetingProject,
   trackExternalEventAsMeeting,
 } from "~/calendar/lib/scheduled-meeting.server";
+import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { parseOccurrenceParam } from "~/calendar/lib/meeting-occurrences";
 import { meetingNotePath } from "~/lib/note-path.server";
 import type { CalendarActionContext, CalendarIntentInput } from "~/calendar/lib/calendar-actions/shared.server";

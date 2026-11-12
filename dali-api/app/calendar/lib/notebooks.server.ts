@@ -18,7 +18,8 @@ import {
   pageDepth,
   trashNotebookIfAbandoned,
 } from "~/lib/pages";
-import { resolveMeetingOccurrence, seedPageFromTemplate } from "~/calendar/lib/scheduled-meeting.server";
+import { seedPageFromTemplate } from "~/calendar/lib/scheduled-meeting.server";
+import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { formatDateShort } from "~/lib/display";
 import { nameConflictResponse } from "~/drive/lib/page-names.server";
 import { removeMeetingShares, syncMeetingShares } from "~/calendar/lib/meeting-shares.server";

@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.scheduled-meetings.$id.check-in";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import { isWithinCheckInWindow } from "~/calendar/lib/meeting-occurrences";
 
 // POST /api/scheduled-meetings/:id/check-in

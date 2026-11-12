@@ -5,7 +5,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import { noteForOccurrence } from "~/calendar/lib/meeting-occurrences";
-import { resolveMeetingOccurrence } from "~/calendar/lib/scheduled-meeting.server";
+import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { parseOccurrenceParam } from "~/calendar/lib/meeting-occurrences";
 import { canReadRecording } from "~/calendar/lib/meeting-recording.server";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";

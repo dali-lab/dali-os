@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
-import { resolveMeetingOccurrence } from "~/calendar/lib/scheduled-meeting.server";
+import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { CHECK_IN_GRACE_MIN } from "~/calendar/lib/meeting-occurrences";
 
 // An event with no scheduled time has no end to lapse at.

@@ -3,7 +3,7 @@
 // Requires the `mcp:write` scope.
 
 import { prisma } from "~/lib/db.server";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import { isWithinCheckInWindow } from "~/calendar/lib/meeting-occurrences";
 import { McpNotFoundError, McpInvalidError, McpForbiddenError } from "../../registry";
 

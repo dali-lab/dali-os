@@ -73,10 +73,12 @@ vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   attachMeetingNote: vi.fn(),
   attachMeetingWhiteboard: vi.fn(),
   cancelScheduledMeeting: vi.fn(),
-  resolveMeetingOccurrence: vi.fn(),
   setMeetingProject: vi.fn(),
   trackExternalEventAsMeeting: vi.fn(),
   updateScheduledMeeting: vi.fn(),
+}));
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({
+  resolveMeetingOccurrence: vi.fn(),
 }));
 vi.mock("~/calendar/lib/meeting-occurrences", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/calendar/lib/meeting-occurrences")>()),
@@ -119,10 +121,10 @@ import { generalCalendarId } from "~/calendar/lib/general-calendar";
 import {
   attachMeetingNote,
   attachMeetingWhiteboard,
-  resolveMeetingOccurrence,
   setMeetingProject,
   trackExternalEventAsMeeting,
 } from "~/calendar/lib/scheduled-meeting.server";
+import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { meetingNotePath } from "~/lib/note-path.server";
 import { submitCalendarAction, shouldInvalidateExternalCache } from "~/calendar/lib/calendar-actions.server";
 

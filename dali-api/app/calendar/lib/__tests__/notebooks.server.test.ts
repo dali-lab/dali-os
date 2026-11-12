@@ -32,7 +32,8 @@ vi.mock("~/lib/pages", () => ({
   trashNotebookIfAbandoned: vi.fn(),
   MAX_PAGE_DEPTH: 6,
 }));
-vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ resolveMeetingOccurrence: vi.fn(), seedPageFromTemplate: vi.fn() }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ seedPageFromTemplate: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({ resolveMeetingOccurrence: vi.fn() }));
 vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(), removeMeetingShares: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
@@ -47,7 +48,8 @@ import {
   pageDepth,
   trashNotebookIfAbandoned,
 } from "~/lib/pages";
-import { resolveMeetingOccurrence, seedPageFromTemplate } from "~/calendar/lib/scheduled-meeting.server";
+import { seedPageFromTemplate } from "~/calendar/lib/scheduled-meeting.server";
+import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { formatDateShort } from "~/lib/display";
 import { removeMeetingShares, syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 import { PageNameConflictError } from "~/drive/lib/page-names.server";
