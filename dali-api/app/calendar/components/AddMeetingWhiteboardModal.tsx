@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useId, useRef, useState } from "react";
+import { Modal } from "~/components/Modal";
 import { useFetcher } from "react-router";
 import { Shapes, X } from "lucide-react";
 import { Z } from "~/components/ui/z";
@@ -53,6 +53,7 @@ function AddMeetingWhiteboardModal({
   actionPath?: string;
   onClose: () => void;
 }) {
+  const titleId = useId();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
 
   // Close only this modal on Escape (capture + stopPropagation) so the key
@@ -89,18 +90,16 @@ function AddMeetingWhiteboardModal({
     );
   }
 
-  if (typeof document === "undefined") return null;
-
-  return createPortal(
-    <div
-      className={`fixed inset-0 ${Z.popover} flex items-center justify-center bg-black/55 backdrop-blur-sm p-4`}
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy={titleId}
+      layer={Z.popover}
+      containerClassName="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-xl cal-surface max-h-[90vh]"
     >
-      <div className="relative z-10 flex w-full max-w-md flex-col overflow-hidden rounded-xl cal-surface max-h-[90vh]">
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
-          <h2 className="font-heading text-base font-semibold text-foreground">Add whiteboard</h2>
+          <h2 id={titleId} className="font-heading text-base font-semibold text-foreground">Add whiteboard</h2>
           <button
             type="button"
             onClick={onClose}
@@ -137,8 +136,6 @@ function AddMeetingWhiteboardModal({
             {submitting ? "Creating…" : "Create whiteboard"}
           </button>
         </div>
-      </div>
-    </div>,
-    document.body,
+    </Modal>
   );
 }

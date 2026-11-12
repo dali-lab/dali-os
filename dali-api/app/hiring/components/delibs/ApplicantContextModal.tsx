@@ -1,6 +1,7 @@
 import { useFetcher } from "react-router";
 import { DocEditor } from "~/components/doc";
 import { Modal } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import {
   DECISION_TONES,
   INTERVIEW_STATUS_TONES,
@@ -46,10 +47,10 @@ export function ApplicantContextModal({
       open
       onClose={onClose}
       labelledBy="applicant-context-title"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
-      containerClassName="bg-card rounded-xl shadow-xl w-full max-w-5xl my-8 max-h-[90vh] flex flex-col"
+      placement="top"
+      containerClassName={modalCardClass("max-w-5xl flex flex-col !p-0")}
     >
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card rounded-t-xl flex-shrink-0">
+      <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card rounded-t-os-card flex-shrink-0">
         <div>
           {isLoading || isError || !data ? (
             <h2 id="applicant-context-title" className="text-lg font-semibold text-foreground">
