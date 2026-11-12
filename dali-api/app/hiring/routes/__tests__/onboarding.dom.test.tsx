@@ -48,6 +48,8 @@ describe("HiringOnboarding", () => {
           startTermCandidates: [],
           hasUntermed: false,
           selectedTermId: null,
+          profileForm: null,
+          selectableForms: [],
         }),
       },
     ]);
