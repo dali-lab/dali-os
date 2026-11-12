@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.mobile.calendar";
 import { prisma } from "~/lib/db.server";
 import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
-import { fetchCalendarEvents } from "~/lib/google-calendar";
+import { fetchCalendarEvents } from "~/calendar/lib/google-calendar.server";
 import { expandClassOccurrences } from "~/calendar/lib/class-schedule";
 import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
 import {

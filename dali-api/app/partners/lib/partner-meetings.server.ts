@@ -14,7 +14,7 @@ import { NotFoundError } from "~/lib/http-error";
 import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
 import { currentTerm } from "~/lib/roles";
 import { createScheduledMeeting } from "~/lib/scheduled-meeting";
-import { computeUserFreeBusy } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { slotStatus } from "~/calendar/lib/slot-availability";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { notifyPartners, partnerNotifyRecipients } from "~/partners/lib/partner-notify.server";

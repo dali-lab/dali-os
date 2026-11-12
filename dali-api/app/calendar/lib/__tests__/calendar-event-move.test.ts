@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
 }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchCalendarEvents: vi.fn(),
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
@@ -31,7 +31,7 @@ vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { patchGoogleCalendarEvent } from "~/lib/google-calendar";
+import { patchGoogleCalendarEvent } from "~/calendar/lib/google-calendar.server";
 import { updateScheduledMeeting } from "~/lib/scheduled-meeting";
 import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 

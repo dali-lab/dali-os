@@ -20,7 +20,7 @@ import {
   patchGoogleCalendarEvent,
   type GoogleAttendee,
   type GoogleCalendarAuth,
-} from "~/lib/google-calendar";
+} from "~/calendar/lib/google-calendar.server";
 import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { getGmailAccessToken } from "~/lib/gmail";
 

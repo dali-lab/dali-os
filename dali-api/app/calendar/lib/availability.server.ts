@@ -1,7 +1,7 @@
 import rrulePkg from "rrule";
 import type { RRule as RRuleType } from "rrule";
 import { prisma } from "~/lib/db.server";
-import { fetchBusyEvents } from "~/lib/google-calendar";
+import { fetchBusyEvents } from "~/calendar/lib/google-calendar.server";
 import { APPLICATION_TZ as DEFAULT_TIMEZONE, getZonedYMD, pickUserTimezone, zonedWallTimeUtc } from "~/lib/timezone";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {

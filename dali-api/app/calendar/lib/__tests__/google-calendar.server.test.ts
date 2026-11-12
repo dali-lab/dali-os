@@ -20,7 +20,7 @@ const prismaMock = vi.hoisted(() => ({
 vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
 
 // Import after mocking so the lib picks up the mocked prisma.
-const { encrypt } = await import("~/lib/calendar-crypto");
+const { encrypt } = await import("~/calendar/lib/calendar-crypto.server");
 const {
   getValidAccessTokenForLink,
   fetchBusyEvents,
@@ -31,7 +31,7 @@ const {
   patchGoogleCalendarEvent,
   respondToGoogleEventAsSelf,
   NotAGuestError,
-} = await import("~/lib/google-calendar");
+} = await import("~/calendar/lib/google-calendar.server");
 
 function mockFetchOnce(body: unknown, ok = true, status = 200) {
   const fn = vi.fn().mockResolvedValueOnce({
@@ -852,7 +852,7 @@ describe("buildEncryptedTokens", () => {
       refreshToken: "b",
       expiresInSec: 3600,
     });
-    const { decrypt } = await import("~/lib/calendar-crypto");
+    const { decrypt } = await import("~/calendar/lib/calendar-crypto.server");
     const parsed = JSON.parse(decrypt(cipher));
     expect(parsed.accessToken).toBe("a");
     expect(parsed.refreshToken).toBe("b");
@@ -865,7 +865,7 @@ describe("buildEncryptedTokens", () => {
       refreshToken: "b",
       expiresInSec: null,
     });
-    const { decrypt } = await import("~/lib/calendar-crypto");
+    const { decrypt } = await import("~/calendar/lib/calendar-crypto.server");
     const parsed = JSON.parse(decrypt(cipher));
     expect(parsed.expiresAt).toBeNull();
   });

@@ -11,7 +11,7 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   requireMobileUser: (...a: unknown[]) => requireMobileUser(...a),
 }));
 vi.mock("~/lib/upcoming-meetings", () => ({ listUpcomingMeetings: (...a: unknown[]) => listUpcomingMeetings(...a) }));
-vi.mock("~/lib/google-calendar", () => ({ fetchCalendarEvents: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/calendar/lib/google-calendar.server", () => ({ fetchCalendarEvents: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/mobile-members.server", () => ({ listMemberSummaries: (...a: unknown[]) => listMemberSummaries(...a) }));
 vi.mock("~/lib/scheduled-meeting", () => ({ createScheduledMeeting: (...a: unknown[]) => createScheduledMeeting(...a) }));
 

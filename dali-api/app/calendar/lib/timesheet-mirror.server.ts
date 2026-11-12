@@ -21,7 +21,7 @@ import {
   deleteGoogleCalendarEvent,
   getOrCreateNamedCalendar,
   patchGoogleCalendarEvent,
-} from "~/lib/google-calendar";
+} from "~/calendar/lib/google-calendar.server";
 import { getRoleLabel } from "~/lib/roles";
 import { APPLICATION_TZ } from "~/lib/timezone";
 

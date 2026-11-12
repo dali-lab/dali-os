@@ -8,7 +8,7 @@ vi.mock("~/lib/groups", () => ({}));
 vi.mock("~/lib/feature-flags.server", () => ({}));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/app-env", () => ({ getApiBaseUrl: () => "https://dali.example" }));
-vi.mock("~/lib/google-calendar", () => ({ buildEncryptedTokens: vi.fn(() => "encrypted-blob") }));
+vi.mock("~/calendar/lib/google-calendar.server", () => ({ buildEncryptedTokens: vi.fn(() => "encrypted-blob") }));
 vi.mock("~/lib/google-oauth", () => {
   class GoogleOAuthError extends Error {}
   return { GoogleOAuthError, exchangeGoogleCode: vi.fn(), resolveGoogleEmail: vi.fn() };
@@ -20,7 +20,7 @@ vi.mock("~/email/lib/access.server", async () => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { buildEncryptedTokens } from "~/lib/google-calendar";
+import { buildEncryptedTokens } from "~/calendar/lib/google-calendar.server";
 import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
 import { expectedConnectAddress } from "~/email/lib/access.server";
 import {

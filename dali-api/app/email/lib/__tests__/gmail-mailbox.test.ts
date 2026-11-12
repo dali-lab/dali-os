@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   parseStoredTokens: () => {
     throw new Error("Unsupported state or unable to authenticate data");
   },

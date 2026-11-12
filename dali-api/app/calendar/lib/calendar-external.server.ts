@@ -2,8 +2,8 @@ import { prisma } from "~/lib/db.server";
 import { cachedExternalRead } from "~/calendar/lib/external-cache.server";
 import { isLabMember } from "~/lib/roles";
 import type { ScopeType } from "~/generated/prisma/client";
-import { type CalendarEvent, listCalendarsForLink } from "~/lib/google-calendar";
-import { isGeneralCalendarEvent } from "~/lib/general-calendar";
+import { type CalendarEvent, listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
+import { isGeneralCalendarEvent } from "~/calendar/lib/general-calendar";
 import { googleInstanceOriginalStart, googleSeriesBase, googleSeriesBaseUID, matchMeetingForEvent, noteForOccurrence, resolveOccurrence } from "~/lib/meeting-occurrences";
 import type { EventAttendeeDTO, EventLinkDTO, EventMeetingDTO, RsvpStatus } from "~/calendar/lib/types";
 

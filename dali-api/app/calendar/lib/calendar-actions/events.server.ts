@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { NotAGuestError, createGoogleCalendarEvent, deleteGoogleCalendarEvent, getGoogleEvent, patchGoogleCalendarEvent, respondToGoogleEventAsSelf } from "~/lib/google-calendar";
+import { NotAGuestError, createGoogleCalendarEvent, deleteGoogleCalendarEvent, getGoogleEvent, patchGoogleCalendarEvent, respondToGoogleEventAsSelf } from "~/calendar/lib/google-calendar.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { type ScheduledMeetingScope, cancelScheduledMeeting, ownsGoogleEvent, updateScheduledMeeting } from "~/lib/scheduled-meeting";
 import { followingRule, googleInstanceOriginalStart, rruleWithUntil } from "~/lib/meeting-occurrences";

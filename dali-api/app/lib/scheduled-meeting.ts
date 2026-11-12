@@ -13,7 +13,7 @@ import {
   getGoogleEvent,
   deleteGoogleCalendarEvent,
   type GoogleAttendee,
-} from "~/lib/google-calendar";
+} from "~/calendar/lib/google-calendar.server";
 import { primaryEmail, formatDateShort } from "~/lib/display";
 import {
   APPLICATION_TZ,
@@ -34,7 +34,7 @@ import { resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-rec
 import { meetingNotebookIdentity, meetingTypeForNotebook, termForDate } from "~/lib/meeting-notebook";
 import { termWindows } from "~/lib/terms";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { isGeneralCalendarEvent } from "~/lib/general-calendar";
+import { isGeneralCalendarEvent } from "~/calendar/lib/general-calendar";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { createNotebook, loadEditableNotebook, NotebookError } from "~/lib/notebooks.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";

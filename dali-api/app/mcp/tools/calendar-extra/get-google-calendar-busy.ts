@@ -2,7 +2,7 @@
 // blocks for a given time range. Self-only (always the caller's own tokens).
 // Requires the `mcp:read` scope.
 
-import { fetchBusyEvents, type EventReadReport } from "~/lib/google-calendar";
+import { fetchBusyEvents, type EventReadReport } from "~/calendar/lib/google-calendar.server";
 import { McpInvalidError } from "../../registry";
 
 export const GET_GOOGLE_CALENDAR_BUSY_DEF = {

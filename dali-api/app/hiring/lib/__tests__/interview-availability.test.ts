@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/availability", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/availability")>()),
+vi.mock("~/calendar/lib/availability.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/calendar/lib/availability.server")>()),
   computeUserFreeBusy: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { computeUserFreeBusy } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { interviewerCalendars, interviewCalendarCacheSizeForTests } from "~/hiring/lib/interview-availability.server";
 
 const mockPrisma = prisma as unknown as Record<string, any>;

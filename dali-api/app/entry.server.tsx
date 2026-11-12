@@ -8,7 +8,7 @@ import { isbot } from "isbot";
 import { startCollabServer } from "~/collab/server";
 import { startJobRunner } from "~/jobs/runner.server";
 import { securityHeaders } from "~/lib/security-headers";
-import { warmGeneralCalendarFeed } from "~/lib/general-calendar";
+import { warmGeneralCalendarFeed } from "~/calendar/lib/general-calendar";
 import { serverTimingHeader, slowestMark } from "~/lib/server-timing";
 import { watchEventLoopLag } from "~/lib/event-loop-lag.server";
 import { watchPerfStats } from "~/lib/perf-stats";

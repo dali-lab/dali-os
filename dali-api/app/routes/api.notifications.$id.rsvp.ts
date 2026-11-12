@@ -5,7 +5,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { parseJson } from "~/lib/validate";
-import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { updateGoogleAttendeeRsvp } from "~/calendar/lib/google-calendar.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { primaryEmail } from "~/lib/display";
 

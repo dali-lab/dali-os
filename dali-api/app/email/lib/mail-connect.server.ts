@@ -10,7 +10,7 @@
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getApiBaseUrl } from "~/lib/app-env";
-import { buildEncryptedTokens } from "~/lib/google-calendar";
+import { buildEncryptedTokens } from "~/calendar/lib/google-calendar.server";
 import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
 import { GMAIL_MODIFY_SCOPE } from "~/email/lib/gmail-mailbox.server";
 import { expectedConnectAddress, parseConnectTarget } from "~/email/lib/access.server";

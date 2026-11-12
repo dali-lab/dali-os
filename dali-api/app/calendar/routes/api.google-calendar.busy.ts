@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.google-calendar.busy";
 import { requireAuth, isImpersonating, forbiddenWhileImpersonating } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { fetchBusyEvents } from "~/lib/google-calendar";
+import { fetchBusyEvents } from "~/calendar/lib/google-calendar.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);

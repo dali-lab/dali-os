@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { listAllGroups } from "~/lib/groups";
 import { listMentorPairs } from "~/mentorship/lib/pair-suggestion.server";
 import { currentTermMemberWhere } from "~/lib/roles";
-import { listCalendarsForLink } from "~/lib/google-calendar";
+import { listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import type { CalendarLinkDTO, GroupOption, MentorPairOption, SubCalendarDTO, UserOption } from "~/calendar/lib/types";
 
 // Pure mapping from a UserCalendarLink row + its prefetched Google calendar

@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
-import { listCalendarsForLink } from "~/lib/google-calendar";
+import { listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import { isAdmin, isCore } from "~/lib/roles";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
 import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";

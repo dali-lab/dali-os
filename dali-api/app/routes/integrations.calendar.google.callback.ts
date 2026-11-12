@@ -13,7 +13,7 @@
 import type { Route } from "./+types/integrations.calendar.google.callback";
 import { prisma } from "~/lib/db.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
-import { buildEncryptedTokens } from "~/lib/google-calendar";
+import { buildEncryptedTokens } from "~/calendar/lib/google-calendar.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { CAL_STATE_COOKIE } from "~/routes/oauth.calendar.google.start";
 import { getApiBaseUrl } from "~/lib/app-env";

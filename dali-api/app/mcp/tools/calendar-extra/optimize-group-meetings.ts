@@ -10,7 +10,7 @@
 // simply isn't free. It is read-only: it recommends slots; create them with
 // `schedule_meeting`.
 
-import { computeUserFreeBusy, type Interval } from "~/lib/availability";
+import { computeUserFreeBusy, type Interval } from "~/calendar/lib/availability.server";
 import { slotStatus } from "~/calendar/lib/slot-availability";
 import { resolveGroupMembers } from "~/lib/groups";
 import {

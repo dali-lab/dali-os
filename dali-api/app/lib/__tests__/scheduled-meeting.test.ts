@@ -19,8 +19,8 @@ vi.mock("~/lib/drive-receivers.server", () => ({
 vi.mock("~/lib/terms", () => ({ termWindows: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
-vi.mock("~/lib/general-calendar", () => ({ isGeneralCalendarEvent: vi.fn(() => true) }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/general-calendar", () => ({ isGeneralCalendarEvent: vi.fn(() => true) }));
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
   getGoogleEvent: vi.fn(),
@@ -64,7 +64,7 @@ import {
   patchGoogleCalendarEvent,
   getGoogleEvent,
   deleteGoogleCalendarEvent,
-} from "~/lib/google-calendar";
+} from "~/calendar/lib/google-calendar.server";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { movePage } from "~/lib/page-move.server";
 import { NotebookError, createNotebook, loadEditableNotebook } from "~/lib/notebooks.server";
@@ -87,7 +87,7 @@ import {
   tracksAttendance,
   updateScheduledMeeting,
 } from "~/lib/scheduled-meeting";
-import { isGeneralCalendarEvent } from "~/lib/general-calendar";
+import { isGeneralCalendarEvent } from "~/calendar/lib/general-calendar";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: {

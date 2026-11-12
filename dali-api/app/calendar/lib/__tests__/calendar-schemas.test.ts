@@ -6,7 +6,7 @@ import {
   ToggleMeetingTimeEntrySchema,
   UpdateTimeEntrySchema,
   validateTimeEntryRange,
-} from "~/lib/calendar-schemas";
+} from "~/calendar/lib/calendar-schemas";
 
 const START = "2026-05-12T13:00:00.000Z";
 const END = "2026-05-12T14:30:00.000Z"; // 1.5h after START

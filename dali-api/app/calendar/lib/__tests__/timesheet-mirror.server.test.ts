@@ -31,7 +31,7 @@ const rolesMock = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
-vi.mock("~/lib/google-calendar", () => googleCalendarMock);
+vi.mock("~/calendar/lib/google-calendar.server", () => googleCalendarMock);
 vi.mock("~/lib/roles", () => rolesMock);
 // APPLICATION_TZ is a plain string export — keep the real value
 vi.mock("~/lib/timezone", () => ({ APPLICATION_TZ: "America/New_York" }));
@@ -42,7 +42,7 @@ import {
   syncTimeEntryToGoogle,
   removeTimeEntryFromGoogle,
   type TimesheetEntryInput,
-} from "~/lib/timesheet-mirror.server";
+} from "~/calendar/lib/timesheet-mirror.server";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

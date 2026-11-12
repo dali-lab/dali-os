@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { isExistingChoice, notebookChoiceSchema } from "~/lib/notebook-choice";
-import { AddMeetingNoteSchema, AddMeetingWhiteboardSchema } from "~/lib/calendar-schemas";
+import { AddMeetingNoteSchema, AddMeetingWhiteboardSchema } from "~/calendar/lib/calendar-schemas";
 
 describe("notebookChoiceSchema", () => {
   it("accepts an existing notebook by id", () => {

@@ -11,7 +11,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({
   createScheduledMeeting: vi.fn(),
 }));
 
-vi.mock("~/lib/availability", () => ({
+vi.mock("~/calendar/lib/availability.server", () => ({
   computeUserFreeBusy: vi.fn(),
 }));
 
@@ -31,7 +31,7 @@ vi.mock("~/partners/lib/partner-emails.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { createScheduledMeeting } from "~/lib/scheduled-meeting";
-import { computeUserFreeBusy } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { notifyPartners, partnerNotifyRecipients } from "~/partners/lib/partner-notify.server";
 import { sendMeetingRequestDeclinedEmail } from "~/partners/lib/partner-emails.server";

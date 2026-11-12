@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { randomBytes } from "node:crypto";
-import { encrypt, decrypt } from "~/lib/calendar-crypto";
+import { encrypt, decrypt } from "~/calendar/lib/calendar-crypto.server";
 
 beforeAll(() => {
   process.env.CALENDAR_TOKEN_KEY = randomBytes(32).toString("base64");

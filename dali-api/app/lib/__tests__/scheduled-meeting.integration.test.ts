@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn(async () => ({})) }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
   getGoogleEvent: vi.fn(),

@@ -4,8 +4,8 @@ import { getUserRoleInstances } from "~/lib/roles";
 import { payPeriodFor } from "~/lib/pay-period";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { parseJson } from "~/lib/validate";
-import { AddTimeEntrySchema } from "~/lib/calendar-schemas";
-import { addTimeEntry } from "~/lib/time-entries.server";
+import { AddTimeEntrySchema } from "~/calendar/lib/calendar-schemas";
+import { addTimeEntry } from "~/calendar/lib/time-entries.server";
 import { assignmentTypeLabel, entryDayKey, todayKey, utcDayKey } from "~/lib/mobile-format";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 

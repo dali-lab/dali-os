@@ -4,9 +4,9 @@
 
 import { prisma } from "~/lib/db.server";
 import { resolveRoleRef } from "~/lib/roles";
-import { validateTimeEntryRange } from "~/lib/calendar-schemas";
+import { validateTimeEntryRange } from "~/calendar/lib/calendar-schemas";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
-import { syncTimeEntryToGoogle, removeTimeEntryFromGoogle } from "~/lib/timesheet-mirror.server";
+import { syncTimeEntryToGoogle, removeTimeEntryFromGoogle } from "~/calendar/lib/timesheet-mirror.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import type { AssignmentType, TimeEntry } from "~/generated/prisma/client";
 

@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/timesheet-mirror.server", () => ({
+vi.mock("~/calendar/lib/timesheet-mirror.server", () => ({
   syncTimeEntryToGoogle: vi.fn(async () => {}),
   removeTimeEntryFromGoogle: vi.fn(async () => {}),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { removeTimeEntryFromGoogle, syncTimeEntryToGoogle } from "~/lib/timesheet-mirror.server";
-import { addTimeEntry, deleteTimeEntry, updateTimeEntry } from "~/lib/time-entries.server";
+import { removeTimeEntryFromGoogle, syncTimeEntryToGoogle } from "~/calendar/lib/timesheet-mirror.server";
+import { addTimeEntry, deleteTimeEntry, updateTimeEntry } from "~/calendar/lib/time-entries.server";
 import { makeCoreAssignment, makeMeeting, makeUser } from "~/lib/__tests__/integration-fixtures.calendar";
 
 const WEEK = 7 * 24 * 3_600_000;
