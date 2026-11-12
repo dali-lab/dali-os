@@ -176,7 +176,7 @@ export function DocumentEditor({
     | { scope: "project"; projectName: string; active: boolean }
     | { scope: "lab"; current: MeetingNoteType | null }
     | null;
-  // The Recording rail's content (specs/meeting-recording-rail.md): sticky
+  // The Recording rail's content (specs/archive/meeting-recording-rail.md): sticky
   // in the wide comments column, or inside ui/Drawer on a narrow one. Omit
   // (or pass open: false) when there's nothing to show. `live` suppresses
   // the Drawer on a narrow canvas — recording/stopping never render in a
@@ -378,7 +378,7 @@ export function DocumentEditor({
   const [commentsOpen, setCommentsOpen] = useState(true);
   const commentsWantColumn = commentsOpen && containerWide && hasComments;
 
-  // Recording rail (specs/meeting-recording-rail.md "Wiring"): the column
+  // Recording rail (specs/archive/meeting-recording-rail.md "Wiring"): the column
   // renders whenever comments want it OR the rail is open. While the rail is
   // open, a two-tab header switches the column between Comments and
   // Recording when both exist; Recording wins by default on open (it just
@@ -1240,7 +1240,7 @@ export function DocumentEditor({
       </div>
 
       {/* Right-hand rail — comments, Recording, or both behind a tab switch
-          when both exist (specs/meeting-recording-rail.md "Wiring"). Only
+          when both exist (specs/archive/meeting-recording-rail.md "Wiring"). Only
           rendered when the container is wide; a narrow canvas renders the
           Recording rail in a Drawer instead, below. */}
       {showColumn &&
@@ -1305,7 +1305,7 @@ export function DocumentEditor({
   // Narrow canvas: the Recording rail opens in a Drawer instead of the sticky
   // column — DocumentEditor is the only component that knows containerWide.
   // Live states (recording/stopping) never render here; the top-bar Popover
-  // carries those (specs/meeting-recording-rail.md "Wiring").
+  // carries those (specs/archive/meeting-recording-rail.md "Wiring").
   const recordingDrawer = rail && !containerWide && !rail.live && (
     <Drawer open={rail.open} onClose={rail.onClose} labelledBy={RECORDING_RAIL_TITLE_ID} width={360}>
       {rail.node}

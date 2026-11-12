@@ -1,4 +1,4 @@
-// Admin → Onboarding (specs/activities.md §7.8). Lists all activities and
+// Admin → Onboarding (specs/archive/activities.md §7.8). Lists all activities and
 // creates a new one (name + mechanic + term; the window defaults and is refined
 // on the detail page). Distinct from the audit log.
 

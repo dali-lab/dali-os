@@ -203,7 +203,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     resolvePhotoUrl(me?.photoUrl),
     // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
     timed(request, 'flags', () => resolveFeatureFlags(auth.user.sub, roles)),
-    // Activities (specs/activities.md): the time-boxed "mode" layer. Resolved
+    // Activities (specs/archive/activities.md): the time-boxed "mode" layer. Resolved
     // with the current path so the overlay payload only carries THIS route's
     // codes — the answers for other routes never reach the client.
     timed(request, 'activities', () =>

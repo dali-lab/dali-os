@@ -673,7 +673,7 @@ function DocumentPage() {
   // DocumentEditor is the only component that measures the ≥ 1150px check;
   // the top-bar Record button needs it too, to answer a live recording with
   // a Popover instead of toggling the rail on a narrow canvas
-  // (specs/meeting-recording-rail.md "Wiring").
+  // (specs/archive/meeting-recording-rail.md "Wiring").
   const [containerWide, setContainerWide] = useState(false);
   const toast = useToast();
 
@@ -785,7 +785,7 @@ function DocumentPage() {
 
         // Lets DocSideMenu offer Keep change/Revert change on a marked block
         // without the generic side menu knowing anything about Enhance
-        // (specs/meeting-recording-rail.md Step 2). Null when the recording
+        // (specs/archive/meeting-recording-rail.md Step 2). Null when the recording
         // hook isn't mounted — the side menu then renders nothing extra.
         const enhanceReview = rec
           ? { keepBlock: rec.keepBlock, revertBlock: rec.revertBlock, priorBlocks: rec.enhanceNotes?.priorBlocks }

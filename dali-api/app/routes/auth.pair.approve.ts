@@ -2,7 +2,7 @@
 // approving in the system browser). Binds the pending DevicePairing to the user
 // (approve) or cancels it. The desktop token is NOT minted here — that's
 // deferred to the consuming poll so the secret is born on the polling channel.
-// Posted from the /link approval page. See TAURI_DESKTOP_PLAN.md.
+// Posted from the /link approval page. See specs/archive/TAURI_DESKTOP_PLAN.md.
 
 import { redirect } from "react-router";
 import type { Route } from "./+types/auth.pair.approve";

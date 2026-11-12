@@ -11,7 +11,7 @@
 // over-cap sends to the next UTC day, and dead-lettering exhausted messages for
 // an operator to inspect in Admin → Communications.
 //
-// See specs/communication-idempotency.md.
+// See specs/archive/communication-idempotency.md.
 
 import { prisma, Prisma } from "~/lib/db.server";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";

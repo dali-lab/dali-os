@@ -2,7 +2,7 @@
 // device pairing. Creates a Pending DevicePairing row and returns the raw
 // deviceCode (the app polls with it), the human userCode (the user eyeball-
 // compares it on /link), and the verification URL to open in the system
-// browser. See TAURI_DESKTOP_PLAN.md.
+// browser. See specs/archive/TAURI_DESKTOP_PLAN.md.
 
 import type { Route } from "./+types/auth.pair.start";
 import { prisma } from "~/lib/db.server";

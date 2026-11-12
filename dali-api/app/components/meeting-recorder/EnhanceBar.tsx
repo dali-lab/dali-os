@@ -257,7 +257,7 @@ function readyBar(rec: UseMeetingRecording, state: "ready" | "inserted", celebra
 }
 
 /**
- * The lifecycle bar under the notebook tabs (specs/enhance-progress-and-
+ * The lifecycle bar under the notebook tabs (specs/archive/enhance-progress-and-
  * review-motion.md section 3): processing, ready, enhancing, and the pending
  * review's Keep all / Revert all, and the tasks step. Renders nothing for
  * every other state.

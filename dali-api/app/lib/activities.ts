@@ -1,4 +1,4 @@
-// Client-safe core of the Activities layer (specs/activities.md). Holds the
+// Client-safe core of the Activities layer (specs/archive/activities.md). Holds the
 // mechanic list, per-kind config types, and the pure predicates shared by the
 // server resolver and the client. Server-side resolution/actions live in
 // activities.server.ts; the client provider/hook live in
