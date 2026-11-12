@@ -2908,6 +2908,8 @@ model ScheduledMeeting {
 
   @@index([iCalUID])
   @@index([notebookId])
+  @@index([organizerId])
+  @@index([projectId])
 }
 
 // A PageShare a meeting justifies on its notebook, so uninviting removes
@@ -3065,6 +3067,7 @@ model TimeEntry {
   @@unique([sourceEventId, userId])
   @@index([userId, date])
   @@index([userId, assignmentType])
+  @@index([projectId])
 }
 
 enum TimeEntrySource {
@@ -3168,6 +3171,8 @@ model Notification {
   @@index([recipientUserId, createdAt])
   @@index([interviewAssignmentId])
   @@index([announcementId])
+  @@index([scheduledMeetingId])
+  @@index([formId])
 }
 
 enum NotificationKind {
