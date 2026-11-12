@@ -23,7 +23,9 @@ import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
 import { buttonClasses } from "~/components/ui/Button";
 import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db.server";
-import { githubTeamSlug } from "~/lib/github-slug";
+import { BadRequestError, NotFoundError } from "~/lib/http-error";
+import { promotePartnerApplication } from "../lib/partner-promote.server";
+import { debriefPartnerMeeting, logPartnerMeeting } from "../lib/partner-meetings.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -77,8 +79,6 @@ import { MeetingsTab } from "../components/application/MeetingsTab";
 import { StageActions } from "../components/application/StageActions";
 import { SowTab } from "../components/application/SowTab";
 import { ScheduleInterviewModal } from "../components/ScheduleInterviewModal";
-import { movePlanningNoteToProject } from "../lib/planning-notes.server";
-import { reopenProjectFromApplication } from "../lib/partner-returns.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const a = (data as { application?: { title: string } } | undefined)
@@ -441,153 +441,22 @@ export async function action({ request, params }: Route.ActionArgs) {
       }),
     ]);
   } else if (intent === "promote") {
-    // Spin up a Project from this application and link the two so they share
-    // partner + scope data. Idempotent on resultingProjectId so a double
-    // submit can't create two projects.
-    const app = await prisma.partnerApplication.findUnique({
-      where: { id: params.id },
-      select: {
-        id: true,
-        title: true,
-        iconEmoji: true,
-        piUserId: true,
-        summary: true,
-        resultingProjectId: true,
-        continuesProjectId: true,
-        partnerOrgId: true,
-        applicantContactId: true,
-        applicantContact: { select: { name: true } },
-        targetTerms: {
-          orderBy: { term: { sortKey: "asc" } },
-          select: { termId: true },
-        },
-        domains: {
-          select: { domainId: true, expectedMembers: true },
-        },
-      },
-    });
-    if (!app) return { error: "That application no longer exists." };
-    const promoteOrgName =
-      typeof form.get("orgName") === "string"
-        ? (form.get("orgName") as string).trim()
-        : "";
-    if (app.resultingProjectId) {
-      return redirect(`/projects/${app.resultingProjectId}`);
-    }
-    if (app.continuesProjectId) {
-      if (app.targetTerms.length === 0) {
-        return { error: "Pick at least one target term before reopening the project." };
-      }
-      const continuesProjectId = app.continuesProjectId;
-      const reopened = await prisma.$transaction((tx) =>
-        reopenProjectFromApplication(tx, {
-          app: {
-            id: app.id,
-            continuesProjectId,
-            partnerOrgId: app.partnerOrgId,
-            piUserId: app.piUserId,
-            targetTermIds: app.targetTerms.map((t) => t.termId),
-            domains: app.domains,
-          },
-          actorUserId: auth.user.sub,
-          request,
-        }),
-      );
-      return redirect(`/projects/${reopened.id}`);
-    }
-
-    // Earliest target term (targetTerms is sorted by sortKey asc) seeds the
-    // project's term set and scopes the per-domain role requests. Without a
-    // target term we still create the project, just with no terms and no role
-    // requests (ProjectRoleRequest requires a termId).
-    const firstTermId = app.targetTerms[0]?.termId ?? null;
-    // PartnerApplicationDomain carries headcount but no level; new role
-    // requests default to P1 (Learner) — the staffing board can refine.
-    const roleRequestRows = firstTermId
-      ? app.domains
-          .filter((d) => d.expectedMembers > 0)
-          .map((d) => ({
-            termId: firstTermId,
-            domainId: d.domainId,
-            level: "P1" as const,
-            slots: d.expectedMembers,
-          }))
-      : [];
-    // The project's declared domains are INHERITED from the role requests: the
-    // distinct domains the project needs people in. No role requests → no
-    // domains inherited. After promotion these stay editable the usual way
-    // (the `domains` intent on the project page), so this is just the initial
-    // seed, not a binding.
-    const inheritedDomainIds = Array.from(
-      new Set(roleRequestRows.map((r) => r.domainId)),
-    );
-
-    const project = await prisma.$transaction(async (tx) => {
-      // Account-first: the PartnerOrg is created HERE (org-at-promotion).
-      // Legacy applications already carry a partnerOrgId; account-first ones
-      // spin up the org from the applicant contact, who becomes its first
-      // member. Core can name the org on the promote form; otherwise it's an
-      // individual partner named after the applicant.
-      let orgId = app.partnerOrgId;
-      if (!orgId) {
-        const org = await tx.partnerOrg.create({
-          data: {
-            name: promoteOrgName || app.applicantContact?.name || app.title,
-            isIndividual: !promoteOrgName,
-          },
-          select: { id: true },
-        });
-        const membership = await tx.partnerMembership.create({
-          data: { contactId: app.applicantContactId, orgId: org.id },
-          select: { id: true },
-        });
-        await tx.partnerOrg.update({
-          where: { id: org.id },
-          data: { primaryContactId: membership.id },
-        });
-        orgId = org.id;
-      }
-
-      const created = await tx.project.create({
-        data: {
-          name: app.title,
-          iconEmoji: app.iconEmoji,
-          // Auto-derive the GitHub team slug from the title (editable later).
-          githubTeamSlug: githubTeamSlug(app.title) || null,
-          description: app.summary,
-          ...(firstTermId
-            ? { projectTerms: { create: { termId: firstTermId, piUserId: app.piUserId } } }
-            : {}),
-          partners: { create: { partnerOrgId: orgId } },
-          ...(roleRequestRows.length > 0
-            ? { roleRequests: { create: roleRequestRows } }
-            : {}),
-          ...(inheritedDomainIds.length > 0
-            ? {
-                domains: {
-                  create: inheritedDomainIds.map((domainId) => ({ domainId })),
-                },
-              }
-            : {}),
-        },
-        select: { id: true },
-      });
-      // "Promoted" is derived (stage Accepted + resultingProjectId), not a
-      // stage of its own — the move here is a no-op if already Accepted, but
-      // still worth routing through setApplicationStage for the resultingProjectId
-      // write and so a reject-then-promote edge case can't skip the activity log.
-      await setApplicationStage(tx, {
-        applicationId: app.id,
-        to: "Accepted",
+    const orgName = form.get("orgName");
+    try {
+      const result = await promotePartnerApplication({
+        applicationId: params.id,
+        orgName: typeof orgName === "string" ? orgName : undefined,
         actorUserId: auth.user.sub,
         request,
-        data: { resultingProjectId: created.id, partnerOrgId: orgId },
-        meta: { projectId: created.id },
       });
-      await movePlanningNoteToProject(tx, { applicationId: app.id, projectId: created.id });
-      return created;
-    });
-    return redirect(`/projects/${project.id}`);
+      return redirect(`/projects/${result.projectId}`);
+    } catch (err) {
+      if (err instanceof NotFoundError) return { error: "That application no longer exists." };
+      if (err instanceof BadRequestError) {
+        return { error: "Pick at least one target term before reopening the project." };
+      }
+      throw err;
+    }
 
   // ─── CRM intents ────────────────────────────────────────────────────────
 
@@ -815,28 +684,22 @@ export async function action({ request, params }: Route.ActionArgs) {
         .filter(Boolean);
       const notes = (form.get("meetingNotes") as string | null)?.trim() || undefined;
 
-      // Fetch the applicant contact id
       const app = await prisma.partnerApplication.findUnique({
         where: { id: params.id },
-        select: { applicantContactId: true, applicantContact: { select: { name: true, email: true } } },
+        select: { applicantContact: { select: { name: true, email: true } } },
       });
-
-      const meeting = await prisma.partnerMeeting.create({
-        data: {
+      try {
+        await logPartnerMeeting({
           applicationId: params.id,
           scheduledAt,
           attendeeUserIds,
           notes: notes ?? null,
-          contactId: app?.applicantContactId ?? null,
-        },
-        select: { id: true },
-      });
-      await logPartnerActivity(prisma, {
-        applicationId: params.id,
-        actorUserId: auth.user.sub,
-        type: "MeetingScheduled",
-        metadata: { meetingId: meeting.id, scheduledAt: scheduledAt.toISOString() },
-      });
+          actorUserId: auth.user.sub,
+        });
+      } catch (err) {
+        if (err instanceof NotFoundError) return { error: "That application no longer exists." };
+        throw err;
+      }
 
       const notifyPartner = form.get("notifyPartner") === "on";
       if (notifyPartner && app?.applicantContact?.email) {
@@ -867,19 +730,18 @@ export async function action({ request, params }: Route.ActionArgs) {
       const outcome = validOutcomes.includes(outcomeRaw as PartnerMeetingOutcome)
         ? (outcomeRaw as PartnerMeetingOutcome)
         : null;
-      await prisma.partnerMeeting.update({
-        where: { id: meetingId },
-        data: {
+      try {
+        await debriefPartnerMeeting({
+          applicationId: params.id,
+          meetingId,
           debrief,
-          ...(outcome ? { outcome } : {}),
-        },
-      });
-      await logPartnerActivity(prisma, {
-        applicationId: params.id,
-        actorUserId: auth.user.sub,
-        type: "MeetingDebriefed",
-        metadata: { meetingId, ...(outcome ? { outcome } : {}) },
-      });
+          outcome,
+          actorUserId: auth.user.sub,
+        });
+      } catch (err) {
+        if (err instanceof NotFoundError) return { error: "That meeting no longer exists." };
+        throw err;
+      }
 
     } else if (intent === "note") {
       const body = (form.get("body") as string | null)?.trim() ?? "";

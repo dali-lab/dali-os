@@ -9,7 +9,7 @@ const canReadRecording = vi.fn();
 const canRecordInto = vi.fn();
 const resolveSpeakerNames = vi.fn();
 const resolveMeetingOccurrence = vi.fn();
-const runEnhanceMeetingNotes = vi.fn();
+const enhanceMeetingNotes = vi.fn();
 const attachMeetingNote = vi.fn();
 
 vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
@@ -29,12 +29,12 @@ vi.mock("~/lib/meeting-recording.server", async (importOriginal) => ({
   canRecordInto: (...a: unknown[]) => canRecordInto(...a),
   resolveSpeakerNames: (...a: unknown[]) => resolveSpeakerNames(...a),
 }));
-vi.mock("~/mcp/tools/calendar-extra/enhance-meeting-notes", () => ({
-  runEnhanceMeetingNotes: (...a: unknown[]) => runEnhanceMeetingNotes(...a),
+vi.mock("~/calendar/lib/enhance-meeting-notes.server", () => ({
+  enhanceMeetingNotes: (...a: unknown[]) => enhanceMeetingNotes(...a),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { McpError } from "~/mcp/errors";
+import { HttpError } from "~/lib/http-error";
 import { PageNameConflictError } from "~/lib/page-names.server";
 import { loader as listLoader, action as quickNote, parseNotesCursor, MAX_NOTES } from "../api.mobile.notes";
 import { loader as detailLoader, action as detailAction } from "../api.mobile.notes.$id";
@@ -424,30 +424,47 @@ describe("POST /api/mobile/notes/:id", () => {
 
   beforeEach(() => {
     mockPrisma.user.findUnique.mockResolvedValue(user);
-    runEnhanceMeetingNotes.mockResolvedValue({});
+    enhanceMeetingNotes.mockResolvedValue({});
   });
 
   it("previews, then applies, Enhance as the member", async () => {
     const res = await enhance();
     expect(await res.json()).toEqual({ ok: true });
-    expect(runEnhanceMeetingNotes).toHaveBeenNthCalledWith(
+    expect(enhanceMeetingNotes).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ user: { id: "u1", ...user } }),
       { recordingId: "r1" },
     );
-    expect(runEnhanceMeetingNotes).toHaveBeenNthCalledWith(2, expect.anything(), { recordingId: "r1", apply: true });
+    expect(enhanceMeetingNotes).toHaveBeenNthCalledWith(2, expect.anything(), { recordingId: "r1", apply: true });
   });
 
   it("does not apply when the preview fails, and passes its status on", async () => {
-    runEnhanceMeetingNotes.mockRejectedValueOnce(new McpError("Too many requests. Try again shortly.", 429));
+    enhanceMeetingNotes.mockRejectedValueOnce(new HttpError(429, "Too many requests. Try again shortly."));
     const res = await enhance();
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: "Too many requests. Try again shortly." });
-    expect(runEnhanceMeetingNotes).toHaveBeenCalledTimes(1);
+    expect(enhanceMeetingNotes).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [403, "Forbidden"],
+    [404, "Recording not found"],
+    [409, "Keep or revert the current changes first"],
+    [503, "AI isn't configured."],
+  ])("passes a %i from Enhance through as { error } with the same status", async (status, message) => {
+    enhanceMeetingNotes.mockRejectedValueOnce(new HttpError(status, message));
+    const res = await enhance();
+    expect(res.status).toBe(status);
+    expect(await res.json()).toEqual({ error: message });
+  });
+
+  it("rethrows errors that are not HTTP errors", async () => {
+    enhanceMeetingNotes.mockRejectedValueOnce(new Error("boom"));
+    await expect(enhance()).rejects.toThrow("boom");
   });
 
   it("rejects an unknown action", async () => {
     expect((await enhance({ action: "delete" })).status).toBe(400);
-    expect(runEnhanceMeetingNotes).not.toHaveBeenCalled();
+    expect(enhanceMeetingNotes).not.toHaveBeenCalled();
   });
 });
