@@ -41,6 +41,7 @@ import {
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
 import { resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
 import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
+import { BoardSettings } from "~/projects/components/BoardSettings";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Question } from "~/types";
 import { conditionalKeys } from "~/forms/lib/form-logic";
@@ -471,7 +472,7 @@ function Loaded({ data }: { data: LoadedData }) {
     [data.domainOptions],
   );
 
-  const canOpenSettings = !data.isAll;
+  const canOpenSettings = !data.isAll && !responseTable;
 
   return (
     <div className="flex flex-col gap-4">
@@ -493,6 +494,15 @@ function Loaded({ data }: { data: LoadedData }) {
           selectableForms={data.selectableForms}
           formQuestions={data.formQuestions}
           cycleTerms={[]}
+          canManage={data.canManage}
+        />
+      )}
+
+      {responseTable && !data.isAll && (
+        <BoardSettings
+          slotLabel="Level Up"
+          binding={data.binding}
+          forms={data.selectableForms}
           canManage={data.canManage}
         />
       )}
@@ -533,7 +543,11 @@ function Loaded({ data }: { data: LoadedData }) {
           "rounded-os-card bg-os-card",
         )}
       >
-        {data.noFormConnected ? (
+        {data.noFormConnected && responseTable ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            Connect a form from the ⋯ menu above so members can submit.
+          </div>
+        ) : data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No Level Up form is connected for this term. Open{" "}
             <em>Advanced settings</em> to connect one.
@@ -544,8 +558,10 @@ function Loaded({ data }: { data: LoadedData }) {
             addable={data.addableColumns}
             roleChoices={data.roleChoices}
             rows={filtered}
-            detailHref={(r) => `/core/level-up/${r.userId}?term=${encodeURIComponent(data.selectedTerm)}`}
             editable={data.canManage && !data.isAll}
+            drawerFooter={
+              data.canManage ? (r) => <LevelUpAction row={r} onLevelUp={setConfirmRow} /> : undefined
+            }
             trailing={
               data.canManage
                 ? [

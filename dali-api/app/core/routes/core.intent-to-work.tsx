@@ -26,6 +26,7 @@ import { ColumnFilters, useColumnFilters } from "~/projects/components/ColumnFil
 import { SlotAdvancedSettingsModal } from "~/projects/components/SlotAdvancedSettingsModal";
 import { SubmissionDatabase } from "~/projects/components/SubmissionDatabase";
 import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
+import { BoardSettings } from "~/projects/components/BoardSettings";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
@@ -320,7 +321,7 @@ function Loaded({
     [data.domainOptions],
   );
 
-  const canOpenSettings = !data.isAll;
+  const canOpenSettings = !data.isAll && !responseTable;
 
   return (
     <div className="flex flex-col gap-4">
@@ -342,6 +343,15 @@ function Loaded({
           selectableForms={data.selectableForms}
           formQuestions={data.formQuestions}
           cycleTerms={data.allTerms}
+          canManage={data.canManage}
+        />
+      )}
+
+      {responseTable && !data.isAll && (
+        <BoardSettings
+          slotLabel="Intent to Work"
+          binding={data.binding}
+          forms={data.selectableForms}
           canManage={data.canManage}
         />
       )}
@@ -384,7 +394,11 @@ function Loaded({
           "rounded-os-card bg-os-card",
         )}
       >
-        {data.noFormConnected ? (
+        {data.noFormConnected && responseTable ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            Connect a form from the ⋯ menu above so members can submit.
+          </div>
+        ) : data.noFormConnected ? (
           <div className="px-4 py-8 text-center text-sm text-muted-foreground">
             No Intent to Work form is connected for this term. Open{" "}
             <em>Advanced settings</em> to connect one so members can submit —
@@ -396,7 +410,6 @@ function Loaded({
             addable={data.addableColumns}
             roleChoices={data.roleChoices}
             rows={filtered}
-            detailHref={(r) => `/core/intent-to-work/${r.userId}?term=${encodeURIComponent(data.selectedTerm)}`}
             editable={data.canManage && !data.isAll}
             emptyMessage={
               data.submissions.length === 0

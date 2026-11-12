@@ -14,6 +14,11 @@ describe("parseColumnOp", () => {
       termId: "t1",
     });
     expect(parseColumnOp({ op: "role", id: "q:a", role: "project" })).toMatchObject({ termId: null });
+    expect(parseColumnOp({ op: "statusMap", id: "q:a", statusMap: { Yes: "Returning" } })).toEqual({
+      op: "statusMap",
+      id: "q:a",
+      statusMap: { Yes: "Returning" },
+    });
   });
 
   it("rejects anything malformed", () => {
@@ -23,6 +28,8 @@ describe("parseColumnOp", () => {
     expect(parseColumnOp({ op: "move", id: "q1", dir: 2 })).toBeNull();
     expect(parseColumnOp({ op: "rename", id: "q1", label: "x".repeat(121) })).toBeNull();
     expect(parseColumnOp({ op: "role", id: "q1", role: 3 })).toBeNull();
+    expect(parseColumnOp({ op: "statusMap", id: "q1", statusMap: ["Returning"] })).toBeNull();
+    expect(parseColumnOp({ op: "statusMap", id: "q1", statusMap: { Yes: 1 } })).toBeNull();
   });
 });
 

@@ -187,6 +187,33 @@ describe("applyBoardColumnOp role", () => {
   });
 });
 
+describe("applyBoardColumnOp statusMap", () => {
+  const status: ColumnMapping = {
+    version: 1,
+    entries: [
+      { role: "intent-status", label: "Status — 27W", source: "question", questionKey: "back", termId: "t27w", order: 0, statusMap: { Maybe: "Off" } },
+      { role: "display", label: "Notes", source: "question", questionKey: "notes", order: 1 },
+    ],
+  };
+
+  it("replaces the answers, keeping only real statuses", () => {
+    const r = intent({ op: "statusMap", id: "q:back@t27w", statusMap: { Returning: "Returning", Maybe: "Someday" } }, status);
+    expect(entriesOf(r)[0].statusMap).toEqual({ Returning: "Returning" });
+  });
+
+  it("clears the map when nothing is picked", () => {
+    const r = intent({ op: "statusMap", id: "q:back@t27w", statusMap: {} }, status);
+    expect(entriesOf(r)[0]).not.toHaveProperty("statusMap");
+  });
+
+  it("refuses a column that isn't a status", () => {
+    expect(intent({ op: "statusMap", id: "q:notes", statusMap: {} }, status)).toEqual({
+      ok: false,
+      reason: "Only a status column has status answers.",
+    });
+  });
+});
+
 describe("applyBoardColumnOp on a mapping that's already stale", () => {
   it("still allows column edits while the stale entry stays the same problem", () => {
     const stale: ColumnMapping = {
@@ -255,5 +282,27 @@ describe("boardTableModel", () => {
       { key: "builtin:currentRole", label: "Current role" },
     ]);
     expect(m.roleChoices.map((c) => c.value)).toEqual(["display", "project"]);
+  });
+
+  it("gives status columns their options and answers", () => {
+    const mapping: ColumnMapping = {
+      version: 1,
+      entries: [
+        { role: "intent-status", label: "Status — 27W", source: "question", questionKey: "back", termId: "t27w", order: 0, statusMap: { Maybe: "Off" } },
+      ],
+    };
+    const m = boardTableModel(
+      "intent-to-work",
+      mapping,
+      [{ key: "q:back@t27w", label: "Status — 27W", source: "question", role: "intent-status", termId: "t27w" }],
+      [{ key: "back", label: "Coming back?", options: ["Returning", "Maybe"] }],
+      [{ id: "t27w", code: "27W" }],
+    );
+    expect(m.columns[0]).toEqual({
+      key: "q:back@t27w",
+      label: "Status — 27W",
+      role: "intent-status@t27w",
+      status: { options: ["Returning", "Maybe"], statusMap: { Maybe: "Off" } },
+    });
   });
 });

@@ -6,6 +6,9 @@ import {
   type FilterCells,
 } from "./submission-filters";
 
+// The response a board's detail drawer has open, by member id.
+export const OPEN_PARAM = "open";
+
 // The rows a slot board shows for its URL's search, domain and column filters.
 // The board applies the same three client side as you type; the CSV export
 // applies them here so the file matches the table.

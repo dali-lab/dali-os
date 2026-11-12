@@ -580,6 +580,12 @@ export function applyBoardColumnOp(
       case "move":
         next = renumber(moveAmongVisible(entries, i, op.dir, (x) => !x.hidden));
         break;
+      case "statusMap": {
+        if (e.role !== "intent-status") return fail("Only a status column has status answers.");
+        const { statusMap: _old, ...rest } = e;
+        next = replace({ ...rest, ...parseStatusMap(op.statusMap) });
+        break;
+      }
       case "role": {
         if (e.source !== "question") return fail("Only a question column can feed staffing.");
         const question = q(e.questionKey);
@@ -617,7 +623,13 @@ export function applyBoardColumnOp(
   return { ok: true, mapping: next };
 }
 
-export type BoardColumn = { key: string; label: string; role?: string };
+export type BoardColumn = {
+  key: string;
+  label: string;
+  role?: string;
+  // Status columns only: the question's options and what each one means.
+  status?: { options: string[]; statusMap: Record<string, IntentStatusValue> };
+};
 
 // What a board's table needs for its columns: the visible ones (question
 // columns carry their "Feeds staffing as" choice), what the + button can
@@ -626,18 +638,25 @@ export function boardTableModel(
   slot: Slot,
   mapping: ColumnMapping | null,
   visible: readonly { key: string; label: string; source: "question" | "builtin"; role: string; termId?: string }[],
-  questions: readonly { key: string; label: string }[],
+  questions: readonly { key: string; label: string; options?: string[] }[],
   terms: readonly { id: string; code: string }[],
 ): { columns: BoardColumn[]; addable: { key: string; label: string }[]; roleChoices: RoleChoice[] } {
   const entries = [...(mapping?.entries ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const mappedQuestions = new Set(entries.flatMap((e) => (e.source === "question" ? [e.questionKey] : [])));
   const placedBuiltins = new Set(entries.flatMap((e) => (e.source === "builtin" ? [e.builtin] : [])));
   return {
-    columns: visible.map((c) => ({
-      key: c.key,
-      label: c.label,
-      ...(c.source === "question" ? { role: roleChoiceValue(c, slot) } : {}),
-    })),
+    columns: visible.map((c) => {
+      const entry = entries.find((e) => columnKey(e) === c.key);
+      const options = questions.find((q) => entry?.source === "question" && q.key === entry.questionKey)?.options;
+      return {
+        key: c.key,
+        label: c.label,
+        ...(c.source === "question" ? { role: roleChoiceValue(c, slot) } : {}),
+        ...(c.role === "intent-status"
+          ? { status: { options: options ?? [], statusMap: entry?.statusMap ?? {} } }
+          : {}),
+      };
+    }),
     addable: [
       ...entries.filter((e) => e.hidden).map((e) => ({ key: columnKey(e), label: e.label })),
       ...questions.filter((q) => !mappedQuestions.has(q.key)).map((q) => ({ key: `q:${q.key}`, label: q.label })),
