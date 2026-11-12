@@ -17,19 +17,14 @@ export function PageIconPicker({
   iconEmoji,
   canEdit,
   onChange,
-  // Legacy compat: editing was the old prop name — if canEdit is absent but
-  // editing is present, treat them the same. Callers should migrate to canEdit.
-  editing,
   size = "lg",
 }: {
   iconEmoji: string | null;
   canEdit?: boolean;
   onChange: (emoji: string | null) => void;
-  /** @deprecated use canEdit */
-  editing?: boolean;
   size?: "lg" | "md";
 }) {
-  const editable = canEdit ?? editing ?? false;
+  const editable = canEdit ?? false;
   const emojiSize = size === "md" ? "text-2xl" : "text-4xl";
 
   // Read-only: show the icon if set, otherwise render nothing so the title
