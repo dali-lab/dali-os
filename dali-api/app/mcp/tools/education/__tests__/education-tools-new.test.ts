@@ -533,18 +533,20 @@ describe("read_education_page", () => {
       id: "page1",
       title: "Week 1",
       studentEditable: false,
-      content: { type: "doc", content: [] },
+      content: [{ id: "b1", type: "paragraph", props: {}, content: [], children: [] }],
     });
     const result = await runReadEducationPage(ctx(), { offeringId: "o1", pageId: "page1" });
     expect(result.id).toBe("page1");
     expect(result.title).toBe("Week 1");
-    expect(result.content).toBe('{"type":"doc","content":[]}');
+    const parsed = JSON.parse(result.content);
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed[0]).toMatchObject({ id: "b1", type: "paragraph" });
     expect(result.page).toMatchObject({ hasMore: false, nextCursor: null });
   });
 
   it("chunks long content and the chunks join back to the document", async () => {
     vi.mocked(isOfferingManager).mockResolvedValue(true);
-    const doc = { type: "doc", content: [{ type: "paragraph", text: "x".repeat(50) }] };
+    const doc = [{ id: "b1", type: "paragraph", props: {}, content: [], children: [], text: "x".repeat(50) }];
     vi.mocked(readMaterialPage).mockResolvedValue({
       id: "page1",
       title: "Week 1",
@@ -577,7 +579,7 @@ describe("read_education_page", () => {
       id: "page1",
       title: "Week 1",
       studentEditable: false,
-      content: { type: "doc", content: [] },
+      content: [],
     });
     await expect(
       runReadEducationPage(ctx(), { offeringId: "o1", pageId: "page1", cursor: "nope" }),

@@ -2410,8 +2410,7 @@ function ColumnItemRow({
         <ProcessLinkPill label={item.linkedProcess.label} href={item.linkedProcess.href} />
       )}
       {/* Partner-visible badge: teal handshake shown when this doc/file is
-          shared with the project's partner org. Mirrors the badge used in
-          the legacy DocumentsBlock. */}
+          shared with the project's partner org. */}
       {(item.type === "doc" || item.type === "file") &&
         (item as { partnerVisible?: boolean | null }).partnerVisible && (
           <Tooltip content="Shared with partner">

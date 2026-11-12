@@ -5,7 +5,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { collabDocToProseMirror, collabDocToHtml } from "~/collab/export";
+import { collabDocToHtml } from "~/collab/export";
+import { readDocAsBlocks } from "~/collab/read";
 import { listDiscussion } from "./announcements.server";
 import { listAssignments } from "./assignments.server";
 import { listThreads, offeringInstructorIds } from "./discussions.server";
@@ -98,7 +99,11 @@ export async function listOfferingFiles(offeringId: string) {
  * when the page doesn't exist, is archived, or belongs to another workspace
  * (the offering scope IS the permission check — callers gate enrollment).
  */
-export async function readMaterialPage(offeringId: string, pageId: string) {
+export async function readMaterialPage(
+  offeringId: string,
+  pageId: string,
+  opts: { skipShared?: boolean } = {},
+) {
   const page = await prisma.page.findUnique({
     where: { id: pageId },
     select: {
@@ -118,10 +123,8 @@ export async function readMaterialPage(offeringId: string, pageId: string) {
   ) {
     return null;
   }
-  // Compat ProseMirror for the static viewer (and MCP read_education_page). The
-  // page viewer ignores this for a shared doc (studentEditable) and mounts the
-  // live collaborative editor client-side instead.
-  const content = await collabDocToProseMirror(`doc:${page.id}:body`);
+  const content =
+    opts.skipShared && page.studentEditable ? null : await readDocAsBlocks(`doc:${page.id}:body`);
   return {
     id: page.id,
     title: page.title,

@@ -204,7 +204,7 @@ export async function loadMaterialPage({ request, params }: PageArgs, surface: O
     params.offeringId!,
     surface.kind,
   );
-  const page = await readMaterialPage(params.offeringId!, params.pageId!);
+  const page = await readMaterialPage(params.offeringId!, params.pageId!, { skipShared: true });
   if (!page) throw new Response("Not found", { status: 404 });
   const [offering, me] = await Promise.all([
     prisma.educationOffering.findUnique({
@@ -226,9 +226,7 @@ export async function loadMaterialPage({ request, params }: PageArgs, surface: O
       id: page.id,
       title: page.title,
       studentEditable: page.studentEditable,
-      // readMaterialPage returns compat ProseMirror JSON for read-only pages; the
-      // read-only DocEditor wants block JSON. Shared docs render live (no content).
-      content: page.studentEditable ? null : ensureBlocks(page.content),
+      content: page.content,
     },
     collabToken: page.studentEditable ? await getCollabToken(request) : null,
     userName: me ? `${me.firstName} ${me.lastName}`.trim() : "Student",
