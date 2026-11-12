@@ -8,7 +8,6 @@ import { summarizeDecisionPills, synthesizePrePipelinePill, currentDecisionId, f
 import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { STATUS_LABELS, STATUS_TONES } from "~/hiring/lib/labels";
 import { Select, Tooltip } from "~/components/ui/floating";
-import { delibRounds } from "~/hiring/lib/cycle-timeline";
 import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
@@ -18,13 +17,13 @@ import { AlertIcon, SetupCard, pillTrigger } from "~/hiring/components/cycle-set
 import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import type { EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { domainReviewStatus } from "~/hiring/lib/domain-windows";
-import { OS_TABLE_HEAD, OS_TABLE_ROW, personName } from "~/hiring/components/domain-lead/table-shared";
+import { OS_TABLE_HEAD, OS_TABLE_ROW, personName, type DomainLeadEntry, type DomainApp, type DomainInterview } from "~/hiring/components/domain-lead/table-shared";
 import { DraftSection, RubricPicker } from "~/hiring/components/domain-lead/DraftSection";
 import { DelibsSection } from "~/hiring/components/domain-lead/DelibsSection";
 import { DecisionPillBadge, PrePipelinePillBadge } from "~/hiring/components/domain-lead/DecisionPills";
 import { DomainApplicationsTable } from "~/hiring/components/domain-lead/DomainApplicationsTable";
 
-export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; allForms: { id: string; name: string }[]; emailEngagement: Record<string, EngagementSummary> }) {
+export function DomainPanel({ entry, allForms, emailEngagement }: { entry: DomainLeadEntry; allForms: { id: string; name: string }[]; emailEngagement: Record<string, EngagementSummary> }) {
   const { assignment, cycle, availableCycles, apps, linkedChallengeForms, isChallengeReady, interviews, reviewers: cycleReviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: roundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired } = entry;
   const os = useOsChrome();
   const navigate = useNavigate();
@@ -101,30 +100,31 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
     );
   }
 
+  const cycleId = cycle.id;
   const currentStatus = domainReviewStatus(
     cycle.statusUpdates[0]?.newStatus ?? null,
     cycle.domains[0] ?? { closeDate: null },
     cycle,
   );
   const hasLinkedChallenge = (linkedChallengeForms ?? []).length > 0;
-  const fullyReviewed = apps.filter((a: any) => {
+  const fullyReviewed = apps.filter((a) => {
     const da = a.domainApplications?.[0];
-    return da?.reviews?.length > 0 && da.reviews.every((r: any) => r.submittedAt);
+    return da?.reviews?.length > 0 && da.reviews.every((r) => r.submittedAt);
   }).length;
-  const needsReviewers = apps.filter((a: any) => {
+  const needsReviewers = apps.filter((a) => {
     const da = a.domainApplications?.[0];
     return !da?.reviews || da.reviews.length === 0;
   }).length;
-  const withDecisions = apps.filter((a: any) => {
+  const withDecisions = apps.filter((a) => {
     const da = a.domainApplications?.[0];
-    return da?.decisions?.some((d: any) => d.stage === "Final" || d.stage === "Released");
+    return da?.decisions?.some((d) => d.stage === "Final" || d.stage === "Released");
   }).length;
-  const scheduledInterviews = interviews.filter((i: any) => i.status === "Scheduled").length;
-  const completedInterviews = interviews.filter((i: any) => i.status === "Completed").length;
+  const scheduledInterviews = interviews.filter((i) => i.status === "Scheduled").length;
+  const completedInterviews = interviews.filter((i) => i.status === "Completed").length;
   const domains = [{ id: assignment.domainId, name: assignment.domain.name }];
 
   async function addToRoster(kind: "reviewers" | "interviewers", userId: string) {
-    const res = await fetch(`/api/hiring/cycles/${cycle.id}/${kind}`, {
+    const res = await fetch(`/api/hiring/cycles/${cycleId}/${kind}`, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
@@ -146,8 +146,8 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
     });
     if (!ok) return;
     const res = reviewer
-      ? await fetch(`/api/hiring/cycles/${cycle.id}/reviewers/${person.id}`, { method: "DELETE", credentials: "include" })
-      : await fetch(`/api/hiring/cycles/${cycle.id}/interviewers`, {
+      ? await fetch(`/api/hiring/cycles/${cycleId}/reviewers/${person.id}`, { method: "DELETE", credentials: "include" })
+      : await fetch(`/api/hiring/cycles/${cycleId}/interviewers`, {
           method: "DELETE",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
@@ -160,9 +160,9 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
     }
   }
 
-  const gate = (
-    <ConfidentialityGate cycleId={cycle.id} reason={confidentialityRequired} next="/hiring/domain-lead" />
-  );
+  const gate = confidentialityRequired ? (
+    <ConfidentialityGate cycleId={cycleId} reason={confidentialityRequired} next="/hiring/domain-lead" />
+  ) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -202,7 +202,7 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
             >
               {hasLinkedChallenge ? (
                 <div className="flex flex-col gap-3">
-                  {linkedChallengeForms.map((cf: any) => (
+                  {linkedChallengeForms.map((cf) => (
                     <HiringFormEmbed key={cf.id} formId={cf.formId} name={cf.name} questions={cf.questions ?? []} />
                   ))}
                 </div>
@@ -258,7 +258,7 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
             cycleId={cycle.id}
             domains={domains}
             members={members}
-            people={cycleReviewers.map((r: any) => ({
+            people={cycleReviewers.map((r) => ({
               id: r.id,
               userId: r.userId,
               domainId: assignment.domainId,
@@ -273,13 +273,13 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
           <NavSection id="interviewers" title="Interviewers">
             <DomainRosterCard
               title="Interviewers"
-              description={`${(interviewers ?? []).filter((i: any) => i.availabilityHours > 0).length} of ${(interviewers ?? []).length} have free time on their calendar.`}
+              description={`${(interviewers ?? []).filter((i) => i.availabilityHours > 0).length} of ${(interviewers ?? []).length} have free time on their calendar.`}
               role="interviewer"
               mentors
               cycleId={cycle.id}
               domains={domains}
               members={members}
-              people={(interviewers ?? []).map((i: any) => ({
+              people={(interviewers ?? []).map((i) => ({
                 id: i.id,
                 userId: i.userId,
                 domainId: assignment.domainId,
@@ -295,7 +295,7 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
         {/* Reviews: applicants still in review plus review-stage rejects.
             Anyone invited to interview moves to Interviews below. */}
         {currentStatus !== "Draft" && (() => {
-          const reviewApps = apps.filter((a: any) => {
+          const reviewApps = apps.filter((a) => {
             const status = a.domainApplications?.[0]?.inferredStatus;
             return status !== "InvitedToInterview" && status !== "InterviewScheduled" && status !== "PostInterviewPending";
           });
@@ -346,19 +346,19 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
             <SetupCard title="Interviews">{gate}</SetupCard>
           </NavSection>
         ) : confidentialityRequired ? null : (() => {
-          const invited = apps.filter((a: any) => {
+          const invited = apps.filter((a) => {
             const status = a.domainApplications?.[0]?.inferredStatus;
             return status === "InvitedToInterview" || status === "InterviewScheduled" || status === "PostInterviewPending";
           });
-          const awaitingBooking = invited.filter((a: any) => a.domainApplications?.[0]?.inferredStatus === "InvitedToInterview");
+          const awaitingBooking = invited.filter((a) => a.domainApplications?.[0]?.inferredStatus === "InvitedToInterview");
           if (invited.length === 0 && interviews.length === 0) return null;
           const noAvailability =
-            invited.length > 0 && (interviewers ?? []).every((i: any) => !(i.availabilityHours > 0));
+            invited.length > 0 && (interviewers ?? []).every((i) => !(i.availabilityHours > 0));
 
           // Post-interview applicants whose final-round Draft isn't Final yet.
           // They stay PostInterviewPending (keyed off the latest Released
           // decision), so finalizing happens here rather than under Reviews.
-          const finalizableByDaId = new Map<string, any>();
+          const finalizableByDaId = new Map<string, DomainApp["domainApplications"][number]["decisions"][number]>();
           for (const app of invited) {
             const da = app.domainApplications?.[0];
             if (!da) continue;
@@ -411,14 +411,14 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
                   </p>
                 )}
                 {(() => {
-                  const fmtAssignment = (a: any) => {
+                  const fmtAssignment = (a: DomainInterview["assignments"][number]) => {
                     const m = a.cycleInterviewer.user;
                     return m.firstName && m.lastName
                       ? `${m.firstName} ${m.lastName}`
                       : m.daliEmail ?? '?';
                   };
                   // Booked rows from interview records.
-                  const bookedRows = interviews.map((interview: any) => {
+                  const bookedRows = interviews.map((interview) => {
                     const start = new Date(interview.startTime);
                     const end = new Date(interview.endTime);
                     return {
@@ -432,17 +432,17 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
                       zoomJoinUrl: interview.room ? null : interview.zoomJoinUrl,
                       videoUrl: interview.room ? null : interview.videoUrl,
                       inDomain: interview.assignments
-                        .filter((a: any) => a.role === 'InDomain' && a.status === 'Active')
+                        .filter((a) => a.role === 'InDomain' && a.status === 'Active')
                         .map(fmtAssignment)
                         .join(', ') || '—',
                       crossDomain: interview.assignments
-                        .filter((a: any) => a.role === 'CrossDomain' && a.status === 'Active')
-                        .map((a: any) => `${fmtAssignment(a)} (${a.cycleInterviewer.domain.name})`)
+                        .filter((a) => a.role === 'CrossDomain' && a.status === 'Active')
+                        .map((a) => `${fmtAssignment(a)} (${a.cycleInterviewer.domain.name})`)
                         .join(', ') || '—',
                     };
                   });
                   // Invited-but-not-booked applicants become rows too.
-                  const pendingRows = awaitingBooking.map((app: any) => ({
+                  const pendingRows = awaitingBooking.map((app) => ({
                     key: `pending-${app.id}`,
                     daId: app.domainApplications?.[0]?.id as string | undefined,
                     name: `${app.user.firstName} ${app.user.lastName}`,
@@ -461,7 +461,7 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
                   // domain application on `invited`. Mirrors the
                   // Reviews table's Decisions column so the two
                   // panels read consistently.
-                  const appByDaId = new Map<string, any>();
+                  const appByDaId = new Map<string, DomainApp>();
                   for (const app of invited) {
                     const da = app.domainApplications?.[0];
                     if (da?.id) appByDaId.set(da.id, app);
@@ -492,11 +492,11 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: any; 
                       ? <PrePipelinePillBadge pill={prePill} />
                       : <span className="text-xs text-muted-foreground">—</span>;
                   };
-                  const statusTone = (row: any): PillTone =>
+                  const statusTone = (row: { booked: boolean; status: string }): PillTone =>
                     !row.booked ? "warning" : row.status === "Completed" ? "success" : "accent";
                   // Clicking a row opens that applicant's review/detail
                   // page — same target as the Reviews table.
-                  const openReview = (row: any) => {
+                  const openReview = (row: { daId: string | undefined }) => {
                     if (!row.daId) return;
                     navigate(`/hiring/domain-lead/application/${row.daId}`);
                   };

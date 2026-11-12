@@ -2,10 +2,11 @@ import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { Pill } from "~/components/ui/Pill";
+import type { DomainAppReview, RubricCriterionRow } from "~/hiring/components/domain-lead/table-shared";
 
 export function ReviewModal({ review, rubricCriteria, onClose }: {
-  review: any;
-  rubricCriteria: any[];
+  review: DomainAppReview;
+  rubricCriteria: RubricCriterionRow[];
   onClose: () => void;
 }) {
   const m = review.cycleReviewer?.user;

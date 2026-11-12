@@ -40,11 +40,11 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function DomainLeadDashboard() {
-  const data = useLoaderData<typeof loader>() as any;
+  const data = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>() as { notice?: string; error?: string } | undefined;
   const toast = useToast();
   const os = useOsChrome();
-  const domainData = data?.domainData ?? [];
+  const domainData = data.domainData;
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function DomainLeadDashboard() {
 
   // One domain at a time; leads of several switch between them.
   const domainParam = searchParams.get("domain");
-  const current = domainData.find((d: any) => d.assignment.domainId === domainParam) ?? domainData[0];
+  const current = domainData.find((d) => d.assignment.domainId === domainParam) ?? domainData[0];
   const setDomain = (domainId: string) =>
     setSearchParams(
       (prev) => {
@@ -80,14 +80,14 @@ export default function DomainLeadDashboard() {
       {domainData.length > 1 && (
         <SegmentedTabButtons
           label="Domain"
-          items={domainData.map((d: any) => ({
+          items={domainData.map((d) => ({
             label: d.assignment.domain.name,
             active: d === current,
             onClick: () => setDomain(d.assignment.domainId),
           }))}
         />
       )}
-      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} allForms={data?.allForms ?? []} emailEngagement={data?.emailEngagement ?? {}} />
+      <DomainPanel key={`${current.assignment.id}-${current.cycle?.id ?? "none"}`} entry={current} allForms={data.allForms ?? []} emailEngagement={data.emailEngagement ?? {}} />
     </div>
   );
 }

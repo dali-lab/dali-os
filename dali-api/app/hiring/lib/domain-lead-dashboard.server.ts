@@ -8,7 +8,6 @@ import { confidentialityBlock, getCycleConfidentialityState } from "~/hiring/lib
 import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
 import type { Question } from "~/types";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
-import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
 import { FIRST_INTERVIEW_ROUND_ID, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
@@ -279,7 +278,7 @@ export async function loadDomainLeadDashboard({ request }: { request: Request })
         ]).then(async ([rubricVersionOptions, pinned]) => {
           const generalCriteria = cycle.generalRubricVersionId
             ? ((rubricVersionOptions.find((rv) => rv.id === cycle.generalRubricVersionId)
-                ?.criteria as any[] | null) ?? undefined)
+                ?.criteria) ?? undefined)
             : undefined;
           return {
             rubricVersionOptions,
@@ -357,9 +356,9 @@ export async function loadDomainLeadDashboard({ request }: { request: Request })
       });
 
       // Compute inferred status for each domain application
-      const appsWithStatus = apps.map((app: any) => ({
+      const appsWithStatus = apps.map((app) => ({
         ...app,
-        domainApplications: app.domainApplications.map((da: any) => ({
+        domainApplications: app.domainApplications.map((da) => ({
           ...da,
           inferredStatus: inferDomainApplicationStatus(
             { ...da, application: { statusUpdates: app.statusUpdates } },
@@ -405,7 +404,7 @@ export async function loadDomainLeadDashboard({ request }: { request: Request })
   ]);
 
   const flat = domainData.flat();
-  const applicantUserIds = flat.flatMap((d: any) => (d.apps ?? []).map((a: any) => a.userId as string));
+  const applicantUserIds = flat.flatMap((d) => d.apps.map((a) => a.userId));
   const emailSummaries = await getEngagementSummaries(applicantUserIds);
 
   return { domainData: flat, pillRoles, allForms, emailEngagement: Object.fromEntries(emailSummaries) };

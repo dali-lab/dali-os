@@ -13,17 +13,18 @@ import { canAssignReviewersIn } from "~/hiring/lib/domain-windows";
 import { OS_TABLE_HEAD, OS_TABLE_ROW } from "~/hiring/components/domain-lead/table-shared";
 import { DecisionPillBadge, PrePipelinePillBadge } from "~/hiring/components/domain-lead/DecisionPills";
 import { ReviewerAssignmentCell } from "~/hiring/components/domain-lead/ReviewerAssignmentCell";
+import type { DomainApp, DraftDecision, CycleReviewerRow, RubricCriterionRow } from "~/hiring/components/domain-lead/table-shared";
 
 export function DomainApplicationsTable({ apps, draftDecisions, cycleReviewersForDomain, cycleId, domainId, currentStatus, canAssignReviewers, rubricCriteria, emailEngagement }: {
-  apps: any[];
+  apps: DomainApp[];
   emailEngagement: Record<string, EngagementSummary>;
-  draftDecisions: any[];
-  cycleReviewersForDomain: any[];
+  draftDecisions: DraftDecision[];
+  cycleReviewersForDomain: CycleReviewerRow[];
   cycleId: string;
   domainId: string;
   currentStatus: string;
   canAssignReviewers: boolean;
-  rubricCriteria: any[];
+  rubricCriteria: RubricCriterionRow[];
 }) {
   const toast = useToast();
   const isUnderReview = currentStatus === "UnderReview";
@@ -100,27 +101,27 @@ export function DomainApplicationsTable({ apps, draftDecisions, cycleReviewersFo
 
   const draftDecisionAppIds = new Set(
     draftDecisions
-      .filter((d: any) => {
-        const da = apps.flatMap((a: any) => a.domainApplications).find((da: any) => da?.id === d.domainApplicationId);
+      .filter((d) => {
+        const da = apps.flatMap((a) => a.domainApplications).find((da) => da?.id === d.domainApplicationId);
         if (!da) return false;
-        const hasFinal = (da.decisions ?? []).some((dec: any) => dec.stage === "Final");
+        const hasFinal = (da.decisions ?? []).some((dec) => dec.stage === "Final");
         return !hasFinal;
       })
-      .map((d: any) => {
-        const da = apps.flatMap((a: any) => a.domainApplications).find((da: any) => da?.id === d.domainApplicationId);
+      .map((d) => {
+        const da = apps.flatMap((a) => a.domainApplications).find((da) => da?.id === d.domainApplicationId);
         return da?.applicationId;
       })
       .filter(Boolean),
   );
 
-  const finalizableApps = apps.filter((app: any) => {
+  const finalizableApps = apps.filter((app) => {
     const da = app.domainApplications[0];
     if (!da) return false;
     const decisions = da.decisions ?? [];
-    return decisions.some((d: any) => {
+    return decisions.some((d) => {
       if (d.stage !== "Draft") return false;
       return !decisions.some(
-        (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+        (other) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
       );
     });
   });
@@ -129,18 +130,18 @@ export function DomainApplicationsTable({ apps, draftDecisions, cycleReviewersFo
   const lowerQuery = query.trim().toLowerCase();
   const filteredApps = lowerQuery === ""
     ? baseApps
-    : baseApps.filter((app: any) => {
+    : baseApps.filter((app) => {
         const name = `${app.user.firstName ?? ""} ${app.user.lastName ?? ""}`.toLowerCase();
         return name.includes(lowerQuery);
       });
-  const reviewerScore = (app: any) => {
+  const reviewerScore = (app: DomainApp) => {
     const reviews = app.domainApplications?.[0]?.reviews ?? [];
-    const submitted = reviews.filter((r: any) => r.submittedAt).length;
+    const submitted = reviews.filter((r) => r.submittedAt).length;
     return submitted * 10000 + reviews.length;
   };
   const sortedApps = sortKey === "none"
     ? filteredApps
-    : [...filteredApps].sort((a: any, b: any) => {
+    : [...filteredApps].sort((a, b) => {
         let cmp = 0;
         if (sortKey === "name") {
           const an = `${a.user.firstName ?? ""} ${a.user.lastName ?? ""}`.toLowerCase();
@@ -204,10 +205,10 @@ export function DomainApplicationsTable({ apps, draftDecisions, cycleReviewersFo
                 for (const app of finalizableApps) {
                   const da = app.domainApplications[0];
                   const allDecisions = da?.decisions ?? [];
-                  const draft = allDecisions.find((d: any) => {
+                  const draft = allDecisions.find((d) => {
                     if (d.stage !== "Draft") return false;
                     return !allDecisions.some(
-                      (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+                      (other) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
                     );
                   });
                   if (draft) {
@@ -297,14 +298,14 @@ export function DomainApplicationsTable({ apps, draftDecisions, cycleReviewersFo
           </tr>
         </thead>
         <tbody>
-          {displayedApps.map((app: any) => {
+          {displayedApps.map((app) => {
             const da = app.domainApplications[0];
             const reviews = da?.reviews ?? [];
             const decisions = da?.decisions ?? [];
-            const draftToFinalize = decisions.find((d: any) => {
+            const draftToFinalize = decisions.find((d) => {
               if (d.stage !== "Draft") return false;
               return !decisions.some(
-                (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+                (other) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
               );
             });
             const pills = da
@@ -385,14 +386,14 @@ export function DomainApplicationsTable({ apps, draftDecisions, cycleReviewersFo
       </table>
       </div>
       <ul className="sm:hidden -mx-6 divide-y divide-os-container border-t border-os-container">
-        {displayedApps.map((app: any) => {
+        {displayedApps.map((app) => {
           const da = app.domainApplications[0];
           const reviews = da?.reviews ?? [];
           const decisions = da?.decisions ?? [];
-          const draftToFinalize = decisions.find((d: any) => {
+          const draftToFinalize = decisions.find((d) => {
             if (d.stage !== "Draft") return false;
             return !decisions.some(
-              (other: any) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
+              (other) => other.type === d.type && (other.stage === "Final" || other.stage === "Released")
             );
           });
           const pills = da
