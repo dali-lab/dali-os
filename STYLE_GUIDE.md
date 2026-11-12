@@ -328,6 +328,12 @@ icon-only `IconButton`s in the card's top right. Choices the user must make
 - Furniture: `.os-modal-title`, `.os-modal-divider`, `.os-section-header`,
   `.os-modal-footer` (right-aligned, 12px gap), `.os-icon-btn` for close and
   edit.
+- Every dialog is `Modal` (`role="dialog"`, `aria-modal`, focus trap, Escape
+  closes the topmost). The scrim is `bg-os-overlay`; pass `placement="top"`
+  for tall cards and `layer={Z.popover}` to open over a popover. Don't
+  hand-roll a portal overlay.
+- A card anchored beside a clicked rect (calendar composer, booking detail)
+  is `AnchoredCard` (`ui/floating/AnchoredCard.tsx`), not a Modal.
 - Confirm, alert and prompt go through `useDialog()` / `useConfirmSubmit()`;
   feedback through `useToast()`. Never a hand-rolled `<Modal>` confirm, an
   inline "Delete → Confirm delete" button swap, or a two-click armed button.
@@ -375,8 +381,9 @@ results bar (`ResultsFilterBar`) are built on it.
 ### 6.5 Status badges and chips
 
 - Status is **one neutral pill with a colored dot**: `Pill` from
-  `app/hiring/components/cycle-setup/SetupCard.tsx` with `dot={tone}`. Don't
-  tint the whole chip.
+  `app/components/ui/Pill.tsx` with `dot={tone}` (`size="sm"` for dense rows
+  and tables). Don't tint the whole chip. Existing tinted chips use
+  `tone={tone}` on the same `Pill` until the look is decided.
 - Tones: `success` (accepted, submitted, completed, open), `accent` (invited,
   scheduled, in review), `warning` (waitlisted, in progress, awaiting),
   `danger` (rejected, cancelled), `neutral` (draft, unknown).
@@ -395,8 +402,9 @@ results bar (`ResultsFilterBar`) are built on it.
   page sections: the same track, with the container fill on the active segment.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
-- Empty states: `EmptyState` (`ui/EmptyState.tsx`), a small dashed card drawn
-  in CSS above one muted line, with optional actions below. Use it for an
+- Empty states: `EmptyState` (`ui/EmptyState.tsx`, the only one: admin and
+  mentorship use it too), a small dashed card drawn in CSS above an optional
+  bold `title` and one muted line, with optional actions below. Use it for an
   empty folder, board, list or filter result instead of a bare line of text.
 
 ### 6.7 Rail

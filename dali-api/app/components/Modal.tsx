@@ -55,6 +55,8 @@ export function nextTrapTarget(
   return null;
 }
 
+const openStack: symbol[] = [];
+
 export interface ModalProps {
   open: boolean;
   onClose: () => void;
@@ -64,7 +66,12 @@ export interface ModalProps {
   initialFocusRef?: React.RefObject<HTMLElement | null>;
   /** Disable Escape-to-close (e.g. while a request is mid-flight). */
   disableEscape?: boolean;
+  /** Replaces the whole overlay dress (Drawer). Most callers want placement and layer instead. */
   className?: string;
+  /** Where the card sits: centered, or pinned near the top (command palette, tall forms). */
+  placement?: "center" | "top";
+  /** The stacking class for the overlay; defaults to Z.modal. */
+  layer?: string;
   /** Overrides the dialog card entirely. Omit to take the shell's own. */
   containerClassName?: string;
 }
@@ -76,9 +83,14 @@ export function Modal({
   children,
   initialFocusRef,
   disableEscape = false,
-  className = `fixed inset-0 ${Z.modal} flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto`,
+  className,
+  placement = "center",
+  layer = Z.modal,
   containerClassName,
 }: ModalProps) {
+  const overlayClass =
+    className ??
+    `fixed inset-0 ${layer} flex ${placement === "top" ? "items-start" : "items-center"} justify-center bg-os-overlay p-4 sm:p-6 overflow-y-auto`;
   const container = containerClassName ?? modalCardClass("max-w-md");
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -114,7 +126,10 @@ export function Modal({
 
   useEffect(() => {
     if (!open) return;
+    const token = Symbol("modal");
+    openStack.push(token);
     const onKeyDown = (e: KeyboardEvent) => {
+      if (openStack[openStack.length - 1] !== token) return;
       if (e.key === "Escape" && !disableEscape) {
         e.stopPropagation();
         onClose();
@@ -133,14 +148,17 @@ export function Modal({
       }
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      openStack.splice(openStack.indexOf(token), 1);
+    };
   }, [open, onClose, disableEscape]);
 
   if (!open) return null;
 
   const overlay = (
     <div
-      className={cn(className, "os-modal-overlay")}
+      className={cn(overlayClass, "os-modal-overlay")}
       role="dialog"
       aria-modal="true"
       aria-labelledby={labelledBy}

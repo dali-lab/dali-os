@@ -1,5 +1,5 @@
 import type { BlogStatus } from "~/lib/blog-post.server";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 
 const STATUS = {
   published: { dot: "success", label: "Published" },

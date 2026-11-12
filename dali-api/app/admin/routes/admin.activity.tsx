@@ -32,7 +32,8 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
-import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
+import { Pill, type Tone } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import {
   AuditActorAvatar,
   AuditActorName,

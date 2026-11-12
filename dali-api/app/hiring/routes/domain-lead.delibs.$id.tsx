@@ -18,7 +18,7 @@ import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
 import { buttonClasses } from "~/components/ui/Button";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { useOsChrome } from "~/components/os-chrome";
 import { useDialog } from "~/components/ui/dialog";

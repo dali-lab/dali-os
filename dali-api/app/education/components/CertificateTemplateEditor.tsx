@@ -158,7 +158,6 @@ export function CertificateTemplateEditor({
                   transform: `scale(${scale})`,
                 }}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={bgUrl}
                   alt="Certificate background"

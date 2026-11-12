@@ -5,7 +5,7 @@ import type { CalendarLinkDTO } from "~/lib/settings-page.server";
 import { cn } from "~/lib/cn";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { pendingForm, useFetcherErrorToast } from "~/calendar/lib/fetcher-pending";
 import { CALENDAR_CONNECT_URL, describeCalendarSyncError } from "~/calendar/lib/sync-error";
 import {

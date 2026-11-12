@@ -42,6 +42,8 @@ import {
   respondToMeetingRequest,
   listPartnerMeetingsForContact,
   listPartnerMeetingRequests,
+  logPartnerMeeting,
+  debriefPartnerMeeting,
 } from "../partner-meetings.server";
 
 // The __mocks__/db.ts stub doesn't define userCalendarLink.findFirst — add it
@@ -596,5 +598,106 @@ describe("listPartnerMeetingRequests", () => {
     expect(result.pending[0].id).toBe("r1");
     expect(result.declined).toHaveLength(1);
     expect(result.declined[0].responseNote).toBe("Try next week");
+  });
+});
+
+describe("logPartnerMeeting", () => {
+  it("throws NotFound without writing when the application is missing", async () => {
+    mockPrisma.partnerApplication.findUnique.mockResolvedValue(null);
+    await expect(
+      logPartnerMeeting({
+        applicationId: "missing",
+        scheduledAt: new Date("2026-10-15T14:00:00Z"),
+        attendeeUserIds: [],
+        notes: null,
+        actorUserId: "u1",
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(mockPrisma.partnerMeeting.create).not.toHaveBeenCalled();
+    expect(logPartnerActivity).not.toHaveBeenCalled();
+  });
+
+  it("creates the meeting with the applicant contact and logs MeetingScheduled", async () => {
+    mockPrisma.partnerApplication.findUnique.mockResolvedValue({ applicantContactId: "c1" });
+    mockPrisma.partnerMeeting.create.mockResolvedValue({ id: "m1" });
+    const scheduledAt = new Date("2026-10-15T14:00:00Z");
+    const out = await logPartnerMeeting({
+      applicationId: "a1",
+      scheduledAt,
+      attendeeUserIds: ["u-1"],
+      notes: "Kickoff",
+      actorUserId: "u1",
+    });
+    expect(out).toEqual({ id: "m1", scheduledAt });
+    expect(mockPrisma.partnerMeeting.create).toHaveBeenCalledWith({
+      data: {
+        applicationId: "a1",
+        scheduledAt,
+        attendeeUserIds: ["u-1"],
+        notes: "Kickoff",
+        contactId: "c1",
+      },
+      select: { id: true },
+    });
+    expect(logPartnerActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        applicationId: "a1",
+        actorUserId: "u1",
+        type: "MeetingScheduled",
+        metadata: { meetingId: "m1", scheduledAt: scheduledAt.toISOString() },
+      }),
+    );
+  });
+});
+
+describe("debriefPartnerMeeting", () => {
+  beforeEach(() => {
+    mockPrisma.partnerMeeting.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+  });
+
+  it("returns 404 and writes no activity for a meeting on another application", async () => {
+    mockPrisma.partnerMeeting.updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      debriefPartnerMeeting({
+        applicationId: "a1",
+        meetingId: "m-other",
+        debrief: "x",
+        actorUserId: "u1",
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(mockPrisma.partnerMeeting.updateMany).toHaveBeenCalledWith({
+      where: { id: "m-other", applicationId: "a1" },
+      data: { debrief: "x" },
+    });
+    expect(logPartnerActivity).not.toHaveBeenCalled();
+  });
+
+  it("sets debrief and outcome and logs MeetingDebriefed", async () => {
+    await debriefPartnerMeeting({
+      applicationId: "a1",
+      meetingId: "m1",
+      debrief: "Great fit",
+      outcome: "Advance",
+      actorUserId: "u1",
+    });
+    expect(mockPrisma.partnerMeeting.updateMany).toHaveBeenCalledWith({
+      where: { id: "m1", applicationId: "a1" },
+      data: { debrief: "Great fit", outcome: "Advance" },
+    });
+    expect(logPartnerActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        type: "MeetingDebriefed",
+        metadata: { meetingId: "m1", outcome: "Advance" },
+      }),
+    );
+  });
+
+  it("leaves a field alone when undefined and clears it when null", async () => {
+    await debriefPartnerMeeting({ applicationId: "a1", meetingId: "m1", outcome: "Hold", actorUserId: "u1" });
+    expect(mockPrisma.partnerMeeting.updateMany.mock.calls[0][0].data).toEqual({ outcome: "Hold" });
+    await debriefPartnerMeeting({ applicationId: "a1", meetingId: "m1", debrief: null, actorUserId: "u1" });
+    expect(mockPrisma.partnerMeeting.updateMany.mock.calls[1][0].data).toEqual({ debrief: null });
   });
 });

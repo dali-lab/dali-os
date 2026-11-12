@@ -455,7 +455,7 @@ export function CommandPalette({ open, onClose, focusMode, roles = NO_ROLES, fla
       onClose={onClose}
       labelledBy="command-palette-title"
       initialFocusRef={inputRef}
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pb-4 pt-[12vh] px-[max(1rem,env(safe-area-inset-left))] overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-os-overlay pb-4 pt-[12vh] px-[max(1rem,env(safe-area-inset-left))] overflow-y-auto"
       containerClassName="rounded-os-card border border-os-container bg-os-card shadow-[0_24px_64px_var(--color-os-shadow)] max-w-xl w-full overflow-hidden"
     >
       <h2 id="command-palette-title" className="sr-only">

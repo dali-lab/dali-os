@@ -7,7 +7,7 @@
 //   warning  needs attention: waitlisted, in progress, awaiting, not ready
 //   danger   bad: rejected, cancelled
 //   neutral  nothing yet: draft, unknown
-import type { PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import type { PillTone } from "~/components/ui/Pill";
 
 // Cycle / Application cycle status pills.
 // Matches lead.tsx, CycleSelector.tsx, lead.cycle.$id.tsx.

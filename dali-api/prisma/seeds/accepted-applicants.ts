@@ -245,7 +245,7 @@ async function main() {
 
     // Run the real welcome path: form-backed profile todo + welcome email
     // (redirected to the override inbox).
-    const { notified, emailSent } = await sendWelcome({
+    const { notified } = await sendWelcome({
       userId: user.id,
       actorId: actor ?? user.id,
       firstName: user.firstName,
@@ -254,7 +254,7 @@ async function main() {
 
     console.log(
       `  ✓ ${person.firstName} ${person.lastName} — member + ${domain.displayName} P1; ` +
-        `welcome notified=${notified}, emailSent=${emailSent}`,
+        `welcome notified=${notified}`,
     );
     seeded++;
   }

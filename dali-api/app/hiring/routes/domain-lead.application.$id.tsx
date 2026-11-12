@@ -27,7 +27,8 @@ import {
   ApplicationTimeline,
   StageMoveControl,
 } from "~/hiring/components/ApplicationTimeline";
-import { Pill, type PillTone, SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, type PillTone } from "~/components/ui/Pill";
+import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
 import { buildApplicationTimeline } from "~/hiring/lib/application-timeline";
 import { findRound, groupByInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { buildCriteriaLabelMap } from "~/hiring/lib/rubric-criteria";
