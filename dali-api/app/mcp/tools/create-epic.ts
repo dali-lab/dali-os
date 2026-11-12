@@ -6,29 +6,20 @@ import { canEditProject } from "./access";
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
 
-export const CREATE_EPIC_TOOL = {
-  name: "create_epic",
-  description:
-    "Create an epic on a project. Requires Core or project-member access.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      projectId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 200 },
-      description: { type: "string", maxLength: 5000 },
-      status: {
-        type: "string",
-        enum: EPIC_STATUSES as unknown as string[],
-        description: "Defaults to 'Open'.",
-      },
-      startsAt: { type: "string", description: "Optional ISO timestamp." },
-      endsAt: { type: "string", description: "Optional ISO timestamp." },
-    },
-    required: ["projectId", "title"],
-    additionalProperties: false,
+export const CREATE_EPIC_PROPERTIES = {
+  projectId: { type: "string", minLength: 1 },
+  title: { type: "string", minLength: 1, maxLength: 200 },
+  description: { type: "string", maxLength: 5000 },
+  status: {
+    type: "string",
+    enum: EPIC_STATUSES as unknown as string[],
+    description: "Defaults to 'Open'.",
   },
-  requiredScope: "mcp:write" as const,
+  startsAt: { type: "string", description: "Optional ISO timestamp." },
+  endsAt: { type: "string", description: "Optional ISO timestamp." },
 };
+
+export const CREATE_EPIC_REQUIRED = ["projectId", "title"];
 
 type Input = {
   projectId: string;

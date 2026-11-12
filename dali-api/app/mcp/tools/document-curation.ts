@@ -225,30 +225,21 @@ export async function runListDocumentSharing(
 
 // ─── set_document_sharing ────────────────────────────────────────────────────
 
-export const SET_DOCUMENT_SHARING_TOOL = {
-  name: "set_document_sharing",
-  description:
-    "Change a project document's audience: share it with the partner org, make it the project's public write-up on dali.website, and/or pin it. Pass only the flags you want to change. Note publicVisible puts the document's body on the public site as soon as the showcase card is Published.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      pageId: { type: "string", minLength: 1, description: "Page.id." },
-      partnerVisible: {
-        type: "boolean",
-        description: "Share with (or unshare from) the project's partner org.",
-      },
-      publicVisible: {
-        type: "boolean",
-        description:
-          "Use as the public write-up rendered under the showcase card on dali.website.",
-      },
-      pinned: { type: "boolean", description: "Pin to the top of the project's Documents block." },
-    },
-    required: ["pageId"],
-    additionalProperties: false,
+export const SET_DOCUMENT_SHARING_PROPERTIES = {
+  pageId: { type: "string", minLength: 1, description: "Page.id." },
+  partnerVisible: {
+    type: "boolean",
+    description: "Share with (or unshare from) the project's partner org.",
   },
-  requiredScope: "mcp:write" as const,
+  publicVisible: {
+    type: "boolean",
+    description:
+      "Use as the public write-up rendered under the showcase card on dali.website.",
+  },
+  pinned: { type: "boolean", description: "Pin to the top of the project's Documents block." },
 };
+
+export const SET_DOCUMENT_SHARING_REQUIRED = ["pageId"];
 
 export async function runSetDocumentSharing(
   callerId: string,
@@ -310,24 +301,15 @@ export async function runSetDocumentSharing(
 
 // ─── delete_project_document ─────────────────────────────────────────────────
 
-export const DELETE_PROJECT_DOCUMENT_TOOL = {
-  name: "delete_project_document",
-  description:
-    "Archive or permanently delete a project document. Archiving is the default and is reversible; pass permanent: true to delete it and its body outright. System documents (auto-created meeting-note folders, the public write-up page) can't be deleted.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      pageId: { type: "string", minLength: 1 },
-      permanent: {
-        type: "boolean",
-        description: "Delete rather than archive. Irreversible. Defaults to false.",
-      },
-    },
-    required: ["pageId"],
-    additionalProperties: false,
+export const DELETE_PROJECT_DOCUMENT_PROPERTIES = {
+  pageId: { type: "string", minLength: 1 },
+  permanent: {
+    type: "boolean",
+    description: "Delete rather than archive. Irreversible. Defaults to false.",
   },
-  requiredScope: "mcp:write" as const,
 };
+
+export const DELETE_PROJECT_DOCUMENT_REQUIRED = ["pageId"];
 
 export async function runDeleteProjectDocument(
   callerId: string,
@@ -366,21 +348,12 @@ export async function runDeleteProjectDocument(
 
 // ─── set_file_sharing / delete_project_file ──────────────────────────────────
 
-export const SET_FILE_SHARING_TOOL = {
-  name: "set_file_sharing",
-  description:
-    "Share a project file with the project's partner org, or stop sharing it.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      fileId: { type: "string", minLength: 1, description: "ProjectFile.id." },
-      partnerVisible: { type: "boolean" },
-    },
-    required: ["fileId", "partnerVisible"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
+export const SET_FILE_SHARING_PROPERTIES = {
+  fileId: { type: "string", minLength: 1, description: "ProjectFile.id." },
+  partnerVisible: { type: "boolean" },
 };
+
+export const SET_FILE_SHARING_REQUIRED = ["fileId", "partnerVisible"];
 
 export async function runSetFileSharing(
   callerId: string,
@@ -410,20 +383,11 @@ export async function runSetFileSharing(
   return { ok: true, partnerVisible: input.partnerVisible };
 }
 
-export const DELETE_PROJECT_FILE_TOOL = {
-  name: "delete_project_file",
-  description:
-    "Archive a project file so it drops out of the Files list and stops being shared. Reversible in the app; the stored versions are kept.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      fileId: { type: "string", minLength: 1 },
-    },
-    required: ["fileId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
+export const DELETE_PROJECT_FILE_PROPERTIES = {
+  fileId: { type: "string", minLength: 1 },
 };
+
+export const DELETE_PROJECT_FILE_REQUIRED = ["fileId"];
 
 export async function runDeleteProjectFile(
   callerId: string,

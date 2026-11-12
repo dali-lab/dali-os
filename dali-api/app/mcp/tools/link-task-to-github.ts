@@ -10,24 +10,13 @@ import {
   normalizeRepo,
 } from "~/projects/lib/github-task-sync";
 
-export const LINK_TASK_TO_GITHUB_TOOL = {
-  name: "link_task_to_github",
-  description:
-    "Create a GitHub issue mirror for a task. `repo` must be one of the project's repoUrls. Requires Core or project-member access. Returns immediately; the GH write is fire-and-forget.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: { type: "string", minLength: 1 },
-      repo: {
-        type: "string",
-        minLength: 1,
-        description: "owner/repo (or a github.com URL). Must appear in the project's repoUrls.",
-      },
-    },
-    required: ["taskId", "repo"],
-    additionalProperties: false,
+export const LINK_TASK_TO_GITHUB_PROPERTIES = {
+  taskId: { type: "string", minLength: 1 },
+  repo: {
+    type: "string",
+    minLength: 1,
+    description: "owner/repo (or a github.com URL). Must appear in the project's repoUrls.",
   },
-  requiredScope: "mcp:write" as const,
 };
 
 type Input = { taskId: string; repo: string };

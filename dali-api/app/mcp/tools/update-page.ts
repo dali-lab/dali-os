@@ -11,36 +11,6 @@ import { canEditProject } from "./access";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 
-export const UPDATE_PAGE_TOOL = {
-  name: "update_page",
-  description:
-    "Update a project workspace page: rename, set icon, move under a folder (or to top level), archive/unarchive (soft delete/restore). Requires Core or being staffed on the project.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      pageId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 200 },
-      iconEmoji: {
-        type: "string",
-        maxLength: 8,
-        description: "Empty string clears the icon.",
-      },
-      parentPageId: {
-        type: "string",
-        description:
-          "Move under this Folder page (documents or folders alike, up to the nesting cap). Empty string moves to top level.",
-      },
-      archived: {
-        type: "boolean",
-        description: "true soft-deletes (archives) the page; false restores it.",
-      },
-    },
-    required: ["pageId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
-
 type Input = {
   pageId: string;
   title?: string;

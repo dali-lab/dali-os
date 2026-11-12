@@ -3,20 +3,11 @@
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
-export const DELETE_STORY_TOOL = {
-  name: "delete_story",
-  description:
-    "Delete a user story. Requires Core or project-member access.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      storyId: { type: "string", minLength: 1 },
-    },
-    required: ["storyId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
+export const DELETE_STORY_PROPERTIES = {
+  storyId: { type: "string", minLength: 1 },
 };
+
+export const DELETE_STORY_REQUIRED = ["storyId"];
 
 type Input = { storyId: string };
 
