@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { prismaMock, listCreds, getCreds, neonMock, flyMock } = vi.hoisted(() => ({
+const { logError, prismaMock, listCreds, getCreds, neonMock, flyMock } = vi.hoisted(() => ({
+  logError: vi.fn(),
   prismaMock: {
     infraSnapshot: { create: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn() },
     infraUsageSample: { upsert: vi.fn() },
@@ -16,6 +17,7 @@ vi.mock("~/lib/infra/project-infra.server", () => ({
   listEnabledInfraProjectCreds: listCreds,
   getProjectInfraCreds: getCreds,
 }));
+vi.mock("~/lib/log.server", () => ({ logError }));
 vi.mock("~/lib/infra/fly.server", () => flyMock);
 vi.mock("~/lib/infra/neon.server", () => neonMock);
 
@@ -332,6 +334,15 @@ describe("refreshProjectInfra", () => {
     getCreds.mockResolvedValue(null);
     await refreshProjectInfra("p404");
     expect(neonMock.getNeonInventory).not.toHaveBeenCalled();
+  });
+
+  it("logs and carries on when adopting an org sweep fails", async () => {
+    getCreds.mockResolvedValue({ ...creds("p1", ["np-a"]), flyOrgSlug: "fly-org" });
+    const boom = new Error("db down");
+    prismaMock.infraSnapshot.findMany.mockRejectedValue(boom);
+    await expect(refreshProjectInfra("p1")).resolves.toBeUndefined();
+    expect(logError).toHaveBeenCalledWith("infra.adopt-snapshot", boom, { projectId: "p1", provider: "fly" });
+    expect(logError).toHaveBeenCalledWith("infra.adopt-snapshot", boom, { projectId: "p1", provider: "neon" });
   });
 
   it("does not throw when the background sweep fails", async () => {
