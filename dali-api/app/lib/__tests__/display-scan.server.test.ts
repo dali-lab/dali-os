@@ -13,7 +13,6 @@ vi.mock("~/lib/db.server", () => ({
 }));
 vi.mock("~/lib/display", () => ({ fullName: vi.fn() }));
 vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
-  CHECK_IN_GRACE_MIN: 15,
   resolveMeetingOccurrence: vi.fn(),
 }));
 

@@ -6,7 +6,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
-import { parseOccurrenceParam } from "~/calendar/lib/scheduled-meeting.server";
+import { parseOccurrenceParam } from "~/calendar/lib/meeting-occurrences";
 import { canReadRecording, storedLines } from "~/calendar/lib/meeting-recording.server";
 import { speakerLabelFor, countSpeakersByChannel } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";

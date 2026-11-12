@@ -5,7 +5,8 @@ import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { markMeetingAttendance, parseOccurrenceParam, tracksAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { parseOccurrenceParam, tracksAttendance } from "~/calendar/lib/meeting-occurrences";
 
 // POST /api/scheduled-meetings/:id/attendance
 //
