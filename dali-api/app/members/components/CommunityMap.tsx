@@ -3,6 +3,7 @@ import type { Map as MapLibreMap, Marker } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import { cn } from "~/lib/cn";
+import { initialsFromName } from "~/lib/display";
 import {
   HOME_ZOOM,
   MAP_TILES_ORIGIN,
@@ -46,14 +47,6 @@ const EVENT_PIN = { width: 44, height: 48, lift: 18 };
 const Z = { event: 1, place: 2, selectedPlace: 3, selectedEvent: 4, hover: 5 };
 const CLUSTER_FIT_MAX_ZOOM = 10;
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
 // Built as DOM nodes, not an HTML string, so a name or photo URL can never be read as markup.
 function pinElement(cluster: MapPlace[], selected: boolean): HTMLElement {
   const faded = cluster.every((p) => p.faded);
@@ -75,7 +68,7 @@ function pinElement(cluster: MapPlace[], selected: boolean): HTMLElement {
       faces.append(img);
     } else {
       const span = document.createElement("span");
-      span.textContent = initials(a.name);
+      span.textContent = initialsFromName(a.name);
       span.style.cssText = `${base};display:flex;align-items:center;justify-content:center;background:var(--color-os-accent);color:var(--color-os-bg);font-size:11px;font-weight:700`;
       faces.append(span);
     }
