@@ -437,14 +437,16 @@ export default function ReviewerApplicationReview() {
 
   const isSubmitted = !!existingReview?.submittedAt
 
-  const changeSubmission = (action: SubmissionAction) =>
-    changeReviewSubmission({
+  const changeSubmission = (action: SubmissionAction) => {
+    if (!existingReview) return
+    return changeReviewSubmission({
       reviewId: existingReview.id,
       action,
       flushSave,
       revalidate: () => revalidator.revalidate(),
       onError: toast.error,
     })
+  }
 
   // Auto-save scores, recommendation, and annotations on change.
   // Feedback and rejectionRationale are handled by the collab server.
