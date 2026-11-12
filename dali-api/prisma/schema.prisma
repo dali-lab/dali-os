@@ -1824,10 +1824,8 @@ model OAuthSession {
   // oAuth params preserved across IDP redirect
   redirectUri String
   state       String
-  provider    OAuthProvider
-  // Optional. Set when the OAuthClient row pins a single accountType
-  // (e.g. MCP clients require "member"). Null = any accountType is OK
-  // for this session, decided by the callback's domain branch.
+  // Retired: no longer read or written.
+  provider    OAuthProvider?
   accountType OAuthAccountType?
 
   // set after IDP authenticates user
@@ -1835,7 +1833,6 @@ model OAuthSession {
   authorizationCode String? @unique
   exchanged         Boolean @default(false)
 
-  // for chained Google → CAS account linking
   linkUserId String?
 
   // MCP foundation track: the OAuthClient that initiated this authorization
