@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ROLE_TARGETS } from "~/lib/feature-flags";
-import type { PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import type { PillTone } from "~/components/ui/Pill";
 
 // Client-safe: the editor, the list and the overlay share these.
 

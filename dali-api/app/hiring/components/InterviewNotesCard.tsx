@@ -2,7 +2,7 @@ import type React from "react";
 import { Link } from "react-router";
 import { Calendar, MapPin, Users } from "lucide-react";
 import { INTERVIEW_STATUS_TONES, INTERVIEW_STATUS_LABELS, RECOMMENDATION_TONES } from "~/hiring/lib/labels";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 

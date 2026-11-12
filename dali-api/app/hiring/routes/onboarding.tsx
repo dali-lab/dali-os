@@ -28,6 +28,7 @@ import { Menu, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { Pill } from "~/components/ui/Pill";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Onboarding · Hiring · DALI OS" },
@@ -451,15 +452,9 @@ export async function action({ request }: Route.ActionArgs) {
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
-        ok ? "bg-os-green/15 text-os-green" : "bg-os-container text-os-grey",
-      )}
-    >
-      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-os-green" : "bg-os-muted")} />
+    <Pill size="sm" tone={ok ? "success" : "neutral"}>
       {label}
-    </span>
+    </Pill>
   );
 }
 

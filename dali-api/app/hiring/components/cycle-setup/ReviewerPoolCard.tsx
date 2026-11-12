@@ -5,7 +5,8 @@ import { Combobox, Tooltip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { Pill, SetupCard, rowTrigger } from "./SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { SetupCard, rowTrigger } from "./SetupCard";
 
 const MIN_POOL_SIZE = 2;
 

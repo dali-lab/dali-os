@@ -19,7 +19,7 @@ import {
   Check,
   Video,
 } from "lucide-react";
-import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
+import { AnchoredCard } from "~/components/ui/floating/AnchoredCard";
 import { WorkingHoursCard } from "~/calendar/components/settings-cards";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
@@ -277,7 +277,7 @@ export function CalendarSearchBar({
   };
 
   return (
-    <AnchoredPopover
+    <AnchoredCard
       anchor={anchor}
       onClose={onClose}
       ariaLabel="Search events"
@@ -346,7 +346,7 @@ export function CalendarSearchBar({
           <p className="px-2 pt-1 text-[11px] text-muted-foreground">Couldn't reach Google.</p>
         )}
       </div>
-    </AnchoredPopover>
+    </AnchoredCard>
   );
 }
 
@@ -362,14 +362,14 @@ export function WorkingHoursPopover({
   onClose: () => void;
 }) {
   return (
-    <AnchoredPopover
+    <AnchoredCard
       anchor={anchor}
       onClose={onClose}
       ariaLabel="Working hours"
       className="w-[25rem] max-h-[80vh] overflow-y-auto rounded-xl cal-surface p-4"
     >
       <WorkingHoursCard workingHours={data.workingHours} hasPersisted={data.hasPersistedWorkingHours} />
-    </AnchoredPopover>
+    </AnchoredCard>
   );
 }
 
@@ -662,7 +662,7 @@ export function EventComposer({
   const fieldCls = "rounded-md border border-border bg-background px-2.5 py-1.5 text-sm text-foreground";
 
   return (
-    <AnchoredPopover
+    <AnchoredCard
       anchor={state.anchor}
       onClose={onClose}
       draggable
@@ -972,7 +972,7 @@ export function EventComposer({
             </div>
           </fetcher.Form>
         )}
-    </AnchoredPopover>
+    </AnchoredCard>
   );
 }
 
