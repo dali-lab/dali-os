@@ -1,6 +1,4 @@
-import { redirect } from "react-router";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { prisma } from "~/lib/db.server";
 import { listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import { isAdmin, isCore } from "~/lib/roles";
@@ -101,11 +99,7 @@ export async function loadDigestSchedule() {
 }
 
 export async function loadSettingsPageData(request: Request) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const userId = auth.user.sub;
 

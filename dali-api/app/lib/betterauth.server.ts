@@ -29,6 +29,7 @@ import {
   recordProvenEmail,
 } from "~/lib/betterauth-email-alias.server";
 import { rejectBlockedIp, rejectDirectMagicLink, throttleOtpSend } from "~/lib/betterauth-otp-throttle.server";
+import { getEnv } from "~/lib/env.server";
 
 // Deduplicate the trusted origins list — in single-server deployments
 // (Fly staging/prod) getApiBaseUrl() === getFrontendUrl(), so a Set avoids a
@@ -50,7 +51,7 @@ export const auth = betterAuth({
   // placeholder — it only throws on that placeholder in NODE_ENV=production,
   // so the module is safe to import in dev without setting this var.
   // In staging/prod BETTER_AUTH_SECRET MUST be set via Fly secrets.
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: getEnv().BETTER_AUTH_SECRET,
 
   database: prismaAdapter(prisma, { provider: "postgresql" }),
 

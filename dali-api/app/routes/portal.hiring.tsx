@@ -126,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Portal() {
-  const data = useLoaderData<typeof loader>() as any;
+  const data = useLoaderData<typeof loader>();
   const {
     cycleName,
     cycleId,

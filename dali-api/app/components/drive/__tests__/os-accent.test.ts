@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { DROP_OVERLAY, DROP_RING } from "../DriveBrowser";
+import { DROP_OVERLAY, DROP_RING } from "../drop-zone";
 
 const src = (f: string) => readFileSync(resolve(__dirname, "..", f), "utf8");
 

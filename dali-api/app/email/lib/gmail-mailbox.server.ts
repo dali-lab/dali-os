@@ -7,6 +7,7 @@ import { prisma } from "~/lib/db.server";
 import { getAppEnv, STAGING_REDIRECT_EMAIL } from "~/lib/app-env";
 import { buildEncryptedTokens, parseStoredTokens } from "~/calendar/lib/google-calendar.server";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
+import { getEnv } from "~/lib/env.server";
 
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";
 const REFRESH_BUFFER_MS = 60_000;
@@ -53,8 +54,8 @@ export async function getMailboxToken(account: {
   try {
     data = await refreshGoogleToken({
       refreshToken: t.refreshToken,
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: getEnv().GOOGLE_CLIENT_ID!,
+      clientSecret: getEnv().GOOGLE_CLIENT_SECRET!,
     });
   } catch (err) {
     if (err instanceof GoogleOAuthError) {

@@ -12,7 +12,9 @@ import { warmGeneralCalendarFeed } from "~/calendar/lib/general-calendar";
 import { serverTimingHeader, slowestMark } from "~/lib/server-timing";
 import { watchEventLoopLag } from "~/lib/event-loop-lag.server";
 import { watchPerfStats } from "~/lib/perf-stats";
+import { warnOnBadEnv } from "~/lib/env.server";
 
+warnOnBadEnv();
 // Start Hocuspocus collab server on a second port (runs once due to module caching).
 startCollabServer();
 // Start the background job tick (cross-machine dedup via DB lease; see

@@ -373,6 +373,8 @@ in-progress work, and clearing a configured binding.
 `chrome.popover` (`OS_SURFACE_CLASS`). Page toolbar filters use
 `OS_FILTER_PILL_CLASS` plus a width.
 
+Picking a member is `PersonPicker` (`ui/PersonPicker.tsx`): `mode="multi"` is a searchable `MultiSelect` with removable chips, the default single mode is a `Combobox` that shows the chosen person and takes `onQueryChange` with `filterLocally={false}` when `people` comes from a search. Rows are an avatar, the name and a secondary line (email or handle). Don't hand-roll a member list; mixed pickers that add groups or typed addresses (the calendar `ParticipantPicker`) reuse `PersonLabel` for the member row.
+
 A row of per-column filters (Filter button with count badge, pills, Clear all,
 result count) is `FilterBar` in `app/components/FilterBar.tsx`. Pass it columns
 with a `renderPicker`; `ColumnFilters` (value lists over rows) and the form
