@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
-import { REGISTRY_TOOLS, registryToolDefs } from "../registry";
+import { REGISTRY_TOOLS, findRegistryTool, registryToolDefs } from "../registry";
 import { FEATURE_FLAGS } from "~/lib/feature-flags";
 import { validateInput } from "~/lib/mcp-input";
 import { ASK_TOOL_NAMES } from "~/ask/tools.server";
@@ -92,6 +92,14 @@ describe("MCP registry invariants", () => {
   it("only gates tools on registered feature flags", () => {
     const keys = new Set<string>(FEATURE_FLAGS.map((f) => f.key));
     expect(REGISTRY_TOOLS.filter((t) => t.featureFlag && !keys.has(t.featureFlag)).map((t) => t.def.name)).toEqual([]);
+  });
+
+  it("keeps only the backfill tools still in use", () => {
+    for (const name of ["backfill_terms", "backfill_core_assignments", "backfill_project_assignments"]) {
+      expect(findRegistryTool(name)).toBeUndefined();
+    }
+    expect(findRegistryTool("backfill_hiring_cycle")).toBeDefined();
+    expect(findRegistryTool("get_backfill_state")).toBeDefined();
   });
 
   it("advertises every registry tool", () => {
