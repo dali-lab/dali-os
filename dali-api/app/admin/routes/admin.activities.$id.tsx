@@ -1,4 +1,4 @@
-// Admin → Onboarding → <activity> (specs/activities.md §7.8). The mechanic's
+// Admin → Onboarding → <activity> (specs/archive/activities.md §7.8). The mechanic's
 // own config editor comes from the client registry; the teams panel is
 // ActivityTeamsEditor.
 

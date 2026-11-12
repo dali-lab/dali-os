@@ -4,7 +4,7 @@
 // session into the webview's cookie jar, then redirects to `next` (same-origin
 // paths only) or /. The 30-day session
 // id is born here via Set-Cookie and never travels in a URL; only the single-use,
-// 60-second handoff code does. See TAURI_DESKTOP_PLAN.md.
+// 60-second handoff code does. See specs/archive/TAURI_DESKTOP_PLAN.md.
 
 import { redirect } from "react-router";
 import type { Route } from "./+types/auth.handoff";

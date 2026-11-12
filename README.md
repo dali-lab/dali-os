@@ -1,6 +1,6 @@
 # DALI OS
 
-Internal operations platform for DALI Lab. One React Router 7 app (`dali-api/`) serves the UI, the JSON API, the MCP server, and the Hocuspocus realtime collab server. Native clients (desktop, iOS, two Chrome extensions) and a Modal transcription service live alongside it in this repo.
+Internal operations platform for DALI Lab. One React Router 7 app (`dali-api/`) serves the UI, the JSON API, the MCP server, and the Hocuspocus realtime collab server. Native clients (desktop, iOS, the mobile member app, a Chrome extension) and a Modal transcription service live alongside it in this repo.
 
 Covers hiring, projects and sprints, members and mentorship, partners, calendar and rooms, education, Drive (docs and files), signing, payroll, and lab-wide notifications.
 
@@ -9,10 +9,10 @@ Covers hiring, projects and sprints, members and mentorship, partners, calendar 
 | Layer | Tech |
 |---|---|
 | App | React Router 7 (full-stack), React 19, TypeScript |
-| DB | Postgres 16 on Neon, Prisma 7 (`@prisma/adapter-neon` in deploys, `@prisma/adapter-pg` locally) |
+| DB | Postgres 16 on Neon, Prisma 7 (`@prisma/adapter-pg` in all environments) |
 | Realtime | Hocuspocus + Yjs, BlockNote editor. Redis fan-out is optional (`REDIS_URL`), needed only for multi-machine sync |
 | AI | Anthropic SDK, first-party key or the Dartmouth Chat gateway (`app/lib/ai.server.ts`) |
-| Auth | Google OAuth, Dartmouth CAS, session cookie + Bearer. BetterAuth migration behind the `betterauth` flag |
+| Auth | Google OAuth and Dartmouth CAS on BetterAuth; legacy session ids still accepted until they expire (`specs/betterauth-legacy-auth-cleanup.md`) |
 | Jobs | In-process 60s runner, Postgres lease for cross-machine dedup (no Redis) |
 | Styling | Tailwind CSS 4, design system in `STYLE_GUIDE.md` |
 | Runtime | Node 22, npm |
@@ -52,6 +52,7 @@ dali-api/               the app (see dali-api/README.md)
 asr/                    Modal app: meeting transcription + diarization (Python, uv)
 desktop/                Tauri v2 shell (macOS, Linux, Windows)
 ios/                    SwiftUI app (iPad room display, iPhone placeholder)
+mobile/                 Expo React Native member app (iOS and Android)
 jobx-extension/         Chrome extension: fill JobX timesheets from DALI OS
 specs/                  design docs; specs/archive/ holds superseded plans
 .github/workflows/      CI/CD
@@ -87,6 +88,7 @@ Run from `dali-api/`.
 | Task | Command |
 |---|---|
 | Unit tests | `npm test` |
+| Integration tests | `DATABASE_URL=<throwaway local db> npm run test:integration` (real Postgres) |
 | Coverage | `npm run test:coverage` |
 | E2E tests | `npm run test:e2e` (needs a seeded Postgres and a prior `npm run build`) |
 | Typecheck | `npm run typecheck` |
@@ -104,7 +106,7 @@ No ESLint/Prettier is wired up.
 | Prod | `prod` | `dali-api-prod` | `production` | migrate only |
 | Preview | PR head | `dali-api-pr-<N>` | `preview-pr-<N>` | wipe → migrate → seed |
 
-PRs merge to `staging`. `promote-to-prod.yml` fast-forwards `prod` when a write-access user comments `/push` on a staging → prod PR. Previews come from `preview-deploy.yml` and tear down on close. `deploy-asr.yml` deploys `asr/` to Modal on pushes to either branch that touch it.
+PRs merge to `staging`. `promote-to-prod.yml` fast-forwards `prod` when a write-access user comments `/push` on a staging → prod PR. Previews come from `preview-deploy.yml` when a PR has the `preview` label and tear down on close. `deploy-asr.yml` deploys `asr/` to Modal on pushes to either branch that touch it.
 
 ## Database & migrations
 
@@ -119,11 +121,11 @@ Runtime uses the pooled `DATABASE_URL`. `prisma migrate` needs a non-pooled URL;
 
 Failures on these block merge:
 
-- `test.yml`: Vitest + Playwright against a Postgres service container, plus `asr/` pytest. Unit coverage lands in the run summary and the `coverage-report` artifact.
+- `test.yml`: Vitest unit tests, Vitest integration tests (`*.integration.test.ts`, real Postgres), and Playwright against a Postgres service container, plus `asr/` pytest. Unit coverage lands in the run summary and the `coverage-report` artifact.
 - `build-check.yml`: Docker build via flyctl.
 - `migration-check.yml`: schema drift, deleted-migration guard, pgfence safety analysis.
 - `codeql.yml`: static security scan.
-- `preview-deploy.yml`: per-PR Neon + Fly preview (blocks only when it fails on its own).
+- `preview-deploy.yml`: Neon + Fly preview, opt-in with the `preview` label (blocks only when it fails on its own).
 
 `claude.yml`, `claude-ci-fix.yml`, and `claude-auto-merge.yml` run Claude on issues and PRs; their conventions are in `CLAUDE.md`.
 
@@ -136,7 +138,7 @@ Failures on these block merge:
 - `/auth/pair/*`, `/auth/handoff`: device pairing for the desktop app and extensions.
 - `/api/public/*`: unauthenticated data for the public website.
 
-Browser auth uses the `__dali_sid` HttpOnly cookie; API and MCP clients send `Authorization: Bearer <session_id>`. Both resolve to one lookup against the `Session` table (`app/lib/session.ts`). Never log session ids, OAuth codes, or `.env` contents.
+Browser auth uses the BetterAuth session cookie; bearer clients send BetterAuth or OAuth tokens. `requireAuth` (`app/lib/auth.ts`) still accepts legacy `__dali_sid` ids first, until the last legacy session expires. Never log session ids, OAuth codes, or `.env` contents.
 
 ## Realtime / collab
 
@@ -152,6 +154,7 @@ Documents are CRDT-synced through the Hocuspocus server (`app/collab/server.ts`)
 
 - `desktop/`: Tauri v2 shell around the hosted app. Native notifications, tray, auto-update, device-pairing sign-in. Releases cut from a version bump on `prod` via `desktop-release.yml`. See `desktop/README.md`.
 - `ios/`: SwiftUI iPad door display and wallet-pass check-in. See `ios/README.md`.
+- `mobile/`: Expo React Native member app (iOS and Android) reading `/api/mobile/*`. See `mobile/README.md`.
 - `jobx-extension/`: Chrome extension that fills Dartmouth JobX timesheets from logged hours. See its README.
 
 ## Pointers

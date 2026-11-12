@@ -105,7 +105,7 @@ export function TranscriptChipHoverLayer({
 }: {
   children: React.ReactNode;
   /** A plain click (or Enter on a focused chip): opens the rail and scrolls
-   *  to `at` when it returns true (specs/meeting-recording-rail.md "Citation
+   *  to `at` when it returns true (specs/archive/meeting-recording-rail.md "Citation
    *  chips") — the chip's default navigation is prevented. Returning false
    *  (e.g. the chip cites a different recording than the one loaded) lets
    *  the `?transcript=&at=` href navigate normally. */

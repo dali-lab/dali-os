@@ -1111,7 +1111,7 @@ enum AssignmentStatus {
 
 // MemberRole enum dropped in Phase 2. Admin → AdminMembership row;
 // HiringLead → CoreAssignment row with leadTitle="Hiring Lead". See
-// V0_PHASE2_PLAN.md M3 backfill.
+// specs/archive/V0_PHASE2_PLAN.md M3 backfill.
 
 model InterviewAssignment {
   id        String   @id @default(cuid())
@@ -1809,7 +1809,7 @@ enum OAuthProvider {
 }
 
 // Phase 2: collapsed to `member` only. MCP clients are members-only (per
-// V0_PLAN.md Q18). The `dartmouth` and `partner` values were never used in
+// specs/archive/V0_PLAN.md Q18). The `dartmouth` and `partner` values were never used in
 // production — first-party login (/auth/callback/*) doesn't go through this
 // type, and the OAuth provider surface (/oauth/*) is MCP-only.
 enum OAuthAccountType {
@@ -1854,7 +1854,7 @@ model OAuthSession {
 }
 
 // Single-credential session record backing both browser cookie logins and
-// OAuth-issued (MCP) sessions. See SESSION_AUTH_PLAN.md for design.
+// OAuth-issued (MCP) sessions. See specs/archive/SESSION_AUTH_PLAN.md for design.
 //
 // The PK `id` stores SHA-256(raw) so a DB read leak does not surface live
 // credentials. The raw id is what travels in the __dali_sid cookie or in
@@ -3457,7 +3457,7 @@ model CourseOffering {
 // and the auth-side foundation from `dali-os-mcp.md`. Phase 2 (destructive
 // refactor) runs separately after the live 2026-S cycle closes.
 //
-// See V0_PLAN.md for the locked decisions, deploy sequencing, and the
+// See specs/archive/V0_PLAN.md for the locked decisions, deploy sequencing, and the
 // Phase 2 column-drop / FK-rename plan.
 
 // ─── Term ────────────────────────────────────────────────────────────────────
@@ -6199,7 +6199,7 @@ model FeatureFlag {
   createdAt DateTime @default(now())
 }
 
-// ─── Activities — time-boxed "mode" layer (specs/activities.md) ───────────────
+// ─── Activities — time-boxed "mode" layer (specs/archive/activities.md) ───────────────
 // A generic, term-scoped, audience-targeted experience that changes what the
 // site shows for assigned members during a window, then auto-reverts. The
 // mechanic (Activity.kind) is registry-validated in app code (app/lib/
@@ -6700,7 +6700,7 @@ enum TokenPurpose {
 // one-time handoff code that /auth/handoff redeems into a fresh webview cookie
 // session. All codes are SHA-256 hashed at rest (same scheme as Session.id and
 // OneTimeToken.tokenHash); raw values exist only in transit. See
-// TAURI_DESKTOP_PLAN.md.
+// specs/archive/TAURI_DESKTOP_PLAN.md.
 model DevicePairing {
   id String @id @default(cuid())
 
@@ -6817,7 +6817,7 @@ enum EmailSendPurpose {
 // A best-effort inline drain runs right after enqueue for low latency; the
 // single-leased outbound-drain job sweeps the rest, retrying with backoff,
 // respecting per-sender daily caps, and dead-lettering what it can't deliver.
-// See specs/communication-idempotency.md.
+// See specs/archive/communication-idempotency.md.
 model OutboundMessage {
   id      String @id @default(cuid())
   // "email" | "slack_dm" | "slack_channel"

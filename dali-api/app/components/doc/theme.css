@@ -482,7 +482,7 @@ html:root .doc-canvas--small .doc-title {
   position: relative;
 }
 
-/* Recording rail (specs/meeting-recording-rail.md): unlike the comments
+/* Recording rail (specs/archive/meeting-recording-rail.md): unlike the comments
  * rail above, it's sticky with its own scroll and 400px wide (the action
  * rows need the extra 80px). top/height are set inline by DocumentEditor,
  * measured off the actual .doc-topbar height rather than guessed here.
@@ -1058,7 +1058,7 @@ a.dali-cmp-piece:hover .dali-cmp-row__title { text-decoration: underline; }
   background: color-mix(in srgb, var(--color-os-accent, #3b6cf6) 20%, transparent);
 }
 
-/* ── Enhance marks (specs/meeting-recording-rail.md Step 2) ──────────────────
+/* ── Enhance marks (specs/archive/meeting-recording-rail.md Step 2) ──────────────────
  * Two reserved `backgroundColor` prop values — ENHANCE_MARK_ADDED /
  * ENHANCE_MARK_PRIOR (app/components/meeting-recorder/enhance-plan.ts) —
  * that BlockNote serializes as a `data-background-color` attribute on

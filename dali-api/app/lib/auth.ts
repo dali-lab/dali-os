@@ -14,7 +14,7 @@ import { cachedForRequest } from "~/lib/request-cache";
 import { getAppEnv } from "~/lib/app-env";
 import { sampleDuration } from "~/lib/perf-stats";
 
-// Session-backed auth middleware. See SESSION_AUTH_PLAN.md for design.
+// Session-backed auth middleware. See specs/archive/SESSION_AUTH_PLAN.md for design.
 // The `user.sub` shape is preserved from the legacy JWT payload so existing
 // callers (`auth.user.sub` is used across calendar/, collab/, etc.) keep
 // working without per-file edits.

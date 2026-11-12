@@ -28,7 +28,7 @@ const RequestSchema = z.object({
   untouchedTemplate: z.boolean(),
   // Set by the client from hasEnhanceMarks(editor.document) — the server
   // can't cheaply read the live doc from this route, so it trusts the
-  // client's own scan (specs/meeting-recording-rail.md Step 2: "Server
+  // client's own scan (specs/archive/meeting-recording-rail.md Step 2: "Server
   // write paths refuse while marks exist").
   hasMarks: z.boolean().optional(),
 });

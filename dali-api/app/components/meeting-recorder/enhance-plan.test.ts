@@ -336,7 +336,7 @@ describe("markOfProps", () => {
   });
 });
 
-describe("localEditKeepIds (specs/meeting-recording-rail.md Step 2: local edit counts as Keep)", () => {
+describe("localEditKeepIds (specs/archive/meeting-recording-rail.md Step 2: local edit counts as Keep)", () => {
   const marks: EnhanceMarkEntry[] = [{ id: "b1", mark: ENHANCE_MARK_ADDED, type: "paragraph", text: "x" }];
 
   function change(overrides: Partial<EnhanceBlockChange> = {}): EnhanceBlockChange {

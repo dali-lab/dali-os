@@ -20,7 +20,7 @@ function lineCountLabel(count: number): string {
 }
 
 /**
- * The rail's transcript region (specs/meeting-recording-rail.md "Rail
+ * The rail's transcript region (specs/archive/meeting-recording-rail.md "Rail
  * layout"): speaker chips pinned at the top, a search filter, and the
  * `[mm:ss] Label: text` lines, full height below whatever state body
  * preceded it. Each chip is a Combobox over the occurrence roster, then

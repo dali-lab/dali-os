@@ -3,7 +3,7 @@
 // (Approved + not yet minted) it mints the long-lived desktop Session (the
 // keychain Bearer for the background poller) and a one-time handoff code, flips
 // the row to Consumed in one atomic guarded write, and returns both to the app.
-// See TAURI_DESKTOP_PLAN.md.
+// See specs/archive/TAURI_DESKTOP_PLAN.md.
 
 import type { Route } from "./+types/auth.pair.poll";
 import { prisma } from "~/lib/db.server";

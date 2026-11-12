@@ -1,6 +1,6 @@
 // The meeting recorder's state machine: fetches, polling, capture, backup,
 // and open/setOpen — everything MeetingRecorder.tsx did before rendering was
-// split out of it (specs/meeting-recording-rail.md "Component split"). No
+// split out of it (specs/archive/meeting-recording-rail.md "Component split"). No
 // rendering lives here; RecordingRail / RecordStartSheet / RecordingTranscript
 // / EnhanceBar take this hook's return value as props.
 
@@ -71,7 +71,7 @@ export function formatDateTime(iso: string): string {
 
 /** Shallow equality on id+mark+type+text, in order — lets the subscription
  *  callback keep pendingMarks's array identity stable across an unrelated
- *  keystroke (specs/meeting-recording-rail.md Step 2: "Memoize so the rail
+ *  keystroke (specs/archive/meeting-recording-rail.md Step 2: "Memoize so the rail
  *  does not rerender per keystroke when marks are unchanged"), while an edit
  *  to a marked block's own text (which changes its `text` field) still
  *  updates the rail row. */
@@ -213,7 +213,7 @@ export type UseMeetingRecordingProps = {
    *  scan of the CURRENT document (findEnhanceMarks) and the change list from
    *  that one transaction (editor.onChange's getChanges()) — this hook stays
    *  BlockNote-free, so the route computes both and hands over plain data
-   *  (specs/meeting-recording-rail.md Step 2: "Pending is derived from the
+   *  (specs/archive/meeting-recording-rail.md Step 2: "Pending is derived from the
    *  document, not from a flag"). Called once immediately on subscribe with
    *  the document's current marks and an empty change list, so a note that
    *  already has marks on arrival starts in "pending review" without
@@ -225,7 +225,7 @@ export type UseMeetingRecordingProps = {
    *  live editor. Single-block versions back the rail row buttons, the
    *  side-menu items, and a local edit on an already-marked block; the "all"
    *  versions re-derive the marks fresh at call time and skip ids already
-   *  gone (specs/meeting-recording-rail.md Step 2: "Concurrent review"),
+   *  gone (specs/archive/meeting-recording-rail.md Step 2: "Concurrent review"),
    *  returning the count kept/reverted for the live-region announcement. */
   onKeepBlock?: (id: string) => void;
   onRevertBlock?: (id: string, priorBlocks: Record<string, unknown>) => void;
@@ -331,7 +331,7 @@ export function useMeetingRecording({
   const [speakersChangedAt, setSpeakersChangedAt] = useState<string | null>(null);
 
   // Enhance (specs/meeting-notes-model.md §2; inline review in
-  // specs/meeting-recording-rail.md Step 2).
+  // specs/archive/meeting-recording-rail.md Step 2).
   const [enhanceNotes, setEnhanceNotes] = useState<StoredEnhanceNotes | null>(null);
   const [enhancedAt, setEnhancedAt] = useState<string | null>(null);
   const [enhancedByName, setEnhancedByName] = useState<string | null>(null);
@@ -364,10 +364,10 @@ export function useMeetingRecording({
   // write lands (new marks on the way, so a future clear should post again).
   const reviewedPostedRef = useRef(false);
   // "Someone enhanced this note after your preview." — the 409 case
-  // (specs/meeting-recording-rail.md's "stale preview" state, replacing the
+  // (specs/archive/meeting-recording-rail.md's "stale preview" state, replacing the
   // old reload confirm dialog).
   const [stalePreview, setStalePreview] = useState(false);
-  // Citation-chip click target (specs/meeting-recording-rail.md "Citation
+  // Citation-chip click target (specs/archive/meeting-recording-rail.md "Citation
   // chips"): scrolls/highlights a transcript line without relying on the
   // `?at=` URL param, which only matters on first mount.
   const [scrollTarget, setScrollTarget] = useState<number | null>(null);
@@ -1095,14 +1095,14 @@ export function useMeetingRecording({
       tone: "destructive",
     });
     if (!ok) return;
-    // Tints never outlive the rail (specs/meeting-recording-rail.md Step 2).
+    // Tints never outlive the rail (specs/archive/meeting-recording-rail.md Step 2).
     if (pendingMarks.length > 0) revertAll();
     reset();
   }
 
   /** Inserts the markdown + transcript into the note. Unlike before the
    *  rail, this does NOT clear local state — the recording stays visible in
-   *  the "inserted" state (specs/meeting-recording-rail.md) until Discard. */
+   *  the "inserted" state (specs/archive/meeting-recording-rail.md) until Discard. */
   function insert(notes: string | null) {
     const paragraphs = transcriptParagraphs(lines, speakers, roster);
     const markdown = meetingNotesMarkdown(notes);

@@ -124,7 +124,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     // refresh_token grant intentionally removed. Sessions auto-extend on
     // use (rolling TTL); MCP clients re-run the authorization flow when
-    // the bearer expires. See SESSION_AUTH_PLAN.md.
+    // the bearer expires. See specs/archive/SESSION_AUTH_PLAN.md.
 
     throw new OAuthError(
       "unsupported_grant_type",
