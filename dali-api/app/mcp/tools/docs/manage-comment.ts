@@ -5,6 +5,7 @@
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { addReaction, commentReactionStore } from "~/lib/reactions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { requireForAction } from "~/mcp/registry";
 import { commentAnchorSchema } from "~/lib/slide-comments";
@@ -170,15 +171,10 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
       if (!access.canComment) throw new ManageCommentError("Forbidden", 403);
     }
     if (input.action === "react") {
-      await prisma.docCommentReaction.upsert({
-        where: { commentId_userId_emoji: { commentId: comment.id, userId: callerId, emoji } },
-        create: { commentId: comment.id, userId: callerId, emoji },
-        update: {},
-      });
+      const refused = await addReaction(commentReactionStore(comment.id, callerId, emoji), emoji);
+      if (refused) throw new ManageCommentError("Reaction not allowed", refused);
     } else {
-      await prisma.docCommentReaction.deleteMany({
-        where: { commentId: comment.id, userId: callerId, emoji },
-      });
+      await commentReactionStore(comment.id, callerId, emoji).remove();
     }
     if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return { ok: true };

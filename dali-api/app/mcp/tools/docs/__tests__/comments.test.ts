@@ -25,6 +25,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
 vi.mock("~/lib/collabAuth", () => ({
   hydrateAuthors: vi.fn().mockResolvedValue([]),
 }));
+vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn(), getDownloadUrl: vi.fn() }));
 vi.mock("~/lib/comment-events.server", () => ({
   publishCommentChange: vi.fn(),
 }));
@@ -77,7 +78,7 @@ const mockPrisma = prisma as unknown as {
   page: { findUnique: ReturnType<typeof vi.fn> };
   pageDoc: { findUnique: ReturnType<typeof vi.fn> };
   projectFileVersion: { findFirst: ReturnType<typeof vi.fn> };
-  docCommentReaction: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
+  docCommentReaction: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
 };
 
 function comment(id: string, parentId: string | null, createdAt: string) {
@@ -206,6 +207,39 @@ describe("manage_comment", () => {
 
     await runManageComment("u1", { action, commentId: "c1", emoji: "👍" });
     expect(publishCommentChange).toHaveBeenCalledExactlyOnceWith("page1");
+  });
+
+  describe("react validation", () => {
+    beforeEach(() => {
+      mockPrisma.docComment.findUnique.mockResolvedValue({
+        id: "c1", authorId: "u2", targetType: "doc", targetId: "page1", parentId: null,
+      });
+      vi.mocked(getPageAccess).mockResolvedValue({ canComment: true } as never);
+      mockPrisma.docCommentReaction.findMany.mockResolvedValue([]);
+    });
+
+    it("rejects text that is not an emoji with 400 and stores nothing", async () => {
+      await expect(
+        runManageComment("u1", { action: "react", commentId: "c1", emoji: "not-an-emoji" }),
+      ).rejects.toMatchObject({ name: "ManageCommentError", status: 400 });
+      expect(mockPrisma.docCommentReaction.upsert).not.toHaveBeenCalled();
+      expect(publishCommentChange).not.toHaveBeenCalled();
+    });
+
+    it("rejects a new emoji past the cap with 409 and stores nothing", async () => {
+      mockPrisma.docCommentReaction.findMany.mockResolvedValue(
+        Array.from({ length: 20 }, (_, i) => ({ emoji: `e${i}` })),
+      );
+      await expect(
+        runManageComment("u1", { action: "react", commentId: "c1", emoji: "👍" }),
+      ).rejects.toMatchObject({ name: "ManageCommentError", status: 409 });
+      expect(mockPrisma.docCommentReaction.upsert).not.toHaveBeenCalled();
+    });
+
+    it("stores a valid emoji", async () => {
+      await runManageComment("u1", { action: "react", commentId: "c1", emoji: "👍" });
+      expect(mockPrisma.docCommentReaction.upsert).toHaveBeenCalledOnce();
+    });
   });
 
   it("allows the author to edit their comment", async () => {

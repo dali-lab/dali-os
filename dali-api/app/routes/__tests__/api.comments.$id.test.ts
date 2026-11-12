@@ -18,7 +18,7 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
-vi.mock("~/lib/reactions.server", () => ({ reactionRefusal: vi.fn() }));
+vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn(), getDownloadUrl: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
@@ -26,7 +26,6 @@ import { logAuditEvent } from "~/lib/audit";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { isCore } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { reactionRefusal } from "~/lib/reactions.server";
 import { action } from "~/routes/api.comments.$id";
 
 const mockPrismaTyped = prisma as any;
@@ -298,18 +297,19 @@ describe("react intent", () => {
     });
     mockPrismaTyped.docCommentReaction.upsert.mockResolvedValue({});
     mockPrismaTyped.docCommentReaction.findMany.mockResolvedValue([{ emoji: "❤️" }]);
-    vi.mocked(reactionRefusal).mockResolvedValue(null);
   });
 
-  it("checks the emoji against the ones already on the comment", async () => {
-    await post("react", AUTHOR_ID, { emoji: "👍" });
-    expect(reactionRefusal).toHaveBeenCalledWith("👍", ["❤️"]);
+  it("refuses with 400 when the emoji isn't an emoji", async () => {
+    const res = (await post("react", AUTHOR_ID, { emoji: "not-an-emoji" })) as Response;
+    expect(res.status).toBe(400);
+    expect(mockPrismaTyped.docCommentReaction.upsert).not.toHaveBeenCalled();
   });
 
-  it.each([400, 409] as const)("refuses with %i when the emoji isn't allowed", async (status) => {
-    vi.mocked(reactionRefusal).mockResolvedValue(status);
-    const res = (await post("react", AUTHOR_ID, { emoji: ":gone:" })) as Response;
-    expect(res.status).toBe(status);
+  it("refuses with 409 when the comment already has the most distinct emoji", async () => {
+    const full = Array.from({ length: 20 }, (_, i) => ({ emoji: `e${i}` }));
+    mockPrismaTyped.docCommentReaction.findMany.mockResolvedValue(full);
+    const res = (await post("react", AUTHOR_ID, { emoji: "👍" })) as Response;
+    expect(res.status).toBe(409);
     expect(mockPrismaTyped.docCommentReaction.upsert).not.toHaveBeenCalled();
   });
 

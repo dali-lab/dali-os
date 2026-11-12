@@ -9,7 +9,7 @@ vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/s3", () => s3);
 
 import data from "@emoji-mart/data/sets/15/native.json";
-import { isStandardEmoji, listCustomEmoji, reactionRefusal } from "../reactions.server";
+import { addReaction, isStandardEmoji, listCustomEmoji, reactionRefusal, toggleReaction } from "../reactions.server";
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -83,5 +83,46 @@ describe("listCustomEmoji", () => {
     db.customEmoji.findMany.mockResolvedValue([row({ addedById: null, addedBy: null })]);
     const [item] = await listCustomEmoji({ userId: "ada", core: false });
     expect(item).toMatchObject({ addedBy: null, canDelete: false });
+  });
+});
+
+describe("toggleReaction", () => {
+  const store = (removed: number, used: string[] = []) => ({
+    remove: vi.fn(async () => removed),
+    usedEmoji: vi.fn(async () => used),
+    add: vi.fn(async () => ({})),
+  });
+
+  it("removes an existing reaction without checking or adding", async () => {
+    const s = store(1);
+    expect(await toggleReaction(s, "🔥")).toBe("removed");
+    expect(s.usedEmoji).not.toHaveBeenCalled();
+    expect(s.add).not.toHaveBeenCalled();
+  });
+
+  it("adds a valid new reaction", async () => {
+    const s = store(0, ["❤️"]);
+    expect(await toggleReaction(s, "🔥")).toBe("added");
+    expect(s.add).toHaveBeenCalledOnce();
+  });
+
+  it("refuses an invalid emoji with 400 and never adds", async () => {
+    const s = store(0);
+    expect(await toggleReaction(s, "hello")).toBe(400);
+    expect(s.add).not.toHaveBeenCalled();
+  });
+
+  it("refuses a new emoji past the cap with 409 and never adds", async () => {
+    const s = store(0, Array.from({ length: 20 }, (_, i) => `:e${i}:`));
+    expect(await toggleReaction(s, "🔥")).toBe(409);
+    expect(s.add).not.toHaveBeenCalled();
+  });
+});
+
+describe("addReaction", () => {
+  it("returns null and adds when allowed", async () => {
+    const add = vi.fn(async () => ({}));
+    expect(await addReaction({ remove: vi.fn(), usedEmoji: async () => [], add }, "🔥")).toBeNull();
+    expect(add).toHaveBeenCalledOnce();
   });
 });
