@@ -21,11 +21,14 @@ const h = vi.hoisted(() => {
     readMe: vi.fn(),
     readBoard: vi.fn(),
     registryRun: vi.fn(),
+    isFeatureEnabled: vi.fn(),
     readRun: vi.fn(),
   };
 });
 
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: h.isFeatureEnabled }));
+vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
 vi.mock("~/lib/mcp-auth", () => ({ authenticateMcpRequest: h.authenticate }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: h.checkRateLimit }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: h.logAuditEvent }));
@@ -49,6 +52,11 @@ vi.mock("~/mcp/registry", async () => {
     read_tool: {
       def: { name: "read_tool", description: "r", requiredScope: "mcp:read", inputSchema: { type: "object" } },
       run: h.readRun,
+    },
+    flagged_tool: {
+      def: { name: "flagged_tool", description: "f", requiredScope: "mcp:read", inputSchema: { type: "object" } },
+      run: vi.fn(),
+      featureFlag: "core-taskboard",
     },
     admin_tool: {
       def: { name: "admin_tool", description: "a", requiredScope: "mcp:admin", inputSchema: { type: "object" } },
@@ -209,6 +217,15 @@ describe("mcp transport gate", () => {
 });
 
 describe("tools/list", () => {
+  it("omits a flag-off tool and lists it once the flag is on", async () => {
+    h.isFeatureEnabled.mockResolvedValue(false);
+    let { result } = await (await rpc("tools/list")).json();
+    expect(result.tools.map((t: { name: string }) => t.name)).not.toContain("flagged_tool");
+    h.isFeatureEnabled.mockResolvedValue(true);
+    ({ result } = await (await rpc("tools/list")).json());
+    expect(result.tools.map((t: { name: string }) => t.name)).toContain("flagged_tool");
+  });
+
   it("lists registry tools with only name, description and schema", async () => {
     const { result } = await (await rpc("tools/list")).json();
     expect(result.tools.map((t: { name: string }) => t.name)).toEqual(["reg_tool", "read_tool"]);
