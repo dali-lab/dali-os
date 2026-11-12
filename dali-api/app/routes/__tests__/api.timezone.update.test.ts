@@ -31,7 +31,8 @@ describe("api.timezone.update", () => {
   });
 
   it("rejects an unknown zone with the exact message and saves nothing", async () => {
-    for (const fields of [{ timeZone: "Mars/Base" }, { timeZone: "" }, {}]) {
+    const cases: Record<string, string>[] = [{ timeZone: "Mars/Base" }, { timeZone: "" }, {}];
+    for (const fields of cases) {
       const res = await post(fields);
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: "Unrecognized timezone." });

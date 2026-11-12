@@ -19,7 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!userId) {
     try {
       const { getBetterAuthUser } = await import("~/lib/betterauth-compat.server");
-      userId = (await getBetterAuthUser(request))?.id ?? null;
+      userId = (await getBetterAuthUser(request))?.sub ?? null;
     } catch {
       // Attribution is best effort; a BetterAuth fault must not block logout.
     }

@@ -41,7 +41,7 @@ beforeEach(() => {
   db.userStory.findUnique.mockResolvedValue(null);
   db.epic.findUnique.mockResolvedValue(null);
   db.task.create.mockResolvedValue({ id: "t1" });
-  db.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(db));
+  (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(async (cb: (tx: unknown) => unknown) => cb(db));
   vi.mocked(nextColumnPosition).mockResolvedValue(7);
   vi.mocked(createIssueForTask).mockResolvedValue(undefined as never);
 });

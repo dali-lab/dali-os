@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api.page-docs.$key";
 import { z } from "zod";
+import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
@@ -69,7 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const doc = await prisma.pageDoc.upsert({
     where: { pageKey },
     update: {},
-    create: { pageKey, title, createdById: userId, sections: [EMPTY_OVERVIEW] },
+    create: { pageKey, title, createdById: userId, sections: [EMPTY_OVERVIEW] as Prisma.InputJsonValue },
     select: {
       id: true,
       title: true,
