@@ -396,6 +396,7 @@ export function RubricDetail() {
                               <Tooltip content="Remove criterion">
                                 <button
                                   type="button"
+                                  aria-label="Remove criterion"
                                   onClick={() => void handleRemoveCriterion(c.key)}
                                   className="p-1.5 text-red-600 hover:bg-red-50 rounded-md"
                                 >
@@ -437,6 +438,7 @@ export function RubricDetail() {
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 touch:opacity-100 focus-within:opacity-100 transition-opacity">
                               <button
                                 type="button"
+                                aria-label="Edit criterion"
                                 onClick={() => startEditing(c)}
                                 className="p-1.5 text-muted-foreground/70 hover:text-foreground rounded-md hover:bg-muted"
                               >
@@ -444,6 +446,7 @@ export function RubricDetail() {
                               </button>
                               <button
                                 type="button"
+                                aria-label="Remove criterion"
                                 onClick={() => void handleRemoveCriterion(c.key)}
                                 className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
                               >

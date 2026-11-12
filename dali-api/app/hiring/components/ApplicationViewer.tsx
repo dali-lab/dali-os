@@ -315,7 +315,7 @@ function AnnotatableField({
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 {readOnly ? 'Annotation' : popover.annotationId ? 'Edit annotation' : 'Add annotation'}
               </span>
-              <button onClick={() => setPopover(null)} className="text-muted-foreground/70 hover:text-muted-foreground">
+              <button type="button" aria-label="Close" onClick={() => setPopover(null)} className="text-muted-foreground/70 hover:text-muted-foreground">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>

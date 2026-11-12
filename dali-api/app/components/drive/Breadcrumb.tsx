@@ -88,6 +88,7 @@ export function Breadcrumb({
             trigger={
               <button
                 type="button"
+                aria-label="Show hidden path segments"
                 className="rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50"
                 onClick={(e) => e.stopPropagation()}
               >
