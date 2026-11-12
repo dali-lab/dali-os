@@ -28,6 +28,10 @@ export const test = base.extend<{ loginAs: (opts: LoginOptions) => Promise<void>
     if (baseURL) {
       await page.context().addCookies([{ name: 'dali_pk_prompt', value: '1', url: baseURL }]);
     }
+    await page.route(
+      (url) => !['localhost', '127.0.0.1'].includes(url.hostname),
+      (route) => (route.request().resourceType() === 'image' ? route.abort() : route.continue()),
+    );
     await use(page);
   },
   loginAs: async ({ page }, use) => {

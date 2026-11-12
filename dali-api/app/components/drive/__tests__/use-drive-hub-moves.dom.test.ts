@@ -30,7 +30,7 @@ const mounted: Array<() => void> = [];
 function setup(over: Partial<DriveHubMovesOptions> = {}, confirm = true) {
   const performMove = vi.fn(async () => true);
   const calls = {
-    confirm: vi.fn(async () => confirm),
+    confirm: vi.fn(async (_opts: unknown) => confirm),
     info: vi.fn(),
     error: vi.fn(),
     revalidate: vi.fn(),
