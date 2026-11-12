@@ -6,7 +6,7 @@ import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { reactionRefusal } from "~/lib/reactions.server";
+import { addReaction, commentReactionStore } from "~/lib/reactions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { notifyMentions } from "~/lib/mentions";
 import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
@@ -212,30 +212,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     // already implies access; no additional check needed.
 
     if (intent === "react") {
-      const used = await prisma.docCommentReaction.findMany({
-        where: { commentId: comment.id },
-        select: { emoji: true },
-        distinct: ["emoji"],
-      });
-      const refused = await reactionRefusal(emoji, used.map((r) => r.emoji));
+      const refused = await addReaction(commentReactionStore(comment.id, auth.user.sub, emoji), emoji);
       if (refused) {
         return withCors(request, Response.json({ error: "Reaction not allowed" }, { status: refused }));
       }
-      await prisma.docCommentReaction.upsert({
-        where: {
-          commentId_userId_emoji: {
-            commentId: comment.id,
-            userId: auth.user.sub,
-            emoji,
-          },
-        },
-        create: { commentId: comment.id, userId: auth.user.sub, emoji },
-        update: {},
-      });
     } else {
-      await prisma.docCommentReaction.deleteMany({
-        where: { commentId: comment.id, userId: auth.user.sub, emoji },
-      });
+      await commentReactionStore(comment.id, auth.user.sub, emoji).remove();
     }
     if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return withCors(request, Response.json({ ok: true }));

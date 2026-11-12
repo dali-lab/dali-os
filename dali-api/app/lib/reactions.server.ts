@@ -29,6 +29,48 @@ export async function reactionRefusal(emoji: string, used: string[]): Promise<40
   return hasRoomForReaction(used, emoji) ? null : 409;
 }
 
+export type ReactionStore = {
+  remove: () => Promise<number>;
+  usedEmoji: () => Promise<string[]>;
+  add: () => Promise<unknown>;
+};
+
+export function commentReactionStore(commentId: string, userId: string, emoji: string): ReactionStore {
+  const mine = { commentId, userId, emoji };
+  return {
+    remove: async () => (await prisma.docCommentReaction.deleteMany({ where: mine })).count,
+    usedEmoji: async () =>
+      (
+        await prisma.docCommentReaction.findMany({
+          where: { commentId },
+          select: { emoji: true },
+          distinct: ["emoji"],
+        })
+      ).map((r) => r.emoji),
+    add: () =>
+      prisma.docCommentReaction.upsert({
+        where: { commentId_userId_emoji: mine },
+        create: mine,
+        update: {},
+      }),
+  };
+}
+
+export async function addReaction(store: ReactionStore, emoji: string): Promise<400 | 409 | null> {
+  const refused = await reactionRefusal(emoji, await store.usedEmoji());
+  if (refused) return refused;
+  await store.add();
+  return null;
+}
+
+export async function toggleReaction(
+  store: ReactionStore,
+  emoji: string,
+): Promise<"removed" | "added" | 400 | 409> {
+  if ((await store.remove()) > 0) return "removed";
+  return (await addReaction(store, emoji)) ?? "added";
+}
+
 /** Fills in each custom reaction's image, or null when the emoji was deleted. */
 export async function withEmojiImages<T extends { reactions: { emoji: string; imageUrl?: string | null }[] }>(
   items: T[],
