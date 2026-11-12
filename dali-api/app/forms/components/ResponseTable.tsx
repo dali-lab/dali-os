@@ -27,6 +27,8 @@ export type ColumnControls = {
   // "Feeds staffing as" for a column, on a board's question columns.
   roleMenu?: (key: string) => RoleMenu | null;
   onRole?: (key: string, value: string) => void;
+  // More items for one column's menu, shown above Hide.
+  extraItems?: (key: string) => { label: string; onSelect: () => void }[];
 };
 
 const TH = "text-left font-medium px-4 py-3";
@@ -240,6 +242,11 @@ function ColumnMenu({
           ))}
         </Menu.Sub>
       )}
+      {controls.extraItems?.(id).map((x) => (
+        <Menu.Item key={x.label} onSelect={x.onSelect}>
+          {x.label}
+        </Menu.Item>
+      ))}
       <Menu.Separator />
       <Menu.Item
         icon={<EyeOff className="h-3.5 w-3.5" />}

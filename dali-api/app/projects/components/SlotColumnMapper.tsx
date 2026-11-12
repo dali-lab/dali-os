@@ -691,7 +691,7 @@ function statusMapFor(c: DraftCol): { statusMap?: Record<string, IntentStatusVal
     : {};
 }
 
-function StatusAnswerMap({
+export function StatusAnswerMap({
   options,
   statusMap,
   canManage,

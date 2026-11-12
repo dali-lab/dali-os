@@ -141,6 +141,16 @@ describe("ResponseTable", () => {
     expect(c.edit).toHaveBeenCalledTimes(1);
   });
 
+  it("adds a column's extra items to its menu", async () => {
+    const onSelect = vi.fn();
+    await render({
+      controls: controls({ extraItems: (key) => (key === "q1" ? [{ label: "Status answers", onSelect }] : []) }),
+    });
+    expect(items("Terms in lab column").map((b) => b.textContent)).not.toContain("Status answers");
+    await click(item("Coming back column", "Status answers"));
+    expect(onSelect).toHaveBeenCalled();
+  });
+
   it("offers Feeds staffing as only where the table gives a role menu", async () => {
     const onRole = vi.fn();
     await render({
