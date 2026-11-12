@@ -10,7 +10,7 @@ import {
 
 function pill(props: { selected: boolean; size?: "sm" | "md"; variant?: "default" | "filled" }) {
   return renderToStaticMarkup(
-    createElement(FilterPill, { onClick: () => {}, ...props }, "Label"),
+    createElement(FilterPill, { onClick: () => {}, ...props, children: "Label" }),
   );
 }
 

@@ -4,25 +4,7 @@ import { Select } from "~/components/ui/floating";
 import { Folder, ChevronRight, ChevronDown } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { Avatar } from "~/components/ui/Avatar";
-import { type ProjectStatus } from "~/projects/lib/project-lifecycle";
 import { type LoaderData } from "~/projects/components/detail/types";
-import { STATUS_PILL_OS } from "~/projects/components/detail/constants";
-
-function StatusBadge({
-  status,
-}: {
-  status: ProjectStatus;
-}) {
-  // The design's status tag — the same plate the project cards wear over their
-  // cover, so a project reads the same in the grid and on its own page.
-  return (
-    <span
-      className={`rounded-full border px-3 py-[5px] text-xs font-semibold ${STATUS_PILL_OS[status]}`}
-    >
-      {status}
-    </span>
-  );
-}
 
 /* One term's roster. Split out of TeamSection because the current term renders
    at the top level and the older ones render inside the "Previous teams"

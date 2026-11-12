@@ -32,6 +32,7 @@ import { EditableSection } from "~/components/EditableSection";
 import { Markdown } from "~/components/Markdown";
 import { type ProjectStatus } from "~/projects/lib/project-lifecycle";
 import { STATUS_PILL_OS } from "~/projects/components/detail/constants";
+import { StatusBadge } from "~/projects/components/detail/StatusBadge";
 import { type LoaderData } from "~/projects/components/detail/types";
 
 export function DescriptionSegment({
