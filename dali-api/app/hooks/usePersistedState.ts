@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { readStorage, writeStorage } from "~/lib/safe-storage";
 
 // Client state that survives navigation, keyed in localStorage. Renders with
 // the fallback first and hydrates after mount so server and client markup
@@ -18,13 +19,13 @@ export function usePersistedState<T>(
     if (typeof window === "undefined") return;
     let next = fallbackRef.current;
     try {
-      const raw = window.localStorage.getItem(key);
+      const raw = readStorage(key);
       if (raw != null) {
         const parsed: unknown = JSON.parse(raw);
         if (isValid(parsed)) next = parsed;
       }
     } catch {
-      // Unreadable storage or corrupt JSON: fall back.
+      // Corrupt JSON: fall back.
     }
     setValue(next);
     // isValid is a stable guard by convention; re-running on it would thrash.
@@ -35,11 +36,7 @@ export function usePersistedState<T>(
     (next: T | ((prev: T) => T)) => {
       setValue((prev) => {
         const resolved = typeof next === "function" ? (next as (p: T) => T)(prev) : next;
-        try {
-          window.localStorage.setItem(key, JSON.stringify(resolved));
-        } catch {
-          // Storage unavailable: keep the in-memory value.
-        }
+        writeStorage(key, JSON.stringify(resolved));
         return resolved;
       });
     },
