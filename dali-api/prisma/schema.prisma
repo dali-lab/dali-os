@@ -1596,6 +1596,7 @@ model DocComment {
 
   @@index([targetType, targetId, createdAt])
   @@index([parentId])
+  @@index([fileId])
 }
 
 // Per-user emoji reactions on a DocComment. Toggle semantics: upsert on add,
@@ -2908,6 +2909,8 @@ model ScheduledMeeting {
 
   @@index([iCalUID])
   @@index([notebookId])
+  @@index([organizerId])
+  @@index([projectId])
 }
 
 // A PageShare a meeting justifies on its notebook, so uninviting removes
@@ -3065,6 +3068,7 @@ model TimeEntry {
   @@unique([sourceEventId, userId])
   @@index([userId, date])
   @@index([userId, assignmentType])
+  @@index([projectId])
 }
 
 enum TimeEntrySource {
@@ -3168,6 +3172,8 @@ model Notification {
   @@index([recipientUserId, createdAt])
   @@index([interviewAssignmentId])
   @@index([announcementId])
+  @@index([scheduledMeetingId])
+  @@index([formId])
 }
 
 enum NotificationKind {
@@ -4505,6 +4511,7 @@ model Task {
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
+  @@index([epicId])
   @@index([storyId])
   @@index([sourceRecordingId])
 }
@@ -4577,6 +4584,7 @@ model TaskAssignee {
   user User @relation(fields: [userId], references: [id])
 
   @@id([taskId, userId])
+  @@index([userId])
 }
 
 model TaskComment {
@@ -5806,6 +5814,7 @@ model Page {
   @@unique([defaultMeetingNoteFor])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
+  @@index([parentPageId])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts
   // (`query <% "title"`). Ordinary exact/substring title search still uses the
   // plain ILIKE path.
