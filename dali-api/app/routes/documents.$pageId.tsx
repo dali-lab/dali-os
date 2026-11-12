@@ -613,8 +613,8 @@ function WhiteboardLink({ pageId }: { pageId: string }) {
 }
 
 export default function DocumentRoute() {
-  const data = useLoaderData<typeof loader>();
-  if ("emptyNotebook" in data) return <EmptyNotebook notebook={data.emptyNotebook} />;
+  const { emptyNotebook } = useLoaderData() as { emptyNotebook?: NotebookView };
+  if (emptyNotebook) return <EmptyNotebook notebook={emptyNotebook} />;
   return <DocumentPage />;
 }
 
@@ -655,7 +655,7 @@ function DocumentPage() {
     latestRecording,
     hasActiveRecording,
     projectId: meetingProjectId,
-  } = useLoaderData<typeof loader>();
+  } = useLoaderData() as Extract<Awaited<ReturnType<typeof loader>>, { pageId: string }>;
 
   // Arriving from a comment-mention notification (?comment=<id>): open the
   // comments panel and scroll to that comment once threads load.
