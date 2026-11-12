@@ -49,7 +49,7 @@ import {
 } from "../partner-access";
 import { createPartnerInvite } from "../invites.server";
 import { classifyPartnerEmail, issuePartnerMagicLink } from "../magic-link.server";
-import { PARTNER_ORG_ACTIONS, runPartnerOrgAction } from "../org-actions.server";
+import { PARTNER_ORG_ACTIONS, isPartnerOrgIntent, runPartnerOrgAction } from "../org-actions.server";
 
 const db = prisma as any;
 const org = { id: "org1", name: "Acme", primaryContactId: "m-primary", isIndividual: false };
@@ -82,6 +82,11 @@ describe("runPartnerOrgAction", () => {
 
   it("does not treat prototype keys as intents", async () => {
     expect(await run("toString")).toEqual({ error: "Unknown action." });
+  });
+
+  it("recognises registered intents only", () => {
+    expect(Object.keys(PARTNER_ORG_ACTIONS).every(isPartnerOrgIntent)).toBe(true);
+    expect(["nope", "toString", ""].some(isPartnerOrgIntent)).toBe(false);
   });
 
   it("registers every intent the page posts", () => {

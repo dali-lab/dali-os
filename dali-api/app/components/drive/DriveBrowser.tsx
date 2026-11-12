@@ -9,8 +9,8 @@
 // Also here: type filter, search, drag-and-drop internal move, drag-to-upload,
 //   favorites, rename, move, delete, bulk actions, context menu, breadcrumb, sort.
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { DndContext, DragOverlay, MouseSensor, pointerWithin, TouchSensor, useSensor, useSensors, type DragEndEvent, type DragStartEvent } from "@dnd-kit/core";
+import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { DndContext, DragOverlay, pointerWithin } from "@dnd-kit/core";
 import { ChevronLeft, ChevronRight, Search, X, List as ListIcon, LayoutGrid, Upload, Columns } from "lucide-react";
 import type { DriveItem } from "~/drive/lib/drive.server";
 import { listedUnderFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
@@ -22,16 +22,16 @@ import { useRevalidator } from "react-router";
 import { useToast } from "~/components/ui/toast";
 import { notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { cn } from "~/lib/cn";
-import { modKey } from "~/lib/shortcuts";
 import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/drive/lib/drive-spaces";
 import { LoadMore } from "~/components/ui/Pager";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { crumbsFor } from "~/components/drive/location";
 import { downloadItems } from "~/components/drive/download-files";
 import { clickIntent } from "~/components/drive/column-click";
-import { gridStepBlocks, perRowFromTops, type GridBlock } from "~/components/drive/grid-nav";
 import { MarqueeBox, useMarquee } from "~/components/drive/use-marquee";
-import { droppedFiles } from "~/components/drive/dropped-files";
+import { useDriveSelection } from "~/components/drive/use-drive-selection";
+import { useDriveKeyboard } from "~/components/drive/use-drive-keyboard";
+import { useDriveDnd } from "~/components/drive/use-drive-dnd";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { meetingsOptionFor } from "~/components/drive/receiver-options";
@@ -44,8 +44,8 @@ import { ScopeContents } from "./ScopeContents";
 import { ScopeList } from "./ScopeList";
 import { SearchResults } from "./SearchResults";
 import { BesideContext, besideTarget, type BesideState } from "./beside";
-import { childrenAt, isPreviewable, sortItems, searchAll, folderDescendants, type SortKey, type SortDir, type ViewMode, type DriveLocation } from "./browser-items";
-import { focusPane, isPlainDocument, fileDropFolderAt, FileDropContext, DROP_OVERLAY, type FileDropOptions } from "./drop-zone";
+import { childrenAt, sortItems, searchAll, type SortKey, type SortDir, type ViewMode, type DriveLocation } from "./browser-items";
+import { focusPane, isPlainDocument, FileDropContext, DROP_OVERLAY, type FileDropOptions } from "./drop-zone";
 import { itemIcon } from "./item-icons";
 import type { RowHandlers, RowActions } from "./row-types";
 export type { RowHandlers, RowActions } from "./row-types";
@@ -263,9 +263,6 @@ export function DriveBrowser({
   // `anchorId` is where a shift-click range starts, and `focusId` is the row the
   // keyboard, Quick Look and rename talk about: the last one clicked, checked
   // or arrowed to.
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [anchorId, setAnchorId] = useState<string | null>(null);
-  const [focusId, setFocusId] = useState<string | null>(null);
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "name", dir: "asc" });
   const [viewMode, setViewMode] = useState<ViewMode>("columns");
   useEffect(() => {
@@ -283,10 +280,6 @@ export function DriveBrowser({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   // Item queued for the spacebar Quick Look overlay (null = closed).
   const [previewItem, setPreviewItem] = useState<DriveItem | null>(null);
-  const [uploadOver, setUploadOver] = useState(false);
-  const [fileOverFolder, setFileOverFolder] = useState<string | null>(null);
-  const [activeDrag, setActiveDrag] = useState<{ item: DriveItem; scopeId: string } | null>(null);
-  const dragDepth = useRef(0);
   const listRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -308,10 +301,6 @@ export function DriveBrowser({
   // Which column the keyboard drives: up/down move within it, left/right step
   // between columns.
   const [focusLevel, setFocusLevel] = useState(() => Math.max(0, levels.length - 1));
-  // Type-ahead buffer: consecutive letters within a second jump to the first row
-  // in the focused pool whose name starts with them.
-  const typeAhead = useRef<{ buf: string; at: number }>({ buf: "", at: 0 });
-
   // Restore the saved view mode after mount.
   useEffect(() => {
     try {
@@ -350,20 +339,6 @@ export function DriveBrowser({
     if (el) el.scrollLeft = el.scrollWidth;
   }, [levels.length]);
 
-  // Follow the keyboard: bring the focused row into view (horizontally as well,
-  // since a deep trail scrolls the columns off-screen).
-  useEffect(() => {
-    if (!focusId) return;
-    const id = CSS.escape(focusId);
-    rootRef.current
-      ?.querySelector(`[data-row-id="${id}"], [data-item-id="${id}"]`)
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [focusId]);
-
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
-  );
   const suppressClickRef = useRef(false);
   /** The click that ends a drag (a row drag or a marquee) must not select, open or deselect anything. */
   function suppressNextClick() {
@@ -432,88 +407,36 @@ export function DriveBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searching, hits, columnsActive, levels, currentScope, listing, scopes, typeFilter, sort]);
 
-  const selectedItems = useMemo(
-    () => [...itemIndex.values()].filter((e) => selected.has(e.item.id)).map((e) => e.item),
-    [itemIndex, selected],
-  );
-
   // The drives themselves are focusable (arrow keys walk them) but never selected.
   const scopesFocusable = !searching && (columnsActive || !currentScope);
 
-  // Whatever the view stops showing — a folder left behind, a view switch, a
-  // search, an item deleted elsewhere — drops out of the selection, anchor and
-  // focus; what is still on screen keeps them.
+  const {
+    selected, setSelected, anchorId, focusId, focusEntry, selectedItems,
+    clearSelection, focusOnly, selectIds, selectWithModifier, handleContextSelect,
+  } = useDriveSelection({
+    itemIndex,
+    scopes,
+    scopesFocusable,
+    listing,
+    currentScopeId,
+    currentFolderId,
+    initialSelectedId,
+    revealId,
+    followRow: (id) => {
+      const level = levelIndexOf(id);
+      if (level > 0) setFocusLevel(level);
+    },
+  });
+
+  // Follow the keyboard: bring the focused row into view (horizontally as well,
+  // since a deep trail scrolls the columns off-screen).
   useEffect(() => {
-    setSelected((prev) => {
-      const next = new Set([...prev].filter((id) => itemIndex.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-    setAnchorId((a) => (a && itemIndex.has(a) ? a : null));
-    setFocusId((f) =>
-      f && (itemIndex.has(f) || (scopesFocusable && scopes.some((s) => s.id === f))) ? f : null,
-    );
-  }, [itemIndex, scopesFocusable, scopes]);
-
-  const focusEntry = focusId ? (itemIndex.get(focusId) ?? null) : null;
-
-  // Arriving somewhere new leaves behind whatever was picked elsewhere: only
-  // rows of the destination's own listing (the keyboard's first-row pick on
-  // stepping into a column) survive. Declared before the reveal effect below
-  // so a reveal's selection lands after this and wins.
-  useEffect(() => {
-    const here = new Set(listing.map((i) => i.id));
-    setSelected((prev) => {
-      const next = new Set([...prev].filter((id) => here.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-    setAnchorId((a) => (a && here.has(a) ? a : null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentScopeId, currentFolderId]);
-
-  // Reveal in Drive lands here with the item to show: select it on first
-  // mount only (a later folder that happens to hold it is not a reveal), and
-  // the focus effect above scrolls it into view.
-  const revealedRef = useRef(false);
-  useEffect(() => {
-    if (!initialSelectedId || revealedRef.current) return;
-    revealedRef.current = true;
-    if (!itemIndex.has(initialSelectedId)) return;
-    focusOnly(initialSelectedId);
-    const level = levelIndexOf(initialSelectedId);
-    if (level > 0) setFocusLevel(level);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSelectedId, itemIndex]);
-
-  const revealedIdRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    if (!revealId || revealedIdRef.current === revealId || !itemIndex.has(revealId)) return;
-    revealedIdRef.current = revealId;
-    focusOnly(revealId);
-    const level = levelIndexOf(revealId);
-    if (level > 0) setFocusLevel(level);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revealId, itemIndex]);
-
-  // ── Selection ──────────────────────────────────────────────────────────────
-  function clearSelection() {
-    setSelected(new Set());
-    setAnchorId(null);
-    setFocusId(null);
-  }
-
-  /** Focus this row and select it alone, or with `selectable` false just focus it (clearing the selection). Drives take focus but never selection. */
-  function focusOnly(id: string, selectable = true) {
-    setSelected(selectable ? new Set([id]) : new Set());
-    setAnchorId(selectable ? id : null);
-    setFocusId(id);
-  }
-
-  /** The marquee's result: replace the selection, focusing the last row it reached. */
-  function selectIds(ids: string[]) {
-    setSelected(new Set(ids));
-    setAnchorId(ids[0] ?? null);
-    setFocusId(ids[ids.length - 1] ?? null);
-  }
+    if (!focusId) return;
+    const id = CSS.escape(focusId);
+    rootRef.current
+      ?.querySelector(`[data-row-id="${id}"], [data-item-id="${id}"]`)
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [focusId]);
 
   function levelIndexOf(id: string): number {
     return columnsActive
@@ -526,26 +449,6 @@ export function DriveBrowser({
     if (!columnsActive) return orderedIds;
     const level = levels[levelIndexOf(id)];
     return level ? itemsForLevel(level).map((i) => i.id) : [];
-  }
-
-  function selectWithModifier(id: string, mode: "toggle" | "range", poolIds: string[]) {
-    if (mode === "toggle") {
-      setSelected((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-      setAnchorId(id);
-    } else {
-      const a = poolIds.indexOf(anchorId!);
-      const b = poolIds.indexOf(id);
-      const [lo, hi] = a <= b ? [a, b] : [b, a];
-      setSelected(new Set(poolIds.slice(lo, hi + 1)));
-    }
-    setFocusId(id);
-    const level = levelIndexOf(id);
-    if (level > 0) setFocusLevel(level);
   }
 
   /** A click on a row, tile or card: plain selects it alone, cmd/ctrl toggles, shift extends; a tap opens. */
@@ -600,17 +503,6 @@ export function DriveBrowser({
     if (level > 0) setFocusLevel(level);
     focusOnly(id, false);
     openById(id);
-  }
-
-  /** Right-click: focus the row, and select it alone unless it is already part of the selection. */
-  function handleContextSelect(id: string) {
-    setFocusId(id);
-    if (!selected.has(id)) {
-      setSelected(new Set([id]));
-      setAnchorId(id);
-    }
-    const level = levelIndexOf(id);
-    if (level > 0) setFocusLevel(level);
   }
 
   // ── Open / navigate ──────────────────────────────────────────────────────
@@ -688,268 +580,16 @@ export function DriveBrowser({
     onNavigate(target.scopeId, target.folderId);
   }
 
-  // ── Keyboard navigation (every view) ──────────────────────────────────────
+  const { onPaneKeyDown } = useDriveKeyboard({
+    searching, columnsActive, viewMode, hits, listing, scopes, currentScope, levels, focusLevel, setFocusLevel,
+    levelRows, itemsForLevel, itemIndex, focusId, focusEntry, selectedItems, focusOnly, clearSelection, setSelected,
+    previewItem, setPreviewItem, listRef, goUp, openById, openFolderInColumn, onOpenItem, onBulkDelete, getInternalScopeActions,
+  });
 
-  /** The rows up/down, select-all and type-ahead move through. Drives are walked but not selectable. */
-  function keyboardRows(): { rows: { id: string; title: string }[]; selectable: boolean } {
-    if (searching) {
-      return { rows: hits.map((h) => ({ id: h.item.id, title: h.item.title || "" })), selectable: true };
-    }
-    if (columnsActive) return { rows: levelRows(focusLevel), selectable: focusLevel > 0 };
-    if (!currentScope) return { rows: scopes.map((s) => ({ id: s.id, title: s.label })), selectable: false };
-    return { rows: listing.map((i) => ({ id: i.id, title: i.title || "" })), selectable: true };
-  }
-
-  /** Delete trashes the whole selection (one confirm via the bulk path), or the one row when only one is picked. */
-  function deleteSelection() {
-    if (selectedItems.length > 1) {
-      onBulkDelete?.(selectedItems);
-      return;
-    }
-    const entry = selectedItems.length === 1 ? itemIndex.get(selectedItems[0].id) : focusEntry;
-    if (entry) getInternalScopeActions(entry.scopeId).onDelete(entry.item);
-  }
-
-  /** Columns: step into the focused drive or folder (opening its column if it is not already) and focus its first row. */
-  function stepIntoFocus({ openFiles }: { openFiles: boolean }) {
-    if (!focusId) return;
-    let target: { scopeId: string; folderId: string | null } | null = null;
-    if (focusLevel === 0) {
-      target = { scopeId: focusId, folderId: null };
-    } else if (focusEntry?.item.type === "folder") {
-      target = { scopeId: focusEntry.scopeId, folderId: focusId };
-    } else if (focusEntry && openFiles) {
-      onOpenItem(focusEntry.item);
-    }
-    if (!target) return;
-    if (openRowIdAt(levels, focusLevel) !== focusId) {
-      openFolderInColumn(focusLevel, target.scopeId, target.folderId);
-    }
-    setFocusLevel(focusLevel + 1);
-    const first = itemsForLevel({ kind: "scope", ...target })[0];
-    if (first) focusOnly(first.id);
-    else clearSelection();
-  }
-
-  /** Columns: step back to the parent column, on the folder that is open in it. */
-  function stepOutOfFocusLevel() {
-    if (focusLevel === 0) return;
-    const parentLevel = focusLevel - 1;
-    const openId = openRowIdAt(levels, parentLevel);
-    setFocusLevel(parentLevel);
-    if (openId) focusOnly(openId, parentLevel > 0);
-  }
-
-  /** Each run of tiles that wraps together in the grid view, with how many fit on a row at the current width. */
-  function gridBlocks(): GridBlock[] {
-    const blocks = listRef.current?.querySelectorAll<HTMLElement>("[data-grid-block]") ?? [];
-    return Array.from(blocks, (block) => {
-      const tiles = Array.from(block.children) as HTMLElement[];
-      return { count: tiles.length, perRow: perRowFromTops(tiles.map((tile) => tile.offsetTop)) };
-    });
-  }
-
-  function onPaneKeyDown(e: ReactKeyboardEvent<HTMLElement>) {
-    if (isInFloatingLayer(e.target)) return;
-    if ((e.target as Element).closest("input, textarea, select, [contenteditable='true']")) return;
-    const mod = modKey(e);
-
-    if (e.key === "Delete" || (mod && e.key === "Backspace")) {
-      e.preventDefault();
-      deleteSelection();
-      return;
-    }
-    if (e.key === "Backspace" || (mod && e.key === "ArrowUp")) {
-      e.preventDefault();
-      goUp();
-      return;
-    }
-    if (e.key === "Escape") {
-      if (previewItem) {
-        setPreviewItem(null);
-        return;
-      }
-      clearSelection();
-      return;
-    }
-
-    const { rows, selectable } = keyboardRows();
-    if (mod && e.key.toLowerCase() === "a") {
-      if (!selectable) return;
-      e.preventDefault();
-      setSelected(new Set(rows.map((r) => r.id)));
-      return;
-    }
-    if (e.key === "F2") {
-      if (focusEntry) getInternalScopeActions(focusEntry.scopeId).onRename(focusEntry.item);
-      return;
-    }
-    // Space → Quick Look of the focused item, but only for items that actually
-    // preview. Must come before type-ahead, which would otherwise swallow it.
-    if (e.key === " ") {
-      if (focusEntry && isPreviewable(focusEntry.item)) {
-        e.preventDefault();
-        setPreviewItem(focusEntry.item);
-      }
-      return;
-    }
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (columnsActive) stepIntoFocus({ openFiles: true });
-      else if (focusId) openById(focusId);
-      return;
-    }
-
-    const idx = focusId ? rows.findIndex((r) => r.id === focusId) : -1;
-    const step = (delta: 1 | -1) => {
-      if (rows.length === 0) return;
-      e.preventDefault();
-      const next = idx === -1 ? 0 : Math.min(Math.max(idx + delta, 0), rows.length - 1);
-      focusOnly(rows[next].id, selectable);
-    };
-    const inGrid = viewMode === "grid" && !searching;
-    /** In a grid, up and down move a whole visual row; anywhere else, one row. */
-    const stepVertically = (delta: 1 | -1) => {
-      const blocks = inGrid ? gridBlocks() : [];
-      if (rows.length === 0 || blocks.reduce((n, b) => n + b.count, 0) !== rows.length) return step(delta);
-      e.preventDefault();
-      focusOnly(rows[gridStepBlocks(blocks, idx, delta)].id, selectable);
-    };
-    if (e.key === "ArrowDown") return stepVertically(1);
-    if (e.key === "ArrowUp") return stepVertically(-1);
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-      if (columnsActive) {
-        e.preventDefault();
-        if (e.key === "ArrowRight") stepIntoFocus({ openFiles: false });
-        else stepOutOfFocusLevel();
-      } else if (inGrid) {
-        step(e.key === "ArrowRight" ? 1 : -1);
-      }
-      return;
-    }
-
-    // Type-ahead. Single printable characters only, so it never swallows a
-    // shortcut; the buffer resets after a second of silence.
-    if (e.key.length === 1 && !mod && !e.altKey) {
-      const now = Date.now();
-      const buf = (now - typeAhead.current.at > 1000 ? "" : typeAhead.current.buf) + e.key.toLowerCase();
-      typeAhead.current = { buf, at: now };
-      const hit = rows.find((r) => r.title.toLowerCase().startsWith(buf));
-      if (hit) {
-        e.preventDefault();
-        focusOnly(hit.id, selectable);
-      }
-    }
-  }
-
-  // ── dnd-kit (internal move) ──────────────────────────────────────────────
-  function handleDragStart(e: DragStartEvent) {
-    const data = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
-    setActiveDrag(data ?? null);
-  }
-  /**
-   * Dragging a row that's part of a multi-selection drags the whole selection,
-   * the way Finder and Drive do; moving only the row under the cursor silently
-   * drops the other items the user had picked. A search selection can span
-   * scopes and a move is scope-relative, so only those sharing the dragged
-   * row's scope come along.
-   */
-  function draggedItemsFor(src: { item: DriveItem; scopeId: string }): DriveItem[] {
-    if (!selected.has(src.item.id) || selectedItems.length < 2) return [src.item];
-    const items = searching
-      ? hits.filter((h) => h.scope.id === src.scopeId && selected.has(h.item.id)).map((h) => h.item)
-      : selectedItems;
-    return items.length > 1 ? items : [src.item];
-  }
-  function handleDragEnd(e: DragEndEvent) {
-    setActiveDrag(null);
-    suppressNextClick();
-    const src = e.active.data.current as { item: DriveItem; scopeId: string } | undefined;
-    const dest = e.over?.data.current as
-      | { destFolderId?: string | null; destNotebookId?: string; destScopeId?: string }
-      | undefined;
-    if (!src || !dest) return;
-    const dragged = draggedItemsFor(src);
-    if (dest.destNotebookId) {
-      const notebook = scopes.flatMap((sc) => sc.items).find((it) => it.id === dest.destNotebookId);
-      if (notebook && !dragged.some((d) => d.id === notebook.id)) void dropOnNotebook(notebook, dragged);
-      return;
-    }
-    // Cross-drive drop: item dragged onto a scope row in column 0.
-    if (dest.destScopeId && dest.destFolderId === undefined) {
-      if (dest.destScopeId !== src.scopeId) {
-        onMoveToScope?.(src.scopeId, dest.destScopeId, dragged);
-      }
-      return;
-    }
-    // Folder-drop: same-drive internal move. The scope comes from the drop
-    // target rather than the browsed URL — a column row knows which drive it
-    // belongs to, and the browsed scope can lag a drop made in a column that
-    // was opened before the last navigation.
-    const destScopeId = dest.destScopeId ?? currentScope?.id ?? null;
-    if (!destScopeId) return;
-    if (destScopeId !== src.scopeId) {
-      onMoveToScope?.(src.scopeId, destScopeId, dragged);
-      return;
-    }
-    const destScope = scopes.find((sc) => sc.id === destScopeId);
-    if (!destScope) return;
-    // Drop the items the destination can't accept rather than failing the whole
-    // drag: a folder can't land inside its own subtree, and an item already in
-    // the target folder has nowhere to go.
-    const movable = dragged.filter((item) => {
-      if (item.id === dest.destFolderId) return false;
-      if (item.type === "folder" && dest.destFolderId) {
-        if (folderDescendants(destScope.items, item.id).has(dest.destFolderId)) return false;
-      }
-      return item.parentFolderId !== (dest.destFolderId ?? null);
-    });
-    if (movable.length === 0) return;
-    onMove(destScope.id, movable, dest.destFolderId ?? null);
-  }
-
-  // ── Drag-to-upload (desktop files) ──────────────────────────────────────
-  const canUpload = !!(currentScope && onUploadFiles && !searching);
-  function hasFiles(e: React.DragEvent) {
-    return Array.from(e.dataTransfer.types || []).includes("Files");
-  }
-  function onFileDragEnter(e: React.DragEvent) {
-    if (!canUpload || !hasFiles(e)) return;
-    e.preventDefault();
-    dragDepth.current += 1;
-    setUploadOver(true);
-    setFileOverFolder(fileDropFolderAt(e));
-  }
-  function onFileDragOver(e: React.DragEvent) {
-    if (!canUpload || !hasFiles(e)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-    setFileOverFolder(fileDropFolderAt(e));
-  }
-  function onFileDragLeave(e: React.DragEvent) {
-    if (!canUpload || !hasFiles(e)) return;
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) {
-      setUploadOver(false);
-      setFileOverFolder(null);
-    }
-  }
-  function onFileDrop(e: React.DragEvent) {
-    if (!canUpload || !hasFiles(e)) return;
-    e.preventDefault();
-    dragDepth.current = 0;
-    setUploadOver(false);
-    setFileOverFolder(null);
-    const { files, skippedFolders } = droppedFiles(e.dataTransfer);
-    if (!onUploadFiles || (files.length === 0 && skippedFolders === 0)) return;
-    const folderId = fileDropFolderAt(e);
-    const options: FileDropOptions = {
-      ...(folderId ? { folderId } : {}),
-      ...(skippedFolders > 0 ? { skippedFolders } : {}),
-    };
-    if (Object.keys(options).length > 0) onUploadFiles(files, options);
-    else onUploadFiles(files);
-  }
+  const {
+    sensors, activeDrag, uploadOver, fileOverFolder, draggedItemsFor,
+    handleDragStart, handleDragEnd, onFileDragEnter, onFileDragOver, onFileDragLeave, onFileDrop,
+  } = useDriveDnd({ scopes, currentScope, searching, hits, selected, selectedItems, suppressNextClick, dropOnNotebook, onMove, onMoveToScope, onUploadFiles });
 
   function toggleSort(key: SortKey) {
     setSort((prev) => (prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
