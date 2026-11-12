@@ -5303,6 +5303,9 @@ model Form {
   draftQuestions Json?
   draftIntro     String?
 
+  // Extra columns on the Results table, in order: ["member:hiredRoles", ...].
+  responseColumns Json?
+
   versions      FormVersion[]
   submissions   FormSubmission[]
   notifications Notification[]

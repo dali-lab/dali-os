@@ -22,6 +22,10 @@ import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { parseMemberColumns } from "~/projects/lib/member-history";
+import { validResponseColumns, responseColumnId } from "~/forms/lib/response-columns";
+import { parseFormDataJson } from "~/lib/safe-json";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { parseAnswerFilters } from "~/forms/lib/answer-filters";
 import { driveRootCrumbs } from "~/drive/lib/drive-crumbs";
@@ -139,6 +143,14 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           answers,
         })
       : null;
+  const savedColumns =
+    resultsVersion != null &&
+    (await isFeatureEnabled(
+      "form-response-views",
+      auth.user.sub,
+      await getUserRoles(auth.user.sub, request),
+      request,
+    ));
   const results = resultsVersion && !summaryActive
     ? await loadVersionResponses(form.id, resultsVersion.id, {
         page: parsePageParam(url.searchParams.get("page")),
@@ -146,7 +158,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slot: url.searchParams.get("slot") ?? "",
         answers,
         questions: resultsVersion.questions,
-        memberColumns: parseMemberColumns(url.searchParams),
+        memberColumns: savedColumns
+          ? form.responseColumns
+          : parseMemberColumns(url.searchParams),
       })
     : null;
   const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;
@@ -224,6 +238,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     if ("error" in deleted)
       return Response.json({ error: deleted.error }, { status: deleted.status });
     return deleted;
+  }
+
+  if (intent === "set-response-columns") {
+    const roles = await getUserRoles(auth.user.sub, request);
+    if (!(await isFeatureEnabled("form-response-views", auth.user.sub, roles, request)))
+      return forbidden(request);
+    const columns = validResponseColumns(parseFormDataJson(formData.get("columns")));
+    if (!columns) return Response.json({ error: "Unknown column" }, { status: 400 });
+    await prisma.form.update({
+      where: { id: params.formId },
+      data: { responseColumns: columns.map(responseColumnId) },
+    });
+    return { ok: true };
   }
 
   if (intent === "send-form-reminder") {

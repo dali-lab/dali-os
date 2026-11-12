@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db.server", () => ({ prisma: { term: { findMany: vi.fn() }, form: { findUnique: vi.fn() } } }));
+vi.mock("~/lib/db.server", () => ({
+  prisma: { term: { findMany: vi.fn() }, form: { findUnique: vi.fn(), update: vi.fn() } },
+}));
+vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
@@ -44,6 +48,7 @@ import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { loadTrackerCounts, loadTrackerList, sendFormReminder } from "~/forms/lib/form-tracker.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader, action, handle } from "~/forms/routes/forms.edit.$formId";
 
 const request = new Request("http://os.test/forms/edit/f1");
@@ -107,6 +112,73 @@ describe("forms.edit loader results paging", () => {
       questions: [],
       memberColumns: [],
     });
+  });
+});
+
+describe("forms.edit saved response columns", () => {
+  const withVersion = (responseColumns: string[]) =>
+    vi.mocked(loadFormForEdit).mockResolvedValue({
+      id: "f1",
+      folderPageId: null,
+      versions: [{ id: "v2", versionNumber: 2, questions: [] }],
+      workspaceType: "Project",
+      responseColumns,
+    } as never);
+  const resultsReq = new Request("http://os.test/forms/edit/f1?view=results&show=responses&member=projectHistory");
+
+  it("loads the form's saved columns and ignores the URL when the flag is on", async () => {
+    withVersion(["hiredRoles", "termsInLab"]);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    await loader({ request: resultsReq, params: { formId: "f1" } } as never);
+    expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.memberColumns).toEqual(["hiredRoles", "termsInLab"]);
+  });
+
+  it("keeps reading the URL when the flag is off", async () => {
+    withVersion(["hiredRoles"]);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+    await loader({ request: resultsReq, params: { formId: "f1" } } as never);
+    expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.memberColumns).toEqual(["projectHistory"]);
+  });
+
+  const save = (columns: string) => {
+    const body = new FormData();
+    body.set("intent", "set-response-columns");
+    body.set("columns", columns);
+    return action({
+      request: new Request("http://os.test/forms/edit/f1", { method: "POST", body }),
+      params: { formId: "f1" },
+    } as never) as Promise<any>;
+  };
+
+  it("saves the columns in the order given", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    expect(await save(JSON.stringify(["member:termsInLab", "member:hiredRoles"]))).toEqual({ ok: true });
+    expect((prisma as any).form.update).toHaveBeenCalledWith({
+      where: { id: "f1" },
+      data: { responseColumns: ["member:termsInLab", "member:hiredRoles"] },
+    });
+  });
+
+  it("rejects an unknown column without saving", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    const res = await save(JSON.stringify(["member:salary"]));
+    expect(res.status).toBe(400);
+    expect((prisma as any).form.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses to save while the flag is off", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+    const res = await save(JSON.stringify(["member:hiredRoles"]));
+    expect(res.status).toBe(403);
+    expect((prisma as any).form.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses someone who can't build the form", async () => {
+    vi.mocked(canBuildForm).mockResolvedValue(false);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    const res = await save(JSON.stringify(["member:hiredRoles"]));
+    expect(res.status).toBe(403);
+    expect((prisma as any).form.update).not.toHaveBeenCalled();
   });
 });
 

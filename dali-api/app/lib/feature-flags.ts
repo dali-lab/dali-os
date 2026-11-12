@@ -154,6 +154,12 @@ export const FEATURE_FLAGS = [
       "Form questions can start filled in from what DALI OS already knows about the person filling them (their name and email, and for partners their organization and project). The answer stays editable. Also adds a \"Partners\" option to a form's sharing. Ships off.",
   },
   {
+    key: "form-response-views",
+    label: "Forms: add columns to results",
+    description:
+      "A + button on a form's results table adds columns about each respondent (hired roles, project history, terms in lab, current role). Added columns are saved on the form for everyone who can edit it and are included in the CSV. Replaces the Member columns dropdown. Ships off.",
+  },
+  {
     key: "alumni-home",
     label: "Alumni: Baker tower Home",
     description:
