@@ -15,7 +15,7 @@ import { useOsChrome } from "~/components/os-chrome";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
 import { AlertIcon, Pill, type PillTone, SetupCard, pillTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
-import { type EngagementSummary } from "~/hiring/lib/email-engagement.server";
+import type { EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { domainReviewStatus } from "~/hiring/lib/domain-windows";
 import { OS_TABLE_HEAD, OS_TABLE_ROW, personName } from "~/hiring/components/domain-lead/table-shared";
 import { DraftSection, RubricPicker } from "~/hiring/components/domain-lead/DraftSection";

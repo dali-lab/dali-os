@@ -10,7 +10,6 @@ import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { defaultTimelineFor, isMemberApplicants } from "~/hiring/lib/applicant-groups";
 import { handleMemberSetupIntent } from "~/hiring/lib/cycle-setup.server";
 import { FIRST_INTERVIEW_ROUND_ID, delibRounds, hasInterviews as timelineHasInterviews, interviewRoundForTab, interviewRounds as timelineInterviewRounds, parseTimeline, type Timeline } from "~/hiring/lib/cycle-timeline";
-import { roundsWithBoards } from "~/hiring/lib/cycle-timeline.server";
 import { buildPhaseTabs, resolvePhaseTab } from "~/hiring/lib/cycle-phase-tabs";
 import { TargetDomainsCard } from "~/hiring/components/cycle-setup/TargetDomainsCard";
 import { ReviewerPoolCard } from "~/hiring/components/cycle-setup/ReviewerPoolCard";
