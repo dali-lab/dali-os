@@ -7,7 +7,7 @@ import { Tooltip, InfoTip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { buttonClasses } from "~/components/ui/Button";
 import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
-import { type EngagementSummary } from "~/hiring/lib/email-engagement.server";
+import type { EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 import { canAssignReviewersIn } from "~/hiring/lib/domain-windows";
 import { OS_TABLE_HEAD, OS_TABLE_ROW } from "~/hiring/components/domain-lead/table-shared";
