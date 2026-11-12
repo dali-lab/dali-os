@@ -31,6 +31,7 @@ import { BoardCard, BoardCardMeta, BoardCardMetaRow, BoardCardChip } from "~/com
 import { modalCardClass } from "~/components/os-chrome";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import { cn } from "~/lib/cn";
+import { isList, listCodec, usePersistedState, type PersistCodec } from "~/hooks/usePersistedState";
 import {
   buildTaskBoard,
   moveTaskInBoard,
@@ -62,39 +63,22 @@ const COLLAPSIBLE_EMPTY_STATUSES: TaskStatus[] = ["Backlog", "Cancelled"];
 const HIDE_EMPTY_KEY = "taskboard:hideEmptyCols";
 const COLLAPSED_KEY = "taskboard:collapsedCols";
 
+const hideEmptyCodec: PersistCodec<boolean> = {
+  parse: (raw) => raw !== "0",
+  serialize: (value) => (value ? "1" : "0"),
+};
+const collapsedCodec = listCodec<TaskStatus>((v): v is TaskStatus => typeof v === "string" && isTaskStatus(v));
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+
 export function useColumnLayout() {
-  const [hideEmptyCols, setHideEmptyCols] = useState(true);
-  useEffect(() => {
-    setHideEmptyCols(window.localStorage.getItem(HIDE_EMPTY_KEY) !== "0");
-  }, []);
-  const toggleHideEmpty = useCallback(() => {
-    setHideEmptyCols((v) => {
-      const next = !v;
-      try {
-        window.localStorage.setItem(HIDE_EMPTY_KEY, next ? "1" : "0");
-      } catch {
-        /* private-mode / storage-disabled: fall back to in-memory only */
-      }
-      return next;
-    });
-  }, []);
-  const [collapsedCols, setCollapsedCols] = useState<TaskStatus[]>([]);
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(COLLAPSED_KEY);
-      if (raw) setCollapsedCols((JSON.parse(raw) as string[]).filter(isTaskStatus));
-    } catch {
-      /* unreadable / malformed: start expanded */
-    }
-  }, []);
-  const persistCollapsed = useCallback((next: TaskStatus[]) => {
-    setCollapsedCols(next);
-    try {
-      window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
-    } catch {
-      /* private-mode / storage-disabled: fall back to in-memory only */
-    }
-  }, []);
+  const [hideEmptyCols, setHideEmptyCols] = usePersistedState(HIDE_EMPTY_KEY, true, isBoolean, hideEmptyCodec);
+  const toggleHideEmpty = useCallback(() => setHideEmptyCols((v) => !v), [setHideEmptyCols]);
+  const [collapsedCols, persistCollapsed] = usePersistedState<TaskStatus[]>(
+    COLLAPSED_KEY,
+    [],
+    isList<TaskStatus>,
+    collapsedCodec,
+  );
   const toggleCollapsed = useCallback(
     (status: TaskStatus) =>
       persistCollapsed(
