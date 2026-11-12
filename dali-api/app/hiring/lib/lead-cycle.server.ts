@@ -23,7 +23,7 @@ import { type HiringEventRow, type EventCheckIn } from "~/hiring/components/cycl
 import { confidentialityBlock, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { sendExtensionNoticeIfDue } from "~/hiring/lib/extension-notice";
 
-export async function loadLeadCycle({ request, params }: { request: Request; params: { id?: string } }) {
+export async function loadLeadCycle({ request, params }: { request: Request; params: { id: string } }) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   // Lab members cycles are Admin-only; everything else is the Core tier.
@@ -41,7 +41,7 @@ export async function loadLeadCycle({ request, params }: { request: Request; par
   // best-effort). Mirrors how autoCloseIfExpired runs from the cycle status
   // loader: leads loading their cycle page will wake up the blast if the
   // original close has just passed.
-  await sendExtensionNoticeIfDue(params.id!);
+  await sendExtensionNoticeIfDue(params.id);
 
   // The reads below only need params.id / confidentialityRequired (already
   // known) — none of them depend on another's result — so they run as one
