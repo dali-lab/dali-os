@@ -14,6 +14,7 @@ import { interviewerCalendars } from "~/hiring/lib/interview-availability.server
 import { FIRST_INTERVIEW_ROUND_ID, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { getEngagementSummaries } from "~/hiring/lib/email-engagement.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
+import type { DomainRoundSummary } from "~/hiring/lib/domain-lead-types";
 
 export async function loadDomainLeadDashboard({ request }: { request: Request }) {
   const auth = await requireAuth(request);

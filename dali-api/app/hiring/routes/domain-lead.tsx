@@ -12,6 +12,7 @@ import { getReviewStatus } from "~/hiring/lib/review-status";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { loadDomainLeadDashboard } from "~/hiring/lib/domain-lead-dashboard.server";
 import { DOMAIN_LEAD_ACTIONS, resolveLeadDomain } from "~/hiring/lib/domain-lead-actions.server";
+import type { DomainRoundSummary } from "~/hiring/lib/domain-lead-types";
 import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import {
@@ -885,15 +886,6 @@ function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
     </Form>
   );
 }
-
-type DomainRoundSummary = {
-  id: string;
-  label: string;
-  isFinal: boolean;
-  leadsToInterviews: boolean;
-  /** This domain's applicants who qualify for the round's board now. */
-  count: number;
-};
 
 // One row per delib round, in timeline order.
 function roundPurpose(r: DomainRoundSummary): string {
