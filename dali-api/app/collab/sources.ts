@@ -38,7 +38,7 @@ export interface CollabSource {
   // Persist the live doc back to the source column after each store.
   // For prose rooms: receives blocks (DocBlock[]). For structured rooms:
   // receives the raw serialized shared-type map — callers guard on `structured`.
-  syncBack(id: string, blocks: DocBlock[]): Promise<void>;
+  syncBack?(id: string, blocks: DocBlock[]): Promise<void>;
   // May this user open (== edit) the room?
   authorize(userSub: string, id: string): Promise<boolean>;
   // When true, this room uses Y.Array/Y.Map (not a BlockNote XmlFragment).
@@ -132,17 +132,12 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
   // column. The source entry exists solely to mark the entity as registry-backed
   // so authorizeCollabDoc delegates to its authorize() instead of returning deny.
   // seed() returns null (initial content is seeded from the latest version's body
-  // via the collabAuth + loader flow); syncBack() is a no-op here because the
-  // "Save Version" action reads readDocAsBlocks() directly from the room.
+  // via the collabAuth + loader flow).
   signing: {
     async seed(_id) {
       // Caller seeds from the latest SigningDocumentVersion.body via loader;
       // null here starts the room empty for brand-new documents.
       return null;
-    },
-    async syncBack(_id, _blocks) {
-      // Immutable version snapshot is written explicitly by the "Save Version"
-      // action — not on every autosave tick. No continuous sync-back.
     },
     async authorize(userSub) {
       return isCore(userSub);
@@ -160,11 +155,6 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
       // because structured rooms cannot use blocksToFragment.
       return null;
     },
-    async syncBack(_id, _blocks) {
-      // Structured sync-back (Y.Array → Form.draftQuestions) is performed by
-      // the FormBuilder's "Save draft" action, which calls readDocAsJson()
-      // and writes the result directly — not via the generic block sync path.
-    },
     async authorize(userSub) {
       return isCore(userSub);
     },
@@ -178,10 +168,6 @@ export const COLLAB_SOURCES: Record<string, CollabSource> = {
       // Criteria seed is handled by the RubricDetail loader passing initialItems
       // to useSharedArray from the latest RubricVersion.criteria column.
       return null;
-    },
-    async syncBack(_id, _blocks) {
-      // Structured sync-back (Y.Array → new RubricVersion) is performed by the
-      // RubricDetail "Save Version" action via readDocAsJson() — not here.
     },
     async authorize(userSub) {
       // Matches the rubrics.$id loader gate: requireCoreOrDomainLead.
@@ -218,9 +204,7 @@ export async function seedRegistryDoc(
 
 // Sync a registry surface's live doc back to its source column as block JSON.
 // Returns true if `entity` is registry-backed (so the caller skips the legacy
-// plain-text sync). Structured rooms have a no-op syncBack (their snapshot is
-// written explicitly by the Save action via readDocAsJson()), so this still
-// returns true (skipping the prose plain-text path) without doing any write.
+// plain-text sync). Rooms without a syncBack return true without decoding.
 export async function syncRegistryDocBack(
   entity: string,
   id: string,
@@ -228,8 +212,7 @@ export async function syncRegistryDocBack(
 ): Promise<boolean> {
   const source = COLLAB_SOURCES[entity];
   if (!source) return false;
-  // Structured rooms: syncBack is a no-op in the source entry — call it to
-  // honour the interface, but the blocks argument is unused for them.
+  if (!source.syncBack) return true;
   await source.syncBack(id, ydocToBlocks(doc).blocks);
   return true;
 }
