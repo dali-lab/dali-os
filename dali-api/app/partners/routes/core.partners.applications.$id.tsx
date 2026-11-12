@@ -25,6 +25,7 @@ import type { Route } from "./+types/core.partners.applications.$id";
 import { prisma } from "~/lib/db.server";
 import { BadRequestError, NotFoundError } from "~/lib/http-error";
 import { promotePartnerApplication } from "../lib/partner-promote.server";
+import { debriefPartnerMeeting, logPartnerMeeting } from "../lib/partner-meetings.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
@@ -683,28 +684,22 @@ export async function action({ request, params }: Route.ActionArgs) {
         .filter(Boolean);
       const notes = (form.get("meetingNotes") as string | null)?.trim() || undefined;
 
-      // Fetch the applicant contact id
       const app = await prisma.partnerApplication.findUnique({
         where: { id: params.id },
-        select: { applicantContactId: true, applicantContact: { select: { name: true, email: true } } },
+        select: { applicantContact: { select: { name: true, email: true } } },
       });
-
-      const meeting = await prisma.partnerMeeting.create({
-        data: {
+      try {
+        await logPartnerMeeting({
           applicationId: params.id,
           scheduledAt,
           attendeeUserIds,
           notes: notes ?? null,
-          contactId: app?.applicantContactId ?? null,
-        },
-        select: { id: true },
-      });
-      await logPartnerActivity(prisma, {
-        applicationId: params.id,
-        actorUserId: auth.user.sub,
-        type: "MeetingScheduled",
-        metadata: { meetingId: meeting.id, scheduledAt: scheduledAt.toISOString() },
-      });
+          actorUserId: auth.user.sub,
+        });
+      } catch (err) {
+        if (err instanceof NotFoundError) return { error: "That application no longer exists." };
+        throw err;
+      }
 
       const notifyPartner = form.get("notifyPartner") === "on";
       if (notifyPartner && app?.applicantContact?.email) {
@@ -735,19 +730,18 @@ export async function action({ request, params }: Route.ActionArgs) {
       const outcome = validOutcomes.includes(outcomeRaw as PartnerMeetingOutcome)
         ? (outcomeRaw as PartnerMeetingOutcome)
         : null;
-      await prisma.partnerMeeting.update({
-        where: { id: meetingId },
-        data: {
+      try {
+        await debriefPartnerMeeting({
+          applicationId: params.id,
+          meetingId,
           debrief,
-          ...(outcome ? { outcome } : {}),
-        },
-      });
-      await logPartnerActivity(prisma, {
-        applicationId: params.id,
-        actorUserId: auth.user.sub,
-        type: "MeetingDebriefed",
-        metadata: { meetingId, ...(outcome ? { outcome } : {}) },
-      });
+          outcome,
+          actorUserId: auth.user.sub,
+        });
+      } catch (err) {
+        if (err instanceof NotFoundError) return { error: "That meeting no longer exists." };
+        throw err;
+      }
 
     } else if (intent === "note") {
       const body = (form.get("body") as string | null)?.trim() ?? "";
