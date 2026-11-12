@@ -15,6 +15,8 @@ Click the title to rename the document, or click its name in the breadcrumb at t
 
 Type `/` on an empty line to open the slash menu, then keep typing to filter it. It offers headings, bullet, numbered and check lists, quotes, code, dividers, toggle lists, tables, images, files, videos, callouts, bookmarks, a page break and two or three column layouts. Press Enter to insert the one you highlighted.
 
+To add an image or file without the menu, paste it (⌘V or Ctrl+V) or drag it onto the page from your computer or another site. It uploads where you drop it, or below the line you're on. A table cell can't hold an image, so one pasted or dropped in a table goes below the table.
+
 Drag the handle at the left of a block to move it. Its menu has **Duplicate**, **Colors** and **Delete**.
 
 ## Mention people and pages

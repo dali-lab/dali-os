@@ -68,6 +68,8 @@ pub fn ensure_main(app: &AppHandle, initial_url: &str) -> tauri::Result<WebviewW
         .min_inner_size(900.0, 600.0)
         .visible(false)
         .initialization_script(&version_script)
+        // Tauri's native file-drop handler swallows drops before the page sees them.
+        .disable_drag_drop_handler()
         .on_navigation(move |u| crate::nav::on_navigation(&nav_handle, u))
         // When the remote page finishes loading, reveal the window and stand
         // down the offline watchdog. (Only the top frame reports here.)

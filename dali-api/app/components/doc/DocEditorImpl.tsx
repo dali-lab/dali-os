@@ -65,6 +65,7 @@ import { DocEditorFallback } from "./DocEditor";
 import { DaliSideMenuController } from "./DocSideMenu";
 import { resolveFeatures, type Features } from "./features";
 import { createFindReplacePlugin } from "./find";
+import { MediaDropExtension } from "./media-drop";
 import { docPasteHandler } from "./paste-embed";
 import { PasteAsMenu } from "./PasteAsMenu";
 import { keepCollabUndoAlive } from "./collab-undo";
@@ -127,6 +128,7 @@ function LocalDoc(props: ResolvedProps) {
       uploadFile: (props.features.images || props.features.files) ? uploadFile : undefined,
       tables: { splitCells: true, cellBackgroundColor: true, cellTextColor: true, headers: true },
       pasteHandler: docPasteHandler as never,
+      extensions: [MediaDropExtension()],
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
     },
     [schema, dictionary],
@@ -168,6 +170,7 @@ function CollabDocInner(
   const threadStore = useThreadStore(props.comments);
   const hostUndo = undoOptions(props);
   const extensions = [
+    MediaDropExtension(),
     ...(threadStore
       ? [CommentsExtension({ schema: commentEditorSchema, threadStore, resolveUsers: makeResolveDocUsers(threadStore) })]
       : []),
@@ -188,9 +191,8 @@ function CollabDocInner(
       // The edge-drop cursor is what turns "drag a block to the side of
       // another" into a column split; without it columns are slash-menu only.
       ...(props.features.columns ? { dropCursor: multiColumnDropCursor } : {}),
-      // Wire CommentsExtension when a threadStore is available. Extensions are
-      // passed through withCollaboration unchanged (see dist/yjs.js).
-      ...(extensions.length > 0 ? { extensions } : {}),
+      // Extensions pass through withCollaboration unchanged (see dist/yjs.js).
+      extensions,
       ...(hostUndo.disableExtensions ? { disableExtensions: hostUndo.disableExtensions } : {}),
       collaboration: {
         fragment: resolveFragment(entry.ydoc, props),
