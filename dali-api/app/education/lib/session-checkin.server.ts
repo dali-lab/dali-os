@@ -1,36 +1,18 @@
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
+import { isManualCheckInOpen } from "~/lib/check-in-window";
 import { isOfferingManager } from "./access.server";
 import { saveAttendance } from "./attendance.server";
 
-// Self-check-in for education sessions (Path A): the instructor opens check-in
-// on a session and projects a QR; enrolled students scan it and mark themselves
-// Present from their own signed-in session. The instructor's manual roster stays
-// the override. This is the parallel of the meeting self-check-in flow
-// (app/calendar), but bound to EducationSession + EducationAttendance instead of
-// ScheduledMeeting, and it reuses saveAttendance so CE credits and session
-// feedback stay consistent with hand-marking.
-
-// A session with no end time is treated as this long for the check-in window.
 const DEFAULT_SESSION_MS = 3 * 60 * 60 * 1000;
-// Check-in stays reachable this long past the session end, so a class that runs
-// over (or a straggler) can still mark in, then auto-closes.
-const CHECKIN_GRACE_MS = 30 * 60 * 1000;
 
 type SessionWindow = { datetime: Date; endsAt: Date | null; checkInOpenAt: Date | null };
 
-function windowEnd(s: SessionWindow): Date {
-  const end = s.endsAt ?? new Date(s.datetime.getTime() + DEFAULT_SESSION_MS);
-  return new Date(end.getTime() + CHECKIN_GRACE_MS);
-}
-
-/**
- * Whether a student can self-check-in right now: the instructor has opened it
- * AND we're still inside the session's grace window. The upper bound means an
- * instructor who forgets to close check-in doesn't leave it open indefinitely.
- */
 export function isSessionCheckInOpen(s: SessionWindow, now: Date = new Date()): boolean {
-  return s.checkInOpenAt != null && now <= windowEnd(s);
+  return isManualCheckInOpen(
+    { checkInOpenAt: s.checkInOpenAt, endsAt: s.endsAt ?? new Date(s.datetime.getTime() + DEFAULT_SESSION_MS) },
+    now,
+  );
 }
 
 export async function setSessionCheckInOpen(args: {

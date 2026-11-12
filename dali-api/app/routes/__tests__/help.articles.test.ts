@@ -17,7 +17,6 @@ vi.mock("~/help/library.server", () => ({
 
 import { loader as listLoader } from "../help.articles._index";
 import { loader as articleLoader } from "../help.articles.$slug";
-import { loader as oldPageLoader } from "../help.$slug";
 
 const ROLES = { isLabMember: true };
 const article = (slug: string, url = `/help/articles/${slug}`) => ({
@@ -92,13 +91,5 @@ describe("/help/articles/:slug", () => {
     h.findHelpArticle.mockResolvedValue(article("shortcuts", "/help/shortcuts"));
     const res = (await call(articleLoader, "/help/articles/shortcuts", { slug: "shortcuts" })) as Response;
     expect(res.headers.get("Location")).toBe("/help/shortcuts");
-  });
-});
-
-describe("old /help/:slug pages", () => {
-  it("move permanently to the article", () => {
-    const res = call(oldPageLoader, "/help/calendar", { slug: "calendar" }) as Response;
-    expect(res.status).toBe(301);
-    expect(res.headers.get("Location")).toBe("/help/articles/calendar");
   });
 });

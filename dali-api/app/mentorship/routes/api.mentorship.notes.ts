@@ -16,9 +16,8 @@ import { ensureMentorNotePage } from "../lib/pair-notebook.server";
 //      term, domain, weekOf)". Always created against the caller as mentor;
 //      that's the only authorial path the UI offers. If a row already exists
 //      for that combination it is returned as-is (idempotent open-or-create).
-//      Newly created notes get their contentJson pre-filled from the current
-//      default MentorNoteTemplate, if one exists, and a tab in the pair's
-//      Mentorship notebook.
+//      Newly created notes get a tab in the pair's Mentorship notebook,
+//      seeded from the current default MentorNoteTemplate if one exists.
 
 type UpsertBody = {
   menteeId: string;
@@ -168,9 +167,6 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ id: existing.id, created: false }));
   }
 
-  // Seed from the current default template when present — block JSON once the
-  // template has been collab-edited, legacy ProseMirror JSON before that; the
-  // collab seed path normalizes both. Otherwise {} reads as an empty document.
   const template = await prisma.mentorNoteTemplate.findFirst({
     where: { isDefault: true },
     select: { contentJson: true },
@@ -184,7 +180,6 @@ export async function action({ request }: Route.ActionArgs) {
       termId: body.termId,
       domainId: body.domainId,
       weekOf,
-      contentJson: (template?.contentJson ?? {}) as object,
     },
     select: {
       id: true,
@@ -195,9 +190,8 @@ export async function action({ request }: Route.ActionArgs) {
       domainId: true,
       weekOf: true,
       pageId: true,
-      contentJson: true,
     },
   });
-  await ensureMentorNotePage(created, auth.user.sub);
+  await ensureMentorNotePage(created, auth.user.sub, { seed: template?.contentJson });
   return withCors(request, Response.json({ id: created.id, created: true }));
 }

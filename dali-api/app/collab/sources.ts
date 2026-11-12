@@ -49,33 +49,6 @@ export interface CollabSource {
 }
 
 export const COLLAB_SOURCES: Record<string, CollabSource> = {
-  // Mentorship weekly note body, for notes not yet moved to a Drive page. Once
-  // a note has a pageId its body lives in doc:<pageId>:body and this room is
-  // closed: nothing seeds it, writes sync back to nothing, and nobody may open it.
-  mentorNote: {
-    async seed(id) {
-      const note = await prisma.mentorNote.findUnique({
-        where: { id },
-        select: { contentJson: true, pageId: true },
-      });
-      return note && !note.pageId ? note.contentJson : null;
-    },
-    async syncBack(id, blocks) {
-      await prisma.mentorNote.updateMany({
-        where: { id, pageId: null },
-        data: { contentJson: blocks as unknown as object },
-      });
-    },
-    async authorize(userSub, id) {
-      const note = await prisma.mentorNote.findUnique({
-        where: { id },
-        select: { mentorId: true, pageId: true },
-      });
-      if (!note || note.pageId) return false;
-      return note.mentorId === userSub || (await isCore(userSub));
-    },
-  },
-
   // Mentorship note template body. Core-only.
   mentorNoteTemplate: {
     async seed(id) {

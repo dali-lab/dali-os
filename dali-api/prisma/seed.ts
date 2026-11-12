@@ -4288,33 +4288,6 @@ async function main() {
         });
       }
 
-      // EssentialityForm + ratings: one PM form on DALI OS rating the first
-      // few members.
-      if (dali) {
-        const form = await prisma.essentialityForm.upsert({
-          where: {
-            projectId_staffingCycleId: { projectId: dali.id, staffingCycleId: cycle.id },
-          },
-          update: { pmUserId: admin.id },
-          create: {
-            projectId: dali.id,
-            staffingCycleId: cycle.id,
-            pmUserId: admin.id,
-            submittedAt: new Date("2026-03-18"),
-          },
-        });
-        const ratingLevels = ["Critical", "Important", "NiceToHave"] as const;
-        for (const [i, u] of memberUsers.slice(0, 3).entries()) {
-          await prisma.essentialityRating.upsert({
-            where: {
-              essentialityFormId_userId: { essentialityFormId: form.id, userId: u.id },
-            },
-            update: { rating: ratingLevels[i] },
-            create: { essentialityFormId: form.id, userId: u.id, rating: ratingLevels[i] },
-          });
-        }
-      }
-
       // Project workspace: a full Epic → User story → Task plan on DALI OS so
       // the timeline renders a populated Gantt (nested bars, dependency arrows,
       // an Active sprint band). Every level carries explicit dates relative to
@@ -5250,7 +5223,7 @@ async function main() {
 
       console.log(
         `  v0 demo rows: ${eligCount} eligibilities, ${assignCount} project assignments, ` +
-          `+ term-status / role-requests / staffing-assignments / essentiality / ` +
+          `+ term-status / role-requests / staffing-assignments / ` +
           `epic-sprint-task / mentorship / partner-user / partner-portal-demo / templates / offering / ` +
           `page / notifications / job-codes`,
       );
