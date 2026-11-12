@@ -11,7 +11,9 @@ import { prisma } from "~/lib/db.server";
 import { fillAccessByPage } from "~/forms/lib/form-access.server";
 import { submitAnonymousForm, submitMemberForm } from "~/forms/lib/public-form";
 
-const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
+const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
+  $transaction: ReturnType<typeof vi.fn>;
+};
 
 const QUESTIONS = [
   { key: "returning", type: "select", required: true, data: { label: "Returning?", options: ["Yes", "No"] } },

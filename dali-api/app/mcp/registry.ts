@@ -7,6 +7,7 @@
 // `.status`) and the dispatcher does the rest.
 
 import type { JsonSchema } from "~/lib/mcp-input";
+import type { FeatureFlagKey } from "~/lib/feature-flags";
 
 export type McpScope = "mcp:read" | "mcp:write" | "mcp:admin";
 
@@ -34,9 +35,7 @@ export type McpToolDef = {
 export type McpTool = {
   def: McpToolDef;
   run: (ctx: McpCtx, args: Record<string, unknown>) => Promise<unknown>;
-  /** If set, this entry is a deprecated alias of another tool (kept callable,
-   *  hidden from tools/list). Used when faceting renames an existing tool. */
-  aliasOf?: string;
+  featureFlag?: FeatureFlagKey;
 };
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
@@ -101,7 +100,6 @@ export function findRegistryTool(name: string): McpTool | undefined {
   return BY_NAME.get(name);
 }
 
-/** Tool defs advertised in tools/list — registry tools minus deprecated aliases. */
 export function registryToolDefs(): McpToolDef[] {
-  return REGISTRY_TOOLS.filter((t) => !t.aliasOf).map((t) => t.def);
+  return REGISTRY_TOOLS.map((t) => t.def);
 }

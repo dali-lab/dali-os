@@ -5,7 +5,7 @@ import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { canReadRecording, canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
 import { actionItemsOf, noteOutline, notePageId } from "~/lib/mobile-notes";
 import { isHttpError } from "~/lib/http-error";
-import { runEnhanceMeetingNotes } from "~/mcp/tools/calendar-extra/enhance-meeting-notes";
+import { enhanceMeetingNotes } from "~/calendar/lib/enhance-meeting-notes.server";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 
 async function meetingFor(scheduledMeetingId: string, occurrenceStart: Date | null, userId: string) {
@@ -107,8 +107,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     request,
   };
   try {
-    await runEnhanceMeetingNotes(ctx, { recordingId: params.id });
-    await runEnhanceMeetingNotes(ctx, { recordingId: params.id, apply: true });
+    await enhanceMeetingNotes(ctx, { recordingId: params.id });
+    await enhanceMeetingNotes(ctx, { recordingId: params.id, apply: true });
   } catch (err) {
     if (isHttpError(err)) return mobileError(err.message, err.status);
     throw err;

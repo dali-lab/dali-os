@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { AlignLeft, CalendarDays, Clock, MapPin, Repeat, UsersRound, X } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { Modal } from "~/components/Modal";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
 import { TimeField as TimeComboField } from "~/components/ui/TimeField";
@@ -537,11 +538,7 @@ export function CreateEventModal({
       ? "Pick a time to see who's available"
       : null;
 
-  // ── Backdrop click handler ────────────────────────────────────────────────
-  const overlayRef = useRef<HTMLDivElement>(null);
-  const handleOverlayClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === overlayRef.current) onClose();
-  };
+  const titleId = useId();
 
   // ── Shared timesheet section ──────────────────────────────────────────────
   // The same TimesheetFields block in both Event and Meeting modes; the helper
@@ -577,17 +574,18 @@ export function CreateEventModal({
     ) : null;
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
-      onClick={handleOverlayClick}
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy={titleId}
+      containerClassName={cn(
+        "relative z-10 flex w-full flex-col sm:flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
+        hasGuests ? "max-w-[88rem]" : "max-w-lg",
+      )}
     >
-      <div
-        className={cn(
-          "relative z-10 flex w-full flex-col sm:flex-row overflow-hidden rounded-xl cal-surface max-h-[90vh]",
-          hasGuests ? "max-w-[88rem]" : "max-w-lg",
-        )}
-      >
+      <h2 id={titleId} className="sr-only">
+        {meetingOnly ? "New meeting" : "New event"}
+      </h2>
         {/* ── Left panel: availability grid — only shown once there are guests
             (a solo event has no availability worth previewing). ───────────── */}
         {hasGuests && (
@@ -1095,7 +1093,6 @@ export function CreateEventModal({
             </form>
           )}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

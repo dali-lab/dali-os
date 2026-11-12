@@ -41,6 +41,7 @@ beforeEach(() => {
   db.userStory.findUnique.mockResolvedValue(null);
   db.epic.findUnique.mockResolvedValue(null);
   db.task.create.mockResolvedValue({ id: "t1" });
+  db.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(db));
   vi.mocked(nextColumnPosition).mockResolvedValue(7);
   vi.mocked(createIssueForTask).mockResolvedValue(undefined as never);
 });
@@ -169,13 +170,13 @@ describe("POST /api/projects/:id/tasks — GitHub mirror", () => {
   it("rejects a repo string that is not owner/repo", async () => {
     const res = await post({ title: "T", dueAt: DUE, github: { repo: "not a repo" } });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "Invalid github.repo" });
+    expect(await res.json()).toEqual({ error: "Invalid GitHub repo" });
   });
 
   it("rejects a repo that is not one of the project's declared repos", async () => {
     const res = await post({ title: "T", dueAt: DUE, github: { repo: "someone/else" } });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({ error: "github.repo is not in project.repoUrls" });
+    expect(await res.json()).toEqual({ error: "That GitHub repo is not one of the project's repos" });
     expect(db.task.create).not.toHaveBeenCalled();
   });
 

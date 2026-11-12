@@ -13,7 +13,7 @@ import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
 import { BANNER_CARD_WIDTH, BANNER_CROP_ASPECT, BannerContent, BannerFooter, BannerOverlay, bannerCardWidth } from "~/components/banners/BannerContent";
 import { MediaField } from "./MediaField";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import {
   BANNER_PAGES,

@@ -23,7 +23,7 @@ import {
 import { linkCoreDomain } from "~/hiring/lib/cycle-applicants.server";
 import { APPLICANT_GROUP_CONFIG } from "~/hiring/lib/applicant-groups.server";
 import { defaultApplicationWindow, termWeek } from "~/hiring/lib/cycle-phases";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { APPLICATION_TZ, zonedDayEndUtc, zonedDayStartUtc } from "~/lib/timezone";
 import type { CycleApplicants } from "~/generated/prisma/client";
 

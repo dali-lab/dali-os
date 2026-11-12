@@ -1,13 +1,10 @@
-// MCP `create_task` — create a Task on a project. Mirrors
-// api.projects.$id.tasks (Core or project member). Optionally mirrors to GitHub.
 
-import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-import { isCore } from "~/lib/roles";
+import { getUserRoles, isCore } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getCoreBoardProject } from "~/core/lib/taskboard.server";
-import { isTaskStatus, TASK_STATUSES } from "~/projects/lib/task-board";
-import { createIssueForTask, normalizeRepo } from "~/projects/lib/github-task-sync";
-import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
+import { TASK_STATUSES } from "~/projects/lib/task-board";
+import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
@@ -15,7 +12,7 @@ type Priority = (typeof PRIORITIES)[number];
 export const CREATE_TASK_TOOL = {
   name: "create_task",
   description:
-    "Create a project task. Requires Core or project-member access. Lands at end of target column. Optionally mirrors to a GitHub issue (`mirrorToGithubRepo` must be one of the project's repoUrls).",
+    "Create a project task. Requires Core or project-member access. Lands at end of target column. Without a status or dueAt the task goes to Backlog. Optionally mirrors to a GitHub issue (`mirrorToGithubRepo` must be one of the project's repoUrls).",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -37,7 +34,7 @@ export const CREATE_TASK_TOOL = {
       status: {
         type: "string",
         enum: TASK_STATUSES as unknown as string[],
-        description: "Defaults to 'Todo'.",
+        description: "Defaults to 'Todo' when dueAt is set, otherwise 'Backlog'.",
       },
       priority: { type: "string", enum: PRIORITIES as unknown as string[] },
       epicId: { type: "string", description: "Optional epic linkage." },
@@ -104,142 +101,44 @@ export async function runCreateTask(callerId: string, rawInput: Input) {
   let projectId = rawInput.projectId ?? "";
   if (rawInput.core) {
     if (!(await isCore(callerId))) throw new CreateTaskError("Forbidden", 403);
+    if (!(await isFeatureEnabled("core-taskboard", callerId, await getUserRoles(callerId)))) {
+      throw new CreateTaskError("The Core taskboard isn't on for you", 403);
+    }
     projectId = (await getCoreBoardProject()).id;
   } else if (!projectId) {
     throw new CreateTaskError("projectId or core is required", 400);
   } else if (!(await canEditProject(callerId, projectId))) {
     throw new CreateTaskError("Forbidden", 403);
   }
-  const input = { ...rawInput, projectId };
 
-  const title = input.title.trim();
-  if (!title) throw new CreateTaskError("Title is required", 400);
-
-  const status = input.status ?? "Todo";
-  if (!isTaskStatus(status)) throw new CreateTaskError("Invalid status", 400);
-
-  const project = await prisma.project.findUnique({
-    where: { id: input.projectId },
-    select: { id: true, repoUrls: true },
-  });
-  if (!project) throw new CreateTaskError("Project not found", 404);
-
-  // An epic/story id must belong to this project — a foreign id would let a
-  // member of one project file tasks onto another project's board (matches the
-  // web create route's guard).
-  // A story pins its epic (UserStory.epicId is required), so the two are never
-  // set independently: a story derives the epic; only a story-less task takes a
-  // free-standing epic (matches the web create route).
-  let epicId: string | null = input.epicId && input.epicId !== "" ? input.epicId : null;
-  const storyId: string | null = input.storyId && input.storyId !== "" ? input.storyId : null;
-  if (storyId) {
-    const story = await prisma.userStory.findUnique({
-      where: { id: storyId },
-      select: { epicId: true, epic: { select: { projectId: true } } },
+  const startsAt = parseDate(rawInput.startsAt, "startsAt");
+  const dueAt = parseDate(rawInput.dueAt, "dueAt");
+  try {
+    return await createTask({
+      projectId,
+      actorId: callerId,
+      title: rawInput.title,
+      description: rawInput.description,
+      status: rawInput.status,
+      priority: rawInput.priority,
+      startsAt,
+      dueAt,
+      epicId: rawInput.epicId,
+      storyId: rawInput.storyId,
+      domainId: rawInput.domainId,
+      assigneeUserIds: rawInput.assigneeUserIds,
+      mirrorToGithubRepo: rawInput.mirrorToGithubRepo,
+      sourceRecordingId: rawInput.sourceRecordingId,
     });
-    if (!story || story.epic.projectId !== input.projectId) {
-      throw new CreateTaskError("Story is not part of this project", 400);
-    }
-    epicId = story.epicId;
-  } else if (epicId) {
-    const epic = await prisma.epic.findUnique({
-      where: { id: epicId },
-      select: { projectId: true },
-    });
-    if (!epic || epic.projectId !== input.projectId) {
-      throw new CreateTaskError("Epic is not part of this project", 400);
-    }
+  } catch (err) {
+    if (err instanceof TaskCreateError) throw new CreateTaskError(err.message, err.status);
+    throw err;
   }
+}
 
-  let startsAt: Date | null = null;
-  if (input.startsAt && input.startsAt !== "") {
-    const d = new Date(input.startsAt);
-    if (!Number.isFinite(d.getTime())) {
-      throw new CreateTaskError("Invalid startsAt", 400);
-    }
-    startsAt = d;
-  }
-
-  let dueAt: Date | null = null;
-  if (input.dueAt && input.dueAt !== "") {
-    const d = new Date(input.dueAt);
-    if (!Number.isFinite(d.getTime())) {
-      throw new CreateTaskError("Invalid dueAt", 400);
-    }
-    dueAt = d;
-  }
-
-  let githubRepo: string | null = null;
-  if (input.mirrorToGithubRepo && input.mirrorToGithubRepo !== "") {
-    const normalized = normalizeRepo(input.mirrorToGithubRepo);
-    if (!normalized) throw new CreateTaskError("Invalid mirrorToGithubRepo", 400);
-    const allowed = project.repoUrls
-      .map(normalizeRepo)
-      .filter((r): r is string => !!r);
-    if (!allowed.includes(normalized)) {
-      throw new CreateTaskError(
-        "mirrorToGithubRepo is not one of the project's repoUrls",
-        400,
-      );
-    }
-    githubRepo = normalized;
-  }
-
-  const last = await prisma.task.findFirst({
-    where: { projectId: input.projectId, status },
-    orderBy: { position: "desc" },
-    select: { position: true },
-  });
-  const position = last ? last.position + 1 : 0;
-
-  const description = input.description?.trim() ?? "";
-
-  const task = await prisma.$transaction(async (tx) => {
-    const created = await tx.task.create({
-      data: {
-        projectId: input.projectId,
-        title,
-        description: description === "" ? null : description,
-        status,
-        position,
-        priority: input.priority ?? "Normal",
-        epicId,
-        storyId,
-        domainId: input.domainId && input.domainId !== "" ? input.domainId : null,
-        startsAt,
-        dueAt,
-        createdById: callerId,
-        sourceRecordingId: input.sourceRecordingId ?? null,
-      },
-      select: { id: true },
-    });
-    if (input.assigneeUserIds && input.assigneeUserIds.length > 0) {
-      await tx.taskAssignee.createMany({
-        data: input.assigneeUserIds.map((userId) => ({
-          taskId: created.id,
-          userId,
-        })),
-        skipDuplicates: true,
-      });
-    }
-    return created;
-  });
-
-  if (githubRepo) {
-    void createIssueForTask(task.id, githubRepo).catch((err) =>
-      console.error(`mcp create_task: github mirror failed for ${task.id}`, err),
-    );
-  }
-
-  if (input.assigneeUserIds && input.assigneeUserIds.length > 0) {
-    void notifyTaskAssigned({
-      taskId: task.id,
-      addedUserIds: input.assigneeUserIds,
-      actorUserId: callerId,
-    }).catch((err) =>
-      console.error(`mcp create_task: assignment notify failed for ${task.id}`, err),
-    );
-  }
-
-  return { id: task.id, status, position };
+function parseDate(raw: string | undefined, field: string): Date | null {
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (!Number.isFinite(d.getTime())) throw new CreateTaskError(`Invalid ${field}`, 400);
+  return d;
 }

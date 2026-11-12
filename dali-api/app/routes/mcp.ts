@@ -9,8 +9,7 @@ import { checkRateLimit } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { enterAgentContext } from "~/collab/agent-presence.server";
 import { safeJson } from "~/lib/safe-json";
-import { registryToolDefs } from "~/mcp/registry";
-import { dispatchTool } from "~/mcp/dispatch.server";
+import { dispatchTool, visibleToolDefs } from "~/mcp/dispatch.server";
 import { MemberNotFoundError } from "~/mcp/tools/get-member-profile";
 import { ME_RESOURCE, readMeResource } from "~/mcp/resources/me";
 import {
@@ -166,7 +165,7 @@ export async function action({ request }: Route.ActionArgs) {
 
     case "tools/list":
       return rpcResult(body.id, {
-        tools: registryToolDefs().filter((d) => auth.scopes.includes(d.requiredScope)).map((d) => ({
+        tools: (await visibleToolDefs({ user: auth.user, scopes: auth.scopes, request })).map((d) => ({
           name: d.name,
           description: d.description,
           inputSchema: d.inputSchema,

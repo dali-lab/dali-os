@@ -78,22 +78,22 @@ describe("CreateEventModal mode=\"meeting-only\"", () => {
     );
 
     // Event-only affordance — proves the Event form is unreachable here.
-    expect(container.textContent).not.toContain("All day");
+    expect(document.body.textContent).not.toContain("All day");
     // Meeting-only mode hides the note/whiteboard asset toggles.
-    expect(container.textContent).not.toContain("Create meeting note");
-    expect(container.textContent).not.toContain("Create whiteboard");
+    expect(document.body.textContent).not.toContain("Create meeting note");
+    expect(document.body.textContent).not.toContain("Create whiteboard");
 
     // The fixed guest renders as a chip, with the no-availability note.
-    expect(container.textContent).toContain("partner@acme.com");
-    expect(container.textContent).toContain("invited by email");
+    expect(document.body.textContent).toContain("partner@acme.com");
+    expect(document.body.textContent).toContain("invited by email");
 
     // defaultTitle prefilled the title field.
-    const title = container.querySelector<HTMLInputElement>("#cem-mtg-title");
+    const title = document.body.querySelector<HTMLInputElement>("#cem-mtg-title");
     expect(title?.value).toBe("DALI x Acme");
 
     // Submit button reads "Create meeting", never "Create event".
-    expect(container.textContent).toContain("Create meeting");
-    expect(container.textContent).not.toContain("Create event");
+    expect(document.body.textContent).toContain("Create meeting");
+    expect(document.body.textContent).not.toContain("Create event");
   });
 
   it("hides groups entirely and disables room search on the location field", async () => {
@@ -105,6 +105,6 @@ describe("CreateEventModal mode=\"meeting-only\"", () => {
       }),
     );
     // The one group in `data.groups` never surfaces as an addable chip/option.
-    expect(container.textContent).not.toContain("Core");
+    expect(document.body.textContent).not.toContain("Core");
   });
 });

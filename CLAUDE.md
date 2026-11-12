@@ -32,11 +32,12 @@ Project conventions for Claude working on this repo, locally or in the `claude.y
 | E2E tests | `npm run test:e2e` (Playwright — needs seeded Postgres) |
 | Demo videos | `npx playwright test -c playwright.demos.config.ts demos/<name>.demo.ts`, then `npx tsx demos/lib/encode.ts` |
 | Typecheck | `npm run typecheck` (runs `react-router typegen && tsc`) |
+| Lint | `npm run lint` |
 | Build | `npm run build` |
 | Dev server | `npm run dev` |
 | Seed DB (dangerous, local only) | `npm run db:reset:local` |
 
-No ESLint/Prettier script is wired up today — don't invent lint commands.
+`npm run lint` runs ESLint with `react-hooks` rules only (rules-of-hooks blocks, exhaustive-deps is hidden by `--quiet`). No Prettier; don't invent other lint commands.
 
 ## Local dev
 

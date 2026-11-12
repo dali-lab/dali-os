@@ -102,7 +102,7 @@ export const SCHEDULE_MEETING_TOOL = {
         properties: {
           existingId: { type: "string", minLength: 1 },
           title: { type: "string", minLength: 1, maxLength: 200 },
-          templatePageId: { type: "string", minLength: 1, nullable: true },
+          templatePageId: { type: ["string", "null"], minLength: 1 },
         },
         additionalProperties: false,
       },

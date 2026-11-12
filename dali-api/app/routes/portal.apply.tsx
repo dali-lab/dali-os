@@ -57,7 +57,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { Radio } from "~/components/ui/Radio";
 import { buttonClasses } from "~/components/ui/Button";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 

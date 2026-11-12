@@ -10,7 +10,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useToast } from "~/components/ui/toast";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import {
   EMAIL_TEMPLATE_KEYS,

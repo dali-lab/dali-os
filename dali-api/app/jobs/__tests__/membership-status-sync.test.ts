@@ -18,7 +18,7 @@ const db = mockedPrisma();
 const TERM_START = new Date("2026-09-14T00:00:00Z");
 const NOW = new Date(2026, 9, 5, 12, 0, 0);
 
-const ctx = (settings: Record<string, unknown> = {}, now = NOW) => ({ now, lastSuccessAt: null, settings });
+const ctx = (settings: Record<string, number> = {}, now = NOW) => ({ now, lastSuccessAt: null, settings });
 const candidateArgs = () => db.user.findMany.mock.calls[0][0] as { where: { OR: Record<string, unknown>[] }; take: number };
 const member = (over: Record<string, unknown> = {}) => ({
   id: "u1",

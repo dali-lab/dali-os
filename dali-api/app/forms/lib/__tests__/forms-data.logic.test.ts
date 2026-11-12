@@ -205,7 +205,7 @@ describe("duplicate-form", () => {
       versions: [{ questions: withRule, intro: null }],
     });
     await runFormsAction(fd({ intent: "duplicate-form", id: "form-1" }), "user-1");
-    const copied = vi.mocked(createForm).mock.calls[0][0].draftQuestions as Question[];
+    const copied = vi.mocked(createForm).mock.calls[0][0].draftQuestions as unknown as Question[];
     expect(copied.map((x) => x.data.showIf)).toEqual([undefined, withRule[1].data.showIf]);
     expect(validateVersionQuestions(JSON.stringify(copied))).toMatchObject({ ok: true });
   });

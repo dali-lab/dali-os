@@ -1,4 +1,3 @@
-import type { BlockNoteEditor } from "@blocknote/core";
 import type { EditorState } from "prosemirror-state";
 import type * as Y from "yjs";
 
@@ -23,7 +22,7 @@ function neuterDestroy(state: EditorState): void {
 }
 
 // Call before the editor mounts; mount builds the EditorState that owns the manager.
-export function keepCollabUndoAlive(editor: Pick<BlockNoteEditor, "onMount" | "prosemirrorState">): () => void {
+export function keepCollabUndoAlive(editor: { onMount: (callback: () => void) => () => void; prosemirrorState: EditorState }): () => void {
   neuterDestroy(editor.prosemirrorState);
   return editor.onMount(() => neuterDestroy(editor.prosemirrorState));
 }

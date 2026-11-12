@@ -85,7 +85,7 @@ export function NotebookPicker({
       onClose={onClose}
       labelledBy={titleId}
       initialFocusRef={searchRef}
-      className={`fixed inset-0 ${Z.tooltip} flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto`}
+      layer={Z.tooltip}
       containerClassName={modalCardClass("max-w-md flex flex-col max-h-[80vh]")}
     >
       <ModalHeader titleId={titleId} title={heading} onClose={onClose} />

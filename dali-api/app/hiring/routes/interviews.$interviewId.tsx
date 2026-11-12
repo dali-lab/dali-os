@@ -33,7 +33,7 @@ import type { Route } from './+types/interviews.$interviewId'
 import type { Question } from '~/types'
 import { INTERVIEW_STATUS_TONES } from '~/hiring/lib/labels'
 import { viewerAssignment } from '~/hiring/lib/interview-status'
-import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
+import { Pill } from '~/components/ui/Pill'
 import { Select, InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from '~/components/os-chrome'
 import { buttonClasses } from '~/components/ui/Button'

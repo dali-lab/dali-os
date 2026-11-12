@@ -27,7 +27,8 @@ import {
   FinalizeDraftButton,
   StageMoveControl,
 } from "~/hiring/components/ApplicationTimeline";
-import { Pill, SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
 import { HiringNote } from "~/hiring/components/HiringNote";
 import { canEditHiringNote, normalizeHiringNote } from "~/hiring/lib/hiring-note";
 import { domainCloseDate } from "~/hiring/lib/domain-windows";

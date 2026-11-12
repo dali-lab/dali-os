@@ -21,7 +21,7 @@ import { Radio } from "~/components/ui/Radio";
 import { IconButton } from "~/components/ui/IconButton";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { useOsChrome } from "~/components/os-chrome";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
