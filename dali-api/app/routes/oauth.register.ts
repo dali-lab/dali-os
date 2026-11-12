@@ -19,6 +19,7 @@ import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";
 import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
 import { safeJson } from "~/lib/safe-json";
 import { logAuditEvent } from "~/lib/audit";
+import { getEnv } from "~/lib/env.server";
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
@@ -68,7 +69,7 @@ function isLoopbackRedirect(uri: string): boolean {
 const DEFAULT_TRUSTED_REDIRECT_HOSTS = ["claude.ai", "claude.com"];
 
 function trustedRedirectHosts(): string[] {
-  const raw = process.env.MCP_ALLOWED_REDIRECT_HOSTS;
+  const raw = getEnv().MCP_ALLOWED_REDIRECT_HOSTS;
   if (!raw) return DEFAULT_TRUSTED_REDIRECT_HOSTS;
   const hosts = raw
     .split(",")
@@ -114,7 +115,7 @@ const DEFAULT_TRUSTED_REDIRECT_URIS = [
 // defaults. Read the value to add off the `oauth.register.rejected` audit row
 // the failed attempt leaves behind rather than guessing a vendor's path.
 function allowedExactRedirectUris(): string[] {
-  const raw = process.env.MCP_ALLOWED_REDIRECT_URIS;
+  const raw = getEnv().MCP_ALLOWED_REDIRECT_URIS;
   if (!raw) return DEFAULT_TRUSTED_REDIRECT_URIS;
   const extra = raw
     .split(",")

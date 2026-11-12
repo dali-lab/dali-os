@@ -17,16 +17,17 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post'
 import { MAX_UPLOAD_BYTES } from './file-validation'
+import { getEnv } from "~/lib/env.server";
 
-const REGION = process.env.AWS_REGION
-const BUCKET = process.env.AWS_S3_BUCKET
+const REGION = getEnv().AWS_REGION
+const BUCKET = getEnv().AWS_S3_BUCKET
 
 export function isS3Configured(): boolean {
   return Boolean(
     REGION &&
       BUCKET &&
-      process.env.AWS_ACCESS_KEY_ID &&
-      process.env.AWS_SECRET_ACCESS_KEY,
+      getEnv().AWS_ACCESS_KEY_ID &&
+      getEnv().AWS_SECRET_ACCESS_KEY,
   )
 }
 
@@ -38,8 +39,8 @@ export function isS3Configured(): boolean {
 const s3 = new S3Client({
   region: REGION,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+    accessKeyId: getEnv().AWS_ACCESS_KEY_ID!,
+    secretAccessKey: getEnv().AWS_SECRET_ACCESS_KEY!,
   },
   responseChecksumValidation: "WHEN_REQUIRED",
   requestChecksumCalculation: "WHEN_REQUIRED",

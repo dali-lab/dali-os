@@ -3,8 +3,7 @@ import { data, redirect, useRevalidator } from "react-router";
 import { Presentation } from "lucide-react";
 import { z } from "zod";
 import type { Route } from "./+types/slides.$pageId";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { parseJson } from "~/lib/validate";
 import { cn } from "~/lib/cn";
 import { recordPageVisit } from "~/lib/user-pages.server";
@@ -59,11 +58,7 @@ export const handle = {
 };
 
 async function requireMember(request: Request) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) throw redirectToLogin(request);
-  if (await isNonMember(auth, request)) throw redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) throw partnerRedirect;
+  const { auth } = await requireLabViewer(request);
   return auth.user;
 }
 

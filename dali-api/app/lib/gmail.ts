@@ -13,9 +13,10 @@ import {
 import { refreshGoogleToken } from '~/lib/google-oauth'
 import { cachedForTtl, clearTtlCache } from '~/lib/ttl-cache'
 import { htmlToPlainText } from '~/lib/email'
+import { getEnv } from "~/lib/env.server";
 
-const CLIENT_ID = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
-const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
+const CLIENT_ID = getEnv().GMAIL_CLIENT_ID ?? getEnv().GOOGLE_CLIENT_ID!
+const CLIENT_SECRET = getEnv().GMAIL_CLIENT_SECRET ?? getEnv().GOOGLE_CLIENT_SECRET!
 
 const TOKEN_TTL_MS = 50 * 60_000
 const MIN_CACHEABLE_EXPIRES_IN_S = 55 * 60

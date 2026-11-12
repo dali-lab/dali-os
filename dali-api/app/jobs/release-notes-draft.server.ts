@@ -25,6 +25,7 @@ import {
   type PullSummary,
 } from "~/lib/release-notes-draft";
 import { RELEASE_NOTE_CAPTURE_KEY_PREFIX } from "~/lib/release-notes";
+import { getEnv } from "~/lib/env.server";
 
 const JOB_NAME = "release-notes-draft";
 const PROMOTION_BRANCH = "prod";
@@ -177,7 +178,7 @@ export async function runReleaseNotesDraft(): Promise<JobResult> {
   const flag = (await getFeatureFlagRows()).get("release-notes");
   if (!flag?.enabled) return { items: 0, note: "release-notes flag is off" };
 
-  const repo = parseRepo(process.env.RELEASE_NOTES_REPO || DEFAULT_REPO, "RELEASE_NOTES_REPO");
+  const repo = parseRepo(getEnv().RELEASE_NOTES_REPO || DEFAULT_REPO, "RELEASE_NOTES_REPO");
   const gh = githubAppClient();
   const { data: branch } = await gh.rest.repos.getBranch({ ...repo, branch: PROMOTION_BRANCH });
   const decision = decideCursor(await readLastSha(), branch.commit.sha);

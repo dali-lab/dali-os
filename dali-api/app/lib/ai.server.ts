@@ -13,6 +13,7 @@
 // generateShortText then falls back to the other provider when the first fails.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { getEnv } from "~/lib/env.server";
 
 export type AiProviderName = "anthropic" | "dartmouth";
 
@@ -54,10 +55,10 @@ const DARTMOUTH_DEFAULT_BASE_URL = "https://chat.dartmouth.edu/api";
 
 function availableProviderNames(): AiProviderName[] {
   const has: Record<AiProviderName, boolean> = {
-    anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
-    dartmouth: Boolean(process.env.DARTMOUTH_CHAT_API_KEY),
+    anthropic: Boolean(getEnv().ANTHROPIC_API_KEY),
+    dartmouth: Boolean(getEnv().DARTMOUTH_CHAT_API_KEY),
   };
-  const forced = process.env.AI_PROVIDER;
+  const forced = getEnv().AI_PROVIDER;
   if (forced === "anthropic" || forced === "dartmouth") return has[forced] ? [forced] : [];
   return (["anthropic", "dartmouth"] as const).filter((n) => has[n]);
 }
@@ -67,10 +68,10 @@ function makeProvider(name: AiProviderName): AiProvider {
   return {
     name,
     client: new Anthropic({
-      baseURL: process.env.DARTMOUTH_CHAT_BASE_URL ?? DARTMOUTH_DEFAULT_BASE_URL,
+      baseURL: getEnv().DARTMOUTH_CHAT_BASE_URL ?? DARTMOUTH_DEFAULT_BASE_URL,
       // apiKey: null stops the SDK reading ANTHROPIC_API_KEY too; the gateway rejects both headers.
       apiKey: null,
-      authToken: process.env.DARTMOUTH_CHAT_API_KEY,
+      authToken: getEnv().DARTMOUTH_CHAT_API_KEY,
     }),
   };
 }

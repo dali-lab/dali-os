@@ -3,6 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { decrypt, encrypt } from "~/calendar/lib/calendar-crypto.server";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
 import { APPLICATION_TZ } from "~/lib/timezone";
+import { getEnv } from "~/lib/env.server";
 
 interface BusyEvent {
   start: string; // ISO
@@ -77,8 +78,8 @@ async function refreshAndPersist(linkId: string, refreshToken: string): Promise<
   try {
     data = await refreshGoogleToken({
       refreshToken,
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: getEnv().GOOGLE_CLIENT_ID!,
+      clientSecret: getEnv().GOOGLE_CLIENT_SECRET!,
     });
   } catch (err) {
     if (err instanceof GoogleOAuthError) {

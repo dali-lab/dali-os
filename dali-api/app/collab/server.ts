@@ -8,6 +8,7 @@ import { authorizeCollabDoc } from "~/lib/collabAuth";
 import { notifyCollabDocMentions } from "./mentions.server";
 import { reconcilePageLinks } from "./page-links.server";
 import { attachAgentPresence, republishAgents } from "./agent-presence.server";
+import { getEnv } from "~/lib/env.server";
 
 const WS_MAX_PAYLOAD_BYTES = 4_194_304; // 4 MB
 const WS_MAX_CONNECTIONS = 100;
@@ -42,10 +43,10 @@ function drainAuthors(documentName: string): string[] {
 export function startCollabServer() {
   if (server) return server;
 
-  const port = parseInt(process.env.COLLAB_PORT ?? "3002", 10);
+  const port = parseInt(getEnv().COLLAB_PORT ?? "3002", 10);
 
   const extensions: any[] = [];
-  const redisUrl = process.env.REDIS_URL;
+  const redisUrl = getEnv().REDIS_URL;
   if (redisUrl) {
     // Pass an ioredis instance built from the URL so deployment configs can
     // ship a single REDIS_URL secret instead of host/port/password fields.
