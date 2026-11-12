@@ -20,8 +20,9 @@ vi.mock("~/lib/auth", async () => {
 vi.mock("~/lib/roles", () => ({ getUserRoles: mocks.getUserRoles }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
-vi.mock("~/lib/groups.server", () => ({ listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/groups", () => ({ listVisibleGroupIdsForUser: vi.fn() }));
 
+import { listVisibleGroupIdsForUser } from "~/lib/groups";
 import { requireFeedbackViewer } from "../feedback.server";
 import { requireResourcesViewer } from "../resources.server";
 import { requireReleaseNoteViewer } from "../release-notes.server";
@@ -62,6 +63,7 @@ beforeEach(() => {
   mocks.isPartnerAccount.mockResolvedValue(false);
   mocks.getUserRoles.mockResolvedValue(roles());
   mocks.isFeatureEnabled.mockResolvedValue(true);
+  vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
 });
 
 describe.each(gates)("%s gate", (_name, gate) => {
