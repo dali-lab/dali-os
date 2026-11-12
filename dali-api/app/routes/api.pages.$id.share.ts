@@ -1,6 +1,7 @@
 import type { Route } from "./+types/api.pages.$id.share";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
+import { errorResponse } from "~/lib/http-error.server";
 import { isLabMember } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { loadShareOptions, parsePermission, parseLinkAccess } from "~/lib/share-params.server";
@@ -8,7 +9,6 @@ import {
   addPageShare,
   listPageShares,
   removePageShare,
-  SharePrincipalError,
 } from "~/lib/page-sharing.server";
 import { describePageAudience } from "~/lib/page-audience.server";
 import {
@@ -16,9 +16,6 @@ import {
   setGeneralAccess,
   setFolderScope,
   notifyDocumentShared,
-  PageShareForbiddenError,
-  PageShareNotFoundError,
-  GeneralAccessError,
 } from "~/lib/page-share-access.server";
 import type { ScopeKind } from "~/generated/prisma/client";
 
@@ -145,15 +142,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         return withCors(request, Response.json({ error: "Unknown action" }, { status: 400 }));
     }
   } catch (err) {
-    if (err instanceof PageShareNotFoundError) {
-      return withCors(request, Response.json({ error: err.message }, { status: 404 }));
-    }
-    if (err instanceof PageShareForbiddenError) {
-      return withCors(request, Response.json({ error: err.message }, { status: 403 }));
-    }
-    if (err instanceof SharePrincipalError || err instanceof GeneralAccessError) {
-      return withCors(request, Response.json({ error: err.message }, { status: 400 }));
-    }
-    throw err;
+    return errorResponse(err, request);
   }
 }

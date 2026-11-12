@@ -14,6 +14,7 @@
 // Plus one cross-workspace addition from the FullAccess tier: anyone granted
 // FullAccess on the page may re-share it (that's what FullAccess means).
 
+import { BadRequestError, ForbiddenError, NotFoundError } from "~/lib/http-error";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isProjectMember } from "~/lib/roles";
@@ -28,21 +29,21 @@ import type {
   ScopeKind,
 } from "~/generated/prisma/client";
 
-export class PageShareNotFoundError extends Error {
+export class PageShareNotFoundError extends NotFoundError {
   constructor() {
     super("Document not found");
     this.name = "PageShareNotFoundError";
   }
 }
 
-export class PageShareForbiddenError extends Error {
+export class PageShareForbiddenError extends ForbiddenError {
   constructor(message = "You can't manage this document's sharing") {
     super(message);
     this.name = "PageShareForbiddenError";
   }
 }
 
-export class GeneralAccessError extends Error {
+export class GeneralAccessError extends BadRequestError {
   constructor(message: string) {
     super(message);
     this.name = "GeneralAccessError";

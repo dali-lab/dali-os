@@ -10,6 +10,7 @@
 //
 // Nothing in this module authorises anything. Call it behind your own gate.
 
+import { BadRequestError } from "~/lib/http-error";
 import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
 import { cachedForRequest } from "~/lib/request-cache";
@@ -183,7 +184,7 @@ export async function labelShares(
   }));
 }
 
-export class SharePrincipalError extends Error {}
+export class SharePrincipalError extends BadRequestError {}
 
 /** Throws SharePrincipalError unless the member or (non-archived) group exists. */
 export async function assertSharePrincipal(
