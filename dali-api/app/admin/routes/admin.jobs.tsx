@@ -4,6 +4,8 @@
 // interval and any settings the job's registry entry declares. The row is
 // authoritative at runtime; the registry values shown are just the defaults.
 
+import { formatMonthDayTime } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { redirect, useFetcher, useLoaderData, useRevalidator } from "react-router";
 import { useEffect, useState } from "react";
 import { useDialog } from "~/components/ui/dialog";
@@ -88,16 +90,6 @@ type JobView = {
   lastDurationMs: number | null;
 };
 
-function formatTime(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function formatDuration(ms: number | null): string | null {
   if (ms == null) return null;
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
@@ -121,6 +113,7 @@ function jobState(job: Pick<JobView, "lastStatus">, enabled: boolean, running: b
 }
 
 function JobRow({ job }: { job: JobView }) {
+  const timeZone = useUserTimeZone();
   const { actionBtn, actionBtnPrimary, compactField } = useOsChrome();
   const toggleFetcher = useFetcher();
   const runFetcher = useFetcher();
@@ -247,10 +240,10 @@ function JobRow({ job }: { job: JobView }) {
       <div className="text-sm">
         <p className="text-xs text-os-muted">Last run · next</p>
         <p className="text-foreground">
-          {formatTime(job.lastRunAt)}
+          {formatMonthDayTime(job.lastRunAt, timeZone)}
           {duration && <span className="text-os-muted"> ({duration})</span>}
         </p>
-        <p className="text-os-grey">{enabled ? formatTime(job.nextRunAt) : "Paused"}</p>
+        <p className="text-os-grey">{enabled ? formatMonthDayTime(job.nextRunAt, timeZone) : "Paused"}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 md:justify-end">

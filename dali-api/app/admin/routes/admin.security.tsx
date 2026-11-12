@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { formatMonthDayTime, formatDateShort } from "~/lib/display";
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { History, Plus, ShieldCheck, X } from "lucide-react";
 import type { Route } from "./+types/admin.security";
@@ -127,20 +129,8 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
 
 type Rule = ReturnType<typeof useLoaderData<typeof loader>>["blocked"][number];
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatDay(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
 function RuleRow({ rule, canEdit }: { rule: Rule; canEdit: boolean }) {
+  const timeZone = useUserTimeZone();
   const fetcher = useFetcher<ActionResult>();
   const dialog = useDialog();
   const { iconBtn } = useOsChrome();
@@ -171,8 +161,8 @@ function RuleRow({ rule, canEdit }: { rule: Rule; canEdit: boolean }) {
           {rule.source === "auto" ? " · automatic" : ""}
         </p>
         <p className="mt-1 text-xs text-os-muted">
-          Added {formatDay(rule.createdAt)}
-          {isBlock && ` · ${rule.expiresAt ? `Until ${formatTime(rule.expiresAt)}` : "Permanent"}`}
+          Added {formatDateShort(rule.createdAt, timeZone)}
+          {isBlock && ` · ${rule.expiresAt ? `Until ${formatMonthDayTime(rule.expiresAt, timeZone)}` : "Permanent"}`}
         </p>
         {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
       </div>

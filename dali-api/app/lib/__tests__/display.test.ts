@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { initialsFromName, userInitials, termCodeLabel } from "~/lib/display";
+import { initialsFromName, userInitials, termCodeLabel, formatMonthDayTime } from "~/lib/display";
 
 describe("initialsFromName", () => {
   it("returns first + last initial for a full name", () => {
@@ -57,5 +57,27 @@ describe("termCodeLabel", () => {
     expect(termCodeLabel("spring")).toBe("spring");
     expect(termCodeLabel("2026S")).toBe("2026S");
     expect(termCodeLabel("")).toBe("");
+  });
+});
+
+describe("formatMonthDayTime", () => {
+  const instant = "2026-11-12T19:00:00Z";
+
+  it("renders the same string wherever the host runs, using the given zone", () => {
+    expect(formatMonthDayTime(instant, "UTC")).toBe("Nov 12, 7:00 PM");
+    expect(formatMonthDayTime(instant, "America/New_York")).toBe("Nov 12, 2:00 PM");
+  });
+
+  it("defaults to the lab zone", () => {
+    expect(formatMonthDayTime(instant)).toBe("Nov 12, 2:00 PM");
+  });
+
+  it("shows a dash for a missing instant", () => {
+    expect(formatMonthDayTime(null)).toBe("—");
+    expect(formatMonthDayTime(undefined, "UTC")).toBe("—");
+  });
+
+  it("crosses the date line in the given zone", () => {
+    expect(formatMonthDayTime("2026-11-13T02:30:00Z", "America/New_York")).toBe("Nov 12, 9:30 PM");
   });
 });

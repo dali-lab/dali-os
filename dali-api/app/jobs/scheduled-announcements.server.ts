@@ -5,6 +5,7 @@
 // lastError on the claimed row — visible in the composer's scheduled list —
 // and deliberately does NOT send; the admin re-composes.
 
+import { logError } from "~/lib/log.server";
 import { prisma } from "~/lib/db.server";
 import { sendAnnouncement } from "~/lib/announcements.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
@@ -59,7 +60,7 @@ export async function runScheduledAnnouncements({ now }: JobContext): Promise<Jo
       const message = err instanceof Error ? err.message : String(err);
       await prisma.scheduledAnnouncement
         .update({ where: { id: row.id }, data: { lastError: message.slice(0, 1000) } })
-        .catch(() => {});
+        .catch((e) => logError("jobs.scheduled-announcement.record-error", e, { id: row.id }));
       console.error(`[jobs] scheduled announcement ${row.id} failed:`, err);
     }
   }

@@ -21,6 +21,7 @@ import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
+import { canEditProject } from "~/lib/project-access";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { parseCaptureReport } from "~/lib/transcription/capture-report";
 import {
@@ -39,7 +40,6 @@ import {
   storedLines,
 } from "~/lib/meeting-recording.server";
 import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
-import { canEditProject } from "~/mcp/tools/access";
 import { isTaskStatus, type TaskStatus } from "~/projects/lib/task-board";
 import { actionItemMatchesBlock, type StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";
 import { formatClock } from "~/components/meeting-recorder/transcript";

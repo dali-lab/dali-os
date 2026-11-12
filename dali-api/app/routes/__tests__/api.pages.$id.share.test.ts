@@ -8,21 +8,27 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
-vi.mock("~/lib/page-sharing.server", () => ({
-  addPageShare: vi.fn(),
-  listPageShares: vi.fn(),
-  removePageShare: vi.fn(),
-  SharePrincipalError: class SharePrincipalError extends Error {},
-}));
-vi.mock("~/lib/page-share-access.server", () => ({
-  requirePageShareManager: vi.fn(),
-  setGeneralAccess: vi.fn(),
-  setFolderScope: vi.fn(),
-  notifyDocumentShared: vi.fn(),
-  PageShareForbiddenError: class PageShareForbiddenError extends Error {},
-  PageShareNotFoundError: class PageShareNotFoundError extends Error {},
-  GeneralAccessError: class GeneralAccessError extends Error {},
-}));
+vi.mock("~/lib/page-sharing.server", async () => {
+  const { BadRequestError } = await import("~/lib/http-error");
+  return {
+    addPageShare: vi.fn(),
+    listPageShares: vi.fn(),
+    removePageShare: vi.fn(),
+    SharePrincipalError: class SharePrincipalError extends BadRequestError {},
+  };
+});
+vi.mock("~/lib/page-share-access.server", async () => {
+  const { BadRequestError, ForbiddenError, NotFoundError } = await import("~/lib/http-error");
+  return {
+    requirePageShareManager: vi.fn(),
+    setGeneralAccess: vi.fn(),
+    setFolderScope: vi.fn(),
+    notifyDocumentShared: vi.fn(),
+    PageShareForbiddenError: class PageShareForbiddenError extends ForbiddenError {},
+    PageShareNotFoundError: class PageShareNotFoundError extends NotFoundError {},
+    GeneralAccessError: class GeneralAccessError extends BadRequestError {},
+  };
+});
 vi.mock("~/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";

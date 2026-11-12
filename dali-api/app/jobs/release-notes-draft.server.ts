@@ -1,4 +1,5 @@
 import type { Prisma } from "~/generated/prisma/client";
+import { logError } from "~/lib/log.server";
 import { prisma } from "~/lib/db.server";
 import { getAppEnv } from "~/lib/app-env";
 import { getFeatureFlagRows } from "~/lib/feature-flags.server";
@@ -120,7 +121,10 @@ async function captureKeysByPr(prNumbers: number[]): Promise<Map<number, string[
   const map = new Map<number, string[]>();
   await Promise.all(
     prNumbers.map(async (n) => {
-      const keys = await listObjectKeys(`${RELEASE_NOTE_CAPTURE_KEY_PREFIX}${n}/`).catch(() => []);
+      const keys = await listObjectKeys(`${RELEASE_NOTE_CAPTURE_KEY_PREFIX}${n}/`).catch((err) => {
+        logError("jobs.release-notes-draft.capture-keys", err, { pr: n });
+        return [] as string[];
+      });
       map.set(n, keys);
     }),
   );

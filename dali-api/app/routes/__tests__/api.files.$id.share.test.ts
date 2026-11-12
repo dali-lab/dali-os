@@ -11,18 +11,22 @@ vi.mock("~/lib/share-params.server", async () => {
   return { ...actual, loadShareOptions: vi.fn() };
 });
 vi.mock("~/lib/file-sharing.server", () => ({ listFileShares: vi.fn() }));
-vi.mock("~/lib/page-sharing.server", () => ({
-  SharePrincipalError: class SharePrincipalError extends Error {},
-}));
-vi.mock("~/lib/file-share-access.server", () => ({
-  requireFileShareManager: vi.fn(),
-  setFileGeneralAccess: vi.fn(),
-  shareFileWith: vi.fn(),
-  unshareFile: vi.fn(),
-  FileShareForbiddenError: class FileShareForbiddenError extends Error {},
-  FileShareNotFoundError: class FileShareNotFoundError extends Error {},
-  FileGeneralAccessError: class FileGeneralAccessError extends Error {},
-}));
+vi.mock("~/lib/page-sharing.server", async () => {
+  const { BadRequestError } = await import("~/lib/http-error");
+  return { SharePrincipalError: class SharePrincipalError extends BadRequestError {} };
+});
+vi.mock("~/lib/file-share-access.server", async () => {
+  const { BadRequestError, ForbiddenError, NotFoundError } = await import("~/lib/http-error");
+  return {
+    requireFileShareManager: vi.fn(),
+    setFileGeneralAccess: vi.fn(),
+    shareFileWith: vi.fn(),
+    unshareFile: vi.fn(),
+    FileShareForbiddenError: class FileShareForbiddenError extends ForbiddenError {},
+    FileShareNotFoundError: class FileShareNotFoundError extends NotFoundError {},
+    FileGeneralAccessError: class FileGeneralAccessError extends BadRequestError {},
+  };
+});
 
 import { requireMemberSession } from "~/lib/auth";
 import { loadShareOptions } from "~/lib/share-params.server";

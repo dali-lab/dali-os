@@ -13,6 +13,7 @@
 //
 // See specs/archive/communication-idempotency.md.
 
+import { isUniqueViolation } from "~/lib/prisma-errors";
 import { prisma, Prisma } from "~/lib/db.server";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";
 import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
@@ -83,12 +84,6 @@ const DEFAULT_DRAIN: DrainConfig = {
   lockSeconds: 120,
 };
 
-function isUniqueViolation(err: unknown): boolean {
-  // Duck-type on the Prisma error code rather than instanceof — robust whether
-  // Prisma is the real namespace or a test mock, and avoids a value-import of
-  // the generated client.
-  return typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002";
-}
 
 type StoredAttachment = { filename: string; mimeType: string; contentBase64: string };
 

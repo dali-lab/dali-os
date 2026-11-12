@@ -91,6 +91,15 @@ export function formatDateShort(iso: string | Date, timeZone: string = APPLICATI
   return formatInTimeZone(iso, timeZone, { month: "short", day: "numeric", year: "numeric" });
 }
 
+/** "Nov 12, 2:00 PM" in the given zone; "—" for a missing instant. */
+export function formatMonthDayTime(
+  iso: string | Date | null | undefined,
+  timeZone: string = APPLICATION_TZ,
+): string {
+  if (!iso) return EMPTY_DISPLAY;
+  return formatInTimeZone(iso, timeZone, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 /** "2:00 PM" in the given zone — just the clock time, no date. */
 export function formatTimeOnly(iso: string | Date, timeZone: string = APPLICATION_TZ): string {
   return formatInTimeZone(iso, timeZone, { hour: "numeric", minute: "2-digit" });

@@ -4,7 +4,7 @@ import { readDocAsBlocks } from "~/collab/read";
 import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
 import { canReadRecording, canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
 import { actionItemsOf, noteOutline, notePageId } from "~/lib/mobile-notes";
-import { McpError } from "~/mcp/errors";
+import { isHttpError } from "~/lib/http-error";
 import { runEnhanceMeetingNotes } from "~/mcp/tools/calendar-extra/enhance-meeting-notes";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 
@@ -110,7 +110,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     await runEnhanceMeetingNotes(ctx, { recordingId: params.id });
     await runEnhanceMeetingNotes(ctx, { recordingId: params.id, apply: true });
   } catch (err) {
-    if (err instanceof McpError) return mobileError(err.message, err.status);
+    if (isHttpError(err)) return mobileError(err.message, err.status);
     throw err;
   }
   return mobileJson({ ok: true });

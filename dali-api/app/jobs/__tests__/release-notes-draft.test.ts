@@ -17,6 +17,7 @@ vi.mock("~/lib/ai.server", () => ({
   generateShortText: vi.fn(),
 }));
 vi.mock("~/lib/ai-usage.server", () => ({ recordTokenUsage: vi.fn() }));
+vi.mock("~/lib/log.server", () => ({ logError: vi.fn() }));
 vi.mock("~/lib/s3", () => ({ listObjectKeys: vi.fn(async () => []) }));
 
 import { prisma } from "~/lib/db.server";
@@ -26,6 +27,7 @@ import { githubAppClient } from "~/lib/github";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { listObjectKeys } from "~/lib/s3";
+import { logError } from "~/lib/log.server";
 import { runReleaseNotesDraft } from "../release-notes-draft.server";
 
 const p = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -223,6 +225,16 @@ describe("runReleaseNotesDraft", () => {
       videoKey: "release-notes/pr-10/demo.mp4",
       videoSource: "scripted",
     });
+  });
+
+  it("logs a failed capture listing and still drafts the note without a video", async () => {
+    setup({ lastSha: "old", prs: [ghPr(10)] });
+    aiReturns(JSON.stringify([entry([10])]));
+    const boom = new Error("s3 down");
+    vi.mocked(listObjectKeys).mockRejectedValue(boom);
+    await runReleaseNotesDraft();
+    expect(logError).toHaveBeenCalledWith("jobs.release-notes-draft.capture-keys", boom, { pr: 10 });
+    expect(p.releaseNote.create.mock.calls[0][0].data.videoKey).toBeUndefined();
   });
 
   it("does not advance the cursor when the model output is not JSON", async () => {

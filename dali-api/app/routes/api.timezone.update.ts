@@ -1,8 +1,18 @@
 import type { Route } from "./+types/api.timezone.update";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, unauthorized } from "~/lib/auth";
+import { z } from "zod";
 import { isValidTimezone } from "~/lib/timezone";
+import { readForm } from "~/lib/validate";
 import { dismissedTimeZoneCookie } from "~/lib/tz-prompt";
+
+const FormSchema = z.object({
+  intent: z.string().default("update"),
+  timeZone: z
+    .string({ error: "Unrecognized timezone." })
+    .trim()
+    .refine(isValidTimezone, "Unrecognized timezone."),
+});
 
 // Backs the client-side timezone-change prompt (components/TimeZonePrompt).
 //   intent=update  → persist the detected/chosen zone to User.timeZone (the
@@ -20,12 +30,9 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const form = await request.formData();
-  const intent = String(form.get("intent") ?? "update");
-  const timeZone = String(form.get("timeZone") ?? "").trim();
-
-  if (!isValidTimezone(timeZone)) {
-    return Response.json({ error: "Unrecognized timezone." }, { status: 400 });
-  }
+  const parsed = readForm(form, FormSchema);
+  if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+  const { intent, timeZone } = parsed.data;
 
   if (intent === "dismiss") {
     return Response.json(

@@ -17,15 +17,7 @@ import {
   PAIRING_TTL_MS,
   POLL_INTERVAL_SECONDS,
 } from "~/lib/pairing";
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code?: string }).code === "P2002"
-  );
-}
+import { isUniqueViolation } from "~/lib/prisma-errors";
 
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {

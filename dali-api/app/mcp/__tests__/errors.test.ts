@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { HttpError, NotFoundError } from "~/lib/http-error";
 import {
   mapToolError,
   McpError,
@@ -43,5 +44,18 @@ describe("mapToolError", () => {
     expect(mapToolError(new McpNotFoundError())?.code).toBe(-32004);
     expect(mapToolError(new McpForbiddenError())?.code).toBe(-32003);
     expect(mapToolError(new McpInvalidError())?.code).toBe(-32602);
+  });
+});
+
+describe("McpError and HttpError", () => {
+  it("McpError is an HttpError with its name and status kept", () => {
+    const err = new McpError("boom", 429);
+    expect(err).toBeInstanceOf(HttpError);
+    expect(err.name).toBe("McpError");
+    expect(err.status).toBe(429);
+  });
+
+  it("maps a shared HttpError subclass", () => {
+    expect(mapToolError(new NotFoundError("x"))).toEqual({ code: -32004, message: "x" });
   });
 });
