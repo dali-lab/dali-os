@@ -113,12 +113,12 @@ function inspect(source: Source) {
   const deployed = getAppEnv() !== "dev";
   for (const name of ENV_NAMES) {
     const raw = source[name];
+    if (raw !== undefined) values[name] = raw;
     if (raw === undefined || raw === "") {
       if (deployed && (REQUIRED_DEPLOYED_ENV as readonly string[]).includes(name)) missing.push(name);
       continue;
     }
-    if (shape[name].safeParse(raw).success) values[name] = raw;
-    else invalid.push(name);
+    if (!shape[name].safeParse(raw).success) invalid.push(name);
   }
   return { values, missing, invalid };
 }

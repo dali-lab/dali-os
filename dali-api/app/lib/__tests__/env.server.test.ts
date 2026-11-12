@@ -83,14 +83,16 @@ describe("getEnv", () => {
     expect(() => getEnv()).not.toThrow();
   });
 
-  it("drops invalid values and empty strings", () => {
+  it("returns values exactly as set, including empty and invalid ones", () => {
     vi.stubEnv("REDIS_URL", "nope");
     vi.stubEnv("SLACK_TEAM_ID", "");
     vi.stubEnv("ZOOM_ACCOUNT_ID", "abc");
+    vi.stubEnv("ZOOM_CLIENT_ID", undefined);
     const env = getEnv();
-    expect(env.REDIS_URL).toBeUndefined();
-    expect(env.SLACK_TEAM_ID).toBeUndefined();
+    expect(env.REDIS_URL).toBe("nope");
+    expect(env.SLACK_TEAM_ID).toBe("");
     expect(env.ZOOM_ACCOUNT_ID).toBe("abc");
+    expect(env.ZOOM_CLIENT_ID).toBeUndefined();
   });
 
   it("re-reads on every call under Vitest", () => {
