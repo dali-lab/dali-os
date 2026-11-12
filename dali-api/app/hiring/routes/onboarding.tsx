@@ -1,10 +1,12 @@
 import {
+  Link,
   redirect,
   useFetcher,
   useLoaderData,
   useNavigate,
   useSearchParams,
 } from "react-router";
+import type { MouseEvent } from "react";
 import { Bell, Check } from "lucide-react";
 import type { Route } from "./+types/onboarding";
 import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
@@ -833,7 +835,7 @@ export default function HiringOnboarding() {
                         />
                         <Link
                           to={`/members/${r.userId}`}
-                          onClick={(e) => e.stopPropagation()}
+                          onClick={(e: MouseEvent<HTMLAnchorElement>) => e.stopPropagation()}
                           className="truncate text-base font-medium text-foreground hover:underline"
                         >
                           {r.name}
