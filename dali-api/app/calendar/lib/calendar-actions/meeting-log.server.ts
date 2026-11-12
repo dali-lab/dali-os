@@ -1,12 +1,12 @@
 import { prisma } from "~/lib/db.server";
 import { addTimeEntry, deleteTimeEntry, timeEntryResult, updateTimeEntry } from "~/calendar/lib/time-entries.server";
 import { removeTimeEntryFromGoogle } from "~/calendar/lib/timesheet-mirror.server";
+import { trackExternalEventAsMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import {
   attachMeetingNote,
   attachMeetingWhiteboard,
   setMeetingProject,
-  trackExternalEventAsMeeting,
-} from "~/calendar/lib/scheduled-meeting.server";
+} from "~/calendar/lib/meeting-artifacts.server";
 import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { parseOccurrenceParam } from "~/calendar/lib/meeting-occurrences";
 import { meetingNotePath } from "~/lib/note-path.server";

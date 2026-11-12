@@ -70,12 +70,14 @@ vi.mock("~/calendar/lib/general-calendar", () => ({
 }));
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
 vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
-  attachMeetingNote: vi.fn(),
-  attachMeetingWhiteboard: vi.fn(),
   cancelScheduledMeeting: vi.fn(),
-  setMeetingProject: vi.fn(),
   trackExternalEventAsMeeting: vi.fn(),
   updateScheduledMeeting: vi.fn(),
+}));
+vi.mock("~/calendar/lib/meeting-artifacts.server", () => ({
+  attachMeetingNote: vi.fn(),
+  attachMeetingWhiteboard: vi.fn(),
+  setMeetingProject: vi.fn(),
 }));
 vi.mock("~/calendar/lib/meeting-roster.server", () => ({
   resolveMeetingOccurrence: vi.fn(),
