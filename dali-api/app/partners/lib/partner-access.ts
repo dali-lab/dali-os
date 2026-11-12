@@ -1,6 +1,9 @@
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import type { Prisma } from "~/generated/prisma/client";
+import { partnerOrgIdsForUser } from "~/lib/partner-orgs.server";
+
+export { partnerOrgIdsForUser };
 
 // Single source of truth for what an "active" partnership window means:
 // startedAt unset-or-past AND endedAt unset-or-future. Archived projects are
@@ -38,16 +41,6 @@ export async function isPartnerUser(userSub: string): Promise<boolean> {
     select: { id: true },
   });
   return row !== null;
-}
-
-// Current org ids the signed-in partner account belongs to (memberships that
-// haven't ended). Empty for a fresh applicant / logged inquiry with no org yet.
-export async function partnerOrgIdsForUser(userSub: string): Promise<string[]> {
-  const contact = await prisma.partnerContact.findUnique({
-    where: { userId: userSub },
-    select: { memberships: { where: { endedAt: null }, select: { orgId: true } } },
-  });
-  return contact?.memberships.map((m) => m.orgId) ?? [];
 }
 
 // Projects any of the account's orgs may currently see in the portal.

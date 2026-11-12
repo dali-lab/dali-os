@@ -14,8 +14,8 @@
 import { prisma } from "~/lib/db.server";
 import { jobByName, resolveJobSettings } from "~/jobs/registry";
 import type { JobContext, JobResult } from "~/jobs/registry";
+import { ARCHIVABLE_STATUSES } from "~/projects/lib/task-archive.server";
 
-const ARCHIVABLE_STATUSES = ["Done", "Cancelled"] as const;
 const DEFAULT_ARCHIVE_AFTER_DAYS = 7;
 
 export async function archiveIdleTasks(opts: {
@@ -33,23 +33,6 @@ export async function archiveIdleTasks(opts: {
       // updatedAt is bumped on any field edit, so this is "no activity since".
       updatedAt: { lt: cutoff },
       ...(opts.projectId ? { projectId: opts.projectId } : {}),
-    },
-    data: { archivedAt: opts.now },
-  });
-
-  return count;
-}
-
-/** Archive every live Done/Cancelled task on a project, regardless of idle age. */
-export async function archiveTerminalTasks(opts: {
-  now: Date;
-  projectId: string;
-}): Promise<number> {
-  const { count } = await prisma.task.updateMany({
-    where: {
-      projectId: opts.projectId,
-      archivedAt: null,
-      status: { in: [...ARCHIVABLE_STATUSES] },
     },
     data: { archivedAt: opts.now },
   });

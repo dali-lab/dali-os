@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
-import { isOfferingManager } from "~/education/lib/access.server";
+import { isOfferingManager } from "~/lib/offering-manager.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
@@ -11,7 +11,7 @@ import { isRoot, nearestRoot, rootBoundMoveError, ROOT_MOVE_ERROR, SYSTEM_FOLDER
 import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 import { findNameConflict } from "~/drive/lib/page-names.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/calendar/lib/notebooks.server";
+import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/drive/lib/notebook-access.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
 //   { parentPageId, beforeId? }                  → reorder within its workspace

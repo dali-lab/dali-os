@@ -12,7 +12,7 @@ import {
   PANEL_CARD as CARD,
   PANEL_HEADER as CARD_HEADER,
   PANEL_TITLE as CARD_TITLE,
-} from '~/hiring/components/ApplicantPanel'
+} from '~/components/ApplicantPanel'
 
 // Question types where the answer is a URL or structured value rather than
 // freeform prose. We render these via AnswerDisplay (download links, etc.)

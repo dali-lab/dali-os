@@ -17,7 +17,7 @@ import {
   type MaintenancePrices,
   type RenewalCardModel,
 } from "../lib/partner-renewals";
-import { listActiveCoreMembers } from "../lib/core-members.server";
+import { listActiveCoreMembers } from "~/lib/core-members.server";
 
 type TermRef = { id: string; code: string; sortKey: number };
 import {

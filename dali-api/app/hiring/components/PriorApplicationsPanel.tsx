@@ -2,7 +2,7 @@ import { Link } from "react-router";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { HiringStatusPill } from "./HiringStatusPill";
-import { ApplicantPanel, PANEL_ROW } from "./ApplicantPanel";
+import { ApplicantPanel, PANEL_ROW } from "~/components/ApplicantPanel";
 import { Pill } from "~/components/ui/Pill";
 import type { PriorApplicationRow } from "~/hiring/lib/prior-applications.server";
 
