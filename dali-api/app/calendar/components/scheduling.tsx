@@ -15,6 +15,7 @@ import {
   FloatingPortal,
 } from "@floating-ui/react";
 import { Tooltip, Combobox, type SelectOption } from "~/components/ui/floating";
+import { PersonLabel } from "~/components/ui/PersonPicker";
 import { usePanelClass } from "~/components/ui/floating/os-styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -490,7 +491,7 @@ export function ParticipantPicker({
                           </span>
                         </>
                       ) : it.kind === "user" ? (
-                        <span className="min-w-0 truncate">{userLabel(it.u)}</span>
+                        <PersonLabel name={userLabel(it.u)} secondary={it.u.daliEmail} />
                       ) : (
                         <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
                           <Mail className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
