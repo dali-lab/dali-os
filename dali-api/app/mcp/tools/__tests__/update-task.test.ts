@@ -17,7 +17,6 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { syncIssueForTask } from "~/projects/lib/github-task-sync";
 import {
   runUpdateTask,
-  UPDATE_TASK_TOOL,
   UpdateTaskError,
 } from "~/mcp/tools/update-task";
 
@@ -33,10 +32,6 @@ beforeEach(() => {
 });
 
 describe("update_task", () => {
-  it("requires the mcp:write scope", () => {
-    expect(UPDATE_TASK_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("rejects callers without project edit access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(false);

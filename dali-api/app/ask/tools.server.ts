@@ -3,19 +3,42 @@ import { pageOpenHref } from "~/drive/lib/page-href";
 import { notePageId } from "~/lib/mobile-notes";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import type { AskSourceInput, AskSourceKind } from "./sources";
+import type { runMcpSearch } from "~/mcp/tools/docs/search";
+import type { runSearchDirectory } from "~/mcp/tools/search-directory";
+import type { runGetMemberProfile } from "~/mcp/tools/get-member-profile";
+import type { runReadPage } from "~/mcp/tools/read-page";
+import type { runListProjectPages } from "~/mcp/tools/list-project-pages";
+import type { runGetMeeting } from "~/mcp/tools/calendar-extra/get-meeting";
+import type { runGetMeetingTranscript } from "~/mcp/tools/calendar-extra/get-meeting-transcript";
+import type { runSearchCalendar } from "~/mcp/tools/calendar-extra/search-calendar";
+import type { runListMyUpcomingMeetings } from "~/mcp/tools/list-my-upcoming-meetings";
+import type { runListMyTasks } from "~/mcp/tools/list-my-tasks";
+import type { runGetTask } from "~/mcp/tools/get-task";
+import type { runListMyProjects } from "~/mcp/tools/list-my-projects";
+import type { runReadHelp } from "~/mcp/tools/read-help";
+import type { runGetProjectOverview } from "~/mcp/tools/get-project-overview";
 
 type Args = Record<string, unknown>;
 
 export const ASK_TRANSCRIPT_PAGE_LINES = 300;
 export const ASK_TRANSCRIPT_MAX_LINES = 500;
 
-export type AskTool = {
+type AskToolOf<P> = {
   status: (args: Args) => string;
   guard?: (args: Args) => string | null;
   args?: (args: Args) => Args;
-  filter?: (payload: unknown) => unknown;
-  sources: (args: Args, payload: unknown) => AskSourceInput[] | Promise<AskSourceInput[]>;
+  filter?: (payload: P) => P;
+  sources: (args: Args, payload: P) => AskSourceInput[] | Promise<AskSourceInput[]>;
 };
+
+export type AskTool = AskToolOf<unknown>;
+
+type Run = (...a: never[]) => Promise<unknown>;
+type Payload<R extends Run> = Awaited<ReturnType<R>>;
+
+function defineAskTool<R extends Run>(tool: AskToolOf<Payload<R>>): AskTool {
+  return tool as AskTool;
+}
 
 export const ASK_SEARCH_CATEGORIES = [
   "person",
@@ -31,27 +54,25 @@ export const ASK_SEARCH_CATEGORIES = [
 
 const searchAllowed = new Set<string>(ASK_SEARCH_CATEGORIES);
 
-type Obj = Record<string, unknown>;
-const obj = (v: unknown): Obj => (v && typeof v === "object" ? (v as Obj) : {});
-const list = (v: unknown): Obj[] => (Array.isArray(v) ? v.map(obj) : []);
-const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
-const name = (p: Obj) => [str(p.firstName), str(p.lastName)].filter(Boolean).join(" ") || "Member";
-const quoted = (args: Args) => (str(args.q) ? ` for "${args.q}"` : "");
+const str = (v: string | null | undefined): string | null => (v ? v : null);
+const name = (p: { firstName?: string | null; lastName?: string | null }) =>
+  [str(p.firstName), str(p.lastName)].filter(Boolean).join(" ") || "Member";
+const quoted = (args: Args) => (typeof args.q === "string" && args.q ? ` for "${args.q}"` : "");
 
 const meetingUrl = (id: string) => `/calendar/meeting/${id}`;
 const taskUrl = (projectId: string, id: string) => `/projects/${projectId}?tab=board&task=${id}`;
 
-function person(p: Obj): AskSourceInput[] {
+function person(p: { id: string; firstName?: string | null; lastName?: string | null }): AskSourceInput[] {
   const id = str(p.id);
   return id ? [{ kind: "person", title: name(p), url: `/members/${id}` }] : [];
 }
 
-function project(p: Obj): AskSourceInput[] {
+function project(p: { id: string; name: string }): AskSourceInput[] {
   const id = str(p.id);
   return id ? [{ kind: "project", title: str(p.name) ?? "Project", url: `/projects/${id}` }] : [];
 }
 
-function task(t: Obj, projectId: string | null): AskSourceInput[] {
+function task(t: { id: string; title: string; dueAt: string | null }, projectId: string | null): AskSourceInput[] {
   const id = str(t.id);
   if (!id || !projectId) return [];
   return [{ kind: "task", title: str(t.title) ?? "Task", url: taskUrl(projectId, id), date: str(t.dueAt) }];
@@ -68,74 +89,63 @@ function articleLinks(body: string): AskSourceInput[] {
   }));
 }
 
-function flattenPages(nodes: Obj[]): Obj[] {
-  return nodes.flatMap((n) => [n, ...flattenPages(list(n.children))]);
+function flattenPages<T extends { children: T[] }>(nodes: T[]): T[] {
+  return nodes.flatMap((n) => [n, ...flattenPages(n.children)]);
 }
 
-export const ASK_TOOLS: Record<string, AskTool> = {
-  search: {
+const TOOLS = {
+  search: defineAskTool<typeof runMcpSearch>({
     status: (args) => `Searching${quoted(args)}`,
     guard: (args) =>
       args.category !== undefined && !searchAllowed.has(String(args.category))
         ? `Category '${args.category}' isn't available here. Use one of: ${ASK_SEARCH_CATEGORIES.join(", ")}`
         : null,
-    filter: (payload) => {
-      const p = obj(payload);
-      return {
-        ...p,
-        results: list(p.results).filter((r) => searchAllowed.has(String(r.type))),
-        ...(Array.isArray(p.categoriesWithMore)
-          ? { categoriesWithMore: p.categoriesWithMore.filter((c) => searchAllowed.has(String(c))) }
-          : {}),
-      };
+    filter: (p) => {
+      const results = p.results.filter((r) => searchAllowed.has(r.type));
+      return "categoriesWithMore" in p
+        ? { ...p, results, categoriesWithMore: p.categoriesWithMore.filter((c) => searchAllowed.has(c)) }
+        : { ...p, results };
     },
-    sources: (_args, payload) =>
-      (list(obj(payload).results) as unknown as SearchResult[]).flatMap((r) =>
+    sources: (_args, p) =>
+      p.results.flatMap((r) =>
         searchAllowed.has(r.type) && r.url
           ? [{ kind: r.type as AskSourceKind, title: r.title, url: r.url, detail: r.subtitle ?? null }]
           : [],
       ),
-  },
-  search_directory: {
+  }),
+  search_directory: defineAskTool<typeof runSearchDirectory>({
     status: (args) => `Looking up people${quoted(args)}`,
-    sources: (_args, payload) => list(obj(payload).results).flatMap(person),
-  },
-  get_member_profile: {
+    sources: (_args, p) => p.results.flatMap(person),
+  }),
+  get_member_profile: defineAskTool<typeof runGetMemberProfile>({
     status: () => "Reading a profile",
-    sources: (_args, payload) => person(obj(payload)),
-  },
-  read_page: {
+    sources: (_args, p) => person(p),
+  }),
+  read_page: defineAskTool<typeof runReadPage>({
     status: () => "Reading a document",
-    sources: (_args, payload) => {
-      const p = obj(payload);
-      const id = str(p.id);
-      return id ? [{ kind: "document", title: str(p.title) ?? "Document", url: pageOpenHref(str(p.kind), id) }] : [];
-    },
-  },
-  list_project_pages: {
+    sources: (_args, p) =>
+      p.id ? [{ kind: "document", title: str(p.title) ?? "Document", url: pageOpenHref(p.kind, p.id) }] : [],
+  }),
+  list_project_pages: defineAskTool<typeof runListProjectPages>({
     status: () => "Listing project documents",
-    sources: (_args, payload) =>
-      flattenPages(list(obj(payload).pages)).flatMap((n) => {
-        const id = str(n.id);
-        return id ? [{ kind: "document" as const, title: str(n.title) ?? "Document", url: pageOpenHref(str(n.kind), id) }] : [];
-      }),
-  },
-  get_meeting: {
+    sources: (_args, p) =>
+      flattenPages(p.pages).flatMap((n) =>
+        n.id ? [{ kind: "document" as const, title: str(n.title) ?? "Document", url: pageOpenHref(n.kind, n.id) }] : [],
+      ),
+  }),
+  get_meeting: defineAskTool<typeof runGetMeeting>({
     status: () => "Reading a meeting",
-    sources: (_args, payload) => {
-      const m = obj(payload);
-      const id = str(m.meetingId);
-      return id ? [{ kind: "meeting", title: str(m.title) ?? "Meeting", url: meetingUrl(id), date: str(m.startsAt) }] : [];
-    },
-  },
-  get_meeting_transcript: {
+    sources: (_args, m) =>
+      m.meetingId ? [{ kind: "meeting", title: str(m.title) ?? "Meeting", url: meetingUrl(m.meetingId), date: m.startsAt }] : [],
+  }),
+  get_meeting_transcript: defineAskTool<typeof runGetMeetingTranscript>({
     status: () => "Reading a transcript",
     args: (args) => ({
       ...args,
       limit: Math.min(typeof args.limit === "number" && args.limit > 0 ? args.limit : ASK_TRANSCRIPT_PAGE_LINES, ASK_TRANSCRIPT_MAX_LINES),
     }),
-    sources: async (_args, payload) => {
-      const recordingId = str(obj(payload).recordingId);
+    sources: async (_args, p) => {
+      const recordingId = p.recordingId;
       if (!recordingId) return [];
       const rec = await prisma.meetingRecording.findUnique({
         where: { id: recordingId },
@@ -153,57 +163,52 @@ export const ASK_TOOLS: Record<string, AskTool> = {
         },
       ];
     },
-  },
-  search_calendar: {
+  }),
+  search_calendar: defineAskTool<typeof runSearchCalendar>({
     status: (args) => `Searching the calendar${quoted(args)}`,
-    sources: (_args, payload) =>
-      list(obj(payload).local).flatMap((h) => {
-        const id = str(h.id)?.replace(/^meeting:/, "");
-        return id ? [{ kind: "meeting" as const, title: str(h.title) ?? "Meeting", url: meetingUrl(id), date: str(h.startIso) }] : [];
+    sources: (_args, p) =>
+      p.local.flatMap((h) => {
+        const id = str(h.id.replace(/^meeting:/, ""));
+        return id ? [{ kind: "meeting" as const, title: str(h.title) ?? "Meeting", url: meetingUrl(id), date: h.startIso }] : [];
       }),
-  },
-  list_my_upcoming_meetings: {
+  }),
+  list_my_upcoming_meetings: defineAskTool<typeof runListMyUpcomingMeetings>({
     status: () => "Checking your upcoming meetings",
-    filter: (payload) => {
-      const p = obj(payload);
-      return { ...p, meetings: list(p.meetings).filter((m) => m.source === "dali") };
-    },
-    sources: (_args, payload) =>
-      list(obj(payload).meetings).flatMap((m) => {
-        const id = str(m.id);
-        return id && m.source === "dali"
-          ? [{ kind: "meeting" as const, title: str(m.title) ?? "Meeting", url: meetingUrl(id), date: str(m.startsAt) }]
-          : [];
-      }),
-  },
-  list_my_tasks: {
+    filter: (p) => ({ ...p, meetings: p.meetings.filter((m) => m.source === "dali") }),
+    sources: (_args, p) =>
+      p.meetings.flatMap((m) =>
+        m.id && m.source === "dali"
+          ? [{ kind: "meeting" as const, title: str(m.title) ?? "Meeting", url: meetingUrl(m.id), date: m.startsAt }]
+          : [],
+      ),
+  }),
+  list_my_tasks: defineAskTool<typeof runListMyTasks>({
     status: () => "Checking your tasks",
-    sources: (_args, payload) => list(obj(payload).tasks).flatMap((t) => task(t, str(t.projectId))),
-  },
-  get_task: {
+    sources: (_args, p) => p.tasks.flatMap((t) => task(t, str(t.projectId))),
+  }),
+  get_task: defineAskTool<typeof runGetTask>({
     status: () => "Reading a task",
-    sources: (_args, payload) => {
-      const t = obj(payload);
-      return task(t, str(obj(t.project).id));
-    },
-  },
-  list_my_projects: {
+    sources: (_args, t) => task(t, str(t.project.id)),
+  }),
+  list_my_projects: defineAskTool<typeof runListMyProjects>({
     status: () => "Checking your projects",
-    sources: (_args, payload) => list(obj(payload).projects).flatMap(project),
-  },
-  read_help: {
-    status: (args) => (str(args.slug) ? "Reading the help" : "Checking the help"),
-    sources: (_args, payload) => {
-      const a = obj(payload);
-      const url = str(a.url);
-      if (!url) return [];
-      return [{ kind: "helpArticle", title: str(a.title) ?? "Help", url }, ...articleLinks(str(a.body) ?? "")];
+    sources: (_args, p) => p.projects.flatMap(project),
+  }),
+  read_help: defineAskTool<typeof runReadHelp>({
+    status: (args) => (typeof args.slug === "string" && args.slug ? "Reading the help" : "Checking the help"),
+    sources: (_args, a) => {
+      if (!("url" in a) || !a.url) return [];
+      return [{ kind: "helpArticle", title: str(a.title) ?? "Help", url: a.url }, ...articleLinks(a.body)];
     },
-  },
-  get_project_overview: {
+  }),
+  get_project_overview: defineAskTool<typeof runGetProjectOverview>({
     status: () => "Reading a project",
-    sources: (_args, payload) => project(obj(payload)),
-  },
+    sources: (_args, p) => project(p),
+  }),
 };
 
-export const ASK_TOOL_NAMES = Object.keys(ASK_TOOLS);
+export type AskToolName = keyof typeof TOOLS;
+
+export const ASK_TOOLS: Record<string, AskTool> = TOOLS;
+
+export const ASK_TOOL_NAMES = Object.keys(TOOLS) as AskToolName[];

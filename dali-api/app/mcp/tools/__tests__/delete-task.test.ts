@@ -10,7 +10,7 @@ vi.mock("~/lib/roles", async (orig) => {
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { runDeleteTask, DELETE_TASK_TOOL, DeleteTaskError } from "~/mcp/tools/delete-task";
+import { runDeleteTask, DeleteTaskError } from "~/mcp/tools/delete-task";
 
 const mockPrisma = prisma as unknown as {
   task: { findUnique: ReturnType<typeof vi.fn> };
@@ -20,10 +20,6 @@ const mockPrisma = prisma as unknown as {
 beforeEach(() => vi.clearAllMocks());
 
 describe("delete_task", () => {
-  it("requires mcp:write", () => {
-    expect(DELETE_TASK_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("rejects callers without project edit access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     vi.mocked(isProjectMember).mockResolvedValue(false);

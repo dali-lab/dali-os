@@ -9,65 +9,54 @@ import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
 
-export const CREATE_TASK_TOOL = {
-  name: "create_task",
-  description:
-    "Create a project task. Requires Core or project-member access. Lands at end of target column. Without a status or dueAt the task goes to Backlog. Optionally mirrors to a GitHub issue (`mirrorToGithubRepo` must be one of the project's repoUrls).",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      projectId: {
-        type: "string",
-        minLength: 1,
-        description: "Required unless `core` is true.",
-      },
-      core: {
-        type: "boolean",
-        description:
-          "Set true to file the task on the Core taskboard instead of a project. Core members only; projectId is ignored.",
-      },
-      title: { type: "string", minLength: 1, maxLength: 500 },
-      description: {
-        type: "string",
-        description: "Optional plain-text / Markdown description.",
-      },
-      status: {
-        type: "string",
-        enum: TASK_STATUSES as unknown as string[],
-        description: "Defaults to 'Todo' when dueAt is set, otherwise 'Backlog'.",
-      },
-      priority: { type: "string", enum: PRIORITIES as unknown as string[] },
-      epicId: { type: "string", description: "Optional epic linkage." },
-      storyId: {
-        type: "string",
-        description:
-          "Optional parent user story. Pins the task's epic to the story's epic (overrides epicId).",
-      },
-      domainId: { type: "string", description: "Optional domain chip." },
-      startsAt: {
-        type: "string",
-        description:
-          "Timeline start (ISO timestamp, planning only). Empty string or omitted = no start.",
-      },
-      dueAt: {
-        type: "string",
-        description: "ISO timestamp. Empty string or omitted = no deadline.",
-      },
-      assigneeUserIds: {
-        type: "array",
-        items: { type: "string" },
-        description: "User ids to assign. Omit or empty for unassigned.",
-      },
-      mirrorToGithubRepo: {
-        type: "string",
-        description:
-          "If set, mirror this task to a GitHub issue in the given repo (must appear in the project's repoUrls). Empty string disables.",
-      },
-    },
-    required: ["title"],
-    additionalProperties: false,
+export const CREATE_TASK_PROPERTIES = {
+  projectId: {
+    type: "string",
+    minLength: 1,
+    description: "Required unless `core` is true.",
   },
-  requiredScope: "mcp:write" as const,
+  core: {
+    type: "boolean",
+    description:
+      "Set true to file the task on the Core taskboard instead of a project. Core members only; projectId is ignored.",
+  },
+  title: { type: "string", minLength: 1, maxLength: 500 },
+  description: {
+    type: "string",
+    description: "Optional plain-text / Markdown description.",
+  },
+  status: {
+    type: "string",
+    enum: TASK_STATUSES as unknown as string[],
+    description: "Defaults to 'Todo' when dueAt is set, otherwise 'Backlog'.",
+  },
+  priority: { type: "string", enum: PRIORITIES as unknown as string[] },
+  epicId: { type: "string", description: "Optional epic linkage." },
+  storyId: {
+    type: "string",
+    description:
+      "Optional parent user story. Pins the task's epic to the story's epic (overrides epicId).",
+  },
+  domainId: { type: "string", description: "Optional domain chip." },
+  startsAt: {
+    type: "string",
+    description:
+      "Timeline start (ISO timestamp, planning only). Empty string or omitted = no start.",
+  },
+  dueAt: {
+    type: "string",
+    description: "ISO timestamp. Empty string or omitted = no deadline.",
+  },
+  assigneeUserIds: {
+    type: "array",
+    items: { type: "string" },
+    description: "User ids to assign. Omit or empty for unassigned.",
+  },
+  mirrorToGithubRepo: {
+    type: "string",
+    description:
+      "If set, mirror this task to a GitHub issue in the given repo (must appear in the project's repoUrls). Empty string disables.",
+  },
 };
 
 type Input = {

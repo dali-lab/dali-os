@@ -1,10 +1,10 @@
 import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
 import {
-  SET_DOCUMENT_SHARING_TOOL,
-  DELETE_PROJECT_DOCUMENT_TOOL,
-  SET_FILE_SHARING_TOOL,
-  DELETE_PROJECT_FILE_TOOL,
+  SET_DOCUMENT_SHARING_PROPERTIES, SET_DOCUMENT_SHARING_REQUIRED,
+  DELETE_PROJECT_DOCUMENT_PROPERTIES, DELETE_PROJECT_DOCUMENT_REQUIRED,
+  SET_FILE_SHARING_PROPERTIES, SET_FILE_SHARING_REQUIRED,
+  DELETE_PROJECT_FILE_PROPERTIES, DELETE_PROJECT_FILE_REQUIRED,
   runSetDocumentSharing,
   runDeleteProjectDocument,
   runSetFileSharing,
@@ -48,13 +48,13 @@ const MANAGE_DOCUMENT_SHARING_DEF = {
         description: "Operation to perform.",
       },
       // set_document_sharing fields
-      ...SET_DOCUMENT_SHARING_TOOL.inputSchema.properties,
+      ...SET_DOCUMENT_SHARING_PROPERTIES,
       // delete_document fields
-      ...DELETE_PROJECT_DOCUMENT_TOOL.inputSchema.properties,
+      ...DELETE_PROJECT_DOCUMENT_PROPERTIES,
       // set_file_sharing fields
-      ...SET_FILE_SHARING_TOOL.inputSchema.properties,
+      ...SET_FILE_SHARING_PROPERTIES,
       // delete_file fields
-      ...DELETE_PROJECT_FILE_TOOL.inputSchema.properties,
+      ...DELETE_PROJECT_FILE_PROPERTIES,
       // file sharing fields
       ...FILE_SHARING_PROPERTIES,
       ...PAGE_SHARING_PROPERTIES,
@@ -66,10 +66,10 @@ const MANAGE_DOCUMENT_SHARING_DEF = {
 };
 
 const ACTION_REQUIRED: Record<string, string[]> = {
-  set_document_sharing: SET_DOCUMENT_SHARING_TOOL.inputSchema.required,
-  delete_document: DELETE_PROJECT_DOCUMENT_TOOL.inputSchema.required,
-  set_file_sharing: SET_FILE_SHARING_TOOL.inputSchema.required,
-  delete_file: DELETE_PROJECT_FILE_TOOL.inputSchema.required,
+  set_document_sharing: SET_DOCUMENT_SHARING_REQUIRED,
+  delete_document: DELETE_PROJECT_DOCUMENT_REQUIRED,
+  set_file_sharing: SET_FILE_SHARING_REQUIRED,
+  delete_file: DELETE_PROJECT_FILE_REQUIRED,
   ...FILE_SHARING_REQUIRED,
   ...PAGE_SHARING_REQUIRED,
 };

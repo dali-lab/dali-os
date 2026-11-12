@@ -6,57 +6,44 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 // ─── Stub the underlying tool modules ────────────────────────────────────────
 
 vi.mock("../../create-epic", () => ({
-  CREATE_EPIC_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["projectId", "title"] },
-  },
+  CREATE_EPIC_PROPERTIES: {},
+  CREATE_EPIC_REQUIRED: ["projectId", "title"],
   runCreateEpic: vi.fn(),
 }));
 vi.mock("../../update-epic", () => ({
-  UPDATE_EPIC_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["epicId"] },
-  },
+  UPDATE_EPIC_PROPERTIES: {},
+  UPDATE_EPIC_REQUIRED: ["epicId"],
   runUpdateEpic: vi.fn(),
 }));
 vi.mock("../../delete-epic", () => ({
-  DELETE_EPIC_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["epicId"] },
-  },
+  DELETE_EPIC_PROPERTIES: {},
+  DELETE_EPIC_REQUIRED: ["epicId"],
   runDeleteEpic: vi.fn(),
 }));
 
 vi.mock("../../create-story", () => ({
-  CREATE_STORY_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["epicId", "title"] },
-  },
+  CREATE_STORY_PROPERTIES: {},
+  CREATE_STORY_REQUIRED: ["epicId", "title"],
   runCreateStory: vi.fn(),
 }));
 vi.mock("../../update-story", () => ({
-  UPDATE_STORY_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["storyId"] },
-  },
+  UPDATE_STORY_PROPERTIES: {},
+  UPDATE_STORY_REQUIRED: ["storyId"],
   runUpdateStory: vi.fn(),
 }));
 vi.mock("../../delete-story", () => ({
-  DELETE_STORY_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["storyId"] },
-  },
+  DELETE_STORY_PROPERTIES: {},
+  DELETE_STORY_REQUIRED: ["storyId"],
   runDeleteStory: vi.fn(),
 }));
 
 vi.mock("../../time-entries", () => ({
-  ADD_TIME_ENTRY_TOOL: {
-    inputSchema: {
-      type: "object",
-      properties: {},
-      required: ["date", "hours", "assignmentType", "roleRefId"],
-    },
-  },
-  UPDATE_TIME_ENTRY_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["id"] },
-  },
-  DELETE_TIME_ENTRY_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["id"] },
-  },
+  ADD_TIME_ENTRY_PROPERTIES: {},
+  ADD_TIME_ENTRY_REQUIRED: ["date", "hours", "assignmentType", "roleRefId"],
+  UPDATE_TIME_ENTRY_PROPERTIES: {},
+  UPDATE_TIME_ENTRY_REQUIRED: ["id"],
+  DELETE_TIME_ENTRY_PROPERTIES: {},
+  DELETE_TIME_ENTRY_REQUIRED: ["id"],
   runAddTimeEntry: vi.fn(),
   runUpdateTimeEntry: vi.fn(),
   runDeleteTimeEntry: vi.fn(),
@@ -75,18 +62,14 @@ vi.mock("../../page-sharing", () => ({
 }));
 
 vi.mock("../../document-curation", () => ({
-  SET_DOCUMENT_SHARING_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["pageId"] },
-  },
-  DELETE_PROJECT_DOCUMENT_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["pageId"] },
-  },
-  SET_FILE_SHARING_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["fileId", "partnerVisible"] },
-  },
-  DELETE_PROJECT_FILE_TOOL: {
-    inputSchema: { type: "object", properties: {}, required: ["fileId"] },
-  },
+  SET_DOCUMENT_SHARING_PROPERTIES: {},
+  SET_DOCUMENT_SHARING_REQUIRED: ["pageId"],
+  DELETE_PROJECT_DOCUMENT_PROPERTIES: {},
+  DELETE_PROJECT_DOCUMENT_REQUIRED: ["pageId"],
+  SET_FILE_SHARING_PROPERTIES: {},
+  SET_FILE_SHARING_REQUIRED: ["fileId", "partnerVisible"],
+  DELETE_PROJECT_FILE_PROPERTIES: {},
+  DELETE_PROJECT_FILE_REQUIRED: ["fileId"],
   runSetDocumentSharing: vi.fn(),
   runDeleteProjectDocument: vi.fn(),
   runSetFileSharing: vi.fn(),

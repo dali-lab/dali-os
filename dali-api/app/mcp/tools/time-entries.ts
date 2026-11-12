@@ -269,42 +269,33 @@ function throwWriteError(id: string | undefined, result: { error: string; status
 
 // ─── add_time_entry ──────────────────────────────────────────────────────────
 
-export const ADD_TIME_ENTRY_TOOL = {
-  name: "add_time_entry",
-  description:
-    "Log a manual time entry against one of the member's roles. Derive `hours` and `note` from the work actually done in this session — the note should say what was worked on, not just 'development'. Two-step: call without `confirmed` to get a preview, show it to the user for approval or amendment, then re-call with `confirmed: true`.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      date: { type: "string", description: "Date of the work (YYYY-MM-DD)." },
-      hours: {
-        type: "number",
-        description: "Hours worked, > 0 and ≤ 24. Must match the startTime/endTime span.",
-      },
-      assignmentType: {
-        type: "string",
-        enum: [...ASSIGNMENT_TYPES],
-        description: "Role kind, from `list_my_roles`.",
-      },
-      roleRefId: { type: "string", description: "Role id, from `list_my_roles`." },
-      note: {
-        type: "string",
-        description:
-          "What was worked on. Summarize the session's actual work concretely (e.g. 'Rebased the showcase importer onto staging and fixed the image mapper').",
-      },
-      startTime: {
-        type: "string",
-        description:
-          "ISO start with an explicit offset (e.g. 2026-10-14T13:00:00-04:00). Payroll reads clock times, so every entry needs one.",
-      },
-      endTime: { type: "string", description: "ISO end with an explicit offset." },
-      ...CONFIRM_PROPERTY,
-    },
-    required: ["date", "hours", "assignmentType", "roleRefId", "startTime", "endTime"],
-    additionalProperties: false,
+export const ADD_TIME_ENTRY_PROPERTIES = {
+  date: { type: "string", description: "Date of the work (YYYY-MM-DD)." },
+  hours: {
+    type: "number",
+    description: "Hours worked, > 0 and ≤ 24. Must match the startTime/endTime span.",
   },
-  requiredScope: "mcp:write" as const,
+  assignmentType: {
+    type: "string",
+    enum: [...ASSIGNMENT_TYPES],
+    description: "Role kind, from `list_my_roles`.",
+  },
+  roleRefId: { type: "string", description: "Role id, from `list_my_roles`." },
+  note: {
+    type: "string",
+    description:
+      "What was worked on. Summarize the session's actual work concretely (e.g. 'Rebased the showcase importer onto staging and fixed the image mapper').",
+  },
+  startTime: {
+    type: "string",
+    description:
+      "ISO start with an explicit offset (e.g. 2026-10-14T13:00:00-04:00). Payroll reads clock times, so every entry needs one.",
+  },
+  endTime: { type: "string", description: "ISO end with an explicit offset." },
+  ...CONFIRM_PROPERTY,
 };
+
+export const ADD_TIME_ENTRY_REQUIRED = ["date", "hours", "assignmentType", "roleRefId", "startTime", "endTime"];
 
 type AddInput = {
   date: string;
@@ -377,28 +368,19 @@ export async function runAddTimeEntry(
 
 // ─── update_time_entry ───────────────────────────────────────────────────────
 
-export const UPDATE_TIME_ENTRY_TOOL = {
-  name: "update_time_entry",
-  description:
-    "Change one of the member's time entries: date, hours, role, note, or time range. Works on Manual and Meeting entries alike (a Meeting entry is how attendance lands on the timesheet; give it a role and note here). Same two-step confirmation as `add_time_entry`.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      id: { type: "string", description: "TimeEntry.id from `list_my_time_entries`." },
-      date: { type: "string", description: "New date (YYYY-MM-DD)." },
-      hours: { type: "number", description: "New hours, > 0 and ≤ 24." },
-      assignmentType: { type: "string", enum: [...ASSIGNMENT_TYPES] },
-      roleRefId: { type: "string" },
-      note: { type: "string", description: "New note. Pass an empty string to clear it." },
-      startTime: { type: "string" },
-      endTime: { type: "string" },
-      ...CONFIRM_PROPERTY,
-    },
-    required: ["id"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
+export const UPDATE_TIME_ENTRY_PROPERTIES = {
+  id: { type: "string", description: "TimeEntry.id from `list_my_time_entries`." },
+  date: { type: "string", description: "New date (YYYY-MM-DD)." },
+  hours: { type: "number", description: "New hours, > 0 and ≤ 24." },
+  assignmentType: { type: "string", enum: [...ASSIGNMENT_TYPES] },
+  roleRefId: { type: "string" },
+  note: { type: "string", description: "New note. Pass an empty string to clear it." },
+  startTime: { type: "string" },
+  endTime: { type: "string" },
+  ...CONFIRM_PROPERTY,
 };
+
+export const UPDATE_TIME_ENTRY_REQUIRED = ["id"];
 
 type UpdateInput = {
   id: string;
@@ -520,20 +502,11 @@ export async function runUpdateTimeEntry(
 // No confirmation gate: it can't invent hours, the id has to come from a list
 // call the user can see, and the entry can be logged again.
 
-export const DELETE_TIME_ENTRY_TOOL = {
-  name: "delete_time_entry",
-  description:
-    "Delete one of the member's time entries, Manual or Meeting. Deleting a Meeting entry takes the meeting's hours off the timesheet; it does not change attendance.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      id: { type: "string", description: "TimeEntry.id from `list_my_time_entries`." },
-    },
-    required: ["id"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
+export const DELETE_TIME_ENTRY_PROPERTIES = {
+  id: { type: "string", description: "TimeEntry.id from `list_my_time_entries`." },
 };
+
+export const DELETE_TIME_ENTRY_REQUIRED = ["id"];
 
 export async function runDeleteTimeEntry(
   callerId: string,
