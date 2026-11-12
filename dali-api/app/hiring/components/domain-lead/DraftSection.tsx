@@ -7,7 +7,8 @@ import { formatVersionLabel } from "~/lib/formatVersion";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
 import { useOsChrome } from "~/components/os-chrome";
-import { Pill, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
 import { ChallengeFormPicker } from "~/hiring/components/cycle-setup/ChallengeLine";
 

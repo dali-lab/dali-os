@@ -4,6 +4,7 @@ import { Select } from "~/components/ui/floating";
 import { Folder, ChevronRight, ChevronDown } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { Avatar } from "~/components/ui/Avatar";
+import { Pill } from "~/components/ui/Pill";
 import { type LoaderData } from "~/projects/components/detail/types";
 
 /* One term's roster. Split out of TeamSection because the current term renders
@@ -54,14 +55,16 @@ function TeamTermGroup({
                 <Link
                   to={`/members/${m.userId}#project-assignments`}
                   title={`Change ${m.name}'s level on their profile`}
-                  className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent transition-colors hover:bg-os-accent/25"
+                  className="flex-shrink-0"
                 >
-                  Mentor
+                  <Pill tone="accent" size="sm" className="transition-colors hover:bg-os-accent/25">
+                    Mentor
+                  </Pill>
                 </Link>
               ) : (
-                <span className="flex-shrink-0 rounded-full bg-os-accent/15 px-2 py-0.5 text-[11px] font-semibold text-os-accent">
+                <Pill tone="accent" size="sm" className="flex-shrink-0">
                   Mentor
-                </span>
+                </Pill>
               ))}
           </div>
         ))}

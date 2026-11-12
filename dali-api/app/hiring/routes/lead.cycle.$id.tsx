@@ -39,7 +39,8 @@ import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/Se
 import { type DomainChallenge } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard } from "~/hiring/components/cycle-setup/DomainRosterCard";
 import { TimelineCard } from "~/hiring/components/cycle-setup/TimelineCard";
-import { Pill, SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { DomainStatusList } from "~/hiring/components/cycle-setup/DomainStatusList";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { ConfidentialityAgreementPicker } from "~/hiring/components/ConfidentialityAgreementPicker";
