@@ -657,7 +657,7 @@ export const AiBar = forwardRef<AiBarHandle, AiBarProps>(function AiBar(
   if (isStreaming) {
     return (
       <div className="flex items-center gap-2 px-1">
-        <AiSparkleIcon size={14} className="text-violet-500 shrink-0" />
+        <AiSparkleIcon size={14} className="text-[var(--os-role-violet-ink)] shrink-0" />
         <span className="text-sm text-muted-foreground flex-1">Editing…</span>
         <button
           type="button"

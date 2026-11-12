@@ -44,7 +44,7 @@ export function DelibsView({
     <>
       <Section
         title="Delibs View"
-        icon={<ListOrdered className="w-4 h-4 text-blue-600" />}
+        icon={<ListOrdered className="w-4 h-4 text-os-accent" />}
         badge={
           (delibsSessions?.length ?? 0) > 0 ? (
             <Pill dot="accent">

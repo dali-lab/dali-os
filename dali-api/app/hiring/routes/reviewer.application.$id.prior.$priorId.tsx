@@ -188,7 +188,7 @@ export default function ReviewerPriorApplicationView() {
         </div>
       </div>
 
-      <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+      <div className="rounded-lg border border-os-accent/30 bg-os-accent/10 px-4 py-3 text-sm text-foreground">
         This is a previous application from {priorCycleName}. Reviews, scores and decisions from
         that cycle aren&apos;t shown.
       </div>

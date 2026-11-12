@@ -398,7 +398,7 @@ export function RubricDetail() {
                                   type="button"
                                   aria-label="Remove criterion"
                                   onClick={() => void handleRemoveCriterion(c.key)}
-                                  className="p-1.5 text-red-600 hover:bg-red-50 rounded-md"
+                                  className="p-1.5 text-os-red hover:bg-os-red/10 rounded-md"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -448,7 +448,7 @@ export function RubricDetail() {
                                 type="button"
                                 aria-label="Remove criterion"
                                 onClick={() => void handleRemoveCriterion(c.key)}
-                                className="p-1.5 text-muted-foreground/70 hover:text-red-600 rounded-md hover:bg-red-50"
+                                className="p-1.5 text-muted-foreground/70 hover:text-os-red rounded-md hover:bg-os-red/10"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>

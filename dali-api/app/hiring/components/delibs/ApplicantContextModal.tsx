@@ -161,7 +161,7 @@ export function InterviewPrepNoteSection({
               features="notes"
               density="compact"
               placeholder="Specific things to bring up in the interview…"
-              className="rounded-lg border border-gray-300 bg-card focus-within:ring-2 focus-within:ring-os-accent focus-within:border-transparent"
+              className="rounded-lg border border-border bg-card focus-within:ring-2 focus-within:ring-os-accent focus-within:border-transparent"
               collab={{
                 documentName: `domainApplication:${domainApplicationId}:prepNote`,
                 token: collabToken,
@@ -353,7 +353,7 @@ export function ReviewsSection({
           No reviewers assigned yet.
         </div>
       ) : (
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-border">
           {reviews.map((review) => {
             const reviewer = review.cycleReviewer?.user;
             const name = reviewer ? `${reviewer.firstName} ${reviewer.lastName}` : "Unknown";

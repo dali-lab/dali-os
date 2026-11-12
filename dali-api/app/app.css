@@ -292,101 +292,16 @@ html.dark,
     --color-sidebar-border: hsl(215 25% 20%);
     --color-sidebar-ring: #00ADAB;
 
-  /* blue-50/100 backgrounds → subtle dark blue surface */
-  .bg-blue-50 { background-color: hsl(215 40% 16%) !important; }
-  .bg-blue-100 { background-color: hsl(213 75% 32%) !important; }
-
-  /* blue text → lighter/brighter for dark bg */
-  .text-blue-600, .text-blue-700 { color: hsl(213 80% 70%) !important; }
-  .text-blue-900 { color: hsl(213 80% 80%) !important; }
-
-  /* blue borders → muted */
-  .border-blue-100, .border-blue-200 { border-color: hsl(215 40% 28%) !important; }
-  .border-blue-400, .border-blue-500 { border-color: hsl(213 70% 55%) !important; }
-
-  /* blue solid buttons stay blue but slightly muted */
-  .bg-blue-600 { background-color: hsl(213 70% 42%) !important; }
-
-  /* green-50/100 → dark green surface */
-  .bg-green-50 { background-color: hsl(150 30% 14%) !important; }
-  .bg-green-100 { background-color: hsl(150 30% 18%) !important; }
-  .text-green-600, .text-green-700 { color: hsl(145 55% 62%) !important; }
-  .text-green-800 { color: hsl(145 55% 72%) !important; }
-  .border-green-200 { border-color: hsl(150 30% 26%) !important; }
-  .bg-green-600 { background-color: hsl(145 50% 32%) !important; }
-
-  /* red-50/100 → dark red surface */
-  .bg-red-50 { background-color: hsl(0 45% 18%) !important; }
-  .text-red-500, .text-red-600 { color: hsl(0 80% 70%) !important; }
-
-  /* purple-50/100 → dark violet surface (domain lead chips, e.g. Engineering) */
-  .bg-purple-100 { background-color: hsl(270 28% 20%) !important; }
-  .text-purple-800 { color: hsl(270 55% 82%) !important; }
-  .hover\:text-purple-600:hover { color: hsl(270 58% 78%) !important; }
-
   /* gray scale → dark equivalents */
   .bg-white { background-color: hsl(215 32% 15%) !important; }
   .text-black { color: hsl(210 20% 95%) !important; }
-  .bg-gray-50 { background-color: hsl(215 28% 14%) !important; }
-  .bg-gray-900 { background-color: hsl(215 28% 22%) !important; }
   .text-gray-400 { color: hsl(210 15% 70%) !important; }
-  .text-gray-500 { color: hsl(210 15% 65%) !important; }
-  .text-gray-700 { color: hsl(210 18% 82%) !important; }
-  .text-gray-900 { color: hsl(210 20% 95%) !important; }
-  .border-gray-200 { border-color: hsl(215 25% 25%) !important; }
-  .border-gray-300 { border-color: hsl(215 25% 28%) !important; }
-  .border-gray-700 { border-color: hsl(215 20% 30%) !important; }
-  .hover\:bg-gray-100:hover { background-color: hsl(215 28% 20%) !important; }
-
-  /* purple scale */
-  .bg-purple-100 { background-color: hsl(270 30% 22%) !important; }
-  .text-purple-800 { color: hsl(270 75% 82%) !important; }
-
-  /* orange scale */
-  .bg-orange-50 { background-color: hsl(25 35% 14%) !important; }
-  .text-orange-800 { color: hsl(25 90% 72%) !important; }
-  .border-orange-200 { border-color: hsl(25 35% 28%) !important; }
 
   /* white/light-gray surfaces → card / muted surfaces */
   .bg-white { background-color: var(--color-card) !important; }
-  .bg-gray-50 { background-color: var(--color-muted) !important; }
-  .hover\:bg-gray-100:hover { background-color: hsl(215 28% 22%) !important; }
-
-  /* light-gray borders → border token */
-  .border-gray-200 { border-color: var(--color-border) !important; }
 
   /* dark gray text → foreground-ish */
-  .text-gray-900 { color: var(--color-foreground) !important; }
-  .text-gray-700 { color: hsl(210 18% 88%) !important; }
-  .text-gray-500, .text-gray-400 { color: var(--color-muted-foreground) !important; }
-
-  /* amber — the app's de-facto warning tint (CE-credit standing, payroll
-     holds, agreement reminders) and the largest gap of the lot */
-  .bg-amber-50 { background-color: hsl(38 30% 13%) !important; }
-  .bg-amber-100 { background-color: hsl(38 30% 17%) !important; }
-  .text-amber-600, .text-amber-700 { color: hsl(38 90% 65%) !important; }
-  .text-amber-800 { color: hsl(38 90% 74%) !important; }
-  .border-amber-200 { border-color: hsl(38 30% 26%) !important; }
-  .border-amber-300 { border-color: hsl(38 35% 32%) !important; }
-
-  /* zinc → the same dark neutrals as gray. The desktop download page and
-     the admin jobs/email-sender tables are built entirely on zinc, so
-     without this they stayed a white page holding dark-remapped cards. */
-  .bg-zinc-900 { background-color: hsl(215 28% 22%) !important; }
-  .text-zinc-400 { color: var(--color-muted-foreground) !important; }
-
-  /* emerald / teal / lime / violet */
-  .text-violet-500 { color: hsl(258 75% 76%) !important; }
-
-  /* Shades the mapped families skipped. The 200–400 fills matter most —
-     they're the applicant-highlighter swatches and solid status chips,
-     and a pastel fill under inherited `text-foreground` is unreadable. */
-  .bg-blue-200 { background-color: hsl(215 45% 24%) !important; }
-  .bg-blue-300 { background-color: hsl(214 50% 30%) !important; }
-  .hover\:bg-green-700:hover { background-color: hsl(145 50% 26%) !important; }
-  .bg-red-500 { background-color: hsl(0 60% 45%) !important; }
-  .border-red-100 { border-color: hsl(0 30% 24%) !important; }
-  .bg-yellow-500 { background-color: hsl(40 75% 45%) !important; }
+  .text-gray-400 { color: var(--color-muted-foreground) !important; }
 
   /* `--color-dark-blue` inverts to near-white above so navy *headline
      text* stays readable — but the same token fills ~20 navy buttons,

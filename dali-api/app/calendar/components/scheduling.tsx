@@ -530,14 +530,14 @@ export type SlotSuggestions = { slots: RankedSlot[]; knownCount: number };
 // Picked to stay legible over the green availability gradient.
 const SUGGESTION_COLORS = [
   {
-    dot: "bg-violet-600 dark:bg-violet-400",
-    border: "border-violet-500 dark:border-violet-400",
-    fill: "bg-violet-500/20 dark:bg-violet-400/20",
+    dot: "bg-[var(--os-role-violet-ink)]",
+    border: "border-[var(--os-role-violet-ink)]",
+    fill: "bg-[var(--os-role-violet-ink)]/20",
   },
   {
-    dot: "bg-sky-600 dark:bg-sky-400",
-    border: "border-sky-500 dark:border-sky-400",
-    fill: "bg-sky-500/20 dark:bg-sky-400/20",
+    dot: "bg-[var(--os-role-cyan-ink)]",
+    border: "border-[var(--os-role-cyan-ink)]",
+    fill: "bg-[var(--os-role-cyan-ink)]/20",
   },
   {
     dot: "bg-os-amber",
@@ -593,7 +593,7 @@ export function OptimalTimePills({
             >
               <span
                 className={cn(
-                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white",
+                  "flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-os-bg",
                   SUGGESTION_COLORS[i]?.dot,
                 )}
               >
@@ -1169,7 +1169,7 @@ export function ScheduleWeekGrid({
                 >
                   <span
                     className={cn(
-                      "absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-white ring-1 ring-white/70",
+                      "absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold text-os-bg ring-1 ring-os-bg/70",
                       SUGGESTION_COLORS[i]?.dot,
                     )}
                   >
@@ -1192,7 +1192,7 @@ export function ScheduleWeekGrid({
                 className={cn(
                   "absolute left-0 right-0 z-30 rounded-sm border-2",
                   aggregateSelected.free
-                    ? "border-green-600 bg-green-500/15 dark:border-green-400"
+                    ? "border-os-green bg-os-green/15"
                     : "border-os-accent bg-os-accent/10",
                 )}
                 style={{
@@ -1204,7 +1204,7 @@ export function ScheduleWeekGrid({
                   className={cn(
                     "m-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[11px] font-semibold shadow-sm",
                     aggregateSelected.free
-                      ? "bg-green-600 text-white dark:bg-green-500"
+                      ? "bg-os-green text-os-bg"
                       : "bg-os-accent text-os-bg",
                   )}
                 >

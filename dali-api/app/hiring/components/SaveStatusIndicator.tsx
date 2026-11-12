@@ -16,7 +16,7 @@ export function SaveStatusIndicator({
   const base = `inline-flex items-center gap-1 text-xs ${className}`;
   if (saving) {
     return (
-      <span className={`${base} text-blue-600`}>
+      <span className={`${base} text-os-accent`}>
         <Save className="w-3 h-3 animate-pulse" />
         Saving…
       </span>

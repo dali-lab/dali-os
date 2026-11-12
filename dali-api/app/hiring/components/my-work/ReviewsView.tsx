@@ -29,7 +29,7 @@ export function ReviewsView({
 
   if (reviews.length === 0) {
     return (
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted-foreground">
         You don't have any assigned applications yet. You'll see them here
         once your Domain Lead assigns reviewers.
       </p>

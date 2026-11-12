@@ -138,7 +138,7 @@ export function RequestMeetingModal({
           />
         </div>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-os-red">{error}</p>}
       </div>
 
       <ModalFooter onCancel={onClose}>

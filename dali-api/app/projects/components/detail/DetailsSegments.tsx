@@ -424,7 +424,7 @@ export function TermsSegment({
             {selected.map((t) => (
               <span
                 key={t.id}
-                className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-blue-50 text-blue-700 border border-blue-100"
+                className="inline-flex items-center px-2 py-0.5 text-xs font-medium rounded bg-os-accent/10 text-os-accent border border-os-accent/30"
               >
                 {t.code}
               </span>
