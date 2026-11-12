@@ -226,7 +226,7 @@ describe("putObject", () => {
     const send = vi.spyOn(S3Client.prototype, "send").mockResolvedValue({} as never);
     await putObject("slides/a.png", new Uint8Array([1]), "image/png", { v: "abc" });
     await putObject("uploads/b.pdf", new Uint8Array([1]), "application/pdf");
-    const inputs = send.mock.calls.map((c) => (c[0] as { input: Record<string, unknown> }).input);
+    const inputs = send.mock.calls.map((c) => (c[0] as unknown as { input: Record<string, unknown> }).input);
     expect(inputs[0]).toMatchObject({ Key: "slides/a.png", ContentType: "image/png", Metadata: { v: "abc" } });
     expect(inputs[1]).not.toHaveProperty("Metadata");
   });

@@ -260,6 +260,7 @@ export function demoEmailPage(request: Request): EmailPageData {
 
   return {
     userId: "demo",
+    mailHidden: false,
     folder: "inbox" as const,
     view,
     inbox,
