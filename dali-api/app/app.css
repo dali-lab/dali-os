@@ -292,194 +292,90 @@ html.dark,
     --color-sidebar-border: hsl(215 25% 20%);
     --color-sidebar-ring: #00ADAB;
 
-  /* Remap light status colors to dark-friendly equivalents */
-
   /* blue-50/100 backgrounds → subtle dark blue surface */
-  .bg-blue-50  { background-color: hsl(215 40% 16%) !important; }
+  .bg-blue-50 { background-color: hsl(215 40% 16%) !important; }
   .bg-blue-100 { background-color: hsl(213 75% 32%) !important; }
-  .bg-blue-50\/50 { background-color: hsl(215 40% 16% / 0.5) !important; }
 
   /* blue text → lighter/brighter for dark bg */
   .text-blue-600, .text-blue-700 { color: hsl(213 80% 70%) !important; }
   .text-blue-800, .text-blue-900 { color: hsl(213 80% 80%) !important; }
-  .text-blue-500 { color: hsl(213 80% 65%) !important; }
 
   /* blue borders → muted */
   .border-blue-100, .border-blue-200 { border-color: hsl(215 40% 28%) !important; }
-  .border-blue-400, .border-blue-500, .border-blue-600 { border-color: hsl(213 70% 55%) !important; }
+  .border-blue-400, .border-blue-500 { border-color: hsl(213 70% 55%) !important; }
 
   /* blue solid buttons stay blue but slightly muted */
   .bg-blue-600 { background-color: hsl(213 70% 42%) !important; }
-  .bg-blue-700, .hover\:bg-blue-700:hover { background-color: hsl(213 70% 36%) !important; }
 
   /* green-50/100 → dark green surface */
-  .bg-green-50  { background-color: hsl(150 30% 14%) !important; }
+  .bg-green-50 { background-color: hsl(150 30% 14%) !important; }
   .bg-green-100 { background-color: hsl(150 30% 18%) !important; }
-  .bg-green-50\/50 { background-color: hsl(150 30% 14% / 0.5) !important; }
-  .text-green-500 { color: hsl(145 55% 58%) !important; }
   .text-green-600, .text-green-700 { color: hsl(145 55% 62%) !important; }
-  .text-green-800, .text-green-900 { color: hsl(145 55% 72%) !important; }
-  .border-green-100 { border-color: hsl(150 30% 22%) !important; }
+  .text-green-800 { color: hsl(145 55% 72%) !important; }
   .border-green-200 { border-color: hsl(150 30% 26%) !important; }
-  .bg-green-600, .bg-green-700 { background-color: hsl(145 50% 32%) !important; }
+  .bg-green-600 { background-color: hsl(145 50% 32%) !important; }
 
   /* red-50/100 → dark red surface */
-  .bg-red-50  { background-color: hsl(0 45% 18%) !important; }
-  .bg-red-100 { background-color: hsl(0 50% 24%) !important; }
-  .text-red-500, .text-red-600, .text-red-700 { color: hsl(0 80% 70%) !important; }
-  .text-red-800, .text-red-900 { color: hsl(0 80% 78%) !important; }
-  .border-red-200 { border-color: hsl(0 30% 28%) !important; }
-
-  /* yellow-50/100 → dark amber surface */
-  .bg-yellow-50  { background-color: hsl(40 30% 13%) !important; }
-  .bg-yellow-100 { background-color: hsl(40 30% 17%) !important; }
-  .text-yellow-600, .text-yellow-700 { color: hsl(40 90% 65%) !important; }
-  .text-yellow-800, .text-yellow-900 { color: hsl(40 90% 72%) !important; }
-
-  /* indigo-50/100 → dark indigo surface */
-  .bg-indigo-50  { background-color: hsl(240 35% 16%) !important; }
-  .bg-indigo-100 { background-color: hsl(240 35% 20%) !important; }
-  .text-indigo-600, .text-indigo-700 { color: hsl(235 80% 75%) !important; }
-  .text-indigo-800, .text-indigo-900 { color: hsl(235 80% 82%) !important; }
+  .bg-red-50 { background-color: hsl(0 45% 18%) !important; }
+  .text-red-500, .text-red-600 { color: hsl(0 80% 70%) !important; }
 
   /* purple-50/100 → dark violet surface (domain lead chips, e.g. Engineering) */
-  .bg-purple-50  { background-color: hsl(270 28% 14%) !important; }
   .bg-purple-100 { background-color: hsl(270 28% 20%) !important; }
-  .text-purple-600, .text-purple-700 { color: hsl(270 58% 72%) !important; }
-  .text-purple-800, .text-purple-900 { color: hsl(270 55% 82%) !important; }
-  .border-purple-200 { border-color: hsl(270 25% 30%) !important; }
+  .text-purple-800 { color: hsl(270 55% 82%) !important; }
   .hover\:text-purple-600:hover { color: hsl(270 58% 78%) !important; }
 
   /* gray scale → dark equivalents */
   .bg-white { background-color: hsl(215 32% 15%) !important; }
   .text-black { color: hsl(210 20% 95%) !important; }
   .bg-gray-50 { background-color: hsl(215 28% 14%) !important; }
-  .bg-gray-100 { background-color: hsl(215 28% 18%) !important; }
-  .bg-gray-200 { background-color: hsl(215 25% 22%) !important; }
-  .bg-gray-300 { background-color: hsl(215 22% 28%) !important; }
-  .bg-gray-700 { background-color: hsl(215 22% 30%) !important; }
-  .bg-gray-800 { background-color: hsl(215 25% 25%) !important; }
   .bg-gray-900 { background-color: hsl(215 28% 22%) !important; }
-  .text-gray-300, .text-gray-400 { color: hsl(210 15% 70%) !important; }
+  .text-gray-400 { color: hsl(210 15% 70%) !important; }
   .text-gray-500 { color: hsl(210 15% 65%) !important; }
-  .text-gray-600 { color: hsl(210 15% 72%) !important; }
   .text-gray-700 { color: hsl(210 18% 82%) !important; }
-  .text-gray-800, .text-gray-900 { color: hsl(210 20% 95%) !important; }
-  .border-gray-100 { border-color: hsl(215 25% 22%) !important; }
+  .text-gray-900 { color: hsl(210 20% 95%) !important; }
   .border-gray-200 { border-color: hsl(215 25% 25%) !important; }
   .border-gray-300 { border-color: hsl(215 25% 28%) !important; }
-  .border-gray-400 { border-color: hsl(215 20% 35%) !important; }
   .border-gray-700 { border-color: hsl(215 20% 30%) !important; }
-  .hover\:bg-gray-50:hover { background-color: hsl(215 28% 16%) !important; }
   .hover\:bg-gray-100:hover { background-color: hsl(215 28% 20%) !important; }
-  .hover\:bg-gray-200:hover { background-color: hsl(215 25% 24%) !important; }
-  .hover\:bg-gray-700:hover { background-color: hsl(215 22% 32%) !important; }
-  .hover\:text-gray-700:hover { color: hsl(210 18% 82%) !important; }
-  .hover\:text-gray-800:hover { color: hsl(210 20% 95%) !important; }
 
   /* purple scale */
-  .bg-purple-50 { background-color: hsl(270 30% 16%) !important; }
   .bg-purple-100 { background-color: hsl(270 30% 22%) !important; }
-  .text-purple-500, .text-purple-600 { color: hsl(270 75% 75%) !important; }
-  .text-purple-700, .text-purple-800 { color: hsl(270 75% 82%) !important; }
-  .text-purple-900 { color: hsl(270 75% 88%) !important; }
-  .border-purple-200 { border-color: hsl(270 30% 30%) !important; }
-  .bg-purple-600 { background-color: hsl(270 50% 45%) !important; }
-  .bg-purple-700 { background-color: hsl(270 50% 38%) !important; }
+  .text-purple-800 { color: hsl(270 75% 82%) !important; }
 
   /* orange scale */
   .bg-orange-50 { background-color: hsl(25 35% 14%) !important; }
-  .bg-orange-100 { background-color: hsl(25 35% 18%) !important; }
-  .text-orange-500, .text-orange-600 { color: hsl(25 90% 65%) !important; }
-  .text-orange-700, .text-orange-800 { color: hsl(25 90% 72%) !important; }
+  .text-orange-800 { color: hsl(25 90% 72%) !important; }
   .border-orange-200 { border-color: hsl(25 35% 28%) !important; }
-  .bg-orange-500 { background-color: hsl(25 75% 50%) !important; }
-  .bg-orange-600 { background-color: hsl(25 75% 42%) !important; }
-
-  /* pink scale */
-  .bg-pink-50 { background-color: hsl(340 35% 16%) !important; }
-  .bg-pink-100 { background-color: hsl(340 35% 20%) !important; }
-  .text-pink-500, .text-pink-600 { color: hsl(340 75% 72%) !important; }
-  .text-pink-700, .text-pink-800 { color: hsl(340 75% 80%) !important; }
-  .border-pink-200 { border-color: hsl(340 35% 30%) !important; }
-  .bg-pink-500 { background-color: hsl(340 65% 55%) !important; }
-  .bg-pink-600 { background-color: hsl(340 65% 48%) !important; }
 
   /* white/light-gray surfaces → card / muted surfaces */
   .bg-white { background-color: var(--color-card) !important; }
-  .bg-white\/50 { background-color: hsl(215 32% 15% / 0.5) !important; }
   .bg-gray-50 { background-color: var(--color-muted) !important; }
-  .bg-gray-100, .hover\:bg-gray-100:hover { background-color: hsl(215 28% 22%) !important; }
-  .bg-gray-200 { background-color: hsl(215 28% 25%) !important; }
+  .hover\:bg-gray-100:hover { background-color: hsl(215 28% 22%) !important; }
 
   /* light-gray borders → border token */
-  .border-gray-100, .border-gray-200 { border-color: var(--color-border) !important; }
+  .border-gray-200 { border-color: var(--color-border) !important; }
 
   /* dark gray text → foreground-ish */
   .text-gray-900 { color: var(--color-foreground) !important; }
-  .text-gray-800, .text-gray-700 { color: hsl(210 18% 88%) !important; }
-  .text-gray-600 { color: hsl(210 15% 75%) !important; }
+  .text-gray-700 { color: hsl(210 18% 88%) !important; }
   .text-gray-500, .text-gray-400 { color: var(--color-muted-foreground) !important; }
-
-  /* ── Families and shades the remaps above never reached ──────────────
-   * A palette class with no entry here keeps its *light* value in dark
-   * mode. Two ways that shows up: a 50/100 fill glows as a pastel patch
-   * against the dark page, and anything on it that inherits
-   * `text-foreground` renders near-white on near-white. */
 
   /* amber — the app's de-facto warning tint (CE-credit standing, payroll
      holds, agreement reminders) and the largest gap of the lot */
-  .bg-amber-50  { background-color: hsl(38 30% 13%) !important; }
-  .bg-amber-50\/40 { background-color: hsl(38 30% 13% / 0.4) !important; }
+  .bg-amber-50 { background-color: hsl(38 30% 13%) !important; }
   .bg-amber-100 { background-color: hsl(38 30% 17%) !important; }
-  .bg-amber-400 { background-color: hsl(38 65% 42%) !important; }
-  .bg-amber-500 { background-color: hsl(38 70% 44%) !important; }
-  .bg-amber-600 { background-color: hsl(38 70% 38%) !important; }
-  .hover\:bg-amber-50:hover, .hover\:bg-amber-100:hover { background-color: hsl(38 30% 20%) !important; }
-  .hover\:bg-amber-500:hover { background-color: hsl(38 70% 48%) !important; }
-  .hover\:bg-amber-700:hover { background-color: hsl(38 70% 32%) !important; }
-  .text-amber-500, .text-amber-600, .text-amber-700 { color: hsl(38 90% 65%) !important; }
-  .text-amber-700\/70 { color: hsl(38 90% 65% / 0.7) !important; }
-  .text-amber-800, .text-amber-900 { color: hsl(38 90% 74%) !important; }
-  .text-amber-800\/80 { color: hsl(38 90% 74% / 0.8) !important; }
-  .hover\:text-amber-900:hover { color: hsl(38 90% 82%) !important; }
+  .text-amber-600, .text-amber-700 { color: hsl(38 90% 65%) !important; }
+  .text-amber-800 { color: hsl(38 90% 74%) !important; }
   .border-amber-200 { border-color: hsl(38 30% 26%) !important; }
   .border-amber-300 { border-color: hsl(38 35% 32%) !important; }
-  .border-amber-400, .border-amber-500 { border-color: hsl(38 45% 40%) !important; }
 
   /* zinc → the same dark neutrals as gray. The desktop download page and
      the admin jobs/email-sender tables are built entirely on zinc, so
      without this they stayed a white page holding dark-remapped cards. */
-  .bg-zinc-50 { background-color: var(--color-muted) !important; }
-  .bg-zinc-100 { background-color: hsl(215 28% 22%) !important; }
-  .bg-zinc-200 { background-color: hsl(215 28% 25%) !important; }
-  .bg-zinc-300 { background-color: hsl(215 22% 28%) !important; }
   .bg-zinc-900 { background-color: hsl(215 28% 22%) !important; }
-  .hover\:bg-zinc-50:hover { background-color: hsl(215 28% 16%) !important; }
-  .hover\:bg-zinc-300:hover, .hover\:bg-zinc-700:hover { background-color: hsl(215 22% 32%) !important; }
   .text-zinc-400 { color: var(--color-muted-foreground) !important; }
-  .text-zinc-500 { color: hsl(210 15% 65%) !important; }
-  .text-zinc-600 { color: hsl(210 15% 75%) !important; }
-  .text-zinc-700 { color: hsl(210 18% 88%) !important; }
-  .text-zinc-900 { color: var(--color-foreground) !important; }
-  .border-zinc-100, .border-zinc-200 { border-color: var(--color-border) !important; }
-  .border-zinc-300 { border-color: hsl(215 25% 28%) !important; }
 
   /* emerald / teal / lime / violet */
-  .bg-emerald-50  { background-color: hsl(155 30% 14%) !important; }
-  .bg-emerald-100 { background-color: hsl(155 30% 18%) !important; }
-  .bg-emerald-200 { background-color: hsl(155 30% 24%) !important; }
-  .bg-emerald-300 { background-color: hsl(155 32% 30%) !important; }
-  .bg-emerald-500 { background-color: hsl(155 50% 36%) !important; }
-  .text-emerald-600, .text-emerald-700 { color: hsl(152 55% 62%) !important; }
-  .text-emerald-800, .text-emerald-900, .text-emerald-950 { color: hsl(152 55% 74%) !important; }
-  .border-emerald-500 { border-color: hsl(155 45% 42%) !important; }
-  .bg-teal-100 { background-color: hsl(175 30% 18%) !important; }
-  .bg-teal-600 { background-color: hsl(175 55% 32%) !important; }
-  .text-teal-800 { color: hsl(175 50% 70%) !important; }
-  .border-teal-600 { border-color: hsl(175 45% 40%) !important; }
-  .bg-lime-50 { background-color: hsl(80 28% 13%) !important; }
-  .text-lime-700 { color: hsl(80 60% 62%) !important; }
   .text-violet-500 { color: hsl(258 75% 76%) !important; }
 
   /* Shades the mapped families skipped. The 200–400 fills matter most —
@@ -487,47 +383,16 @@ html.dark,
      and a pastel fill under inherited `text-foreground` is unreadable. */
   .bg-blue-200 { background-color: hsl(215 45% 24%) !important; }
   .bg-blue-300 { background-color: hsl(214 50% 30%) !important; }
-  .bg-blue-500 { background-color: hsl(213 70% 48%) !important; }
-  .text-blue-400 { color: hsl(213 80% 70%) !important; }
-  .border-blue-300 { border-color: hsl(215 40% 32%) !important; }
-  .bg-green-200 { background-color: hsl(150 30% 24%) !important; }
-  .bg-green-300 { background-color: hsl(150 32% 30%) !important; }
-  .bg-green-400 { background-color: hsl(148 40% 34%) !important; }
-  .bg-green-500 { background-color: hsl(145 50% 36%) !important; }
-  .border-green-300 { border-color: hsl(150 30% 30%) !important; }
-  .border-green-400 { border-color: hsl(150 30% 36%) !important; }
   .hover\:bg-green-700:hover { background-color: hsl(145 50% 26%) !important; }
-  .bg-red-200 { background-color: hsl(0 40% 28%) !important; }
-  .bg-red-300 { background-color: hsl(0 42% 34%) !important; }
   .bg-red-500 { background-color: hsl(0 60% 45%) !important; }
-  .bg-red-600 { background-color: hsl(0 60% 40%) !important; }
-  .bg-red-50\/50 { background-color: hsl(0 45% 18% / 0.5) !important; }
-  .hover\:bg-red-700:hover { background-color: hsl(0 60% 34%) !important; }
-  .text-red-400 { color: hsl(0 80% 70%) !important; }
   .border-red-100 { border-color: hsl(0 30% 24%) !important; }
-  .border-red-300 { border-color: hsl(0 32% 34%) !important; }
-  .border-red-400 { border-color: hsl(0 40% 42%) !important; }
-  .border-red-500 { border-color: hsl(0 50% 48%) !important; }
-  .bg-yellow-200 { background-color: hsl(40 30% 22%) !important; }
-  .bg-yellow-300 { background-color: hsl(40 35% 28%) !important; }
   .bg-yellow-500 { background-color: hsl(40 75% 45%) !important; }
-  .bg-yellow-600 { background-color: hsl(40 75% 40%) !important; }
-  .bg-yellow-50\/50 { background-color: hsl(40 30% 13% / 0.5) !important; }
-  .hover\:bg-yellow-700:hover { background-color: hsl(40 75% 34%) !important; }
-  .border-yellow-200 { border-color: hsl(40 30% 26%) !important; }
-  .border-yellow-300 { border-color: hsl(40 35% 32%) !important; }
-  .border-yellow-400 { border-color: hsl(40 45% 40%) !important; }
-  .border-orange-300 { border-color: hsl(25 35% 32%) !important; }
-  .border-purple-300 { border-color: hsl(270 28% 34%) !important; }
-  .border-gray-50 { border-color: var(--color-border) !important; }
 
   /* `--color-dark-blue` inverts to near-white above so navy *headline
      text* stays readable — but the same token fills ~20 navy buttons,
      and inverting those left white labels on a pale surface. Pin the
      background and border roles back to brand navy (guide §3.1). */
-  .bg-dark-blue, .bg-navy, .hover\:bg-dark-blue:hover { background-color: #1E5779 !important; }
-  .bg-dark-blue\/90 { background-color: hsl(202 60% 30% / 0.9) !important; }
-  .bg-dark-blue\/5  { background-color: hsl(202 60% 30% / 0.05) !important; }
+  .bg-dark-blue { background-color: #1E5779 !important; }
   .border-dark-blue { border-color: #1E5779 !important; }
 }
 
