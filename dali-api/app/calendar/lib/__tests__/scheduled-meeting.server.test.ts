@@ -11,7 +11,7 @@ vi.mock("~/lib/pages", () => ({
   moveIntoNotebook: vi.fn(),
   trashNotebookIfAbandoned: vi.fn(),
 }));
-vi.mock("~/lib/drive-receivers.server", () => ({
+vi.mock("~/drive/lib/drive-receivers.server", () => ({
   resolveFilingFolder: vi.fn(),
   projectSlot: (projectId: string) => ({ processType: "Project", processId: projectId, folderType: "Meetings" }),
   singletonSlot: (processType: string, folderType: string) => ({ processType, processId: processType.toLowerCase(), folderType }),
@@ -26,8 +26,8 @@ vi.mock("~/calendar/lib/google-calendar.server", () => ({
   getGoogleEvent: vi.fn(),
   deleteGoogleCalendarEvent: vi.fn(),
 }));
-vi.mock("~/lib/page-copy.server", () => ({ copyPageBody: vi.fn() }));
-vi.mock("~/lib/page-move.server", () => ({ movePage: vi.fn() }));
+vi.mock("~/drive/lib/page-copy.server", () => ({ copyPageBody: vi.fn() }));
+vi.mock("~/drive/lib/page-move.server", () => ({ movePage: vi.fn() }));
 vi.mock("~/calendar/lib/notebooks.server", () => {
   class NotebookError extends Error {
     constructor(
@@ -40,16 +40,16 @@ vi.mock("~/calendar/lib/notebooks.server", () => {
   return { NotebookError, createNotebook: vi.fn(), loadEditableNotebook: vi.fn() };
 });
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: { id: true }, getPageAccess: vi.fn() }));
-vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
+vi.mock("~/drive/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn(async () => []) }));
 vi.mock("~/components/doc/schema/configs", () => ({ blocksToPlainText: vi.fn(() => "") }));
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
-import { resolveFilingFolder } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import { resolveGroupMembers } from "~/lib/groups";
 import {
   createProjectPage,
@@ -65,8 +65,8 @@ import {
   getGoogleEvent,
   deleteGoogleCalendarEvent,
 } from "~/calendar/lib/google-calendar.server";
-import { copyPageBody } from "~/lib/page-copy.server";
-import { movePage } from "~/lib/page-move.server";
+import { copyPageBody } from "~/drive/lib/page-copy.server";
+import { movePage } from "~/drive/lib/page-move.server";
 import { NotebookError, createNotebook, loadEditableNotebook } from "~/calendar/lib/notebooks.server";
 import { syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 import { readDocAsBlocks } from "~/collab/read";

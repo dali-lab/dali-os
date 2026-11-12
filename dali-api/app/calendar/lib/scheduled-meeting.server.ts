@@ -30,15 +30,15 @@ import {
   trashNotebookIfAbandoned,
   type MeetingNotebookDestination,
 } from "~/lib/pages";
-import { resolveFilingFolder, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, projectSlot, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import { meetingNotebookIdentity, meetingTypeForNotebook, termForDate } from "~/calendar/lib/meeting-notebook.server";
 import { termWindows } from "~/lib/terms";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { isGeneralCalendarEvent } from "~/calendar/lib/general-calendar";
-import { copyPageBody } from "~/lib/page-copy.server";
+import { copyPageBody } from "~/drive/lib/page-copy.server";
 import { createNotebook, loadEditableNotebook, NotebookError } from "~/calendar/lib/notebooks.server";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
 import { isExistingChoice, type NotebookChoice, type NotebookSpaceChoice } from "~/calendar/lib/notebook-choice";
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";

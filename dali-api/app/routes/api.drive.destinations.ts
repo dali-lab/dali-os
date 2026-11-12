@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
-import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { loadDriveScopes } from "~/drive/lib/drive-scopes.server";
 import { moveConstraintFor } from "~/lib/move-constraint.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { applyMoveConstraint, buildPickerRows, keepWritable, searchRows } from "~/components/drive/picker-rows";

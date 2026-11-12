@@ -6,7 +6,7 @@ vi.mock("~/lib/db.server", () => ({
     scheduledMeeting: { findMany: vi.fn(), findUnique: vi.fn() },
   },
 }));
-vi.mock("~/lib/drive-roots.server", () => ({ findRoot: vi.fn() }));
+vi.mock("~/drive/lib/drive-roots.server", () => ({ findRoot: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccessBulk: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
 vi.mock("~/lib/note-path.server", () => ({
   formatFiledPath: (parts: string[]) => parts.join(" ▸ "),
@@ -16,7 +16,7 @@ vi.mock("~/lib/note-path.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { findRoot } from "~/lib/drive-roots.server";
+import { findRoot } from "~/drive/lib/drive-roots.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { notebookLocationPartsBulk } from "~/lib/note-path.server";
 import { meetingNotebookIdentity } from "~/calendar/lib/meeting-notebook.server";

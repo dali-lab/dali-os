@@ -50,7 +50,7 @@ import {
 import { resolveMeetingOccurrence, seedPageFromTemplate } from "~/calendar/lib/scheduled-meeting.server";
 import { formatDateShort } from "~/lib/display";
 import { removeMeetingShares, syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
-import { PageNameConflictError } from "~/lib/page-names.server";
+import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import {
   NotebookError,
   addToNotebook,

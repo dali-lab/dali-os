@@ -15,7 +15,7 @@ import {
   mergeSectionsPayload,
   parseStoredSections,
   type StoredPageDocSection,
-} from "~/lib/page-doc-sections";
+} from "~/drive/lib/page-doc-sections.server";
 
 // Per-page documentation guide, keyed by a stable pageKey a route declares via
 // handle.docKey. Backs the "Docs" modal.

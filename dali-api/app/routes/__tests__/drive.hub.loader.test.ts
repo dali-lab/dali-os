@@ -8,8 +8,8 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
-vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
-vi.mock("~/lib/drive-hub.server", () => ({
+vi.mock("~/drive/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
+vi.mock("~/drive/lib/drive-hub.server", () => ({
   loadProjectWorkspaces: vi.fn(),
   loadEducationWorkspaces: vi.fn(),
   loadAllDocTags: vi.fn(),
@@ -19,13 +19,13 @@ vi.mock("~/lib/drive-hub.server", () => ({
 import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
-import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { loadDriveScopes } from "~/drive/lib/drive-scopes.server";
 import {
   loadProjectWorkspaces,
   loadEducationWorkspaces,
   loadAllDocTags,
   loadItemTagIds,
-} from "~/lib/drive-hub.server";
+} from "~/drive/lib/drive-hub.server";
 import { loader } from "~/routes/drive.hub";
 
 const AUTH = { ok: true, user: { sub: "u1" } };

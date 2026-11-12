@@ -19,7 +19,7 @@ import {
   type SearchResultType,
 } from "~/lib/search";
 import { searchPageContent } from "~/lib/doc-search.server";
-import { parseStoredSections } from "~/lib/page-doc-sections";
+import { parseStoredSections } from "~/drive/lib/page-doc-sections.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";

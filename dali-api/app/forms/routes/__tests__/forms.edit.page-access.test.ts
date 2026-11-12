@@ -13,7 +13,7 @@ vi.mock("~/forms/lib/form-access.server", () => ({
   canSeeForm: vi.fn(),
 }));
 vi.mock("~/forms/lib/forms-data", () => ({ loadFormForEdit: vi.fn(), runFormsAction: vi.fn() }));
-vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
+vi.mock("~/drive/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formUsages: vi.fn(), managingUsage: vi.fn() }));
 vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
 vi.mock("~/forms/lib/mapped-questions.server", () => ({
@@ -36,7 +36,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { loadFormHiringLinks, unlinkHiringForm } from "~/hiring/lib/form-links.server";
 import { getCollabToken } from "~/lib/collab-token.server";

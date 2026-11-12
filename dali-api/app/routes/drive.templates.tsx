@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { loadTemplates, type TemplateItem, type TemplateKind } from "~/lib/drive-templates.server";
+import { loadTemplates, type TemplateItem, type TemplateKind } from "~/drive/lib/drive-templates.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Templates · DALI OS" }];
 

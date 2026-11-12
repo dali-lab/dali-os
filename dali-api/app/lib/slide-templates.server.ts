@@ -2,7 +2,7 @@ import { z } from "zod";
 import * as Y from "yjs";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { canListWorkspace } from "~/lib/page-templates.server";
+import { canListWorkspace } from "~/drive/lib/page-templates.server";
 import { deckAccess, deckStorage, migrateDeckOnOpen, readDeckModel } from "~/lib/slide-decks.server";
 import { transactDeck } from "~/collab/deck-live.server";
 import type { DeckRead } from "~/collab/read-deck.server";

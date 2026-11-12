@@ -45,8 +45,8 @@ import {
 } from "~/projects/lib/project-status";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { isAiEnabled } from "~/lib/ai.server";
-import { loadProjectDriveScope } from "~/lib/drive-scopes.server";
-import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/lib/drive.server";
+import { loadProjectDriveScope } from "~/drive/lib/drive-scopes.server";
+import { PROJECT_PAGE_SELECT, PROJECT_FILE_SELECT } from "~/drive/lib/drive.server";
 
 // Audit actions surfaced in the Overview "Recent activity" card. Restricted to
 // actions whose metadata reliably carries a projectId — document.delete,

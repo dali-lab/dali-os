@@ -33,8 +33,8 @@ vi.mock("~/calendar/lib/notebooks.server", () => {
     loadManageableNotebook: vi.fn(),
   };
 });
-vi.mock("~/lib/page-names.server", async (importActual) => ({
-  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+vi.mock("~/drive/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/drive/lib/page-names.server")>()),
   findNameConflict: vi.fn(),
   assertUniqueName: vi.fn(),
 }));
@@ -47,7 +47,7 @@ import { prisma } from "~/lib/db.server";
 import { requireMemberSession, requireProjectEditAccess } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { NotebookError, loadManageableNotebook, trashNotebook } from "~/calendar/lib/notebooks.server";
-import { findNameConflict } from "~/lib/page-names.server";
+import { findNameConflict } from "~/drive/lib/page-names.server";
 import { action } from "../api.documents.$id";
 
 const m = prisma as any;

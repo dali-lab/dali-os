@@ -1,4 +1,4 @@
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 export type DriveTypeFilter = "all" | "doc" | "notebook" | "whiteboard" | "slides" | "file" | "form" | "agreement" | "rubric";
 

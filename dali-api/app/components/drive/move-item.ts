@@ -1,4 +1,4 @@
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 // The one place that knows how to ask the server to re-file a drive item.
 //

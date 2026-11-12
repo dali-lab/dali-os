@@ -1,4 +1,4 @@
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 /** How long a move or trash toast stays up: long enough to reach for Undo. */
 export const ACTION_TOAST_MS = 8000;

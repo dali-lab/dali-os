@@ -6,7 +6,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3";
-import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import { parsePlacedFields, type PlacedField } from "./certificate-fields";
 
 /** The S3 key + content type of a background ProjectFile's current version. */

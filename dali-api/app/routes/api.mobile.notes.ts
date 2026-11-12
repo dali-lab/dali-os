@@ -5,7 +5,7 @@ import { isTranscriptionEnabled } from "~/lib/transcription/provider";
 import { pageDocName } from "~/collab/roomName";
 import { parseJson } from "~/lib/validate";
 import { createNote } from "~/members/lib/personal-notes-actions.server";
-import { PageNameConflictError } from "~/lib/page-names.server";
+import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import { attachMeetingNote } from "~/calendar/lib/scheduled-meeting.server";
 import { actionItemsOf, notePageId } from "~/lib/mobile-notes";
 import { CURSOR_DONE, decodeCursor, joinPairCursor, keysetAfter, keysetPage, splitPairCursor } from "~/lib/pagination";

@@ -19,8 +19,8 @@ import { FilePreview } from "~/components/FilePreview";
 import { TagPicker } from "~/components/TagPicker";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { FolderIcon } from "~/components/FolderIcon";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
-import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
+import { driveRootCrumbs } from "~/drive/lib/drive-crumbs";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;

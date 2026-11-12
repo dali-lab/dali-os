@@ -35,7 +35,7 @@ vi.mock("~/calendar/lib/enhance-meeting-notes.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { HttpError } from "~/lib/http-error";
-import { PageNameConflictError } from "~/lib/page-names.server";
+import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import { loader as listLoader, action as quickNote, parseNotesCursor, MAX_NOTES } from "../api.mobile.notes";
 import { loader as detailLoader, action as detailAction } from "../api.mobile.notes.$id";
 

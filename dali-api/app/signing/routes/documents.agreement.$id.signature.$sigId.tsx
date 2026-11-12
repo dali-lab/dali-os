@@ -3,8 +3,8 @@
 // "Drive › Folder › … › <agreement name> › Signed copy" rather than no crumb.
 import type { Route } from "./+types/documents.agreement.$id.signature.$sigId";
 import { loader as coreLoader } from "./core.agreements.$id.signature.$sigId";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
-import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
+import { driveRootCrumbs } from "~/drive/lib/drive-crumbs";
 import { requireAuth } from "~/lib/auth";
 import { PageIcon } from "~/components/PageIcon";
 import { prisma } from "~/lib/db.server";

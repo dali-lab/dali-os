@@ -5,7 +5,7 @@ import { useAltClickOpensBeside, useCarryPageScroll, useKeepSidePanel, useSidePa
 import { cn } from "~/lib/cn";
 import { formatSidePanel } from "~/lib/side-panel";
 import { loadAskPanel } from "~/ask/components/load-ask-panel";
-import { PAGE_SCROLLER_ATTR } from "~/lib/page-scroll";
+import { PAGE_SCROLLER_ATTR } from "~/drive/lib/page-scroll";
 
 // The editor is heavy and most pages never open a panel, so it loads on demand.
 const DocumentPanel = lazy(() => import("~/components/side-panel/DocumentPanel"));

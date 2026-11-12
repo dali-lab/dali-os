@@ -4,10 +4,10 @@ import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess, requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
-import { findNameConflict } from "~/lib/page-names.server";
+import { findNameConflict } from "~/drive/lib/page-names.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadManageableNotebook, notebookErrorResponse, trashNotebook } from "~/calendar/lib/notebooks.server";
-import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
+import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
 
 // POST   /api/documents/:id — partial update. Body: any of
 //                             { title?, iconEmoji?, coverImageUrl? }.

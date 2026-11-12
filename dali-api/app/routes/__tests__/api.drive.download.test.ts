@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/fileAccess.server", () => ({ filterViewableFiles: vi.fn() }));
 vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn() }));
-vi.mock("~/lib/drive-download.server", () => ({
+vi.mock("~/drive/lib/drive-download.server", () => ({
   MAX_ZIP_FILES: 100,
   MAX_ZIP_BYTES: 500 * 1024 * 1024,
   buildDriveZip: vi.fn(),
@@ -15,7 +15,7 @@ import { requireMemberSession } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { prisma } from "~/lib/db.server";
 import { filterViewableFiles } from "~/lib/fileAccess.server";
-import { buildDriveZip } from "~/lib/drive-download.server";
+import { buildDriveZip } from "~/drive/lib/drive-download.server";
 import { _resetForTests } from "~/lib/rate-limit";
 import { isS3Configured } from "~/lib/s3";
 import { action } from "~/routes/api.drive.download";

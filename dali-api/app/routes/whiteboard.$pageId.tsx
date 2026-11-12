@@ -8,8 +8,8 @@ import { getPresenceUser } from "~/lib/presence-user";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
 import { recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
-import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
-import { loadDrivePageAncestry } from "~/lib/drive-page-trail.server";
+import { drivePageTrail, type DrivePageAncestry } from "~/components/drive/drive-page-trail";
+import { loadDrivePageAncestry } from "~/drive/lib/drive-page-trail.server";
 import { Shapes } from "lucide-react";
 import { WhiteboardEditor } from "~/components/whiteboard/WhiteboardEditor";
 

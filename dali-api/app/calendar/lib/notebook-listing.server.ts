@@ -3,7 +3,7 @@ import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { meetingNotebookIdentity, type NotebookMeeting } from "~/calendar/lib/meeting-notebook.server";
 import { suggestNotebooks, type NotebookCandidate } from "~/calendar/lib/notebook-suggest";
 import { formatFiledPath, notebookLocationPartsBulk } from "~/lib/note-path.server";
-import { findRoot } from "~/lib/drive-roots.server";
+import { findRoot } from "~/drive/lib/drive-roots.server";
 
 // The notebooks the picker offers: ones the viewer can edit, in any workspace
 // they belong to, with the signals that make some of them suggested.

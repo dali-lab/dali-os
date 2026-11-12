@@ -34,7 +34,7 @@ vi.mock("~/calendar/lib/meeting-recording.server", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ ensureOccurrenceRoster: vi.fn() }));
-vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
+vi.mock("~/drive/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";

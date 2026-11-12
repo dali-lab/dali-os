@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db.server";
 import { ensureOfferingFormsFolder } from "~/lib/pages";
-import { resolveFilingFolder } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import {
   ensureEducationTemplates,
   createOfferingApplicationForm,
@@ -22,7 +22,7 @@ vi.mock("~/lib/pages", () => ({
   // form create's folderPageId matters.
   ensureOfferingFormsFolder: vi.fn().mockResolvedValue("offering-forms-folder"),
 }));
-vi.mock("~/lib/drive-receivers.server", () => ({
+vi.mock("~/drive/lib/drive-receivers.server", () => ({
   singletonSlot: (processType: string, folderType: string) => ({ processType, processId: "core", folderType }),
   resolveFilingFolder: vi.fn(async () => ({ folderId: "receiver-folder", viaReceiver: true })),
 }));

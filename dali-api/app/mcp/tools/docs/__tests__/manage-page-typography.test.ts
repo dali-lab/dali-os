@@ -40,7 +40,7 @@ vi.mock("~/lib/pageAccess.server", async (importOriginal) => ({
   getPageAccess: vi.fn(),
 }));
 
-vi.mock("~/lib/page-copy.server", () => ({
+vi.mock("~/drive/lib/page-copy.server", () => ({
   duplicatePage: vi.fn(),
 }));
 

@@ -4,11 +4,11 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/forms/lib/form-page.server", () => ({ createForm: vi.fn() }));
-vi.mock("~/lib/drive-receivers.server", () => ({
+vi.mock("~/drive/lib/drive-receivers.server", () => ({
   resolveFilingFolder: vi.fn().mockResolvedValue({ folderId: "folder-forms" }),
   singletonSlot: vi.fn().mockReturnValue({}),
 }));
-vi.mock("~/lib/drive-roots.server", () => ({ ensureRoot: vi.fn().mockResolvedValue("folder-hiring") }));
+vi.mock("~/drive/lib/drive-roots.server", () => ({ ensureRoot: vi.fn().mockResolvedValue("folder-hiring") }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/outbound.server", () => ({ enqueueOutbound: vi.fn() }));
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));

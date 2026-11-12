@@ -8,7 +8,7 @@ vi.mock("~/mentorship/lib/pair-notebook.server", () => ({
   pairNotebookKey: (p: { mentorId: string; menteeId: string }) => `pair:${p.mentorId}:${p.menteeId}`,
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccessBulk: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
-vi.mock("~/lib/drive-receivers.server", () => ({
+vi.mock("~/drive/lib/drive-receivers.server", () => ({
   findReceiver: vi.fn(),
   projectSlot: (projectId: string) => ({ processType: "Project", processId: projectId, folderType: "Meetings" }),
   singletonSlot: (processType: string) => ({ processType, processId: processType.toLowerCase(), folderType: "Meetings" }),
@@ -21,7 +21,7 @@ vi.mock("~/lib/note-path.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
-import { findReceiver, resolveFilingFolder } from "~/lib/drive-receivers.server";
+import { findReceiver, resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import { notebookLocationParts } from "~/lib/note-path.server";
 import { resolveDefaultNotebook } from "~/calendar/lib/notebook-default.server";
 import { findMentorPair } from "~/mentorship/lib/pair-suggestion.server";

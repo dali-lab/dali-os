@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db.server";
-import { resolveFilingFolder } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";
 import {
   createCycleApplicationForm,
@@ -21,7 +21,7 @@ vi.mock("~/lib/db.server", () => ({
     cycleDomainForm: { create: vi.fn() },
   },
 }));
-vi.mock("~/lib/drive-receivers.server", () => ({
+vi.mock("~/drive/lib/drive-receivers.server", () => ({
   singletonSlot: (processType: string, folderType: string) => ({ processType, processId: "hiring", folderType }),
   resolveFilingFolder: vi.fn(async () => ({ folderId: "receiver-folder", viaReceiver: true })),
 }));

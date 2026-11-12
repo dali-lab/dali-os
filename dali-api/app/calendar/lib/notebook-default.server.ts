@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
-import { DRIVE_SPACES } from "~/lib/drive-spaces";
-import { findReceiver, projectSlot, singletonSlot } from "~/lib/drive-receivers.server";
+import { DRIVE_SPACES } from "~/drive/lib/drive-spaces";
+import { findReceiver, projectSlot, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import { formatFiledPath, notebookLocationParts } from "~/lib/note-path.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
 import { pairNotebookKey } from "~/mentorship/lib/pair-notebook.server";

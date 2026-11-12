@@ -8,7 +8,7 @@ import { readDocAsBlocks } from "~/collab/read";
 import { blocksToHtml } from "~/collab/blocknote-server";
 import { exportMarkdown } from "~/lib/markdown-export.server";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
-import { normalizePageTypography } from "~/lib/page-typography";
+import { normalizePageTypography } from "~/drive/lib/page-typography";
 
 // GET /documents/:pageId/export?format=pdf|docx|md
 //

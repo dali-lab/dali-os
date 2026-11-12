@@ -8,7 +8,7 @@ import { Select, type SelectOption, InfoTip } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { modalCardClass } from "~/components/os-chrome";
-import { audienceLine, type Audience, type InheritedScope } from "~/lib/page-audience";
+import { audienceLine, type Audience, type InheritedScope } from "~/drive/lib/page-audience";
 
 // One Share dialog for every document — Project, Lab, EducationOffering and
 // personal notes — and for uploaded Drive files. Google Docs' shape: add people,

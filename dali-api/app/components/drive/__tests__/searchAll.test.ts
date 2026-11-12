@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { searchAll } from "~/components/drive/DriveBrowser";
-import type { DriveTreeScope } from "~/lib/drive-scopes.server";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const at = new Date("2026-01-01T00:00:00Z");
 

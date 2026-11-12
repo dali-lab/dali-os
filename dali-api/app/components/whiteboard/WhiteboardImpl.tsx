@@ -20,7 +20,7 @@ import { Tooltip } from "~/components/ui/floating";
 import { MeetingStrip } from "~/components/meeting/MeetingStrip";
 import { meetingPlaceLabel, meetingSubtitle } from "~/components/meeting/meeting-strip-model";
 import { useDialog } from "~/components/ui/dialog";
-import { revealInDriveHref } from "~/lib/drive-crumbs";
+import { revealInDriveHref } from "~/drive/lib/drive-crumbs";
 import { acquireCollabDoc, releaseCollabDoc, nameToHexColor } from "~/components/doc/collab-doc";
 import { whiteboardRoomName } from "~/collab/roomName";
 import { bindExcalidrawToYjs, type WhiteboardBinding } from "./whiteboard-yjs";

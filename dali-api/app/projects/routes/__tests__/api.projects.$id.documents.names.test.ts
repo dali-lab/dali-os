@@ -8,7 +8,7 @@ vi.mock("~/lib/pages", () => ({ createProjectPage: vi.fn(), pageDepth: vi.fn(), 
 import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { createProjectPage } from "~/lib/pages";
-import { PageNameConflictError } from "~/lib/page-names.server";
+import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import { action } from "../api.projects.$id.documents";
 
 const post = (body: unknown) =>
