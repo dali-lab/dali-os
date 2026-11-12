@@ -2,7 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useOsChrome } from '~/components/os-chrome'
 import { buttonClasses } from '~/components/ui/Button'
 import { cn } from '~/lib/cn'
-import { redirect, useLoaderData, useSubmit } from 'react-router'
+import { redirect, useLoaderData, useRevalidator, useSubmit } from 'react-router'
+import { useToast } from '~/components/ui/toast'
+import { changeReviewSubmission, type SubmissionAction } from '~/hiring/lib/review-submission'
 import { HelpCircle, X, Check } from 'lucide-react'
 import { prisma } from '~/lib/db.server'
 import { recordRouteVisit } from '~/lib/user-pages.server'
@@ -372,6 +374,8 @@ export default function ReviewerApplicationReview() {
     presenceSubtitle,
   } = useLoaderData<typeof loader>()
   const submit = useSubmit()
+  const revalidator = useRevalidator()
+  const toast = useToast()
   const { pageTitle, bodyText, panel, popover, sectionTitle, heading, headingIcon } = useOsChrome()
 
   const cycle = application.applicationCycle
@@ -432,6 +436,15 @@ export default function ReviewerApplicationReview() {
   }
 
   const isSubmitted = !!existingReview?.submittedAt
+
+  const changeSubmission = (action: SubmissionAction) =>
+    changeReviewSubmission({
+      reviewId: existingReview.id,
+      action,
+      flushSave,
+      revalidate: () => revalidator.revalidate(),
+      onError: toast.error,
+    })
 
   // Auto-save scores, recommendation, and annotations on change.
   // Feedback and rejectionRationale are handled by the collab server.
@@ -669,15 +682,7 @@ export default function ReviewerApplicationReview() {
                   <>
                     {existingReview && (
                       <button
-                        onClick={async () => {
-                          // Reloading while the save is in flight aborts it: the
-                          // last edits are lost and the error page flashes.
-                          await flushSave()
-                          const res = await fetch(`/api/hiring/reviews/${existingReview.id}/submit`, {
-                            method: 'POST', credentials: 'include',
-                          })
-                          if (res.ok) window.location.reload()
-                        }}
+                        onClick={() => changeSubmission('submit')}
                         className={buttonClasses('primary', 'md', 'w-full')}
                       >
                         Submit review
@@ -691,12 +696,7 @@ export default function ReviewerApplicationReview() {
                       <span className="text-sm font-medium text-foreground">Review submitted</span>
                     </div>
                     <button
-                      onClick={async () => {
-                        const res = await fetch(`/api/hiring/reviews/${existingReview.id}/unsubmit`, {
-                          method: 'POST', credentials: 'include',
-                        })
-                        if (res.ok) window.location.reload()
-                      }}
+                      onClick={() => changeSubmission('unsubmit')}
                       className={buttonClasses('secondary', 'md', 'w-full')}
                     >
                       Unsubmit and edit
