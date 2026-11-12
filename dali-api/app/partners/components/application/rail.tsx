@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "~/lib/cn";
-import type { PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import type { PillTone } from "~/components/ui/Pill";
 import type { PartnerStage } from "../../lib/partner-application";
 
 export const RAIL_CONTROL =

@@ -5,7 +5,7 @@ import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { History, Plus, ShieldCheck, X } from "lucide-react";
 import type { Route } from "./+types/admin.security";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { EmptyState } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";

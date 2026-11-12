@@ -1,65 +1,18 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn() };
 });
-vi.mock("~/lib/github-slug", () => ({
-  githubTeamSlug: (s: string) => s.toLowerCase().replace(/\s+/g, "-"),
-}));
-// Promote now routes the stage flip through setApplicationStage (logs a
-// StatusChanged activity). Mock it so the tx doesn't need the activity plumbing.
-vi.mock("~/partners/lib/partner-activity.server", () => ({
-  setApplicationStage: vi.fn().mockResolvedValue("New"),
-}));
-vi.mock("~/partners/lib/planning-notes.server", () => ({ movePlanningNoteToProject: vi.fn() }));
-vi.mock("~/partners/lib/partner-returns.server", () => ({
-  reopenProjectFromApplication: vi.fn().mockResolvedValue({ id: "proj-old" }),
-}));
-// Stub the registry so the BY_NAME map side-effect doesn't pull in every
-// tool module. We only need the error classes here.
-vi.mock("~/mcp/registry", () => {
-  class McpError extends Error {
-    status: number;
-    constructor(message: string, status = 400) {
-      super(message);
-      this.name = "McpError";
-      this.status = status;
-    }
-  }
-  class McpForbiddenError extends McpError {
-    constructor(message = "Forbidden") { super(message, 403); this.name = "McpForbiddenError"; }
-  }
-  class McpNotFoundError extends McpError {
-    constructor(message = "Not found") { super(message, 404); this.name = "McpNotFoundError"; }
-  }
-  class McpInvalidError extends McpError {
-    constructor(message = "Invalid params") { super(message, 400); this.name = "McpInvalidError"; }
-  }
-  function requireForAction(action: string, args: Record<string, unknown>, spec: Record<string, string[]>) {
-    const required = spec[action];
-    if (!required) throw new McpInvalidError(`Unknown action '${action}'. Expected one of: ${Object.keys(spec).join(", ")}`);
-    const missing = required.filter((k) => args[k] === undefined || args[k] === null);
-    if (missing.length) throw new McpInvalidError(`action '${action}' requires: ${missing.join(", ")}`);
-  }
-  return { McpError, McpForbiddenError, McpNotFoundError, McpInvalidError, requireForAction, REGISTRY_TOOLS: [], findRegistryTool: () => undefined, registryToolDefs: () => [] };
-});
+vi.mock("~/partners/lib/partner-promote.server", () => ({ promotePartnerApplication: vi.fn() }));
 
-import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { setApplicationStage } from "~/partners/lib/partner-activity.server";
-import { movePlanningNoteToProject } from "~/partners/lib/planning-notes.server";
-import { reopenProjectFromApplication } from "~/partners/lib/partner-returns.server";
+import { promotePartnerApplication } from "~/partners/lib/partner-promote.server";
+import { NotFoundError } from "~/lib/http-error";
 import {
   runPromotePartnerApplication,
   PROMOTE_PARTNER_APPLICATION_TOOL,
 } from "../promote-partner-application";
-
-const mockPrisma = prisma as unknown as {
-  partnerApplication: { findUnique: ReturnType<typeof vi.fn> };
-  $transaction: ReturnType<typeof vi.fn>;
-};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,219 +23,40 @@ describe("promote_partner_application", () => {
     expect(PROMOTE_PARTNER_APPLICATION_TOOL.requiredScope).toBe("mcp:admin");
   });
 
-  it("rejects non-Core callers", async () => {
+  it("rejects non-Core callers without calling the service", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
     await expect(
       runPromotePartnerApplication("u1", { applicationId: "app-1" }),
-    ).rejects.toMatchObject({ name: "McpForbiddenError" });
+    ).rejects.toMatchObject({ status: 403 });
+    expect(promotePartnerApplication).not.toHaveBeenCalled();
   });
 
-  it("throws McpNotFoundError when application does not exist", async () => {
+  it("delegates to the service and returns its result unchanged", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication = { findUnique: vi.fn().mockResolvedValue(null) };
-    await expect(
-      runPromotePartnerApplication("u1", { applicationId: "missing" }),
-    ).rejects.toMatchObject({ name: "McpNotFoundError" });
-  });
-
-  it("returns alreadyExisted=true when resultingProjectId is set", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication = {
-      findUnique: vi.fn().mockResolvedValue({
-        id: "app-1",
-        title: "Cool Project",
-        summary: null,
-        resultingProjectId: "proj-existing",
-        partnerOrgId: "org-1",
-        targetTerms: [],
-        domains: [],
-      }),
-    };
-    const out = await runPromotePartnerApplication("u1", { applicationId: "app-1" });
-    expect(out).toMatchObject({ projectId: "proj-existing", alreadyExisted: true });
-  });
-
-  it("promotes application and returns new projectId", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication = {
-      findUnique: vi.fn().mockResolvedValue({
-        id: "app-1",
-        title: "AI Health Tool",
-        summary: "A useful tool",
-        resultingProjectId: null,
-        partnerOrgId: "org-1",
-        targetTerms: [{ termId: "term-26s" }],
-        domains: [
-          { domainId: "domain-ml", expectedMembers: 2 },
-          { domainId: "domain-web", expectedMembers: 0 },
-        ],
-      }),
-    };
-    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({
-        project: { create: vi.fn().mockResolvedValue({ id: "proj-new", name: "AI Health Tool" }) },
-        partnerApplication: { update: vi.fn() },
-      } as unknown as typeof prisma);
+    vi.mocked(promotePartnerApplication).mockResolvedValue({
+      projectId: "proj-new",
+      name: "AI Health Tool",
+      alreadyExisted: false,
     });
-
-    const out = await runPromotePartnerApplication("u1", { applicationId: "app-1" });
-    expect(out).toMatchObject({ projectId: "proj-new", name: "AI Health Tool", alreadyExisted: false });
-    // A5: promotion is logged via setApplicationStage (from → Accepted) rather
-    // than a bare inline update, so the application timeline records it.
-    // "Promoted" is derived (Accepted + resultingProjectId), not a stage.
-    expect(setApplicationStage).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        applicationId: "app-1",
-        to: "Accepted",
-        actorUserId: "u1",
-        data: expect.objectContaining({ resultingProjectId: "proj-new" }),
-      }),
-    );
-    const tx = vi.mocked(setApplicationStage).mock.calls[0][0];
-    expect(movePlanningNoteToProject).toHaveBeenCalledWith(tx, { applicationId: "app-1", projectId: "proj-new" });
-  });
-
-  it("creates role requests for every target term", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication = {
-      findUnique: vi.fn().mockResolvedValue({
-        id: "app-3",
-        title: "Two Terms",
-        summary: null,
-        resultingProjectId: null,
-        partnerOrgId: "org-3",
-        targetTerms: [{ termId: "term-26f" }, { termId: "term-27w" }],
-        domains: [
-          { domainId: "domain-ml", expectedMembers: 2 },
-          { domainId: "domain-web", expectedMembers: 0 },
-        ],
-      }),
-    };
-    const createFn = vi.fn().mockResolvedValue({ id: "proj-two", name: "Two Terms" });
-    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({
-        project: { create: createFn },
-        partnerApplication: { update: vi.fn() },
-      } as unknown as typeof prisma);
-    });
-
-    await runPromotePartnerApplication("u1", { applicationId: "app-3" });
-    const data = (createFn.mock.calls[0][0] as { data: Record<string, any> }).data;
-    expect(data.roleRequests.create).toEqual([
-      { termId: "term-26f", domainId: "domain-ml", level: "P1", slots: 2 },
-      { termId: "term-27w", domainId: "domain-ml", level: "P1", slots: 2 },
-    ]);
-    expect(data.projectTerms.create).toEqual({ termId: "term-26f" });
-  });
-
-  it("carries the application's icon and PI onto the project", async () => {
-    mockPrisma.partnerApplication.findUnique.mockResolvedValue({
-      id: "app-4",
-      title: "Icons",
-      iconEmoji: "🚀",
-      piUserId: "core-1",
-      summary: null,
-      resultingProjectId: null,
-      partnerOrgId: "org-1",
-      applicantContactId: "c1",
-      applicantContact: { id: "c1", name: "Ada" },
-      targetTerms: [{ termId: "term-26f" }],
-      domains: [],
-    } as never);
-    const createFn = vi.fn().mockResolvedValue({ id: "proj-icon", name: "Icons" });
-    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({
-        project: { create: createFn },
-        partnerApplication: { update: vi.fn() },
-      } as unknown as typeof prisma);
-    });
-
-    await runPromotePartnerApplication("u1", { applicationId: "app-4" });
-    const data = (createFn.mock.calls[0][0] as { data: Record<string, any> }).data;
-    expect(data.iconEmoji).toBe("🚀");
-    expect(data.projectTerms.create).toEqual({ termId: "term-26f", piUserId: "core-1" });
-  });
-
-  it("promotes without terms or domains when none provided", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication = {
-      findUnique: vi.fn().mockResolvedValue({
-        id: "app-2",
-        title: "Empty App",
-        summary: null,
-        resultingProjectId: null,
-        partnerOrgId: "org-2",
-        targetTerms: [],
-        domains: [],
-      }),
-    };
-    const createFn = vi.fn().mockResolvedValue({ id: "proj-bare", name: "Empty App" });
-    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => {
-      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
-      return cb({
-        project: { create: createFn },
-        partnerApplication: { update: vi.fn() },
-      } as unknown as typeof prisma);
-    });
-
-    const out = await runPromotePartnerApplication("u1", { applicationId: "app-2" });
-    expect(out).toMatchObject({ projectId: "proj-bare", alreadyExisted: false });
-    // No terms, role requests, or domains created — just the partner link.
-    const createCall = createFn.mock.calls[0][0] as { data: Record<string, unknown> };
-    expect(createCall.data).not.toHaveProperty("projectTerms");
-    expect(createCall.data).not.toHaveProperty("roleRequests");
-    expect(createCall.data).not.toHaveProperty("domains");
-  });
-});
-
-describe("promote_partner_application for a returning project", () => {
-  const returning = {
-    id: "app-r",
-    title: "Research Computing",
-    summary: null,
-    resultingProjectId: null,
-    continuesProjectId: "proj-old",
-    partnerOrgId: "org-1",
-    piUserId: "pi-1",
-    targetTerms: [{ termId: "t27w" }, { termId: "t27s" }],
-    domains: [{ domainId: "eng", expectedMembers: 2 }],
-  };
-
-  it("reopens the old project instead of creating one", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication = { findUnique: vi.fn().mockResolvedValue(returning) };
-    const create = vi.fn();
-    const tx = { project: { create } };
-    mockPrisma.$transaction = vi.fn().mockImplementation(async (fn: unknown) => (fn as (t: unknown) => unknown)(tx));
-
-    const out = await runPromotePartnerApplication("u1", { applicationId: "app-r" });
-
-    expect(out).toEqual({ projectId: "proj-old", alreadyExisted: false, reopened: true });
-    expect(create).not.toHaveBeenCalled();
-    expect(reopenProjectFromApplication).toHaveBeenCalledWith(tx, {
-      app: {
-        id: "app-r",
-        continuesProjectId: "proj-old",
-        partnerOrgId: "org-1",
-        piUserId: "pi-1",
-        targetTermIds: ["t27w", "t27s"],
-        domains: [{ domainId: "eng", expectedMembers: 2 }],
-      },
+    const out = await runPromotePartnerApplication("u1", { applicationId: "app-1", orgName: "Acme" });
+    expect(out).toEqual({ projectId: "proj-new", name: "AI Health Tool", alreadyExisted: false });
+    expect(promotePartnerApplication).toHaveBeenCalledWith({
+      applicationId: "app-1",
+      orgName: "Acme",
       actorUserId: "u1",
     });
   });
 
-  it("refuses to reopen without a target term", async () => {
+  it("lets the service's not-found error through with its status", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication = { findUnique: vi.fn().mockResolvedValue({ ...returning, targetTerms: [] }) };
-    mockPrisma.$transaction = vi.fn();
-    await expect(runPromotePartnerApplication("u1", { applicationId: "app-r" })).rejects.toMatchObject({
-      name: "McpInvalidError",
-    });
-    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    vi.mocked(promotePartnerApplication).mockRejectedValue(new NotFoundError("nope"));
+    await expect(
+      runPromotePartnerApplication("u1", { applicationId: "missing" }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("describes role requests for the first target term only", () => {
+    expect(PROMOTE_PARTNER_APPLICATION_TOOL.description).toContain("first target term");
+    expect(PROMOTE_PARTNER_APPLICATION_TOOL.description).not.toContain("every target term");
   });
 });

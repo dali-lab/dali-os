@@ -15,7 +15,7 @@ import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
 import { DocEditor } from "~/components/doc";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { cn } from "~/lib/cn";
 

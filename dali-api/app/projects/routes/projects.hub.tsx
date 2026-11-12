@@ -42,6 +42,7 @@ import { CalendarRange, CircleDot, Globe, Handshake, Plus } from "lucide-react";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { Pill } from "~/components/ui/Pill";
 import { SearchInput } from "~/components/ui/SearchInput";
 import {
   ColumnFilters,
@@ -723,9 +724,7 @@ function OsProjectCard({ project }: { project: ProjectRow }) {
         </span>
         {project.firstTermCode && (
           <span className="flex items-center gap-2">
-            <span className="rounded-full bg-os-container px-3 py-1 text-xs font-semibold text-foreground">
-              {project.firstTermCode}
-            </span>
+            <Pill size="sm">{project.firstTermCode}</Pill>
             <span className="text-xs text-os-grey">Start term</span>
           </span>
         )}

@@ -14,7 +14,8 @@ import { APPLICATION_TZ, getZonedParts, zonedDateTimeLocalToUtc } from "~/lib/ti
 import { cn } from "~/lib/cn";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
 import { CheckInPanel } from "~/components/CheckInPanel";
-import { Pill, SetupCard, rowTrigger } from "./SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { SetupCard, rowTrigger } from "./SetupCard";
 
 // Help hours, socials and info sessions Core runs on a hiring cycle — setup,
 // manual announcement send, and attendance (QR self check-in or hand-marked).
