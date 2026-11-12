@@ -1,10 +1,7 @@
-import { FileText, ClipboardList, FileSignature, FolderOpen, Folder, Plus, ChevronDown, LayoutTemplate, Upload, Shapes, Presentation, NotebookPen } from "lucide-react";
+import { FileText, ClipboardList, FileSignature, FolderOpen, Plus, ChevronDown, LayoutTemplate, Upload, Shapes, Presentation, NotebookPen } from "lucide-react";
 import { useState, useRef } from "react";
 import type { ReactNode } from "react";
-import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import { DRIVE_TOOLBAR_BTN } from "~/components/drive/toolbar";
-import { FolderPicker } from "~/components/drive/FolderPicker";
-import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useToast } from "~/components/ui/toast";

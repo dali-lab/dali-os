@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { inviteDestinations, inviteOrganizerFields } from "~/calendar/components/composer";
+import { inviteDestinations, inviteOrganizerFields } from "~/calendar/lib/composer-fields";
 import type { CalendarLinkDTO, SubCalendarDTO } from "~/calendar/lib/types";
 
 const cal = (id: string, over: Partial<SubCalendarDTO> = {}): SubCalendarDTO => ({

@@ -11,7 +11,8 @@ import type { LoaderData } from "~/calendar/lib/types";
 
 vi.mock("~/calendar/components/scheduling", () => ({ ParticipantPicker: () => null }));
 
-const { CalendarManagerModal, ClassesManagerBody } = await import("~/calendar/components/composer");
+const { CalendarManagerModal } = await import("~/calendar/components/CalendarManagerModal");
+const { ClassesManagerBody } = await import("~/calendar/components/ClassesManager");
 
 let container: HTMLDivElement;
 let root: Root;

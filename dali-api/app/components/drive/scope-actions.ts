@@ -1,16 +1,11 @@
-import { Folder } from "lucide-react";
 import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
 import type { DriveItem } from "~/drive/lib/drive.server";
-import { DriveBrowser } from "~/components/drive/DriveBrowser";
-import { FolderPicker } from "~/components/drive/FolderPicker";
 import { moveDriveItem, driveErrorFrom, isPageItem } from "~/components/drive/move-item";
 import { type PendingHidden } from "~/components/drive/pending-hidden";
 import { runTrash } from "~/components/drive/trash-batch";
 import { type DriveHistory } from "~/components/drive/use-drive-history";
-import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { Select } from "~/components/ui/floating";
 import { isProcessRootSpace } from "~/drive/lib/drive-spaces";
 import type { DriveScope } from "~/routes/drive.hub";
 

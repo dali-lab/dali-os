@@ -6,7 +6,6 @@ import { useLoaderData, useActionData, useSearchParams, Form, Link } from "react
 import type { Route } from "./+types/education.manage.$offeringId";
 import { loadManageOffering } from "~/education/lib/manage-offering.server";
 import { runManageOfferingAction } from "~/education/lib/manage-offering-actions.server";
-import { isCore } from "~/lib/roles";
 import { ApplicationsReview, WaitlistOrder } from "~/education/components/ApplicationsReview";
 import { RosterMatrix } from "~/education/components/RosterMatrix";
 import { OfferingDiscussion } from "~/education/components/OfferingDiscussion";

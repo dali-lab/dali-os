@@ -17,14 +17,11 @@ import {
 } from "lucide-react";
 import { fullName } from "~/lib/display";
 import { getZonedYMD, zonedWallTimeUtc } from "~/lib/timezone";
-import {
-  EventComposer,
-  CalendarSearchBar,
-  WorkingHoursPopover,
-  CalendarManagerModal,
-  ClassesManagerModal,
-  type ComposerState,
-} from "~/calendar/components/composer";
+import { EventComposer, type ComposerState } from "~/calendar/components/composer";
+import { CalendarSearchBar } from "~/calendar/components/CalendarSearchBar";
+import { WorkingHoursPopover } from "~/calendar/components/WorkingHoursPopover";
+import { CalendarManagerModal } from "~/calendar/components/CalendarManagerModal";
+import { ClassesManagerModal } from "~/calendar/components/ClassesManager";
 import { formatDayRange, formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";

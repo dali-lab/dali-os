@@ -1,12 +1,9 @@
 import { FileText, ClipboardList, Paperclip, Folder, Trash2, RotateCcw, X } from "lucide-react";
 import { useState, useEffect } from "react";
-import { DriveBrowser } from "~/components/drive/DriveBrowser";
-import { FolderPicker } from "~/components/drive/FolderPicker";
 import { LocationLink } from "~/components/drive/LocationLink";
 import { locateFolder, type LocatableScope } from "~/components/drive/location";
 import { restoredToast } from "~/components/drive/action-toast";
 import { restoreFromTrashRequest } from "~/components/drive/trash-batch";
-import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { Modal } from "~/components/Modal";
