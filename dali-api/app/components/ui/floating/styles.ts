@@ -1,3 +1,5 @@
+import { Z } from "../z";
+
 // Shared Tailwind for the floating primitives so Select / Menu / ContextMenu read
 // identically. Kept in one place so a look change lands everywhere at once.
 
@@ -15,7 +17,7 @@
 export const OS_SURFACE_CLASS =
   "rounded-os-card border border-os-container bg-os-card shadow-[0_16px_40px_var(--color-os-shadow)]";
 
-export const OS_PANEL_CLASS = `z-[60] overflow-y-auto ${OS_SURFACE_CLASS} p-1.5 focus:outline-none`;
+export const OS_PANEL_CLASS = `${Z.popover} overflow-y-auto ${OS_SURFACE_CLASS} p-1.5 focus:outline-none`;
 
 // No text colour: cn() has no tailwind-merge, so a row's own colour
 // (destructive, muted) would race a base text-foreground on stylesheet order.

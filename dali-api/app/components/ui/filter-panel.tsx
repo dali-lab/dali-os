@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "~/lib/cn";
 import { Toggle } from "./Toggle";
 import { OS_SURFACE_CLASS, filterPillClass } from "./floating/styles";
+import { Z } from "~/components/ui/z";
 
 /* The "Customize" panel: one toolbar pill that folds a page's slices into a
  * popover, plus the pieces its body is built from. A row of selects grows with
@@ -22,7 +23,7 @@ export function customizeButtonClass(active: boolean) {
 /** Pass to <Popover panelClassName>. */
 export function filterPanelClass() {
   return cn(
-    "z-[60] w-72 overflow-y-auto p-3 focus:outline-none",
+    `${Z.popover} w-72 overflow-y-auto p-3 focus:outline-none`,
     OS_SURFACE_CLASS,
   );
 }

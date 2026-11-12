@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
+import { Z } from "~/components/ui/z";
 
 /**
  * A full-window workspace over the page: the document, slide, quiz and lab
@@ -59,7 +60,7 @@ export function FullscreenEditor({
       role="dialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-[45] flex flex-col bg-os-bg font-os text-foreground"
+      className={`fixed inset-0 ${Z.takeover} flex flex-col bg-os-bg font-os text-foreground`}
     >
       <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-os-container px-3">
         <div className="flex min-w-0 items-center gap-3">

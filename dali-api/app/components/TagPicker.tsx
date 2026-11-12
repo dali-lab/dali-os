@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { buttonClasses } from "~/components/ui/Button";
 import { X, Plus, Check } from "lucide-react";
 import { Popover } from "~/components/ui/floating";
+import { Z } from "~/components/ui/z";
 
 export function canManageDocTags(isCore: boolean, workspaceType: string): boolean {
   return isCore && (workspaceType === "Project" || workspaceType === "Lab");
@@ -130,7 +131,7 @@ export function TagPicker({
       {canEdit && (
         <Popover
           ariaLabel="Add tag"
-          panelClassName="z-[60] w-56 max-h-72 overflow-auto rounded-md border border-border bg-card shadow-lg p-1.5"
+          panelClassName={`${Z.popover} w-56 max-h-72 overflow-auto rounded-md border border-border bg-card shadow-lg p-1.5`}
           trigger={
             <button
               type="button"

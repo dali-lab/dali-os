@@ -201,6 +201,23 @@ Elevation: cards are flat. Popovers wear `OS_SURFACE_CLASS`
 (`shadow-[0_16px_40px_var(--color-os-shadow)]`); dialogs wear
 `0 24px 64px var(--color-os-shadow)`.
 
+### 4.1 Layers
+
+`Z` in `ui/z.ts` holds the stacking classes. Use it for anything that floats
+above the page instead of typing a `z-[NN]` value.
+
+| Key | Class | Use |
+|---|---|---|
+| `Z.sticky` | `z-10` | Sticky headers and in-flow lifts |
+| `Z.chrome` | `z-30` | Page chrome |
+| `Z.chromeTop` | `z-40` | Chrome that sits over other chrome |
+| `Z.takeover` | `z-[45]` | Full-screen editors that cover the shell |
+| `Z.takeoverTop` | `z-[46]` | A full-screen view opened over a takeover |
+| `Z.modal` | `z-50` | `Modal`, `Drawer`, toasts |
+| `Z.popover` | `z-[60]` | Floating panels (`OS_PANEL_CLASS`), date and time pickers, dialogs opened from a popover |
+| `Z.tooltip` | `z-[70]` | Tooltips and pickers that must clear a dialog |
+| `Z.top` | `z-[100]` | Navigation progress, the screenshot selector, lightboxes |
+
 ---
 
 ## 5. The shell
@@ -373,7 +390,9 @@ results bar (`ResultsFilterBar`) are built on it.
 - Page tabs: `OsTabBar`. The open tab is a filled, top-rounded plate that
   meets the rule below it, not an underline.
 - View switches: `Segmented` (`ui/Segmented.tsx`), a 10px track with 8px
-  segments and the container fill on the active one.
+  segments and a raised `bg-background shadow-sm` thumb on the active one.
+  `SegmentedTabButtons` (`ui/SegmentedTabs.tsx`) is the tablist version for
+  page sections: the same track, with the container fill on the active segment.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
 - Empty states: `EmptyState` (`ui/EmptyState.tsx`), a small dashed card drawn

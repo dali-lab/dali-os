@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { MODAL_TITLE_CLASS, Modal } from "~/components/Modal";
 import { IconButton } from "~/components/ui/IconButton";
 import { cn } from "~/lib/cn";
+import { Z } from "~/components/ui/z";
 
 // A right-edge sliding panel — a Modal variant, so Escape and focus trapping
 // come for free. Extracted from TasksDrawer (AttentionPanel.tsx); the
@@ -36,7 +37,7 @@ export function Drawer({ open, onClose, title, headerActions, labelledBy, childr
       open={open}
       onClose={onClose}
       labelledBy={titleId}
-      className="fixed inset-0 z-50 flex justify-end bg-os-overlay"
+      className={`fixed inset-0 ${Z.modal} flex justify-end bg-os-overlay`}
       containerClassName={cn(
         "flex h-full w-full flex-col border-l border-os-container bg-os-card shadow-[-24px_0_60px_var(--color-os-shadow)] outline-none motion-safe:animate-detail-panel",
         width === 360 ? "max-w-[360px]" : "max-w-[480px]",

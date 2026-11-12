@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Clock } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
+import { Z } from "~/components/ui/z";
 
 // A time combobox, Google-Calendar style: type any time (freely, non-15-min
 // included) OR pick from a dropdown of stepped options. The value is the LITERAL
@@ -287,7 +288,7 @@ export function TimeField({
               width: pos?.width,
               visibility: pos ? "visible" : "hidden",
             }}
-            className={cn("z-[60] max-h-56 overflow-y-auto py-1", OS_SURFACE_CLASS)}
+            className={cn(`${Z.popover} max-h-56 overflow-y-auto py-1`, OS_SURFACE_CLASS)}
             // Keep focus in the input so blur-commit doesn't fire mid-pick.
             onMouseDown={(e) => e.preventDefault()}
           >

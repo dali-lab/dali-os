@@ -105,6 +105,7 @@ import { FolderGlyph, GlyphBadge } from "~/components/drive/FolderGlyph";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { isPageFolder, meetingsOptionFor, receivesLabel } from "~/components/drive/receiver-options";
+import { Z } from "~/components/ui/z";
 
 function useDriveText() {
   return {
@@ -2205,7 +2206,7 @@ function DriveQuickPreview({ item, onClose }: { item: DriveItem; onClose: () => 
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-6"
+      className={`fixed inset-0 ${Z.top} flex items-center justify-center bg-black/70 p-6`}
       data-testid="drive-quick-preview"
       onClick={onClose}
     >

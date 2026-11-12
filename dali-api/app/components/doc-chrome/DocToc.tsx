@@ -3,6 +3,7 @@ import type { TocHeading } from "~/components/doc";
 import { Popover } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { Z } from "~/components/ui/z";
 
 // Collapsible document outline (H1–H3). Lives in the header row and opens a
 // floating panel, so it works the same in read and edit mode. Clicking an entry
@@ -26,7 +27,7 @@ export function DocToc({
       align="right"
       ariaLabel="Table of contents"
       panelClassName={cn(
-        "z-[60] max-h-80 w-64 overflow-y-auto p-1 focus:outline-none",
+        `${Z.popover} max-h-80 w-64 overflow-y-auto p-1 focus:outline-none`,
         popover,
       )}
       trigger={

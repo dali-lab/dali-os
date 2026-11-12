@@ -25,6 +25,7 @@ import {
 } from "@floating-ui/react";
 import { Info } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { Z } from "~/components/ui/z";
 
 // The one tooltip primitive. Built on @floating-ui/react like the rest of this
 // folder (Popover/Menu/Select) so it flips/shifts off screen edges and portals
@@ -136,7 +137,7 @@ export const Tooltip = forwardRef<
             ref={refs.setFloating}
             style={floatingStyles}
             {...getFloatingProps()}
-            className={cn("z-[70]", variant === "label" && "pointer-events-none")}
+            className={cn(Z.tooltip, variant === "label" && "pointer-events-none")}
           >
             <div
               style={transitionStyles}
