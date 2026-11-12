@@ -36,6 +36,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import {
   parseColumnMapping,
   validateMapping,
+  boardTableModel,
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
@@ -96,10 +97,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     formId: binding?.formId ?? null,
   });
   const submissions = view.rows;
-  const tableColumns = view.tableColumns.map((c) => ({
-    key: c.key,
-    label: c.label,
-  }));
 
   // Bound form's questions drive the column mapper; validate the saved
   // mapping against them so a manager is warned before members submit.
@@ -139,6 +136,15 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, code: true },
   });
 
+  const mappedTermIds = new Set(binding?.mapping?.entries.flatMap((e) => e.termId ?? []) ?? []);
+  const columnModel = boardTableModel(
+    SLOT,
+    binding?.mapping ?? null,
+    view.tableColumns,
+    formQuestions,
+    allTerms.filter((t, i) => i < 4 || mappedTermIds.has(t.id)),
+  );
+
   const domainOptions = await prisma.domain.findMany({
     orderBy: { displayName: "asc" },
     select: { id: true, displayName: true },
@@ -152,7 +158,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     domainOptions,
     isAll,
     submissions,
-    tableColumns,
+    tableColumns: columnModel.columns,
+    addableColumns: columnModel.addable,
+    roleChoices: columnModel.roleChoices,
     canManage,
     binding,
     selectableForms,
@@ -385,6 +393,8 @@ function Loaded({
         ) : responseTable ? (
           <BoardTable
             columns={data.tableColumns}
+            addable={data.addableColumns}
+            roleChoices={data.roleChoices}
             rows={filtered}
             detailHref={(r) => `/core/intent-to-work/${r.userId}?term=${encodeURIComponent(data.selectedTerm)}`}
             editable={data.canManage && !data.isAll}

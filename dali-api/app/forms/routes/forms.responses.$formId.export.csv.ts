@@ -14,7 +14,7 @@ import {
   memberColumnValues,
   versionResponsesWhere,
 } from "~/forms/lib/version-responses.server";
-import { parseResponseColumns } from "~/forms/lib/response-columns";
+import { arrangeResultColumns, parseResultColumns } from "~/forms/lib/response-columns";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question } from "~/types";
@@ -97,10 +97,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   );
 
-  const member = await memberColumnValues(
-    savedColumns ? parseResponseColumns(form.responseColumns) : [],
-    submissions.map((s) => s.userId),
+  const arranged = arrangeResultColumns(
+    grid.columns,
+    savedColumns ? parseResultColumns(form.responseColumns) : [],
   );
+  const member = await memberColumnValues(arranged.members, submissions.map((s) => s.userId));
 
   const responses = submissions.map((s, i) => ({
     name:
@@ -116,7 +117,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }));
 
   const csv = rowsToCsv(
-    responsesCsvRows([...grid.columns, ...member.columns], responses, {
+    responsesCsvRows(arranged.visible, responses, {
       includeSlot: submissions.some((s) => s.slot !== null),
     }),
   );

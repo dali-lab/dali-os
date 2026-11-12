@@ -20,11 +20,8 @@ import { ResponseTable, type ColumnControls } from "~/forms/components/ResponseT
 import {
   MEMBER_COLUMNS_PARAM,
   MEMBER_HISTORY_COLUMNS,
-  isMemberHistoryColumn,
   parseMemberColumns,
-  type MemberHistoryColumn,
 } from "~/projects/lib/member-history";
-import { memberColumnKey, responseColumnId } from "~/forms/lib/response-columns";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 
 function formatDate(iso: string): string {
@@ -154,27 +151,15 @@ function MemberColumnsPicker() {
   );
 }
 
-function useResultColumns(columns: { key: string }[]): ColumnControls {
+function useResultColumns(available: { key: string; label: string }[]): ColumnControls {
   const fetcher = useFetcher<{ ok?: true; error?: string }>();
-  const added = columns.flatMap((c) => {
-    const key = memberColumnKey(c.key);
-    return key ? [key] : [];
-  });
-  const save = (next: MemberHistoryColumn[]) =>
-    fetcher.submit(
-      { intent: "set-response-columns", columns: JSON.stringify(next.map(responseColumnId)) },
-      { method: "post", preventScrollReset: true },
-    );
   return {
-    available: MEMBER_HISTORY_COLUMNS.filter((c) => !added.includes(c.key)).map((c) => ({
-      key: c.key,
-      label: c.label,
-    })),
-    onAdd: (key) => {
-      if (isMemberHistoryColumn(key)) save([...added, key]);
-    },
-    removable: (key) => memberColumnKey(key) !== null,
-    onRemove: (key) => save(added.filter((k) => k !== memberColumnKey(key))),
+    available,
+    edit: (op) =>
+      fetcher.submit(
+        { intent: "response-column", op: JSON.stringify(op) },
+        { method: "post", preventScrollReset: true },
+      ),
   };
 }
 
@@ -208,7 +193,7 @@ export function VersionResults({
   } = results;
   const [searchParams, setSearchParams] = useSearchParams();
   const canAddColumns = useFeatureFlag("form-response-views");
-  const columnControls = useResultColumns(columns);
+  const columnControls = useResultColumns(results.hiddenColumns);
   const urlQuery = searchParams.get("q") ?? "";
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
