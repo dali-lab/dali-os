@@ -1779,13 +1779,10 @@ model PageDoc {
   id       String  @id @default(cuid())
   pageKey  String  @unique
   title    String
-  // ProseMirror JSON. Null until the maintainer writes the guide.
+  // Retired: no longer read or written; content lives in sections.
   body     Json?
-  // S3 key of the uploaded walkthrough video (read via presigned URL). Null =
-  // no video yet. Kept in sync with sections[0].videoKey for older clients.
   videoKey String?
-  // Ordered sidebar sections: [{ id, title, body, videoKey }, ...]. Null =
-  // legacy single-body docs (API synthesizes an Overview from body/videoKey).
+  // Ordered sidebar sections: [{ id, title, body, videoKey }, ...].
   sections Json?
 
   maintainerId   String?

@@ -59,9 +59,7 @@ beforeEach(() => {
     upsert: vi.fn().mockResolvedValue({
       id: "doc1",
       title: "Tasks",
-      body: null,
-      videoKey: null,
-      sections: null,
+      sections: EXISTING.sections,
       maintainerId: "grace",
       maintainer: { id: "grace", firstName: "Grace", lastName: "Hopper", handle: "grace" },
     }),
@@ -88,7 +86,12 @@ describe("loader", () => {
       expect.objectContaining({
         where: { pageKey: "tasks" },
         update: {},
-        create: { pageKey: "tasks", title: "Task board", createdById: "ada" },
+        create: {
+          pageKey: "tasks",
+          title: "Task board",
+          createdById: "ada",
+          sections: [{ id: "overview", title: "Overview", body: null, videoKey: null }],
+        },
       }),
     );
     await get();
@@ -109,45 +112,27 @@ describe("loader", () => {
     expect(body).toMatchObject({ canEdit: true, canAssignMaintainer: true });
   });
 
-  it("falls back to a single Overview section from legacy columns and signs video urls", async () => {
-    m.pageDoc.upsert.mockResolvedValue({
-      id: "doc1",
-      title: "Tasks",
-      body: [{ t: 1 }],
-      videoKey: "vid/legacy",
-      sections: null,
-      maintainerId: null,
-      maintainer: null,
-    });
+  it("returns sections with signed video urls and no top-level body or video mirrors", async () => {
     const body = await (await get()).json();
-    expect(body.maintainer).toBeNull();
+    expect(body.doc).not.toHaveProperty("body");
+    expect(body.doc).not.toHaveProperty("videoUrl");
+    expect(body.doc).not.toHaveProperty("hasVideo");
     expect(body.doc.sections).toEqual([
       {
-        id: "overview",
-        title: "Overview",
-        body: [{ t: 1 }],
-        videoUrl: "https://s3.example.edu/vid/legacy",
+        id: "s1",
+        title: "Intro",
+        body: [{ mentions: ["old"] }],
+        videoUrl: "https://s3.example.edu/vid/1",
         hasVideo: true,
       },
     ]);
-    expect(body.doc.videoUrl).toBe("https://s3.example.edu/vid/legacy");
-    expect(body.doc.hasVideo).toBe(true);
   });
 
   it("omits video urls when S3 is not configured but still reports hasVideo", async () => {
     vi.mocked(isS3Configured).mockReturnValue(false);
-    m.pageDoc.upsert.mockResolvedValue({
-      id: "doc1",
-      title: "Tasks",
-      body: null,
-      videoKey: "vid/legacy",
-      sections: null,
-      maintainerId: null,
-      maintainer: null,
-    });
     const body = await (await get()).json();
-    expect(body.doc.videoUrl).toBeNull();
-    expect(body.doc.hasVideo).toBe(true);
+    expect(body.doc.sections[0].videoUrl).toBeNull();
+    expect(body.doc.sections[0].hasVideo).toBe(true);
   });
 
   it("names the maintainer", async () => {
@@ -169,6 +154,12 @@ describe("action access", () => {
     expect(m.pageDoc.update).not.toHaveBeenCalled();
   });
 
+  it("rejects the retired body and videoKey payload", async () => {
+    expect((await post({ body: [] })).status).toBe(400);
+    expect((await post({ videoKey: null })).status).toBe(400);
+    expect(m.pageDoc.update).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid payloads", async () => {
     expect((await post({ title: "   " })).status).toBe(400);
     expect((await post({ title: "a".repeat(201) })).status).toBe(400);
@@ -183,8 +174,6 @@ describe("action access", () => {
   it("forbids content edits from a plain lab member", async () => {
     for (const body of [
       { title: "x" },
-      { body: [] },
-      { videoKey: null },
       { sections: [{ title: "A" }] },
     ]) {
       const res = await post(body);
@@ -244,7 +233,7 @@ describe("action writes", () => {
     });
   });
 
-  it("sections payload replaces sections, keeps prior videoKey, and mirrors the first section to legacy columns", async () => {
+  it("sections payload replaces sections, keeps prior videoKey, and writes no legacy columns", async () => {
     await post({
       sections: [
         { id: "s1", title: "Intro v2", body: ["new"] },
@@ -256,8 +245,8 @@ describe("action writes", () => {
     expect(data.sections[0]).toEqual({ id: "s1", title: "Intro v2", body: ["new"], videoKey: "vid/1" });
     expect(data.sections[1]).toMatchObject({ title: "Extra", videoKey: null });
     expect(data.sections[1].id).toBeTruthy();
-    expect(data.body).toEqual(["new"]);
-    expect(data.videoKey).toBe("vid/1");
+    expect(data).not.toHaveProperty("body");
+    expect(data).not.toHaveProperty("videoKey");
   });
 
   it("returns 400 with the validation message for bad sections", async () => {
@@ -266,24 +255,6 @@ describe("action writes", () => {
     expect(await res.json()).toEqual({ error: "Add at least one section." });
     expect((await post({ sections: [{ title: "" }] })).status).toBe(400);
     expect(m.pageDoc.update).not.toHaveBeenCalled();
-  });
-
-  it("legacy body/videoKey edit patches only the first section", async () => {
-    m.pageDoc.findUnique.mockResolvedValue({
-      ...EXISTING,
-      sections: [
-        { id: "s1", title: "Intro", body: ["a"], videoKey: "vid/1" },
-        { id: "s2", title: "More", body: ["b"], videoKey: null },
-      ],
-    });
-    await post({ body: ["changed"], videoKey: null });
-    const data = m.pageDoc.update.mock.calls[0][0].data;
-    expect(data.sections).toEqual([
-      { id: "s1", title: "Intro", body: ["changed"], videoKey: null },
-      { id: "s2", title: "More", body: ["b"], videoKey: null },
-    ]);
-    expect(data.body).toEqual(["changed"]);
-    expect(data.videoKey).toBeNull();
   });
 
   it("notifies only newly mentioned users, deduped, with the page link", async () => {
