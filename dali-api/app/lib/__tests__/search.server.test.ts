@@ -619,7 +619,7 @@ describe("runSearch — guides", () => {
       id: "projects.staffing",
       title: "Staffing",
       subtitle: "Guide",
-      url: "/projects/staffing?doc=1",
+      url: "/core/staffing?doc=1",
     });
   });
 

@@ -7,7 +7,6 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/outbound.server", () => ({ enqueueOutbound: vi.fn(), drainNow: vi.fn() }));
 vi.mock("~/email/lib/layout.server", () => ({ renderAuthEmail: vi.fn() }));
 vi.mock("~/admin/components/EmailTemplatesAdmin", () => ({ EmailTemplatesAdmin: () => null }));
-vi.mock("~/core/lib/regroup-redirect.server", () => ({ regroupRedirect: vi.fn() }));
 vi.mock("~/email/lib/templates.server", () => ({
   saveEmailTemplate: vi.fn(),
   rollbackEmailTemplate: vi.fn(),
@@ -19,7 +18,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { rollbackEmailTemplate, saveEmailTemplate } from "~/email/lib/templates.server";
 import { EMAIL_TEMPLATES } from "~/email/lib/registry";
-import { action } from "~/admin/routes/admin.email";
+import { action } from "~/core/routes/core.communications.email";
 
 const KEY = Object.keys(EMAIL_TEMPLATES)[0];
 
