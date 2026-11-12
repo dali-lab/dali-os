@@ -18,7 +18,8 @@ import { prisma } from "~/lib/db.server";
 import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
 import { generateShortText } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
-import { action, TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
+import { action } from "~/routes/api.ai.meeting-notes";
+import { TRANSCRIPT_MAX } from "~/lib/meeting-notes-enhance.server";
 
 const DOC = "doc:p1:body";
 

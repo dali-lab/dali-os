@@ -33,6 +33,8 @@ vi.mock("~/collab/persistence", () => ({ forceSnapshot: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
 vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
 vi.mock("~/lib/meeting-notes-enhance.server", () => ({
+  AI_BURST_MAX: 10,
+  AI_BURST_WINDOW_MS: 60_000,
   generateAndVerifyEnhancePlan: vi.fn(),
   resolveMeetingEnhanceContext: vi.fn().mockResolvedValue({ roster: [], meetingTypeLabel: "Meeting", occurrenceDate: "2026-10-10" }),
 }));

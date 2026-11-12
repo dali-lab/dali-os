@@ -95,7 +95,7 @@ import { prisma } from "~/lib/db.server";
 import { currentTermMemberWhere } from "~/lib/roles";
 import { listAllGroups } from "~/lib/groups";
 import { listMentorPairs } from "~/mentorship/lib/pair-suggestion.server";
-import { buildCalendarLinkDTO, loadParticipantOptions } from "~/calendar/routes/calendar.server";
+import { buildCalendarLinkDTO, loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 
 const findUsers = vi.mocked(prisma.user.findMany);
 

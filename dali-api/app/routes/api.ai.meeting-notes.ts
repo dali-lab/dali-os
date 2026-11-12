@@ -17,19 +17,11 @@ import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/m
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db.server";
 import { aiQuotaResponse, claimAiQuota } from "~/lib/ai-quota.server";
+import { AI_BURST_MAX, AI_BURST_WINDOW_MS, TRANSCRIPT_MAX } from "~/lib/meeting-notes-enhance.server";
 
 export interface MeetingNotesResponse {
   markdown: string;
 }
-
-// Shared with api.ai.meeting-notes.enhance.ts — Enhance draws on the same
-// per-user burst/daily budget as Write notes (specs/meeting-notes-model.md
-// §2: "Same per-user burst and daily caps as api/ai/meeting-notes").
-export const AI_BURST_MAX = 10;
-export const AI_BURST_WINDOW_MS = 60_000;
-
-// About 150k tokens, roughly twelve hours of speech; still fits Haiku 4.5's 200k context on the gateway.
-export const TRANSCRIPT_MAX = 600_000;
 
 const SYSTEM_PROMPT = `You write meeting notes for a university software lab from a raw speech-to-text transcript. \
 Each line is "[mm:ss] Speaker: text". "You" is the person who recorded (their microphone) and "Others" is everyone else on the call (the computer's audio); there are no other speaker names. Words may be misheard, and it may start or stop mid-sentence. \

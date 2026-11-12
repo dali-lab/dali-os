@@ -4,7 +4,7 @@ const mockRequireAuth = vi.hoisted(() => vi.fn());
 const mockAttach = vi.hoisted(() => vi.fn());
 const mockNotePath = vi.hoisted(() => vi.fn());
 
-// calendar.server pulls in the Prisma client; CI has no generated client.
+// calendar actions pull in the Prisma client; CI has no generated client.
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
@@ -20,7 +20,7 @@ vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({
 }));
 vi.mock("~/lib/note-path.server", () => ({ meetingNotePath: mockNotePath }));
 
-import { submitCalendarAction } from "~/calendar/routes/calendar.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 async function post(fields: Record<string, string>) {
   const body = new FormData();
