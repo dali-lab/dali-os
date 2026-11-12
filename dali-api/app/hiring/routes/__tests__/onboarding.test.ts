@@ -39,6 +39,20 @@ vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn(() => true),
   sendDm: vi.fn().mockResolvedValue({ ts: "1.0" }),
 }));
+vi.mock("~/hiring/lib/onboarding-form.server", () => ({
+  getOnboardingFormBinding: vi.fn(),
+  setOnboardingFormBinding: vi.fn(),
+  clearOnboardingFormBinding: vi.fn(),
+}));
+vi.mock("~/projects/lib/form-slots", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/projects/lib/form-slots")>()),
+  listSelectableForms: vi.fn(),
+}));
+vi.mock("~/forms/lib/form-publish.server", () => ({ setFormPublished: vi.fn() }));
+vi.mock("~/lib/audit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/audit")>()),
+  logAuditEvent: vi.fn(),
+}));
 vi.mock("~/lib/photo", () => ({
   resolvePhotoUrl: vi.fn(async (url: string | null | undefined) => url ?? null),
 }));
@@ -51,6 +65,14 @@ import { sendEmail } from "~/lib/gmail";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { sendDm } from "~/slack/lib/slack-client";
 import { loader, action } from "~/hiring/routes/onboarding";
+import {
+  clearOnboardingFormBinding,
+  getOnboardingFormBinding,
+  setOnboardingFormBinding,
+} from "~/hiring/lib/onboarding-form.server";
+import { listSelectableForms } from "~/projects/lib/form-slots";
+import { setFormPublished } from "~/forms/lib/form-publish.server";
+import { logAuditEvent } from "~/lib/audit";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 const CORE_ID = "core-1";
@@ -133,6 +155,8 @@ beforeEach(() => {
   vi.mocked(getUserRoles).mockResolvedValue(CORE_ROLES as any);
   vi.mocked(notify).mockResolvedValue(undefined as any);
   vi.mocked(enqueueOutbound).mockResolvedValue({ id: "om-x", deduped: false });
+  vi.mocked(getOnboardingFormBinding).mockResolvedValue(null);
+  vi.mocked(listSelectableForms).mockResolvedValue([]);
 });
 
 describe("hiring/onboarding loader", () => {
@@ -917,4 +941,93 @@ describe("hiring/onboarding action (set start term)", () => {
     expect(res.status).toBe(403);
     expect(mockPrisma.application.update).not.toHaveBeenCalled();
   });
+});
+
+describe("hiring/onboarding profile form", () => {
+  const BOUND = {
+    formId: "f-profile",
+    formName: "Welcome",
+    published: true,
+    publicToken: "tok",
+    hasVersion: true,
+  };
+
+  function post(fields: Record<string, string>) {
+    return action({
+      request: new Request("http://localhost/hiring/onboarding", {
+        method: "POST",
+        body: new URLSearchParams(fields),
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      }),
+      params: {},
+      context: {},
+    } as any) as Promise<Response>;
+  }
+
+  it("loads the bound form and the forms to choose from", async () => {
+    vi.mocked(getOnboardingFormBinding).mockResolvedValue(BOUND);
+    vi.mocked(listSelectableForms).mockResolvedValue([{ id: "f-profile", name: "Welcome", published: true }]);
+    const data = (await call()) as any;
+    expect(data.profileForm).toEqual(BOUND);
+    expect(data.selectableForms).toEqual([{ id: "f-profile", name: "Welcome", published: true }]);
+  });
+
+  it("binds a form and audits it", async () => {
+    vi.mocked(setOnboardingFormBinding).mockResolvedValue({ ok: true });
+    const res = await post({ intent: "bind-profile-form", formId: "f-profile" });
+    expect(res.status).toBe(200);
+    expect(setOnboardingFormBinding).toHaveBeenCalledWith("f-profile", CORE_ID);
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "hiring.onboarding-form.set", targetId: "f-profile" }),
+    );
+  });
+
+  it("requires a form to bind", async () => {
+    const res = await post({ intent: "bind-profile-form", formId: "" });
+    expect(res.status).toBe(400);
+    expect(setOnboardingFormBinding).not.toHaveBeenCalled();
+  });
+
+  it("passes on a missing form", async () => {
+    vi.mocked(setOnboardingFormBinding).mockResolvedValue({ ok: false, error: "That form no longer exists." });
+    const res = await post({ intent: "bind-profile-form", formId: "gone" });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "That form no longer exists." });
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("clears the binding and audits it", async () => {
+    const res = await post({ intent: "clear-profile-form" });
+    expect(res.status).toBe(200);
+    expect(clearOnboardingFormBinding).toHaveBeenCalled();
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "hiring.onboarding-form.clear" }),
+    );
+  });
+
+  it("opens and closes the bound form", async () => {
+    vi.mocked(getOnboardingFormBinding).mockResolvedValue(BOUND);
+    vi.mocked(setFormPublished).mockResolvedValue({ ok: true });
+    const res = await post({ intent: "set-form-published", published: "0" });
+    expect(res.status).toBe(200);
+    expect(setFormPublished).toHaveBeenCalledWith("f-profile", false, { clearWindow: true });
+  });
+
+  it("won't publish with nothing bound", async () => {
+    const res = await post({ intent: "set-form-published", published: "1" });
+    expect(res.status).toBe(400);
+    expect(setFormPublished).not.toHaveBeenCalled();
+  });
+
+  it.each(["bind-profile-form", "clear-profile-form", "set-form-published"])(
+    "403s %s for non-core users",
+    async (intent) => {
+      vi.mocked(isCore).mockResolvedValueOnce(false);
+      const res = await post({ intent, formId: "f-profile", published: "1" });
+      expect(res.status).toBe(403);
+      expect(setOnboardingFormBinding).not.toHaveBeenCalled();
+      expect(clearOnboardingFormBinding).not.toHaveBeenCalled();
+      expect(setFormPublished).not.toHaveBeenCalled();
+    },
+  );
 });

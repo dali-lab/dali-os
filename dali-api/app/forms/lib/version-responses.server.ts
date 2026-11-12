@@ -6,7 +6,7 @@ import {
   buildResponseGrid,
   type FormAnswerRow,
 } from "~/forms/lib/answer-rows.server";
-import { RESPONSE_LOCK_SELECT, responseLockReason } from "~/forms/lib/response-lock";
+import { RESPONSE_LOCK_SELECT, responseDeletePlan } from "~/forms/lib/response-lock";
 import type { Question } from "~/types";
 import { filterableQuestions, type AnswerFilter } from "~/forms/lib/answer-filters";
 import {
@@ -91,8 +91,8 @@ export type ResponseRow = {
   id: string;
   createdAt: string;
   edited: boolean;
-  // Why this response can't be deleted (it feeds another feature); null when it can.
-  lockReason: string | null;
+  deleteBlocked: string | null;
+  deleteEffects: string[];
   name: string;
   email: string | null;
   slot: string | null;
@@ -175,8 +175,6 @@ export async function loadVersionResponses(
           },
         },
         formVersion: { select: { versionNumber: true, questions: true } },
-        partnerApplication: { select: { id: true, title: true } },
-        form: { select: { name: true } },
       },
     }),
     filters.questions ? buildReferenceLabelMaps(filters.questions) : null,
@@ -198,22 +196,28 @@ export async function loadVersionResponses(
     submissions.map((s) => s.userId),
   );
 
-  const responses: ResponseRow[] = submissions.map((s, i) => ({
-    id: s.id,
-    createdAt: s.createdAt.toISOString(),
-    edited: s.updatedAt > s.createdAt,
-    lockReason: responseLockReason(s, s.form.name),
-    name:
-      [s.user?.firstName, s.user?.lastName].filter(Boolean).join(" ") ||
-      s.submitterName ||
-      "Anonymous",
-    email:
-      s.user?.daliEmail || s.user?.personalEmail || s.submitterEmail || null,
-    slot: s.slot,
-    submitterIp: s.submitterIp,
-    partnerApplication: s.partnerApplication,
-    rows: [...grid.rowsBySubmission[i], ...member.rowsFor(s.userId)],
-  }));
+  const responses: ResponseRow[] = submissions.map((s, i) => {
+    const plan = responseDeletePlan(s);
+    return {
+      id: s.id,
+      createdAt: s.createdAt.toISOString(),
+      edited: s.updatedAt > s.createdAt,
+      deleteBlocked: plan.blocked,
+      deleteEffects: "effects" in plan ? plan.effects : [],
+      name:
+        [s.user?.firstName, s.user?.lastName].filter(Boolean).join(" ") ||
+        s.submitterName ||
+        "Anonymous",
+      email:
+        s.user?.daliEmail || s.user?.personalEmail || s.submitterEmail || null,
+      slot: s.slot,
+      submitterIp: s.submitterIp,
+      partnerApplication: s.partnerApplication
+        ? { id: s.partnerApplication.id, title: s.partnerApplication.title }
+        : null,
+      rows: [...grid.rowsBySubmission[i], ...member.rowsFor(s.userId)],
+    };
+  });
 
   return {
     versionId,

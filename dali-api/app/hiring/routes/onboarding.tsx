@@ -31,6 +31,14 @@ import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { Pill } from "~/components/ui/Pill";
+import { listSelectableForms } from "~/projects/lib/form-slots";
+import { setFormPublished } from "~/forms/lib/form-publish.server";
+import { FormBindingRow } from "~/forms/components/FormBindingRow";
+import {
+  clearOnboardingFormBinding,
+  getOnboardingFormBinding,
+  setOnboardingFormBinding,
+} from "~/hiring/lib/onboarding-form.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Onboarding · Hiring · DALI OS" },
@@ -316,13 +324,17 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const requested = url.searchParams.get("cycle");
-  const data = await loadOnboardingRows({
-    cycleId: requested === "all" ? "all" : requested,
-    domainKey: url.searchParams.get("domain"),
-    termId: url.searchParams.get("term"),
-  });
+  const [data, profileForm, selectableForms] = await Promise.all([
+    loadOnboardingRows({
+      cycleId: requested === "all" ? "all" : requested,
+      domainKey: url.searchParams.get("domain"),
+      termId: url.searchParams.get("term"),
+    }),
+    getOnboardingFormBinding(),
+    listSelectableForms(),
+  ]);
 
-  return { ...data, pillRoles };
+  return { ...data, pillRoles, profileForm, selectableForms };
 }
 
 // Toggle Figma invite, or blast a reminder to members incomplete on a step.
@@ -447,6 +459,41 @@ export async function action({ request }: Route.ActionArgs) {
       const message = err instanceof Error ? err.message : "Failed to send reminders";
       return Response.json({ error: message }, { status: 500 });
     }
+  }
+
+  if (intent === "bind-profile-form") {
+    const formId = String(form.get("formId") ?? "");
+    if (!formId) return Response.json({ error: "Choose a form to use." }, { status: 400 });
+    const result = await setOnboardingFormBinding(formId, auth.user.sub);
+    if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+    await logAuditEvent({
+      action: "hiring.onboarding-form.set",
+      userId: auth.user.sub,
+      targetId: formId,
+      request,
+    });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "clear-profile-form") {
+    await clearOnboardingFormBinding();
+    await logAuditEvent({
+      action: "hiring.onboarding-form.clear",
+      userId: auth.user.sub,
+      targetId: "onboarding-profile",
+      request,
+    });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "set-form-published") {
+    const binding = await getOnboardingFormBinding();
+    if (!binding) return Response.json({ error: "Choose a form first." }, { status: 400 });
+    const result = await setFormPublished(binding.formId, form.get("published") === "1", {
+      clearWindow: true,
+    });
+    if ("error" in result) return Response.json({ error: result.error }, { status: 400 });
+    return Response.json({ ok: true });
   }
 
   return Response.json({ error: "Unknown intent" }, { status: 400 });
@@ -703,6 +750,8 @@ export default function HiringOnboarding() {
     startTermCandidates,
     hasUntermed,
     selectedTermId,
+    profileForm,
+    selectableForms,
   } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -733,6 +782,22 @@ export default function HiringOnboarding() {
       <div className="flex flex-col gap-2">
         <h1 className={pageTitle}>Onboarding</h1>
         <p className={bodyText}>Accepted applicants and their onboarding progress.</p>
+      </div>
+
+      <div className={cn(panel, "p-4")}>
+        <FormBindingRow
+          title="Profile form"
+          description="New members fill this in to finish onboarding. Their answers fill in their profile."
+          binding={profileForm}
+          forms={selectableForms}
+          action="/hiring/onboarding"
+          bindIntent="bind-profile-form"
+          clearIntent="clear-profile-form"
+          publishSlot="onboarding-profile"
+          removeDescription="New members won't have a profile form to fill in until another is chosen. Submitted responses are kept."
+          openNote="New members can fill this form now."
+          unpublishedNote="New members won't be asked to fill it in."
+        />
       </div>
 
       {cycles.length > 0 && (
