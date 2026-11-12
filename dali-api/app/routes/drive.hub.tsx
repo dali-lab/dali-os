@@ -203,7 +203,7 @@ export default function DriveHub() {
     selectedTerm,
     canManageAgreements,
     viewerId,
-  } = useLoaderData() as LoaderData;
+  } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const hubToast = useToast();
   // Reveal in Drive arrives with ?select=<id>, and a redirect into Drive can

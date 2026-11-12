@@ -197,7 +197,7 @@ export default function FilePage() {
     canShare,
     canManageTags,
     currentUserId,
-  } = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  } = useLoaderData<typeof loader>();
 
   const revalidator = useRevalidator();
   const [fileSearchParams] = useSearchParams();

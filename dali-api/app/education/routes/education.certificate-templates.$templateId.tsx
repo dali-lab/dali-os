@@ -82,10 +82,8 @@ export async function action({
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
-type LoaderData = Extract<Awaited<ReturnType<typeof loader>>, { template: unknown }>;
-
 export default function CertificateTemplateEditorRoute() {
-  const { template, bgUrl } = useLoaderData() as LoaderData;
+  const { template, bgUrl } = useLoaderData<typeof loader>();
   const [name, setName] = useState(template.name);
   const dialog = useDialog();
   const renameFetcher = useFetcher<{ ok?: boolean; error?: string }>();
