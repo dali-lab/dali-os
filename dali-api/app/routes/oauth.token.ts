@@ -50,8 +50,6 @@ export async function action({ request }: Route.ActionArgs) {
 
       const {
         userId,
-        provider,
-        accountType,
         scopes,
         clientId: resolvedClientId,
       } = await exchangeAuthorizationCode({
@@ -61,8 +59,7 @@ export async function action({ request }: Route.ActionArgs) {
         clientId: client_id,
       });
 
-      const authType =
-        provider === "cas" ? "dartmouth" : (accountType ?? "member");
+      const authType = "member";
 
       const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) throw new OAuthError("server_error", "User not found");

@@ -156,7 +156,7 @@ describe("live comment updates", () => {
 // ── set-anchor intent ────────────────────────────────────────────────────────
 describe("set-anchor intent", () => {
   it("allows author to set anchor on a doc comment", async () => {
-    const anchor = { from: "abc", to: "def" };
+    const anchor = { kind: "blocknote" };
     const res = (await post("set-anchor", AUTHOR_ID, { anchor })) as Response;
     expect(res.status).toBe(200);
     expect(mockPrisma.docComment.update).toHaveBeenCalledWith(
@@ -164,8 +164,13 @@ describe("set-anchor intent", () => {
     );
   });
 
+  it("rejects a legacy {from, to} anchor", async () => {
+    const res = (await post("set-anchor", AUTHOR_ID, { anchor: { from: "a", to: "b" } })) as Response;
+    expect(res.status).toBe(400);
+  });
+
   it("rejects non-author setting anchor", async () => {
-    const res = (await post("set-anchor", OTHER_ID, { anchor: { from: "a", to: "b" } })) as Response;
+    const res = (await post("set-anchor", OTHER_ID, { anchor: { kind: "blocknote" } })) as Response;
     expect(res.status).toBe(403);
   });
 

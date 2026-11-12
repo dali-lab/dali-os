@@ -19,7 +19,7 @@ import {
   type SearchResultType,
 } from "~/lib/search";
 import { searchPageContent } from "~/lib/doc-search.server";
-import { resolveSections } from "~/lib/page-doc-sections";
+import { parseStoredSections } from "~/lib/page-doc-sections";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
@@ -430,8 +430,8 @@ async function searchDocuments(
 
 // Flatten a guide's authored content into one searchable string: each section's
 // title plus its body text (legacy ProseMirror bodies convert to blocks first).
-function guideContentText(row: { body: unknown; sections: unknown }): string {
-  return resolveSections({ body: row.body, videoKey: null, sections: row.sections })
+function guideContentText(row: { sections: unknown }): string {
+  return parseStoredSections(row.sections)
     .map((s) => `${s.title} ${blocksToPlainText(ensureBlocks(s.body))}`)
     .join(" ");
 }
@@ -442,7 +442,7 @@ async function searchGuides(q: string, b: SearchBudget): Promise<SearchResult[]>
   // anyone has opened it to create its PageDoc row.
   const rows = await prisma.pageDoc.findMany({
     where: { pageKey: { in: GUIDE_PAGES.map((g) => g.pageKey) } },
-    select: { pageKey: true, title: true, body: true, sections: true },
+    select: { pageKey: true, title: true, sections: true },
   });
   const byKey = new Map(rows.map((r) => [r.pageKey, r]));
 

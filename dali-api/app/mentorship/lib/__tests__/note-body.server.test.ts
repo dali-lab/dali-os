@@ -10,33 +10,15 @@ const BLOCKS = [{ type: "paragraph", content: "from the room" }];
 beforeEach(() => vi.resetAllMocks());
 
 describe("readMentorNoteBlocks", () => {
-  it("reads the page's room once the note has a page, ignoring contentJson", async () => {
+  it("reads the page's room", async () => {
     vi.mocked(readDocAsBlocks).mockResolvedValue(BLOCKS as never);
 
-    const out = await readMentorNoteBlocks({ pageId: "p1", contentJson: [{ type: "paragraph", content: "stale" }] });
-
+    expect(await readMentorNoteBlocks({ pageId: "p1" })).toEqual(BLOCKS);
     expect(readDocAsBlocks).toHaveBeenCalledWith("doc:p1:body");
-    expect(out).toEqual(BLOCKS);
   });
 
-  it("falls back to contentJson as blocks when there is no page", async () => {
-    const out = await readMentorNoteBlocks({ pageId: null, contentJson: BLOCKS });
-
+  it("reads a note with no page as an empty document", async () => {
+    expect(await readMentorNoteBlocks({ pageId: null })).toEqual([]);
     expect(readDocAsBlocks).not.toHaveBeenCalled();
-    expect(out).toEqual(BLOCKS);
-  });
-
-  it("maps legacy ProseMirror contentJson when there is no page", async () => {
-    const pm = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Legacy" }] }] };
-
-    const out = await readMentorNoteBlocks({ pageId: null, contentJson: pm });
-
-    expect(JSON.stringify(out)).toContain("Legacy");
-  });
-
-  it("reads an empty page as an empty document, not the stale contentJson", async () => {
-    vi.mocked(readDocAsBlocks).mockResolvedValue([]);
-
-    expect(await readMentorNoteBlocks({ pageId: "p1", contentJson: BLOCKS })).toEqual([]);
   });
 });

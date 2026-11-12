@@ -44,7 +44,7 @@ export const MANAGE_COMMENT_TOOL_DEF = {
           y: { type: "number", minimum: 0, maximum: 1 },
         },
         description:
-          "For 'create' on doc targets: a Yjs anchor range ({from, to}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide).",
+          "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide).",
       },
       versionId: { type: "string", description: "For 'create' on file targets: pin to a file version." },
       // For edit/react/unreact/delete

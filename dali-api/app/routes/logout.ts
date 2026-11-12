@@ -5,9 +5,6 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  // Best-effort attribution: look up the current session (if any) so we
-  // can record which user logged out. A missing/invalid session still
-  // emits a logout event with userId=null.
   let userId: string | null = null;
   const raw = parseSessionId(request);
   if (raw) {
@@ -18,6 +15,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
     if (session) userId = session.userId;
     await revokeSession(id, { hashed: true });
+  }
+  if (!userId) {
+    try {
+      const { getBetterAuthUser } = await import("~/lib/betterauth-compat.server");
+      userId = (await getBetterAuthUser(request))?.id ?? null;
+    } catch {
+      // Attribution is best effort; a BetterAuth fault must not block logout.
+    }
   }
   await logAuditEvent({
     action: "logout",

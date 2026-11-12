@@ -50,6 +50,11 @@ describe("GET my-interviews", () => {
     expect(body[0].interview.id).toBe("i-a1");
   });
 
+  it("does not include note versions in the query", async () => {
+    await callLoader();
+    expect(mockPrisma.interviewAssignment.findMany.mock.calls[0][0].include).not.toHaveProperty("noteVersions");
+  });
+
   it("returns an empty list without looking up engagement when the user interviews on nothing", async () => {
     mockPrisma.cycleInterviewer.findMany.mockResolvedValue([]);
     const body = await (await callLoader()).json();
