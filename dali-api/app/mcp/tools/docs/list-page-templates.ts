@@ -1,7 +1,7 @@
 // MCP `list_page_templates` — list FreeForm template pages in a workspace scope.
 // Mirrors GET /api/page-templates: returns only templates the caller can access.
 
-import { listPageTemplates } from "~/lib/page-templates.server";
+import { listPageTemplates } from "~/drive/lib/page-templates.server";
 
 export const LIST_PAGE_TEMPLATES_TOOL = {
   name: "list_page_templates",

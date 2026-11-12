@@ -26,7 +26,7 @@ vi.mock("~/partners/lib/partner-meetings.server", () => ({
   debriefPartnerMeeting: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   createScheduledMeeting: vi.fn(),
 }));
 
@@ -73,7 +73,7 @@ import {
   logPartnerMeeting,
   linkScheduledMeetingToApplication,
 } from "~/partners/lib/partner-meetings.server";
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import { NotFoundError } from "~/lib/http-error";
 import {
   runManagePartnerMeeting,

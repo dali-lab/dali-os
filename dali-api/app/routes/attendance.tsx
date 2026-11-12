@@ -18,7 +18,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { loadAttendanceFeed, type AttendanceCard } from "~/lib/attendance-feed.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
-import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
+import { parseOccurrenceParam } from "~/calendar/lib/scheduled-meeting.server";
 import { fullName, formatDateShort, formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useOsChrome } from "~/components/os-chrome";

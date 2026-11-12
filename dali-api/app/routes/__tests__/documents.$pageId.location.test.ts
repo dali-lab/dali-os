@@ -22,29 +22,29 @@ vi.mock("~/lib/pageAccess.server", () => ({
 }));
 vi.mock("~/lib/page-sharing.server", () => ({ groupIdsForUser: vi.fn() }));
 vi.mock("~/lib/note-path.server", () => ({ notebookItemLocation: vi.fn(), pageItemLocation: vi.fn() }));
-vi.mock("~/lib/notebooks.server", () => ({ canManageNotebook: vi.fn() }));
-vi.mock("~/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn() }));
+vi.mock("~/calendar/lib/notebooks.server", () => ({ canManageNotebook: vi.fn() }));
+vi.mock("~/calendar/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ isFavorited: vi.fn(), recordPageVisit: vi.fn() }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
 vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn() }));
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   ACTIVE_RECORDING_STATUSES: [],
   latestRecordingFor: vi.fn(),
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isProjectMember: vi.fn() }));
-vi.mock("~/lib/scheduled-meeting", () => ({ ensureOccurrenceRoster: vi.fn() }));
-vi.mock("~/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ ensureOccurrenceRoster: vi.fn() }));
+vi.mock("~/drive/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
 import { notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
-import { canManageNotebook } from "~/lib/notebooks.server";
-import { nextNoteTargets } from "~/lib/notebook-series.server";
+import { canManageNotebook } from "~/calendar/lib/notebooks.server";
+import { nextNoteTargets } from "~/calendar/lib/notebook-series.server";
 import { getUserRoles } from "~/lib/roles";
-import { latestRecordingFor } from "~/lib/meeting-recording.server";
+import { latestRecordingFor } from "~/calendar/lib/meeting-recording.server";
 import { loader } from "../documents.$pageId";
 
 const db = prisma as any;

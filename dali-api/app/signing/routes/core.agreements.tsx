@@ -14,8 +14,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
 import { logAuditEvent } from "~/lib/audit";
-import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
-import { editableFolderInRoot } from "~/lib/drive-roots.server";
+import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
+import { editableFolderInRoot } from "~/drive/lib/drive-roots.server";
 import type {
   SigningGateScope,
   SigningAudience,

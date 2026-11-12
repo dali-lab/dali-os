@@ -1,8 +1,8 @@
 import { prisma } from "~/lib/db.server";
 import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
-import { setUserTimesheetSync } from "~/lib/timesheet-mirror.server";
-import { subscribeCalendarForLink } from "~/lib/google-calendar";
-import { generalCalendarId } from "~/lib/general-calendar";
+import { setUserTimesheetSync } from "~/calendar/lib/timesheet-mirror.server";
+import { subscribeCalendarForLink } from "~/calendar/lib/google-calendar.server";
+import { generalCalendarId } from "~/calendar/lib/general-calendar";
 import type { CalendarActionContext, CalendarIntentInput } from "~/calendar/lib/calendar-actions/shared.server";
 
 export async function handleSetWorkingSegments(

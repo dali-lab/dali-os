@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { redirect, useLoaderData, useLocation, useMatches, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
-import { isPageScroll, pageScrollY, scrollPageTo } from '~/lib/page-scroll'
+import { isPageScroll, pageScrollY, scrollPageTo } from '~/drive/lib/page-scroll'
 import { areaForPath, areaInk, areaTint } from '~/lib/nav-areas'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'

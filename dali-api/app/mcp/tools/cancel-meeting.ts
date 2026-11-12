@@ -4,7 +4,7 @@
 // status to Cancelled (which pulls the invite from every recipient's
 // inbox/tasks). Requires the `mcp:write` scope.
 
-import { cancelScheduledMeeting } from "~/lib/scheduled-meeting";
+import { cancelScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 
 export const CANCEL_MEETING_TOOL = {
   name: "cancel_meeting",

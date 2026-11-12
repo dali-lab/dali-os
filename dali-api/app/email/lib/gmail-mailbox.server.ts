@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db.server";
 import { getAppEnv, STAGING_REDIRECT_EMAIL } from "~/lib/app-env";
-import { buildEncryptedTokens, parseStoredTokens } from "~/lib/google-calendar";
+import { buildEncryptedTokens, parseStoredTokens } from "~/calendar/lib/google-calendar.server";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
 
 const API = "https://gmail.googleapis.com/gmail/v1/users/me";

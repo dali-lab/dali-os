@@ -4,7 +4,7 @@ import {
   type UrlCheckState,
 } from "~/components/form-builder/QuestionField";
 import { InfoBody } from "~/components/form-builder/info-body";
-import { hasNothingToPick } from "~/lib/form-answers";
+import { hasNothingToPick } from "~/forms/lib/form-answers";
 
 // The per-question wrapper that every fill surface used to hand-write:
 // label + standardized required star + optional description + the field.

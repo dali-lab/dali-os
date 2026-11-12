@@ -8,9 +8,9 @@
 // no-op, so re-running is always safe.
 
 import type { JobContext, JobResult } from "~/jobs/registry";
-import { runWalletRestyleBroadcast } from "~/lib/wallet-broadcast.server";
-import { walletGoogleConfigured } from "~/lib/wallet-google.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
+import { runWalletRestyleBroadcast } from "~/wallet/lib/wallet-broadcast.server";
+import { walletGoogleConfigured } from "~/wallet/lib/wallet-google.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
 
 export async function runWalletRestyleBroadcastJob(_ctx: JobContext): Promise<JobResult> {
   if (!walletGoogleConfigured() && !walletAppleConfigured()) {

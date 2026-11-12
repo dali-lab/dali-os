@@ -19,7 +19,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
+import { canRecordInto, resolveSpeakerNames, storedLines } from "~/calendar/lib/meeting-recording.server";
 import { getCollabServer } from "~/collab/server";
 import { forceSnapshot } from "~/collab/persistence";
 import { readDocAsBlocks } from "~/collab/read";
@@ -31,19 +31,19 @@ import {
 } from "~/components/meeting-recorder/enhance-plan";
 import { speakerFirstNameAt, transcriptParagraphs } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
-import { isUntouchedTemplate } from "~/lib/meeting-note-template";
+import { isUntouchedTemplate } from "~/calendar/lib/meeting-note-template";
 import {
   generateAndVerifyEnhancePlan,
   resolveMeetingEnhanceContext,
   AI_BURST_MAX,
   AI_BURST_WINDOW_MS,
-} from "~/lib/meeting-notes-enhance.server";
+} from "~/calendar/lib/meeting-notes-enhance.server";
 import {
   applyEnhanceOpsToDocBlocks,
   enhanceSnapshotDocBlocks,
   ensureTranscriptToggle,
   hasEnhanceMarkInTree,
-} from "~/lib/meeting-notes-apply.server";
+} from "~/calendar/lib/meeting-notes-apply.server";
 import { HttpError, ForbiddenError, NotFoundError, BadRequestError } from "~/lib/http-error";
 
 type EnhanceInput = { recordingId: string; apply?: boolean };

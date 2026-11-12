@@ -1,6 +1,6 @@
 import type { Question } from "~/types";
 import { NUMBER_PATTERN } from "~/forms/lib/version-summary";
-import { OTHER_VALUE, questionNumbers } from "~/lib/form-logic";
+import { OTHER_VALUE, questionNumbers } from "~/forms/lib/form-logic";
 
 export { OTHER_VALUE };
 export const ANSWER_PARAM = "a";

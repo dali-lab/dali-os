@@ -12,8 +12,8 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
-import { loadAncestorChain } from "~/lib/page-ancestry.server";
-import { nearestRoot, rootBoundMoveError } from "~/lib/drive-roots";
+import { loadAncestorChain } from "~/drive/lib/page-ancestry.server";
+import { nearestRoot, rootBoundMoveError } from "~/drive/lib/drive-roots";
 
 const BodySchema = z.object({
   itemType: z.enum(["file", "form", "rubric", "agreement"]),

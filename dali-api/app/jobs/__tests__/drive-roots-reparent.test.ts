@@ -8,12 +8,12 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
-vi.mock("~/lib/drive-roots.server", () => ({ ensureAllRoots: vi.fn() }));
+vi.mock("~/drive/lib/drive-roots.server", () => ({ ensureAllRoots: vi.fn() }));
 vi.mock("~/lib/pages", () => ({ collectSubtree: vi.fn(), MAX_PAGE_DEPTH: 6 }));
 
 import { prisma } from "~/lib/db.server";
 import { resolveGroupMembers } from "~/lib/groups";
-import { ensureAllRoots } from "~/lib/drive-roots.server";
+import { ensureAllRoots } from "~/drive/lib/drive-roots.server";
 import { collectSubtree } from "~/lib/pages";
 import { runDriveRootsReparent } from "~/jobs/drive-roots-reparent.server";
 import { JOBS } from "~/jobs/registry";

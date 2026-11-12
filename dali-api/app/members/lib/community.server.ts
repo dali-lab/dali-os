@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
-import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
+import { listUpcomingMeetings } from "~/calendar/lib/upcoming-meetings-list.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { LAB_MEMBER_WHERE, LEGACY_DOMAIN_ID, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";

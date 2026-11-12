@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/drive.reveal.$pageId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { driveRevealHref } from "~/lib/drive-reveal.server";
+import { driveRevealHref } from "~/drive/lib/drive-reveal.server";
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

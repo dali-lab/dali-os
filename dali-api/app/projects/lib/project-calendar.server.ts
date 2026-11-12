@@ -5,7 +5,7 @@ import {
   resolveMonthWindow,
   toMonthEvent,
 } from "~/lib/week-events";
-import { expandOccurrences, noteForOccurrence } from "~/lib/meeting-occurrences";
+import { expandOccurrences, noteForOccurrence } from "~/calendar/lib/meeting-occurrences";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import type { TimelineEpic } from "~/projects/components/EpicsTimeline";
 

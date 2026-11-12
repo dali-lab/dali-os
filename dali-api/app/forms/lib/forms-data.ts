@@ -19,8 +19,8 @@ import { formDeletionBlockers, formUsages, managingUsage } from "./form-usages.s
 import { newPublicToken, setFormPublished } from "./form-publish.server";
 import { isGroupArchived, loadGroupArchiveContext } from "~/lib/groups";
 import { isEmptyBlocks } from "~/lib/blocks";
-import { isLayoutOnly } from "~/lib/form-answers";
-import { showIfProblems } from "~/lib/form-logic";
+import { isLayoutOnly } from "~/forms/lib/form-answers";
+import { showIfProblems } from "~/forms/lib/form-logic";
 import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type React from 'react'
 import { useNavigate } from 'react-router'
-import { COPY_PAGE_LINK_EVENT } from '~/lib/page-link'
+import { COPY_PAGE_LINK_EVENT } from '~/drive/lib/page-link'
 import { isCommandKShortcut, isCopyPageLinkShortcut, isFavoriteShortcut } from '~/lib/shortcuts'
 import { tabActions } from '~/lib/desktop-tabs-store'
 import type { OpenTabRequest } from '~/lib/desktop-tabs'

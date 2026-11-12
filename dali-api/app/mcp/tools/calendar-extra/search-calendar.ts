@@ -3,7 +3,7 @@
 // Requires `mcp:read` scope.
 
 import { prisma } from "~/lib/db.server";
-import { searchCalendarEvents, type EventReadReport } from "~/lib/google-calendar";
+import { searchCalendarEvents, type EventReadReport } from "~/calendar/lib/google-calendar.server";
 import { searchWindow, sortHits } from "~/calendar/lib/search";
 import { McpInvalidError } from "../../registry";
 import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../../pagination";

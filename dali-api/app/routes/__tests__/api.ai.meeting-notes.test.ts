@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   documentTitle: vi.fn(),
   formatRecordingTranscript: vi.fn(),
@@ -15,11 +15,11 @@ vi.mock("~/lib/ai.server", () => ({ generateShortText: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
+import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/calendar/lib/meeting-recording.server";
 import { generateShortText } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
 import { action } from "~/routes/api.ai.meeting-notes";
-import { TRANSCRIPT_MAX } from "~/lib/meeting-notes-enhance.server";
+import { TRANSCRIPT_MAX } from "~/calendar/lib/meeting-notes-enhance.server";
 
 const DOC = "doc:p1:body";
 

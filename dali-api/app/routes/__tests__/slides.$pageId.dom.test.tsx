@@ -30,7 +30,7 @@ vi.mock("~/lib/slide-decks.server", () => ({
   saveDeck: vi.fn(),
   migrateDeckOnOpen: m.migrate,
 }));
-vi.mock("~/lib/drive-page-trail.server", () => ({ loadDrivePageAncestry: vi.fn(async () => ({ title: "Deck", iconEmoji: null, workspaceType: "Lab" })) }));
+vi.mock("~/drive/lib/drive-page-trail.server", () => ({ loadDrivePageAncestry: vi.fn(async () => ({ title: "Deck", iconEmoji: null, workspaceType: "Lab" })) }));
 vi.mock("~/lib/slide-live.server", () => ({ slidesLiveEnabled: m.slidesLive }));
 vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck, transactDeck: m.transact }));
 vi.mock("~/lib/roles", () => ({ isCore: m.isCore }));

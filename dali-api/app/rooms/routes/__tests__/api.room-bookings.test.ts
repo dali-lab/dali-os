@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireRoomBookingUser = vi.fn();
 const updateRoomBookingAsMember = vi.fn();
 vi.mock("~/rooms/lib/access.server", () => ({ requireRoomBookingUser }));
-vi.mock("~/lib/rooms.server", () => ({ updateRoomBookingAsMember }));
+vi.mock("~/rooms/lib/rooms.server", () => ({ updateRoomBookingAsMember }));
 
 const { action } = await import("~/rooms/routes/api.room-bookings.$id");
 

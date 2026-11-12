@@ -6,12 +6,12 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
-vi.mock("~/lib/google-calendar", () => ({ updateGoogleAttendeeRsvp: vi.fn() }));
+vi.mock("~/calendar/lib/google-calendar.server", () => ({ updateGoogleAttendeeRsvp: vi.fn() }));
 vi.mock("~/calendar/lib/external-cache.server", () => ({ markCalendarChanged: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { updateGoogleAttendeeRsvp } from "~/calendar/lib/google-calendar.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { action } from "~/routes/api.notifications.$id.rsvp";
 

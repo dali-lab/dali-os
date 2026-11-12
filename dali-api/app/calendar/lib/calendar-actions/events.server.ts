@@ -1,9 +1,9 @@
 import { prisma } from "~/lib/db.server";
-import { NotAGuestError, createGoogleCalendarEvent, deleteGoogleCalendarEvent, getGoogleEvent, patchGoogleCalendarEvent, respondToGoogleEventAsSelf } from "~/lib/google-calendar";
+import { NotAGuestError, createGoogleCalendarEvent, deleteGoogleCalendarEvent, getGoogleEvent, patchGoogleCalendarEvent, respondToGoogleEventAsSelf } from "~/calendar/lib/google-calendar.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
-import { type ScheduledMeetingScope, cancelScheduledMeeting, ownsGoogleEvent, updateScheduledMeeting } from "~/lib/scheduled-meeting";
-import { followingRule, googleInstanceOriginalStart, rruleWithUntil } from "~/lib/meeting-occurrences";
-import { bookRoomsForEvent, claimEventRoomBookings, releaseEventRoomBookings, releaseRoomBookings, retimeEventRoomBookings, truncateEventRoomBookings } from "~/lib/rooms.server";
+import { type ScheduledMeetingScope, cancelScheduledMeeting, ownsGoogleEvent, updateScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
+import { followingRule, googleInstanceOriginalStart, rruleWithUntil } from "~/calendar/lib/meeting-occurrences";
+import { bookRoomsForEvent, claimEventRoomBookings, releaseEventRoomBookings, releaseRoomBookings, retimeEventRoomBookings, truncateEventRoomBookings } from "~/rooms/lib/rooms.server";
 import { resolveEventWorkLog, retimeEventWorkLog, workLogShapeError, writeEventWorkLog } from "~/calendar/lib/calendar-actions/event-work-log.server";
 import { assertLinkOwned } from "~/calendar/lib/calendar-actions/shared.server";
 

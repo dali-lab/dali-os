@@ -11,14 +11,14 @@ vi.mock("~/lib/db.server", () => ({
     },
   },
 }));
-vi.mock("~/lib/wallet-apple.server", () => ({
+vi.mock("~/wallet/lib/wallet-apple.server", () => ({
   walletAppleConfigured: vi.fn(),
   buildAppleWalletPass: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { walletAppleConfigured, buildAppleWalletPass } from "~/lib/wallet-apple.server";
-import { signWalletAuthToken } from "~/lib/wallet-token";
+import { walletAppleConfigured, buildAppleWalletPass } from "~/wallet/lib/wallet-apple.server";
+import { signWalletAuthToken } from "~/wallet/lib/wallet-token.server";
 import { action as registration } from "~/wallet/routes/api.wallet.apple.v1.device-registration";
 import { loader as serials } from "~/wallet/routes/api.wallet.apple.v1.device-serials";
 import { loader as passLoader } from "~/wallet/routes/api.wallet.apple.v1.pass";

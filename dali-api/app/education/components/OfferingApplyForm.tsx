@@ -6,10 +6,10 @@ import {
   FormPagerNav,
   FormPageHeading,
 } from "~/forms/components/FormPager";
-import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/lib/form-logic";
+import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/forms/lib/form-logic";
 import { DocEditor, countWords } from "~/components/doc";
 import { Button } from "~/components/ui/Button";
-import { findMissingRequired } from "~/lib/form-answers";
+import { findMissingRequired } from "~/forms/lib/form-answers";
 import type { Question } from "~/types";
 
 // Education apply/RSVP form. Modeled on MemberFormFillView, but posts the

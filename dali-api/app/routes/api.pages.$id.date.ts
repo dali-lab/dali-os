@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { setNoteDate, notebookErrorResponse } from "~/lib/notebooks.server";
+import { setNoteDate, notebookErrorResponse } from "~/calendar/lib/notebooks.server";
 import { APPLICATION_TZ, getZonedYMD, zonedDayStartUtc } from "~/lib/timezone";
 
 // POST /api/pages/:id/date

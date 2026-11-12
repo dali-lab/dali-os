@@ -70,8 +70,8 @@ vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn().mockResolv
 vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn().mockResolvedValue(null) }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/ai.server", () => ({ isAiEnabled: vi.fn().mockReturnValue(false) }));
-vi.mock("~/lib/drive-scopes.server", () => ({ loadProjectDriveScope: vi.fn().mockResolvedValue(null) }));
-vi.mock("~/lib/drive.server", () => ({ PROJECT_PAGE_SELECT: {}, PROJECT_FILE_SELECT: {} }));
+vi.mock("~/drive/lib/drive-scopes.server", () => ({ loadProjectDriveScope: vi.fn().mockResolvedValue(null) }));
+vi.mock("~/drive/lib/drive.server", () => ({ PROJECT_PAGE_SELECT: {}, PROJECT_FILE_SELECT: {} }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn() }));
 vi.mock("~/partners/lib/core-members.server", () => ({
   listActiveCoreMembers: vi.fn().mockResolvedValue([]),

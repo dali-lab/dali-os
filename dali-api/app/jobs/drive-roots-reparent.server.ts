@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { resolveCoreActor } from "~/jobs/core-actor.server";
-import { ensureAllRoots } from "~/lib/drive-roots.server";
+import { ensureAllRoots } from "~/drive/lib/drive-roots.server";
 import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages";
 import type { JobResult } from "~/jobs/registry";
 

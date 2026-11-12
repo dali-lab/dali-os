@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import type { CalendarAction } from "~/lib/calendar-schemas";
+import type { CalendarAction } from "~/calendar/lib/calendar-schemas";
 
 export type CalendarActionContext = {
   request: Request;

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { notebookErrorResponse, setSeriesNotebook } from "~/lib/notebooks.server";
+import { notebookErrorResponse, setSeriesNotebook } from "~/calendar/lib/notebooks.server";
 
 // POST /api/scheduled-meetings/:id/notebook — { notebookId | null, scope }
 //

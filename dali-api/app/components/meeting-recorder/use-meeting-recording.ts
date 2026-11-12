@@ -39,7 +39,7 @@ import {
   type SnapshotBlock,
   type StoredEnhanceNotes,
 } from "./enhance-plan";
-import { isUntouchedTemplate } from "~/lib/meeting-note-template";
+import { isUntouchedTemplate } from "~/calendar/lib/meeting-note-template";
 import type {
   Channel,
   LatestRecording,

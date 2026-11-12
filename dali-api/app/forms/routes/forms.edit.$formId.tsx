@@ -3,13 +3,13 @@ import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
-import type { DriveNoticeKey } from "~/lib/drive-notices";
+import type { DriveNoticeKey } from "~/drive/lib/drive-notices";
 import { prisma } from "~/lib/db.server";
 import {
   loadFormForEdit,
   runFormsAction,
 } from "~/forms/lib/forms-data";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
 import { PageIcon } from "~/components/PageIcon";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { mappedQuestionFeatures } from "~/forms/lib/mapped-questions.server";
@@ -24,7 +24,7 @@ import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { parseMemberColumns } from "~/projects/lib/member-history";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
 import { parseAnswerFilters } from "~/forms/lib/answer-filters";
-import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { driveRootCrumbs } from "~/drive/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import {

@@ -1,11 +1,11 @@
 import type { Route } from "./+types/api.room-display.scan";
 import { z } from "zod";
 import { parseJson } from "~/lib/validate";
-import { walletTokensConfigured } from "~/lib/wallet-token";
-import { resolveScannedMember } from "~/lib/wallet-scan.server";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
-import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
-import { currentEvent, getRoomSchedule } from "~/lib/rooms.server";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
+import { resolveScannedMember } from "~/wallet/lib/wallet-scan.server";
+import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/rooms/lib/room-display.server";
+import { currentEvent, getRoomSchedule } from "~/rooms/lib/rooms.server";
 import { getActiveDisplayScan } from "~/lib/display-scan.server";
 import { isCheckedIn } from "~/lib/display-check-ins.server";
 

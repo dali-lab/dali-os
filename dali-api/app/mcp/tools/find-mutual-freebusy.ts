@@ -3,7 +3,7 @@
 // availability scheduler. The caller's userId is implicitly added to the
 // participant list. Requires the `mcp:read` scope.
 
-import { findMutualFreeSlots } from "~/lib/availability";
+import { findMutualFreeSlots } from "~/calendar/lib/availability.server";
 
 export const FIND_MUTUAL_FREEBUSY_TOOL = {
   name: "find_mutual_freebusy",

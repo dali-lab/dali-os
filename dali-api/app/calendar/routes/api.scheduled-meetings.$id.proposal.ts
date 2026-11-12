@@ -5,7 +5,7 @@ import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { isCore } from "~/lib/roles";
-import { updateScheduledMeeting, type ScheduledMeetingScope } from "~/lib/scheduled-meeting";
+import { updateScheduledMeeting, type ScheduledMeetingScope } from "~/calendar/lib/scheduled-meeting.server";
 import { notify } from "~/lib/notify.server";
 
 const Schema = z.object({

@@ -12,7 +12,7 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   requireMobileUser: (...a: unknown[]) => requireMobileUser(...a),
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoleInstances: (...a: unknown[]) => getUserRoleInstances(...a) }));
-vi.mock("~/lib/time-entries.server", () => ({
+vi.mock("~/calendar/lib/time-entries.server", () => ({
   addTimeEntry: (...a: unknown[]) => addTimeEntry(...a),
   updateTimeEntry: (...a: unknown[]) => updateTimeEntry(...a),
   deleteTimeEntry: (...a: unknown[]) => deleteTimeEntry(...a),

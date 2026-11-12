@@ -1,6 +1,6 @@
 import { unzipSync } from "fflate";
 import { markdownToBlocks, type DocBlock } from "~/collab/blocknote-server";
-import { MAX_ZIP_FILES } from "~/lib/drive-download.server";
+import { MAX_ZIP_FILES } from "~/drive/lib/drive-download.server";
 import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { MAX_IMPORT_IMAGES, rewriteMarkdownImages, type ImageDeps } from "~/lib/markdown-images.server";
 

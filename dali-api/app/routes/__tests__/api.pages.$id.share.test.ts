@@ -29,7 +29,7 @@ vi.mock("~/lib/page-share-access.server", async () => {
     GeneralAccessError: class GeneralAccessError extends BadRequestError {},
   };
 });
-vi.mock("~/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
+vi.mock("~/drive/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
@@ -45,7 +45,7 @@ import {
   PageShareNotFoundError,
   GeneralAccessError,
 } from "~/lib/page-share-access.server";
-import { describePageAudience } from "~/lib/page-audience.server";
+import { describePageAudience } from "~/drive/lib/page-audience.server";
 import { action } from "../api.pages.$id.share";
 
 const USER_ID = "user-1";

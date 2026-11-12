@@ -12,13 +12,13 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/display", () => ({ fullName: vi.fn() }));
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   CHECK_IN_GRACE_MIN: 15,
   resolveMeetingOccurrence: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { resolveMeetingOccurrence } from "~/calendar/lib/scheduled-meeting.server";
 import { startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 
 const occurrenceStart = new Date("2026-09-30T22:00:00Z");

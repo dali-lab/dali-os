@@ -7,7 +7,7 @@ import { Menu } from "~/components/ui/floating";
 import { OS_MENU_ITEM_CLASS } from "~/components/ui/floating/styles";
 import { isNavbarRoute } from '~/lib/navbar-routes'
 import { isAreaSubtabPath } from '~/lib/nav-areas'
-import { stripAppTitle } from '~/lib/page-title'
+import { stripAppTitle } from '~/drive/lib/page-title'
 import { usePageBarTitle } from '~/components/shell/page-bar-slot'
 import { RenameCrumb, TitleCrumbIcon } from '~/components/shell/PageBarTitleCrumb'
 

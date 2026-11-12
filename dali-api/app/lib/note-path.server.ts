@@ -2,11 +2,11 @@
 // just landed in the Drive, for the toast that follows creating one.
 
 import { prisma } from "~/lib/db.server";
-import { DRIVE_SPACES, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { DRIVE_SPACES, SHARED_SPACE_KEY } from "~/drive/lib/drive-spaces";
 import { getPageAccess, type PageShape } from "~/lib/pageAccess.server";
-import { driveLocation, locationFromCrumbs } from "~/lib/drive-reveal.server";
+import { driveLocation, locationFromCrumbs } from "~/drive/lib/drive-reveal.server";
 import type { ItemLocation } from "~/components/drive/location";
-import { driveFolderCrumbsBulk, type DriveCrumbs } from "~/lib/drive-crumbs.server";
+import { driveFolderCrumbsBulk, type DriveCrumbs } from "~/drive/lib/drive-crumbs.server";
 
 const LAB_ROOT_CRUMBS: DriveCrumbs = { scope: "lab", folders: [] };
 

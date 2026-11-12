@@ -7,7 +7,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { CalendarActionSchema } from "~/lib/calendar-schemas";
+import { CalendarActionSchema } from "~/calendar/lib/calendar-schemas";
 import { CALENDAR_ACTION_HANDLERS, submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 function post(intent: string) {

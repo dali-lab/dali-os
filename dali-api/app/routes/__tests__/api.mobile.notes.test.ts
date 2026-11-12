@@ -19,12 +19,12 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
 vi.mock("~/lib/transcription/provider", () => ({ isTranscriptionEnabled: () => isTranscriptionEnabled() }));
 vi.mock("~/members/lib/personal-notes-actions.server", () => ({ createNote: (...a: unknown[]) => createNote(...a) }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: (...a: unknown[]) => readDocAsBlocks(...a) }));
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   resolveMeetingOccurrence: (...a: unknown[]) => resolveMeetingOccurrence(...a),
   attachMeetingNote: (...a: unknown[]) => attachMeetingNote(...a),
 }));
-vi.mock("~/lib/meeting-recording.server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/meeting-recording.server")>()),
+vi.mock("~/calendar/lib/meeting-recording.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/calendar/lib/meeting-recording.server")>()),
   canReadRecording: (...a: unknown[]) => canReadRecording(...a),
   canRecordInto: (...a: unknown[]) => canRecordInto(...a),
   resolveSpeakerNames: (...a: unknown[]) => resolveSpeakerNames(...a),
@@ -35,7 +35,7 @@ vi.mock("~/calendar/lib/enhance-meeting-notes.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { HttpError } from "~/lib/http-error";
-import { PageNameConflictError } from "~/lib/page-names.server";
+import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import { loader as listLoader, action as quickNote, parseNotesCursor, MAX_NOTES } from "../api.mobile.notes";
 import { loader as detailLoader, action as detailAction } from "../api.mobile.notes.$id";
 

@@ -2,7 +2,7 @@
 // MeetingRecording contract in specs/meeting-transcription.md exactly, so the
 // server and client PRs type-check against the same shape.
 
-import type { TranscriptLine as ServerTranscriptLine } from "~/lib/meeting-transcript";
+import type { TranscriptLine as ServerTranscriptLine } from "~/calendar/lib/meeting-transcript";
 import type { StoredEnhanceNotes } from "./enhance-plan";
 
 export type Channel = "mic" | "call";

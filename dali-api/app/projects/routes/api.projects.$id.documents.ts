@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { nameConflictResponse } from "~/lib/page-names.server";
+import { nameConflictResponse } from "~/drive/lib/page-names.server";
 import { createProjectPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
 
 // POST /api/projects/:id/documents

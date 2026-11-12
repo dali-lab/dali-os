@@ -6,7 +6,7 @@ import type { Question } from '~/types'
 import { DocEditor } from '~/components/doc'
 import { useDialog } from '~/components/ui/dialog'
 import { isEmptyBlocks } from '~/lib/blocks'
-import { visibleQuestions } from '~/lib/form-logic'
+import { visibleQuestions } from '~/forms/lib/form-logic'
 import { AnswerDisplay } from '~/hiring/components/ApplicationAnswers'
 import {
   PANEL_CARD as CARD,

@@ -3,7 +3,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-import { editableFolderInRoot, ensureRoot } from "~/lib/drive-roots.server";
+import { editableFolderInRoot, ensureRoot } from "~/drive/lib/drive-roots.server";
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);

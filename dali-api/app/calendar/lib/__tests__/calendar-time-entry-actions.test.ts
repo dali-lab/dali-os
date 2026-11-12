@@ -12,7 +12,7 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/roles")>()),
   resolveRoleRef: vi.fn(),
 }));
-vi.mock("~/lib/timesheet-mirror.server", () => ({
+vi.mock("~/calendar/lib/timesheet-mirror.server", () => ({
   setUserTimesheetSync: vi.fn(),
   syncTimeEntryToGoogle: vi.fn(),
   removeTimeEntryFromGoogle: vi.fn(),
@@ -25,10 +25,10 @@ vi.mock("~/calendar/lib/external-cache.server", async (importOriginal) => ({
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { resolveRoleRef } from "~/lib/roles";
-import { syncTimeEntryToGoogle, removeTimeEntryFromGoogle } from "~/lib/timesheet-mirror.server";
+import { syncTimeEntryToGoogle, removeTimeEntryFromGoogle } from "~/calendar/lib/timesheet-mirror.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
-import { timeEntryResult } from "~/lib/time-entries.server";
+import { timeEntryResult } from "~/calendar/lib/time-entries.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
   $transaction: ReturnType<typeof vi.fn>;

@@ -38,7 +38,7 @@ import {
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
 import type { Question } from "~/types";
-import { conditionalKeys } from "~/lib/form-logic";
+import { conditionalKeys } from "~/forms/lib/form-logic";
 
 const SLOT = "intent-to-work" as const;
 

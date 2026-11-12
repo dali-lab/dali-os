@@ -12,7 +12,7 @@ import { canViewForms, isCore, currentTerm } from "~/lib/roles";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { DEFAULT_BUFFER_MIN, defaultWorkingHours } from "~/calendar/lib/calendar-defaults";
 import { weekWindow } from "~/calendar/lib/view-window";
-import { getValidAccessTokenForLink, listCalendarsForLink } from "~/lib/google-calendar";
+import { getValidAccessTokenForLink, listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import { buildCalendarLinkDTO, loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 import type { SchedulingData, WhDay, WhSegment } from "~/calendar/lib/types";
 

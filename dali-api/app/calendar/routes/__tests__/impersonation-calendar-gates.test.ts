@@ -16,7 +16,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchBusyEvents: mockFetchBusyEvents,
   searchCalendarEvents: mockSearchCalendarEvents,
 }));

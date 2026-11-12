@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   storedLines: vi.fn().mockReturnValue([]),
   resolveSpeakerNames: vi.fn().mockResolvedValue({}),
@@ -12,26 +12,26 @@ vi.mock("~/collab/server", () => ({ getCollabServer: vi.fn() }));
 vi.mock("~/collab/persistence", () => ({ forceSnapshot: vi.fn() }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: vi.fn() }));
 vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
-vi.mock("~/lib/meeting-notes-enhance.server", () => ({
+vi.mock("~/calendar/lib/meeting-notes-enhance.server", () => ({
   AI_BURST_MAX: 10,
   AI_BURST_WINDOW_MS: 60_000,
   generateAndVerifyEnhancePlan: vi.fn(),
   resolveMeetingEnhanceContext: vi.fn().mockResolvedValue({ roster: [], meetingTypeLabel: "Meeting", occurrenceDate: "2026-10-10" }),
 }));
-vi.mock("~/lib/meeting-notes-apply.server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/meeting-notes-apply.server")>()),
+vi.mock("~/calendar/lib/meeting-notes-apply.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/calendar/lib/meeting-notes-apply.server")>()),
   applyEnhanceOpsToDocBlocks: vi.fn((_ops: unknown, blocks: unknown) => blocks),
   ensureTranscriptToggle: vi.fn((blocks: unknown) => blocks),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { canRecordInto, resolveSpeakerNames, storedLines } from "~/lib/meeting-recording.server";
-import { applyEnhanceOpsToDocBlocks } from "~/lib/meeting-notes-apply.server";
+import { canRecordInto, resolveSpeakerNames, storedLines } from "~/calendar/lib/meeting-recording.server";
+import { applyEnhanceOpsToDocBlocks } from "~/calendar/lib/meeting-notes-apply.server";
 import { getCollabServer } from "~/collab/server";
 import { forceSnapshot } from "~/collab/persistence";
 import { readDocAsBlocks } from "~/collab/read";
 import { replaceCollabDocContent } from "~/collab/write";
-import { generateAndVerifyEnhancePlan } from "~/lib/meeting-notes-enhance.server";
+import { generateAndVerifyEnhancePlan } from "~/calendar/lib/meeting-notes-enhance.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
 import { ENHANCE_MARK_ADDED, ENHANCE_MARK_PRIOR } from "~/components/meeting-recorder/enhance-plan";
 import { enhanceMeetingNotes } from "../enhance-meeting-notes.server";

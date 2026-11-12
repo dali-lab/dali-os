@@ -14,8 +14,8 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/roles")>()),
   isLabMember: vi.fn().mockResolvedValue(true),
 }));
-vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/scheduled-meeting")>()),
+vi.mock("~/calendar/lib/scheduled-meeting.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/calendar/lib/scheduled-meeting.server")>()),
   attachMeetingNote: mockAttach,
 }));
 vi.mock("~/lib/note-path.server", () => ({ meetingNotePath: mockNotePath }));

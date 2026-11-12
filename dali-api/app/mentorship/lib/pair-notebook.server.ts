@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { createNotebookTab, ensureMeetingNotebook } from "~/lib/pages";
-import { resolveFilingFolder, singletonSlot } from "~/lib/drive-receivers.server";
+import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import { pageDocName } from "~/collab/roomName";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { replaceCollabDocContent } from "~/collab/write";

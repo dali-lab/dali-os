@@ -41,7 +41,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { createSearchCache } from "~/lib/search-cache";
 import { looksLikeQuestion } from "~/ask/thread";
 import { setFocusPreference } from "~/lib/focus-mode";
-import { COPY_PAGE_LINK_EVENT } from "~/lib/page-link";
+import { COPY_PAGE_LINK_EVENT } from "~/drive/lib/page-link";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import { iconForCategory } from "~/lib/file-icon";
 import { ADMIN_SECTIONS } from "~/admin/adminNav";

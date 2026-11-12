@@ -8,7 +8,7 @@ vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), isUnderGover
 
 import { requireMemberSession } from "~/lib/auth";
 import { createLabPage } from "~/lib/pages";
-import { PageNameConflictError } from "~/lib/page-names.server";
+import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import { action } from "../api.lab-documents";
 
 const post = (body: unknown) =>

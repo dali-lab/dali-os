@@ -18,7 +18,7 @@ import {
   type ReceiverFolderType,
   type ReceiverProcessType,
   type ReceiverSlot,
-} from "~/lib/drive-receivers.server";
+} from "~/drive/lib/drive-receivers.server";
 
 // GET  /api/folder-receivers?processType=&processId=
 //        -> { slots: [{ folderType, label, folder: { id, title, path } | null }] }

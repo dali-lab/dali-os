@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { parseJson } from "~/lib/validate";
 import { checkRateLimit, getClientIp } from "~/lib/rate-limit";
-import { redeemDisplaySetupCode } from "~/lib/room-display.server";
+import { redeemDisplaySetupCode } from "~/rooms/lib/room-display.server";
 
 const BodySchema = z.object({ code: z.string().trim().min(1).max(32) });
 

@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
 }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchCalendarEvents: vi.fn(),
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
@@ -20,19 +20,19 @@ vi.mock("~/lib/google-calendar", () => ({
   respondToGoogleEventAsSelf: vi.fn(),
   NotAGuestError: class NotAGuestError extends Error {},
 }));
-vi.mock("~/lib/rooms.server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/rooms.server")>()),
+vi.mock("~/rooms/lib/rooms.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/rooms/lib/rooms.server")>()),
   retimeEventRoomBookings: vi.fn(async () => ({ ok: true })),
 }));
-vi.mock("~/lib/scheduled-meeting", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/scheduled-meeting")>()),
+vi.mock("~/calendar/lib/scheduled-meeting.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/calendar/lib/scheduled-meeting.server")>()),
   updateScheduledMeeting: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { patchGoogleCalendarEvent } from "~/lib/google-calendar";
-import { updateScheduledMeeting } from "~/lib/scheduled-meeting";
+import { patchGoogleCalendarEvent } from "~/calendar/lib/google-calendar.server";
+import { updateScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;

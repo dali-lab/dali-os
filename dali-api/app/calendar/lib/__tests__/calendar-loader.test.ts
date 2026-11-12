@@ -26,7 +26,7 @@ vi.mock("~/lib/roles", () => ({
 }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/calendar/lib/meeting-link.server", () => ({ meetingLinkRedirect: vi.fn(async () => null) }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchCalendarEvents: vi.fn(),
   getValidAccessTokenForLink: vi.fn(),
   listCalendarsForLink: vi.fn(),
@@ -35,7 +35,7 @@ vi.mock("~/lib/google-calendar", () => ({
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { isLabMember, currentTerm, getUserRoleInstances, canViewForms, isCore, getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
-import { fetchCalendarEvents, getValidAccessTokenForLink, listCalendarsForLink } from "~/lib/google-calendar";
+import { fetchCalendarEvents, getValidAccessTokenForLink, listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import { invalidateExternalCache } from "~/calendar/lib/external-cache.server";
 import { loadCalendarData } from "~/calendar/lib/calendar-loader.server";
 

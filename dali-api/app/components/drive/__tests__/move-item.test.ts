@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isPageItem, moveDriveItem } from "~/components/drive/move-item";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const item = (type: string, id = "i1") =>
   ({ type, id, title: "T", parentFolderId: null, iconEmoji: null, updatedAt: new Date(), href: "/x" }) as DriveItem;

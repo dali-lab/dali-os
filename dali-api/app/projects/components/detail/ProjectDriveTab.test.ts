@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { folderSubtree } from "./ProjectDriveTab";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const item = (id: string, parentFolderId: string | null) => ({ id, parentFolderId }) as unknown as DriveItem;
 

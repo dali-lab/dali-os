@@ -15,7 +15,7 @@
 import type { Route } from "./+types/api.ai.meeting-notes.enhance";
 import { z } from "zod";
 import { requireAuth } from "~/lib/auth";
-import { canRecordInto } from "~/lib/meeting-recording.server";
+import { canRecordInto } from "~/calendar/lib/meeting-recording.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { parseJson } from "~/lib/validate";
 import { prisma } from "~/lib/db.server";
@@ -24,7 +24,7 @@ import {
   EnhanceBlocksSchema,
   AI_BURST_MAX,
   AI_BURST_WINDOW_MS,
-} from "~/lib/meeting-notes-enhance.server";
+} from "~/calendar/lib/meeting-notes-enhance.server";
 
 const RequestSchema = z.object({
   recordingId: z.string().min(1),

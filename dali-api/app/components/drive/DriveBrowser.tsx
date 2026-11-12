@@ -65,11 +65,11 @@ import {
   NotebookPen,
   SlidersHorizontal,
 } from "lucide-react";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 import { listedUnderFilter, matchesTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { categorize } from "~/lib/file-type";
 import { iconForCategory } from "~/lib/file-icon";
-import type { DriveTreeScope } from "~/lib/drive-scopes.server";
+import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
 import { Menu, ContextMenu, Tooltip, isInFloatingLayer } from "~/components/ui/floating";
 import { useSidePanel } from "~/components/side-panel/use-side-panel";
 import { sidePanelForUrl } from "~/lib/side-panel";
@@ -81,7 +81,7 @@ import { notebookRequest, sendJson } from "~/components/notebooks/notebook-reque
 import { cn } from "~/lib/cn";
 import { modKey } from "~/lib/shortcuts";
 import { collapseMiddle } from "~/lib/collapse-middle";
-import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { FAVORITES_SPACE_KEY, isProcessRootSpace, SHARED_SPACE_KEY } from "~/drive/lib/drive-spaces";
 import { scopeIconFor } from "~/components/drive/scope-icon";
 import { ProcessLinkPill } from "~/components/drive/ProcessLinkPill";
 import { AudienceSignal } from "~/components/drive/AudienceSignal";

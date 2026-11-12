@@ -2,7 +2,7 @@ import { useCallback, useMemo } from "react";
 import { destinationPath, type Destination } from "~/components/drive/FolderPicker";
 import { ACTION_TOAST_MS, movedToast, pathLabel } from "~/components/drive/action-toast";
 import { driveErrorFrom } from "~/components/drive/move-item";
-import type { MovedFrom } from "~/lib/page-move.server";
+import type { MovedFrom } from "~/drive/lib/page-move.server";
 import { pickDrives, type PickerRows } from "~/components/drive/picker-rows";
 import {
   descendantFolderIds,

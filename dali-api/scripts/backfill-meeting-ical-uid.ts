@@ -21,7 +21,7 @@
 
 import { PrismaClient } from "../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { getGoogleEvent } from "../app/lib/google-calendar";
+import { getGoogleEvent } from "../app/calendar/lib/google-calendar.server";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });

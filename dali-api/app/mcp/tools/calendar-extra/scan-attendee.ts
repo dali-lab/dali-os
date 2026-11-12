@@ -4,13 +4,13 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
 import {
   classifyWalletScanFailure,
   memberIdFromToken,
   verifyWalletToken,
   walletTokensConfigured,
-} from "~/lib/wallet-token";
+} from "~/wallet/lib/wallet-token.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError } from "../../registry";
 

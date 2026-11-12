@@ -6,7 +6,7 @@ import type { loader as frontPageLoader } from "./resources._index";
 import { prisma } from "~/lib/db.server";
 import { blogPostRoomName } from "~/collab/roomName";
 import { requireResourcesViewer } from "~/lib/resources.server";
-import { UNTOUCHED_DRAFT } from "~/lib/blog-post.server";
+import { UNTOUCHED_DRAFT } from "~/blog/lib/blog-post.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Resources · DALI OS" }];
 

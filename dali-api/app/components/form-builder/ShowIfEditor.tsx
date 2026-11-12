@@ -23,7 +23,7 @@ import {
   type Condition,
   type Rule,
   type ShowIfOp,
-} from '~/lib/form-logic'
+} from '~/forms/lib/form-logic'
 
 type Props = {
   subject: 'question' | 'page'

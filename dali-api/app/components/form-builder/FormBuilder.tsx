@@ -62,9 +62,9 @@ import {
   showIfProblems,
   showIfSentence,
   type ShowIf,
-} from '~/lib/form-logic'
+} from '~/forms/lib/form-logic'
 import { ShowIfEditor } from './ShowIfEditor'
-import { MAX_FILES_PER_QUESTION, isLayoutOnly } from '~/lib/form-answers'
+import { MAX_FILES_PER_QUESTION, isLayoutOnly } from '~/forms/lib/form-answers'
 import { useSharedArray } from '~/components/collab/useSharedCollection'
 import { formDraftName } from '~/collab/roomName'
 import { useUndoKeys } from '~/hooks/useUndoKeys'

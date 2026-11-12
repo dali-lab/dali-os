@@ -7,7 +7,7 @@
 // into the client bundle).
 
 import type { RoleInstance } from "~/lib/roles";
-import type { GeneralCalendarState } from "~/lib/general-calendar";
+import type { GeneralCalendarState } from "~/calendar/lib/general-calendar";
 
 /** The unified calendar's three views. */
 export type CalendarView = "day" | "week" | "month" | "agenda";

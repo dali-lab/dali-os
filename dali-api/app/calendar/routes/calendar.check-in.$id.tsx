@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { resolveMeetingOccurrence } from "~/calendar/lib/scheduled-meeting.server";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/calendar.check-in.$id";

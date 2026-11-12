@@ -7,8 +7,8 @@ import { DndContext, MouseSensor, useDraggable, useSensor, useSensors, type Drag
 import { DriveBrowser, ScopeList } from "~/components/drive/DriveBrowser";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ToastProvider } from "~/components/ui/toast";
-import type { DriveTreeScope } from "~/lib/drive-scopes.server";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 import type { DriveTypeFilter } from "~/components/drive/type-filter";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
