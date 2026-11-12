@@ -38,7 +38,6 @@ function submission(i: number, over: Record<string, unknown> = {}) {
     id: `s${i}`,
     createdAt: new Date(Date.UTC(2026, 4, 20, 10, 0, 60 - i)),
     updatedAt: new Date(Date.UTC(2026, 4, 20, 10, 0, 60 - i)),
-    form: { name: "Feedback" },
     staffingCycleId: null,
     educationOfferingId: null,
     educationSessionId: null,
@@ -222,21 +221,32 @@ describe("loadVersionResponses edit and delete state", () => {
     expect((await rowFor({ updatedAt: new Date(Date.UTC(2026, 4, 21)) })).edited).toBe(true);
   });
 
-  it("leaves an ordinary response deletable", async () => {
-    expect((await rowFor({})).lockReason).toBeNull();
+  it("leaves an ordinary response deletable with nothing else removed", async () => {
+    expect(await rowFor({})).toMatchObject({ deleteBlocked: null, deleteEffects: [] });
   });
 
-  it.each([
-    ["slot", { slot: "project-bids" }],
-    ["staffingCycleId", { staffingCycleId: "c1" }],
-    ["educationOfferingId", { educationOfferingId: "o1" }],
-    ["educationSessionId", { educationSessionId: "s1" }],
-    ["partnerApplication", { partnerApplication: { id: "a", title: "T" } }],
-    ["educationApplication", { educationApplication: { id: "a" } }],
-    ["partnerSurveyFor", { partnerSurveyFor: { id: "a" } }],
-    ["the onboarding profile form", { form: { name: "Welcome to DALI! 👋" } }],
-  ])("gives a reason for a response with %s", async (_n, over) => {
-    expect((await rowFor(over)).lockReason).toEqual(expect.any(String));
+  it("lists what a bound response's delete also removes", async () => {
+    expect(await rowFor({ slot: "project-bids", staffingCycleId: "c1" })).toMatchObject({
+      deleteBlocked: null,
+      deleteEffects: ["Removes their project bids for this cycle."],
+    });
+  });
+
+  it("gives the reason when the delete is refused", async () => {
+    const row = await rowFor({
+      partnerApplication: { id: "a", title: "T", resultingProjectId: "p1" },
+    });
+    expect(row).toMatchObject({
+      deleteBlocked: "Its partner application became a project.",
+      deleteEffects: [],
+    });
+  });
+
+  it("hands the table only the partner application's id and title", async () => {
+    const row = await rowFor({
+      partnerApplication: { id: "a", title: "T", resultingProjectId: null },
+    });
+    expect(row.partnerApplication).toEqual({ id: "a", title: "T" });
   });
 });
 
@@ -244,7 +254,9 @@ describe("loadVersionResponses partner application", () => {
   it("selects the partner application title so the table can name it", async () => {
     await loadVersionResponses("f1", "v1");
     const page = db.formSubmission.findMany.mock.calls.find((c) => c[0].select?.partnerApplication)!;
-    expect(page[0].select.partnerApplication).toEqual({ select: { id: true, title: true } });
+    expect(page[0].select.partnerApplication).toEqual({
+      select: { id: true, title: true, resultingProjectId: true },
+    });
     expect(page[0].select.slot).toBe(true);
   });
 });

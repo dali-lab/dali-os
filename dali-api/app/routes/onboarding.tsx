@@ -1,4 +1,4 @@
-// Onboarding IS the "Welcome to DALI! 👋" profile form, rendered INLINE here —
+// Onboarding IS the profile form bound in Hiring → Onboarding, rendered INLINE here —
 // no cross-URL redirect.
 // Submitting the form writes the member's profile, stamps DALIMember.onboardedAt,
 // and clears the onboarding task (see submitMemberForm in public-form.ts).
@@ -16,7 +16,7 @@ import {
   MemberFormFillView,
   MemberFormShell,
 } from "~/forms/components/MemberFormFillView";
-import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { getOnboardingFormBinding } from "~/hiring/lib/onboarding-form.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Welcome · DALI OS" }];
 
@@ -40,11 +40,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Resolve the onboarding form's token, then load it the same way the fill
   // route does so we render an identical form inline (no redirect).
-  const profileForm = await prisma.form.findFirst({
-    where: { name: NEW_MEMBER_PROFILE_FORM_NAME, published: true },
-    orderBy: { createdAt: "desc" },
-    select: { publicToken: true },
-  });
+  const binding = await getOnboardingFormBinding();
+  const profileForm = binding?.published ? binding : null;
   const form = profileForm?.publicToken
     ? await loadPublicForm(profileForm.publicToken, auth.user.sub)
     : null;

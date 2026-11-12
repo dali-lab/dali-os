@@ -1,11 +1,10 @@
 import { prisma } from "~/lib/db.server";
 import { SLOTS, isSlot } from "~/projects/lib/form-slots";
-import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 import { applicantPortalPath } from "~/lib/applicant-portal-path";
 
 // Central answer to "where is this form used?". Each surface keeps its own
 // binding (StaffingCycleFormBinding, PartnerApplicationFormBinding,
-// Notification.formId, the onboarding profile form's reserved name); this
+// Notification.formId, OnboardingProfileFormBinding); this
 // registry unions them so the forms admin can show usage and refuse
 // destructive actions instead of silently breaking a live surface.
 
@@ -58,7 +57,7 @@ export function staffingUsage(usages: FormUsage[]): FormUsage | null {
 
 export async function formUsages(formId: string): Promise<FormUsage[]> {
   const [
-    form,
+    onboardingBinding,
     staffingBindings,
     partnerBinding,
     partnerSurveyBinding,
@@ -70,9 +69,9 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
     attachedCount,
     openTodoCount,
   ] = await Promise.all([
-    prisma.form.findUnique({
-      where: { id: formId },
-      select: { name: true },
+    prisma.onboardingProfileFormBinding.findFirst({
+      where: { formId },
+      select: { id: true },
     }),
     prisma.staffingCycleFormBinding.findMany({
       where: { formId },
@@ -181,11 +180,11 @@ export async function formUsages(formId: string): Promise<FormUsage[]> {
       href: `/education/manage/${b.offering.id}`,
     });
   }
-  if (form?.name === NEW_MEMBER_PROFILE_FORM_NAME) {
+  if (onboardingBinding) {
     usages.push({
       kind: "onboarding-profile",
       label: "New-member onboarding profile",
-      href: "/onboarding",
+      href: "/hiring/onboarding",
     });
   }
   if (attachedCount > 0) {

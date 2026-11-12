@@ -91,6 +91,20 @@ export const prisma = {
     findFirst: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  onboardingProfileFormBinding: {
+    findFirst: vi.fn().mockResolvedValue(null),
+    create: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  staffingPreference: {
+    deleteMany: vi.fn(),
+  },
+  intentToWork: {
+    deleteMany: vi.fn(),
+  },
+  educationApplicationAnswer: {
+    deleteMany: vi.fn(),
+  },
   delibsSession: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
@@ -185,6 +199,7 @@ export const prisma = {
   dALIMember: {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
+    updateMany: vi.fn(),
   },
   partnerContact: {
     findUnique: vi.fn(),
@@ -716,6 +731,7 @@ export const prisma = {
     create: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
+    delete: vi.fn(),
     count: vi.fn().mockResolvedValue(0),
     groupBy: vi.fn().mockResolvedValue([]),
   },

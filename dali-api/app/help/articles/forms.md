@@ -74,7 +74,7 @@ Open the three-dot menu at the top and choose **Form settings**.
 Open a version and use the switch at the top to move between **Questions**, **Summary** and **Responses**. The count beside Responses is how many people answered.
 
 - **Summary** charts each question. Scale and number questions show count, average, lowest and highest. Choice questions show how many picked each option.
-- **Responses** lists each submission. Search by name, email or answer, open a row to read the full answer, or use **Delete response** (this can't be undone).
+- **Responses** lists each submission. Search by name, email or answer, open a row to read the full answer, or use **Delete response** (this can't be undone). Deleting a response also removes what it fed: a project bids response takes the member's bids for that cycle with it, an intent to work response takes their intent, and an application response deletes the application. The confirm lists what goes. A response can't be deleted once its partner application became a project, or while its course application is approved, waitlisted or has attendance.
 
 Forms tied to staffing slots add **Slot** to the filter bar in both views.
 

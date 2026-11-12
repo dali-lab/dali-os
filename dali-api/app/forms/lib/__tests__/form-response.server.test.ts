@@ -25,7 +25,6 @@ import {
   editOwnResponse,
   loadResponseForEditing,
 } from "~/forms/lib/form-response.server";
-import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const audit = logAuditEvent as ReturnType<typeof vi.fn>;
@@ -92,6 +91,9 @@ beforeEach(() => {
   resolveRef.mockResolvedValue([{ value: "p1", label: "P1" }, { value: "p2", label: "P2" }]);
   db.form.findUnique.mockResolvedValue(formRow());
   db.formSubmission.findFirst.mockResolvedValue(submissionRow());
+  (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+    (fn: (tx: typeof prisma) => unknown) => fn(prisma),
+  );
 });
 
 describe("deleteFormResponse", () => {
@@ -102,10 +104,16 @@ describe("deleteFormResponse", () => {
       id: "s1",
       userId: "u1",
       formVersionId: "v1",
-      form: { name: "Feedback" },
       ...FREE,
       ...over,
     });
+  const partnerApp = { id: "pa1", title: "River sensors", resultingProjectId: null };
+  const eduApp = (status: string) => ({
+    id: "ea1",
+    status,
+    offering: { title: "Intro to Figma" },
+    _count: { attendances: 0 },
+  });
 
   it("hard-deletes an ordinary response and audits it without answers", async () => {
     found();
@@ -115,7 +123,15 @@ describe("deleteFormResponse", () => {
       action: "form.response.delete",
       userId: "owner",
       targetId: "f1",
-      metadata: { submissionId: "s1", respondentId: "u1", formVersionId: "v1" },
+      metadata: {
+        submissionId: "s1",
+        respondentId: "u1",
+        formVersionId: "v1",
+        staffingCycleId: null,
+        slot: null,
+        partnerApplicationId: null,
+        educationApplicationId: null,
+      },
       request: undefined,
     });
   });
@@ -132,19 +148,65 @@ describe("deleteFormResponse", () => {
     expect(db.formSubmission.delete).not.toHaveBeenCalled();
   });
 
+  it("clears the member's bids for the cycle with a project-bids response", async () => {
+    found({ slot: "project-bids", staffingCycleId: "c1" });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.staffingPreference.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "u1", staffingCycleId: "c1" },
+    });
+    expect(db.intentToWork.deleteMany).not.toHaveBeenCalled();
+    expect(db.formSubmission.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
+  });
+
+  it("clears the member's intent for the cycle with an intent-to-work response", async () => {
+    found({ slot: "intent-to-work", staffingCycleId: "c1" });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.intentToWork.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "u1", staffingCycleId: "c1" },
+    });
+    expect(db.staffingPreference.deleteMany).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ["slot", { slot: "project-bids" }],
-    ["staffingCycleId", { staffingCycleId: "c1" }],
-    ["educationOfferingId", { educationOfferingId: "o1" }],
-    ["educationSessionId", { educationSessionId: "s9" }],
-    ["partnerApplication", { partnerApplication: { id: "a" } }],
-    ["educationApplication", { educationApplication: { id: "a" } }],
-    ["partnerSurveyFor", { partnerSurveyFor: { id: "a" } }],
-    ["the onboarding profile form", { form: { name: NEW_MEMBER_PROFILE_FORM_NAME } }],
-  ])("refuses when the response has %s", async (_n, over) => {
+    ["level-up", { slot: "level-up", staffingCycleId: "c1" }],
+    ["session feedback", { slot: "session-feedback", educationOfferingId: "o1", educationSessionId: "s9" }],
+    ["partner survey", { partnerSurveyFor: { id: "pp1" } }],
+  ])("deletes a %s response alone", async (_n, over) => {
+    found(over);
+    expect(await run()).toEqual({ ok: true });
+    expect(db.formSubmission.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
+    expect(db.staffingPreference.deleteMany).not.toHaveBeenCalled();
+    expect(db.intentToWork.deleteMany).not.toHaveBeenCalled();
+    expect(db.partnerApplication.delete).not.toHaveBeenCalled();
+    expect(db.educationApplication.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes the partner application with its response and audits it", async () => {
+    found({ partnerApplication: partnerApp });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.partnerApplication.delete).toHaveBeenCalledWith({ where: { id: "pa1" } });
+    expect(db.formSubmission.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
+    expect(audit.mock.calls[0][0].metadata).toMatchObject({ partnerApplicationId: "pa1" });
+  });
+
+  it("deletes a submitted education application and its answers with its response", async () => {
+    found({ educationApplication: eduApp("Submitted") });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.educationApplicationAnswer.deleteMany).toHaveBeenCalledWith({
+      where: { applicationId: "ea1" },
+    });
+    expect(db.educationApplication.delete).toHaveBeenCalledWith({ where: { id: "ea1" } });
+    expect(audit.mock.calls[0][0].metadata).toMatchObject({ educationApplicationId: "ea1" });
+  });
+
+  it.each([
+    ["a partner application that became a project", { partnerApplication: { ...partnerApp, resultingProjectId: "p1" } }],
+    ["an approved education application", { educationApplication: eduApp("Approved") }],
+    ["a waitlisted education application", { educationApplication: eduApp("Waitlisted") }],
+  ])("refuses a response linked to %s", async (_n, over) => {
     found(over);
     expect(await run()).toMatchObject({ status: 409 });
-    expect(db.formSubmission.delete).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(audit).not.toHaveBeenCalled();
   });
 });
@@ -152,7 +214,7 @@ describe("deleteFormResponse", () => {
 describe("after a delete", () => {
   it("lets the member fill again even with one response per member on", async () => {
     db.formSubmission.findFirst.mockResolvedValueOnce({
-      id: "s1", userId: "u1", formVersionId: "v1", form: { name: "Feedback" }, ...FREE,
+      id: "s1", userId: "u1", formVersionId: "v1", ...FREE,
     });
     await deleteFormResponse({ formId: "f1", submissionId: "s1", actorId: "owner" });
 
@@ -210,8 +272,8 @@ describe("editOwnResponse gates", () => {
     ["staffingCycleId", { staffingCycleId: "c1" }],
     ["educationOfferingId", { educationOfferingId: "o1" }],
     ["educationSessionId", { educationSessionId: "s9" }],
-    ["partnerApplication", { partnerApplication: { id: "a" } }],
-    ["educationApplication", { educationApplication: { id: "a" } }],
+    ["partnerApplication", { partnerApplication: { id: "a", title: "T", resultingProjectId: null } }],
+    ["educationApplication", { educationApplication: { id: "a", status: "Submitted", offering: { title: "O" }, _count: { attendances: 0 } } }],
     ["partnerSurveyFor", { partnerSurveyFor: { id: "a" } }],
   ])("refuses a response with %s", async (_n, over) => {
     db.formSubmission.findFirst.mockResolvedValue(submissionRow(over));
@@ -219,10 +281,6 @@ describe("editOwnResponse gates", () => {
     expect(db.formSubmission.update).not.toHaveBeenCalled();
   });
 
-  it("refuses the onboarding profile form", async () => {
-    db.form.findUnique.mockResolvedValue(formRow({ name: NEW_MEMBER_PROFILE_FORM_NAME }));
-    expect(await edit({ name: "x" })).toMatchObject({ status: 409 });
-  });
 });
 
 describe("editOwnResponse", () => {

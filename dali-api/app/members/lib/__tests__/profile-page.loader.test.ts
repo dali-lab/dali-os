@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prisma = vi.hoisted(() => ({
   dALIMember: { findUnique: vi.fn() },
-  form: { findFirst: vi.fn() },
+  onboardingProfileFormBinding: { findFirst: vi.fn() },
   formSubmission: { count: vi.fn() },
   user: { findUnique: vi.fn() },
   domain: { findMany: vi.fn() },
@@ -115,7 +115,9 @@ beforeEach(() => {
   prisma.mentorshipPair.findMany.mockResolvedValue([]);
   prisma.mentorNote.count.mockResolvedValue(0);
   prisma.dALIMember.findUnique.mockResolvedValue({ onboardedAt: null });
-  prisma.form.findFirst.mockResolvedValue({ publicToken: "form-token" });
+  prisma.onboardingProfileFormBinding.findFirst.mockResolvedValue({
+    form: { id: "f-profile", name: "Welcome", published: true, publicToken: "form-token", _count: { versions: 1 } },
+  });
   prisma.formSubmission.count.mockResolvedValue(0);
 });
 
@@ -138,6 +140,23 @@ describe("loadProfilePage", () => {
   it("does not redirect when the onboarding form was already submitted", async () => {
     prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
     prisma.formSubmission.count.mockResolvedValue(1);
+    await expect(run("u1")).resolves.toMatchObject({ isSelf: true });
+    expect(prisma.formSubmission.count).toHaveBeenCalledWith({
+      where: { userId: "u1", formId: "f-profile" },
+    });
+  });
+
+  it("does not redirect when no profile form is bound", async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.onboardingProfileFormBinding.findFirst.mockResolvedValue(null);
+    await expect(run("u1")).resolves.toMatchObject({ isSelf: true });
+  });
+
+  it("does not redirect when the bound profile form is closed", async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.onboardingProfileFormBinding.findFirst.mockResolvedValue({
+      form: { id: "f-profile", name: "Welcome", published: false, publicToken: "form-token", _count: { versions: 1 } },
+    });
     await expect(run("u1")).resolves.toMatchObject({ isSelf: true });
   });
 

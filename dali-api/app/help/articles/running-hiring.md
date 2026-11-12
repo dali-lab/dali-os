@@ -55,6 +55,8 @@ Domain leads run deliberations from their own pages. The delib tab shows each do
 
 [Onboarding](/hiring/onboarding) lists accepted applicants and their setup progress: **DALI email**, **Slack**, **Figma** (tick the checkbox once invited) and **Profile form**. Filter by start term, cycle and domain, and set a start term from a row. Send a reminder for a step, choosing the channel: **DALI OS**, **Slack DM**, **Email · DALI** or **Email · Dartmouth**.
 
+**Profile form**, at the top of the page, picks the form new members fill in to finish onboarding. Their answers fill in their profile. Choose a form and select **Use form**, or **Change** to swap it. **Open for responses** turns it on or off. While no form is chosen or it's closed, new members aren't asked to fill one in.
+
 ## Library and Drive folders
 
 [Library](/hiring/library) opens the Hiring folders in Drive: rubrics, application templates and hiring forms. Open a rubric to edit its criteria (label, max score, description) and save a new version. A cycle uses the version you picked for it, so a new version does not change a cycle that is already using an older one. Agreements live here too; open one to see who has signed. [Drive folders](/hiring/drive-folders) sets where new hiring forms and application templates are saved.

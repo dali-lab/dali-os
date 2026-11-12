@@ -5312,6 +5312,7 @@ model Form {
   cycleBindings StaffingCycleFormBinding[]
 
   partnerApplicationBindings          PartnerApplicationFormBinding[]
+  onboardingProfileBindings           OnboardingProfileFormBinding[]
   partnerSurveyBindings               PartnerSurveyFormBinding[]
   educationOfferingsAsApplicationForm EducationOffering[]             @relation("EducationOfferingApplicationForm")
   educationBindings                   EducationFormBinding[]          @relation("EducationFormBindings")
@@ -7325,6 +7326,19 @@ model PartnerApplicationFormBinding {
   id          String   @id @default(cuid())
   formId      String
   // Loose ref to User.id (same convention as PartnerInvite.invitedByUserId).
+  updatedById String?
+  updatedAt   DateTime @updatedAt
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+
+  @@index([formId])
+}
+
+// The new-member profile form filled at /onboarding. At most one row,
+// app-enforced, set from Hiring → Onboarding.
+model OnboardingProfileFormBinding {
+  id          String   @id @default(cuid())
+  formId      String
   updatedById String?
   updatedAt   DateTime @updatedAt
 
