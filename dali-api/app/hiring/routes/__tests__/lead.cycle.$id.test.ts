@@ -34,7 +34,8 @@ import { saveCycleTimeline } from "~/hiring/lib/cycle-timeline.server";
 import { sendDomainAddedNotice } from "~/hiring/lib/domain-added-notice";
 import { STANDARD_TIMELINE, defaultTimeline } from "~/hiring/lib/cycle-timeline";
 import { defaultTimelineFor } from "~/hiring/lib/applicant-groups";
-import { action, DECISION_SLICES } from "~/hiring/routes/lead.cycle.$id";
+import { action } from "~/hiring/routes/lead.cycle.$id";
+import { DECISION_SLICES } from "~/hiring/lib/decision-slices";
 
 const HIRING_LEAD_ID = "hiring-lead-1";
 const CYCLE_ID = "cycle-1";
