@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { ChevronRight, Plus, Settings2, Trash2, X } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { OsPageHeader } from "~/components/os-section";
 import { Avatar } from "~/components/ui/Avatar";
 import { Drawer } from "~/components/ui/Drawer";

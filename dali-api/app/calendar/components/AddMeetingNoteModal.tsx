@@ -16,6 +16,7 @@ import { OPEN_NOTE_FETCHER_KEY } from "~/calendar/components/MeetingNoteOpenWatc
 import { useSeriesNotebook } from "~/calendar/lib/useSeriesNotebook";
 import { suggestInputOfMeeting } from "~/calendar/lib/note-suggest-input";
 import type { EditContext } from "~/calendar/components/EditMeetingModal";
+import { Z } from "~/components/ui/z";
 
 // Post-hoc counterpart to the create modal's meeting-note fields: adds a notes
 // doc to a meeting that was created without one. The note config (which
@@ -217,7 +218,7 @@ function AddMeetingNoteModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 backdrop-blur-sm p-4"
+      className={`fixed inset-0 ${Z.popover} flex items-center justify-center bg-black/55 backdrop-blur-sm p-4`}
       onPointerDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

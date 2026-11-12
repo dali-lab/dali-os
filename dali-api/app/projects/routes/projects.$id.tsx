@@ -135,6 +135,7 @@ import { useDriveFileUpload } from "~/components/drive/useDriveFileUpload";
 import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
+import { LEGACY_TAB_TO_TAB } from "../lib/project-tabs";
 import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => {
@@ -167,11 +168,6 @@ type ProjectStatus = (typeof STATUSES)[number];
 // The status plate's colours, shared by the read-only StatusBadge and the
 // hero's editable status dropdown so a project's status reads the same whether
 // or not you can change it.
-const STATUS_PILL_CLASSIC: Record<ProjectStatus, string> = {
-  Active: "bg-accent-teal/15 text-accent-teal border-accent-teal/40",
-  Paused: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/40",
-  Archived: "bg-muted/50 text-muted-foreground border-border",
-};
 const STATUS_PILL_OS: Record<ProjectStatus, string> = {
   Active: "bg-os-bg/85 text-os-green border-os-green/35",
   Paused: "bg-os-bg/85 text-os-amber border-os-amber/35",
@@ -189,11 +185,6 @@ function isTab(x: string | null): x is Tab {
   return (TABS as readonly string[]).includes(x ?? "");
 }
 
-// The dali.os cut of the same page. Nothing new is computed for it — the
-// content is the classic tabs redealt: the planning timeline and the task
-// board are one "Progress" surface, the project's files get their own "Drive"
-// tab, and what's left of Overview is the project's details. Meetings are no
-// longer a tab — they ride the Progress timeline as day-pinned chips.
 const OS_TABS = ["progress", "drive", "details", "mentorship"] as const;
 type OsTab = (typeof OS_TABS)[number];
 function isOsTab(x: string | null): x is OsTab {
@@ -204,29 +195,6 @@ const OS_TAB_LABELS: Record<OsTab, string> = {
   progress: "Progress",
   drive: "Drive",
   details: "Project details",
-  mentorship: "Mentorship",
-};
-
-// Links already in the wild carry ?tab=overview / ?tab=board, and openTaskFrom
-// Timeline still writes "board". Translate rather than 404 into the default:
-// the board folded into Progress, Overview became Project details.
-const CLASSIC_TO_OS: Record<Tab, OsTab> = {
-  overview: "details",
-  board: "progress",
-  mentorship: "mentorship",
-};
-// And back, for a member who lands on an os link with the flag off. Drive has
-// no classic equivalent — its files live in Overview there.
-const OS_TO_CLASSIC: Record<OsTab, Tab> = {
-  progress: "board",
-  drive: "overview",
-  details: "overview",
-  mentorship: "mentorship",
-};
-
-const TAB_LABELS: Record<Tab, string> = {
-  overview: "Overview",
-  board: "Tasks",
   mentorship: "Mentorship",
 };
 
@@ -1720,7 +1688,7 @@ export default function ProjectDetail() {
     const want = isOsTab(tabParam)
       ? tabParam
       : isTab(tabParam)
-        ? CLASSIC_TO_OS[tabParam]
+        ? LEGACY_TAB_TO_TAB[tabParam]
         : "progress";
     if (want === "mentorship" && !canViewMentorshipTab) return "progress";
     return want;

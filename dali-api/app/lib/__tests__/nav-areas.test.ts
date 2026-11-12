@@ -89,7 +89,7 @@ describe("isAreaSubtabPath", () => {
 // that from `handle.areaPills` alone, which broke both ways — calendar
 // (areaSubnav) got a standalone arrow bar stacked on top of its own subnav
 // row, and under the sidebar redesign areaPills pages hid the bar for a pill
-// row AreaPillNav no longer renders.
+// row no longer rendered.
 describe("hasSubnavRow", () => {
   const m = (handle: unknown) => [{ handle }];
 

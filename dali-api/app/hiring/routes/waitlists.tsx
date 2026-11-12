@@ -144,7 +144,6 @@ export default function WaitlistsPage() {
       {cycleOptions.length > 1 && (
         <div className="flex flex-wrap items-center gap-2">
           <FilterPill
-            os
             size="md"
             selected={!filtering}
             onClick={() => setCycleFilter("all")}
@@ -154,7 +153,6 @@ export default function WaitlistsPage() {
           {cycleOptions.map((c) => (
             <FilterPill
               key={c.id}
-              os
               size="md"
               selected={cycleFilter === c.id}
               onClick={() => setCycleFilter(c.id)}

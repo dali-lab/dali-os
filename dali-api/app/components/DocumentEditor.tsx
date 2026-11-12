@@ -51,7 +51,7 @@ import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Drawer } from "~/components/ui/Drawer";
 import { RECORDING_RAIL_TITLE_ID } from "~/components/meeting-recorder/RecordingRail";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, doc-level comments, and PDF/Word

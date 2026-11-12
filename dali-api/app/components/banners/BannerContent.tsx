@@ -5,6 +5,7 @@ import { Checkbox } from "~/components/ui/Checkbox";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { snoozeOffered, type BannerFrequency, type BannerKind, type BannerTone } from "~/core/lib/banners";
+import { Z } from "~/components/ui/z";
 
 export type BannerView = {
   name: string;
@@ -203,7 +204,7 @@ export function BannerOverlay({
       open
       onClose={() => onClose(false)}
       labelledBy={titleId}
-      className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/70 p-4 md:p-8"
+      className={`fixed inset-0 ${Z.popover} flex items-center justify-center overflow-y-auto bg-black/70 p-4 md:p-8`}
       containerClassName={cn(
         "relative my-auto w-full overflow-hidden rounded-os-card border border-os-container bg-os-card shadow-[0_32px_80px_rgba(0,0,0,0.6)]",
         bannerCardWidth(banner) === POSTER_CARD_WIDTH ? "max-w-[480px]" : "max-w-[880px]",

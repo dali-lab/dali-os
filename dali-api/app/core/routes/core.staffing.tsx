@@ -19,7 +19,6 @@ import { buildSubmissionView } from "~/projects/lib/submission-view.server";
 import { StaffingBoard } from "~/projects/components/StaffingBoard";
 import { dedupeLiveAssignments, matchesDomainFilter } from "~/projects/lib/staffing-board";
 import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 import type {
   Assignment,
   BidField,
@@ -391,7 +390,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 export default function StaffingPage() {
   const data = useLoaderData<typeof loader>();
-  const { os, pageTitle } = useOsChrome();
+  const { pageTitle } = useOsChrome();
 
   if (!data.cycle) {
     return (
@@ -414,12 +413,7 @@ export default function StaffingPage() {
       </header>
 
       {!data.bidsFormBound && (
-        <div
-          className={cn(
-            "border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber",
-            os ? "rounded-os-item" : "rounded-md",
-          )}
-        >
+        <div className="rounded-os-item border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
           No Project Bids form is connected for this term — connect one on the
           Project Bids page.
         </div>

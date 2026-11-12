@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "~/lib/cn";
 
@@ -7,7 +6,7 @@ import { cn } from "~/lib/cn";
 // destinations — calendar's three views, settings' sections — switch with a
 // segmented pill: one track, the active segment filled, sized to its content.
 
-export type UnderlineTabButton = {
+export type SegmentedTab = {
   label: string;
   active?: boolean;
   onClick: () => void;
@@ -79,7 +78,7 @@ export function SegmentedTabButtons({
   stretch = false,
   size = "md",
 }: {
-  items: UnderlineTabButton[];
+  items: SegmentedTab[];
   label?: string;
   className?: string;
   /** Fill the container, segments sharing the width equally. */
@@ -112,29 +111,6 @@ export function SegmentedTabButtons({
           />
         </button>
       ))}
-    </div>
-  );
-}
-
-export function UnderlineTabButtons({
-  items,
-  label = "Section",
-  heading,
-}: {
-  items: UnderlineTabButton[];
-  label?: string;
-  /**
-   * The page's own title, rendered at the left of this row — one line instead of
-   * a title stacked above a rail of pills. The switcher is pushed to the far
-   * right, so a row with no heading still ends on the same edge as one with it.
-   */
-  heading?: ReactNode;
-}) {
-  // No Guide button or history arrows here: the os top bar carries both.
-  return (
-    <div className="mb-6 flex flex-wrap items-center gap-3">
-      {heading}
-      <SegmentedTabButtons items={items} label={label} className="ml-auto" />
     </div>
   );
 }
