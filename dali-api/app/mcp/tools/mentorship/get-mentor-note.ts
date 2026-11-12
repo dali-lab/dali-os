@@ -41,7 +41,6 @@ export async function runGetMentorNote(
       termId: true,
       domainId: true,
       weekOf: true,
-      contentJson: true,
       pageId: true,
       vibe: true,
       updatedAt: true,

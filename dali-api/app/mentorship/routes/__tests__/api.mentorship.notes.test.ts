@@ -45,7 +45,7 @@ beforeEach(() => {
 
 describe("POST /api/mentorship/notes", () => {
   it("gives a newly created note its notebook tab, as the caller, with the Monday of the week", async () => {
-    const created = { id: "n1", mentorId: "mentor", pageId: null, contentJson: { a: 1 } };
+    const created = { id: "n1", mentorId: "mentor", pageId: null };
     m.mentorNote.findUnique.mockResolvedValue(null);
     m.mentorNoteTemplate.findFirst.mockResolvedValue({ contentJson: { a: 1 } });
     m.mentorNote.create.mockResolvedValue(created);
@@ -53,7 +53,9 @@ describe("POST /api/mentorship/notes", () => {
     const res = await post();
 
     expect(await res.json()).toEqual({ id: "n1", created: true });
-    expect(ensureMentorNotePage).toHaveBeenCalledWith(created, "mentor");
+    expect(ensureMentorNotePage).toHaveBeenCalledWith(created, "mentor", { seed: { a: 1 } });
+    expect(m.mentorNote.create.mock.calls[0][0].data).not.toHaveProperty("contentJson");
+    expect(m.mentorNote.create.mock.calls[0][0].select).not.toHaveProperty("contentJson");
     expect(m.mentorNote.create.mock.calls[0][0].data.weekOf).toEqual(new Date("2026-10-12T00:00:00Z"));
   });
 
