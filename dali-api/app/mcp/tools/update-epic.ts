@@ -6,28 +6,19 @@ import { canEditProject } from "./access";
 const EPIC_STATUSES = ["Backlog", "Open", "InProgress", "Done", "Cancelled"] as const;
 type EpicStatus = (typeof EPIC_STATUSES)[number];
 
-export const UPDATE_EPIC_TOOL = {
-  name: "update_epic",
-  description:
-    "Edit an epic's fields (title, description, status, dates). Requires Core or project-member access. Empty string clears nullable fields.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      epicId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 200 },
-      description: { type: "string", maxLength: 5000 },
-      status: {
-        type: "string",
-        enum: EPIC_STATUSES as unknown as string[],
-      },
-      startsAt: { type: "string", description: "Empty string clears." },
-      endsAt: { type: "string", description: "Empty string clears." },
-    },
-    required: ["epicId"],
-    additionalProperties: false,
+export const UPDATE_EPIC_PROPERTIES = {
+  epicId: { type: "string", minLength: 1 },
+  title: { type: "string", minLength: 1, maxLength: 200 },
+  description: { type: "string", maxLength: 5000 },
+  status: {
+    type: "string",
+    enum: EPIC_STATUSES as unknown as string[],
   },
-  requiredScope: "mcp:write" as const,
+  startsAt: { type: "string", description: "Empty string clears." },
+  endsAt: { type: "string", description: "Empty string clears." },
 };
+
+export const UPDATE_EPIC_REQUIRED = ["epicId"];
 
 type Input = {
   epicId: string;

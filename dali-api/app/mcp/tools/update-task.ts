@@ -1,10 +1,5 @@
-// MCP `update_task` — edit fields on a task (title/description/priority/
-// startsAt/dueAt/epicId/storyId/domainId/assignees). Mirrors api.tasks.$id
-// PATCH (Core or project member). Use `update_task_status` for status changes
-// (it has special column-rebalance semantics).
-//
-// description: plain-text Markdown stored on the Task.description column.
-// startsAt: timeline start (planning only — fires no reminders).
+// manage_task `update`: edit fields on a task. Mirrors api.tasks.$id PATCH
+// (Core or project member). Status changes go through `set_status`.
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
@@ -13,53 +8,42 @@ import { TaskUpdateError, updateTask, type TaskPatch } from "~/projects/lib/task
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
 
-export const UPDATE_TASK_TOOL = {
-  name: "update_task",
-  description:
-    "Edit fields on a project task (title, description, priority, start/due dates, epic, user story, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged. A task's sprint is derived from its dates. A story pins its epic — setting storyId also sets epicId; changing epicId drops a story that no longer fits.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 500 },
-      description: {
-        type: "string",
-        description:
-          "Plain-text / Markdown description. Empty string clears.",
-      },
-      priority: { type: "string", enum: PRIORITIES as unknown as string[] },
-      startsAt: {
-        type: "string",
-        description:
-          "Timeline start (ISO timestamp, planning only). Empty string clears.",
-      },
-      dueAt: {
-        type: "string",
-        description: "ISO timestamp. Empty string clears.",
-      },
-      epicId: {
-        type: "string",
-        description: "Epic link. Empty string = unlinked.",
-      },
-      storyId: {
-        type: "string",
-        description:
-          "Parent user story. Pins the epic to the story's epic (overrides epicId). Empty string unlinks. A bare epicId change drops a now-orphaned story.",
-      },
-      domainId: {
-        type: "string",
-        description: "Domain chip. Empty string = no domain.",
-      },
-      assigneeUserIds: {
-        type: "array",
-        items: { type: "string" },
-        description: "Full replacement set. Empty array unassigns everyone.",
-      },
-    },
-    required: ["taskId"],
-    additionalProperties: false,
+export const UPDATE_TASK_PROPERTIES = {
+  taskId: { type: "string", minLength: 1 },
+  title: { type: "string", minLength: 1, maxLength: 500 },
+  description: {
+    type: "string",
+    description:
+      "Plain-text / Markdown description. Empty string clears.",
   },
-  requiredScope: "mcp:write" as const,
+  priority: { type: "string", enum: PRIORITIES as unknown as string[] },
+  startsAt: {
+    type: "string",
+    description:
+      "Timeline start (ISO timestamp, planning only). Empty string clears.",
+  },
+  dueAt: {
+    type: "string",
+    description: "ISO timestamp. Empty string clears.",
+  },
+  epicId: {
+    type: "string",
+    description: "Epic link. Empty string = unlinked.",
+  },
+  storyId: {
+    type: "string",
+    description:
+      "Parent user story. Pins the epic to the story's epic (overrides epicId). Empty string unlinks. A bare epicId change drops a now-orphaned story.",
+  },
+  domainId: {
+    type: "string",
+    description: "Domain chip. Empty string = no domain.",
+  },
+  assigneeUserIds: {
+    type: "array",
+    items: { type: "string" },
+    description: "Full replacement set. Empty array unassigns everyone.",
+  },
 };
 
 type Input = {
