@@ -28,7 +28,7 @@ import {
 } from "./blocknote-server";
 import { ensureBlocks } from "./legacy/pm-to-blocknote";
 import { ydocToBlocks } from "./read";
-import { deriveBlogPreview } from "~/lib/blog-preview";
+import { deriveBlogPreview } from "~/blog/lib/blog-preview";
 
 export interface CollabSource {
   // Initial content for a brand-new room (no CollabDocument row yet). Returns

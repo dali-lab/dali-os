@@ -7,7 +7,7 @@ import { summarizeReactions } from "~/lib/reactions";
 import { toggleReaction, withEmojiImages } from "~/lib/reactions.server";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
-import { BLOG_COMMENT_MAX } from "~/lib/blog-engagement";
+import { BLOG_COMMENT_MAX } from "~/blog/lib/blog-engagement";
 
 export type BlogReader = { id: string; core: boolean; name: string };
 

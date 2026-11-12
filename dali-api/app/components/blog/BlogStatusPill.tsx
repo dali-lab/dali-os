@@ -1,4 +1,4 @@
-import type { BlogStatus } from "~/lib/blog-post.server";
+import type { BlogStatus } from "~/blog/lib/blog-post.server";
 import { Pill } from "~/components/ui/Pill";
 
 const STATUS = {

@@ -3,7 +3,7 @@ import type { Prisma } from "~/generated/prisma/client";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import { isAdmin } from "~/lib/roles";
 import { formatDateShort, fullName } from "~/lib/display";
-import { blogListing } from "~/lib/blog-preview";
+import { blogListing } from "~/blog/lib/blog-preview";
 import { decodeCursor, keysetAfter, keysetPage } from "~/lib/pagination";
 import { notify } from "~/lib/notify.server";
 import { adminRecipientIds } from "~/lib/promotion-notify.server";

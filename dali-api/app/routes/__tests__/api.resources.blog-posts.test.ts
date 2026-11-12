@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/resources.server", () => ({ requireResourcesViewer: vi.fn() }));
-vi.mock("~/lib/blog-post.server", () => ({ loadBlogFeedPage: vi.fn() }));
+vi.mock("~/blog/lib/blog-post.server", () => ({ loadBlogFeedPage: vi.fn() }));
 
 import { requireResourcesViewer } from "~/lib/resources.server";
-import { loadBlogFeedPage } from "~/lib/blog-post.server";
+import { loadBlogFeedPage } from "~/blog/lib/blog-post.server";
 import { loader } from "~/routes/api.resources.blog-posts";
 
 function call(query = "") {
