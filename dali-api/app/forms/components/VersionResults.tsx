@@ -14,13 +14,17 @@ import { FormTracker } from "~/forms/components/FormTracker";
 import { ExportCsvLink } from "~/forms/components/ResultsControls";
 import { ResultsFilterBar, responseCountText, useAnswerFilters } from "~/forms/components/ResultsFilterBar";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
-import { MultiSelect } from "~/components/ui/floating";
-import { ChevronDown } from "lucide-react";
+import { Menu, MultiSelect } from "~/components/ui/floating";
+import { IconButton } from "~/components/ui/IconButton";
+import { ChevronDown, Plus, X } from "lucide-react";
 import {
   MEMBER_COLUMNS_PARAM,
   MEMBER_HISTORY_COLUMNS,
   parseMemberColumns,
+  type MemberHistoryColumn,
 } from "~/projects/lib/member-history";
+import { memberColumnKey, responseColumnId } from "~/forms/lib/response-columns";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, {
@@ -149,6 +153,71 @@ function MemberColumnsPicker() {
   );
 }
 
+function useAddedColumns(columns: { key: string }[]) {
+  const fetcher = useFetcher<{ ok?: true; error?: string }>();
+  const added = columns.flatMap((c) => {
+    const key = memberColumnKey(c.key);
+    return key ? [key] : [];
+  });
+  const save = (next: MemberHistoryColumn[]) =>
+    fetcher.submit(
+      { intent: "set-response-columns", columns: JSON.stringify(next.map(responseColumnId)) },
+      { method: "post", preventScrollReset: true },
+    );
+  return {
+    available: MEMBER_HISTORY_COLUMNS.filter((c) => !added.includes(c.key)),
+    add: (key: MemberHistoryColumn) => save([...added, key]),
+    remove: (key: MemberHistoryColumn) => save(added.filter((k) => k !== key)),
+  };
+}
+
+function AddColumnMenu({
+  available,
+  onAdd,
+}: {
+  available: { key: MemberHistoryColumn; label: string }[];
+  onAdd: (key: MemberHistoryColumn) => void;
+}) {
+  return (
+    <Menu
+      align="right"
+      ariaLabel="Add a column"
+      trigger={<IconButton label="Add a column" icon={Plus} tooltipSide="top" />}
+    >
+      {available.length > 0 ? (
+        available.map((c) => (
+          <Menu.Item key={c.key} onSelect={() => onAdd(c.key)}>
+            {c.label}
+          </Menu.Item>
+        ))
+      ) : (
+        <Menu.Item disabled>Every column is added</Menu.Item>
+      )}
+    </Menu>
+  );
+}
+
+function AddedColumnHeader({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <Menu
+      ariaLabel={`${label} column`}
+      trigger={
+        <button
+          type="button"
+          className="max-w-[16rem] truncate text-left font-medium hover:text-foreground"
+          title={label}
+        >
+          {label}
+        </button>
+      }
+    >
+      <Menu.Item icon={<X className="h-3.5 w-3.5" />} onSelect={onRemove}>
+        Remove column
+      </Menu.Item>
+    </Menu>
+  );
+}
+
 // One version's responses: a page of submissions with a detail modal, a slot
 // filter when staffing fills are present, answer filters, and CSV export of
 // what matches. Page, search, slot and answer filters live in the URL and are
@@ -178,6 +247,8 @@ export function VersionResults({
     responses,
   } = results;
   const [searchParams, setSearchParams] = useSearchParams();
+  const canAddColumns = useFeatureFlag("form-response-views");
+  const addedColumns = useAddedColumns(columns);
   const urlQuery = searchParams.get("q") ?? "";
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
@@ -264,7 +335,7 @@ export function VersionResults({
                 size="sm"
                 containerClassName="w-full sm:w-64 min-w-[12rem]"
               />
-              <MemberColumnsPicker />
+              {!canAddColumns && <MemberColumnsPicker />}
               <ExportCsvLink
                 formId={formId}
                 versionNumber={versionNumber}
@@ -307,16 +378,34 @@ export function VersionResults({
                       {hasSlotColumn && (
                         <th className="text-left font-medium px-4 py-3">Slot</th>
                       )}
-                      {columns.map((c) => (
-                        <th key={c.key} className="text-left font-medium px-4 py-3">
-                          <div className="max-w-[16rem] truncate" title={c.label}>
-                            {c.label}
-                          </div>
-                        </th>
-                      ))}
+                      {columns.map((c) => {
+                        const added = canAddColumns ? memberColumnKey(c.key) : null;
+                        return (
+                          <th key={c.key} className="text-left font-medium px-4 py-3">
+                            {added ? (
+                              <AddedColumnHeader
+                                label={c.label}
+                                onRemove={() => addedColumns.remove(added)}
+                              />
+                            ) : (
+                              <div className="max-w-[16rem] truncate" title={c.label}>
+                                {c.label}
+                              </div>
+                            )}
+                          </th>
+                        );
+                      })}
                       {isPartnerApplicationForm && (
                         <th className="text-left font-medium px-4 py-3">
                           Partner app
+                        </th>
+                      )}
+                      {canAddColumns && (
+                        <th className="w-10 px-2 py-1.5 text-right">
+                          <AddColumnMenu
+                            available={addedColumns.available}
+                            onAdd={addedColumns.add}
+                          />
                         </th>
                       )}
                     </tr>
@@ -329,7 +418,16 @@ export function VersionResults({
                         className="border-t border-os-container hover:bg-os-card-hover cursor-pointer"
                       >
                         <td className="px-4 py-2.5 text-foreground font-medium whitespace-nowrap">
-                          {r.name}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenId(r.id);
+                            }}
+                            className="text-left hover:underline"
+                          >
+                            {r.name}
+                          </button>
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground">
                           {r.email ?? "—"}
@@ -373,6 +471,7 @@ export function VersionResults({
                             )}
                           </td>
                         )}
+                        {canAddColumns && <td />}
                       </tr>
                     ))}
                   </tbody>

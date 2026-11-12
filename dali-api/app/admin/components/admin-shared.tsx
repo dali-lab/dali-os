@@ -124,7 +124,7 @@ export function RemoveDomainLeadButton({
       <button
         type="submit"
         aria-label={`Remove ${name} as a ${domainName} lead`}
-        className="hover:text-purple-600 ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
+        className="hover:text-[var(--os-role-violet-ink)] ml-0.5 p-2 -m-1.5 inline-flex items-center justify-center"
       >
         <X className="w-3 h-3" />
       </button>
@@ -150,7 +150,7 @@ export function DomainLeadPicker({
       {existingAssignments.map((assignment) => (
         <span
           key={assignment.id}
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[var(--os-role-violet-fill)] text-[var(--os-role-violet-ink)]"
         >
           {assignment.domain.name}
           <RemoveDomainLeadButton

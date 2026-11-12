@@ -115,7 +115,7 @@ export function TrashPanel({
         <h2 id={titleId} className="text-base font-semibold text-foreground flex items-center gap-2">
           <Trash2 className="w-4 h-4 text-muted-foreground" /> Trash
         </h2>
-        <button type="button" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground">
+        <button type="button" aria-label="Close trash" onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-muted/60 hover:text-foreground">
           <X className="w-4 h-4" />
         </button>
       </div>

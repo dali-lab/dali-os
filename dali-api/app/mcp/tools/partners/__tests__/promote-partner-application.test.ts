@@ -1,9 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/roles", async (orig) => {
-  const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn() };
-});
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/partners/lib/partner-promote.server", () => ({ promotePartnerApplication: vi.fn() }));
 
 import { isCore } from "~/lib/roles";

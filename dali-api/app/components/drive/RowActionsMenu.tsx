@@ -132,6 +132,7 @@ export function RowActionsMenu({
       trigger={
         <button
           type="button"
+          aria-label={`Actions for ${item.title || "item"}`}
           data-testid={`drive-item-actions-${item.id}`}
           onClick={(e) => e.stopPropagation()}
           onPointerDown={(e) => e.stopPropagation()}

@@ -15,10 +15,19 @@ export type HistoryCoreAssignment = {
   term: HistoryTerm;
 };
 
+export type HistoryEligibility = {
+  level: string;
+  domainId: string;
+  domain: { displayName: string };
+};
+
 export type MemberHistory = {
   projects: HistoryProjectAssignment[];
   core: HistoryCoreAssignment[];
+  eligibilities: HistoryEligibility[];
 };
+
+export const EMPTY_MEMBER_HISTORY: MemberHistory = { projects: [], core: [], eligibilities: [] };
 
 const bySortKey = (a: HistoryTerm, b: HistoryTerm) => a.sortKey - b.sortKey;
 
@@ -38,6 +47,10 @@ export function projectHistoryText(h: MemberHistory): string {
     )
     .map((p) => `${p.name} (${p.terms.map((t) => t.code).join(", ")})`)
     .join("; ");
+}
+
+export function hiredRolesText(h: MemberHistory): string {
+  return h.eligibilities.map((e) => `${e.domain.displayName} (${e.level})`).join(", ");
 }
 
 export function termsInLabText(h: MemberHistory): string {
@@ -71,6 +84,7 @@ export function currentRoleText(h: MemberHistory, now: Date): string {
 }
 
 export const MEMBER_HISTORY_COLUMNS = [
+  { key: "hiredRoles", label: "Hired roles" },
   { key: "projectHistory", label: "Project history" },
   { key: "termsInLab", label: "Terms in lab" },
   { key: "currentRole", label: "Current role" },
@@ -84,6 +98,7 @@ export function isMemberHistoryColumn(v: string): v is MemberHistoryColumn {
 
 export function memberHistoryText(h: MemberHistory, now: Date): Record<MemberHistoryColumn, string> {
   return {
+    hiredRoles: hiredRolesText(h),
     projectHistory: projectHistoryText(h),
     termsInLab: termsInLabText(h),
     currentRole: currentRoleText(h, now),

@@ -10,7 +10,13 @@ import {
   responsesCsvRows,
 } from "~/forms/lib/answer-rows.server";
 import { parseAnswerFilters } from "~/forms/lib/answer-filters";
-import { versionResponsesWhere } from "~/forms/lib/version-responses.server";
+import {
+  memberColumnValues,
+  versionResponsesWhere,
+} from "~/forms/lib/version-responses.server";
+import { parseResponseColumns } from "~/forms/lib/response-columns";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import type { Question } from "~/types";
 
 // Resource route — no default export, no layout wrapping. Returning a Response
@@ -31,9 +37,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 
   const form = await prisma.form.findUnique({
     where: { id: params.formId },
-    select: { id: true, name: true },
+    select: { id: true, name: true, responseColumns: true },
   });
   if (!form) return redirect("/forms");
+  const savedColumns = await isFeatureEnabled(
+    "form-response-views",
+    auth.user.sub,
+    await getUserRoles(auth.user.sub, request),
+    request,
+  );
 
   const query = new URL(request.url).searchParams;
   const version = Number(query.get("version"));
@@ -62,6 +74,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       submitterName: true,
       submitterEmail: true,
       slot: true,
+      userId: true,
       user: {
         select: {
           firstName: true,
@@ -84,6 +97,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     })),
   );
 
+  const member = await memberColumnValues(
+    savedColumns ? parseResponseColumns(form.responseColumns) : [],
+    submissions.map((s) => s.userId),
+  );
+
   const responses = submissions.map((s, i) => ({
     name:
       [s.user?.firstName, s.user?.lastName].filter(Boolean).join(" ") ||
@@ -94,11 +112,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     createdAt: s.createdAt.toISOString(),
     versionNumber: s.formVersion.versionNumber,
     slot: s.slot,
-    rows: grid.rowsBySubmission[i],
+    rows: [...grid.rowsBySubmission[i], ...member.rowsFor(s.userId)],
   }));
 
   const csv = rowsToCsv(
-    responsesCsvRows(grid.columns, responses, {
+    responsesCsvRows([...grid.columns, ...member.columns], responses, {
       includeSlot: submissions.some((s) => s.slot !== null),
     }),
   );

@@ -45,8 +45,10 @@ jobs:
           echo "$FILES"
           grep -q '^\.github/' <<<"$FILES" && all
           has() { grep -qE "$1" <<<"$FILES" && echo true || echo false; }
+          # Not `grep -v | grep -q .`: under pipefail, SIGPIPE on long file lists made api=false.
+          API_FILES=$(grep -vE '^(specs/|mobile/|desktop/|ios/|jobx-extension/|asr/|[^/]+\.(md|html)$)' <<<"$FILES" || true)
           {
-            echo "api=$(grep -vE '^(specs/|mobile/|desktop/|ios/|jobx-extension/|asr/|[^/]+\.(md|html)$)' <<<"$FILES" | grep -q . && echo true || echo false)"
+            echo "api=$([ -n "$API_FILES" ] && echo true || echo false)"
             echo "asr=$(has '^asr/')"
             echo "migrations=$(has '^dali-api/prisma/')"
             echo "desktop=$(has '^desktop/')"

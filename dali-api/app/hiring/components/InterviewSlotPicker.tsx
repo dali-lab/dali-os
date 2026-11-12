@@ -70,7 +70,7 @@ export function InterviewSlotPicker({
                       key={slot.id}
                       onClick={() => onSelect(slot)}
                       disabled={disabled}
-                      className="px-3 py-3 text-sm font-medium rounded-lg border border-border bg-card hover:border-blue-400 hover:bg-blue-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3 py-3 text-sm font-medium rounded-lg border border-border bg-card hover:border-os-accent/60 hover:bg-os-accent/10 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {isLoading ? "Booking..." : slot.time}
                     </button>

@@ -31,7 +31,7 @@ import type { WhiteboardEditorProps } from "./WhiteboardEditor";
 // Shared style for our custom top-right buttons so they read like Excalidraw's
 // own islands in light and dark.
 const TOP_BTN_CLASS =
-  "flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 bg-white text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]";
+  "flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-os-grey shadow-sm transition-colors hover:bg-os-hover";
 
 export default function WhiteboardImpl(props: WhiteboardEditorProps) {
   const { pageId, title, canEdit, collabToken, userName, photoUrl, meeting, canManageAccess, workspaceType } = props;
@@ -277,7 +277,7 @@ export default function WhiteboardImpl(props: WhiteboardEditorProps) {
               type="button"
               onClick={() => setDiagramOpen(true)}
               title="Insert a diagram from Mermaid"
-              className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-black/10 bg-white px-2.5 py-1.5 text-sm text-gray-700 shadow-sm transition-colors hover:bg-gray-100 dark:border-white/10 dark:bg-[#232329] dark:text-gray-200 dark:hover:bg-[#2d2d36]"
+              className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-os-grey shadow-sm transition-colors hover:bg-os-hover"
             >
               <Workflow className="h-4 w-4" /> Insert diagram
             </button>

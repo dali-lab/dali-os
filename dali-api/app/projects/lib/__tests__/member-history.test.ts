@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   currentRoleText,
+  hiredRolesText,
   parseMemberColumns,
   projectHistoryText,
   termsInLabText,
@@ -21,7 +22,7 @@ function pa(project: string, term: keyof typeof T, domain = "Developer", level =
 function ca(term: keyof typeof T, leadTitle: string | null = null) {
   return { leadTitle, term: T[term] };
 }
-const empty: MemberHistory = { projects: [], core: [] };
+const empty: MemberHistory = { projects: [], core: [], eligibilities: [] };
 
 describe("projectHistoryText", () => {
   it("is blank for a member with no project assignments", () => {
@@ -32,6 +33,7 @@ describe("projectHistoryText", () => {
     const h: MemberHistory = {
       projects: [pa("Evergreen", "26W"), pa("Ripple", "26F"), pa("Evergreen", "25F"), pa("Atlas", "26W")],
       core: [],
+      eligibilities: [],
     };
     expect(projectHistoryText(h)).toBe("Ripple (26F); Atlas (26W); Evergreen (25F, 26W)");
   });
@@ -40,12 +42,13 @@ describe("projectHistoryText", () => {
     const h: MemberHistory = {
       projects: [pa("Evergreen", "26F", "Developer"), pa("Evergreen", "26F", "Designer", "P1", "d-des")],
       core: [],
+      eligibilities: [],
     };
     expect(projectHistoryText(h)).toBe("Evergreen (26F)");
   });
 
   it("includes projects from legacy history", () => {
-    const h: MemberHistory = { projects: [pa("Old App", "25F", "Legacy", "P1", "domain_legacy")], core: [] };
+    const h: MemberHistory = { projects: [pa("Old App", "25F", "Legacy", "P1", "domain_legacy")], core: [], eligibilities: [] };
     expect(projectHistoryText(h)).toBe("Old App (25F)");
   });
 });
@@ -59,12 +62,13 @@ describe("termsInLabText", () => {
     const h: MemberHistory = {
       projects: [pa("Evergreen", "26F"), pa("Ripple", "26F"), pa("Evergreen", "25F")],
       core: [ca("26W", "Education Lead"), ca("26F")],
+      eligibilities: [],
     };
     expect(termsInLabText(h)).toBe("3 terms: 25F, 26W, 26F");
   });
 
   it("uses the singular for one term", () => {
-    expect(termsInLabText({ projects: [], core: [ca("26F")] })).toBe("1 term: 26F");
+    expect(termsInLabText({ projects: [], core: [ca("26F")], eligibilities: [] })).toBe("1 term: 26F");
   });
 });
 
@@ -81,12 +85,13 @@ describe("currentRoleText", () => {
         pa("Atlas", "26W", "Product Manager", "P3", "d-pm"),
       ],
       core: [ca("26F", "Education Lead"), ca("26W", "Events Lead")],
+      eligibilities: [],
     };
     expect(currentRoleText(h, NOW)).toBe("26F: Developer (P2), Designer (P1), Education Lead");
   });
 
   it("lists a role once when it is held on two projects", () => {
-    const h: MemberHistory = { projects: [pa("Evergreen", "26F"), pa("Ripple", "26F")], core: [] };
+    const h: MemberHistory = { projects: [pa("Evergreen", "26F"), pa("Ripple", "26F")], core: [], eligibilities: [] };
     expect(currentRoleText(h, NOW)).toBe("26F: Developer (P2)");
   });
 
@@ -94,26 +99,47 @@ describe("currentRoleText", () => {
     const h: MemberHistory = {
       projects: [pa("Evergreen", "26F", "Developer", "P1"), pa("Ripple", "27W", "Developer", "P2")],
       core: [],
+      eligibilities: [],
     };
     expect(currentRoleText(h, NOW)).toBe("26F: Developer (P1)");
   });
 
   it("is blank when the member is only staffed for a future term", () => {
-    expect(currentRoleText({ projects: [pa("Ripple", "27W")], core: [] }, NOW)).toBe("");
+    expect(currentRoleText({ projects: [pa("Ripple", "27W")], core: [], eligibilities: [] }, NOW)).toBe("");
   });
 
   it("reads an untitled Core assignment as Core and skips legacy domains", () => {
     const h: MemberHistory = {
       projects: [pa("Old App", "26F", "Legacy", "P1", "domain_legacy")],
       core: [ca("26F")],
+      eligibilities: [],
     };
     expect(currentRoleText(h, NOW)).toBe("26F: Core");
   });
 });
 
+describe("hiredRolesText", () => {
+  it("is blank for a member with no eligibility", () => {
+    expect(hiredRolesText(empty)).toBe("");
+  });
+
+  it("lists each eligibility as domain and level", () => {
+    expect(
+      hiredRolesText({
+        ...empty,
+        eligibilities: [
+          { level: "P2", domainId: "eng", domain: { displayName: "Engineering" } },
+          { level: "P1", domainId: "des", domain: { displayName: "Design" } },
+        ],
+      }),
+    ).toBe("Engineering (P2), Design (P1)");
+  });
+});
+
 describe("parseMemberColumns", () => {
   it("keeps known columns in display order and drops anything else", () => {
-    expect(parseMemberColumns(new URLSearchParams("member=currentRole,nope,projectHistory"))).toEqual([
+    expect(parseMemberColumns(new URLSearchParams("member=currentRole,nope,projectHistory,hiredRoles"))).toEqual([
+      "hiredRoles",
       "projectHistory",
       "currentRole",
     ]);

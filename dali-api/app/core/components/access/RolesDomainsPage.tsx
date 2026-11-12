@@ -205,7 +205,16 @@ export function RolesDomainsPage({ data }: { data: Data }) {
                   <div className="flex items-center gap-3">
                     <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" userId={m.id} />
                     <div className="min-w-0">
-                      <p className="font-semibold text-foreground">{m.name}</p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(m.id);
+                        }}
+                        className="text-left font-semibold text-foreground hover:underline"
+                      >
+                        {m.name}
+                      </button>
                       <p className="truncate text-xs text-os-muted">
                         {m.email ?? "No DALI email"}
                         {m.isAlumni && " · Alumni"}

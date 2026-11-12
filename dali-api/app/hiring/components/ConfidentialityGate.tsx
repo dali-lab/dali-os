@@ -49,7 +49,7 @@ export function ConfidentialityGate({
         (className ?? "")
       }
     >
-      <ShieldAlert className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+      <ShieldAlert className="w-6 h-6 text-os-accent mx-auto mb-2" />
       <p className="text-sm text-foreground/80 font-medium">
         {cycleName
           ? `Sign the ${cycleName} confidentiality agreement to see its applications.`

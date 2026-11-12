@@ -34,8 +34,8 @@ const WEEK_COL = "2.5rem";
 const IDENTITY_COL = "17rem";
 // The check-in whose forms the Form pills open.
 const FORM_WEEK = 5;
-// The roomy white hover card used by the week circles and the check-in bubble.
-const POPUP = "!max-w-[320px] !rounded-2xl !border-os-container/60 !bg-white !p-4 !text-sm !text-neutral-900";
+// The roomy hover card used by the week circles and the check-in bubble.
+const POPUP = "!max-w-[320px] !rounded-2xl !border-os-container/60 !bg-os-card !p-4 !text-sm !text-os-fg";
 
 const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
 
@@ -365,9 +365,9 @@ function FormBubble({
     <div className="flex items-center gap-3">
       <span className="flex min-w-0 flex-1 flex-col leading-tight">
         <span className="truncate font-medium">{name}</span>
-        <span className="text-xs text-neutral-500">{role}</span>
+        <span className="text-xs text-muted-foreground">{role}</span>
       </span>
-      <span className={cn("inline-flex items-center gap-1.5 text-xs", done ? "font-medium" : "text-neutral-500")}>
+      <span className={cn("inline-flex items-center gap-1.5 text-xs", done ? "font-medium" : "text-muted-foreground")}>
         {done ? "Submitted" : "Not submitted"}
         <FormStateBadge done={done} label={role} />
       </span>
@@ -455,21 +455,21 @@ function GridCellView({
             <span
               className={cn(
                 "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                cell.vibe ? cn(VIBE_META[cell.vibe].dot, "text-black/60") : "border border-neutral-300 text-neutral-400",
+                cell.vibe ? cn(VIBE_META[cell.vibe].dot, "text-black/60") : "border border-os-container text-os-muted",
               )}
             >
               <VibeIcon className="h-5 w-5" aria-hidden />
             </span>
             <span className="flex flex-col gap-0.5">
-              <span className="text-xs text-neutral-500">Week {cell.week}</span>
+              <span className="text-xs text-muted-foreground">Week {cell.week}</span>
               {cell.vibe ? (
                 <>
                   <span className="font-semibold">{vibeLabel}</span>
-                  <span className="text-neutral-600">{vibeDesc}</span>
+                  <span className="text-muted-foreground">{vibeDesc}</span>
                 </>
               ) : (
                 // One quiet line instead of a title plus a restatement.
-                <span className="italic text-neutral-500">Not filled in</span>
+                <span className="italic text-muted-foreground">Not filled in</span>
               )}
             </span>
           </div>

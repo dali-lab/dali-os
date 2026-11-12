@@ -114,7 +114,7 @@ function Surface({
         </fetcher.Form>
         {fetcher.data?.message &&
           (fetcher.data.ok ? (
-            <p className="mt-3 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            <p className="mt-3 flex items-center gap-2 rounded-lg border border-os-green/30 bg-os-green/10 px-3 py-2 text-sm text-os-green">
               <CheckCircle2 className="h-4 w-4 shrink-0" />
               {fetcher.data.message}
             </p>

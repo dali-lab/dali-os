@@ -348,7 +348,7 @@ function FormSettingsFields({
         {isPublic && (
           <p
             className={`pl-[26px] text-xs ${
-              hasEmailQuestion ? "text-os-grey" : "text-amber-700"
+              hasEmailQuestion ? "text-os-grey" : "text-os-amber"
             }`}
           >
             {hasEmailQuestion
