@@ -9,7 +9,7 @@ import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { coreBoardPathFor } from "~/core/lib/taskboard";
+import { coreBoardPathFor } from "~/projects/lib/task-board";
 import { fullName, UNKNOWN_LABEL } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";

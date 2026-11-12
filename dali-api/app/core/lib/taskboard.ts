@@ -7,11 +7,6 @@ export type CoreTaskFilters = {
   query: string;
 };
 
-export function coreBoardPathFor(projectPageUrl: string): string {
-  const taskId = new URL(projectPageUrl, "http://x").searchParams.get("task");
-  return taskId ? `/core?task=${encodeURIComponent(taskId)}` : "/core";
-}
-
 export function parseAssigneeParam(value: string): string[] {
   return value ? value.split(",").filter(Boolean) : [];
 }
