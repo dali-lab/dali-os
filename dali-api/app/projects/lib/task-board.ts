@@ -478,3 +478,8 @@ export function moveTaskInBoard(
   const { cards, orderedIds } = moveInBoard(tasks, taskId, toStatus, targetIndex, TASK_STATUSES, "Todo");
   return { tasks: cards, orderedIds };
 }
+
+export function coreBoardPathFor(projectPageUrl: string): string {
+  const taskId = new URL(projectPageUrl, "http://x").searchParams.get("task");
+  return taskId ? `/core?task=${encodeURIComponent(taskId)}` : "/core";
+}

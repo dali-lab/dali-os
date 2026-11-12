@@ -9,7 +9,7 @@ import { DateField } from "~/components/ui/DateField";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
-import type { HiringFormLink } from "~/hiring/lib/form-links.server";
+import type { HiringFormLink } from "~/forms/lib/form-links.server";
 
 type Usage = { kind: string; label: string; href?: string | null };
 

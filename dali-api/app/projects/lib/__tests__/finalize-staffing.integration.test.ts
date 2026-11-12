@@ -8,7 +8,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn(() => false),
   SLACK_NOT_CONFIGURED_MESSAGE: "slack not configured",
 }));
-vi.mock("~/members/lib/slack-sync.server", () => ({ resolveSlackIdsForInvite: vi.fn() }));
+vi.mock("~/slack/lib/slack-sync.server", () => ({ resolveSlackIdsForInvite: vi.fn() }));
 vi.mock("~/lib/github", () => ({ ensureTeam: vi.fn(), addTeamMember: vi.fn(), isNo2fa: () => false }));
 vi.mock("~/lib/google-workspace", () => ({
   workspaceConfigured: vi.fn(() => false),

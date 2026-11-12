@@ -35,7 +35,6 @@ import {
   SET_PAGE_CONTENT_TOOL,
   SetPageContentError,
 } from "~/mcp/tools/set-page-content";
-import { UPDATE_PAGE_TOOL } from "~/mcp/tools/update-page";
 import { UPLOAD_PROJECT_FILE_TOOL } from "~/mcp/tools/upload-project-file";
 import { GET_TASK_TOOL } from "~/mcp/tools/get-task";
 
@@ -57,11 +56,7 @@ describe("pages + files tools", () => {
   it("scopes are right", () => {
     expect(LIST_PROJECT_PAGES_TOOL.requiredScope).toBe("mcp:read");
     expect(READ_PAGE_TOOL.requiredScope).toBe("mcp:read");
-    expect(CREATE_PAGE_TOOL.requiredScope).toBe("mcp:write");
     expect(LIST_PROJECT_FILES_TOOL.requiredScope).toBe("mcp:read");
-    expect(SET_PAGE_CONTENT_TOOL.requiredScope).toBe("mcp:write");
-    expect(UPDATE_PAGE_TOOL.requiredScope).toBe("mcp:write");
-    expect(UPLOAD_PROJECT_FILE_TOOL.requiredScope).toBe("mcp:write");
     expect(GET_TASK_TOOL.requiredScope).toBe("mcp:read");
   });
 

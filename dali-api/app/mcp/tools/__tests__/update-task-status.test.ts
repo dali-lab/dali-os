@@ -19,7 +19,6 @@ import { notifyTaskStatusChanged } from "~/projects/lib/task-notifications.serve
 import { isCore, isProjectMember } from "~/lib/roles";
 import {
   runUpdateTaskStatus,
-  UPDATE_TASK_STATUS_TOOL,
   UpdateTaskStatusError,
 } from "~/mcp/tools/update-task-status";
 
@@ -36,10 +35,6 @@ beforeEach(() => {
 });
 
 describe("update_task_status", () => {
-  it("requires the mcp:write scope", () => {
-    expect(UPDATE_TASK_STATUS_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("rejects unknown statuses", async () => {
     await expect(
       runUpdateTaskStatus("u1", { taskId: "t1", status: "Reopened" }),

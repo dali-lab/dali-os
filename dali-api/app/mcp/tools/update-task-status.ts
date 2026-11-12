@@ -13,28 +13,17 @@ import {
   isTaskStatus,
 } from "~/projects/lib/task-board";
 
-export const UPDATE_TASK_STATUS_TOOL = {
-  name: "update_task_status",
-  description:
-    "Move a project task to a different status column (e.g. mark a task Done). Allowed for the task's assignees and for project editors (Core or project members).",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: {
-        type: "string",
-        minLength: 1,
-        description: "Task.id, as returned by `list_my_tasks`.",
-      },
-      status: {
-        type: "string",
-        enum: TASK_STATUSES as unknown as string[],
-        description: "Target status column.",
-      },
-    },
-    required: ["taskId", "status"],
-    additionalProperties: false,
+export const UPDATE_TASK_STATUS_PROPERTIES = {
+  taskId: {
+    type: "string",
+    minLength: 1,
+    description: "Task.id, as returned by `list_my_tasks`.",
   },
-  requiredScope: "mcp:write" as const,
+  status: {
+    type: "string",
+    enum: TASK_STATUSES as unknown as string[],
+    description: "Target status column.",
+  },
 };
 
 type Input = { taskId: string; status: string };

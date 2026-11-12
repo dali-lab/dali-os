@@ -12,13 +12,13 @@ vi.mock("~/rooms/lib/rooms.server", () => ({
   serializeScheduleItem: vi.fn((i: unknown) => i),
 }));
 vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn() }));
-vi.mock("~/hiring/lib/hiring-events.server", () => ({ getBroadcastEvent: vi.fn() }));
+vi.mock("~/lib/display-broadcast.server", () => ({ getBroadcastEvent: vi.fn() }));
 vi.mock("~/lib/display-check-ins.server", () => ({ getDisplayCheckIns: vi.fn() }));
 
 import { requireRoomDisplay } from "~/rooms/lib/room-display.server";
 import { currentEvent, getRoomSchedule, parseWindow } from "~/rooms/lib/rooms.server";
 import { getActiveDisplayScan } from "~/lib/display-scan.server";
-import { getBroadcastEvent } from "~/hiring/lib/hiring-events.server";
+import { getBroadcastEvent } from "~/lib/display-broadcast.server";
 import { getDisplayCheckIns } from "~/lib/display-check-ins.server";
 import { loader } from "~/rooms/routes/api.room-display.schedule";
 

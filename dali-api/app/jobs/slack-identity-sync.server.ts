@@ -20,7 +20,7 @@
 // workspace keeps their stale mapping until someone clears it by hand.
 
 import { prisma } from "~/lib/db.server";
-import { syncSlackUserId } from "~/members/lib/slack-sync.server";
+import { syncSlackUserId } from "~/slack/lib/slack-sync.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

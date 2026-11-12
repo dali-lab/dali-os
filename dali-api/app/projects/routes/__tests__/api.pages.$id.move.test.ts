@@ -28,8 +28,8 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
-vi.mock("~/calendar/lib/notebooks.server", () => {
+vi.mock("~/lib/offering-manager.server", () => ({ isOfferingManager: vi.fn() }));
+vi.mock("~/drive/lib/notebook-access.server", () => {
   class NotebookError extends Error {
     constructor(
       message: string,
@@ -60,9 +60,9 @@ import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadAncestorChain } from "~/drive/lib/page-ancestry.server";
-import { isOfferingManager } from "~/education/lib/access.server";
+import { isOfferingManager } from "~/lib/offering-manager.server";
 import { logAuditEvent } from "~/lib/audit";
-import { NotebookError, addToNotebook } from "~/calendar/lib/notebooks.server";
+import { NotebookError, addToNotebook } from "~/drive/lib/notebook-access.server";
 import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 import { findNameConflict } from "~/drive/lib/page-names.server";
 import { action } from "../api.pages.$id.move";

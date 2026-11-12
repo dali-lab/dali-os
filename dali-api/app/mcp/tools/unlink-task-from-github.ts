@@ -6,21 +6,6 @@ import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 import { unlinkTaskFromGithub } from "~/projects/lib/github-task-sync";
 
-export const UNLINK_TASK_FROM_GITHUB_TOOL = {
-  name: "unlink_task_from_github",
-  description:
-    "Clear a task's GitHub issue link. The GitHub issue is left untouched on GH — this only severs dalios's mirror tracking. Requires Core or project-member access.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: { type: "string", minLength: 1 },
-    },
-    required: ["taskId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
-
 type Input = { taskId: string };
 
 export class UnlinkTaskFromGithubError extends Error {

@@ -32,7 +32,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn(),
   SLACK_NOT_CONFIGURED_MESSAGE: "slack not configured",
 }));
-vi.mock("~/members/lib/slack-sync.server", () => ({ resolveSlackIdsForInvite: vi.fn() }));
+vi.mock("~/slack/lib/slack-sync.server", () => ({ resolveSlackIdsForInvite: vi.fn() }));
 vi.mock("~/lib/github", () => ({
   ensureTeam: vi.fn(),
   addTeamMember: vi.fn(),
@@ -67,7 +67,7 @@ vi.mock("../github-team-sync", () => ({ grantTeamRepos: vi.fn() }));
 
 import { finalizeStaffing, FinalizeInputError, FinalizeNotFoundError } from "../finalize-staffing.server";
 import { ensureChannel, inviteUsersToChannel, postMessage, slackConfigured } from "~/slack/lib/slack-client";
-import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
+import { resolveSlackIdsForInvite } from "~/slack/lib/slack-sync.server";
 import { ensureTeam, addTeamMember } from "~/lib/github";
 import { workspaceConfigured, ensureWorkspaceGroup, addGroupMember } from "~/lib/google-workspace";
 import { externalFinalizeAllowed } from "~/projects/lib/finalize-external.server";
