@@ -8,7 +8,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { coreHandle } from "~/core/coreNav";
 import { requireCommsViewer } from "~/core/lib/communications.server";
 import { BannerInputSchema, validateForPublish } from "~/core/lib/banners";
-import { createBanner, deleteBanner, getBanner, updateBanner } from "~/core/lib/banners.server";
+import { createBanner, deleteBanner, getBanner, untilFormError, updateBanner } from "~/core/lib/banners.server";
 import { BannerEditor } from "~/core/components/banners/BannerEditor";
 
 export const handle = coreHandle("communications");
@@ -24,7 +24,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const isNew = params.bannerId === "new";
   const banner = isNew ? null : await getBanner(params.bannerId);
   if (!isNew && !banner) throw new Response("Not found", { status: 404 });
-  const [groups, me, media] = await Promise.all([
+  const [groups, me, media, forms] = await Promise.all([
     listAllGroups(request),
     prisma.user.findUnique({ where: { id: viewer.userId }, select: { firstName: true, lastName: true } }),
     prisma.banner.findMany({
@@ -32,6 +32,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       orderBy: { updatedAt: "desc" },
       select: { mediaUrl: true },
       take: 12,
+    }),
+    prisma.form.findMany({
+      where: { published: true, archivedAt: null },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, audience: true },
     }),
   ]);
   return {
@@ -41,6 +46,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       groups.filter((g) => !g.archived),
       banner?.groupIds,
     ).map((g) => ({ id: g.id, name: g.name, memberCount: g.memberIds.length })),
+    forms,
     recentMedia: [...new Set(media.map((m) => m.mediaUrl!))].slice(0, 6),
   };
 }
@@ -69,6 +75,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (input.published) {
     const errors = validateForPublish(input);
     if (Object.keys(errors).length) return { ok: false as const, error: "Fix the highlighted sections first.", errors };
+    const formError = await untilFormError(input);
+    if (formError) return { ok: false as const, error: formError };
   }
   let id = params.bannerId;
   if (id === "new") {

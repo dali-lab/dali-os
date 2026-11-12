@@ -29,40 +29,48 @@ const banner = (over: Partial<BannerView> = {}): BannerView => ({
 const render = (b: BannerView) => renderToStaticMarkup(createElement(BannerContent, { banner: b, inert: true }));
 
 describe("bannerCardWidth", () => {
-  it("narrows the card to the poster when a poster has no text", () => {
+  it("narrows the card to the poster for every poster, with or without text or an image", () => {
     expect(bannerCardWidth(banner())).toBe(POSTER_CARD_WIDTH);
+    expect(bannerCardWidth(banner({ headline: "Join us", body: "Bring yarn", ctaLabel: "RSVP" }))).toBe(POSTER_CARD_WIDTH);
+    expect(bannerCardWidth(banner({ mediaUrl: null }))).toBe(POSTER_CARD_WIDTH);
   });
 
-  it("keeps the full card when a poster has a headline, message or button", () => {
-    expect(bannerCardWidth(banner({ headline: "Join us" }))).toBe(BANNER_CARD_WIDTH);
-    expect(bannerCardWidth(banner({ body: "Bring yarn" }))).toBe(BANNER_CARD_WIDTH);
-    expect(bannerCardWidth(banner({ ctaLabel: "RSVP" }))).toBe(BANNER_CARD_WIDTH);
-  });
-
-  it("keeps the full card for a poster with no image yet and for other kinds", () => {
-    expect(bannerCardWidth(banner({ mediaUrl: null }))).toBe(BANNER_CARD_WIDTH);
+  it("keeps the full card for other kinds", () => {
     expect(bannerCardWidth(banner({ kind: "Image" }))).toBe(BANNER_CARD_WIDTH);
+    expect(bannerCardWidth(banner({ kind: "Video" }))).toBe(BANNER_CARD_WIDTH);
     expect(bannerCardWidth(banner({ kind: "Text", mediaUrl: null, headline: "Hi" }))).toBe(BANNER_CARD_WIDTH);
   });
 });
 
 describe("BannerContent poster", () => {
-  it("shows a poster with no text whole, with no empty text column", () => {
+  it("shows a poster with no text whole at up to 80% of the window", () => {
     const html = render(banner());
     expect(html).not.toContain("grid-cols");
     expect(html).toContain("object-contain");
-    expect(html).not.toContain("aspect-[3/4]");
+    expect(html).toContain("max-h-[80vh]");
   });
 
-  it("keeps the poster beside its text when there is text", () => {
+  it("stacks the text under the whole poster, never beside it", () => {
     const html = render(banner({ headline: "Join us" }));
-    expect(html).toContain("grid-cols");
-    expect(html).toContain("aspect-[3/4]");
-    expect(html).toContain("Join us");
+    expect(html).not.toContain("grid-cols");
+    expect(html).toContain("object-contain");
+    expect(html).toContain("max-h-[60vh]");
+    expect(html.indexOf("<img")).toBeLessThan(html.indexOf("Join us"));
+    expect(html).toContain("text-2xl");
   });
 
   it("shows the add-an-image placeholder when a poster has no image", () => {
     expect(render(banner({ mediaUrl: null }))).toContain("Add an image");
+  });
+});
+
+describe("BannerContent image", () => {
+  it("shows the whole 16:9 image with no height cap that crops it", () => {
+    const html = render(banner({ kind: "Image", headline: "Open house" }));
+    expect(html).toContain("aspect-[16/9]");
+    expect(html).not.toContain("max-h-[50vh]");
+    expect(html).not.toContain("overflow-hidden");
+    expect(html.indexOf("<img")).toBeLessThan(html.indexOf("Open house"));
   });
 });
 

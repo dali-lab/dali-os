@@ -19,9 +19,12 @@ import {
   BANNER_PAGES,
   BANNER_ROLES,
   BANNER_ROLE_LABELS,
+  FORM_AUDIENCE_LABEL,
+  FORM_CTA_LABEL,
   FREQUENCY_HELP,
   STATUS_DOT,
   STATUS_LABEL,
+  UNTIL_FORM_HELP,
   bannerStatus,
   pageLabel,
   snoozeOffered,
@@ -38,6 +41,7 @@ type EditorData = {
   banner: BannerDTO | null;
   author: string;
   groups: { id: string; name: string; memberCount: number }[];
+  forms: { id: string; name: string; audience: string }[];
   recentMedia: string[];
 };
 
@@ -75,6 +79,7 @@ function initialDraft(b: BannerDTO | null): Draft {
     triggerPath: null,
     frequency: "EveryOpen",
     allowSnooze: true,
+    untilFormId: null,
     startsAt: toLocal(start),
     endsAt: toLocal(end),
     published: false,
@@ -121,10 +126,25 @@ export function BannerEditor({ data }: { data: EditorData }) {
   }
 
   const patch = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }));
-  const view = { ...draft, author: existing?.author ?? data.author, name: draft.name || draft.headline || "Untitled banner" };
+  const view = {
+    ...draft,
+    author: existing?.author ?? data.author,
+    name: draft.name || draft.headline || "Untitled banner",
+    ctaLabel: draft.untilFormId ? draft.ctaLabel || FORM_CTA_LABEL : draft.ctaLabel,
+    ctaUrl: draft.untilFormId ? draft.ctaUrl || "/forms" : draft.ctaUrl,
+  };
+  const frequencyOptions: { value: BannerFrequency; label: string }[] = [
+    { value: "EveryOpen", label: "Every time" },
+    { value: "Daily", label: "Once a day" },
+    { value: "Once", label: "Once per person" },
+  ];
   const startsLater = draft.startsAt && new Date(draft.startsAt) > new Date();
 
   const persist = (published: boolean) => {
+    if (draft.untilFormId === "") {
+      toast.error("Pick a form, or choose Always");
+      return;
+    }
     const input = toInput(draft, published);
     const e = published ? validateForPublish(input) : {};
     setErrors(e);
@@ -276,15 +296,20 @@ export function BannerEditor({ data }: { data: EditorData }) {
             <div className="grid gap-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
               <label className={os.fieldLabel}>
                 Button label (optional)
-                <input value={draft.ctaLabel} onChange={(e) => patch({ ctaLabel: e.target.value })} maxLength={60} placeholder="Learn more" />
+                <input
+                  value={draft.ctaLabel}
+                  onChange={(e) => patch({ ctaLabel: e.target.value })}
+                  maxLength={60}
+                  placeholder={draft.untilFormId ? FORM_CTA_LABEL : "Learn more"}
+                />
               </label>
               <label className={os.fieldLabel}>
                 Button link
                 <input
                   value={draft.ctaUrl}
                   onChange={(e) => patch({ ctaUrl: e.target.value })}
-                  placeholder="/projects or https://"
-                  disabled={!draft.ctaLabel}
+                  placeholder={draft.untilFormId ? "Leave empty to open the form" : "/projects or https://"}
+                  disabled={!draft.ctaLabel && !draft.untilFormId}
                 />
               </label>
             </div>
@@ -372,11 +397,7 @@ export function BannerEditor({ data }: { data: EditorData }) {
                 size="md"
                 value={draft.frequency}
                 onChange={(frequency) => patch({ frequency })}
-                options={[
-                  { value: "EveryOpen", label: "Every time" },
-                  { value: "Daily", label: "Once a day" },
-                  { value: "Once", label: "Once per person" },
-                ]}
+                options={draft.untilFormId ? frequencyOptions.filter((o) => o.value !== "Once") : frequencyOptions}
               />
               <p className="text-xs text-os-muted">{FREQUENCY_HELP[draft.frequency]}</p>
             </div>
@@ -398,6 +419,45 @@ export function BannerEditor({ data }: { data: EditorData }) {
                 onChange={(e) => patch({ allowSnooze: e.target.checked })}
               />
             </div>
+          </Panel>
+
+          <Panel title="Show until">
+            <Segmented<"always" | "form">
+              ariaLabel="Show until"
+              size="md"
+              value={draft.untilFormId === null ? "always" : "form"}
+              onChange={(v) =>
+                patch(v === "always" ? { untilFormId: null } : { untilFormId: data.forms[0]?.id ?? "" })
+              }
+              options={[
+                { value: "always", label: "Always" },
+                { value: "form", label: "They fill a form" },
+              ]}
+            />
+            {draft.untilFormId !== null && (
+              <div className="flex flex-col gap-2">
+                <div className="sm:w-80">
+                  <Select
+                    value={draft.untilFormId || undefined}
+                    ariaLabel="Form"
+                    placeholder="Pick a form"
+                    buttonClassName={os.formTrigger}
+                    options={data.forms.map((f) => ({
+                      value: f.id,
+                      label: f.name,
+                      description: FORM_AUDIENCE_LABEL[f.audience] ?? f.audience,
+                    }))}
+                    onChange={(untilFormId) =>
+                      patch({
+                        untilFormId,
+                        frequency: draft.frequency === "Once" ? "EveryOpen" : draft.frequency,
+                      })
+                    }
+                  />
+                </div>
+                <p className="text-xs text-os-muted">{UNTIL_FORM_HELP}</p>
+              </div>
+            )}
           </Panel>
 
           <Panel title="Schedule" error={errors.schedule}>

@@ -313,6 +313,20 @@ export const prisma = {
     updateMany: vi.fn(),
     deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
   },
+  banner: {
+    findMany: vi.fn().mockResolvedValue([]),
+    findFirst: vi.fn(),
+    findUnique: vi.fn(),
+    count: vi.fn().mockResolvedValue(0),
+    create: vi.fn(),
+    updateMany: vi.fn(),
+    deleteMany: vi.fn(),
+  },
+  bannerImpression: {
+    findMany: vi.fn().mockResolvedValue([]),
+    groupBy: vi.fn().mockResolvedValue([]),
+    upsert: vi.fn(),
+  },
   notificationPreference: {
     findMany: vi.fn().mockResolvedValue([]),
     findUnique: vi.fn(),
