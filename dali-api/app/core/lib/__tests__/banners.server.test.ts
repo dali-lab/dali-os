@@ -6,9 +6,9 @@ const db = vi.hoisted(() => ({
   user: { findMany: vi.fn() },
 }));
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
-vi.mock("~/lib/groups", () => ({ isUserInAnyGroup: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ isUserInAnyGroup: vi.fn() }));
 
-import { isUserInAnyGroup } from "~/lib/groups";
+import { isUserInAnyGroup } from "~/lib/groups.server";
 import type { UserRoles } from "~/lib/roles";
 import type { BannerInput } from "~/core/lib/banners";
 import {

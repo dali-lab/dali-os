@@ -7,10 +7,10 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/cors", () => ({ withCors: (_req: Request, res: Response) => res, handlePreflight: () => null }));
-vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/collabAuth.server", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/comment-events.server", () => ({ publishCommentChange: vi.fn() }));
-vi.mock("~/lib/mentions", () => ({
+vi.mock("~/lib/mentions.server", () => ({
   extractHandlesFromText: vi.fn(() => []),
   resolveHandles: vi.fn().mockResolvedValue([]),
   notifyMentions: vi.fn(),
@@ -22,7 +22,7 @@ vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { notifyMentions } from "~/lib/mentions";
+import { notifyMentions } from "~/lib/mentions.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { action } from "~/routes/api.comments";
 

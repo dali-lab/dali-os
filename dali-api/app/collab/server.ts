@@ -4,7 +4,7 @@ import IORedis from "ioredis";
 import { verifyCollabToken } from "./auth";
 import { loadDocument, maybeSnapshot, storeDocument } from "./persistence";
 import { isPresenceRoom } from "./roomName";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { notifyCollabDocMentions } from "./mentions.server";
 import { reconcilePageLinks } from "./page-links.server";
 import { attachAgentPresence, republishAgents } from "./agent-presence.server";

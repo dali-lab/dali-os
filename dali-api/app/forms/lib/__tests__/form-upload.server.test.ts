@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/forms/lib/form-access.server", () => ({ fillAccessByPage: vi.fn() }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getUploadPost: vi.fn(),
   isS3Configured: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { fillAccessByPage } from "~/forms/lib/form-access.server";
-import { getUploadPost, isS3Configured } from "~/lib/s3";
+import { getUploadPost, isS3Configured } from "~/lib/s3.server";
 import { presignFormUpload } from "~/forms/lib/form-upload.server";
 import { FORM_UPLOAD_CAP } from "~/lib/file-validation";
 

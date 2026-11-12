@@ -5,7 +5,7 @@ import { isOfferingManager } from "~/lib/offering-manager.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import type { Prisma, WorkspaceType } from "~/generated/prisma/client";
-import { MAX_PAGE_DEPTH, collectSubtree } from "~/lib/pages";
+import { MAX_PAGE_DEPTH, collectSubtree } from "~/lib/pages.server";
 import { loadAncestorChain, chainDepth, chainHasAncestor, chainGoverningScope } from "~/drive/lib/page-ancestry.server";
 import { isRoot, nearestRoot, rootBoundMoveError, ROOT_MOVE_ERROR, SYSTEM_FOLDER_MOVE_ERROR } from "~/drive/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";

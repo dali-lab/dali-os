@@ -6,7 +6,7 @@ vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.f
 
 import { prisma } from "~/lib/db.server";
 import { syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
-import { ensureMeetingNotebook, moveIntoNotebook, trashNotebookIfAbandoned } from "~/lib/pages";
+import { ensureMeetingNotebook, moveIntoNotebook, trashNotebookIfAbandoned } from "~/lib/pages.server";
 
 const page = vi.mocked(prisma.page);
 const input = {

@@ -4,7 +4,7 @@ import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
-import { coreCycleTermIds } from "~/lib/core-cycle";
+import { coreCycleTermIds } from "~/lib/core-cycle.server";
 import { logRoleChange, logDomainLeadChange } from "~/admin/lib/access-audit.server";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 

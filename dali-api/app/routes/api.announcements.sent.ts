@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.announcements.sent";
 import { loadSentAnnouncements } from "~/core/lib/announcements-sent.server";
 import { requireAuth } from "~/lib/auth";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import { isCore } from "~/lib/roles";
 
 export async function loader({ request }: Route.LoaderArgs) {

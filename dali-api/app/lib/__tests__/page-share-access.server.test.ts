@@ -13,8 +13,8 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/page-sharing.server", () => ({ sharePermissionFor: vi.fn() }));
-vi.mock("~/lib/pages", () => ({ collectSubtree: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
+vi.mock("~/lib/pages.server", () => ({ collectSubtree: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: vi.fn() }));
 vi.mock("~/lib/lab-documents.server", () => ({ labDocAccess: vi.fn() }));
 vi.mock("~/members/lib/personal-notes.server", () => ({ noteAccess: vi.fn() }));
 vi.mock("~/partners/lib/partner-access", () => ({
@@ -23,8 +23,8 @@ vi.mock("~/partners/lib/partner-access", () => ({
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { collectSubtree } from "~/lib/pages";
-import { resolveGroupMembers } from "~/lib/groups";
+import { collectSubtree } from "~/lib/pages.server";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { sharePermissionFor } from "~/lib/page-sharing.server";
 import { labDocAccess } from "~/lib/lab-documents.server";

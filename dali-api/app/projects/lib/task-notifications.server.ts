@@ -6,7 +6,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions.server";
 import { TASK_STATUS_LABELS } from "./task-board";
 import { currentProjectParticipantIds } from "./project-members.server";
 

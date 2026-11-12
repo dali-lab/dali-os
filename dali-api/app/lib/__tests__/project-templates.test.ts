@@ -14,7 +14,7 @@ const prismaMock = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
-vi.mock("~/lib/groups", () => ({ ensureProjectGroup: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ ensureProjectGroup: vi.fn() }));
 vi.mock("~/drive/lib/page-copy.server", () => ({ duplicatePage: vi.fn() }));
 
 import {

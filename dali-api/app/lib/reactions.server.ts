@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { customEmojiName, hasRoomForReaction } from "~/lib/reactions";
 
 // Built with the constructor: the `v` flag is newer than the compile target.

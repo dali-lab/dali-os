@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server", () => ({
   prisma: { mailAccount: { findFirst: vi.fn() } },
 }));
-vi.mock("~/lib/gmail-integration", () => ({
+vi.mock("~/lib/gmail-integration.server", () => ({
   getMailboxReader: vi.fn(),
   noteSenderHealth: vi.fn(),
 }));
@@ -17,7 +17,7 @@ vi.mock("~/email/lib/gmail-mailbox.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { getMailboxReader } from "~/lib/gmail-integration";
+import { getMailboxReader } from "~/lib/gmail-integration.server";
 import { refreshGoogleToken } from "~/lib/google-oauth";
 import { getMailboxToken } from "~/email/lib/gmail-mailbox.server";
 import { getSharedInboxToken } from "~/email/lib/mail-index.server";

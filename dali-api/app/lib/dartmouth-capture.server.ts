@@ -21,7 +21,7 @@ import {
   DartmouthPeopleError,
 } from "~/lib/dartmouth-people";
 import { recordUserEmail } from "~/lib/user-email.server";
-import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status";
+import { syncAndRecomputeMembershipStatus } from "~/lib/membership-status.server";
 
 export type CaptureResult = {
   netIdCaptured: boolean;

@@ -10,7 +10,7 @@ import { prisma } from "~/lib/db.server";
 import { cachedDomains, cachedTerms } from "~/lib/reference-cache.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import { ensureStaffingCycle } from "~/projects/lib/staffing-cycle";

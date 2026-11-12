@@ -5,7 +5,7 @@ const currentTerm = vi.fn();
 const syncAndRecomputeMembershipStatus = vi.fn();
 const resolveMembershipStatus = vi.fn();
 vi.mock("~/lib/roles", () => ({ currentTerm: (...a: unknown[]) => currentTerm(...a) }));
-vi.mock("~/lib/membership-status", () => ({
+vi.mock("~/lib/membership-status.server", () => ({
   syncAndRecomputeMembershipStatus: (...a: unknown[]) => syncAndRecomputeMembershipStatus(...a),
   resolveMembershipStatus: (...a: unknown[]) => resolveMembershipStatus(...a),
   commencementDate: vi.fn(),

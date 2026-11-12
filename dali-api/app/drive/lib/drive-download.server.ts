@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Zip, ZipPassThrough } from "fflate";
 import { DRIVE_DOWNLOAD_PREFIX } from "~/lib/file-validation";
 import { uniqueNames } from "~/lib/file-download-name";
-import { deleteObject, getDownloadUrl, getObjectStream, putObjectStream } from "~/lib/s3";
+import { deleteObject, getDownloadUrl, getObjectStream, putObjectStream } from "~/lib/s3.server";
 
 export const MAX_ZIP_FILES = 100;
 export const MAX_ZIP_BYTES = 500 * 1024 * 1024;

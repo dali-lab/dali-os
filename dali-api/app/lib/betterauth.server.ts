@@ -7,7 +7,7 @@ import { passkey } from "@better-auth/passkey";
 import { prisma } from "~/lib/db.server";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { freshKey } from "~/lib/outbound-keys";
+import { freshKey } from "~/lib/outbound-keys.server";
 import { renderAuthEmail } from "~/email/lib/layout.server";
 import {
   signInLinkEmail,
@@ -345,7 +345,7 @@ export const auth = betterAuth({
               update: {},
               create: { userId: user.id },
             });
-            const { assignHandleIfMissing } = await import("~/lib/handle");
+            const { assignHandleIfMissing } = await import("~/lib/handle.server");
             await assignHandleIfMissing(user.id);
           } catch (err) {
             console.error(

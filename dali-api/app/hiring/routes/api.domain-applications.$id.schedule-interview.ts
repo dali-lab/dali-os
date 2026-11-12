@@ -4,7 +4,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { assignInterviewers } from "~/hiring/lib/scheduling";
-// import { provisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+// import { provisionZoomMeeting } from "~/lib/zoom.server"; // S2S Zoom not configured yet
 import { provisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { parseJson } from "~/lib/validate";
 import { sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";

@@ -20,9 +20,9 @@ vi.mock("~/lib/auth", async () => {
 vi.mock("~/lib/roles", () => ({ getUserRoles: mocks.getUserRoles }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: mocks.isFeatureEnabled }));
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupIdsForUser: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupIdsForUser: vi.fn() }));
 
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import { requireFeedbackViewer } from "../feedback.server";
 import { requireResourcesViewer } from "../resources.server";
 import { requireReleaseNoteViewer } from "../release-notes.server";

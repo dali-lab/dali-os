@@ -18,7 +18,7 @@ import {
   isAllowedRedirectUri,
   exchangeAuthorizationCode,
   buildUserInfo,
-} from "~/lib/oauth";
+} from "~/lib/oauth.server";
 
 const mockPrisma = prisma as unknown as {
   oAuthSession: {

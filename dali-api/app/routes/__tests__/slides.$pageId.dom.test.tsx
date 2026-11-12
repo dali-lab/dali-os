@@ -35,7 +35,7 @@ vi.mock("~/lib/slide-live.server", () => ({ slidesLiveEnabled: m.slidesLive }));
 vi.mock("~/collab/deck-live.server", () => ({ readLiveDeck: m.readLiveDeck, transactDeck: m.transact }));
 vi.mock("~/lib/roles", () => ({ isCore: m.isCore, getUserRoles: vi.fn(async () => ({})) }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: m.token }));
-vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => ({ name: "Ada Lovelace", photoUrl: null })) }));
+vi.mock("~/lib/presence-user.server", () => ({ getPresenceUser: vi.fn(async () => ({ name: "Ada Lovelace", photoUrl: null })) }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: m.canManage }));
 vi.mock("~/components/slides/collab/SlidesEditor", () => ({
   SlidesEditor: (p: { canEdit: boolean; actionsSlot?: unknown }) =>

@@ -5,7 +5,7 @@ import {
   generateAuthorizationCode,
   getOAuthClient,
   isAllowedRedirectUri,
-} from "~/lib/oauth";
+} from "~/lib/oauth.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { isImpersonating, requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";

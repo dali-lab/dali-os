@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getObjectStream: vi.fn(),
   putObjectStream: vi.fn(),
   deleteObject: vi.fn(),
@@ -9,7 +9,7 @@ vi.mock("~/lib/s3", () => ({
 }));
 
 import { buildDriveZip, zipSources } from "~/drive/lib/drive-download.server";
-import { deleteObject, getDownloadUrl, getObjectStream, putObjectStream } from "~/lib/s3";
+import { deleteObject, getDownloadUrl, getObjectStream, putObjectStream } from "~/lib/s3.server";
 
 const modified = new Date("2026-03-01T12:00:00Z");
 const source = (name: string, s3Key = name) => ({ name, s3Key, modified });

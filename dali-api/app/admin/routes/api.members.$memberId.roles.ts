@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, currentTerm } from "~/lib/roles";
-import { coreCycleTermIds } from "~/lib/core-cycle";
+import { coreCycleTermIds } from "~/lib/core-cycle.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { logRoleChange } from "~/admin/lib/access-audit.server";

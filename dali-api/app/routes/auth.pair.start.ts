@@ -16,7 +16,7 @@ import {
   formatUserCode,
   PAIRING_TTL_MS,
   POLL_INTERVAL_SECONDS,
-} from "~/lib/pairing";
+} from "~/lib/pairing.server";
 import { isUniqueViolation } from "~/lib/prisma-errors";
 
 export async function action({ request }: Route.ActionArgs) {

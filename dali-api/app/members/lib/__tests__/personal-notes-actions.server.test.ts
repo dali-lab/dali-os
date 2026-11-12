@@ -28,7 +28,7 @@ vi.mock("~/members/lib/personal-notes.server", () => {
   return { NoteNotFoundError, NoteForbiddenError, requireNoteOwner: vi.fn() };
 });
 vi.mock("~/drive/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   pageDepth: vi.fn(),
   isAncestorOf: vi.fn(),
   MAX_PAGE_DEPTH: 4,
@@ -40,7 +40,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { addPageShare, listPageShares, removePageShare, SharePrincipalError } from "~/lib/page-sharing.server";
 import { NoteForbiddenError, NoteNotFoundError, requireNoteOwner } from "~/members/lib/personal-notes.server";
 import { assertUniqueName } from "~/drive/lib/page-names.server";
-import { pageDepth, isAncestorOf } from "~/lib/pages";
+import { pageDepth, isAncestorOf } from "~/lib/pages.server";
 import {
   addNoteShare,
   archiveNote,

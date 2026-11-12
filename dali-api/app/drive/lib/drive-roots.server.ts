@@ -6,7 +6,7 @@ import {
   MENTORSHIP_PROCESS_ID,
 } from "~/lib/process-ids";
 import type { ProcessType, SharePermission } from "~/generated/prisma/client";
-import { ensureMentorsGroup } from "~/lib/groups";
+import { ensureMentorsGroup } from "~/lib/groups.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadAncestorChain } from "~/drive/lib/page-ancestry.server";
 import { nearestRoot } from "~/drive/lib/drive-roots";

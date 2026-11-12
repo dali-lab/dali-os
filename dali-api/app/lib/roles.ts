@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { isAdminOnlyCycle } from "~/hiring/lib/applicant-groups";
-import { cycleSortKeyRange } from "~/lib/core-cycle";
+import { cycleSortKeyRange } from "~/lib/core-cycle.server";
 import { cachedForRequest } from "~/lib/request-cache";
 import { cachedForTtl } from "~/lib/ttl-cache";
 import type { AssignmentType, OfferingType } from "~/generated/prisma/client";
@@ -774,7 +774,7 @@ export async function currentTermMemberWhere(request?: Request) {
  * helper just returns the current cycle's term ids — same set the
  * cycle-aware fan-out writes to CoreAssignment.
  *
- * Cycle math lives in `~/lib/core-cycle.ts` and is shared with the
+ * Cycle math lives in `~/lib/core-cycle.server` and is shared with the
  * add/remove writers so reads + writes can't drift.
  */
 export async function getActiveCoreCycleTermIds(request?: Request): Promise<string[]> {

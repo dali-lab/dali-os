@@ -7,7 +7,7 @@
 // NEVER log transcript text, chunk bytes, or a presigned chunk URL.
 
 import { prisma, Prisma } from "~/lib/db.server";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { isPresenceRoom } from "~/collab/roomName";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { deletePrefix } from "~/lib/transcription/chunks.server";

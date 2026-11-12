@@ -2,7 +2,7 @@
 // Returns: { url: string } — a presigned S3 read URL valid for 1 hour
 
 import { requireAuth } from "~/lib/auth";
-import { getDownloadUrl } from '~/lib/s3'
+import { getDownloadUrl } from '~/lib/s3.server'
 import { isReservedUploadKey } from '~/lib/file-validation'
 
 export async function loader({ request }: { request: Request }) {

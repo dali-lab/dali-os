@@ -4,7 +4,7 @@ vi.mock("~/lib/db.server", () => ({
   prisma: { mailAccount: { upsert: vi.fn() }, mailAccountConnection: { upsert: vi.fn() } },
 }));
 vi.mock("~/lib/roles", () => ({}));
-vi.mock("~/lib/groups", () => ({}));
+vi.mock("~/lib/groups.server", () => ({}));
 vi.mock("~/lib/feature-flags.server", () => ({}));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/app-env", () => ({ getApiBaseUrl: () => "https://dali.example" }));

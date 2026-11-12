@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: { session: { findUnique: mocks.findSession } } }));
-vi.mock("~/lib/session", () => ({ hashSessionId: (s: string) => `h:${s}`, revokeSession: mocks.revoke }));
+vi.mock("~/lib/session.server", () => ({ hashSessionId: (s: string) => `h:${s}`, revokeSession: mocks.revoke }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mocks.audit }));
 vi.mock("~/lib/betterauth-compat.server", () => ({ getBetterAuthUser: mocks.baUser }));
 vi.mock("~/lib/betterauth.server", () => ({ auth: { api: { signOut: mocks.signOut } } }));

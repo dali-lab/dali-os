@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockGetOAuthClient = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/oauth", async () => ({
+vi.mock("~/lib/oauth.server", async () => ({
   // authorizationResponseUrl is a pure URL builder — use the real one so these
   // tests see the same `iss` the route actually emits.
   authorizationResponseUrl: (
-    await vi.importActual<typeof import("~/lib/oauth")>("~/lib/oauth")
+    await vi.importActual<typeof import("~/lib/oauth.server")>("~/lib/oauth.server")
   ).authorizationResponseUrl,
   createOAuthSession: vi.fn().mockResolvedValue({ id: "session-1" }),
   getOAuthClient: mockGetOAuthClient,
@@ -30,7 +30,7 @@ vi.mock("~/lib/db.server", () => ({
 }));
 
 import { _resetForTests } from "~/lib/rate-limit";
-import { createOAuthSession, generateAuthorizationCode } from "~/lib/oauth";
+import { createOAuthSession, generateAuthorizationCode } from "~/lib/oauth.server";
 import { prisma } from "~/lib/db.server";
 import { loader } from "~/routes/oauth.authorize";
 

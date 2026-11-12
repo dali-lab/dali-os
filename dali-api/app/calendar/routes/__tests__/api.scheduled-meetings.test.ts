@@ -18,7 +18,7 @@ vi.mock("~/lib/roles", () => ({
   canViewForms: vi.fn().mockResolvedValue(false),
   isCore: vi.fn().mockResolvedValue(false),
 }));
-vi.mock("~/lib/groups", () => ({ isCoreGroup: vi.fn().mockResolvedValue(false) }));
+vi.mock("~/lib/groups.server", () => ({ isCoreGroup: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/rooms/lib/rooms.server", () => ({ assertMeetingRoomsFree: vi.fn() }));
 vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ createScheduledMeeting: mockCreate }));
 vi.mock("~/lib/note-path.server", () => ({ meetingNotePath: mockNotePath }));

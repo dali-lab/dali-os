@@ -11,7 +11,7 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ ensureProjectGroup: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ ensureProjectGroup: vi.fn() }));
 vi.mock("~/lib/infra/config-save.server", () => ({ saveInfraConfig: vi.fn() }));
 vi.mock("~/lib/chart-string.server", () => ({
   recordProjectChartString: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock("../project-terms.server", () => ({ replaceProjectTerms: vi.fn() }));
 
 import { prisma as realPrisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { linkProjectPartner } from "~/partners/lib/partner-access";
 import { replaceProjectTerms } from "../project-terms.server";

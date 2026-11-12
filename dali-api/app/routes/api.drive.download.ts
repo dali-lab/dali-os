@@ -7,7 +7,7 @@ import { filterViewableFiles } from "~/lib/fileAccess.server";
 import { downloadFileName } from "~/lib/file-download-name";
 import { buildDriveZip, MAX_ZIP_BYTES, MAX_ZIP_FILES } from "~/drive/lib/drive-download.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { isS3Configured } from "~/lib/s3";
+import { isS3Configured } from "~/lib/s3.server";
 import { idSchema, parseJson } from "~/lib/validate";
 
 // POST /api/drive/download { fileIds } — zips the files the caller can view and

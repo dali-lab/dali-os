@@ -6,7 +6,7 @@
 import { prisma } from "~/lib/db.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { notify } from "~/lib/notify.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import {
   createGoogleCalendarEvent,
   patchGoogleCalendarEvent,

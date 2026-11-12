@@ -4,8 +4,8 @@ import {
   buildUserInfo,
   getOAuthClient,
   OAuthError,
-} from "~/lib/oauth";
-import type { UserInfo } from "~/lib/oauth";
+} from "~/lib/oauth.server";
+import type { UserInfo } from "~/lib/oauth.server";
 
 import { getClientIp } from "~/lib/request-meta";
 import { withCors, handlePreflight, preflightLoader } from "~/lib/cors";

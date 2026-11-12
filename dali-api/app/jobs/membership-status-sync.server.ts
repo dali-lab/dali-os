@@ -33,7 +33,7 @@ import {
   resolveMembershipStatus,
   commencementDate,
   syncAndRecomputeMembershipStatus,
-} from "~/lib/membership-status";
+} from "~/lib/membership-status.server";
 
 // The classYear whose Commencement has passed as of `now` — a member at or
 // below this class has graduated (used to scope the ambiguous set).

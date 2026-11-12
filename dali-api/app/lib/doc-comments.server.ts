@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { notify } from "~/lib/notify.server";
-import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions";
+import { extractHandlesFromText, resolveHandles, notifyMentions, pageDocLink } from "~/lib/mentions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import type { BodySegment } from "~/lib/comment-body";
 import { anchorSlideId, type commentAnchorSchema } from "~/lib/slide-comments";

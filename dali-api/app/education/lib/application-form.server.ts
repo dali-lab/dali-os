@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "~/lib/db.server";
 import { createForm } from "~/forms/lib/form-page.server";
-import { ensureOfferingFormsFolder } from "~/lib/pages";
+import { ensureOfferingFormsFolder } from "~/lib/pages.server";
 import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import type { Question } from "~/types";
 import { resolveReferenceOptions } from "~/forms/lib/reference-sources";

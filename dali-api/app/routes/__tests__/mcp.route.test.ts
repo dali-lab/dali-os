@@ -29,7 +29,7 @@ const h = vi.hoisted(() => {
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: h.isFeatureEnabled }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}) }));
-vi.mock("~/lib/mcp-auth", () => ({ authenticateMcpRequest: h.authenticate }));
+vi.mock("~/lib/mcp-auth.server", () => ({ authenticateMcpRequest: h.authenticate }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: h.checkRateLimit }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: h.logAuditEvent }));
 vi.mock("~/mcp/audit.server", () => ({ logMcpToolCall: h.logMcpToolCall }));

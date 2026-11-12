@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import { BadRequestError, ForbiddenError } from "~/lib/http-error";
 import { PROJECT_STATUSES, type ProjectStatus } from "./project-lifecycle";
 

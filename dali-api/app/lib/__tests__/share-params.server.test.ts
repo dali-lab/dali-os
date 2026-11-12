@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import { loadShareOptions, parseLinkAccess, parsePermission } from "../share-params.server";
 
 const m = prisma as any;

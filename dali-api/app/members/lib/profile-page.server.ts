@@ -16,7 +16,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import {
   listProfileNotes,
   listSharedWithMe,
@@ -39,7 +39,7 @@ import {
   isCore,
   isLabMentor,
 } from "~/lib/roles";
-import { listActiveGroupsForUser } from "~/lib/groups";
+import { listActiveGroupsForUser } from "~/lib/groups.server";
 import { groupKind, orderGroupsForPicker, type GroupKind } from "~/lib/group-kind";
 import {
   ALLOWED_LEVELS,

@@ -4,7 +4,7 @@
 // for Claude Desktop / Claude Code to call our tools.
 
 import type { Route } from "./+types/mcp";
-import { authenticateMcpRequest } from "~/lib/mcp-auth";
+import { authenticateMcpRequest } from "~/lib/mcp-auth.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
 import { enterAgentContext } from "~/collab/agent-presence.server";

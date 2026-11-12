@@ -12,14 +12,14 @@ vi.mock("~/lib/db.server", () => {
     },
   };
 });
-vi.mock("~/lib/s3", () => ({ getObjectBytes: vi.fn(), getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ getObjectBytes: vi.fn(), getDownloadUrl: vi.fn() }));
 vi.mock("~/drive/lib/drive-receivers.server", () => ({
   resolveFilingFolder: vi.fn(),
   singletonSlot: vi.fn((scope: string, name: string) => ({ scope, name })),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { getObjectBytes, getDownloadUrl } from "~/lib/s3";
+import { getObjectBytes, getDownloadUrl } from "~/lib/s3.server";
 import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import {
   getCertificateTemplateBgUrl,

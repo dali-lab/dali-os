@@ -36,7 +36,7 @@ const gallery = vi.hoisted(() => ({
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/roles", () => roles);
 vi.mock("~/lib/feature-flags.server", () => flags);
-vi.mock("~/lib/s3", () => s3);
+vi.mock("~/lib/s3.server", () => s3);
 vi.mock("~/community/lib/gallery.server", () => gallery);
 
 import {

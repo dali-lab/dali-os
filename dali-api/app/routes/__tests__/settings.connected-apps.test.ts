@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const mockRequireAuth = vi.hoisted(() => vi.fn());
 vi.mock("~/lib/auth", () => ({ requireAuth: mockRequireAuth }));
 const mockRevokeAllForGrant = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/session", () => ({ revokeAllForGrant: mockRevokeAllForGrant }));
+vi.mock("~/lib/session.server", () => ({ revokeAllForGrant: mockRevokeAllForGrant }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/db.server", () => ({
   prisma: {

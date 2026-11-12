@@ -16,7 +16,7 @@
 import { isUniqueViolation } from "~/lib/prisma-errors";
 import { prisma, Prisma } from "~/lib/db.server";
 import { sendEmail, type EmailAttachment } from "~/lib/gmail";
-import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
+import { getSender, noteSenderHealth } from "~/lib/gmail-integration.server";
 import {
   slackConfigured,
   sendDm,
@@ -24,7 +24,7 @@ import {
   postBlocks,
   uploadFileToThread,
 } from "~/slack/lib/slack-client";
-import { getObjectBytes } from "~/lib/s3";
+import { getObjectBytes } from "~/lib/s3.server";
 import type { KnownBlock } from "@slack/web-api";
 import { getAppEnv } from "~/lib/app-env";
 import { slackSendAllowed } from "~/slack/lib/send-gate";

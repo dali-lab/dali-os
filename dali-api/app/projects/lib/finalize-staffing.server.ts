@@ -23,7 +23,7 @@ import {
 import { logAuditEvent } from "~/lib/audit";
 import { notify } from "~/lib/notify.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { staffingFinalizeWelcomeKey } from "~/lib/outbound-keys";
+import { staffingFinalizeWelcomeKey } from "~/lib/outbound-keys.server";
 import { notifyAdminsOfPromotion, isLevelAdvance } from "~/lib/promotion-notify.server";
 import type { Level } from "~/lib/level";
 import { dedupeLiveAssignments } from "./staffing-board";

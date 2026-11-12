@@ -10,7 +10,7 @@ import {
   extractHandlesFromText,
   extractMentionUserIds,
   pageDocLink,
-} from "~/lib/mentions";
+} from "~/lib/mentions.server";
 
 describe("extractHandlesFromText", () => {
   it("pulls bare @handles, lowercased and deduped", () => {

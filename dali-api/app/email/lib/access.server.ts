@@ -10,7 +10,7 @@
 
 import type { MailAccountKind } from "~/generated/prisma/enums";
 import { prisma } from "~/lib/db.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { currentTerm, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { PERSONAL_MAIL_NOTICE_VERSION } from "~/email/lib/personal-notice";

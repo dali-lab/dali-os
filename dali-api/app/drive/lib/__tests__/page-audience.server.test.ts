@@ -15,13 +15,13 @@ vi.mock("~/lib/roles", () => ({
   isLabMember: vi.fn(),
 }));
 vi.mock("~/partners/lib/partner-access", () => ({ partnerHasProjectAccess: vi.fn() }));
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn(),
   listVisibleGroupIdsForUser: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { describePageAudience, summarizeAudience, type AudiencePageRow } from "../page-audience.server";
 
 const db = prisma as any;

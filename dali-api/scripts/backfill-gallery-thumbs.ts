@@ -22,7 +22,7 @@ import { randomUUID } from "node:crypto";
 import { chromium, type Page } from "playwright-core";
 import { PrismaClient } from "../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { getObjectBytes, isS3Configured, putObject } from "../app/lib/s3";
+import { getObjectBytes, isS3Configured, putObject } from "../app/lib/s3.server";
 import { GALLERY_THUMB_WIDTH, galleryKeyPrefix } from "../app/community/lib/gallery";
 
 const COMMIT = process.argv.includes("--commit");

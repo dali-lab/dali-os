@@ -26,7 +26,7 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(n
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => u) }));
 vi.mock("~/lib/dartmouth-people", () => ({ graduateProgramLabel: vi.fn(() => null) }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn(async () => "tok") }));
-vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => null) }));
+vi.mock("~/lib/presence-user.server", () => ({ getPresenceUser: vi.fn(async () => null) }));
 vi.mock("~/members/lib/personal-notes.server", () => ({
   listProfileNotes: vi.fn(async () => []),
   listSharedWithMe: vi.fn(async () => []),
@@ -44,14 +44,14 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(async () => false),
   isLabMentor: vi.fn(async () => false),
 }));
-vi.mock("~/lib/groups", () => ({ listActiveGroupsForUser: vi.fn(async () => []) }));
+vi.mock("~/lib/groups.server", () => ({ listActiveGroupsForUser: vi.fn(async () => []) }));
 vi.mock("~/lib/group-kind", () => ({
   groupKind: vi.fn(() => "custom"),
   orderGroupsForPicker: vi.fn(() => []),
 }));
 vi.mock("~/admin/lib/eligibility", () => ({ ALLOWED_LEVELS: [], parseLevel: vi.fn() }));
 vi.mock("~/admin/lib/eligibility.server", () => ({}));
-vi.mock("~/lib/handle", () => ({ normalizeHandle: vi.fn() }));
+vi.mock("~/lib/handle.server", () => ({ normalizeHandle: vi.fn() }));
 vi.mock("~/wallet/lib/wallet-token.server", () => ({ rotateWalletSecret: vi.fn() }));
 vi.mock("~/wallet/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
 vi.mock("~/wallet/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn(() => false) }));

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLoaderData } from "react-router";
 import { Bell, SquareCheck } from "lucide-react";
 import { requireLabViewer } from "~/lib/lab-viewer.server";
-import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks";
+import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks.server";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { isBirthdayToday } from "~/members/lib/warmth";
 import { timed } from "~/lib/server-timing";

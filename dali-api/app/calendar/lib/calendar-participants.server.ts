@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import { listMentorPairs } from "~/mentorship/lib/pair-suggestion.server";
 import { currentTermMemberWhere } from "~/lib/roles";
 import { listCalendarsForLink } from "~/calendar/lib/google-calendar.server";

@@ -7,7 +7,7 @@
 
 import { prisma } from "~/lib/db.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
-import { resolveGroupMembers, resolveDynamicQuery } from "~/lib/groups";
+import { resolveGroupMembers, resolveDynamicQuery } from "~/lib/groups.server";
 import { currentTerm } from "~/lib/roles";
 import { partitionStaffedMembers, listStaffedMentors } from "./staffing-audience.server";
 import type { SignerCohorts } from "./state.server";

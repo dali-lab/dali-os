@@ -17,7 +17,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { getUploadPost, headObject, isS3Configured } from "~/lib/s3";
+import { getUploadPost, headObject, isS3Configured } from "~/lib/s3.server";
 import {
   MAX_FILE_STORE_BYTES,
   MAX_FILE_STORE_LABEL,

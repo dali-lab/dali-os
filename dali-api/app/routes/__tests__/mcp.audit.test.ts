@@ -5,7 +5,7 @@ const mockAuthenticate = vi.hoisted(() => vi.fn());
 
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: mockLogAuditEvent }));
-vi.mock("~/lib/mcp-auth", () => ({ authenticateMcpRequest: mockAuthenticate }));
+vi.mock("~/lib/mcp-auth.server", () => ({ authenticateMcpRequest: mockAuthenticate }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: () => null }));
 
 class FakeToolError extends Error {

@@ -22,7 +22,7 @@ vi.mock("~/calendar/lib/external-cache.server", () => ({
   markCalendarChanged: vi.fn(async () => {}),
 }));
 vi.mock("~/calendar/lib/sub-calendar.server", () => ({ setSubCalendarEnabled: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listAllGroups: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listAllGroups: vi.fn() }));
 vi.mock("~/mentorship/lib/pair-suggestion.server", () => ({ listMentorPairs: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/lib/member-class.server", () => {

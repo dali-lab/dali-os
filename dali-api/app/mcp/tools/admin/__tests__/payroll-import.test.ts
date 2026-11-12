@@ -5,7 +5,7 @@ const { PayrollImportError } = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   deleteObject: vi.fn(),
   getObjectBytes: vi.fn(),
   getUploadPost: vi.fn(),
@@ -18,7 +18,7 @@ vi.mock("~/admin/lib/payroll-import.server", () => ({
 }));
 
 import { isAdmin } from "~/lib/roles";
-import { deleteObject, getObjectBytes, getUploadPost, headObject } from "~/lib/s3";
+import { deleteObject, getObjectBytes, getUploadPost, headObject } from "~/lib/s3.server";
 import { importPayrollCsvs } from "~/admin/lib/payroll-import.server";
 import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import {

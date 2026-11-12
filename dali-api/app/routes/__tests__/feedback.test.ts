@@ -15,9 +15,9 @@ const mentions = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
-vi.mock("~/lib/mentions", () => mentions);
+vi.mock("~/lib/mentions.server", () => mentions);
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: vi.fn(() => null) }));
-vi.mock("~/lib/s3", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
 vi.mock("~/lib/feedback.server", () => ({
   requireFeedbackViewer: vi.fn(async () => ({ user: { sub: "me" }, core: false })),
 }));

@@ -3,7 +3,7 @@
 // them and see rosters, matching the web scheduler (which lets anyone schedule
 // a meeting with any team). Requires the `mcp:read` scope.
 
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import { pageArray, pageProps, type PageArgs } from "../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "~/lib/db.server";
-import { MAX_PAGE_DEPTH } from "~/lib/pages";
+import { MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import {
   chainDepth,
   chainGoverningScope,

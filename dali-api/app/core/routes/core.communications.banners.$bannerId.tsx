@@ -1,6 +1,6 @@
 import { redirect } from "react-router";
 import type { Route } from "./+types/core.communications.banners.$bannerId";
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { fullName } from "~/lib/display";
 import { prisma } from "~/lib/db.server";

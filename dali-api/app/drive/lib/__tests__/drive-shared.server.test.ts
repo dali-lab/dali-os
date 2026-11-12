@@ -17,14 +17,14 @@ vi.mock("~/lib/roles", () => ({
 vi.mock("~/partners/lib/partner-access", () => ({
   partnerHasProjectAccess: vi.fn().mockResolvedValue(false),
 }));
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
   listVisibleGroupIdsForUser: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import { loadSharedWithMe } from "~/drive/lib/drive-shared.server";
 
 const m = prisma as any;

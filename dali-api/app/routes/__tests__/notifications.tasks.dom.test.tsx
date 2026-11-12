@@ -10,8 +10,8 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({}));
 vi.mock("~/lib/login-next", () => ({}));
 vi.mock("~/lib/roles", () => ({}));
-vi.mock("~/lib/tasks", () => ({}));
-vi.mock("~/lib/notifications", () => ({}));
+vi.mock("~/lib/tasks.server", () => ({}));
+vi.mock("~/lib/notifications.server", () => ({}));
 vi.mock("~/components/os-chrome", () => ({ useOsChrome: () => ({ pageTitle: "", iconBtn: "" }) }));
 vi.mock("~/hooks/useUserTimeZone", () => ({ useUserTimeZone: () => "UTC" }));
 vi.mock("~/components/RsvpButtons", () => ({

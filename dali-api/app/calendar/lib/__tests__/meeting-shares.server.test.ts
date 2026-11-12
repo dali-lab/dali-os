@@ -11,11 +11,11 @@ vi.mock("~/lib/db.server", () => {
   return { prisma };
 });
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn(), PAGE_ACCESS_SELECT: { id: true } }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { removeMeetingShares, syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 
 const m = prisma as any;

@@ -12,7 +12,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth }));
 vi.mock("~/lib/roles", () => ({ getUserRoles }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent }));
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: vi.fn(() => null) }));
-vi.mock("~/lib/s3", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
 
 import { action, loader } from "../api.custom-emoji";
 

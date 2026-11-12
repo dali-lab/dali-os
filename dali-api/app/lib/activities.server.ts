@@ -12,7 +12,7 @@ import type {
   ActivityStatus,
 } from "~/generated/prisma/client";
 import { getActiveCoreCycleTermIds, getAdminUserIdsFromEnv, type UserRoles } from "~/lib/roles";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { fullName } from "~/lib/display";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { ROLE_TARGETS } from "~/lib/feature-flags";

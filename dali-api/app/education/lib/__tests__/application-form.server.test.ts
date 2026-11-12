@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { prisma } from "~/lib/db.server";
-import { ensureOfferingFormsFolder } from "~/lib/pages";
+import { ensureOfferingFormsFolder } from "~/lib/pages.server";
 import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import {
   ensureEducationTemplates,
@@ -17,7 +17,7 @@ vi.mock("~/lib/db.server", () => ({
     educationOffering: { findUnique: vi.fn(), update: vi.fn() },
   },
 }));
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   // Drive placement is a side effect; stub the offering Forms folder so only the
   // form create's folderPageId matters.
   ensureOfferingFormsFolder: vi.fn().mockResolvedValue("offering-forms-folder"),

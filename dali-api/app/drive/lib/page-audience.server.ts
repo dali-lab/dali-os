@@ -8,7 +8,7 @@
 import { prisma } from "~/lib/db.server";
 import { findGoverningScopeFor, governingScopeMap, type AncestorRow } from "~/lib/pageAccess.server";
 import { PERMISSION_RANK } from "~/lib/page-sharing.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import type { SharePermission } from "~/generated/prisma/client";
 import type { Audience, AudiencePermission, AudiencePerson, InheritedScope } from "~/drive/lib/page-audience";
 

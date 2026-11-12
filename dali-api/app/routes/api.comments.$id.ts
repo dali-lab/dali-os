@@ -8,7 +8,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { addReaction, commentReactionStore } from "~/lib/reactions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
-import { notifyMentions } from "~/lib/mentions";
+import { notifyMentions } from "~/lib/mentions.server";
 import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
 import { docCommentContext } from "~/lib/comment-links.server";
 import type { BodySegment } from "~/lib/comment-body";

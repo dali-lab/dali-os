@@ -14,7 +14,7 @@ vi.mock("~/collab/blocknote-server", () => ({
   blocksToHtml: vi.fn(),
   blocksToMarkdown: vi.fn(),
 }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   headObject: vi.fn(),
   getObjectStream: vi.fn(),
   putObjectStream: vi.fn(),
@@ -31,7 +31,7 @@ import { readDocAsBlocks } from "~/collab/read";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { renderDocumentPdf } from "~/lib/pdf/document-pdf.server";
 import { logAuditEvent } from "~/lib/audit";
-import { getDownloadUrl, getObjectStream, headObject, putObjectStream } from "~/lib/s3";
+import { getDownloadUrl, getObjectStream, headObject, putObjectStream } from "~/lib/s3.server";
 import { loader } from "~/routes/documents.$pageId.export";
 
 function get(format?: string) {

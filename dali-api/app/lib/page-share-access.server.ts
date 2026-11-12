@@ -19,7 +19,7 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { sharePermissionFor } from "~/lib/page-sharing.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { isRoot, ROOT_PUBLIC_ERROR, ROOT_SCOPE_ERROR } from "~/drive/lib/drive-roots";
 import type {
   WorkspaceType,
@@ -348,7 +348,7 @@ export async function setFolderScope(
   // Narrowing scopes close the link; "Lab" is itself lab-wide, so it has
   // nothing to close and leaves each page's own setting alone.
   const narrowing = scopeKind === "Group" || scopeKind === "Private";
-  const { collectSubtree } = await import("~/lib/pages");
+  const { collectSubtree } = await import("~/lib/pages.server");
   const descendantIds = narrowing ? (await collectSubtree(pageId)).ids : [];
 
   await prisma.$transaction([

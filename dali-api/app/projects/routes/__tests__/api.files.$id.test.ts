@@ -15,8 +15,8 @@ vi.mock("~/lib/fileAccess.server", () => ({
   canViewFile: vi.fn(),
   canEditFile: vi.fn(),
 }));
-vi.mock("~/lib/s3", () => ({ getDownloadUrl: vi.fn().mockResolvedValue("https://signed.example/file") }));
-vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/s3.server", () => ({ getDownloadUrl: vi.fn().mockResolvedValue("https://signed.example/file") }));
+vi.mock("~/lib/collabAuth.server", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("../../lib/file-notifications.server", () => ({ notifyFileNewVersion: vi.fn() }));
 

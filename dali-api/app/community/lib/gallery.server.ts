@@ -3,12 +3,12 @@ import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { summarizeReactions } from "~/lib/reactions";
 import { toggleReaction, withEmojiImages } from "~/lib/reactions.server";
 import { notify } from "~/lib/notify.server";
-import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions.server";
 import { requireCommunityViewer } from "~/community/lib/community.server";
 import {
   GALLERY_COMMENT_MAX,

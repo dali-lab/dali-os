@@ -18,7 +18,7 @@ import {
   DESKTOP_ABSOLUTE_TTL_MS,
   HANDOFF_TTL_MS,
   POLL_INTERVAL_SECONDS,
-} from "~/lib/pairing";
+} from "~/lib/pairing.server";
 
 export async function action({ request }: Route.ActionArgs) {
   if (request.method !== "POST") {

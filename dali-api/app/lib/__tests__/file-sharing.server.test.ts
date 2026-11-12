@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue(["a", "b"]),
   listVisibleGroupIdsForUser: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import {
   addFileShare,
   listFileShares,

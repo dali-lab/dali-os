@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { coreCycleTermIds } from "~/lib/core-cycle";
+import { coreCycleTermIds } from "~/lib/core-cycle.server";
 import { personName } from "~/lib/core-members.server";
 import {
   isValidWeek,

@@ -14,7 +14,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
-import { listSenderIntegrations } from "~/lib/gmail-integration";
+import { listSenderIntegrations } from "~/lib/gmail-integration.server";
 import { GMAIL_READONLY_SCOPE, GOOGLE_CALENDAR_SCOPE } from "~/lib/google-oauth";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";

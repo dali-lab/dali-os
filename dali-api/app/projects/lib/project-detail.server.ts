@@ -23,7 +23,7 @@ import {
   isLabMentor,
 } from "~/lib/roles";
 import { listActiveCoreMembers, personName } from "~/lib/core-members.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { type TimelineEpic, type TaskDependencyEdge } from "~/projects/components/EpicsTimeline";
 import { buildTimelineEpics } from "~/projects/lib/timeline-epics";
 import { type EditableEpic } from "~/projects/components/EpicSprintManager";

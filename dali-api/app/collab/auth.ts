@@ -1,4 +1,4 @@
-import { lookupSession, rollSession } from "~/lib/session";
+import { lookupSession, rollSession } from "~/lib/session.server";
 
 // Hocuspocus onAuthenticate handler — verifies the credential passed through the
 // WS handshake. Returns the legacy `{ sub }` shape so the rest of collab/server.ts

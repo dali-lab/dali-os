@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   headObject: vi.fn(),
   getObjectStream: vi.fn(),
   putObjectStream: vi.fn(),
@@ -13,7 +13,7 @@ vi.mock("~/lib/s3", () => ({
 import { exportMarkdown } from "~/lib/markdown-export.server";
 import { importMarkdownFile } from "~/lib/markdown-import.server";
 import { MAX_ZIP_FILES } from "~/drive/lib/drive-download.server";
-import { deleteObject, getDownloadUrl, getObjectStream, headObject, putObjectStream } from "~/lib/s3";
+import { deleteObject, getDownloadUrl, getObjectStream, headObject, putObjectStream } from "~/lib/s3.server";
 import type { DocBlock } from "~/collab/blocknote-server";
 
 const BASE = { backgroundColor: "default", textColor: "default", textAlignment: "left" };

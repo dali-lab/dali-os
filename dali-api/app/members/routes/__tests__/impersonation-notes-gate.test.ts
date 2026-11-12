@@ -17,7 +17,7 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: vi.fn() }));
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/members/lib/personal-notes.server", () => ({
   NoteForbiddenError: class extends Error {},

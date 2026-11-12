@@ -7,7 +7,7 @@ import { duplicatePage } from "~/drive/lib/page-copy.server";
 import { setFavorite } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages.server";
 import { isRoot, ROOT_MOVE_ERROR } from "~/drive/lib/drive-roots";
 import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 import { runUpdatePage } from "~/mcp/tools/update-page";

@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn().mockResolvedValue({}), isAdmin: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   isS3Configured: vi.fn(),
   putObject: vi.fn(),
   deleteObject: vi.fn(),
@@ -23,7 +23,7 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isAdmin } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s3";
+import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s3.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { isAiEnabled, resolveAiProvider } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";

@@ -17,7 +17,7 @@ import { getFrontendUrl } from "~/lib/app-env";
 import { escapeHtml } from "~/lib/email";
 import { renderEmailDocument } from "~/email/lib/layout";
 import { getZonedParts, zonedWallTimeUtc, APPLICATION_TZ } from "~/lib/timezone";
-import { NOT_CANCELLED_MEETING } from "~/lib/notifications";
+import { NOT_CANCELLED_MEETING } from "~/lib/notifications.server";
 import { EVENT_TYPES, type EventDef } from "~/lib/notification-events";
 import type { JobContext, JobResult } from "~/jobs/registry";
 

@@ -5,7 +5,7 @@ import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
 import { isLabMember, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { hydrateAuthors } from "~/lib/collabAuth";
+import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { withEmojiImages } from "~/lib/reactions.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { createDocComment, CommentCreateError, type CommentTarget } from "~/lib/doc-comments.server";

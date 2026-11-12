@@ -3,13 +3,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn() }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(async (k: string) => `https://s3.example.edu/${k}`),
   isS3Configured: vi.fn(() => true),
 }));
 vi.mock("~/collab/legacy/pm-to-blocknote", () => ({ ensureBlocks: (x: unknown) => x }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("~/lib/mentions", () => ({
+vi.mock("~/lib/mentions.server", () => ({
   extractMentionUserIds: (body: any) => (Array.isArray(body) ? body.flatMap((b: any) => b.mentions ?? []) : []),
   notifyMentions: vi.fn().mockResolvedValue(undefined),
   pageDocLink: (p?: string) => `link:${p ?? ""}`,
@@ -18,9 +18,9 @@ vi.mock("~/lib/mentions", () => ({
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
-import { isS3Configured } from "~/lib/s3";
+import { isS3Configured } from "~/lib/s3.server";
 import { notify } from "~/lib/notify.server";
-import { notifyMentions } from "~/lib/mentions";
+import { notifyMentions } from "~/lib/mentions.server";
 import { action, loader } from "~/routes/api.page-docs.$key";
 
 const m = prisma as any;

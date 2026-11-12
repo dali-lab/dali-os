@@ -12,7 +12,7 @@
 
 import { computeUserFreeBusy, type Interval } from "~/calendar/lib/availability.server";
 import { slotStatus } from "~/calendar/lib/slot-availability";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import {
   optimizeMeetingSchedule,
   type OptimizerMeeting,

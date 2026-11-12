@@ -11,7 +11,7 @@ import type { Route } from "./+types/auth.handoff";
 import { prisma } from "~/lib/db.server";
 import { getClientIp } from "~/lib/rate-limit";
 import { logAuditEvent } from "~/lib/audit";
-import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing";
+import { hashCode, desktopWebviewUserAgent } from "~/lib/pairing.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { appendBetterAuthSessionCookie } from "~/lib/betterauth-cookie.server";
 import { clearSessionCookie } from "~/lib/cookies";

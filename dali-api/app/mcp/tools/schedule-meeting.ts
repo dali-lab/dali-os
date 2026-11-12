@@ -5,7 +5,7 @@
 
 import { createScheduledMeeting, type ScheduledMeetingScope } from "~/calendar/lib/scheduled-meeting.server";
 import { isCore, canViewForms, isLabMember } from "~/lib/roles";
-import { isCoreGroup } from "~/lib/groups";
+import { isCoreGroup } from "~/lib/groups.server";
 import { notebookChoiceSchema } from "~/calendar/lib/notebook-choice";
 import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 

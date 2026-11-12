@@ -10,7 +10,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { formatUserCode, normalizeUserCode } from "~/lib/pairing";
+import { formatUserCode, normalizeUserCode } from "~/lib/pairing.server";
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);

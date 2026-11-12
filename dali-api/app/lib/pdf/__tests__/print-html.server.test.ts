@@ -3,8 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // vi.hoisted so the mock fn exists before vi.mock's factory runs; spread the real
 // module so every other s3 export stays intact and only getObjectBytes is faked.
 const { getObjectBytes } = vi.hoisted(() => ({ getObjectBytes: vi.fn() }));
-vi.mock("~/lib/s3", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/s3")>()),
+vi.mock("~/lib/s3.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/lib/s3.server")>()),
   getObjectBytes,
 }));
 

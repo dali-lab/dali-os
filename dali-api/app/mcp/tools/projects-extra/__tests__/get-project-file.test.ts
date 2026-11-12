@@ -4,8 +4,8 @@ vi.mock("~/lib/db.server", () => ({
   prisma: { projectFile: { findUnique: vi.fn() } },
 }));
 vi.mock("~/lib/fileAccess.server", () => ({ canViewFile: vi.fn() }));
-vi.mock("~/lib/s3", () => ({ getDownloadUrl: vi.fn().mockResolvedValue("https://signed.example/x") }));
-vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/s3.server", () => ({ getDownloadUrl: vi.fn().mockResolvedValue("https://signed.example/x") }));
+vi.mock("~/lib/collabAuth.server", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
 
 import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";

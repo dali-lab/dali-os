@@ -3,11 +3,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server", () => ({ prisma: { project: { findUnique: vi.fn() }, page: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/auth", () => ({ requireProjectEditAccess: vi.fn() }));
 vi.mock("~/lib/cors", () => ({ withCors: (_r: Request, res: Response) => res, handlePreflight: () => null }));
-vi.mock("~/lib/pages", () => ({ createProjectPage: vi.fn(), pageDepth: vi.fn(), MAX_PAGE_DEPTH: 6 }));
+vi.mock("~/lib/pages.server", () => ({ createProjectPage: vi.fn(), pageDepth: vi.fn(), MAX_PAGE_DEPTH: 6 }));
 
 import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
-import { createProjectPage } from "~/lib/pages";
+import { createProjectPage } from "~/lib/pages.server";
 import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import { action } from "../api.projects.$id.documents";
 

@@ -8,7 +8,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages.server";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 
 type Input = {

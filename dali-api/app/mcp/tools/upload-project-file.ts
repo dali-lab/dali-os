@@ -13,7 +13,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-import { putObject } from "~/lib/s3";
+import { putObject } from "~/lib/s3.server";
 import { rawUploadSrc } from "~/lib/upload-src";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL, isBlockedUpload } from "~/lib/file-validation";
 

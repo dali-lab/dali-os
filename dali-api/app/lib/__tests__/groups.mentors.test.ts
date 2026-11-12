@@ -15,7 +15,7 @@ import {
   listVisibleGroupIdsForUser,
   ensureMentorsGroup,
   syncDefaultGroups,
-} from "../groups";
+} from "../groups.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 

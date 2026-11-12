@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server", () => ({
     },
   },
 }));
-vi.mock("~/lib/groups", () => ({ ensureProjectGroup: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ ensureProjectGroup: vi.fn() }));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
@@ -16,7 +16,7 @@ vi.mock("~/lib/roles", async (orig) => {
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import { runUpdateProject, UPDATE_PROJECT_TOOL, UpdateProjectError } from "~/mcp/tools/projects-extra/update-project";
 
 const mockPrisma = prisma as unknown as {

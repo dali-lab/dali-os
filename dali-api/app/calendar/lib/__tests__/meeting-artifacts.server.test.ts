@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   createProjectPage: vi.fn(async () => ({ id: "page-project" })),
   createLabMeetingPage: vi.fn(async () => ({ id: "page-lab" })),
   ensureMeetingNotebook: vi.fn(async () => ({ id: "notebook-1" })),
@@ -18,7 +18,7 @@ vi.mock("~/drive/lib/drive-receivers.server", () => ({
 }));
 vi.mock("~/lib/terms", () => ({ termWindows: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(async () => false) }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: vi.fn(async () => []) }));
 vi.mock("~/calendar/lib/general-calendar", () => ({ isGeneralCalendarEvent: vi.fn(() => true) }));
 vi.mock("~/calendar/lib/google-calendar.server", () => ({
   createGoogleCalendarEvent: vi.fn(),
@@ -50,7 +50,7 @@ import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
 import { notify } from "~/lib/notify.server";
 import { isCore } from "~/lib/roles";
 import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import {
   createProjectPage,
   createLabMeetingPage,
@@ -58,7 +58,7 @@ import {
   createNotebookTab,
   moveIntoNotebook,
   trashNotebookIfAbandoned,
-} from "~/lib/pages";
+} from "~/lib/pages.server";
 import {
   createGoogleCalendarEvent,
   patchGoogleCalendarEvent,
