@@ -1,9 +1,9 @@
 import { redirect } from "react-router";
+import { setDomainRubric } from "~/hiring/lib/domain-rubric.server";
+import { addMentorsToCycleDomain } from "~/hiring/lib/domain-mentors.server";
 import { prisma } from "~/lib/db.server";
 import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
-import { logAuditEvent } from "~/lib/audit";
 import { setDomainReady } from "~/hiring/lib/domain-windows.server";
-import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
 
 export interface DomainLeadActionContext {
   request: Request;
@@ -31,48 +31,35 @@ export async function resolveLeadDomain(formData: FormData, userId: string): Pro
 }
 
 const addDomainMentorsAction: DomainLeadActionHandler = async ({ request, formData, domainId, actorId }) => {
-  const cycleId = String(formData.get("cycleId") ?? "");
   const role = formData.get("role");
   if (role !== "reviewer" && role !== "interviewer") {
     return Response.json({ error: "Unknown role" }, { status: 400 });
   }
-  const linked = await prisma.domainApplicationCycle.findUnique({
-    where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-    select: { domainId: true },
+  const result = await addMentorsToCycleDomain({
+    cycleId: String(formData.get("cycleId") ?? ""),
+    domainId,
+    role,
+    request,
+    actorId,
   });
-  if (!linked) return Response.json({ error: "That domain isn't in this cycle" }, { status: 400 });
-  const added = await addDomainMentors(cycleId, domainId, role, request, undefined, actorId);
-  const notice =
-    added > 0
-      ? `Added ${added} mentor${added === 1 ? "" : "s"}.`
-      : (await domainMentorIds(domainId, request)).length
-        ? "Everyone's already on the roster."
-        : "This domain has no mentors yet.";
+  if (result.status === "not-in-cycle") return Response.json({ error: "That domain isn't in this cycle" }, { status: 400 });
+  const notice = {
+    added: `Added ${result.added} mentor${result.added === 1 ? "" : "s"}.`,
+    already: "Everyone's already on the roster.",
+    none: "This domain has no mentors yet.",
+  }[result.outcome];
   return { notice };
 };
 
 const setRubricAction: DomainLeadActionHandler = async ({ request, formData, domainId, actorId }) => {
-  const cycleId = formData.get("cycleId") as string;
-  const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
-
-  const hasAssignedReviews = await prisma.applicationReview.count({
-    where: { domainApplication: { domainId, application: { applicationCycleId: cycleId } } },
-  });
-  if (hasAssignedReviews > 0) return redirect(DASHBOARD);
-
-  const rubricKey = { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } };
-  const before = await prisma.domainApplicationCycle.findUnique({
-    where: rubricKey,
-    select: { rubricVersionId: true },
-  });
-  await prisma.domainApplicationCycle.update({ where: rubricKey, data: { rubricVersionId } });
-  await logAuditEvent({
-    action: "domain.rubric.set",
-    userId: actorId,
-    targetId: domainId,
-    metadata: { cycleId, before: before?.rubricVersionId ?? null, after: rubricVersionId },
+  const result = await setDomainRubric({
+    cycleId: formData.get("cycleId") as string,
+    domainId,
+    rubricVersionId: (formData.get("rubricVersionId") as string) || null,
+    actorId,
     request,
   });
+  if (result === "not-in-cycle") return Response.json({ error: "This domain isn't part of this cycle" }, { status: 409 });
   return redirect(DASHBOARD);
 };
 

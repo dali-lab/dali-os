@@ -56,6 +56,7 @@ beforeEach(() => {
   mockPrisma.applicationReview = { count: vi.fn() };
   mockPrisma.domainApplicationCycle = {
     upsert: vi.fn().mockResolvedValue({}),
+    update: vi.fn().mockResolvedValue({}),
     findUnique: vi.fn().mockResolvedValue(null),
   };
   // The action reads the cycle's applicant group before dispatching intents.
@@ -113,17 +114,31 @@ describe("lead.cycle.$id action — hiring lead overrides", () => {
   });
 
   describe("hl-set-domain-rubric", () => {
-    it("upserts rubric when no reviews are assigned", async () => {
+    it("updates the domain's link when no reviews are assigned", async () => {
       mockPrisma.applicationReview.count.mockResolvedValue(0);
       mockPrisma.rubricVersion.findUnique.mockResolvedValue({ id: RV_ID });
+      mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ rubricVersionId: null });
 
       await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID });
 
-      expect(mockPrisma.domainApplicationCycle.upsert).toHaveBeenCalledWith({
+      expect(mockPrisma.domainApplicationCycle.update).toHaveBeenCalledWith({
         where: { domainId_applicationCycleId: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID } },
-        update: { rubricVersionId: RV_ID },
-        create: { domainId: DOMAIN_ID, applicationCycleId: CYCLE_ID, rubricVersionId: RV_ID },
+        data: { rubricVersionId: RV_ID },
       });
+    });
+
+    it("returns 409 and creates no link for a domain that isn't in the cycle", async () => {
+      mockPrisma.applicationReview.count.mockResolvedValue(0);
+      mockPrisma.rubricVersion.findUnique.mockResolvedValue({ id: RV_ID });
+      mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
+
+      const res = (await callAction({ intent: "hl-set-domain-rubric", domainId: DOMAIN_ID, rubricVersionId: RV_ID })) as Response;
+
+      expect(res.status).toBe(409);
+      expect(await res.json()).toEqual({ error: "This domain isn't part of this cycle" });
+      expect(mockPrisma.domainApplicationCycle.upsert).not.toHaveBeenCalled();
+      expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+      expect(logAuditEvent).not.toHaveBeenCalled();
     });
 
     it("logs the rubric change with the version before and after", async () => {
