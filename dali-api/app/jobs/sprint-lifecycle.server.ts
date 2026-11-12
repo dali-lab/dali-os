@@ -1,18 +1,14 @@
 // Sprint lifecycle: a per-sprint wrap-up.
 //
-// Sprints are not stored rows — a sprint is a fixed one-week band anchored to
-// each term a project runs (Sprint 1..N per term), the same grid the board and
-// timeline draw. So there is nothing to "activate" or "close": a sprint simply
-// ends when its last day passes. On the day after a sprint's last day, this job
-// posts a wrap-up (done/total of the tasks that were due in it) to the project's
-// members (in-app + desktop banner, preference-gated) and Slack channel.
-//
-// Idempotency comes from notify()'s dedupKey (sprint-closed:<projectId>:<key>),
-// not a CAS row-claim: a re-fired tick creates no new in-app rows, and the Slack
-// post is gated on that fresh dispatch so it fires exactly once per sprint.
+// Sprints are not stored rows: a sprint is a fixed one-week band anchored to
+// each term a project runs, the same grid the board and timeline draw. On the
+// day after a sprint's last day, this job posts a wrap-up (done/total of the
+// tasks that were due in it) to the project's members and Slack channel.
 
 import { prisma } from "~/lib/db.server";
-import { postMessage, slackConfigured } from "~/slack/lib/slack-client";
+import { slackConfigured } from "~/slack/lib/slack-client";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
+import { sprintClosedSlackKey } from "~/lib/outbound-keys";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import { slackSendAllowed } from "~/slack/lib/send-gate";
@@ -63,6 +59,7 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
 
   let closed = 0;
   let failed = 0;
+  const slackIds: Array<string | null> = [];
   for (const project of projects) {
     const terms = project.projectTerms.map((pt) => ({
       startsAt: pt.term.startDate.toISOString(),
@@ -92,7 +89,6 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
       const doneCount = tasks.filter((t) => t.status === "Done").length;
       const summary = `${doneCount} of ${tasks.length} task${tasks.length === 1 ? "" : "s"} done.`;
 
-      // In-app + desktop first: its dedupKey is the source of once-only truth.
       const memberIds = await currentProjectParticipantIds(project.id);
       let fresh = false;
       if (memberIds.size > 0) {
@@ -108,13 +104,15 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
         fresh = res.inApp > 0;
       }
 
-      // Slack channel post rides the same fresh dispatch, so a re-fired tick
-      // (dedupKey already claimed → no new in-app rows) posts nothing.
-      if (fresh && project.slackChannelId && slackConfigured() && slackSendAllowed()) {
-        const text = `:checkered_flag: *${band.label}* wrapped up. ${summary}`;
-        await postMessage(project.slackChannelId, text).catch((err) =>
-          console.error(`[jobs] project ${project.id}: slack post failed`, err),
-        );
+      if (memberIds.size > 0 && project.slackChannelId && slackConfigured() && slackSendAllowed()) {
+        const { id } = await enqueueOutbound({
+          channel: "slack_channel",
+          target: project.slackChannelId,
+          slackText: `:checkered_flag: *${band.label}* wrapped up. ${summary}`,
+          dedupKey: sprintClosedSlackKey(project.id, band.key),
+          eventType: "project.sprint_closed",
+        });
+        slackIds.push(id);
       }
 
       if (fresh) closed++;
@@ -123,6 +121,8 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
       console.error(`[jobs] project ${project.id}: sprint wrap-up failed`, err);
     }
   }
+
+  await drainNow(slackIds);
 
   return {
     items: closed,
