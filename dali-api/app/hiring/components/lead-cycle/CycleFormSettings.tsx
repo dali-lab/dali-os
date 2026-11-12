@@ -9,6 +9,7 @@ import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cy
 import { Pill } from "~/components/ui/Pill";
 import { SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { formatVersionLabel } from "~/lib/formatVersion";
+import type { RubricVersionOption } from "~/hiring/lib/lead-cycle-types";
 
 export function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {
   return (
@@ -131,7 +132,7 @@ export function GeneralApplicationSection({
   applicationForm: { id: string; name: string } | null;
   allForms: { id: string; name: string }[];
   currentRubricVersionId: string | null;
-  rubricVersionOptions: any[];
+  rubricVersionOptions: RubricVersionOption[];
   rubricLocked: boolean;
 }) {
   const os = useOsChrome();
@@ -139,13 +140,13 @@ export function GeneralApplicationSection({
   // "Rubric" / "No rubric" twice.
   const [editingRubric, setEditingRubric] = useState(false);
 
-  const rubricVersion = (rv: any) => ({
+  const rubricVersion = (rv: RubricVersionOption) => ({
     name: rv.rubric?.name ?? "Rubric",
     versionNumber: rv.versionNumber,
     createdAt: rv.createdAt,
     createdBy: rv.createdBy,
   });
-  const currentRubric = rubricVersionOptions.find((rv: any) => rv.id === currentRubricVersionId);
+  const currentRubric = rubricVersionOptions.find((rv) => rv.id === currentRubricVersionId);
   const small = buttonClasses("secondary", "sm");
 
   return (
@@ -198,7 +199,7 @@ export function GeneralApplicationSection({
                     placeholder="Pick a rubric"
                     options={[
                       { value: "", label: "No rubric" },
-                      ...rubricVersionOptions.map((rv: any): SelectOption => ({ value: rv.id, label: formatVersionLabel(rubricVersion(rv)) })),
+                      ...rubricVersionOptions.map((rv): SelectOption => ({ value: rv.id, label: formatVersionLabel(rubricVersion(rv)) })),
                     ]}
                     buttonClassName={rowTrigger(os.formTrigger)}
                   />

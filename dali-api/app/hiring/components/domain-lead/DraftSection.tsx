@@ -11,11 +11,12 @@ import { Pill } from "~/components/ui/Pill";
 import { rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
 import { ChallengeFormPicker } from "~/hiring/components/cycle-setup/ChallengeLine";
+import type { DomainCycle, LinkedChallengeForm, RubricOption } from "~/hiring/components/domain-lead/table-shared";
 
 export function DraftSection({ cycle, domainId, linkedChallengeForms, allForms, isChallengeReady }: {
-  cycle: any;
+  cycle: DomainCycle;
   domainId: string;
-  linkedChallengeForms: any[];
+  linkedChallengeForms: LinkedChallengeForm[];
   allForms: { id: string; name: string }[];
   isChallengeReady: boolean;
 }) {
@@ -24,7 +25,7 @@ export function DraftSection({ cycle, domainId, linkedChallengeForms, allForms, 
   const navigation = useNavigation();
   const submit = useSubmit();
   const [picking, setPicking] = useState(false);
-  const linkedFormIds = new Set(linkedChallengeForms.map((cf: any) => cf.formId));
+  const linkedFormIds = new Set(linkedChallengeForms.map((cf) => cf.formId));
   const addChallenge = (formId?: string) => {
     setPicking(false);
     submit(
@@ -51,7 +52,7 @@ export function DraftSection({ cycle, domainId, linkedChallengeForms, allForms, 
     return (
       <>
         <div className="flex flex-col gap-3">
-          {linkedChallengeForms.map((cf: any) => (
+          {linkedChallengeForms.map((cf) => (
             <HiringFormEmbed key={cf.id} formId={cf.formId} name={cf.name} questions={cf.questions ?? []} />
           ))}
         </div>
@@ -69,7 +70,7 @@ export function DraftSection({ cycle, domainId, linkedChallengeForms, allForms, 
     <>
       {hasLinked ? (
         <div className="flex flex-col gap-3">
-          {linkedChallengeForms.map((cf: any) => (
+          {linkedChallengeForms.map((cf) => (
             <HiringFormEmbed
               key={cf.id}
               formId={cf.formId}
@@ -120,18 +121,18 @@ export function DraftSection({ cycle, domainId, linkedChallengeForms, allForms, 
 export function RubricPicker({ cycleId, domainId, options, selectedId, locked }: {
   cycleId: string;
   domainId: string;
-  options: any[];
+  options: RubricOption[];
   selectedId: string | null;
   locked: boolean;
 }) {
   const { formTrigger } = useOsChrome();
-  const version = (rv: any) => ({
+  const version = (rv: RubricOption) => ({
     name: rv.rubric?.name ?? "Rubric",
     versionNumber: rv.versionNumber,
     createdAt: rv.createdAt,
     createdBy: rv.createdBy,
   });
-  const selectedRv = options.find((rv: any) => rv.id === selectedId);
+  const selectedRv = options.find((rv: RubricOption) => rv.id === selectedId);
   if (locked) {
     return (
       <DomainSubRow
@@ -152,7 +153,7 @@ export function RubricPicker({ cycleId, domainId, options, selectedId, locked }:
           ariaLabel="Rubric version"
           defaultValue={selectedId ?? ""}
           placeholder="No rubric"
-          options={[{ value: "", label: "No rubric" }, ...options.map((rv: any) => ({ value: rv.id as string, label: formatVersionLabel(version(rv)) }))]}
+          options={[{ value: "", label: "No rubric" }, ...options.map((rv: RubricOption) => ({ value: rv.id as string, label: formatVersionLabel(version(rv)) }))]}
           buttonClassName={rowTrigger(formTrigger)}
         />
       </div>

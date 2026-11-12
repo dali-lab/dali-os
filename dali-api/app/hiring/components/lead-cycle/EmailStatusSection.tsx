@@ -8,9 +8,14 @@ import { Modal } from "~/components/Modal";
 import { X } from "lucide-react";
 import { SetupCard } from "~/hiring/components/cycle-setup/SetupCard";
 
-export function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => void }) {
+type PreviewCriterion = { key: string; label: string; maxScore?: number; description?: string };
+
+export function RubricPreviewModal({ rv, onClose }: {
+  rv: { id: string; versionNumber: number; rubric?: { name: string } | null; criteria: unknown };
+  onClose: () => void;
+}) {
   const headingId = `rubric-preview-heading-${rv.id}`;
-  const criteria: any[] = (rv.criteria as any[]) ?? [];
+  const criteria = (Array.isArray(rv.criteria) ? rv.criteria : []) as PreviewCriterion[];
   return (
     <Modal open onClose={onClose} labelledBy={headingId} containerClassName="bg-card rounded-os-card shadow-xl max-w-lg w-full mx-4 p-5 max-h-[80vh] overflow-y-auto">
       <div className="space-y-4">
@@ -26,7 +31,7 @@ export function RubricPreviewModal({ rv, onClose }: { rv: any; onClose: () => vo
           <p className="text-sm text-muted-foreground/70 italic">No criteria in this version.</p>
         ) : (
           <div className="space-y-3">
-            {criteria.map((c: any) => (
+            {criteria.map((c) => (
               <div key={c.key} className="border border-border rounded-lg p-3">
                 <div className="flex items-center justify-between mb-1">
                   <h4 className="text-sm font-semibold text-foreground">{c.label}</h4>

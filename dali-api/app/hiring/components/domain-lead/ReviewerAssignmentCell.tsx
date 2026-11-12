@@ -8,13 +8,14 @@ import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
 import { Pill, type PillTone } from "~/components/ui/Pill";
 import { ReviewModal } from "~/hiring/components/domain-lead/ReviewModal";
+import type { DomainAppReview, CycleReviewerRow, RubricCriterionRow } from "~/hiring/components/domain-lead/table-shared";
 
 export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, editable = true, rubricCriteria = [] }: {
   domainApplicationId: string | undefined;
-  reviews: any[];
-  cycleReviewers: any[];
+  reviews: DomainAppReview[];
+  cycleReviewers: CycleReviewerRow[];
   editable?: boolean;
-  rubricCriteria?: any[];
+  rubricCriteria?: RubricCriterionRow[];
 }) {
   const toast = useToast();
   const dialog = useDialog();
@@ -22,7 +23,7 @@ export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleRevi
   const [localReviews, setLocalReviews] = useState(reviews);
   const [adding, setAdding] = useState(false);
   const [selectedReviewerId, setSelectedReviewerId] = useState("");
-  const [openReview, setOpenReview] = useState<any | null>(null);
+  const [openReview, setOpenReview] = useState<DomainAppReview | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
   // Resync from props after the loader revalidates (e.g. when bulk auto-assign
@@ -30,8 +31,8 @@ export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleRevi
   // behind server state until a hard reload.
   useEffect(() => { setLocalReviews(reviews); }, [reviews]);
 
-  const assignedReviewerIds = new Set(localReviews.map((r: any) => r.cycleReviewerId));
-  const available = cycleReviewers.filter((cr: any) => !assignedReviewerIds.has(cr.id));
+  const assignedReviewerIds = new Set(localReviews.map((r) => r.cycleReviewerId));
+  const available = cycleReviewers.filter((cr) => !assignedReviewerIds.has(cr.id));
 
   async function addReviewer() {
     if (!domainApplicationId || !selectedReviewerId) return;
@@ -44,7 +45,7 @@ export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleRevi
       });
       if (res.ok) {
         const review = await res.json();
-        const reviewer = cycleReviewers.find((cr: any) => cr.id === selectedReviewerId);
+        const reviewer = cycleReviewers.find((cr) => cr.id === selectedReviewerId);
         setLocalReviews(prev => [...prev, { ...review, cycleReviewer: reviewer }]);
         setSelectedReviewerId("");
         setAdding(false);
@@ -82,7 +83,7 @@ export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleRevi
     }
   }
 
-  async function requestRemoveReview(review: any) {
+  async function requestRemoveReview(review: DomainAppReview) {
     const submitted = getReviewStatus(review) === "submitted";
     const m = review?.cycleReviewer?.user;
     const who =
@@ -108,7 +109,7 @@ export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleRevi
     : "flex flex-wrap items-center gap-1";
   return (
     <div className={cellClass}>
-      {localReviews.map((r: any) => {
+      {localReviews.map((r) => {
         const m = r.cycleReviewer?.user;
         const name = m?.firstName && m?.lastName
           ? `${m.firstName} ${m.lastName[0]}.`
@@ -170,7 +171,7 @@ export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleRevi
             value={selectedReviewerId}
             placeholder="Select..."
             onChange={(v) => setSelectedReviewerId(v)}
-            options={available.map((cr: any) => {
+            options={available.map((cr) => {
               const m = cr.user;
               return {
                 value: cr.id as string,

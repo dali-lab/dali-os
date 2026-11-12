@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DomainRoundSummary } from "~/hiring/lib/domain-lead-types";
 import { buttonClasses } from "~/components/ui/Button";
+import type { DelibsSession } from "~/hiring/components/domain-lead/table-shared";
 
 // One row per delib round, in timeline order.
 export function roundPurpose(r: DomainRoundSummary): string {
@@ -12,7 +13,7 @@ export function roundPurpose(r: DomainRoundSummary): string {
 export function DelibsSection({ cycleId, domainId, sessions, rounds }: {
   cycleId: string;
   domainId: string;
-  sessions: any[];
+  sessions: DelibsSession[];
   rounds: DomainRoundSummary[];
 }) {
   const [loading, setLoading] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export function DelibsSection({ cycleId, domainId, sessions, rounds }: {
     setLoading(null);
   }
 
-  function renderButton(round: DomainRoundSummary, session: any) {
+  function renderButton(round: DomainRoundSummary, session: DelibsSession | undefined) {
     const count = round.count;
     const countLabel = ` (${count})`;
     if (session?.status === "Active") {
@@ -63,7 +64,7 @@ export function DelibsSection({ cycleId, domainId, sessions, rounds }: {
             <span className="text-sm font-semibold text-foreground">{round.label}</span>
             <span className="text-sm text-os-grey">{roundPurpose(round)}</span>
           </div>
-          {renderButton(round, sessions.find((s: any) => s.roundId === round.id))}
+          {renderButton(round, sessions.find((s) => s.roundId === round.id))}
         </div>
       ))}
     </div>

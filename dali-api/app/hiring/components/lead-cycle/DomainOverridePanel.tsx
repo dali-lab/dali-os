@@ -14,6 +14,7 @@ import { rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { formatVersionLabel } from "~/lib/formatVersion";
 import { getZonedYMD, formatInTimeZone, APPLICATION_TZ } from "~/lib/timezone";
 import { RubricPreviewModal } from "~/hiring/components/lead-cycle/EmailStatusSection";
+import type { LeadCycleDomain, RubricVersionOption } from "~/hiring/lib/lead-cycle-types";
 
 export function toYmd(d: Date | string | null): string {
   if (!d) return '';
@@ -36,8 +37,14 @@ export function joinNames(names: string[]): string {
 // accept-preemption.server.ts), releasing needs a stronger confirm than the
 // default "this emails the applicant" one. Null when there's nothing to warn
 // about.
-export function acceptPreemptionWarning(d: any): { title: string; description: string } | null {
-  const siblings: { name: string; closeDate: Date | string | null }[] = d.openSiblingDomains ?? [];
+type PreemptionInput = {
+  type: string;
+  openSiblingDomains?: { name: string; closeDate: Date | string | null }[];
+  domainApplication: { application: { user: { firstName: string | null } } };
+};
+
+export function acceptPreemptionWarning(d: PreemptionInput): { title: string; description: string } | null {
+  const siblings = d.openSiblingDomains ?? [];
   if (d.type !== 'Accepted' || siblings.length === 0) return null;
   const firstName = d.domainApplication.application.user.firstName;
   const names = siblings.map((s) => s.name);
@@ -64,7 +71,7 @@ export function DomainOverridePanel({
   rubricLocked,
   domainAddedRecipientCount,
 }: {
-  domain: any;
+  domain: LeadCycleDomain;
   cycleStatus: string;
   /** The cycle's own close date, for the "Same as cycle" label when this domain inherits it. */
   cycleCloseDate: Date | string | null;
@@ -72,7 +79,7 @@ export function DomainOverridePanel({
   showRubric: boolean;
   /** This domain's challenges; null when the cycle has none. */
   challenge: DomainChallenge | null;
-  rubricOptions: any[];
+  rubricOptions: RubricVersionOption[];
   rubricLocked: boolean;
   /** How many applicants "Email applicants" would reach — cycle-wide, not per-domain. */
   domainAddedRecipientCount: number;
@@ -104,8 +111,8 @@ export function DomainOverridePanel({
   const [editingRubric, setEditingRubric] = useState(false);
   useEffect(() => { setSelectedRubricId(domain.rubricVersionId ?? ''); }, [domain.rubricVersionId]);
 
-  const currentRubric = rubricOptions.find((rv: any) => rv.id === selectedRubricId);
-  const rubricVersion = (rv: any) => ({
+  const currentRubric = rubricOptions.find((rv) => rv.id === selectedRubricId);
+  const rubricVersion = (rv: RubricVersionOption) => ({
     name: rv.rubric?.name ?? 'Rubric',
     versionNumber: rv.versionNumber,
     createdAt: rv.createdAt,
@@ -341,7 +348,7 @@ export function DomainOverridePanel({
                     ariaLabel={`Select rubric version for ${domainName}`}
                     options={[
                       { value: "", label: "No rubric" },
-                      ...rubricOptions.map((rv: any): SelectOption => ({
+                      ...rubricOptions.map((rv): SelectOption => ({
                         value: rv.id,
                         label: formatVersionLabel(rubricVersion(rv)),
                       })),

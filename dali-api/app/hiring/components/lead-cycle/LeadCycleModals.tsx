@@ -8,6 +8,7 @@ import { AlertTriangle } from "lucide-react";
 import { buttonClasses } from "~/components/ui/Button";
 import { formatInTimeZone } from "~/lib/timezone";
 import { decisionEmailVars } from "~/hiring/lib/decision-email-vars";
+import type { PendingDecision } from "~/hiring/lib/lead-cycle-types";
 
 export function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; unfilled: string[] }) {
   return (
@@ -45,7 +46,7 @@ export function PreviewLintWarning({ unknown, unfilled }: { unknown: string[]; u
 }
 
 export function DecisionEmailPreviewModal({ decision, email, slot, dates, onClose }: {
-  decision: any;
+  decision: PendingDecision;
   /** The decision's shared email, or null when none is written. */
   email: { subject: string; body: string } | null;
   slot: TemplateSlot;
