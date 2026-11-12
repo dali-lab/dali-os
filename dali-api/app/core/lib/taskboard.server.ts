@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { activeDomainOptions } from "~/lib/reference-cache.server";
-import { listActiveCoreMembers } from "~/partners/lib/core-members.server";
+import { listActiveCoreMembers } from "~/lib/core-members.server";
 import type { Priority, TaskBoardOptions, TaskCardModel, TaskStatus } from "~/projects/lib/task-board";
 
 const CORE_BOARD_SELECT = { id: true, name: true } as const;

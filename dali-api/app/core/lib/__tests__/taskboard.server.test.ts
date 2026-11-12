@@ -10,7 +10,7 @@ const refs = vi.hoisted(() => ({ domains: vi.fn(), members: vi.fn() }));
 vi.mock("~/lib/reference-cache.server", () => ({
   activeDomainOptions: refs.domains,
 }));
-vi.mock("~/partners/lib/core-members.server", () => ({
+vi.mock("~/lib/core-members.server", () => ({
   listActiveCoreMembers: refs.members,
 }));
 

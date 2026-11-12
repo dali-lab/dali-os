@@ -10,7 +10,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), currentTerm: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("../../lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
+vi.mock("~/lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
 vi.mock("../../lib/partner-renewals.server", () => ({
   applyContinue: vi.fn(),
   applyMaintain: vi.fn(),
@@ -30,7 +30,7 @@ vi.mock("../../lib/partner-reports.server", () => ({
 
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { currentTerm, isCore } from "~/lib/roles";
-import { listActiveCoreMembers } from "../../lib/core-members.server";
+import { listActiveCoreMembers } from "~/lib/core-members.server";
 import { loadRenewalCards } from "../../lib/partner-renewals.server";
 import * as reportsLib from "../../lib/partner-reports.server";
 import { loader as renewalsLoader } from "../core.partners.renewals";
