@@ -158,11 +158,9 @@ const SERVER_ONLY_LIB_ALLOWLIST: string[] = [
 ];
 
 const TWO_WAY_DOMAIN_ALLOWLIST: string[] = [
-  "calendar <-> drive", // surfaced by the domain moves; split or redirect-table follow-up
   "calendar <-> rooms", // split or redirect-table follow-up
   "core <-> partners", // split or redirect-table follow-up
   "core <-> projects", // split or redirect-table follow-up
-  "drive <-> education", // surfaced by the domain moves; split or redirect-table follow-up
   "education <-> hiring", // split or redirect-table follow-up
   "email <-> hiring", // split or redirect-table follow-up
   "forms <-> hiring", // split or redirect-table follow-up
