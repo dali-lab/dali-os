@@ -52,6 +52,7 @@ export type PlanningGapModel = {
     fresh: number;
     spots: number;
     intent: number;
+    people: number;
     shortfall: number;
     noDomain: number;
   };
@@ -146,7 +147,8 @@ export function buildPlanningGap(input: {
       renewing,
       fresh,
       spots: renewing + fresh,
-      intent: withDomain.size,
+      intent: rows.reduce((n, r) => n + r.intent, 0),
+      people: withDomain.size,
       shortfall: rows.reduce((n, r) => n + Math.max(r.gap, 0), 0),
       noDomain: everyone.size - withDomain.size,
     },
@@ -285,4 +287,17 @@ export function intentSetupState(input: {
   if (!mapped) return { kind: "unmapped", submissions: input.submissions };
   if (input.submissions > 0) return { kind: "no-statuses", submissions: input.submissions };
   return { kind: "no-responses" };
+}
+
+// The header for a project popup: a counted or listed row, or a project on a
+// maintenance plan (which Planning lists apart and never counts).
+export function findPlanningProject(
+  projectId: string,
+  items: Pick<PlanningItem, "kind" | "refId" | "name" | "iconEmoji">[],
+  maintaining: { projectId: string; name: string; iconEmoji: string | null }[],
+): { id: string; name: string; iconEmoji: string | null } | null {
+  const item = items.find((i) => i.kind === "project" && i.refId === projectId);
+  if (item) return { id: item.refId, name: item.name, iconEmoji: item.iconEmoji ?? null };
+  const kept = maintaining.find((m) => m.projectId === projectId);
+  return kept ? { id: kept.projectId, name: kept.name, iconEmoji: kept.iconEmoji } : null;
 }

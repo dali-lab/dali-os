@@ -8,7 +8,8 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
-import { setTermPi } from "../lib/partner-renewals.server";
+import { setMaintenancePlan, setTermPi } from "../lib/partner-renewals.server";
+import { isMaintenancePlan } from "../lib/partner-renewals";
 import { setApplicationSpots, setTermSpots } from "../lib/planning-spots.server";
 import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server";
 import { startProjectReturn } from "../lib/partner-returns.server";
@@ -20,7 +21,7 @@ import { StartReturnModal } from "../components/planning/StartReturnModal";
 import { Button } from "~/components/ui/Button";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
-import { buildPlanningGap, buildPlanningProjects, type IntentSetup } from "../lib/planning-gap";
+import { buildPlanningGap, buildPlanningProjects, findPlanningProject, type IntentSetup } from "../lib/planning-gap";
 import { TermFilter } from "~/components/TermFilter";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
@@ -134,6 +135,16 @@ export async function action({ request }: Route.ActionArgs) {
   const projectId = String(form.get("projectId") ?? "");
   if (!projectId) return Response.json({ error: "Missing project." }, { status: 400 });
 
+  if (intent === "maintenance-plan") {
+    const plan = form.get("plan");
+    if (!isMaintenancePlan(plan)) return Response.json({ error: "Pick a maintenance plan." }, { status: 400 });
+    const result = await setMaintenancePlan(prisma, { projectId, plan });
+    if (result === "not-on-plan") {
+      return Response.json({ error: "This project is not on a maintenance plan." }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  }
+
   if (intent === "description") {
     const description = String(form.get("description") ?? "").trim();
     if (description.length > DESCRIPTION_MAX) {
@@ -217,16 +228,11 @@ export default function PartnersPlanning() {
   }, []);
   const openProject = useMemo(() => {
     if (!openProjectId) return null;
-    const match = [...data.items, ...data.listOnlyItems].find(
-      (i) => i.kind === "project" && i.refId === openProjectId,
-    );
+    const match = findPlanningProject(openProjectId, [...data.items, ...data.listOnlyItems], data.maintaining);
     const info = data.projectInfo[openProjectId];
     if (!match || !info) return null;
-    return {
-      project: { id: match.refId, name: match.name, iconEmoji: match.iconEmoji ?? null },
-      info,
-    };
-  }, [openProjectId, data.items, data.listOnlyItems, data.projectInfo]);
+    return { project: match, info };
+  }, [openProjectId, data.items, data.listOnlyItems, data.maintaining, data.projectInfo]);
   const model = useMemo(
     () =>
       buildPlanningGap({
@@ -317,6 +323,7 @@ export default function PartnersPlanning() {
           model={projectModel}
           termCode={termCode}
           onRowClick={openRowClick}
+          maintaining={data.maintaining}
         />
       ) : data.intentSetup.kind !== "ready" ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">

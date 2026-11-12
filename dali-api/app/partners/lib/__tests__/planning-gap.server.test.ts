@@ -9,6 +9,7 @@ vi.mock("~/lib/db.server", () => ({
     staffingCycle: { findUnique: vi.fn() },
     user: { count: vi.fn() },
     intentToWork: { findMany: vi.fn() },
+    formSubmission: { findMany: vi.fn() },
   },
 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn() }));
@@ -17,6 +18,7 @@ vi.mock("../partner-returns.server", () => ({ listReturnableProjects: vi.fn() })
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { loadPlanningData } from "../planning-gap.server";
+import { buildPlanningGap } from "../planning-gap";
 import { listReturnableProjects } from "../partner-returns.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
@@ -42,6 +44,7 @@ function project(over: Record<string, unknown> = {}) {
     roleRequests: [],
     partners: [],
     planningNote: null,
+    maintenancePlans: [],
     ...over,
   };
 }
@@ -56,6 +59,7 @@ beforeEach(() => {
   db.staffingCycle.findUnique.mockResolvedValue(null);
   db.user.count.mockResolvedValue(40);
   db.intentToWork.findMany.mockResolvedValue([]);
+  db.formSubmission.findMany.mockResolvedValue([]);
   vi.mocked(listReturnableProjects).mockResolvedValue([]);
 });
 
@@ -345,19 +349,83 @@ describe("loadPlanningData intent to work", () => {
     expect(data).toMatchObject({ replied: 0, returning: [], hasIntentData: false, roster: 40, intentSetup: { kind: "no-form" } });
   });
 
-  it("counts distinct repliers and lists only Returning people with deduped eligibility domains", async () => {
-    db.staffingCycle.findUnique.mockResolvedValue({ id: "c1", formBindings: [], _count: { formSubmissions: 0 } });
-    db.intentToWork.findMany.mockResolvedValue([
-      { userId: "u1", status: "Returning", user: { domainEligibilities: [{ domainId: "eng" }, { domainId: "eng" }, { domainId: "des" }] } },
-      { userId: "u1", status: "Not returning", user: { domainEligibilities: [{ domainId: "eng" }] } },
-      { userId: "u2", status: "Not returning", user: { domainEligibilities: [{ domainId: "eng" }] } },
+  const MAPPING = {
+    version: 1,
+    entries: [
+      {
+        role: "intent-status",
+        label: "Are you planning on being on a project?",
+        source: "question",
+        questionKey: "q-status",
+        statusMap: { Yes: "Returning", No: "Off", Maybe: "Unsure" },
+      },
+    ],
+  };
+  const bound = { id: "c1", formBindings: [{ columnMapping: MAPPING }], _count: { formSubmissions: 4 } };
+  const sub = (userId: string, answer: string, domainIds: string[]) => ({
+    userId,
+    answers: { "q-status": answer },
+    user: { domainEligibilities: domainIds.map((domainId) => ({ domainId })) },
+  });
+
+  it("reads each member's latest answer, so a Yes counts even without an IntentToWork row", async () => {
+    db.staffingCycle.findUnique.mockResolvedValue(bound);
+    db.formSubmission.findMany.mockResolvedValue([
+      sub("u1", "Yes", ["eng", "eng", "des"]),
+      sub("u1", "No", ["eng"]),
+      sub("u2", "No", ["eng"]),
+      sub("u3", "Maybe", ["des"]),
     ]);
     const data = await loadPlanningData("t26s");
-    expect(db.intentToWork.findMany.mock.calls[0][0].where).toEqual({ staffingCycleId: "c1", termId: "t26s" });
-    expect(data.replied).toBe(2);
+    expect(db.intentToWork.findMany).not.toHaveBeenCalled();
+    expect(db.formSubmission.findMany.mock.calls[0][0]).toMatchObject({
+      where: { staffingCycleId: "c1", slot: "intent-to-work", userId: { not: null } },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(data.replied).toBe(3);
     expect(data.hasIntentData).toBe(true);
     expect(data.intentSetup).toEqual({ kind: "ready" });
     expect(data.returning).toEqual([{ userId: "u1", domainIds: ["eng", "des"] }]);
+  });
+
+  it("counts a member who said Yes in every domain they hold", async () => {
+    db.staffingCycle.findUnique.mockResolvedValue(bound);
+    db.domain.findMany.mockResolvedValue([
+      { id: "pm", displayName: "Product Management", active: true, isSystem: false },
+      { id: "des", displayName: "Design", active: true, isSystem: false },
+      { id: "core", displayName: "Core", active: true, isSystem: true },
+    ]);
+    db.formSubmission.findMany.mockResolvedValue([
+      sub("helen", "Yes", ["pm", "core"]),
+      sub("steph", "Yes", ["pm", "des", "core"]),
+      sub("alex", "Yes", ["pm"]),
+    ]);
+    const data = await loadPlanningData("t26s");
+    const model = buildPlanningGap({
+      domains: data.domains,
+      items: [],
+      returning: data.returning,
+      includePotential: false,
+      includeBacklog: false,
+    });
+    expect(model.rows.find((r) => r.domainId === "pm")?.intent).toBe(3);
+    expect(model.rows.find((r) => r.domainId === "des")?.intent).toBe(1);
+  });
+
+  it("skips an answer the mapping can't read instead of failing the page", async () => {
+    db.staffingCycle.findUnique.mockResolvedValue(bound);
+    db.formSubmission.findMany.mockResolvedValue([sub("u1", "Banana", ["eng"]), sub("u2", "Yes", ["eng"])]);
+    const data = await loadPlanningData("t26s");
+    expect(data.returning).toEqual([{ userId: "u2", domainIds: ["eng"] }]);
+    expect(data.replied).toBe(1);
+  });
+
+  it("counts nobody while the status question isn't mapped", async () => {
+    db.staffingCycle.findUnique.mockResolvedValue({ ...bound, formBindings: [] });
+    db.formSubmission.findMany.mockResolvedValue([sub("u1", "Yes", ["eng"])]);
+    const data = await loadPlanningData("t26s");
+    expect(data.returning).toEqual([]);
+    expect(data.replied).toBe(0);
   });
 
   it("flags a bound form with submissions but no intent-status column as unmapped", async () => {
@@ -461,5 +529,26 @@ describe("loadPlanningData popups for potential and backlog work", () => {
     db.project.findMany.mockResolvedValue([project({ projectTerms: [{ termId: "t26s", pi: null }] })]);
     const { projectInfo } = await loadPlanningData("t26s");
     expect(projectInfo.p1.lastTerm).toBeNull();
+  });
+});
+
+describe("loadPlanningData maintenance", () => {
+  it("lists projects on a maintenance plan apart from demand, with their tier and PI", async () => {
+    db.project.findMany.mockResolvedValue([
+      project({
+        id: "kept",
+        name: "Kept Alive",
+        termStatuses: [{ isContinuing: false }],
+        maintenancePlans: [{ plan: "Hosting", feeCents: 50000 }],
+      }),
+      project({ id: "p1" }),
+    ]);
+    const data = await loadPlanningData("t26s");
+    expect(data.maintaining).toEqual([
+      { projectId: "kept", name: "Kept Alive", iconEmoji: null, plan: "Hosting", piName: "Ada Lovelace" },
+    ]);
+    expect([...data.items, ...data.listOnlyItems].map((i) => i.refId)).not.toContain("kept");
+    expect(data.projectInfo.kept.maintenance).toEqual({ plan: "Hosting", feeCents: 50000 });
+    expect(data.projectInfo.p1.maintenance).toBeNull();
   });
 });

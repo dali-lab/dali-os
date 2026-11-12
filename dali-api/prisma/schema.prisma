@@ -3501,6 +3501,7 @@ model Term {
   projectChartStrings   ProjectChartString[]
   mentorshipForms       MentorshipTermForm[]
   coreMilestones        CoreMilestone[]
+  maintenanceStarts     ProjectMaintenance[]
 
   @@index([sortKey])
 }
@@ -4032,6 +4033,7 @@ model Project {
   mailAccounts      MailAccount[]
   roleRequests      ProjectRoleRequest[]
   planningNote      PlanningNote?
+  maintenancePlans  ProjectMaintenance[]
   returnApplications PartnerApplication[] @relation("PartnerApplicationContinues")
   mentorshipPairs   MentorshipPair[]
   externalMentors   ExternalMentor[]
@@ -7147,6 +7149,10 @@ model PartnerCrmSettings {
   // interview. Empty = every active Core member.
   interviewPanelUserIds String[] @default([])
   staleDays             Int      @default(14)
+  // Price per term for each maintenance tier; null = not set yet.
+  maintenanceHostingCents Int?
+  maintenanceMildCents    Int?
+  maintenanceMediumCents  Int?
   updatedAt             DateTime @updatedAt
 }
 
@@ -8252,4 +8258,31 @@ model CommunityEventRsvp {
 
   @@id([eventId, userId])
   @@index([userId])
+}
+
+enum MaintenancePlan {
+  Hosting
+  Mild
+  Medium
+}
+
+// A project on DALI's recurring maintenance plan instead of continuing as
+// active term work. Ongoing until ended; at most one open row per project.
+model ProjectMaintenance {
+  id          String          @id @default(cuid())
+  projectId   String
+  plan        MaintenancePlan
+  // Per-term fee, copied from the tier price when chosen and editable.
+  feeCents    Int?
+  startTermId String?
+  startedAt   DateTime        @default(now())
+  startedById String?
+  endedAt     DateTime?
+  endedById   String?
+  updatedAt   DateTime        @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  startTerm Term?   @relation(fields: [startTermId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, endedAt])
 }

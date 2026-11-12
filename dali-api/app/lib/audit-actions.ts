@@ -220,6 +220,7 @@ export const AUDIT_ACTIONS = [
   "partner.invite.revoked",
   "partner.application.submitted",
   "partner.application.stage",
+  "partner.application.delete",
   "partner.settings.save",
   "partner.form-binding.set",
   "partner.form-binding.clear",

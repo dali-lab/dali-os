@@ -1,11 +1,28 @@
-export const RENEWAL_COLUMNS = ["undecided", "continuing", "not_continuing"] as const;
+import type { MaintenancePlan } from "~/generated/prisma/enums";
+
+export const RENEWAL_COLUMNS = ["undecided", "continuing", "maintaining", "not_continuing"] as const;
 export type RenewalColumn = (typeof RENEWAL_COLUMNS)[number];
 
 export const RENEWAL_COLUMN_LABELS: Record<RenewalColumn, string> = {
   undecided: "Undecided",
   continuing: "Continuing",
+  maintaining: "Maintaining",
   not_continuing: "Not continuing",
 };
+
+export const MAINTENANCE_PLANS = ["Hosting", "Mild", "Medium"] as const satisfies readonly MaintenancePlan[];
+
+export type MaintenancePrices = Record<MaintenancePlan, number | null>;
+
+export function isMaintenancePlan(value: unknown): value is MaintenancePlan {
+  return typeof value === "string" && (MAINTENANCE_PLANS as readonly string[]).includes(value);
+}
+
+export function maintenanceLabel(plan: MaintenancePlan): string {
+  return `${plan} maintenance`;
+}
+
+export type RenewalMaintenance = { plan: MaintenancePlan; feeCents: number | null; startTermCode: string | null };
 
 export type RenewalRole = { domainId: string; name: string; slots: number };
 
@@ -26,6 +43,7 @@ export type RenewalCardModel = {
   feeCents: number | null;
   lastRoles: RenewalRole[];
   decidedRoles: RenewalRole[];
+  maintenance: RenewalMaintenance | null;
 };
 
 export type StatusRow = { sortKey: number; code: string; isContinuing: boolean | null };
@@ -94,6 +112,7 @@ export function groupRenewals(cards: RenewalCardModel[]): Record<RenewalColumn, 
   const out: Record<RenewalColumn, RenewalCardModel[]> = {
     undecided: [],
     continuing: [],
+    maintaining: [],
     not_continuing: [],
   };
   for (const c of cards) out[c.column].push(c);
@@ -154,6 +173,7 @@ export function addDomainRole(roles: RenewalRole[], domainId: string, name: stri
 
 const INTENT_COLUMN: Record<string, RenewalColumn> = {
   continue: "continuing",
+  maintain: "maintaining",
   "not-continuing": "not_continuing",
   undecided: "undecided",
 };

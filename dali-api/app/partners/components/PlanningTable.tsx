@@ -169,7 +169,14 @@ export function PlanningTable({
           <div className={cn(GRID, "border-t border-os-container-hi py-3 text-sm font-semibold text-foreground")}>
             <span>Total</span>
             <span className="tabular-nums">{spotsLabel(totals.renewing, totals.fresh)}</span>
-            <span className="tabular-nums">{totals.intent}</span>
+            <span className="tabular-nums">
+              {totals.intent}
+              {totals.people !== totals.intent && (
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  ({totals.people} {totals.people === 1 ? "person" : "people"})
+                </span>
+              )}
+            </span>
             <SourceBar
               renewing={totals.renewing}
               fresh={totals.fresh}

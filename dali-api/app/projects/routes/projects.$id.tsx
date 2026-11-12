@@ -81,6 +81,7 @@ import {
 } from "~/partners/lib/partner-access";
 import { listActiveCoreMembers, personName } from "~/partners/lib/core-members.server";
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
+import { maintenanceLabel } from "~/partners/lib/partner-renewals";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard, type TaskCreateSeed } from "../components/TaskBoard";
 import { ProjectMentorshipTab } from "~/mentorship/components/ProjectMentorshipTab";
@@ -295,6 +296,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       kind: true,
       description: true,
       status: true,
+      maintenancePlans: { where: { endedAt: null }, take: 1, select: { plan: true } },
       aiTldr: true,
       aiTldrGeneratedAt: true,
       aiTldrInputHash: true,
@@ -1255,6 +1257,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         partners: partnerships,
         domains: declaredDomains,
         derivedDomains,
+        maintenancePlan: project.maintenancePlans[0]?.plan ?? null,
       },
       canEditScope,
     ),
@@ -2239,6 +2242,14 @@ function ProjectHeader({
           />
         )}
       </HeroClusterLabel>
+
+      {project.maintenancePlan && (
+        <HeroClusterLabel label="Maintenance">
+          <span className="rounded-full border border-os-accent/40 bg-os-accent/10 px-2.5 py-0.5 text-[13px] font-medium text-os-accent">
+            {maintenanceLabel(project.maintenancePlan)}
+          </span>
+        </HeroClusterLabel>
+      )}
     </div>
   );
 
