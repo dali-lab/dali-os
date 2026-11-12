@@ -46,14 +46,7 @@ export function extractPageMentionIds(doc: Y.Doc): string[] {
     }
     for (const child of block.children ?? []) walkBlock(child as typeof block);
   };
-  // Clone so any Y.XmlText comment-mark side effects don't touch the live doc.
-  const clone = new Y.Doc();
-  try {
-    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-    for (const block of ydocToBlocks(clone).blocks) walkBlock(block);
-  } finally {
-    clone.destroy();
-  }
+  for (const block of ydocToBlocks(doc).blocks) walkBlock(block);
   return [...ids];
 }
 

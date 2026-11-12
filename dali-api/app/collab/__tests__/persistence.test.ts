@@ -4,6 +4,7 @@ import * as Y from "yjs";
 // Mock prisma before importing the module under test
 vi.mock("~/lib/db.server", () => {
   const mock: any = {
+    mentorNote: { findUnique: vi.fn(), updateMany: vi.fn() },
     collabDocument: { findUnique: vi.fn(), upsert: vi.fn() },
     collabDocumentVersion: { findFirst: vi.fn(), create: vi.fn() },
     applicationReview: { findUnique: vi.fn(), update: vi.fn() },
@@ -23,10 +24,47 @@ vi.mock("~/collab/server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { getPlainText, loadDocument, storeDocument, maybeSnapshot } from "../persistence";
-import { fragmentToBlocks } from "../blocknote-server";
+import { BLOCKNOTE_FRAGMENT, blocksToFragment, fragmentToBlocks, plainTextToBlocks } from "../blocknote-server";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 
 const mockPrisma = prisma as any;
+
+
+function docWithCommentMark(text = "hello"): Y.Doc {
+  const doc = new Y.Doc();
+  doc.transact(() => blocksToFragment(plainTextToBlocks(text), doc.getXmlFragment(BLOCKNOTE_FRAGMENT)));
+  doc.transact(() => {
+    const t = findXmlText(doc.getXmlFragment(BLOCKNOTE_FRAGMENT))[0];
+    t.format(0, text.length, { "comment--abc": { id: "abc" } } as any);
+  });
+  return doc;
+}
+
+function docWithUnknownNode(text = "hello"): Y.Doc {
+  const doc = new Y.Doc();
+  const fragment = doc.getXmlFragment(BLOCKNOTE_FRAGMENT);
+  doc.transact(() => blocksToFragment(plainTextToBlocks(text), fragment));
+  doc.transact(() => {
+    const container = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlElement;
+    const ghost = new Y.XmlElement("notInServerSchema");
+    const ghostText = new Y.XmlText();
+    ghostText.insert(0, "ghost");
+    ghost.insert(0, [ghostText]);
+    container.push([ghost]);
+  });
+  return doc;
+}
+
+function findXmlText(el: Y.XmlFragment | Y.XmlElement, out: Y.XmlText[] = []): Y.XmlText[] {
+  for (let i = 0; i < el.length; i++) {
+    const c = el.get(i);
+    if (c instanceof Y.XmlText) out.push(c);
+    else if (c instanceof Y.XmlElement) findXmlText(c, out);
+  }
+  return out;
+}
+
+const stateOf = (doc: Y.Doc) => Buffer.from(Y.encodeStateAsUpdate(doc));
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -368,5 +406,24 @@ describe("maybeSnapshot", () => {
     expect(result).toBe(false);
     expect(mockPrisma.$executeRaw).toHaveBeenCalledOnce();
     expect(mockPrisma.collabDocumentVersion.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("storeDocument never decodes the live doc", () => {
+  it.each([
+    ["a comment mark", () => docWithCommentMark("hello")],
+    ["an unknown node", () => docWithUnknownNode("hello")],
+  ] as Array<[string, () => Y.Doc]>)("emits no update and keeps the state bytes with %s", async (_name, make) => {
+    mockPrisma.collabDocument.upsert.mockResolvedValue({ updatedAt: new Date("2026-01-01") });
+    const doc = make();
+    const before = stateOf(doc);
+    const updates: Uint8Array[] = [];
+    doc.on("update", (u: Uint8Array) => updates.push(u));
+
+    await storeDocument("mentorNote:n1:body", doc);
+
+    expect(updates).toEqual([]);
+    expect(stateOf(doc).equals(before)).toBe(true);
+    expect(mockPrisma.mentorNote.updateMany).toHaveBeenCalled();
   });
 });
