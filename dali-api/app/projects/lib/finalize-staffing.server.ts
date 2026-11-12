@@ -8,7 +8,7 @@ import {
   slackConfigured,
   SLACK_NOT_CONFIGURED_MESSAGE,
 } from "~/slack/lib/slack-client";
-import { resolveSlackIdsForInvite } from "~/members/lib/slack-sync.server";
+import { resolveSlackIdsForInvite } from "~/slack/lib/slack-sync.server";
 import { ensureTeam, addTeamMember, isNo2fa } from "~/lib/github";
 import {
   workspaceConfigured,

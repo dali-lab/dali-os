@@ -7,7 +7,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { lookupSlackUserByEmail } from "~/slack/lib/slack-client";
-import { syncSlackUserId } from "~/members/lib/slack-sync.server";
+import { syncSlackUserId } from "~/slack/lib/slack-sync.server";
 
 const mockPrisma = prisma as unknown as {
   user: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
