@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { Link, useNavigate } from "react-router";
 import { Eye, Plus } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { IconButton } from "~/components/ui/IconButton";
 import { useOsChrome } from "~/components/os-chrome";
 import { BannerOverlay } from "~/components/banners/BannerContent";

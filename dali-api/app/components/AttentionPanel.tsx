@@ -19,7 +19,7 @@ import { Truncated } from "~/components/ui/Truncated";
 import { Drawer } from "~/components/ui/Drawer";
 import { IconButton } from "~/components/ui/IconButton";
 import { Tooltip } from "~/components/ui/floating";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { RsvpButtons, notifyTasksChanged } from "~/components/RsvpButtons";
 import { buttonClasses } from "~/components/ui/Button";
 import { LoadMore, type LoadMoreProps } from "~/components/ui/Pager";

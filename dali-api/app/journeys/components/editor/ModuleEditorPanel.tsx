@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { IconButton } from "~/components/ui/IconButton";
 import { moduleTitle } from "~/journeys/lib/journey";
 import { updateModule } from "~/journeys/lib/journey-edit";

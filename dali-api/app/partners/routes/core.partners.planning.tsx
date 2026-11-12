@@ -25,7 +25,7 @@ import { buildPlanningGap, buildPlanningProjects, findPlanningProject, type Inte
 import { TermFilter } from "~/components/TermFilter";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
