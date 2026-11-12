@@ -192,6 +192,14 @@ describe("unique-constraint failures", () => {
     expect(await run(profile({ handle: "ada" }))).toEqual({ error: "That handle is already taken — pick another." });
   });
 
+  it("names a taken handle when the pg adapter reports only the constraint index", async () => {
+    db.user.update.mockRejectedValue({
+      code: "P2002",
+      meta: { modelName: "User", driverAdapterError: { cause: { constraint: { index: "User_handle_key" } } } },
+    });
+    expect(await run(profile({ handle: "ada" }))).toEqual({ error: "That handle is already taken — pick another." });
+  });
+
   it("treats other unique violations as a NetID duplicate", async () => {
     db.user.update.mockRejectedValue({ code: "P2002", meta: { target: "User_netId_key" } });
     expect(await run(profile({ netId: "f00ada" }))).toEqual({
