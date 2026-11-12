@@ -42,8 +42,7 @@ export const MANAGE_PAGE_TOOL_DEF = {
       pinned: { type: "boolean", description: "For 'pin': true to pin, false to unpin." },
       // move
       parentPageId: {
-        type: "string",
-        nullable: true,
+        type: ["string", "null"],
         description: "For 'move': target parent folder id, or null for top-level.",
       },
       beforeId: { type: "string", description: "For 'move': place before this sibling's id." },
