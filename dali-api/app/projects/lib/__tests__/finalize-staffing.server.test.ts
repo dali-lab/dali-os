@@ -50,6 +50,7 @@ vi.mock("~/projects/lib/finalize-external.server", () => ({
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
+vi.mock("~/lib/outbound.server", () => ({ enqueueOutbound: vi.fn(), drainNow: vi.fn() }));
 vi.mock("~/lib/promotion-notify.server", () => {
   const rank = { P1: 1, P2: 2, P3: 3 } as Record<string, number>;
   return {
@@ -71,6 +72,7 @@ import { ensureTeam, addTeamMember } from "~/lib/github";
 import { workspaceConfigured, ensureWorkspaceGroup, addGroupMember } from "~/lib/google-workspace";
 import { externalFinalizeAllowed } from "~/projects/lib/finalize-external.server";
 import { logAuditEvent } from "~/lib/audit";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import { publishCycleChange } from "../staffing-events.server";
@@ -129,6 +131,7 @@ beforeEach(() => {
   vi.mocked(derivePairings).mockResolvedValue(0);
   vi.mocked(findDomainsMissingMentors).mockReturnValue([]);
   vi.mocked(notify).mockResolvedValue(undefined as never);
+  vi.mocked(enqueueOutbound).mockResolvedValue({ id: "ob1", deduped: false });
   vi.mocked(notifyAdminsOfPromotion).mockResolvedValue(undefined as never);
   vi.mocked(externalFinalizeAllowed).mockReturnValue(true);
   vi.mocked(grantTeamRepos).mockResolvedValue([]);
@@ -541,17 +544,31 @@ describe("slack step", () => {
         data: { slackChannelId: "C1", slackChannelName: "Atlas" },
       });
       expect(inviteUsersToChannel).toHaveBeenCalledWith("C1", ["S1", "S2"]);
-      expect(postMessage).toHaveBeenCalledWith(
-        "C1",
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(enqueueOutbound).toHaveBeenCalledWith({
+        channel: "slack_channel",
+        target: "C1",
+        dedupKey: `staffing.finalize_welcome:${CYCLE.id}:${PROJECT.id}`,
+        eventType: "staffing.finalize",
+        createdByUserId: ACTOR,
+        slackText:
         "*Welcome to Atlas 26F!* Here are your team and repos for the term :tada:\n\n" +
           "*Team*\n*Design*\n• Alan Turing (mentor)\n• Bob Zed\n\n" +
           "*Engineering*\n• Grace Hopper (mentor)\n• Ada Lovelace\n\n" +
           "*Repos*\n• https://github.com/example/atlas",
-      );
+      });
+      expect(drainNow).toHaveBeenCalledWith(["ob1"]);
       expect(out.results.slack).toEqual({
         status: "ok",
         message: "#atlas (new) · 2 invited · 3 announced · 1 no Slack account",
       });
+    });
+
+    it("reports an already posted welcome when the outbox dedups it", async () => {
+      vi.mocked(enqueueOutbound).mockResolvedValue({ id: null, deduped: true });
+      const out = (await run({ automations: ["slack"] })) as { results: Record<string, { status: string; message: string }> };
+      expect(out.results.slack.status).toBe("ok");
+      expect(out.results.slack.message).toBe("#atlas (new) · 2 invited · welcome already posted · 1 no Slack account");
     });
 
     it("a mentor-role override beats the P3 default for the (mentor) tag", async () => {
@@ -560,7 +577,7 @@ describe("slack step", () => {
         { userId: "u-ada", isMentor: true },
       ]);
       await run({ automations: ["slack"] });
-      const text = vi.mocked(postMessage).mock.calls[0][1] as string;
+      const text = vi.mocked(enqueueOutbound).mock.calls[0][0].slackText as string;
       expect(text).toContain("• Ada Lovelace (mentor)\n• Grace Hopper");
       expect(text).not.toContain("Grace Hopper (mentor)");
     });
@@ -593,7 +610,7 @@ describe("slack step", () => {
       prismaMock.staffingAssignment.findMany.mockResolvedValue([]);
       prismaMock.externalMentor.findMany.mockResolvedValue([]);
       await run({ automations: ["slack"] });
-      expect(vi.mocked(postMessage).mock.calls[0][1]).toContain("_No confirmed members yet._");
+      expect(vi.mocked(enqueueOutbound).mock.calls[0][0].slackText).toContain("_No confirmed members yet._");
     });
 
     it("invites roster, term core members and admins", async () => {
