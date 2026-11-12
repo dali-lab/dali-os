@@ -15,7 +15,7 @@ import { prisma } from "~/lib/db.server";
 import { postMessage, slackConfigured } from "~/slack/lib/slack-client";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
-import { jobChannelPostAllowed } from "~/jobs/job-slack";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import { DAY, SPRINT_DAYS, utcDayOf, localTodayUtcDay } from "~/projects/lib/timeline-days";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
@@ -110,7 +110,7 @@ export async function runSprintLifecycle({ now }: JobContext): Promise<JobResult
 
       // Slack channel post rides the same fresh dispatch, so a re-fired tick
       // (dedupKey already claimed → no new in-app rows) posts nothing.
-      if (fresh && project.slackChannelId && slackConfigured() && jobChannelPostAllowed()) {
+      if (fresh && project.slackChannelId && slackConfigured() && slackSendAllowed()) {
         const text = `:checkered_flag: *${band.label}* wrapped up. ${summary}`;
         await postMessage(project.slackChannelId, text).catch((err) =>
           console.error(`[jobs] project ${project.id}: slack post failed`, err),

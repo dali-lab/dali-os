@@ -13,6 +13,7 @@
 import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import { renderMemberEmail } from "~/email/lib/layout.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
@@ -92,10 +93,6 @@ function audienceOf(user: {
 }): Audience {
   if (user.daliMember) return "member";
   return user.partnerContact ? "partner" : "portal";
-}
-
-export function slackDmAllowed(): boolean {
-  return getAppEnv() === "prod" || process.env.NOTIFY_SLACK_DM_OVERRIDE === "1";
 }
 
 export function absoluteLink(link: string | null | undefined): string | null {
@@ -408,7 +405,7 @@ export async function notify(args: {
   // drain also refuses to send them, as defense-in-depth).
   let slackDmed = 0;
   const dmTargets = resolved.filter((r) => r.slackDm && r.user.slackUserId);
-  if (slackConfigured() && slackDmAllowed()) {
+  if (slackConfigured() && slackSendAllowed()) {
     for (const r of dmTargets) {
       if (dedupedInApp.has(r.user.id)) continue;
       const m = merged(r.recipient);
@@ -428,7 +425,7 @@ export async function notify(args: {
         slackDmed += 1;
       }
     }
-  } else if (!slackDmAllowed() && dmTargets.length > 0) {
+  } else if (!slackSendAllowed() && dmTargets.length > 0) {
     console.info(
       `[slack-dm:${getAppEnv()}] skipped ${dmTargets.length} DM(s) for ${args.eventType} (prod-only; set NOTIFY_SLACK_DM_OVERRIDE=1 to test)`,
     );

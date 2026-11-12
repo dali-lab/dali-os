@@ -8,7 +8,8 @@ import {
   resolveNotificationCopy,
 } from "~/email/lib/notification-render.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
+import { getFrontendUrl } from "~/lib/app-env";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
 
 // Deep-link for the welcome todo and Core reminders.
@@ -158,8 +159,7 @@ export async function sendOnboardingReminders(args: {
     if (!slackConfigured()) {
       throw new Error("Slack is not configured");
     }
-    // Same prod gate as notify(): staging DBs mirror prod Slack ids.
-    if (getAppEnv() !== "prod" && process.env.NOTIFY_SLACK_DM_OVERRIDE !== "1") {
+    if (!slackSendAllowed()) {
       throw new Error(
         "Slack DMs are production-only (set NOTIFY_SLACK_DM_OVERRIDE=1 to test)",
       );
