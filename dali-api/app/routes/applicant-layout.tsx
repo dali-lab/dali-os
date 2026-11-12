@@ -36,7 +36,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Feature flags for the portal: the member shell resolves these in its own
   // layout, but the applicant portal is a separate layout — without this, every
   // /portal/* page reads flags as off (useFeatureFlag falls back to false).
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   const [avatarUrl, flags] = await Promise.all([
     resolvePhotoUrl(me?.photoUrl),
     resolveFeatureFlags(auth.user.sub, roles),

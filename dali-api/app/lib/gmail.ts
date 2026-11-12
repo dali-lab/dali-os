@@ -11,17 +11,31 @@ import {
   STAGING_REDIRECT_EMAIL as STAGING_REDIRECT,
 } from './app-env'
 import { refreshGoogleToken } from '~/lib/google-oauth'
+import { cachedForTtl, clearTtlCache } from '~/lib/ttl-cache'
 import { htmlToPlainText } from '~/lib/email'
 
 const CLIENT_ID = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
 const CLIENT_SECRET = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
 
+const TOKEN_TTL_MS = 50 * 60_000
+const MIN_CACHEABLE_EXPIRES_IN_S = 55 * 60
+
+function tokenCacheKey(refreshToken: string): string {
+  return `gmail:token:${refreshToken}`
+}
+
 export async function getGmailAccessToken(refreshToken: string): Promise<string> {
-  const tokens = await refreshGoogleToken({
-    refreshToken,
-    clientId: CLIENT_ID,
-    clientSecret: CLIENT_SECRET,
-  })
+  const tokens = await cachedForTtl(
+    tokenCacheKey(refreshToken),
+    TOKEN_TTL_MS,
+    () =>
+      refreshGoogleToken({
+        refreshToken,
+        clientId: CLIENT_ID,
+        clientSecret: CLIENT_SECRET,
+      }),
+    (t) => (t.expires_in ?? 0) >= MIN_CACHEABLE_EXPIRES_IN_S,
+  )
   return tokens.access_token
 }
 
@@ -295,6 +309,7 @@ export async function sendEmail({
       body: JSON.stringify({ raw }),
     },
   )
+  if (res.status === 401) clearTtlCache(tokenCacheKey(refreshToken))
   if (!res.ok) throw new Error(`Gmail send failed: ${await res.text()}`)
   return res.json()
 }

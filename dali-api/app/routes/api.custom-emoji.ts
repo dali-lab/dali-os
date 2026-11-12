@@ -14,7 +14,7 @@ const EMOJI_KEY = /^uploads\/custom-emoji\/[0-9a-f-]{36}-emoji\.(png|gif)$/;
 async function requireEmojiViewer(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return { denied: auth.response } as const;
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isLabMember && !roles.isCore) {
     return { denied: Response.json({ error: "Forbidden" }, { status: 403 }) } as const;
   }

@@ -139,6 +139,10 @@ async function readCalendars(
   return calendars;
 }
 
+export function interviewCalendarCacheSizeForTests(): number {
+  return cache.size;
+}
+
 /** Each interviewer's availability straight from their DALI OS calendar:
  *  working hours plus busy time on the calendars they've linked (DALI
  *  meetings live on those too), limited to the interview window. */
@@ -147,6 +151,7 @@ export async function interviewerCalendars(
   config: InterviewWindowConfig,
 ): Promise<Map<string, InterviewerCalendar>> {
   const now = Date.now();
+  for (const [key, entry] of cache) if (entry.expires < now) cache.delete(key);
   const unique = [...new Set(userIds)];
   const missing = unique.filter((userId) => {
     const hit = cache.get(cacheKey(userId, config));

@@ -6,13 +6,11 @@
 // predate the index, pages edited while an instance could not write to it, and
 // seeded pages whose room name overrides the usual doc:{pageId}:body shape.
 //
-// Staleness is decided by comparing CollabDocument.updatedAt against the
-// sourceUpdatedAt recorded at index time, so a steady state costs two cheap
-// column reads and decodes nothing.
+// Staleness is decided in SQL by comparing CollabDocument.updatedAt against the
+// sourceUpdatedAt recorded at index time; only the stale batch is decoded.
 
 import type { JobContext, JobResult } from "~/jobs/registry";
 import { prisma } from "~/lib/db.server";
-import { pageDocName } from "~/collab/roomName";
 import { stateToBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { indexPageBody } from "~/lib/doc-search.server";
@@ -24,51 +22,29 @@ const STATE_CHUNK = 25;
 export async function runDocSearchIndex(ctx: JobContext): Promise<JobResult> {
   const batchSize = ctx.settings.batchSize;
 
-  // Archived pages are excluded from search, so leave their rows alone —
-  // un-archiving bumps nothing, but the next edit re-indexes, and a stale row
-  // for a hidden page is invisible either way.
-  const pages = await prisma.page.findMany({
-    where: { archivedAt: null },
-    select: { id: true, contentDocId: true },
-  });
-  if (pages.length === 0) return { items: 0, note: "no pages" };
+  // Archived pages are excluded from search. The room name mirrors pageDocName()
+  // unless a seeded page overrides it with contentDocId.
+  const rows = await prisma.$queryRaw<
+    { pageId: string; name: string; updatedAt: Date; total: bigint }[]
+  >`
+    SELECT p.id AS "pageId", cd.name, cd."updatedAt", count(*) OVER () AS total
+    FROM "Page" p
+    JOIN "CollabDocument" cd ON cd.name = COALESCE(p."contentDocId", 'doc:' || p.id || ':body')
+    LEFT JOIN "PageSearchIndex" psi ON psi."pageId" = p.id
+    WHERE p."archivedAt" IS NULL
+      AND (psi."sourceUpdatedAt" IS NULL OR psi."sourceUpdatedAt" < cd."updatedAt")
+    ORDER BY cd."updatedAt" ASC
+    LIMIT ${batchSize}
+  `;
+  if (rows.length === 0) return { items: 0, note: "index up to date" };
 
-  // Room name → page id. Mirrors the read paths (MCP read_page, exports):
-  // contentDocId when a seeded page overrides it, else the standard shape.
-  const pageIdByDocName = new Map(
-    pages.map((p) => [p.contentDocId ?? pageDocName(p.id), p.id]),
-  );
-
-  const [docs, indexed] = await Promise.all([
-    prisma.collabDocument.findMany({
-      where: { name: { in: [...pageIdByDocName.keys()] } },
-      select: { name: true, updatedAt: true },
-    }),
-    prisma.pageSearchIndex.findMany({ select: { pageId: true, sourceUpdatedAt: true } }),
-  ]);
-
-  const indexedAt = new Map(indexed.map((r) => [r.pageId, r.sourceUpdatedAt]));
-  const allStale = docs
-    .flatMap((doc) => {
-      const pageId = pageIdByDocName.get(doc.name);
-      if (!pageId) return [];
-      const seen = indexedAt.get(pageId);
-      if (seen && seen >= doc.updatedAt) return [];
-      return [{ pageId, name: doc.name, updatedAt: doc.updatedAt }];
-    })
-    // Oldest edit first, so a backlog drains in a stable order instead of
-    // re-picking the same rows every tick.
-    .sort((a, b) => a.updatedAt.getTime() - b.updatedAt.getTime());
-
-  if (allStale.length === 0) return { items: 0, note: "index up to date" };
-
-  const stale = allStale.slice(0, batchSize);
+  const totalStale = Number(rows[0].total);
 
   let indexedCount = 0;
   let failed = 0;
 
-  for (let i = 0; i < stale.length; i += STATE_CHUNK) {
-    const chunk = stale.slice(i, i + STATE_CHUNK);
+  for (let i = 0; i < rows.length; i += STATE_CHUNK) {
+    const chunk = rows.slice(i, i + STATE_CHUNK);
     const states = await prisma.collabDocument.findMany({
       where: { name: { in: chunk.map((c) => c.name) } },
       select: { name: true, state: true },
@@ -91,7 +67,7 @@ export async function runDocSearchIndex(ctx: JobContext): Promise<JobResult> {
     }
   }
 
-  const deferred = allStale.length - stale.length;
+  const deferred = totalStale - rows.length;
   return {
     items: indexedCount,
     note:

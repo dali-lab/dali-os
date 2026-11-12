@@ -13,6 +13,7 @@
 import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getAppEnv, getFrontendUrl } from "~/lib/app-env";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import { renderMemberEmail } from "~/email/lib/layout.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
@@ -92,10 +93,6 @@ function audienceOf(user: {
 }): Audience {
   if (user.daliMember) return "member";
   return user.partnerContact ? "partner" : "portal";
-}
-
-export function slackDmAllowed(): boolean {
-  return getAppEnv() === "prod" || process.env.NOTIFY_SLACK_DM_OVERRIDE === "1";
 }
 
 export function absoluteLink(link: string | null | undefined): string | null {
@@ -238,31 +235,38 @@ export async function notify(args: {
   // announcement still shows it, so the email is never empty).
   const isAnnouncement = args.eventType === "announcement";
 
-  // Coalescing (best-effort, opt-in per event): when a recipient already got a
-  // row for this event+link inside the window, merge the new activity into that
-  // row instead of writing a second one — taming a burst (5 comments → 1 row).
-  // The surviving row is refreshed to the latest preview, re-lit unread, bumped
-  // to the top of the feed (which also slides the window forward), and its
-  // coalesceCount incremented; only the in-app row re-surfaces, so email/Slack
-  // stay suppressed to one-per-window. Best-effort: a rare race just delivers
-  // the burst (the un-coalesced behaviour), so a plain findFirst — not an atomic
-  // claim — is fine, and a merge-write failure must not lose the row already shown.
+  // Coalescing (best-effort, opt-in per event): a recipient with a row for this
+  // event+link inside the window gets the new activity merged into it instead
+  // of a second row. Only the in-app row re-surfaces; email/Slack stay
+  // suppressed to one per window. A merge-write failure must not lose the row already shown.
   if (def.coalesceWindowMs && resolved.length > 0) {
     const since = new Date(Date.now() - def.coalesceWindowMs);
     const kept: Resolved[] = [];
     const mergedInto: string[] = [];
+    const links = [
+      ...new Set(resolved.map((r) => merged(r.recipient).link).filter((l): l is string => !!l)),
+    ];
+    const recentByKey = new Map<string, { id: string; coalesceCount: number }>();
+    if (links.length > 0) {
+      const recentRows = await prisma.notification.findMany({
+        where: {
+          recipientUserId: { in: resolved.map((r) => r.user.id) },
+          eventType: args.eventType,
+          link: { in: links },
+          createdAt: { gte: since },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, recipientUserId: true, link: true, coalesceCount: true },
+      });
+      for (const row of recentRows) {
+        const key = `${row.recipientUserId}|${row.link}`;
+        if (!recentByKey.has(key)) recentByKey.set(key, row);
+      }
+    }
     for (const r of resolved) {
       const m = merged(r.recipient);
       if (m.link) {
-        const recent = await prisma.notification.findFirst({
-          where: {
-            recipientUserId: r.user.id,
-            eventType: args.eventType,
-            link: m.link,
-            createdAt: { gte: since },
-          },
-          select: { id: true, coalesceCount: true },
-        });
+        const recent = recentByKey.get(`${r.user.id}|${m.link}`);
         if (recent) {
           const count = recent.coalesceCount + 1;
           const summary =
@@ -294,9 +298,8 @@ export async function notify(args: {
     if (mergedInto.length > 0) publishNotificationChange(mergedInto);
   }
 
-  // In-app: unkeyed recipients keep the fast bulk insert; keyed recipients each
-  // claim (recipientUserId, dedupKey) with a per-recipient insert so a re-fire
-  // no-ops on the unique constraint instead of aborting the whole batch.
+  // In-app: keyed recipients claim (recipientUserId, dedupKey) via ON CONFLICT DO NOTHING,
+  // so a re-fire no-ops per recipient instead of aborting the batch.
   const inAppTargets = resolved.filter((r) => r.inApp);
   const rows: { id: string; recipientUserId: string }[] = [];
 
@@ -315,26 +318,19 @@ export async function notify(args: {
   }
 
   const keyed = inAppTargets.filter((r) => dedupKeyFor(r.recipient));
-  for (const r of keyed) {
-    try {
-      const row = await prisma.notification.create({
-        data: {
-          recipientUserId: r.user.id,
-          createdByUserId: args.createdByUserId ?? null,
-          eventType: args.eventType,
-          dedupKey: dedupKeyFor(r.recipient),
-          ...merged(r.recipient),
-        },
-        select: { id: true, recipientUserId: true },
-      });
-      rows.push(row);
-    } catch (err) {
-      // Already claimed by an earlier fire — a duplicate we absorb. Duck-type on
-      // the Prisma error code (no value-import of the generated client needed).
-      if (typeof err === "object" && err !== null && (err as { code?: unknown }).code === "P2002")
-        continue;
-      throw err;
-    }
+  if (keyed.length > 0) {
+    const created = await prisma.notification.createManyAndReturn({
+      data: keyed.map((r) => ({
+        recipientUserId: r.user.id,
+        createdByUserId: args.createdByUserId ?? null,
+        eventType: args.eventType,
+        dedupKey: dedupKeyFor(r.recipient),
+        ...merged(r.recipient),
+      })),
+      skipDuplicates: true,
+      select: { id: true, recipientUserId: true },
+    });
+    rows.push(...created);
   }
 
   const rowIdByUser = new Map(rows.map((row) => [row.recipientUserId, row.id]));
@@ -408,7 +404,7 @@ export async function notify(args: {
   // drain also refuses to send them, as defense-in-depth).
   let slackDmed = 0;
   const dmTargets = resolved.filter((r) => r.slackDm && r.user.slackUserId);
-  if (slackConfigured() && slackDmAllowed()) {
+  if (slackConfigured() && slackSendAllowed()) {
     for (const r of dmTargets) {
       if (dedupedInApp.has(r.user.id)) continue;
       const m = merged(r.recipient);
@@ -428,7 +424,7 @@ export async function notify(args: {
         slackDmed += 1;
       }
     }
-  } else if (!slackDmAllowed() && dmTargets.length > 0) {
+  } else if (!slackSendAllowed() && dmTargets.length > 0) {
     console.info(
       `[slack-dm:${getAppEnv()}] skipped ${dmTargets.length} DM(s) for ${args.eventType} (prod-only; set NOTIFY_SLACK_DM_OVERRIDE=1 to test)`,
     );
