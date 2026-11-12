@@ -85,3 +85,17 @@ describe("api.custom-hires audit trail", () => {
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
+
+describe("api.custom-hires create validation", () => {
+  it("keeps the exact messages for an empty, missing and over-long label", async () => {
+    const empty = await post({ intent: "create", label: "   " });
+    expect(empty.status).toBe(400);
+    expect(await empty.json()).toEqual({ error: "Give the role a name" });
+    expect(await (await post({ intent: "create" })).json()).toEqual({ error: "Give the role a name" });
+    const long = await post({ intent: "create", label: "x".repeat(81) });
+    expect(long.status).toBe(400);
+    expect(await long.json()).toEqual({ error: "Keep it under 80 characters" });
+    expect(hire.create).not.toHaveBeenCalled();
+  });
+});
+
