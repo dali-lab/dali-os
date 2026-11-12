@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, type PillTone } from "~/components/ui/Pill";
 import { Link } from "react-router";
 import type { DomainApplicationStatus } from "~/types";
 import { InterviewSlotPicker } from "~/hiring/components/InterviewSlotPicker";

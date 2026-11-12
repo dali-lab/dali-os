@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import { Check, X } from "lucide-react";
 import { useFetcher } from "react-router";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { Pill } from "~/components/ui/Pill";
 import { Select } from "~/components/ui/floating";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -11,8 +12,6 @@ import {
   type TermFormRole,
   type TermForms,
 } from "../lib/term-forms";
-
-const PILL = "inline-flex items-center gap-1.5 rounded-full bg-os-container px-2.5 py-0.5 text-xs font-medium whitespace-nowrap";
 
 // One person's answer to a linked form: a pill that opens the response, or a
 // quiet "Not submitted".
@@ -29,10 +28,9 @@ export function TermFormStatus({
   const titleId = useId();
   if (!response) {
     return (
-      <span className={cn(PILL, "text-os-grey")}>
-        <span className="h-2 w-2 rounded-full bg-os-grey" aria-hidden />
+      <Pill size="sm" dot="neutral">
         Not submitted
-      </span>
+      </Pill>
     );
   }
   return (
@@ -40,10 +38,11 @@ export function TermFormStatus({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={cn(PILL, "text-foreground hover:bg-os-container-hi transition-colors")}
+        className="rounded-full transition-opacity hover:opacity-80"
       >
-        <span className="h-2 w-2 rounded-full bg-os-green" aria-hidden />
-        Submitted
+        <Pill size="sm" dot="success">
+          Submitted
+        </Pill>
       </button>
       <Modal open={open} onClose={() => setOpen(false)} labelledBy={titleId} containerClassName={modalCardClass("max-w-lg")}>
         <ModalHeader

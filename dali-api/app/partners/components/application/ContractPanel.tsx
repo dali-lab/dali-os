@@ -9,7 +9,7 @@ import { useState } from "react";
 import { FileSignature, FileCheck2, Download } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
-import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, type PillTone } from "~/components/ui/Pill";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
 import type { PartnerContractStatus } from "../../lib/partner-contract.server";
 import { RAIL_CONTROL, RAIL_LINK } from "./rail";

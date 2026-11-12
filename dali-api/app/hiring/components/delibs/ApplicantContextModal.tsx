@@ -7,7 +7,7 @@ import {
   RECOMMENDATION_TONES,
   STAGE_LABELS,
 } from "~/hiring/lib/labels";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { useEffect } from "react";
 
 export interface ApplicantContextModalProps {
