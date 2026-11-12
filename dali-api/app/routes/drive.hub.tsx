@@ -1,9 +1,8 @@
-import { redirect, useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
+import { useLoaderData, useSearchParams, useNavigate, useRevalidator, useLocation } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import type { Route } from "./+types/drive.hub";
-import { FileText, ClipboardList, FileSignature, Paperclip, Plus, ChevronDown, LayoutTemplate, Upload, Tag as TagIcon, Trash2, MoreHorizontal, X, Shapes, Presentation, NotebookPen } from "lucide-react";
+import { FileText, ClipboardList, FileSignature, Paperclip, Plus, ChevronDown, LayoutTemplate, Tag as TagIcon, Trash2, MoreHorizontal, X, Shapes, Presentation, NotebookPen } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { ReactNode } from "react";
 import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
@@ -204,7 +203,7 @@ export default function DriveHub() {
     selectedTerm,
     canManageAgreements,
     viewerId,
-  } = useLoaderData() as LoaderData;
+  } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const hubToast = useToast();
   // Reveal in Drive arrives with ?select=<id>, and a redirect into Drive can

@@ -28,7 +28,7 @@ import {
   inviteDestinations,
   inviteOrganizerFields,
   addDaysToDate,
-} from "~/calendar/components/composer";
+} from "~/calendar/lib/composer-fields";
 import { durationMinutesBetween } from "~/calendar/lib/event-block";
 import { eventTitleOrDefault } from "~/calendar/lib/event-title";
 import { useSubmitBackground } from "~/calendar/lib/background-submissions";

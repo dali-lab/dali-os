@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import {
   Form,
   Link,
@@ -31,14 +31,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { isCore } from "~/lib/roles";
 import { coreHandle } from "~/core/coreNav";
-import {
-  PARTNER_STAGE_LABELS as STAGE_LABEL,
-  PARTNER_REJECT_REASONS,
-  PARTNER_REJECT_REASON_LABELS,
-  isPartnerStage,
-  isPartnerRejectReason,
-} from "../lib/partner-application";
-import { PROJECT_FUNDING_TYPES, PROJECT_FUNDING_TYPE_LABELS } from "~/lib/chart-string";
+import { PARTNER_STAGE_LABELS as STAGE_LABEL, isPartnerStage, isPartnerRejectReason } from "../lib/partner-application";
+import { PROJECT_FUNDING_TYPES } from "~/lib/chart-string";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
 import { DocEditor } from "~/components/doc";
@@ -843,7 +837,7 @@ export default function PartnerApplicationDetail() {
     emailThreads,
     contract,
     contractDocuments,
-  } = useLoaderData() as LoaderData;
+  } = useLoaderData<typeof loader>();
   // Always-inline editing (gated only by permission), matching the rest of the
   // site — no view/edit mode toggle.
   const canEdit = canEditPerm;

@@ -35,10 +35,7 @@ const KIND_META: { kind: TemplateKind; label: string; icon: React.ReactNode; blu
 ];
 
 export default function DriveTemplates() {
-  const { templates, userId } = useLoaderData() as {
-    templates: Awaited<ReturnType<typeof loadTemplates>>;
-    userId: string;
-  };
+  const { templates, userId } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [creating, setCreating] = useState<string | null>(null);
 

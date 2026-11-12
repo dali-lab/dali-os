@@ -25,7 +25,7 @@ import { pendingForm, useFetcherErrorToast } from "~/calendar/lib/fetcher-pendin
 import { CalendarDays, ChevronDown, ChevronRight, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { CalendarManagerModal } from "~/calendar/components/composer";
+import { CalendarManagerModal } from "~/calendar/components/CalendarManagerModal";
 import { GeneralCalendarPrompt, SectionHeader } from "~/calendar/components/settings-cards";
 import { SyncErrorNotice } from "~/calendar/components/SyncErrorNotice";
 import type { LoaderData, CalendarLinkDTO, SubCalendarDTO } from "~/calendar/lib/types";

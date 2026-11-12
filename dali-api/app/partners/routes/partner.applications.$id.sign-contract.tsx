@@ -108,10 +108,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   return redirect(`/partner/applications/${application.id}/sign-contract`);
 }
 
-type LoaderData = Awaited<ReturnType<typeof loader>>;
-
 export default function SignPartnerContract() {
-  const data = useLoaderData() as LoaderData;
+  const data = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const error = actionData && "error" in actionData ? actionData.error : null;
 

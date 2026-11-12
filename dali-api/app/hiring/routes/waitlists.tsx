@@ -76,10 +76,7 @@ function fullName(e: WaitlistEntry): string {
 }
 
 export default function WaitlistsPage() {
-  const { entries, continuedInterestEmail } = useLoaderData<typeof loader>() as {
-    entries: WaitlistEntry[];
-    continuedInterestEmail: EmailCopy | null;
-  };
+  const { entries, continuedInterestEmail } = useLoaderData<typeof loader>();
   const { pageTitle, bodyText } = useOsChrome();
   const [cycleFilter, setCycleFilter] = useState<string>("all");
   const [removingAll, setRemovingAll] = useState(false);

@@ -5,7 +5,7 @@ import { loadPortalApply } from "~/hiring/lib/portal-apply.server";
 import { runPortalApplyAction } from "~/hiring/lib/portal-apply-actions.server";
 import { CycleChooser } from "~/components/portal/apply/CycleChooser";
 import { SectionNavMobile, SectionNavDesktop, BackToTopButton } from "~/components/portal/apply/SectionNav";
-import { getDomainColor, formatShortDate, getPickedQuestions, computeRequiredProgress, buildSections, type DomainShape, type ContinuedProgress } from "~/hiring/lib/apply-sections";
+import { getDomainColor, formatShortDate, getPickedQuestions, computeRequiredProgress, buildSections, visibleGeneralParts, type DomainShape, type ContinuedProgress } from "~/hiring/lib/apply-sections";
 import type { WaitlistedApplicationOption } from "~/hiring/lib/continued-interest.server";
 import { formatDeadline } from "~/hiring/components/ApplicationTracker";
 import { APPLICATION_TZ } from "~/lib/timezone";
@@ -161,7 +161,7 @@ function ApplyForm({ loaderData }: { loaderData: ApplyLoaderData }) {
   }
 
   function buildDomainAnswersPayload() {
-    return (draft.domainApplications ?? [])
+    return (draft?.domainApplications ?? [])
       .filter((da: any) => selectedDomainIds.includes(da.domainId))
       .map((da: any) => ({
         domainApplicationId: da.id,
@@ -201,7 +201,7 @@ function ApplyForm({ loaderData }: { loaderData: ApplyLoaderData }) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     await doSave();
     reuseFetcher.submit(
-      { intent: "stop-using-waitlisted", applicationId: draft.id, domainId },
+      { intent: "stop-using-waitlisted", applicationId: draft?.id ?? "", domainId },
       { method: "post" },
     );
   }

@@ -142,7 +142,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 }
 
 export default function WhiteboardPage() {
-  const data = useLoaderData() as Exclude<Awaited<ReturnType<typeof loader>>, Response>;
+  const data = useLoaderData<typeof loader>();
   return (
     <WhiteboardEditor
       pageId={data.pageId}
