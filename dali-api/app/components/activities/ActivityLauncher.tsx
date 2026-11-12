@@ -1,4 +1,4 @@
-// Activity launcher (specs/activities.md §7.5): the "an activity is live" entry
+// Activity launcher (specs/archive/activities.md §7.5): the "an activity is live" entry
 // point + the surface modal, mounted in the shell (LayoutOS) next to
 // DesktopBanner. Two pieces, one owner of open state:
 //   • A top-bar bar (DesktopBanner's slot/styling) announcing what's live.

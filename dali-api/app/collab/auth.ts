@@ -9,7 +9,7 @@ import { lookupSession, rollSession } from "~/lib/session";
 // getCollabToken (~/lib/collab-token.server) minted:
 //   - Legacy session: the raw __dali_sid credential, resolved via lookupSession.
 //   - BetterAuth session: a bearer token, validated via auth.api.getSession.
-// See SESSION_AUTH_PLAN.md § Phase 5.5.
+// See specs/archive/SESSION_AUTH_PLAN.md § Phase 5.5.
 export async function verifyCollabToken(rawToken: string): Promise<{ sub: string }> {
   const session = await lookupSession(rawToken);
   if (session) {

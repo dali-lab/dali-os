@@ -47,7 +47,7 @@ describe("deriveRailState", () => {
   });
 });
 
-describe("RecordingRail per state (specs/meeting-recording-rail.md state table)", () => {
+describe("RecordingRail per state (specs/archive/meeting-recording-rail.md state table)", () => {
   it("idle: renders nothing (the start sheet, not the rail, handles it)", () => {
     expect(render(makeRec({ phase: "idle" }))).toBe("");
   });

@@ -10,7 +10,7 @@ import type { UseMeetingRecording } from "./use-meeting-recording";
 
 /**
  * The start sheet: a real decision (mic, consent) — the one modal
- * the Recording rail keeps (specs/meeting-recording-rail.md). Shown only
+ * the Recording rail keeps (specs/archive/meeting-recording-rail.md). Shown only
  * while `rec.phase === "idle"`; Start hands off to the rail (the sheet
  * closes, the rail opens) without this component doing anything special —
  * `rec.open` stays true and `rec.phase` simply stops being "idle".

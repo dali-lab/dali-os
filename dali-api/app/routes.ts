@@ -461,7 +461,7 @@ export default [
   route("logout", "routes/logout.ts"),
 
   // Desktop device pairing (GitHub-CLI style). Additive — OAuth + login
-  // untouched. /link is the only new web UI surface. See TAURI_DESKTOP_PLAN.md.
+  // untouched. /link is the only new web UI surface. See specs/archive/TAURI_DESKTOP_PLAN.md.
   route("auth/pair/start", "routes/auth.pair.start.ts"),
   route("auth/pair/approve", "routes/auth.pair.approve.ts"),
   route("auth/pair/poll", "routes/auth.pair.poll.ts"),
@@ -521,7 +521,7 @@ export default [
   // High scores for the runner game on the error screens.
   route("api/dino-scores", "routes/api.dino-scores.ts"),
 
-  // Activities (specs/activities.md): the time-boxed "mode" layer — the
+  // Activities (specs/archive/activities.md): the time-boxed "mode" layer — the
   // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
   // activity modal (progress + leaderboard on GET; code submit on POST); the
   // modal floats over whatever page the member is exploring, so there is no

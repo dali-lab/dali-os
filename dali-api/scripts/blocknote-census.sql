@@ -1,4 +1,4 @@
--- BlockNote migration census (specs/blocknote-migration.md, D1/D3/D5 pre-flights).
+-- BlockNote migration census (specs/archive/blocknote-migration.md, D1/D3/D5 pre-flights).
 -- READ-ONLY. Run against prod:  psql "$DATABASE_URL" -f scripts/blocknote-census.sql
 --
 -- Notes:

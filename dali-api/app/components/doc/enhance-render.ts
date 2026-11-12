@@ -135,7 +135,7 @@ function withMark(block: DocPartialBlock, mark: EnhanceMark): DocPartialBlock {
  * Applies applyEnhancePlan's ops to the live editor inside one BlockNote
  * transaction (editor.transact — @blocknote/core/src/editor/BlockNoteEditor.ts),
  * so the editor's own undo reverts the whole write, never half of it
- * (specs/meeting-recording-rail.md Step 2). Every updated or inserted block
+ * (specs/archive/meeting-recording-rail.md Step 2). Every updated or inserted block
  * is tinted `enhance-added`; a `remove` op tints the block `enhance-prior`
  * instead of deleting it, leaving something for Keep/Revert to act on.
  * Returns the full prior JSON (content/props/children) of every block an
@@ -204,7 +204,7 @@ function enhanceMarkOf(block: { props: Record<string, unknown> }): EnhanceMark |
 
 /** Every block carrying a reserved Enhance mark, at any depth, in document
  *  order — the data the rail's "pending review" state derives from
- *  (specs/meeting-recording-rail.md Step 2: "Pending is derived from the
+ *  (specs/archive/meeting-recording-rail.md Step 2: "Pending is derived from the
  *  document, not from a flag"). */
 export function findEnhanceMarks(blocks: readonly DocBlock[]): EnhanceMarkEntry[] {
   const hits: EnhanceMarkEntry[] = [];
@@ -277,7 +277,7 @@ export function revertEnhanceBlock(
 
 /** Keep every block currently carrying an Enhance mark, in one transaction.
  *  Iterates the marks present when called and skips an id that's already
- *  gone by the time its turn comes (specs/meeting-recording-rail.md Step 2:
+ *  gone by the time its turn comes (specs/archive/meeting-recording-rail.md Step 2:
  *  "Concurrent review"). Returns the number kept. */
 export function keepAllEnhance(editor: DocEditorInstance): number {
   return editor.transact(() => {

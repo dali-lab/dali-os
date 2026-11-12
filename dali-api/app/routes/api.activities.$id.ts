@@ -1,4 +1,4 @@
-// Activity data endpoint (specs/activities.md §7.7). A resource route — no UI —
+// Activity data endpoint (specs/archive/activities.md §7.7). A resource route — no UI —
 // that the shell's ActivityLauncher modal fetches from: the loader returns the
 // member's progress + results (computed via the SERVER mechanic registry), and
 // the action forwards a submitted form to the mechanic's onAction. The surface

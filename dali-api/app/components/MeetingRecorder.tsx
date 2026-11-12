@@ -13,7 +13,7 @@ import type { UseMeetingRecording } from "./meeting-recorder/use-meeting-recordi
 
 /**
  * The top-bar Record/status button, and the one modal the Recording rail
- * keeps — the start sheet (specs/meeting-recording-rail.md). The rail
+ * keeps — the start sheet (specs/archive/meeting-recording-rail.md). The rail
  * itself renders in DocumentEditor's `rail` slot, built by the route from
  * the same `rec` this component mirrors; this component owns only the
  * trigger and, on a narrow canvas while live, a small Popover with the

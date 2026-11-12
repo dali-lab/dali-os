@@ -1,4 +1,4 @@
-// Scavenger-hunt mechanic — client half (specs/activities.md §8): the Surface
+// Scavenger-hunt mechanic — client half (specs/archive/activities.md §8): the Surface
 // (submit + progress + leaderboard, shown in the shell's activity modal) and
 // the admin config editor (the code list). Codes are submitted from the modal,
 // which is reachable from any page, so the hunt renders no on-page overlay.

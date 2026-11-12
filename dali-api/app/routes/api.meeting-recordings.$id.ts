@@ -51,7 +51,7 @@ const notFound = () => Response.json({ error: "Not found" }, { status: 404 });
 // this window. Older than this (or no chunk ever) reads as abandoned.
 const EDITOR_FINAL_STOP_STALE_MS = 2 * 60_000;
 
-// priorBlocks (specs/meeting-recording-rail.md Step 2): full prior DocBlock
+// priorBlocks (specs/archive/meeting-recording-rail.md Step 2): full prior DocBlock
 // JSON for every block Enhance changed, keyed by block id — capped well
 // under the request body's own ceiling so one outsized note can't bloat the
 // recording row indefinitely.

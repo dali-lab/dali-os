@@ -85,7 +85,7 @@ describe("transcriptToggleBlock / findTranscriptToggle", () => {
   });
 });
 
-// ─── Enhance marks (specs/meeting-recording-rail.md Step 2) ───────────────
+// ─── Enhance marks (specs/archive/meeting-recording-rail.md Step 2) ───────────────
 
 // Real BlockNote blocks always resolve every registered prop (backgroundColor
 // included) to an explicit value — "default" when unset, never absent — since

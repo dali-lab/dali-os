@@ -7,7 +7,7 @@ import { cn } from "~/lib/cn";
 // A right-edge sliding panel — a Modal variant, so Escape and focus trapping
 // come for free. Extracted from TasksDrawer (AttentionPanel.tsx); the
 // Recording rail's narrow-canvas states use this too
-// (specs/meeting-recording-rail.md).
+// (specs/archive/meeting-recording-rail.md).
 
 export interface DrawerProps {
   open: boolean;
