@@ -1,20 +1,11 @@
 import type { Route } from "./+types/api.staffing.eligibility";
-import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { logAuditEvent } from "~/lib/audit";
 import { isLevel, type Level } from "~/lib/level";
-import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
-import { publishCycleChange } from "../lib/staffing-events.server";
-import { dedupeLiveAssignments } from "../lib/staffing-board";
+import { setDomainEligibility, StaffingWriteError } from "../lib/staffing-assign.server";
 
 // POST /api/staffing/eligibility
-//
-// Upsert a member's DomainEligibility (domain + level) from the staffing board
-// card chips. When they have a live assignment in that domain for the cycle,
-// rewrite the Proposed (or mint a Proposed over Confirmed) so Propagate uses
-// the new level. Gated to staffing managers.
 
 type Body = {
   cycleId: string;
@@ -59,117 +50,23 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  const [cycle, domain, user] = await Promise.all([
-    prisma.staffingCycle.findUnique({
-      where: { id: body.cycleId },
-      select: { id: true, termId: true },
-    }),
-    prisma.domain.findUnique({
-      where: { id: body.domainId },
-      select: { id: true, name: true, displayName: true },
-    }),
-    prisma.user.findUnique({
-      where: { id: body.userId },
-      select: { id: true },
-    }),
-  ]);
-  if (!cycle) {
-    return withCors(request, Response.json({ error: "Cycle not found" }, { status: 404 }));
-  }
-  if (!domain) {
-    return withCors(request, Response.json({ error: "Domain not found" }, { status: 404 }));
-  }
-  if (!user) {
-    return withCors(request, Response.json({ error: "User not found" }, { status: 404 }));
-  }
-
-  await addOrUpdateEligibility({
-    userId: body.userId,
-    domainId: body.domainId,
-    level: body.level,
-    actorId: auth.user.sub,
-  });
-
-  // If they're live-assigned in this domain, keep the board assignment level
-  // in sync so Propagate / mentorship pairing sees the new level. Preserve any
-  // other selected domains on the same project (multi-domain staffing).
-  const cycleRows = await prisma.staffingAssignment.findMany({
-    where: {
-      staffingCycleId: cycle.id,
-      userId: body.userId,
-      status: { in: ["Proposed", "Confirmed"] },
-    },
-    select: {
-      id: true,
-      userId: true,
-      projectId: true,
-      domainId: true,
-      level: true,
-      status: true,
-    },
-  });
-  const liveRows = dedupeLiveAssignments(cycleRows);
-  // The member may be staffed in this domain on multiple projects at once; sync
-  // each affected project independently and never touch their rows on projects
-  // that don't include this domain.
-  const affectedProjectIds = [
-    ...new Set(
-      liveRows
-        .filter((r) => r.domainId === body.domainId && r.level !== body.level)
-        .map((r) => r.projectId),
-    ),
-  ];
-  if (affectedProjectIds.length > 0) {
-    await prisma.$transaction(async (tx) => {
-      for (const projectId of affectedProjectIds) {
-        const siblings = liveRows.filter((r) => r.projectId === projectId);
-        await tx.staffingAssignment.deleteMany({
-          where: {
-            userId: body.userId,
-            staffingCycleId: cycle.id,
-            projectId,
-            status: "Proposed",
-          },
-        });
-        for (const r of siblings) {
-          await tx.staffingAssignment.create({
-            data: {
-              userId: body.userId,
-              staffingCycleId: cycle.id,
-              projectId,
-              termId: cycle.termId,
-              domainId: r.domainId,
-              level: r.domainId === body.domainId ? body.level : r.level,
-              status: "Proposed",
-              assignedById: auth.user.sub,
-            },
-          });
-        }
-      }
-    });
-  }
-
-  await logAuditEvent({
-    action: "staffing.eligibility.set",
-    userId: auth.user.sub,
-    targetId: body.userId,
-    metadata: {
+  try {
+    const { domainName } = await setDomainEligibility({
       cycleId: body.cycleId,
+      userId: body.userId,
       domainId: body.domainId,
       level: body.level,
-    },
-    request,
-  });
-
-  publishCycleChange(cycle.id);
-
-  return withCors(
-    request,
-    Response.json({
-      ok: true,
-      domainId: body.domainId,
-      domainName: domain.displayName || domain.name,
-      level: body.level,
-    }),
-  );
+      actorId: auth.user.sub,
+      request,
+    });
+    return withCors(
+      request,
+      Response.json({ ok: true, domainId: body.domainId, domainName, level: body.level }),
+    );
+  } catch (err) {
+    if (err instanceof StaffingWriteError) {
+      return withCors(request, Response.json({ error: err.message }, { status: err.status }));
+    }
+    throw err;
+  }
 }
