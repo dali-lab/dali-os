@@ -36,7 +36,8 @@ vi.mock("~/components/slides/pptx/import-client", async (orig) => ({
   uploadImages: pptx.uploadImages,
 }));
 
-import { NewMenu, makeScopeActions, notebookPlacement } from "~/routes/drive.hub";
+import { NewMenu, notebookPlacement } from "~/components/drive/NewMenu";
+import { makeScopeActions } from "~/components/drive/scope-actions";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
