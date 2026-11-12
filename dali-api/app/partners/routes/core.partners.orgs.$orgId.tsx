@@ -83,6 +83,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   );
 }
 
+export type PartnerOrgLoaderData = ReturnType<typeof useLoaderData<typeof loader>>;
+
 export default function PartnerOrgDetail() {
   const {
     org,

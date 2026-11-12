@@ -11,7 +11,7 @@ import { cn } from "~/lib/cn";
 import { EditableSection } from "~/components/EditableSection";
 import { DotPill } from "./OrgStatusPill";
 import { PARTNER_ORG_TYPES, PARTNER_ORG_TYPE_LABELS } from "../../lib/partner-org";
-import type { PartnerOrgData } from "../../lib/org-detail.server";
+import type { PartnerOrgLoaderData } from "../../routes/core.partners.orgs.$orgId";
 import { memberName } from "./org-tabs";
 
 // The Settings tab's facts card. Individuals show Name + Email (both stored on
@@ -23,7 +23,7 @@ function DetailsFields({
   editing,
   allContacts,
 }: {
-  org: PartnerOrgData["org"];
+  org: PartnerOrgLoaderData["org"];
   editing: boolean;
   allContacts: { id: string; name: string; email: string | null }[];
 }) {
@@ -292,9 +292,9 @@ export function SettingsTab({
   canEdit,
   canDeleteOrg,
 }: {
-  org: PartnerOrgData["org"];
-  otherOrgs: PartnerOrgData["otherOrgs"];
-  allContacts: PartnerOrgData["allContacts"];
+  org: PartnerOrgLoaderData["org"];
+  otherOrgs: PartnerOrgLoaderData["otherOrgs"];
+  allContacts: PartnerOrgLoaderData["allContacts"];
   canEdit: boolean;
   canDeleteOrg: boolean;
 }) {
