@@ -121,7 +121,7 @@ import {
   trackExternalEventAsMeeting,
 } from "~/lib/scheduled-meeting";
 import { meetingNotePath } from "~/lib/note-path.server";
-import { submitCalendarAction, shouldInvalidateExternalCache } from "~/calendar/routes/calendar.server";
+import { submitCalendarAction, shouldInvalidateExternalCache } from "~/calendar/lib/calendar-actions.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
   $transaction: ReturnType<typeof vi.fn>;

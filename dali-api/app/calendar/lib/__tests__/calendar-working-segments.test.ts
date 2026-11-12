@@ -8,7 +8,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { submitCalendarAction } from "~/calendar/routes/calendar.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const whd = () => mockPrisma.workingHoursDay!;

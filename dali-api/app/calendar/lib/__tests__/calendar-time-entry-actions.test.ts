@@ -27,7 +27,8 @@ import { requireAuth } from "~/lib/auth";
 import { resolveRoleRef } from "~/lib/roles";
 import { syncTimeEntryToGoogle, removeTimeEntryFromGoogle } from "~/lib/timesheet-mirror.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
-import { submitCalendarAction, timeEntryResult } from "~/calendar/routes/calendar.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
+import { timeEntryResult } from "~/lib/time-entries.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
   $transaction: ReturnType<typeof vi.fn>;

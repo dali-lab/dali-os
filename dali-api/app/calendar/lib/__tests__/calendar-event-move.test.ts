@@ -33,7 +33,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { patchGoogleCalendarEvent } from "~/lib/google-calendar";
 import { updateScheduledMeeting } from "~/lib/scheduled-meeting";
-import { submitCalendarAction } from "~/calendar/routes/calendar.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const mockUpdate = vi.mocked(updateScheduledMeeting);

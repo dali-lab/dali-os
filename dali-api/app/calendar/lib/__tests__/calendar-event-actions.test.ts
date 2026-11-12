@@ -115,7 +115,7 @@ import {
   retimeEventRoomBookings,
   truncateEventRoomBookings,
 } from "~/lib/rooms.server";
-import { submitCalendarAction } from "~/calendar/routes/calendar.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 

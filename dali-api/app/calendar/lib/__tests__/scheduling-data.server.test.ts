@@ -18,7 +18,7 @@ vi.mock("~/lib/google-calendar", () => ({
   getValidAccessTokenForLink: vi.fn(),
   listCalendarsForLink: vi.fn(),
 }));
-vi.mock("~/calendar/routes/calendar.server", () => ({
+vi.mock("~/calendar/lib/calendar-participants.server", () => ({
   buildCalendarLinkDTO: vi.fn(),
   loadParticipantOptions: vi.fn(),
 }));
@@ -27,7 +27,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { canViewForms, isCore } from "~/lib/roles";
 import { getValidAccessTokenForLink, listCalendarsForLink } from "~/lib/google-calendar";
-import { buildCalendarLinkDTO, loadParticipantOptions } from "~/calendar/routes/calendar.server";
+import { buildCalendarLinkDTO, loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 import { DEFAULT_BUFFER_MIN } from "../calendar-defaults";
 import { loadSchedulingData } from "../scheduling-data.server";
 

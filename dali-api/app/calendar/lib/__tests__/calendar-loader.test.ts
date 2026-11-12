@@ -37,7 +37,7 @@ import { isLabMember, currentTerm, getUserRoleInstances, canViewForms, isCore, g
 import { resolveTermFilter } from "~/lib/terms";
 import { fetchCalendarEvents, getValidAccessTokenForLink, listCalendarsForLink } from "~/lib/google-calendar";
 import { invalidateExternalCache } from "~/calendar/lib/external-cache.server";
-import { loadCalendarData } from "~/calendar/routes/calendar.server";
+import { loadCalendarData } from "~/calendar/lib/calendar-loader.server";
 
 const USER = "u1";
 const LINK = {

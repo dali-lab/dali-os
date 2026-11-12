@@ -4,7 +4,7 @@ import { currentTerm, isAdminViaEnv } from "~/lib/roles";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { isLevel } from "~/lib/level";
-import { DOMAIN_USAGE_COUNT_SELECT, describeDomainUsage } from "~/admin/routes/api.domains.$domainId";
+import { DOMAIN_USAGE_COUNT_SELECT, describeDomainUsage } from "~/admin/lib/domain-usage";
 import { accessOf, mergeMemberships, type AccessDomain, type AccessMember } from "~/core/lib/access";
 
 export async function loadAccess(): Promise<{ members: AccessMember[]; domains: AccessDomain[]; term: string | null }> {
