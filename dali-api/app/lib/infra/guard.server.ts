@@ -1,9 +1,4 @@
-// Protected-resource allowlist — the primary safety rail. The DALI OS platform's
-// own infra (the app the dashboard runs on + its Neon project) must NEVER be
-// destroyed or quota-limited from the dashboard, regardless of who clicks. This
-// is enforced server-side before any destructive/quota write, independent of the
-// UI hiding controls. Per-client-project infra is deliberately NOT protected —
-// decommissioning a finished project is a legitimate Admin action.
+// Protected platform infra refuses every mutating dashboard action, for every role.
 
 const DEFAULT_PROTECTED_FLY_APPS = ["dali-api-prod", "dali-api-staging"];
 
@@ -11,8 +6,6 @@ function splitEnv(v: string | undefined): string[] {
   return (v ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-// The Fly apps that can't be destroyed: the built-in platform apps, the running
-// app itself (FLY_APP_NAME), and any operator-configured extras.
 export function protectedFlyApps(): string[] {
   const self = process.env.FLY_APP_NAME;
   return [
@@ -24,8 +17,6 @@ export function protectedFlyApps(): string[] {
   ];
 }
 
-// Neon project ids that can't be deleted or quota-limited. The platform's prod
-// Neon project id(s) belong here — set via INFRA_PROTECTED_NEON_PROJECTS.
 export function protectedNeonProjectIds(): string[] {
   return splitEnv(process.env.INFRA_PROTECTED_NEON_PROJECTS);
 }

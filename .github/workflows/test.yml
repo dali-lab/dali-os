@@ -20,14 +20,14 @@ jobs:
     defaults:
       run:
         working-directory: dali-api
-    env:
-      JWT_SECRET: test-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm install
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dali-api/package-lock.json
+      - run: npm ci
       - name: Run unit tests with coverage
         run: npm run test:coverage
       - name: Write coverage summary
@@ -52,7 +52,6 @@ jobs:
     env:
       DATABASE_URL: postgresql://dali:dali@localhost:5432/dali_integration
       DIRECT_URL: postgresql://dali:dali@localhost:5432/dali_integration
-      JWT_SECRET: test-secret-for-ci-at-least-32-chars
     services:
       postgres:
         image: postgres:16-alpine
@@ -71,8 +70,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm install
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dali-api/package-lock.json
+      - run: npm ci
       - name: Generate Prisma client
         run: npx prisma generate
       - name: Run integration tests
@@ -87,7 +88,6 @@ jobs:
         working-directory: dali-api
     env:
       DATABASE_URL: postgresql://dali:dali@localhost:5432/dali
-      JWT_SECRET: test-secret-for-ci-at-least-32-chars
       CAS_BASE_URL: https://login.dartmouth.edu/cas
       FRONTEND_URL: http://localhost:5173
       API_BASE_URL: http://localhost:3001
@@ -109,8 +109,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - run: npm install
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dali-api/package-lock.json
+      - run: npm ci
       - name: Generate Prisma client
         run: npx prisma generate
       - name: Run migrations and seed
@@ -130,6 +132,36 @@ jobs:
             dali-api/e2e/test-results/
             dali-api/playwright-report/
           retention-days: 7
+
+  typecheck-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: dali-api
+    env:
+      DATABASE_URL: postgresql://dummy:dummy@localhost:5432/dummy
+      NODE_OPTIONS: --max-old-space-size=8192
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dali-api/package-lock.json
+      - run: npm ci
+      - name: Generate Prisma client
+        run: npx prisma generate
+      - name: Typecheck
+        shell: bash
+        run: |
+          npm run typecheck 2>&1 | tee tsc.log
+          status=${PIPESTATUS[0]}
+          count=$(grep -c 'error TS' tsc.log || true)
+          echo "tsc errors: $count" >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
 
   test-asr:
     needs: changes
