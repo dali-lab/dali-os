@@ -17,12 +17,12 @@ import {
 } from "~/forms/components/FormTileStrip";
 import { stripPattern } from "~/forms/lib/tile-strip";
 import { canAnimate, prefersReducedMotion } from "~/components/meeting-recorder/motion";
-import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/lib/form-logic";
+import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/forms/lib/form-logic";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
 import { useFormProgress } from "~/forms/components/useFormProgress";
-import { findMissingRequired, validateAnswerFormats } from "~/lib/form-answers";
+import { findMissingRequired, validateAnswerFormats } from "~/forms/lib/form-answers";
 import type { Question } from "~/types";
 
 // The shared authenticated form-fill UI. Rendered both by /forms/fill/:token

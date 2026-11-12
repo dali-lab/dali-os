@@ -38,17 +38,17 @@ vi.mock("~/lib/member-class.server", () => {
     MemberClassError,
   };
 });
-vi.mock("~/lib/time-entries.server", () => ({
+vi.mock("~/calendar/lib/time-entries.server", () => ({
   addTimeEntry: vi.fn(),
   deleteTimeEntry: vi.fn(),
   updateTimeEntry: vi.fn(),
   timeEntryResult: vi.fn(),
 }));
-vi.mock("~/lib/timesheet-mirror.server", () => ({
+vi.mock("~/calendar/lib/timesheet-mirror.server", () => ({
   setUserTimesheetSync: vi.fn(),
   removeTimeEntryFromGoogle: vi.fn(),
 }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchCalendarEvents: vi.fn(),
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
@@ -63,13 +63,13 @@ vi.mock("~/lib/google-calendar", () => ({
   respondToGoogleEventAsSelf: vi.fn(),
   NotAGuestError: class NotAGuestError extends Error {},
 }));
-vi.mock("~/lib/general-calendar", () => ({
+vi.mock("~/calendar/lib/general-calendar", () => ({
   generalCalendarId: vi.fn(),
   isGeneralCalendarEvent: vi.fn(),
   generalCalendarState: vi.fn(),
 }));
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   attachMeetingNote: vi.fn(),
   attachMeetingWhiteboard: vi.fn(),
   cancelScheduledMeeting: vi.fn(),
@@ -81,7 +81,7 @@ vi.mock("~/lib/scheduled-meeting", () => ({
   updateScheduledMeeting: vi.fn(),
 }));
 vi.mock("~/lib/note-path.server", () => ({ meetingNotePath: vi.fn() }));
-vi.mock("~/lib/rooms.server", () => ({
+vi.mock("~/rooms/lib/rooms.server", () => ({
   bookRoomsForEvent: vi.fn(),
   claimEventRoomBookings: vi.fn(),
   releaseEventRoomBookings: vi.fn(),

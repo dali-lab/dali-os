@@ -2,9 +2,15 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ canManageStaffing: vi.fn() }));
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
+vi.mock("~/projects/lib/staffing-events.server", () => ({ publishCycleChange: vi.fn() }));
+vi.mock("~/admin/lib/eligibility.server", () => ({ addOrUpdateEligibility: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
+import { publishCycleChange } from "~/projects/lib/staffing-events.server";
+import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
 import { validateInput } from "~/lib/mcp-input";
 import {
   SET_STAFFING_ASSIGNMENT_TOOL,
@@ -163,6 +169,19 @@ describe("set_staffing_assignment", () => {
     });
   });
 
+  it("audits the assignment and publishes the cycle change", async () => {
+    await runSetStaffingAssignment(ME, {
+      cycleId: "cyc-1",
+      userId: "u1",
+      projectId: "p1",
+      domains: [{ domainId: "d1", level: "P2" }],
+    });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "staffing.assign", userId: ME, targetId: "u1" }),
+    );
+    expect(publishCycleChange).toHaveBeenCalledWith("cyc-1");
+  });
+
   it("creates one row per domain", async () => {
     mockPrisma.domain.count.mockResolvedValue(2);
     const res = await runSetStaffingAssignment(ME, {
@@ -266,7 +285,20 @@ describe("set_domain_eligibility", () => {
       level: "P3",
     });
     expect(res).toEqual({ ok: true, created: true });
-    expect(mockPrisma.domainEligibility.create).toHaveBeenCalled();
+    expect(addOrUpdateEligibility).toHaveBeenCalledWith({
+      userId: "u1",
+      domainId: "d1",
+      level: "P3",
+      actorId: ME,
+    });
+  });
+
+  it("audits the change", async () => {
+    mockPrisma.domainEligibility.findFirst.mockResolvedValue(null);
+    await runSetDomainEligibility(ME, { userId: "u1", domainId: "d1", level: "P3" });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "staffing.eligibility.set", userId: ME, targetId: "u1" }),
+    );
   });
 
   it("updates when present, rather than duplicating", async () => {
@@ -277,8 +309,7 @@ describe("set_domain_eligibility", () => {
       level: "P1",
     });
     expect(res).toEqual({ ok: true, created: false });
-    expect(mockPrisma.domainEligibility.update.mock.calls[0][0].data).toEqual({ level: "P1" });
-    expect(mockPrisma.domainEligibility.create).not.toHaveBeenCalled();
+    expect(addOrUpdateEligibility).toHaveBeenCalledWith(expect.objectContaining({ level: "P1", actorId: ME }));
   });
 
   it("404s on an unknown member or domain", async () => {

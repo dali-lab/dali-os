@@ -12,7 +12,7 @@ vi.mock("~/lib/s3", () => ({
 
 import { exportMarkdown } from "~/lib/markdown-export.server";
 import { importMarkdownFile } from "~/lib/markdown-import.server";
-import { MAX_ZIP_FILES } from "~/lib/drive-download.server";
+import { MAX_ZIP_FILES } from "~/drive/lib/drive-download.server";
 import { deleteObject, getDownloadUrl, getObjectStream, headObject, putObjectStream } from "~/lib/s3";
 import type { DocBlock } from "~/collab/blocknote-server";
 

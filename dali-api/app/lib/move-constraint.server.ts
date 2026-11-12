@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
-import { loadAncestorChains } from "~/lib/page-ancestry.server";
-import { nearestRoot } from "~/lib/drive-roots";
+import { loadAncestorChains } from "~/drive/lib/page-ancestry.server";
+import { nearestRoot } from "~/drive/lib/drive-roots";
 import type { MoveConstraint } from "~/components/drive/picker-rows";
 
 /** The destination limits the move rules put on these pages, for the picker to apply. */

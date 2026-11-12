@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/fileAccess.server", () => ({ filterViewableFiles: vi.fn() }));
 vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn() }));
-vi.mock("~/lib/drive-download.server", () => ({
+vi.mock("~/drive/lib/drive-download.server", () => ({
   MAX_ZIP_FILES: 100,
   MAX_ZIP_BYTES: 500 * 1024 * 1024,
   buildDriveZip: vi.fn(),
@@ -15,7 +15,7 @@ import { requireMemberSession } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { prisma } from "~/lib/db.server";
 import { filterViewableFiles } from "~/lib/fileAccess.server";
-import { buildDriveZip } from "~/lib/drive-download.server";
+import { buildDriveZip } from "~/drive/lib/drive-download.server";
 import { _resetForTests } from "~/lib/rate-limit";
 import { isS3Configured } from "~/lib/s3";
 import { action } from "~/routes/api.drive.download";
@@ -99,7 +99,7 @@ describe("POST /api/drive/download", () => {
   it("zips the files by their download names and returns the link", async () => {
     const res = await post(["a", "b"]);
     expect(await res.json()).toEqual({ url: "https://signed.example/zip", included: 2, skipped: 0 });
-    expect(vi.mocked(buildDriveZip).mock.calls[0][0].map((s) => [s.name, s.s3Key])).toEqual([
+    expect(vi.mocked(buildDriveZip).mock.calls[0][0].map((s) => [s.name, "s3Key" in s && s.s3Key])).toEqual([
       ["File a.pdf", "uploads/a"],
       ["File b.pdf", "uploads/b"],
     ]);
@@ -114,7 +114,7 @@ describe("POST /api/drive/download", () => {
     const res = await post(["a", "secret"]);
 
     expect(await res.json()).toMatchObject({ included: 1, skipped: 1 });
-    expect(vi.mocked(buildDriveZip).mock.calls[0][0].map((s) => s.s3Key)).toEqual(["uploads/a"]);
+    expect(vi.mocked(buildDriveZip).mock.calls[0][0].map((s) => "s3Key" in s && s.s3Key)).toEqual(["uploads/a"]);
   });
 
   it("counts archived and unknown ids as skipped", async () => {

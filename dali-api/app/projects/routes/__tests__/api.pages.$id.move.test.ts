@@ -19,8 +19,8 @@ vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }))
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
-vi.mock("~/lib/page-ancestry.server", async (importActual) => ({
-  ...(await importActual<typeof import("~/lib/page-ancestry.server")>()),
+vi.mock("~/drive/lib/page-ancestry.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/drive/lib/page-ancestry.server")>()),
   loadAncestorChain: vi.fn(),
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
@@ -29,7 +29,7 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
-vi.mock("~/lib/notebooks.server", () => {
+vi.mock("~/calendar/lib/notebooks.server", () => {
   class NotebookError extends Error {
     constructor(
       message: string,
@@ -47,24 +47,24 @@ vi.mock("~/lib/notebooks.server", () => {
     addToNotebook: vi.fn(),
   };
 });
-vi.mock("~/lib/page-names.server", async (importActual) => ({
-  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+vi.mock("~/drive/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/drive/lib/page-names.server")>()),
   findNameConflict: vi.fn(),
   assertUniqueName: vi.fn(),
 }));
-vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
+vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { loadAncestorChain } from "~/lib/page-ancestry.server";
+import { loadAncestorChain } from "~/drive/lib/page-ancestry.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
-import { NotebookError, addToNotebook } from "~/lib/notebooks.server";
-import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
-import { findNameConflict } from "~/lib/page-names.server";
+import { NotebookError, addToNotebook } from "~/calendar/lib/notebooks.server";
+import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
+import { findNameConflict } from "~/drive/lib/page-names.server";
 import { action } from "../api.pages.$id.move";
 
 const m = prisma as any;

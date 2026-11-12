@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.pages.$id.duplicate";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { duplicatePage } from "~/lib/page-copy.server";
+import { duplicatePage } from "~/drive/lib/page-copy.server";
 
 // POST /api/pages/:id/duplicate
 //

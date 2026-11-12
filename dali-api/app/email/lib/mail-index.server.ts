@@ -12,6 +12,7 @@ import { senderAddress } from "~/email/lib/format";
 import { getMailboxToken, MailboxError, type MessageMeta } from "~/email/lib/gmail-mailbox.server";
 import { getMailboxReader, noteSenderHealth } from "~/lib/gmail-integration";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
+import { getEnv } from "~/lib/env.server";
 
 const SUBJECT_MAX_LENGTH = 500;
 
@@ -43,8 +44,8 @@ async function readerAccessToken(reader: { id: string; refreshToken: string }): 
   try {
     data = await refreshGoogleToken({
       refreshToken: reader.refreshToken,
-      clientId: process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: getEnv().GMAIL_CLIENT_ID ?? getEnv().GOOGLE_CLIENT_ID!,
+      clientSecret: getEnv().GMAIL_CLIENT_SECRET ?? getEnv().GOOGLE_CLIENT_SECRET!,
     });
   } catch (err) {
     if (err instanceof GoogleOAuthError) {

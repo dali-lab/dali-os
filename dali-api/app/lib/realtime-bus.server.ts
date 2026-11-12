@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import IORedis from "ioredis";
+import { getEnv } from "~/lib/env.server";
 
 // Topic-keyed pub/sub behind every live surface (notification, comment,
 // activity, staffing, and delibs streams). With REDIS_URL set, events fan out
@@ -47,7 +48,7 @@ function deliverAll(event: BusEvent): void {
 }
 
 function connectRedis(): BusState["redis"] {
-  const url = process.env.REDIS_URL;
+  const url = getEnv().REDIS_URL;
   if (!url) return null;
   if (state.redis && state.redisUrl === url) return state.redis;
 

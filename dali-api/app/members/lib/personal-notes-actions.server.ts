@@ -19,7 +19,7 @@ import {
   NoteNotFoundError,
   requireNoteOwner,
 } from "./personal-notes.server";
-import { assertUniqueName } from "~/lib/page-names.server";
+import { assertUniqueName } from "~/drive/lib/page-names.server";
 import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
 import type { SharePrincipalType } from "~/generated/prisma/client";
 

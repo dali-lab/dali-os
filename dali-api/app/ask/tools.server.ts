@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { pageOpenHref } from "~/lib/page-href";
+import { pageOpenHref } from "~/drive/lib/page-href";
 import { notePageId } from "~/lib/mobile-notes";
 import type { SearchResult, SearchResultType } from "~/lib/search";
 import type { AskSourceInput, AskSourceKind } from "./sources";

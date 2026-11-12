@@ -188,56 +188,59 @@ export const MentionSpec = createReactInlineContentSpec(mentionConfig, {
   ),
 });
 
+function PageMentionChip({ pageId, storedLabel }: { pageId: string; storedLabel: string }) {
+  const label = usePageMentionTitle(pageId, storedLabel);
+  return (
+    <span
+      className={PAGE_MENTION_CLASS}
+      data-page-mention-id={pageId}
+      onClick={(e) => {
+        e.preventDefault();
+        if (pageId) window.location.href = `/documents/${pageId}`;
+      }}
+      title={`Open page: ${label}`}
+    >
+      📄 {label}
+    </span>
+  );
+}
+
 export const PageMentionSpec = createReactInlineContentSpec(pageMentionConfig, {
-  render: ({ inlineContent }) => {
-    const pageId = inlineContent.props.pageId;
-    const storedLabel = inlineContent.props.label || "Untitled";
-    // usePageMentionTitle registers the pageId with the nearest
-    // PageMentionTitleProvider and returns the live title once resolved.
-    // Falls back to the stored snapshot gracefully (no-op outside provider).
-    const label = usePageMentionTitle(pageId, storedLabel);
-    return (
-      <span
-        className={PAGE_MENTION_CLASS}
-        data-page-mention-id={pageId}
-        onClick={(e) => {
-          e.preventDefault();
-          if (pageId) window.location.href = `/documents/${pageId}`;
-        }}
-        title={`Open page: ${label}`}
-      >
-        📄 {label}
-      </span>
-    );
-  },
+  render: ({ inlineContent }) => (
+    <PageMentionChip pageId={inlineContent.props.pageId} storedLabel={inlineContent.props.label || "Untitled"} />
+  ),
 });
 
+function TaskMentionChip({ taskId, projectId, label }: { taskId: string; projectId: string; label: string }) {
+  const task = useTaskMentionCard(taskId);
+  const status = task === "loading" || !task ? null : task.status;
+  return (
+    <Tooltip variant="rich" content={taskMentionHoverContent(task, label)}>
+      <span
+        className={TASK_MENTION_CLASS}
+        data-task-mention-id={taskId}
+        onClick={(e) => {
+          e.preventDefault();
+          if (taskId && projectId) {
+            window.location.href = `/projects/${projectId}?tab=progress&task=${taskId}`;
+          }
+        }}
+      >
+        <TaskStatusDot status={status} />
+        {label}
+      </span>
+    </Tooltip>
+  );
+}
+
 export const TaskMentionSpec = createReactInlineContentSpec(taskMentionConfig, {
-  render: ({ inlineContent }) => {
-    const { taskId, projectId } = inlineContent.props;
-    const label = inlineContent.props.label || "Untitled task";
-    // One fetch per chip (cached per taskId) feeds both the status dot and
-    // the hover card — see TaskMentionHoverCard.tsx.
-    const task = useTaskMentionCard(taskId);
-    const status = task === "loading" || !task ? null : task.status;
-    return (
-      <Tooltip variant="rich" content={taskMentionHoverContent(task, label)}>
-        <span
-          className={TASK_MENTION_CLASS}
-          data-task-mention-id={taskId}
-          onClick={(e) => {
-            e.preventDefault();
-            if (taskId && projectId) {
-              window.location.href = `/projects/${projectId}?tab=progress&task=${taskId}`;
-            }
-          }}
-        >
-          <TaskStatusDot status={status} />
-          {label}
-        </span>
-      </Tooltip>
-    );
-  },
+  render: ({ inlineContent }) => (
+    <TaskMentionChip
+      taskId={inlineContent.props.taskId}
+      projectId={inlineContent.props.projectId}
+      label={inlineContent.props.label || "Untitled task"}
+    />
+  ),
 });
 
 /**

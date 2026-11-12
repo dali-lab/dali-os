@@ -1,5 +1,5 @@
 import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
-import { createCalendar, deleteCalendar, patchCalendar, subscribeCalendarForLink } from "~/lib/google-calendar";
+import { createCalendar, deleteCalendar, patchCalendar, subscribeCalendarForLink } from "~/calendar/lib/google-calendar.server";
 import { assertLinkOwned } from "~/calendar/lib/calendar-actions/shared.server";
 
 /** Create / rename / recolor / delete a linked Google calendar (P4). */

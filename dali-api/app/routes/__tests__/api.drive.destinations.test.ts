@@ -8,14 +8,14 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", async (orig) => ({ ...(await orig<typeof import("~/lib/pageAccess.server")>()), getPageAccessBulk: vi.fn() }));
-vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
+vi.mock("~/drive/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
 vi.mock("~/lib/move-constraint.server", () => ({ moveConstraintFor: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireMemberSession } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
-import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { loadDriveScopes } from "~/drive/lib/drive-scopes.server";
 import { moveConstraintFor } from "~/lib/move-constraint.server";
 import { loader } from "~/routes/api.drive.destinations";
 

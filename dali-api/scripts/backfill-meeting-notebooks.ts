@@ -23,7 +23,7 @@
 
 import { prisma } from "../app/lib/db.server.js";
 import { ensureMeetingNotebook, moveIntoNotebook } from "../app/lib/pages.js";
-import { meetingNotebookIdentity, termForDate } from "../app/lib/meeting-notebook.js";
+import { meetingNotebookIdentity, termForDate } from "../app/calendar/lib/meeting-notebook.server.js";
 import { termWindows } from "../app/lib/terms.js";
 
 const commit = process.argv.includes("--commit");

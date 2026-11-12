@@ -8,7 +8,7 @@ vi.mock("~/lib/roles", () => ({
   // asserts stay tied to the one definition in ~/lib/roles.
   coreRoleLabel: (leadTitle: string | null) => leadTitle || "Core",
 }));
-vi.mock("~/lib/time-entries.server", () => ({
+vi.mock("~/calendar/lib/time-entries.server", () => ({
   addTimeEntry: vi.fn(),
   updateTimeEntry: vi.fn(),
   deleteTimeEntry: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("~/lib/time-entries.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { resolveRoleRef, currentTerm } from "~/lib/roles";
-import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/calendar/lib/time-entries.server";
 import {
   runAddTimeEntry,
   runUpdateTimeEntry,

@@ -1,5 +1,5 @@
 import type { PickedNotebook } from "~/components/notebooks/notebook-picker";
-import type { NotebookChoice, NotebookSpaceChoice } from "~/lib/notebook-choice";
+import type { NotebookChoice, NotebookSpaceChoice } from "~/calendar/lib/notebook-choice";
 import type { GroupOption } from "~/calendar/lib/types";
 import { PAIR_REASON } from "~/calendar/lib/suggest-filing";
 import { destinationPath, type Destination } from "~/components/drive/FolderPicker";

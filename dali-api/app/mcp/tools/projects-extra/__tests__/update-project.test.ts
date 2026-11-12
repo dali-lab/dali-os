@@ -8,6 +8,7 @@ vi.mock("~/lib/db.server", () => ({
     },
   },
 }));
+vi.mock("~/lib/groups", () => ({ ensureProjectGroup: vi.fn() }));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
@@ -15,6 +16,7 @@ vi.mock("~/lib/roles", async (orig) => {
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { ensureProjectGroup } from "~/lib/groups";
 import { runUpdateProject, UPDATE_PROJECT_TOOL, UpdateProjectError } from "~/mcp/tools/projects-extra/update-project";
 
 const mockPrisma = prisma as unknown as {
@@ -109,5 +111,43 @@ describe("update_project", () => {
     expect(mockPrisma.project.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ githubTeamSlug: null }) }),
     );
+  });
+
+  it("refuses a non-Core member setting isPrivate", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    await expect(
+      runUpdateProject("u2", { projectId: "p1", isPrivate: true }),
+    ).rejects.toMatchObject({ name: "UpdateProjectError", status: 403 });
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a non-Core member changing status", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    await expect(
+      runUpdateProject("u2", { projectId: "p1", status: "Archived" }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(mockPrisma.project.update).not.toHaveBeenCalled();
+  });
+
+  it("lets Core set isPrivate", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(isProjectMember).mockResolvedValue(false);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    await runUpdateProject("u1", { projectId: "p1", isPrivate: true });
+    expect(mockPrisma.project.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { isPrivate: true } }),
+    );
+  });
+
+  it("syncs the project group when the name changes", async () => {
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(isProjectMember).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1" });
+    await runUpdateProject("u2", { projectId: "p1", name: " Atlas " });
+    expect(ensureProjectGroup).toHaveBeenCalledWith("p1", "Atlas");
   });
 });

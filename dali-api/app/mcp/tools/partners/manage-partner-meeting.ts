@@ -16,17 +16,16 @@
 //             does for (a)/(b); (c) stays silent, matching the no-email rule.
 //   debrief — set debrief text and/or outcome on an existing meeting (mirrors meeting-debrief intent).
 //
-// Web fns reused: logPartnerActivity (from partner-activity.server) for the
-// MeetingDebriefed activity row, and linkScheduledMeetingToApplication /
-// createScheduledMeeting (from partner-meetings.server / scheduled-meeting)
-// for the (a)/(b) create paths. The legacy (c) path and debrief stay direct
-// Prisma calls, same as the original web action.
+// The legacy log row and debrief live in partner-meetings.server (shared with the web action).
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
-import { linkScheduledMeetingToApplication } from "~/partners/lib/partner-meetings.server";
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import {
+  debriefPartnerMeeting,
+  linkScheduledMeetingToApplication,
+  logPartnerMeeting,
+} from "~/partners/lib/partner-meetings.server";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import {
   McpForbiddenError,
   McpNotFoundError,
@@ -238,33 +237,14 @@ export async function runManagePartnerMeeting(
     const notes =
       typeof input.notes === "string" ? input.notes.trim() || null : null;
 
-    // Verify the application exists and fetch the applicant contact (to store
-    // the contactId FK on the meeting row — mirrors the web action behaviour).
-    const app = await prisma.partnerApplication.findUnique({
-      where: { id: applicationId },
-      select: { applicantContactId: true },
-    });
-    if (!app) throw new McpNotFoundError(`Partner application ${applicationId} not found`);
-
-    const meeting = await prisma.partnerMeeting.create({
-      data: {
-        applicationId,
-        scheduledAt,
-        attendeeUserIds,
-        notes,
-        contactId: app.applicantContactId ?? null,
-      },
-      select: { id: true },
-    });
-
-    await logPartnerActivity(prisma, {
+    const meeting = await logPartnerMeeting({
       applicationId,
+      scheduledAt,
+      attendeeUserIds,
+      notes,
       actorUserId: callerId,
-      type: "MeetingScheduled",
-      metadata: { meetingId: meeting.id, scheduledAt: scheduledAt.toISOString() },
     });
-
-    return { id: meeting.id, scheduledAt: scheduledAt.toISOString() };
+    return { id: meeting.id, scheduledAt: meeting.scheduledAt.toISOString() };
   }
 
   // ── debrief ───────────────────────────────────────────────────────────────
@@ -286,26 +266,12 @@ export async function runManagePartnerMeeting(
     );
   }
 
-  try {
-    await prisma.partnerMeeting.update({
-      where: { id: meetingId },
-      data: {
-        ...(debrief !== null ? { debrief } : {}),
-        ...(outcome !== null ? { outcome } : {}),
-      },
-    });
-  } catch (e) {
-    if ((e as { code?: string })?.code === "P2025") {
-      throw new McpNotFoundError(`Partner meeting ${meetingId} not found`);
-    }
-    throw e;
-  }
-
-  await logPartnerActivity(prisma, {
+  await debriefPartnerMeeting({
     applicationId,
+    meetingId,
+    ...(debrief !== null ? { debrief } : {}),
+    outcome,
     actorUserId: callerId,
-    type: "MeetingDebriefed",
-    metadata: { meetingId, ...(outcome ? { outcome } : {}) },
   });
 
   return { ok: true };

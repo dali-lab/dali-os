@@ -17,7 +17,7 @@ import type {
 } from "~/generated/prisma/enums";
 import { githubTeamSlug } from "~/lib/github-slug";
 import { ensureProjectGroup } from "~/lib/groups";
-import { duplicatePage } from "~/lib/page-copy.server";
+import { duplicatePage } from "~/drive/lib/page-copy.server";
 
 // ─── Blueprint shape (version 1) ─────────────────────────────────────────────
 // Refs (`e0`, …) are blueprint-local ids used to wire tasks→epic without leaking

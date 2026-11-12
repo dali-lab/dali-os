@@ -6,7 +6,7 @@ vi.mock("~/lib/db.server", () => ({
     interview: { findUnique: vi.fn(), update: vi.fn() },
   },
 }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   createGoogleCalendarEvent: vi.fn(),
   deleteGoogleCalendarEvent: vi.fn(),
   getGoogleEventMeetUrl: vi.fn(),
@@ -23,7 +23,7 @@ import {
   createGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   getGoogleEventMeetUrl,
-} from "~/lib/google-calendar";
+} from "~/calendar/lib/google-calendar.server";
 import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration";
 import { getGmailAccessToken } from "~/lib/gmail";
 import {

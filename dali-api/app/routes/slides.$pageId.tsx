@@ -3,8 +3,7 @@ import { data, redirect, useRevalidator } from "react-router";
 import { Presentation } from "lucide-react";
 import { z } from "zod";
 import type { Route } from "./+types/slides.$pageId";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { parseJson } from "~/lib/validate";
 import { cn } from "~/lib/cn";
 import { recordPageVisit } from "~/lib/user-pages.server";
@@ -25,8 +24,8 @@ import { PresentMenu } from "~/components/slides/live/PresentMenu";
 import { ReadOnlyDeck } from "~/components/slides/collab/ReadOnlyDeck";
 import { PageBarTitle } from "~/components/shell/page-bar-slot";
 import { DeckDownloadItems } from "~/components/slides/pptx/DeckDownloadItems";
-import { drivePageTrail, type DrivePageAncestry } from "~/lib/drive-page-trail";
-import { loadDrivePageAncestry } from "~/lib/drive-page-trail.server";
+import { drivePageTrail, type DrivePageAncestry } from "~/components/drive/drive-page-trail";
+import { loadDrivePageAncestry } from "~/drive/lib/drive-page-trail.server";
 import { prisma } from "~/lib/db.server";
 import { buttonClasses } from "~/components/ui/Button";
 import { Segmented } from "~/components/ui/Segmented";
@@ -59,11 +58,7 @@ export const handle = {
 };
 
 async function requireMember(request: Request) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) throw redirectToLogin(request);
-  if (await isNonMember(auth, request)) throw redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) throw partnerRedirect;
+  const { auth } = await requireLabViewer(request);
   return auth.user;
 }
 

@@ -3,7 +3,7 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { TypeBadge, MyStatusChip } from "./OfferingCard";
 import { InfoTip } from "~/components/ui/floating";
 import { ApplicantPanel, PANEL_ROW } from "~/hiring/components/ApplicantPanel";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import type { OfferingType } from "~/education/lib/offering-type";
 import { attendanceCopy, type AttendanceSummary } from "~/education/lib/session-time";
 

@@ -23,8 +23,8 @@ vi.mock("~/mcp/registry", () => {
 vi.mock("~/lib/db.server");
 // Keep the real (pure) isWithinCheckInWindow — the tool now shares it — and mock
 // only the DB-touching markMeetingAttendance.
-vi.mock("~/lib/scheduled-meeting", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/lib/scheduled-meeting")>();
+vi.mock("~/calendar/lib/scheduled-meeting.server", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/calendar/lib/scheduled-meeting.server")>();
   return {
     ...actual,
     markMeetingAttendance: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock("~/lib/scheduled-meeting", async (importOriginal) => {
 });
 
 import { prisma } from "~/lib/db.server";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
 import {
   runCheckInToMeeting,
   CHECK_IN_TO_MEETING_DEF,

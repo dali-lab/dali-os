@@ -13,7 +13,7 @@ const ACTIONS = ["create", "update", "set_status", "set_checklist", "delete", "l
 const MANAGE_TASK_DEF = {
   name: "manage_task",
   description: `Create and edit project or Core tasks. Pass \`action\`:
-- \`create\`: file a task at the end of its column. Requires title, plus projectId unless core is true. Optional mirrorToGithubRepo (one of the project's repoUrls) mirrors it to a GitHub issue.
+- \`create\`: file a task at the end of its column. Requires title, plus projectId unless core is true. With no status and no dueAt it goes to Backlog. Optional mirrorToGithubRepo (one of the project's repoUrls) mirrors it to a GitHub issue.
 - \`update\`: edit title, description, priority, startsAt, dueAt, epicId, storyId, domainId, assigneeUserIds. Requires taskId. Omit a field to keep it; empty string clears it. A task's sprint follows its dates. A story pins its epic.
 - \`set_status\`: move a task to another column, e.g. Done. Requires taskId, status. Assignees can do this too.
 - \`set_checklist\`: replace the whole checklist. Requires taskId, items (empty array clears). Assignees can do this too.
@@ -29,7 +29,7 @@ Everything except set_status and set_checklist needs Core or project-member acce
       ...UPDATE_TASK_TOOL.inputSchema.properties,
       status: {
         ...UPDATE_TASK_STATUS_TOOL.inputSchema.properties.status,
-        description: "set_status: the target column. create: defaults to Todo.",
+        description: "set_status: the target column. create: defaults to Todo when dueAt is set, otherwise Backlog.",
       },
       items: { ...SET_TASK_CHECKLIST_TOOL.inputSchema.properties.items, description: "set_checklist: the whole checklist." },
       repo: LINK_TASK_TO_GITHUB_TOOL.inputSchema.properties.repo,

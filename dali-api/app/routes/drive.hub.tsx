@@ -24,16 +24,15 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import type { ReactNode } from "react";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { setPageFavorite } from "~/components/favorites-live";
 import { TermFilter } from "~/components/TermFilter";
-import { loadProjectWorkspaces, loadEducationWorkspaces, loadAllDocTags, loadItemTagIds } from "~/lib/drive-hub.server";
-import { loadDriveScopes } from "~/lib/drive-scopes.server";
-import type { DriveTreeScope } from "~/lib/drive-scopes.server";
-import type { DriveItem } from "~/lib/drive.server";
+import { loadProjectWorkspaces, loadEducationWorkspaces, loadAllDocTags, loadItemTagIds } from "~/drive/lib/drive-hub.server";
+import { loadDriveScopes } from "~/drive/lib/drive-scopes.server";
+import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 import { DriveBrowser } from "~/components/drive/DriveBrowser";
 import type { FileDropOptions, RowActions } from "~/components/drive/DriveBrowser";
 import { DriveTagFilter } from "~/components/drive/DriveTagFilter";
@@ -65,7 +64,7 @@ import { useToast } from "~/components/ui/toast";
 import { uploadEditorImage, uploadErrorMessage } from "~/components/doc/upload";
 import { stashImport } from "~/components/slides/pptx/pending-import";
 import { parsePptxFile, PPTX_ACCEPT, PptxImportError, uploadImages, validatePptxFile } from "~/components/slides/pptx/import-client";
-import { driveNoticeMessage } from "~/lib/drive-notices";
+import { driveNoticeMessage } from "~/drive/lib/drive-notices";
 import { Menu, Select } from "~/components/ui/floating";
 import { parseTypeFilter, type DriveTypeFilter } from "~/components/drive/type-filter";
 import { createNotebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
@@ -75,7 +74,7 @@ import { applyTemplateToDeck, type TemplateRow as SlideTemplateRow } from "~/com
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { cn } from "~/lib/cn";
-import { isProcessRootSpace, isVirtualSpace, sharedSpaceItems, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { isProcessRootSpace, isVirtualSpace, sharedSpaceItems, SHARED_SPACE_KEY } from "~/drive/lib/drive-spaces";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { modalCardClass } from "~/components/os-chrome";
 
@@ -148,11 +147,7 @@ export function shouldRevalidate({
 export type DocTagOut = { id: string; label: string; slug: string; color: string | null };
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const userId = auth.user.sub;
   const [roles, termFilter] = await Promise.all([

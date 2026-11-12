@@ -9,7 +9,7 @@ import type { Question } from "~/types";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { resolveReferenceOptions } from "./reference-sources";
-import { dropHiddenAnswers } from "~/lib/form-logic";
+import { dropHiddenAnswers } from "~/forms/lib/form-logic";
 import { safeParseJsonString } from "./forms-data";
 import { requireMember } from "~/lib/roles";
 import { fillAccessByPage } from "./form-access.server";
@@ -34,7 +34,7 @@ import {
   parseFileAnswer,
   normalizeAnswerFormats,
   validateAnswerFormats,
-} from "~/lib/form-answers";
+} from "~/forms/lib/form-answers";
 import {
   interpretProfileForm,
   NEW_MEMBER_PROFILE_FORM_NAME,

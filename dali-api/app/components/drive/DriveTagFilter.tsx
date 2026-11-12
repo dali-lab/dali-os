@@ -2,7 +2,7 @@ import { ChevronDown, Tag as TagIcon } from "lucide-react";
 import { MultiSelect, toggledValue } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { cn } from "~/lib/cn";
-import { hexColor } from "~/lib/drive-tags";
+import { hexColor } from "~/drive/lib/drive-tags";
 
 export type FilterTag = { id: string; label: string; color: string | null };
 

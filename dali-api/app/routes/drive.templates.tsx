@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useNavigate } from "react-router";
+import { useLoaderData, useNavigate } from "react-router";
 import type { Route } from "./+types/drive.templates";
 import { useState } from "react";
 import {
@@ -7,9 +7,8 @@ import {
   LayoutTemplate,
   Lock,
 } from "lucide-react";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
-import { loadTemplates, type TemplateItem, type TemplateKind } from "~/lib/drive-templates.server";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
+import { loadTemplates, type TemplateItem, type TemplateKind } from "~/drive/lib/drive-templates.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Templates · DALI OS" }];
 
@@ -22,11 +21,7 @@ export const handle = {
 // from — documents (any lab member) and projects (Core). Reusable-by-nature
 // objects (email, agreements, mentor notes) live in their own areas, not here.
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const templates = await loadTemplates(auth.user.sub);
   return { templates, userId: auth.user.sub };

@@ -297,6 +297,7 @@ describe("domain-lead action — audit trail", () => {
 
   it("logs the rubric change with the version before and after", async () => {
     mockPrisma.applicationReview = { count: vi.fn().mockResolvedValue(0) };
+    mockPrisma.rubricVersion = { findUnique: vi.fn().mockResolvedValue({ id: "rv-new" }) };
     mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue({ rubricVersionId: "rv-old" });
 
     await callAction({ intent: "set-rubric", cycleId: CYCLE_ID, domainId: DOMAIN_ID, rubricVersionId: "rv-new" });
@@ -304,6 +305,24 @@ describe("domain-lead action — audit trail", () => {
     expect(logged()).toEqual([
       ["domain.rubric.set", USER_ID, DOMAIN_ID, { cycleId: CYCLE_ID, before: "rv-old", after: "rv-new" }],
     ]);
+  });
+
+  it("returns 409 instead of throwing for a domain that isn't in the cycle", async () => {
+    mockPrisma.applicationReview = { count: vi.fn().mockResolvedValue(0) };
+    mockPrisma.rubricVersion = { findUnique: vi.fn().mockResolvedValue({ id: "rv-new" }) };
+    mockPrisma.domainApplicationCycle.findUnique.mockResolvedValue(null);
+    const res = (await callAction({ intent: "set-rubric", cycleId: CYCLE_ID, domainId: DOMAIN_ID, rubricVersionId: "rv-new" })) as Response;
+    expect(res.status).toBe(409);
+    expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it("writes nothing for a rubric version that doesn't exist", async () => {
+    mockPrisma.applicationReview = { count: vi.fn().mockResolvedValue(0) };
+    mockPrisma.rubricVersion = { findUnique: vi.fn().mockResolvedValue(null) };
+    await callAction({ intent: "set-rubric", cycleId: CYCLE_ID, domainId: DOMAIN_ID, rubricVersionId: "rv-gone" });
+    expect(mockPrisma.domainApplicationCycle.update).not.toHaveBeenCalled();
+    expect(logAuditEvent).not.toHaveBeenCalled();
   });
 
   it("logs nothing when reviews already exist and the rubric is locked", async () => {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TagDots, TagLabels } from "~/components/drive/TagDots";
-import type { DriveItemTag } from "~/lib/drive-tags";
+import type { DriveItemTag } from "~/drive/lib/drive-tags";
 
 const tag = (i: number, color: string | null = "#ff0000"): DriveItemTag => ({ id: `t${i}`, label: `Tag ${i}`, color });
 const render = (tags: DriveItemTag[] | undefined, onApply?: (id: string) => void) =>

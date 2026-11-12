@@ -8,13 +8,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/general-calendar", () => ({
+vi.mock("~/calendar/lib/general-calendar", () => ({
   isGeneralCalendarEvent: vi.fn(() => false),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { meetingsForExternalEvents } from "~/calendar/lib/calendar-external.server";
-import type { CalendarEvent } from "~/lib/google-calendar";
+import type { CalendarEvent } from "~/calendar/lib/google-calendar.server";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: {
@@ -195,7 +195,7 @@ describe("meetingsForExternalEvents", () => {
     });
 
     it("admits by iCalUID for lab-wide events", async () => {
-      const { isGeneralCalendarEvent } = await import("~/lib/general-calendar");
+      const { isGeneralCalendarEvent } = await import("~/calendar/lib/general-calendar");
       vi.mocked(isGeneralCalendarEvent).mockReturnValueOnce(true);
       mockPrisma.scheduledMeeting.findMany.mockResolvedValue([]);
 

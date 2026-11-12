@@ -10,7 +10,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
 }));
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchCalendarEvents: vi.fn(),
   createGoogleCalendarEvent: vi.fn(),
   patchGoogleCalendarEvent: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock("~/lib/google-calendar", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { respondToGoogleEventAsSelf } from "~/lib/google-calendar";
+import { respondToGoogleEventAsSelf } from "~/calendar/lib/google-calendar.server";
 import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;

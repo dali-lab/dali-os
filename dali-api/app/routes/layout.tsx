@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { redirect, useLoaderData, useLocation, useMatches, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
-import { isPageScroll, pageScrollY, scrollPageTo } from '~/lib/page-scroll'
+import { isPageScroll, pageScrollY, scrollPageTo } from '~/drive/lib/page-scroll'
 import { areaForPath, areaInk, areaTint } from '~/lib/nav-areas'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -296,14 +296,8 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
+  const { user, flags, impersonating, impersonationWrites, instructorChrome } = useLoaderData<typeof loader>()
 
-  // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
-  // for the education-management routes they're allowed into. Rendered before the
-  // member-shell hooks below since those assume the full member layout. Toast /
-  // Dialog / Presence providers live in root.tsx (global); FeatureFlagsProvider
-  // is re-supplied here for any management component that reads a flag, and
-  // useUserTimeZone() still resolves off this same layout loader's data.
   if (instructorChrome) {
     return (
       <FeatureFlagsProvider flags={flags}>
@@ -316,6 +310,12 @@ export default function AppLayoutRoute() {
       </FeatureFlagsProvider>
     )
   }
+
+  return <MemberLayoutRoute />
+}
+
+function MemberLayoutRoute() {
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
 
   const [searchParams] = useSearchParams()
   const location = useLocation()

@@ -163,6 +163,24 @@ jobs:
           echo "tsc errors: $count" >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
+  lint-api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: dali-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: dali-api/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+
   test-asr:
     needs: changes
     if: needs.changes.outputs.asr == 'true'

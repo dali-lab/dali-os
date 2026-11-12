@@ -17,7 +17,7 @@ vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), redirectNonMemberToPortal: vi.fn(async () => null) }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isProjectMember: vi.fn() }));
-vi.mock("~/lib/wallet-token", () => ({ walletTokensConfigured: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-token.server", () => ({ walletTokensConfigured: vi.fn() }));
 vi.mock("~/lib/display-scan.server", () => ({
   getActiveDisplayScan: vi.fn(),
   startDisplayScan: vi.fn(),

@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   cancelScheduledMeeting: vi.fn(),
 }));
 
-import { cancelScheduledMeeting } from "~/lib/scheduled-meeting";
+import { cancelScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import {
   runCancelMeeting,
   CANCEL_MEETING_TOOL,

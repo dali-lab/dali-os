@@ -12,7 +12,7 @@
 
 import { isIntentStatus, type IntentStatusValue } from "./intent-status";
 import type { Question } from "~/types";
-import { conditionalKeys } from "~/lib/form-logic";
+import { conditionalKeys } from "~/forms/lib/form-logic";
 import type { Slot } from "./form-slots";
 
 // `QuestionTypeConstraint` still declares each role's intended shape (and

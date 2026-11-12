@@ -11,7 +11,7 @@ vi.mock("~/hiring/lib/interview-meet", () => ({
 vi.mock("~/hiring/lib/interview-emails", () => ({
   sendLocationChangeEmails: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("~/lib/rooms.server", () => ({ createRoomBooking: vi.fn() }));
+vi.mock("~/rooms/lib/rooms.server", () => ({ createRoomBooking: vi.fn() }));
 vi.mock("~/hiring/lib/scheduling", () => ({
   releaseInterviewRoom: vi.fn().mockResolvedValue(undefined),
 }));
@@ -24,7 +24,7 @@ import {
   deprovisionInterviewMeet,
 } from "~/hiring/lib/interview-meet";
 import { sendLocationChangeEmails } from "~/hiring/lib/interview-emails";
-import { createRoomBooking } from "~/lib/rooms.server";
+import { createRoomBooking } from "~/rooms/lib/rooms.server";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 import { action } from "~/hiring/routes/api.interviews.$id.location";
 

@@ -192,7 +192,7 @@ async function main() {
           console.warn(`  could not refile ${m.pageId} into ${m.notebookId}: ${err instanceof Error ? err.message : err}`);
         }
       }
-      const { syncMeetingShares } = await import("../app/lib/meeting-shares.server");
+      const { syncMeetingShares } = await import("../app/calendar/lib/meeting-shares.server");
       await syncMeetingShares(p.parentId);
       folded++;
     } catch (err) {

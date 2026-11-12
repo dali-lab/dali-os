@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { Question } from "~/types";
 import { Button } from "~/components/ui/Button";
-import { findMissingRequired } from "~/lib/form-answers";
-import type { FormPage } from "~/lib/form-pages";
+import { findMissingRequired } from "~/forms/lib/form-answers";
+import type { FormPage } from "~/forms/lib/form-pages";
 
 // Shared stepping machinery for paginated forms. Surfaces own their own field
 // rendering and Submit button; this owns the page index, per-page required

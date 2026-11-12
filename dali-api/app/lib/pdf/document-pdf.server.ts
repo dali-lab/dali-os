@@ -10,7 +10,7 @@ import type { PMNode } from "~/collab/export-html";
 import { renderProseMirrorToPdf } from "~/collab/export-pdf";
 import { documentToPrintHtml } from "./print-html.server";
 import { renderHtmlToPdf } from "./render.server";
-import type { PageTypography } from "~/lib/page-typography";
+import type { PageTypography } from "~/drive/lib/page-typography";
 
 export async function renderDocumentPdf(
   title: string,

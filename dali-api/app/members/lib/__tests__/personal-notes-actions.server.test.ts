@@ -27,7 +27,7 @@ vi.mock("~/members/lib/personal-notes.server", () => {
   class NoteForbiddenError extends Error {}
   return { NoteNotFoundError, NoteForbiddenError, requireNoteOwner: vi.fn() };
 });
-vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
+vi.mock("~/drive/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 vi.mock("~/lib/pages", () => ({
   pageDepth: vi.fn(),
   isAncestorOf: vi.fn(),
@@ -39,7 +39,7 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { addPageShare, listPageShares, removePageShare, SharePrincipalError } from "~/lib/page-sharing.server";
 import { NoteForbiddenError, NoteNotFoundError, requireNoteOwner } from "~/members/lib/personal-notes.server";
-import { assertUniqueName } from "~/lib/page-names.server";
+import { assertUniqueName } from "~/drive/lib/page-names.server";
 import { pageDepth, isAncestorOf } from "~/lib/pages";
 import {
   addNoteShare,

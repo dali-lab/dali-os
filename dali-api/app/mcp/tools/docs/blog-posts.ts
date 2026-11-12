@@ -9,7 +9,7 @@ import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { isAdmin } from "~/lib/roles";
 import { resourcesAccess } from "~/lib/resources.server";
-import { blogListing } from "~/lib/blog-preview";
+import { blogListing } from "~/blog/lib/blog-preview";
 import {
   BLOG_LISTING_ORDER,
   blogStatus,
@@ -18,7 +18,7 @@ import {
   listedBlogPostsWhere,
   publishBlogPost,
   unpublishBlogPost,
-} from "~/lib/blog-post.server";
+} from "~/blog/lib/blog-post.server";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { parseMarkdown } from "../../doc-markdown.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";

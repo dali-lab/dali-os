@@ -58,7 +58,7 @@ struct ScheduleResponseTests {
         #expect(response.applicationEvent == nil)
     }
 
-    @Test func rendersAQRCodeForTheCheckInUrl() {
+    @Test @MainActor func rendersAQRCodeForTheCheckInUrl() {
         #expect(QRCodeView.render("https://os.dali.dartmouth.edu/hiring/events/check-in/e1") != nil)
     }
 

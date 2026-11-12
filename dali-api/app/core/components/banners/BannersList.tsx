@@ -6,7 +6,7 @@ import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { IconButton } from "~/components/ui/IconButton";
 import { useOsChrome } from "~/components/os-chrome";
 import { BannerOverlay } from "~/components/banners/BannerContent";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import {
   BANNER_ROLE_LABELS,

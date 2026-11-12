@@ -1,7 +1,7 @@
 import type { Question } from "~/types";
-import { isLayoutOnly } from "~/lib/form-answers";
+import { isLayoutOnly } from "~/forms/lib/form-answers";
 import { parseSkillsRating } from "~/lib/skills-rating";
-import { conditionalKeys, questionNumbers, shownWhenSentence, visibleKeys } from "~/lib/form-logic";
+import { conditionalKeys, questionNumbers, shownWhenSentence, visibleKeys } from "~/forms/lib/form-logic";
 
 export type Bar = { label: string; count: number; percent: number; other?: boolean };
 

@@ -10,9 +10,11 @@
 // helpers the API routes and portal loaders share.
 
 import { prisma } from "~/lib/db.server";
+import { NotFoundError } from "~/lib/http-error";
+import type { PartnerMeetingOutcome } from "~/generated/prisma/enums";
 import { currentTerm } from "~/lib/roles";
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
-import { computeUserFreeBusy } from "~/lib/availability";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { slotStatus } from "~/calendar/lib/slot-availability";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { notifyPartners, partnerNotifyRecipients } from "~/partners/lib/partner-notify.server";
@@ -400,4 +402,59 @@ export async function listPartnerMeetingRequests(scope: {
     pending: rows.filter((r) => r.status === "Pending").map(toSummary),
     declined: rows.filter((r) => r.status === "Declined").map(toSummary),
   };
+}
+
+export async function logPartnerMeeting(input: {
+  applicationId: string;
+  scheduledAt: Date;
+  attendeeUserIds: string[];
+  notes: string | null;
+  actorUserId: string;
+}): Promise<{ id: string; scheduledAt: Date }> {
+  const app = await prisma.partnerApplication.findUnique({
+    where: { id: input.applicationId },
+    select: { applicantContactId: true },
+  });
+  if (!app) throw new NotFoundError(`Partner application ${input.applicationId} not found`);
+  const meeting = await prisma.partnerMeeting.create({
+    data: {
+      applicationId: input.applicationId,
+      scheduledAt: input.scheduledAt,
+      attendeeUserIds: input.attendeeUserIds,
+      notes: input.notes,
+      contactId: app.applicantContactId ?? null,
+    },
+    select: { id: true },
+  });
+  await logPartnerActivity(prisma, {
+    applicationId: input.applicationId,
+    actorUserId: input.actorUserId,
+    type: "MeetingScheduled",
+    metadata: { meetingId: meeting.id, scheduledAt: input.scheduledAt.toISOString() },
+  });
+  return { id: meeting.id, scheduledAt: input.scheduledAt };
+}
+
+export async function debriefPartnerMeeting(input: {
+  applicationId: string;
+  meetingId: string;
+  debrief?: string | null;
+  outcome?: PartnerMeetingOutcome | null;
+  actorUserId: string;
+}): Promise<void> {
+  const { applicationId, meetingId, debrief, outcome } = input;
+  const { count } = await prisma.partnerMeeting.updateMany({
+    where: { id: meetingId, applicationId },
+    data: {
+      ...(debrief !== undefined ? { debrief } : {}),
+      ...(outcome ? { outcome } : {}),
+    },
+  });
+  if (count === 0) throw new NotFoundError(`Partner meeting ${meetingId} not found`);
+  await logPartnerActivity(prisma, {
+    applicationId,
+    actorUserId: input.actorUserId,
+    type: "MeetingDebriefed",
+    metadata: { meetingId, ...(outcome ? { outcome } : {}) },
+  });
 }

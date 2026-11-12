@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.calendar.search";
 import { requireAuth, isImpersonating } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { searchCalendarEvents } from "~/lib/google-calendar";
+import { searchCalendarEvents } from "~/calendar/lib/google-calendar.server";
 import { searchWindow, sortHits, type CalendarSearchHit } from "../lib/search";
 
 // Over-fetch per local source; the union is sorted (upcoming-first) client-side.

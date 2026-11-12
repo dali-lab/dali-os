@@ -30,7 +30,7 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Menu, Select, Tooltip } from "~/components/ui/floating";
-import { revealInDriveHref } from "~/lib/drive-crumbs";
+import { revealInDriveHref } from "~/drive/lib/drive-crumbs";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
@@ -46,7 +46,7 @@ import { FindReplaceBar } from "./doc/find";
 import {
   DEFAULT_TYPOGRAPHY,
   type PageTypography,
-} from "~/lib/page-typography";
+} from "~/drive/lib/page-typography";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Drawer } from "~/components/ui/Drawer";

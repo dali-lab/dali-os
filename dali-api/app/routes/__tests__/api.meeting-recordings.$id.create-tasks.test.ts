@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/project-access", () => ({ canEditProject: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canReadRecording: vi.fn(),
   canRecordInto: vi.fn(),
   claimRecording: vi.fn(),
@@ -22,24 +22,24 @@ vi.mock("~/lib/meeting-recording.server", () => ({
   startProcessing: vi.fn(),
   storedLines: vi.fn().mockReturnValue([]),
 }));
-vi.mock("~/mcp/tools/create-task", () => {
-  class CreateTaskError extends Error {
+vi.mock("~/projects/lib/task-create.server", () => {
+  class TaskCreateError extends Error {
     status: number;
     constructor(message: string, status = 400) {
       super(message);
-      this.name = "CreateTaskError";
+      this.name = "TaskCreateError";
       this.status = status;
     }
   }
-  return { runCreateTask: vi.fn(), CreateTaskError };
+  return { createTask: vi.fn(), TaskCreateError };
 });
 
 
 import { requireAuth } from "~/lib/auth";
 import { canEditProject } from "~/lib/project-access";
 import { prisma } from "~/lib/db.server";
-import { canRecordInto } from "~/lib/meeting-recording.server";
-import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
+import { canRecordInto } from "~/calendar/lib/meeting-recording.server";
+import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
 import { action } from "~/routes/api.meeting-recordings.$id";
 
 function post(body: unknown): Request {
@@ -89,7 +89,7 @@ beforeEach(() => {
     workspaceId: "proj1",
   } as never);
   vi.mocked(prisma.task.findMany).mockResolvedValue([] as never);
-  vi.mocked(runCreateTask).mockResolvedValue({ id: "task1", status: "Todo", position: 0 });
+  vi.mocked(createTask).mockResolvedValue({ id: "task1", status: "Todo", position: 0 });
   vi.mocked(canEditProject).mockResolvedValue(true);
 });
 
@@ -101,14 +101,14 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     vi.mocked(canRecordInto).mockResolvedValue(false);
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
     expect(res.status).toBe(403);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
   });
 
   it("requires a project on the item when the note has none", async () => {
     noProject();
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
     expect(res.status).toBe(400);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
   });
 
   it("files the task on the item's project when the note has none", async () => {
@@ -116,7 +116,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", projectId: "proj9" }] });
     expect(res.status).toBe(200);
     expect(canEditProject).toHaveBeenCalledWith("u2", "proj9");
-    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ projectId: "proj9" }));
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj9" }));
     expect((await res.json()).created).toEqual([{ index: 0, taskId: "task1", projectId: "proj9" }]);
   });
 
@@ -131,19 +131,19 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
       ],
     });
     expect(res.status).toBe(403);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
   });
 
   it("accepts an item project equal to the note's project", async () => {
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", projectId: "proj1" }] });
     expect(res.status).toBe(200);
-    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ projectId: "proj1" }));
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ projectId: "proj1" }));
   });
 
   it("rejects an item project that differs from the note's project", async () => {
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", projectId: "proj9" }] });
     expect(res.status).toBe(400);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
   });
 
   it("passes the status through to the task", async () => {
@@ -152,13 +152,13 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
       items: [{ index: 0, title: "Send the revised scope", status: "InProgress", dueAt: "2026-10-17T00:00:00.000Z" }],
     });
     expect(res.status).toBe(200);
-    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ status: "InProgress" }));
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ status: "InProgress" }));
   });
 
   it("allows Backlog without a due date", async () => {
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope", status: "Backlog" }] });
     expect(res.status).toBe(200);
-    expect(runCreateTask).toHaveBeenCalledWith("u2", expect.objectContaining({ status: "Backlog" }));
+    expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ status: "Backlog" }));
   });
 
   it("requires a due date outside Backlog, creating nothing", async () => {
@@ -170,7 +170,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
       ],
     });
     expect(res.status).toBe(400);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown status", async () => {
@@ -186,12 +186,14 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.created).toEqual([{ index: 0, taskId: "task1", projectId: "proj1" }]);
-    expect(runCreateTask).toHaveBeenCalledWith("u2", {
+    expect(createTask).toHaveBeenCalledWith({
       projectId: "proj1",
+      actorId: "u2",
+      status: undefined,
       title: "Send the revised scope",
       description: 'Action item from "Standup notes" at 20:03.\nhttp://localhost/documents/p1?transcript=rec1&at=1203',
       assigneeUserIds: ["u-ada"],
-      dueAt: "2026-10-17T00:00:00.000Z",
+      dueAt: new Date("2026-10-17T00:00:00.000Z"),
       sourceRecordingId: "rec1",
     });
     // The action item's taskId is written back for the dedup guard.
@@ -228,7 +230,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.created).toEqual([]);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
     expect(prisma.meetingRecording.update).not.toHaveBeenCalled();
   });
 
@@ -238,7 +240,7 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.created).toEqual([{ index: 0, taskId: "task-old", projectId: "proj1" }]);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
     expect(prisma.meetingRecording.update).toHaveBeenCalledWith({
       where: { id: "rec1" },
       data: {
@@ -254,16 +256,23 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     });
   });
 
-  it("maps a CreateTaskError (e.g. no task-create rights on the project) to its status", async () => {
-    vi.mocked(runCreateTask).mockRejectedValue(new CreateTaskError("Forbidden", 403));
+  it("refuses a note project the caller cannot edit, creating nothing", async () => {
+    vi.mocked(canEditProject).mockResolvedValue(false);
     const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Forbidden", created: [] });
+    expect(createTask).not.toHaveBeenCalled();
+  });
+
+  it("maps a TaskCreateError to its status and message", async () => {
+    vi.mocked(createTask).mockRejectedValue(new TaskCreateError("Project not found", 404));
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
+    expect(res.status).toBe(404);
   });
 
   it("keeps the task ids already created when a later item fails, so a retry can't duplicate them", async () => {
-    vi.mocked(runCreateTask)
-      .mockResolvedValueOnce({ id: "task1" } as never)
-      .mockRejectedValueOnce(new CreateTaskError("Invalid dueAt", 400));
+    vi.mocked(createTask)
+      .mockResolvedValueOnce({ id: "task1" } as never);
     const res = await run({
       action: "createTasks",
       items: [
@@ -288,12 +297,21 @@ describe('POST /api/meeting-recordings/:id { action: "createTasks" }', () => {
     });
   });
 
+  it("passes no status or due date for an undated item so the service files it in Backlog", async () => {
+    const res = await run({ action: "createTasks", items: [{ index: 0, title: "Send the revised scope" }] });
+    expect(res.status).toBe(200);
+    const args = vi.mocked(createTask).mock.calls[0][0];
+    expect(args.status).toBeUndefined();
+    expect(args.dueAt).toBeUndefined();
+    expect(await res.json()).toEqual({ created: [{ index: 0, taskId: "task1", projectId: "proj1" }] });
+  });
+
   it("skips an out-of-range index without creating anything", async () => {
     const res = await run({ action: "createTasks", items: [{ index: 9, title: "Ghost item" }] });
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.created).toEqual([]);
-    expect(runCreateTask).not.toHaveBeenCalled();
+    expect(createTask).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid body", async () => {

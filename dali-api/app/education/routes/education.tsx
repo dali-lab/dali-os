@@ -10,6 +10,7 @@ import { myCreditStanding } from "~/education/lib/ce-credits.server";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
+import { Pill, type PillTone } from "~/components/ui/Pill";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
 export const meta: Route.MetaFunction = () => [{ title: "Education · DALI OS" }];
@@ -28,16 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   return { myApplications, ceStanding, dashboard };
 }
 
-// An application's state is one quiet pill with a colored dot, not a tinted
-// chip — the same shape the rest of the app uses for a status.
-const DOT_TONE = {
-  neutral: "bg-muted-foreground/50",
-  success: "bg-os-green",
-  warning: "bg-os-amber",
-  danger: "bg-destructive",
-} as const;
-
-const APPLICATION_TONE: Record<string, keyof typeof DOT_TONE> = {
+const APPLICATION_TONE: Record<string, PillTone> = {
   Submitted: "success",
   Approved: "success",
   Waitlisted: "warning",
@@ -47,15 +39,9 @@ const APPLICATION_TONE: Record<string, keyof typeof DOT_TONE> = {
 
 function StatusPill({ status }: { status: string }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-foreground">
-      <span
-        className={cn(
-          "h-1.5 w-1.5 rounded-full",
-          DOT_TONE[APPLICATION_TONE[status] ?? "neutral"],
-        )}
-      />
+    <Pill size="sm" dot={APPLICATION_TONE[status] ?? "neutral"}>
       {status}
-    </span>
+    </Pill>
   );
 }
 

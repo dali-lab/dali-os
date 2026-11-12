@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.notebooks.default";
 import { z } from "zod";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { resolveDefaultNotebook } from "~/lib/notebook-default.server";
+import { resolveDefaultNotebook } from "~/calendar/lib/notebook-default.server";
 
 // GET /api/notebooks/default?meetingId=&scopeType=&groupId=&projectId=&isCoreMeeting=1&pairMenteeId=
 // — { kind: "series" | "history" | "pair" | "new", notebook, newPath }: the notebook a

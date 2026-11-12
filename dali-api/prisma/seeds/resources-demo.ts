@@ -17,7 +17,7 @@ import type { DocBlock } from "../../app/collab/blocknote-server.js";
 import { resourcesRoomName } from "../../app/collab/roomName.js";
 import { replaceCollabDocContent } from "../../app/collab/write.js";
 import { COMPONENT_KINDS } from "../../app/components/doc/components/kinds.js";
-import { deriveBlogPreview } from "../../app/lib/blog-preview.js";
+import { deriveBlogPreview } from "../../app/blog/lib/blog-preview.js";
 
 const DAY = 86_400_000;
 

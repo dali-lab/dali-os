@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server", () => {
   };
   return { prisma };
 });
-vi.mock("~/lib/rooms.server", () => ({
+vi.mock("~/rooms/lib/rooms.server", () => ({
   createRoomBooking: vi.fn(),
   cancelRoomBooking: vi.fn(),
   listRoomConflicts: vi.fn(),
@@ -25,7 +25,7 @@ import {
   previewBookingSeries,
   releaseCycleRoomBookings,
   type RoomScheduleItem,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 import { notify } from "~/lib/notify.server";
 import { zonedDayStartUtc, zonedWallTimeUtc } from "~/lib/timezone";
 import { applyRoomHolds, holdOccurrencesFor } from "~/hiring/lib/interview-room-holds.server";

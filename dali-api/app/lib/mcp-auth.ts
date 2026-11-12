@@ -15,6 +15,7 @@ import { prisma } from "~/lib/db.server";
 import { auth } from "~/lib/betterauth.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { getClientIp } from "~/lib/rate-limit";
+import { getEnv } from "~/lib/env.server";
 
 export type McpAuthSuccess = {
   ok: true;
@@ -40,7 +41,7 @@ export type McpAuthFailure = {
 export type McpAuthResult = McpAuthSuccess | McpAuthFailure;
 
 function unauthorized(reason: string): Response {
-  const issuer = process.env.API_BASE_URL;
+  const issuer = getEnv().API_BASE_URL;
   const resourceMetadata = issuer
     ? `, resource_metadata="${issuer}/.well-known/oauth-protected-resource/mcp"`
     : "";

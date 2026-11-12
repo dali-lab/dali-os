@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { Trash2, StickyNote } from "lucide-react";
-import { EmptyState, adminTable } from "~/admin/components/console-ui";
+import { adminTable } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { useOsChrome } from "~/components/os-chrome";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { formatUsd } from "~/lib/money";

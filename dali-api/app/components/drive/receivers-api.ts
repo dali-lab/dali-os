@@ -1,4 +1,4 @@
-import type { ReceiverFolderType, ReceiverProcessType } from "~/lib/drive-receivers";
+import type { ReceiverFolderType, ReceiverProcessType } from "~/drive/lib/drive-receivers";
 import type { ReceiverRequest } from "~/components/drive/receiver-options";
 
 export const FOLDER_RECEIVERS_URL = "/api/folder-receivers";

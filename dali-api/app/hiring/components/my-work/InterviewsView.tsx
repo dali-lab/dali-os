@@ -8,7 +8,7 @@ import { CycleSelector } from '~/hiring/components/CycleSelector'
 import { ConfidentialityGate } from '~/hiring/components/ConfidentialityGate'
 import { useDialog } from '~/components/ui/dialog'
 import { useToast } from '~/components/ui/toast'
-import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
+import { Pill } from '~/components/ui/Pill'
 import { splitInterviewsByTime } from '~/hiring/lib/interview-status'
 
 // My work → Interviews: the interviewer's assigned interviews. Applicants book

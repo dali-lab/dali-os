@@ -415,7 +415,6 @@ export function VersionHistoryPanel({ documentName, canEdit, onClose }: VersionH
                     // The html is server-generated from trusted Y.Doc state — not
                     // user-typed freeform input — so XSS risk is equivalent to
                     // the existing export/preview paths.
-                    // eslint-disable-next-line react/no-danger
                     dangerouslySetInnerHTML={{ __html: detail.html }}
                   />
                 ) : detail.plainText ? (

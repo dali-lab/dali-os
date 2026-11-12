@@ -20,7 +20,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { sharePermissionFor } from "~/lib/page-sharing.server";
 import { resolveGroupMembers } from "~/lib/groups";
-import { isRoot, ROOT_PUBLIC_ERROR, ROOT_SCOPE_ERROR } from "~/lib/drive-roots";
+import { isRoot, ROOT_PUBLIC_ERROR, ROOT_SCOPE_ERROR } from "~/drive/lib/drive-roots";
 import type {
   WorkspaceType,
   LinkAccess,

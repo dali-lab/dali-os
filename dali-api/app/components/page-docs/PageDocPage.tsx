@@ -20,7 +20,7 @@ import { MAX_UPLOAD_LABEL } from "~/lib/file-validation";
 // schema package here doesn't drag BlockNote into any route's initial chunk.
 import { searchMentionableUsers, type MentionUser } from "~/components/doc/schema/mention";
 import { cn } from "~/lib/cn";
-import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
+import { PersonPicker, type PersonOption } from "~/components/ui/PersonPicker";
 
 type Maintainer = { id: string; name: string; handle: string | null };
 
@@ -700,9 +700,7 @@ function SectionEditPanel({
   );
 }
 
-// Small typeahead to (re)assign the maintainer. Reuses the mention search, which
-// returns lab members who have a handle.
-function MaintainerPicker({
+export function MaintainerPicker({
   currentLabel,
   onSelect,
 }: {
@@ -711,12 +709,11 @@ function MaintainerPicker({
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MentionUser[]>([]);
-  const [selectedLabel, setSelectedLabel] = useState<string | null>(currentLabel);
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [selected, setSelected] = useState<PersonOption | null>(
+    currentLabel ? { id: CURRENT_MAINTAINER_ID, name: currentLabel } : null,
+  );
 
   useEffect(() => {
-    if (!open) return;
     let active = true;
     void searchMentionableUsers(query).then((r) => {
       if (active) setResults(r);
@@ -724,64 +721,29 @@ function MaintainerPicker({
     return () => {
       active = false;
     };
-  }, [query, open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [open]);
+  }, [query]);
 
   return (
-    <div ref={containerRef} className="relative">
-      <div className="flex items-center gap-2">
-        <UserCog className="h-4 w-4 text-muted-foreground" aria-hidden />
-        <input
-          value={open ? query : selectedLabel ?? ""}
-          placeholder={selectedLabel ?? "Search members…"}
-          onFocus={() => {
-            setOpen(true);
-            setQuery("");
+    <div className="flex items-center gap-2">
+      <UserCog className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <PersonPicker
+          people={results.map((u) => ({ id: u.id, name: u.name, secondary: `@${u.handle}` }))}
+          value={selected?.id ?? null}
+          selectedPerson={selected}
+          onQueryChange={setQuery}
+          onChange={(id) => {
+            const user = id ? (results.find((u) => u.id === id) ?? null) : null;
+            setSelected(user ? { id: user.id, name: user.name } : null);
+            onSelect(user);
           }}
-          onChange={(e) => setQuery(e.target.value)}
-          className="flex-1 border border-border text-sm text-foreground focus:outline-none focus:ring-2 rounded-full bg-os-card px-4 py-2 focus:ring-os-accent/40"
+          clearLabel="Clear"
+          ariaLabel="Maintainer"
+          placeholder="Search members…"
         />
-        {selectedLabel && (
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedLabel(null);
-              onSelect(null);
-            }}
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            Clear
-          </button>
-        )}
       </div>
-      {open && results.length > 0 && (
-        <div className={cn("absolute z-10 mt-1 w-full overflow-hidden py-1 text-sm", OS_SURFACE_CLASS)}>
-          {results.map((u) => (
-            <button
-              key={u.id}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setSelectedLabel(u.name);
-                setOpen(false);
-                onSelect(u);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-muted/60"
-            >
-              <span className="font-medium text-foreground">{u.name}</span>
-              <span className="text-xs text-muted-foreground">@{u.handle}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
+
+const CURRENT_MAINTAINER_ID = "current";

@@ -7,11 +7,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // calendar actions pull in the Prisma client; CI has no generated client.
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   listCalendarsForLink: vi.fn(),
 }));
 
-import { listCalendarsForLink } from "~/lib/google-calendar";
+import { listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import { shouldInvalidateExternalCache } from "~/calendar/lib/calendar-actions.server";
 import { invalidateExternalCache } from "~/calendar/lib/external-cache.server";
 import { fetchCachedCalendarList } from "~/calendar/lib/calendar-external.server";

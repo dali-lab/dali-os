@@ -1,5 +1,5 @@
-import type { AudienceKind } from "~/lib/page-audience";
-import { RECEIVER_LABELS, type ReceiverFolderType } from "~/lib/drive-receivers";
+import type { AudienceKind } from "~/drive/lib/page-audience";
+import { RECEIVER_LABELS, type ReceiverFolderType } from "~/drive/lib/drive-receivers";
 
 export const CORAL_FOLDER = "text-accent-coral/80";
 const TEAL_FOLDER = "text-accent-teal/80";

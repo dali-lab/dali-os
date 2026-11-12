@@ -5,7 +5,7 @@
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { EVENT_TYPES, isEventType, type EventDef } from "~/lib/notification-events";
-import { noteForOccurrence } from "~/lib/meeting-occurrences";
+import { noteForOccurrence } from "~/calendar/lib/meeting-occurrences";
 
 // Invites for a Cancelled meeting are hidden everywhere — inbox, bell,
 // tasks, and digest emails alike. Combine this with the per-user filter on

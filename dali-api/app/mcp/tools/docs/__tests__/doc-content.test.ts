@@ -10,7 +10,7 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
-vi.mock("~/lib/blog-post.server", () => ({ findBlogPost: vi.fn() }));
+vi.mock("~/blog/lib/blog-post.server", () => ({ findBlogPost: vi.fn() }));
 vi.mock("../blog-posts", () => ({ requireViewer: vi.fn() }));
 vi.mock("../../set-page-content", () => ({ loadEditablePage: vi.fn() }));
 vi.mock("~/collab/edit.server", () => {
@@ -58,7 +58,7 @@ vi.mock("~/collab/agent-presence.server", () => {
 import { prisma } from "~/lib/db.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { authorizeCollabDoc } from "~/lib/collabAuth";
-import { findBlogPost } from "~/lib/blog-post.server";
+import { findBlogPost } from "~/blog/lib/blog-post.server";
 import { requireViewer } from "../blog-posts";
 import { loadEditablePage } from "../../set-page-content";
 import { DocEditError, applyDocOps, getDocBlocks, outlineDoc } from "~/collab/edit.server";

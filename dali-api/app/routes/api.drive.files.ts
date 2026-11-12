@@ -6,7 +6,7 @@ import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { assertUniqueName, nameConflictResponse } from "~/lib/page-names.server";
+import { assertUniqueName, nameConflictResponse } from "~/drive/lib/page-names.server";
 
 // POST /api/drive/files
 //

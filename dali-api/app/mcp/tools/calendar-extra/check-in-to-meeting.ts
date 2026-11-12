@@ -3,7 +3,7 @@
 // Requires the `mcp:write` scope.
 
 import { prisma } from "~/lib/db.server";
-import { markMeetingAttendance, isWithinCheckInWindow } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance, isWithinCheckInWindow } from "~/calendar/lib/scheduled-meeting.server";
 import { McpNotFoundError, McpInvalidError, McpForbiddenError } from "../../registry";
 
 export const CHECK_IN_TO_MEETING_DEF = {

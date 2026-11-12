@@ -16,7 +16,7 @@ import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { parseForm } from "~/lib/validate";
 import { formatUserCode } from "~/lib/pairing";
-import { createDisplaySetupCode } from "~/lib/room-display.server";
+import { createDisplaySetupCode } from "~/rooms/lib/room-display.server";
 import { getActiveDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
@@ -27,7 +27,7 @@ import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { timeAgo } from "~/components/infra/format";
 
 export const handle = adminHandle("rooms");

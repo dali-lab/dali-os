@@ -38,8 +38,8 @@ import {
   setSpeakers,
   startProcessing,
   storedLines,
-} from "~/lib/meeting-recording.server";
-import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
+} from "~/calendar/lib/meeting-recording.server";
+import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
 import { isTaskStatus, type TaskStatus } from "~/projects/lib/task-board";
 import { actionItemMatchesBlock, type StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";
 import { formatClock } from "~/components/meeting-recorder/transcript";
@@ -279,20 +279,25 @@ export async function action({ request, params }: Route.ActionArgs) {
             ? `Action item from "${noteTitle}" at ${formatClock(citeAt)}.\n${origin}/documents/${pageId}?transcript=${rec.id}&at=${Math.max(0, Math.round(citeAt))}`
             : undefined;
 
+        const projectId = projectIds.get(item.index)!;
         let task: { id: string };
         try {
-          task = await runCreateTask(auth.user.sub, {
-            projectId: projectIds.get(item.index)!,
+          if (!(await canEditProject(auth.user.sub, projectId))) throw new TaskCreateError("Forbidden", 403);
+          const dueAt = item.dueAt ? new Date(item.dueAt) : undefined;
+          if (dueAt && Number.isNaN(dueAt.getTime())) throw new TaskCreateError("Invalid dueAt", 400);
+          task = await createTask({
+            projectId,
+            actorId: auth.user.sub,
             title: item.title,
             description,
             assigneeUserIds: item.assigneeId ? [item.assigneeId] : undefined,
-            dueAt: item.dueAt,
+            dueAt,
             status: item.status,
             sourceRecordingId: rec.id,
           });
         } catch (err) {
           await saveTaskIds();
-          if (err instanceof CreateTaskError) {
+          if (err instanceof TaskCreateError) {
             return Response.json({ error: err.message, created }, { status: err.status });
           }
           throw err;

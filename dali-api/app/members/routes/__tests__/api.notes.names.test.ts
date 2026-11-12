@@ -30,7 +30,7 @@ vi.mock("~/members/lib/personal-notes-actions.server", () => ({
   withdrawLabListing: vi.fn(),
 }));
 
-import { PageNameConflictError } from "~/lib/page-names.server";
+import { PageNameConflictError } from "~/drive/lib/page-names.server";
 import { action } from "~/members/routes/api.notes";
 
 function post(intent: string, fields: Record<string, string> = {}) {

@@ -16,7 +16,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { LoadMore } from "~/components/ui/Pager";
 import { useClientSlice } from "~/hooks/useClientSlice";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import type { Level } from "~/lib/level";
 import {

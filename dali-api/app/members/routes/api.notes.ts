@@ -5,7 +5,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { isCore, isLabMember } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { listVisibleGroupsForUser } from "~/lib/groups";
-import { nameConflictResponse } from "~/lib/page-names.server";
+import { nameConflictResponse } from "~/drive/lib/page-names.server";
 import {
   NoteForbiddenError,
   NoteNotFoundError,

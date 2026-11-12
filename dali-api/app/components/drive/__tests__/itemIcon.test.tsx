@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { itemIcon } from "~/components/drive/DriveBrowser";
-import { RECEIVER_LABELS } from "~/lib/drive-receivers";
-import type { DriveItem } from "~/lib/drive.server";
+import { RECEIVER_LABELS } from "~/drive/lib/drive-receivers";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const at = new Date("2026-01-01T00:00:00Z");
 const folder = (extra: Record<string, unknown> = {}) =>

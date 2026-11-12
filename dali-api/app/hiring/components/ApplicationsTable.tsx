@@ -3,7 +3,7 @@ import { useNavigate } from "react-router";
 import { LoadMore } from "~/components/ui/Pager";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { cn } from "~/lib/cn";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import type { ApplicationSort, ApplicationSortKey } from "~/hiring/lib/application-filters";
 
 function formatDate(iso: string): string {

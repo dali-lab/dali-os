@@ -30,7 +30,7 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 
-vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
+vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
@@ -42,7 +42,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
 
-vi.mock("~/lib/page-copy.server", () => ({
+vi.mock("~/drive/lib/page-copy.server", () => ({
   duplicatePage: vi.fn(),
 }));
 
@@ -71,7 +71,7 @@ vi.mock("~/mcp/tools/access", () => ({
 import { prisma } from "~/lib/db.server";
 import { MANAGE_PAGE_TOOL_DEF, runManagePage } from "~/mcp/tools/docs/manage-page";
 import { canManageSharing } from "~/lib/page-share-access.server";
-import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
+import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 
 const mockPrisma = prisma as unknown as {
   page: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };

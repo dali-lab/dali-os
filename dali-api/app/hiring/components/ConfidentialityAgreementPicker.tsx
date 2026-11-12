@@ -5,7 +5,8 @@ import { Select, type SelectOption } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { Pill, SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 
 // Binds a Confidentiality-kind SigningDocument version to a hiring cycle. The
 // enclosing route's action handles the `set-confidentiality-agreement` intent

@@ -10,10 +10,11 @@
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { getApiBaseUrl } from "~/lib/app-env";
-import { buildEncryptedTokens } from "~/lib/google-calendar";
+import { buildEncryptedTokens } from "~/calendar/lib/google-calendar.server";
 import { exchangeGoogleCode, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
 import { GMAIL_MODIFY_SCOPE } from "~/email/lib/gmail-mailbox.server";
 import { expectedConnectAddress, parseConnectTarget } from "~/email/lib/access.server";
+import { getEnv } from "~/lib/env.server";
 
 export const MAIL_STATE_COOKIE = "__dali_mail_oauth_state";
 
@@ -73,8 +74,8 @@ export async function completeMailConnect(request: Request): Promise<Response> {
     tokens = await exchangeGoogleCode({
       code,
       redirectUri: mailConnectRedirectUri(),
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: getEnv().GOOGLE_CLIENT_ID!,
+      clientSecret: getEnv().GOOGLE_CLIENT_SECRET!,
     });
   } catch (err) {
     if (err instanceof GoogleOAuthError) return redirectToEmail("mail_error=token_exchange_failed");

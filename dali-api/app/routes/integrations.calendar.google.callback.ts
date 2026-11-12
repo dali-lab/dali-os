@@ -13,12 +13,13 @@
 import type { Route } from "./+types/integrations.calendar.google.callback";
 import { prisma } from "~/lib/db.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
-import { buildEncryptedTokens } from "~/lib/google-calendar";
+import { buildEncryptedTokens } from "~/calendar/lib/google-calendar.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { CAL_STATE_COOKIE } from "~/routes/oauth.calendar.google.start";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { exchangeGoogleCode, GOOGLE_CALENDAR_SCOPE, GoogleOAuthError, resolveGoogleEmail } from "~/lib/google-oauth";
 import { completeMailConnect, isMailConnectCallback } from "~/email/lib/mail-connect.server";
+import { getEnv } from "~/lib/env.server";
 
 function parseCookies(request: Request): Record<string, string> {
   const header = request.headers.get("Cookie") ?? "";
@@ -74,8 +75,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 
   const apiBase = getApiBaseUrl();
-  const clientId = process.env.GOOGLE_CLIENT_ID!;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET!;
+  const clientId = getEnv().GOOGLE_CLIENT_ID!;
+  const clientSecret = getEnv().GOOGLE_CLIENT_SECRET!;
 
   let tokens;
   try {

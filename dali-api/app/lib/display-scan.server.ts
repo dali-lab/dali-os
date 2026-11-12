@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
-import { CHECK_IN_GRACE_MIN, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
+import { CHECK_IN_GRACE_MIN, resolveMeetingOccurrence } from "~/calendar/lib/scheduled-meeting.server";
 
 // An event with no scheduled time has no end to lapse at.
 const UNSCHEDULED_TTL_MS = 12 * 60 * 60_000;

@@ -4,7 +4,7 @@ vi.mock("~/mcp/registry", async () => {
   const { requireForAction } = await import("~/mcp/errors");
   return { requireForAction };
 });
-vi.mock("~/lib/notebooks.server", () => ({
+vi.mock("~/calendar/lib/notebooks.server", () => ({
   addToNotebook: vi.fn(),
   attachNote: vi.fn(),
   createNotebook: vi.fn(),
@@ -16,7 +16,7 @@ vi.mock("~/lib/notebooks.server", () => ({
   trashNotebook: vi.fn(),
 }));
 
-import * as lib from "~/lib/notebooks.server";
+import * as lib from "~/calendar/lib/notebooks.server";
 import { MANAGE_NOTEBOOK, MANAGE_NOTEBOOK_TOOL_DEF, runManageNotebook } from "../manage-notebook";
 
 const run = (input: Record<string, unknown>) => runManageNotebook("u1", input as never);

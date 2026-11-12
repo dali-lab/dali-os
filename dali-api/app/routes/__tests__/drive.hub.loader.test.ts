@@ -8,8 +8,8 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
-vi.mock("~/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
-vi.mock("~/lib/drive-hub.server", () => ({
+vi.mock("~/drive/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
+vi.mock("~/drive/lib/drive-hub.server", () => ({
   loadProjectWorkspaces: vi.fn(),
   loadEducationWorkspaces: vi.fn(),
   loadAllDocTags: vi.fn(),
@@ -19,19 +19,26 @@ vi.mock("~/lib/drive-hub.server", () => ({
 import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
-import { loadDriveScopes } from "~/lib/drive-scopes.server";
+import { loadDriveScopes } from "~/drive/lib/drive-scopes.server";
 import {
   loadProjectWorkspaces,
   loadEducationWorkspaces,
   loadAllDocTags,
   loadItemTagIds,
-} from "~/lib/drive-hub.server";
+} from "~/drive/lib/drive-hub.server";
 import { loader } from "~/routes/drive.hub";
 
 const AUTH = { ok: true, user: { sub: "u1" } };
 const ROLES = { isCore: false, canViewForms: true };
 const request = new Request("http://localhost/drive");
 const run = () => loader({ request } as never);
+const thrown = (p: Promise<unknown>) =>
+  p.then(
+    () => {
+      throw new Error("did not throw");
+    },
+    (e) => e as Response,
+  );
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -61,14 +68,14 @@ describe("drive hub loader", () => {
 
   it("redirects an anonymous visitor, a non-member and a partner before reading anything else", async () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
-    expect((await run()) as Response).toBeInstanceOf(Response);
+    expect(await thrown(run())).toBeInstanceOf(Response);
     vi.mocked(requireAuth).mockResolvedValue(AUTH as never);
     vi.mocked(isNonMember).mockResolvedValue(true);
-    expect(((await run()) as Response).headers.get("Location")).toBe("/portal");
+    expect((await thrown(run())).headers.get("Location")).toBe("/portal");
     vi.mocked(isNonMember).mockResolvedValue(false);
     const partner = new Response(null, { status: 302 });
     vi.mocked(redirectPartnerToPortal).mockResolvedValue(partner as never);
-    expect(await run()).toBe(partner);
+    expect(await thrown(run())).toBe(partner);
 
     expect(getUserRoles).not.toHaveBeenCalled();
     expect(loadDriveScopes).not.toHaveBeenCalled();

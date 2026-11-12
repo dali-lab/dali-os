@@ -31,7 +31,7 @@ describe("logout", () => {
   });
 
   it("attributes a BetterAuth logout to the member", async () => {
-    mocks.baUser.mockResolvedValue({ id: "u-ada" });
+    mocks.baUser.mockResolvedValue({ sub: "u-ada", email: "ada@example.edu", type: "member" });
     await run();
     expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({ action: "logout", userId: "u-ada" }));
   });

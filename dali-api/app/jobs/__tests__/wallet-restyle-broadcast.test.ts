@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/wallet-broadcast.server", () => ({ runWalletRestyleBroadcast: vi.fn() }));
-vi.mock("~/lib/wallet-google.server", () => ({ walletGoogleConfigured: vi.fn() }));
-vi.mock("~/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-broadcast.server", () => ({ runWalletRestyleBroadcast: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-google.server", () => ({ walletGoogleConfigured: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn() }));
 
 import { runWalletRestyleBroadcastJob } from "~/jobs/wallet-restyle-broadcast.server";
-import { runWalletRestyleBroadcast } from "~/lib/wallet-broadcast.server";
-import { walletGoogleConfigured } from "~/lib/wallet-google.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
+import { runWalletRestyleBroadcast } from "~/wallet/lib/wallet-broadcast.server";
+import { walletGoogleConfigured } from "~/wallet/lib/wallet-google.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
 
 const broadcast = runWalletRestyleBroadcast as unknown as ReturnType<typeof vi.fn>;
 const gConf = walletGoogleConfigured as unknown as ReturnType<typeof vi.fn>;

@@ -10,7 +10,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/room-display.server", () => ({ createDisplaySetupCode: vi.fn() }));
+vi.mock("~/rooms/lib/room-display.server", () => ({ createDisplaySetupCode: vi.fn() }));
 vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn(), stopDisplayScan: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
@@ -18,7 +18,7 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { getActiveDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
-import { createDisplaySetupCode } from "~/lib/room-display.server";
+import { createDisplaySetupCode } from "~/rooms/lib/room-display.server";
 import { action, loader } from "~/rooms/routes/admin.rooms";
 
 const occurrenceStart = new Date("2026-09-30T22:00:00Z");

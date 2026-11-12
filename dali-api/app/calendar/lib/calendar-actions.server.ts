@@ -1,7 +1,7 @@
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { forbidden, requireAuth } from "~/lib/auth";
 import { isLabMember } from "~/lib/roles";
-import { CalendarActionSchema, type CalendarAction } from "~/lib/calendar-schemas";
+import { CalendarActionSchema, type CalendarAction } from "~/calendar/lib/calendar-schemas";
 import { handleCalendarAction } from "~/calendar/lib/calendar-actions/calendars.server";
 import { handleClassAction } from "~/calendar/lib/calendar-actions/classes.server";
 import { handleEventAction } from "~/calendar/lib/calendar-actions/events.server";

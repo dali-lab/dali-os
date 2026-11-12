@@ -6,13 +6,13 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
 import {
   classifyWalletScanFailure,
   memberIdFromToken,
   verifyWalletToken,
   walletTokensConfigured,
-} from "~/lib/wallet-token";
+} from "~/wallet/lib/wallet-token.server";
 
 // POST /api/scheduled-meetings/:id/scan-attendee
 //

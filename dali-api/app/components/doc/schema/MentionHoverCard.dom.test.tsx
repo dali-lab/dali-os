@@ -26,7 +26,7 @@ async function hover(userId: string, name: string) {
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root.render(createElement(MentionHoverCard, { userId }, "@someone"));
+    root.render(createElement(MentionHoverCard, { userId, children: "@someone" }));
   });
   const chip = container.firstElementChild as HTMLElement;
   await act(async () => {

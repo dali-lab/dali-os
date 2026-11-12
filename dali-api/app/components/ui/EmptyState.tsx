@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
 
 export function EmptyState({
+  title,
   children,
   actions,
   className,
 }: {
-  children: ReactNode;
+  title?: ReactNode;
+  children?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }) {
@@ -28,7 +30,12 @@ export function EmptyState({
           <div className="h-1.5 w-1.5 -translate-y-px rotate-45 border-b-2 border-r-2 border-os-nav" />
         </div>
       </div>
-      <p className="text-sm text-os-muted">{children}</p>
+      {(title || children) && (
+        <div className="flex flex-col gap-1">
+          {title && <p className="text-sm font-semibold text-foreground">{title}</p>}
+          {children && <p className="text-sm text-os-muted">{children}</p>}
+        </div>
+      )}
       {actions && <div className="flex flex-wrap items-center justify-center gap-2">{actions}</div>}
     </div>
   );

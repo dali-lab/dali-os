@@ -1,5 +1,5 @@
 import type { Question } from "~/types";
-import { visibleQuestions } from "~/lib/form-logic";
+import { visibleQuestions } from "~/forms/lib/form-logic";
 
 export function renderSkillsRating(value: string): React.ReactNode {
   const ratings: { skill: string; rating: string }[] = [];

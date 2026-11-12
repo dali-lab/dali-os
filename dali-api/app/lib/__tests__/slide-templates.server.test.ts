@@ -8,14 +8,14 @@ const db = vi.hoisted(() => ({
 const env = vi.hoisted(() => ({ doc: null as unknown as Y.Doc }));
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
-vi.mock("~/lib/page-templates.server", () => ({ canListWorkspace: vi.fn() }));
+vi.mock("~/drive/lib/page-templates.server", () => ({ canListWorkspace: vi.fn() }));
 vi.mock("~/lib/slide-decks.server", () => ({ deckAccess: vi.fn(), deckStorage: vi.fn(), migrateDeckOnOpen: vi.fn(), readDeckModel: vi.fn() }));
 vi.mock("~/collab/deck-live.server", () => ({
   transactDeck: vi.fn(async (_p: string, _u: string, fn: (d: Y.Doc) => void) => env.doc.transact(() => fn(env.doc))),
 }));
 
 import { isCore } from "~/lib/roles";
-import { canListWorkspace } from "~/lib/page-templates.server";
+import { canListWorkspace } from "~/drive/lib/page-templates.server";
 import { deckAccess, deckStorage, migrateDeckOnOpen, readDeckModel } from "~/lib/slide-decks.server";
 import { readDeck } from "~/collab/read-deck.server";
 import { addSlide } from "~/components/slides/deck/deck-ops";

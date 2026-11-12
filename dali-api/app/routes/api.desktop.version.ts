@@ -4,13 +4,14 @@
 // latestVersion). Env-driven with safe fallbacks. See specs/archive/TAURI_DESKTOP_PLAN.md.
 
 import type { Route } from "./+types/api.desktop.version";
+import { getEnv } from "~/lib/env.server";
 
 export async function loader(_: Route.LoaderArgs) {
   const body = {
-    minVersion: process.env.DESKTOP_MIN_VERSION ?? "0.0.0",
-    latestVersion: process.env.DESKTOP_LATEST_VERSION ?? "0.0.0",
-    downloadUrl: process.env.DESKTOP_DOWNLOAD_URL ?? null,
-    notesUrl: process.env.DESKTOP_NOTES_URL ?? null,
+    minVersion: getEnv().DESKTOP_MIN_VERSION ?? "0.0.0",
+    latestVersion: getEnv().DESKTOP_LATEST_VERSION ?? "0.0.0",
+    downloadUrl: getEnv().DESKTOP_DOWNLOAD_URL ?? null,
+    notesUrl: getEnv().DESKTOP_NOTES_URL ?? null,
   };
   return Response.json(body, {
     headers: { "Cache-Control": "public, max-age=300" },

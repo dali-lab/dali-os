@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.upcoming-meetings";
 import { requireAuth } from "~/lib/auth";
-import { loadUpcomingMeetings } from "~/lib/upcoming-meetings.server";
+import { loadUpcomingMeetings } from "~/calendar/lib/upcoming-meetings.server";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);

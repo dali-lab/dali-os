@@ -1,5 +1,5 @@
-// MCP `update_profile` — self-only profile field edit. Mirrors the profile
-// intent from runProfileAction in members/lib/profile-page.server.ts.
+// MCP `update_profile` — self-only profile field edit, on the shared
+// updateProfileFields service (members/lib/profile-update.server.ts).
 // Only the authenticated caller can edit their own profile (no Admin-as-others).
 // Requires the `mcp:write` scope.
 //
@@ -13,10 +13,13 @@
 //   bio — lives in a Yjs/BlockNote collab doc; edit via the collab layer.
 //   netId — CAS-authoritative; editing here risks unique-key conflicts.
 
-import { prisma } from "~/lib/db.server";
-import { normalizeHandle } from "~/lib/handle";
-import { isValidTimezone } from "~/lib/timezone";
-import { McpInvalidError } from "../../registry";
+import {
+  updateProfileFields,
+  ProfileConflictError,
+  ProfileValidationError,
+  type ProfileField,
+} from "~/members/lib/profile-update.server";
+import { McpInvalidError } from "../../errors";
 
 export const UPDATE_PROFILE_DEF = {
   name: "update_profile",
@@ -70,106 +73,31 @@ type Input = {
   personalEmail?: string;
 };
 
-// Nullable text fields: input key → Prisma/DB column name (they match).
-const NULLABLE_TEXT_FIELDS: Array<keyof Input & string> = [
-  "pronouns",
-  "linkedinUrl",
-  "githubUsername",
-  "personalSite",
-  "major",
-  "hometown",
-  "dietaryRestrictions",
-  "phoneNumber",
-  "photoUrl",
-];
+const MESSAGES: Record<ProfileField, string> = {
+  name: "firstName and lastName must both be non-empty if provided",
+  personalEmail: "personalEmail looks malformed — must contain @",
+  timeZone: "That timezone isn't a recognized IANA zone",
+  classYear: "classYear must be a 4-digit year between 1900 and 2100",
+  birthday: "birthday must be a valid date in YYYY-MM-DD format",
+  handle: "That handle is already taken",
+  netId: "A unique constraint was violated",
+  unique: "A unique constraint was violated",
+};
 
 export async function runUpdateProfile(userId: string, input: Input) {
-  const data: Record<string, string | number | Date | null> = {};
-  const updated: Record<string, unknown> = {};
-
-  if (input.firstName !== undefined || input.lastName !== undefined) {
-    const firstName = (input.firstName ?? "").trim();
-    const lastName = (input.lastName ?? "").trim();
-    if (!firstName || !lastName) {
-      throw new McpInvalidError("firstName and lastName must both be non-empty if provided");
-    }
-    data.firstName = firstName;
-    data.lastName = lastName;
-    updated.firstName = firstName;
-    updated.lastName = lastName;
-  }
-
-  for (const field of NULLABLE_TEXT_FIELDS) {
-    if (input[field] !== undefined) {
-      const val = (input[field] as string).trim();
-      data[field] = val === "" ? null : val;
-      updated[field] = data[field];
-    }
-  }
-
-  if (input.handle !== undefined) {
-    const raw = input.handle.trim();
-    const normalized = normalizeHandle(raw);
-    data.handle = normalized === "" ? null : normalized;
-    updated.handle = data.handle;
-  }
-
-  if (input.timezone !== undefined) {
-    const tz = input.timezone.trim();
-    if (!isValidTimezone(tz)) {
-      throw new McpInvalidError("That timezone isn't a recognized IANA zone");
-    }
-    data.timeZone = tz;
-    updated.timezone = tz;
-  }
-
-  if (input.classYear !== undefined) {
-    data.classYear = input.classYear;
-    updated.classYear = input.classYear;
-  }
-
-  if (input.personalEmail !== undefined) {
-    const val = input.personalEmail.trim();
-    if (val !== "" && !val.includes("@")) {
-      throw new McpInvalidError("personalEmail looks malformed — must contain @");
-    }
-    data.personalEmail = val === "" ? null : val;
-    updated.personalEmail = data.personalEmail;
-  }
-
-  if (input.birthday !== undefined) {
-    const raw = input.birthday.trim();
-    if (raw === "") {
-      data.birthday = null;
-      updated.birthday = null;
-    } else {
-      const d = new Date(`${raw}T00:00:00Z`);
-      if (Number.isNaN(d.getTime())) {
-        throw new McpInvalidError("birthday must be a valid date in YYYY-MM-DD format");
-      }
-      data.birthday = d;
-      updated.birthday = raw;
-    }
-  }
-
-  if (Object.keys(data).length === 0) {
-    return { ok: true, updated: {} };
-  }
-
+  const { timezone, ...rest } = input;
   try {
-    await prisma.user.update({ where: { id: userId }, data });
+    const { updated } = await updateProfileFields(
+      userId,
+      { ...rest, ...(timezone !== undefined ? { timeZone: timezone } : {}) },
+      { allowNetId: false },
+    );
+    const { timeZone, ...others } = updated;
+    return { ok: true, updated: timeZone !== undefined ? { ...others, timezone: timeZone } : others };
   } catch (e) {
-    const err = e as { code?: string; meta?: { target?: string[] | string } } | null;
-    if (err?.code === "P2002") {
-      const target = err.meta?.target;
-      const fields = Array.isArray(target) ? target : target ? [target] : [];
-      if (fields.some((f) => f.includes("handle"))) {
-        throw new McpInvalidError("That handle is already taken");
-      }
-      throw new McpInvalidError("A unique constraint was violated");
+    if (e instanceof ProfileValidationError || e instanceof ProfileConflictError) {
+      throw new McpInvalidError(MESSAGES[e.field]);
     }
     throw e;
   }
-
-  return { ok: true, updated };
 }

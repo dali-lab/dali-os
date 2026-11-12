@@ -6,7 +6,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/notebooks.server", () => {
+vi.mock("~/calendar/lib/notebooks.server", () => {
   class NotebookError extends Error {
     constructor(
       message: string,
@@ -32,7 +32,7 @@ vi.mock("~/lib/notebooks.server", () => {
 });
 
 import { requireMemberSession } from "~/lib/auth";
-import * as lib from "~/lib/notebooks.server";
+import * as lib from "~/calendar/lib/notebooks.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action, loader } from "~/routes/api.notebooks.$id";
 

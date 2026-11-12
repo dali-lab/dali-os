@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { redirect, useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
+import { useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
 import { useSearchParamChoice, useSearchParamState } from "~/hooks/useSearchParamState";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { ExternalLink, RotateCcw } from "lucide-react";
@@ -8,8 +8,7 @@ import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { getUserRoles } from "~/lib/roles";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import {
   listOpenTasksPage,
   listMyProjectTasksPage,
@@ -66,11 +65,7 @@ export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const userId = auth.user.sub;
   const url = new URL(request.url);

@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/meeting-recording.server", () => ({ documentTitle: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({ documentTitle: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { documentTitle } from "~/lib/meeting-recording.server";
+import { documentTitle } from "~/calendar/lib/meeting-recording.server";
 import { loader } from "~/routes/api.meeting-recordings.active";
 
 const run = () =>

@@ -6,8 +6,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
-import { parseOccurrenceParam } from "~/lib/scheduled-meeting";
-import { canReadRecording, storedLines } from "~/lib/meeting-recording.server";
+import { parseOccurrenceParam } from "~/calendar/lib/scheduled-meeting.server";
+import { canReadRecording, storedLines } from "~/calendar/lib/meeting-recording.server";
 import { speakerLabelFor, countSpeakersByChannel } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
 import { McpNotFoundError, McpInvalidError } from "../../registry";

@@ -38,8 +38,8 @@ import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-c
 import type { SubmissionCheckResult } from "~/lib/submission-check";
 import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
-import { countRequired, dropHiddenAnswers, visibleKeys, visibleQuestions } from "~/lib/form-logic";
-import { isAnswered, normalizeAnswerFormats, validateAnswerFormats } from "~/lib/form-answers";
+import { countRequired, dropHiddenAnswers, visibleKeys, visibleQuestions } from "~/forms/lib/form-logic";
+import { isAnswered, normalizeAnswerFormats, validateAnswerFormats } from "~/forms/lib/form-answers";
 import { termCodeLabel } from "~/lib/display";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
@@ -57,7 +57,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { Radio } from "~/components/ui/Radio";
 import { buttonClasses } from "~/components/ui/Button";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 

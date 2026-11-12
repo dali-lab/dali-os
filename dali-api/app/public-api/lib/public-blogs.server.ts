@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { blocksToHtml, type DocBlock } from "~/collab/blocknote-server";
-import { blogListing } from "~/lib/blog-preview";
+import { blogListing } from "~/blog/lib/blog-preview";
 import { publicizeUploadUrls } from "./public-media";
 
 export type PublicBlog = {

@@ -11,7 +11,7 @@ import {
   Users,
 } from "lucide-react";
 import { AreaTile } from "~/components/shell/AreaTile";
-import { DRIVE_SPACE_AREA, FAVORITES_SPACE_KEY, SHARED_SPACE_KEY } from "~/lib/drive-spaces";
+import { DRIVE_SPACE_AREA, FAVORITES_SPACE_KEY, SHARED_SPACE_KEY } from "~/drive/lib/drive-spaces";
 
 export type ScopeIconSize = "sm" | "lg" | "xl";
 

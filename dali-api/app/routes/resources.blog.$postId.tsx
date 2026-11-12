@@ -3,7 +3,7 @@ import { ArrowLeft, Check, Pencil, Trash2 } from "lucide-react";
 import type { Route } from "./+types/resources.blog.$postId";
 import { DocEditor } from "~/components/doc";
 import { fullName, formatDateShort } from "~/lib/display";
-import { blogStatus, loadBlogPost } from "~/lib/blog-post.server";
+import { blogStatus, loadBlogPost } from "~/blog/lib/blog-post.server";
 import { BlogStatusPill } from "~/components/blog/BlogStatusPill";
 import { useOsChrome } from "~/components/os-chrome";
 import { IconButton } from "~/components/ui/IconButton";
@@ -11,12 +11,12 @@ import { Tooltip } from "~/components/ui/floating/Tooltip";
 import { useDialog } from "~/components/ui/dialog";
 import { PostComments } from "~/components/PostComments";
 import { ReactionBar, useReactionToggle } from "~/components/ReactionBar";
-import { BLOG_COMMENT_MAX, BLOG_EMOJI } from "~/lib/blog-engagement";
+import { BLOG_COMMENT_MAX, BLOG_EMOJI } from "~/blog/lib/blog-engagement";
 import {
   blogEngagementAction,
   loadBlogEngagement,
   type BlogEngagement,
-} from "~/lib/blog-engagement.server";
+} from "~/blog/lib/blog-engagement.server";
 import { requireResourcesViewer } from "~/lib/resources.server";
 
 function reader(viewer: Awaited<ReturnType<typeof requireResourcesViewer>>) {

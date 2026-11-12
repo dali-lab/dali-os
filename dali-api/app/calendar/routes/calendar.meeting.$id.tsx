@@ -21,26 +21,26 @@ import { Radio } from "~/components/ui/Radio";
 import { IconButton } from "~/components/ui/IconButton";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { useOsChrome } from "~/components/os-chrome";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { walletTokensConfigured } from "~/lib/wallet-token";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { fullName } from "~/lib/display";
 import { AttendanceChecklist, type AttendanceRow } from "~/components/AttendanceChecklist";
-import { expandOccurrences, noteForOccurrence, resolveOccurrence } from "~/lib/meeting-occurrences";
+import { expandOccurrences, noteForOccurrence, resolveOccurrence } from "~/calendar/lib/meeting-occurrences";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import {
   CHECK_IN_GRACE_MIN,
   ensureOccurrenceRoster,
   parseOccurrenceParam,
   seedMeetingRoster,
-} from "~/lib/scheduled-meeting";
+} from "~/calendar/lib/scheduled-meeting.server";
 import { CheckInPanel } from "~/components/CheckInPanel";
 import { EditMeetingModal } from "~/calendar/components/EditMeetingModal";
 import { AddMeetingNoteButton, OpenMeetingNoteButton } from "~/calendar/components/AddMeetingNoteModal";

@@ -4,7 +4,7 @@
 
 import { useState } from "react";
 import { Button } from "~/components/ui/Button";
-import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, type PillTone } from "~/components/ui/Pill";
 import { postPartnerApplicationIntent } from "../../lib/partner-detail-fetch";
 
 export type PartnerSowState = "Draft" | "Shared" | "Accepted";

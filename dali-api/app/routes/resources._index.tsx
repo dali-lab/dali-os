@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Globe, Pin, PinOff } from "lucide-react";
 import type { Route } from "./+types/resources._index";
 import type { ResourcesOutletContext } from "./resources";
 import { cn } from "~/lib/cn";
-import { DEFAULT_BLOG_COVER } from "~/lib/blog-preview";
+import { DEFAULT_BLOG_COVER } from "~/blog/lib/blog-preview";
 import { requireResourcesViewer } from "~/lib/resources.server";
 import {
   loadBlogFrontPage,
@@ -11,7 +11,7 @@ import {
   pinBlogPostToTop,
   unpinBlogPost,
   type ListedBlogPost,
-} from "~/lib/blog-post.server";
+} from "~/blog/lib/blog-post.server";
 import { IconButton } from "~/components/ui/IconButton";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";

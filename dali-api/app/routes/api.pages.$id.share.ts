@@ -10,7 +10,7 @@ import {
   listPageShares,
   removePageShare,
 } from "~/lib/page-sharing.server";
-import { describePageAudience } from "~/lib/page-audience.server";
+import { describePageAudience } from "~/drive/lib/page-audience.server";
 import {
   requirePageShareManager,
   setGeneralAccess,

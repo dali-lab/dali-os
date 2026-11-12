@@ -8,7 +8,7 @@
 
 import type { Route } from "./+types/api.meeting-recordings.$id.chunks";
 import { requireAuth } from "~/lib/auth";
-import { ownRecording, recordChunk } from "~/lib/meeting-recording.server";
+import { ownRecording, recordChunk } from "~/calendar/lib/meeting-recording.server";
 import { putChunk } from "~/lib/transcription/chunks.server";
 import { isVoiced } from "~/lib/transcription/pcm-level";
 

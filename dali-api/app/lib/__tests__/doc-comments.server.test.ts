@@ -72,7 +72,7 @@ describe("createDocComment", () => {
   });
 
   it("drops anchors on non-doc targets", async () => {
-    await createDocComment({ ...doc, targetType: "file", targetId: "f1", anchor: { from: "a", to: "b" } });
+    await createDocComment({ ...doc, targetType: "file", targetId: "f1", anchor: { kind: "slide", slideId: "s1" } });
     expect(db.docComment.create.mock.calls[0]![0].data.anchor).toBeUndefined();
   });
 

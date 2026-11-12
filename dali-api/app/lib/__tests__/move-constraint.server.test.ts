@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { page: { findMany: vi.fn() } } }));
-vi.mock("~/lib/page-ancestry.server", () => ({ loadAncestorChains: vi.fn() }));
+vi.mock("~/drive/lib/page-ancestry.server", () => ({ loadAncestorChains: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { loadAncestorChains } from "~/lib/page-ancestry.server";
+import { loadAncestorChains } from "~/drive/lib/page-ancestry.server";
 import { moveConstraintFor } from "~/lib/move-constraint.server";
 
 const m = prisma as any;

@@ -788,7 +788,7 @@ export function TaskModal({
       open
       onClose={guardedClose}
       labelledBy="task-modal-title"
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto"
+      placement="top"
       containerClassName={cn(
         "w-full my-8 max-h-[85vh] flex flex-col",
         "max-w-[560px] os-modal-card os-form !p-0",

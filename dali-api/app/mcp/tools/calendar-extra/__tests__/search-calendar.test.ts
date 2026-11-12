@@ -21,7 +21,7 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpInvalidError, McpNotFoundError, McpForbiddenError };
 });
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   searchCalendarEvents: vi.fn(),
 }));
 vi.mock("~/calendar/lib/search", async (orig) => {
@@ -30,7 +30,7 @@ vi.mock("~/calendar/lib/search", async (orig) => {
 });
 
 import { prisma } from "~/lib/db.server";
-import { searchCalendarEvents } from "~/lib/google-calendar";
+import { searchCalendarEvents } from "~/calendar/lib/google-calendar.server";
 import { runSearchCalendar, SEARCH_CALENDAR_DEF } from "~/mcp/tools/calendar-extra/search-calendar";
 
 const mockPrisma = prisma as unknown as {

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { computeUserFreeBusy } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { buildAvailabilityDays } from "~/calendar/lib/availability-buckets.server";
 
 const Schema = z.object({

@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { redirect, useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import { useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { Download, Upload } from "lucide-react";
 import { Menu, Tooltip } from "~/components/ui/floating";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
@@ -7,8 +7,7 @@ import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { PageBarMenuItems, PageBarPortal, PageBarTitle, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import type { Route } from "./+types/documents.file.$fileId";
 import { prisma } from "~/lib/db.server";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { isCore } from "~/lib/roles";
 import { canViewFile, canEditFile, canManageFileSharing } from "~/lib/fileAccess.server";
 import { getDownloadUrl } from "~/lib/s3";
@@ -19,8 +18,8 @@ import { FilePreview } from "~/components/FilePreview";
 import { TagPicker } from "~/components/TagPicker";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { FolderIcon } from "~/components/FolderIcon";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
-import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
+import { driveRootCrumbs } from "~/drive/lib/drive-crumbs";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -84,11 +83,7 @@ export const handle = {
 };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const file = await prisma.projectFile.findUnique({
     where: { id: params.fileId },

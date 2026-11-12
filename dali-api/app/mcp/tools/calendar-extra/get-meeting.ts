@@ -4,9 +4,9 @@
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { fullName } from "~/lib/display";
-import { noteForOccurrence } from "~/lib/meeting-occurrences";
-import { parseOccurrenceParam, resolveMeetingOccurrence } from "~/lib/scheduled-meeting";
-import { canReadRecording } from "~/lib/meeting-recording.server";
+import { noteForOccurrence } from "~/calendar/lib/meeting-occurrences";
+import { parseOccurrenceParam, resolveMeetingOccurrence } from "~/calendar/lib/scheduled-meeting.server";
+import { canReadRecording } from "~/calendar/lib/meeting-recording.server";
 import { McpNotFoundError, McpForbiddenError } from "../../registry";
 import { pageArray, pageProps, type PageArgs } from "../../pagination";
 

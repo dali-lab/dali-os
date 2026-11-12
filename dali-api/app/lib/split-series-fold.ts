@@ -1,5 +1,5 @@
-import { expandOccurrences, googleSeriesBase, googleSeriesBaseUID } from "~/lib/meeting-occurrences";
-import type { OccurrenceException } from "~/lib/meeting-occurrences";
+import { expandOccurrences, googleSeriesBase, googleSeriesBaseUID } from "~/calendar/lib/meeting-occurrences";
+import type { OccurrenceException } from "~/calendar/lib/meeting-occurrences";
 
 export type FoldMeeting = {
   id: string;

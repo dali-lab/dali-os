@@ -1,5 +1,6 @@
 import type { Route } from "./+types/api.page-docs.$key";
 import { z } from "zod";
+import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
@@ -14,7 +15,7 @@ import {
   mergeSectionsPayload,
   parseStoredSections,
   type StoredPageDocSection,
-} from "~/lib/page-doc-sections";
+} from "~/drive/lib/page-doc-sections.server";
 
 // Per-page documentation guide, keyed by a stable pageKey a route declares via
 // handle.docKey. Backs the "Docs" modal.
@@ -69,7 +70,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const doc = await prisma.pageDoc.upsert({
     where: { pageKey },
     update: {},
-    create: { pageKey, title, createdById: userId, sections: [EMPTY_OVERVIEW] },
+    create: { pageKey, title, createdById: userId, sections: [EMPTY_OVERVIEW] as Prisma.InputJsonValue },
     select: {
       id: true,
       title: true,

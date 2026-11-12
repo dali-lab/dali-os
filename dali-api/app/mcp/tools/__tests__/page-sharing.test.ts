@@ -17,7 +17,7 @@ vi.mock("~/lib/page-sharing.server", () => ({
   removePageShare: vi.fn(),
   SharePrincipalError: class SharePrincipalError extends Error {},
 }));
-vi.mock("~/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
+vi.mock("~/drive/lib/page-audience.server", () => ({ describePageAudience: vi.fn() }));
 vi.mock("~/lib/page-share-access.server", () => ({
   requirePageShareManager: vi.fn(),
   setGeneralAccess: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock("~/lib/page-share-access.server", () => ({
 }));
 
 import { listPageShares, addPageShare, removePageShare, SharePrincipalError } from "~/lib/page-sharing.server";
-import { describePageAudience } from "~/lib/page-audience.server";
+import { describePageAudience } from "~/drive/lib/page-audience.server";
 import {
   requirePageShareManager,
   setGeneralAccess,

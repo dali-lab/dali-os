@@ -10,8 +10,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { resolveRoleRef, currentTerm, coreRoleLabel } from "~/lib/roles";
-import { validateTimeEntryRange, ASSIGNMENT_TYPES } from "~/lib/calendar-schemas";
-import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/lib/time-entries.server";
+import { validateTimeEntryRange, ASSIGNMENT_TYPES } from "~/calendar/lib/calendar-schemas";
+import { addTimeEntry, updateTimeEntry, deleteTimeEntry } from "~/calendar/lib/time-entries.server";
 import type { AssignmentType } from "~/generated/prisma/client";
 import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../pagination";
 

@@ -22,7 +22,7 @@ vi.mock("~/lib/s3", () => ({
   getDownloadUrl: vi.fn(),
 }));
 vi.mock("~/lib/pdf/document-pdf.server", () => ({ renderDocumentPdf: vi.fn() }));
-vi.mock("~/lib/page-typography", () => ({ normalizePageTypography: vi.fn() }));
+vi.mock("~/drive/lib/page-typography", () => ({ normalizePageTypography: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { isNonMember, isPartnerAccount, requireAuth } from "~/lib/auth";
