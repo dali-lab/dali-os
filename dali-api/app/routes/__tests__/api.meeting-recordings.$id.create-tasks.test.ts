@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
+vi.mock("~/lib/project-access", () => ({ canEditProject: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canReadRecording: vi.fn(),
@@ -33,10 +34,9 @@ vi.mock("~/mcp/tools/create-task", () => {
   return { runCreateTask: vi.fn(), CreateTaskError };
 });
 
-vi.mock("~/mcp/tools/access", () => ({ canEditProject: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { canEditProject } from "~/mcp/tools/access";
+import { canEditProject } from "~/lib/project-access";
 import { prisma } from "~/lib/db.server";
 import { canRecordInto } from "~/lib/meeting-recording.server";
 import { runCreateTask, CreateTaskError } from "~/mcp/tools/create-task";
