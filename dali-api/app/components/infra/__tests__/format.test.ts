@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { consoleUrl, INFRA_COLS, plural, volumeSummary } from "../format";
+import { consoleUrl, INFRA_COLS, plural, stateTone, volumeSummary } from "../format";
 
 describe("consoleUrl", () => {
   it("links a Fly app and machine", () => {
@@ -39,5 +39,16 @@ describe("INFRA_COLS", () => {
       expect(widths[0]).toBeNull();
       expect(widths.slice(1).every((w) => typeof w === "string")).toBe(true);
     }
+  });
+});
+
+describe("stateTone", () => {
+  it("maps running states to success, resting states to neutral and the rest to warning", () => {
+    expect(stateTone("started")).toBe("success");
+    expect(stateTone("active")).toBe("success");
+    expect(stateTone("idle")).toBe("neutral");
+    expect(stateTone("stopped")).toBe("neutral");
+    expect(stateTone("suspended")).toBe("neutral");
+    expect(stateTone("replacing")).toBe("warning");
   });
 });

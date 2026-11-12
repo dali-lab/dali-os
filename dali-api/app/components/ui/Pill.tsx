@@ -20,11 +20,12 @@ export const DOT_TONES: Record<PillTone, string> = {
   danger: "bg-os-red",
 };
 
-export type PillSize = "sm" | "md";
+export type PillSize = "xs" | "sm" | "md";
 
 const SIZES: Record<PillSize, string> = {
   md: "px-3 py-1 text-sm",
   sm: "whitespace-nowrap px-2.5 py-0.5 text-xs",
+  xs: "whitespace-nowrap px-1.5 py-0.5 text-[10px]",
 };
 
 export function Pill({

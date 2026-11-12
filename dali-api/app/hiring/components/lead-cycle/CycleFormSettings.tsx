@@ -6,7 +6,8 @@ import { Plus } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { buttonClasses } from "~/components/ui/Button";
 import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
-import { Pill, SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { SetupCard, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import { formatVersionLabel } from "~/lib/formatVersion";
 
 export function BlindReviewToggle({ anonymizeReview }: { anonymizeReview: boolean }) {

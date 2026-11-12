@@ -1,9 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { createPortal } from "react-dom";
 import { useFetcher } from "react-router";
 import { Shield, ChevronDown, X, Check, Plus, Briefcase, LogIn } from "lucide-react";
 import { fullName } from "~/lib/display";
-import { Tooltip } from "~/components/ui/floating";
+import { Menu, MenuItem, Tooltip } from "~/components/ui/floating";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -133,20 +132,6 @@ export function RemoveDomainLeadButton({
   );
 }
 
-function AddDomainLeadButton({ userId, domain, onAdded }: { userId: string; domain: DomainRow; onAdded: () => void }) {
-  const fetcher = useFetcher();
-  return (
-    <fetcher.Form method="post" onSubmit={onAdded}>
-      <input type="hidden" name="intent" value="add-domain-lead" />
-      <input type="hidden" name="userId" value={userId} />
-      <input type="hidden" name="domainId" value={domain.id} />
-      <button type="submit" className="w-full text-left px-4 py-2 text-sm text-foreground/80 hover:bg-muted/50">
-        {domain.name}
-      </button>
-    </fetcher.Form>
-  );
-}
-
 export function DomainLeadPicker({
   member,
   domains,
@@ -156,30 +141,9 @@ export function DomainLeadPicker({
   domains: DomainRow[];
   existingAssignments: Member["domainLeadAssignments"];
 }) {
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+  const fetcher = useFetcher();
   const assignedDomainIds = new Set(existingAssignments.map((a) => a.domain.id));
   const available = domains.filter((d) => !assignedDomainIds.has(d.id));
-
-  useEffect(() => {
-    if (!open) return;
-    const updatePosition = () => {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setMenuPos({
-        top: rect.bottom + 4,
-        right: Math.max(8, window.innerWidth - rect.right),
-      });
-    };
-    updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
-  }, [open]);
 
   return (
     <div className="flex flex-wrap gap-1.5 items-center">
@@ -198,38 +162,32 @@ export function DomainLeadPicker({
       ))}
 
       {available.length > 0 && (
-        <>
-          <button
-            ref={triggerRef}
-            onClick={() => setOpen(!open)}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
-          >
-            + Domain
-            <ChevronDown className="w-3 h-3" />
-          </button>
-          {open && menuPos && typeof document !== "undefined" &&
-            createPortal(
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                <div
-                  className="fixed z-50 w-40 rounded-md shadow-lg bg-card ring-1 ring-black ring-opacity-5"
-                  style={{ top: menuPos.top, right: menuPos.right }}
-                >
-                  <div className="py-1">
-                    {available.map((domain) => (
-                      <AddDomainLeadButton
-                        key={domain.id}
-                        userId={member.id}
-                        domain={domain}
-                        onAdded={() => setOpen(false)}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </>,
-              document.body,
-            )}
-        </>
+        <Menu
+          ariaLabel="Add a domain lead role"
+          trigger={
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-muted text-muted-foreground hover:bg-muted"
+            >
+              + Domain
+              <ChevronDown className="w-3 h-3" />
+            </button>
+          }
+        >
+          {available.map((domain) => (
+            <MenuItem
+              key={domain.id}
+              onSelect={() =>
+                fetcher.submit(
+                  { intent: "add-domain-lead", userId: member.id, domainId: domain.id },
+                  { method: "post" },
+                )
+              }
+            >
+              {domain.name}
+            </MenuItem>
+          ))}
+        </Menu>
       )}
     </div>
   );
