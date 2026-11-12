@@ -1596,6 +1596,7 @@ model DocComment {
 
   @@index([targetType, targetId, createdAt])
   @@index([parentId])
+  @@index([fileId])
 }
 
 // Per-user emoji reactions on a DocComment. Toggle semantics: upsert on add,
@@ -5813,6 +5814,7 @@ model Page {
   @@unique([defaultMeetingNoteFor])
   @@index([workspaceType, workspaceId, parentPageId])
   @@index([archivedAt])
+  @@index([parentPageId])
   // Trigram index behind the typo-tolerant title match in doc-search.server.ts
   // (`query <% "title"`). Ordinary exact/substring title search still uses the
   // plain ILIKE path.
