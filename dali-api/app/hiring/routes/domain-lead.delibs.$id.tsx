@@ -182,7 +182,7 @@ const COLUMN_TOKENS: Record<string, string> = {
 
 export default function DelibsKanban() {
   const { session, domainApplications, collabToken, userName, round, columns } =
-    useLoaderData<typeof loader>() as any;
+    useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const os = useOsChrome();
   const dialog = useDialog();
@@ -343,6 +343,7 @@ export default function DelibsKanban() {
   }
 
   async function confirmClose() {
+    if (!round) return;
     if (
       await dialog.confirm({
         title: "Close delibs and create draft decisions?",

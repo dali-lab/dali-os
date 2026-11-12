@@ -139,7 +139,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function HiringLeadDashboard() {
-  const data = useLoaderData<typeof loader>() as any;
+  const data = useLoaderData<typeof loader>();
   const cycles = data?.cycles ?? [];
   const [showModal, setShowModal] = useState(false);
   const { pageTitle, formClass, fieldLabel, formTrigger } = useOsChrome();

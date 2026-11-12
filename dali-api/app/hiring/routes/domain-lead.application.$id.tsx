@@ -374,10 +374,10 @@ export default function DomainLeadApplicationView() {
     priorApplications,
     emailEngagement,
     blinded,
-  } = useLoaderData<typeof loader>() as any;
+  } = useLoaderData<typeof loader>();
 
-  const generalQuestions: any[] = application.generalChallengeVersion?.questions ?? [];
-  const challengeQuestions: any[] = da.challengeVersion?.questions ?? [];
+  const generalQuestions = (application.generalChallengeVersion?.questions ?? []) as unknown as Question[];
+  const challengeQuestions = (da.challengeVersion?.questions ?? []) as unknown as Question[];
   const reviews: any[] = da.reviews ?? [];
   const statusInfo = STATUS_BADGE[inferredStatus] ?? STATUS_BADGE.Pending;
 

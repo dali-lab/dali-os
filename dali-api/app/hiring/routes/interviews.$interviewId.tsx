@@ -289,7 +289,7 @@ export default function InterviewDetailPage() {
     blinded,
     isCore,
     latestRecording,
-  } = useLoaderData<typeof loader>() as any
+  } = useLoaderData<typeof loader>()
 
   const applicant = interview.domainApplication?.application?.user
   const domain = interview.domainApplication?.domain?.name
@@ -310,10 +310,8 @@ export default function InterviewDetailPage() {
     })
 
   const application = interview.domainApplication?.application
-  const generalQuestions: any[] =
-    application?.applicationFormVersion?.questions ?? []
-  const domainQuestions: any[] =
-    interview.domainApplication?.challengeFormVersion?.questions ?? []
+  const generalQuestions = (application?.applicationFormVersion?.questions ?? []) as unknown as Question[]
+  const domainQuestions = (interview.domainApplication?.challengeFormVersion?.questions ?? []) as unknown as Question[]
   const submittedReviews: any[] = interview.domainApplication?.reviews ?? []
 
   const questionLabels: Record<string, string> = {}
