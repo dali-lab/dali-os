@@ -35,6 +35,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import {
   parseColumnMapping,
   validateMapping,
+  boardTableModel,
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
@@ -95,10 +96,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     formId: binding?.formId ?? null,
   });
 
-  const tableColumns = view.tableColumns.map((c) => ({
-    key: c.key,
-    label: c.label,
-  }));
 
   let formQuestions: {
     key: string;
@@ -141,6 +138,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     targetPromotion: targetPromotion.get(r.userId) ?? null,
   }));
 
+  const columnModel = boardTableModel(
+    SLOT,
+    binding?.mapping ?? null,
+    view.tableColumns,
+    formQuestions,
+    [],
+  );
+
   const domainOptions = await prisma.domain.findMany({
     orderBy: { displayName: "asc" },
     select: { id: true, displayName: true },
@@ -154,7 +159,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     domainOptions,
     isAll,
     submissions,
-    tableColumns,
+    tableColumns: columnModel.columns,
+    addableColumns: columnModel.addable,
+    roleChoices: columnModel.roleChoices,
     canManage,
     binding,
     selectableForms,
@@ -534,6 +541,8 @@ function Loaded({ data }: { data: LoadedData }) {
         ) : responseTable ? (
           <BoardTable
             columns={data.tableColumns}
+            addable={data.addableColumns}
+            roleChoices={data.roleChoices}
             rows={filtered}
             detailHref={(r) => `/core/level-up/${r.userId}?term=${encodeURIComponent(data.selectedTerm)}`}
             editable={data.canManage && !data.isAll}

@@ -47,6 +47,7 @@ import {
   REQUIRED_BUILTINS,
   isBuiltinSource,
   missingRequirements,
+  roleColumnLabel,
   type ColumnMapping,
   type ColumnMappingEntry,
   type RoleDef,
@@ -81,23 +82,6 @@ type DraftCol = {
 let _uid = 0;
 const nextUid = () => `c${_uid++}`;
 
-// Static label for a role-bearing column. Repeatable roles get a positional
-// suffix (1, 2, 3) over the existing entries of the same role; per-term roles
-// get the term code. The label travels with the saved entry but is not
-// user-editable for role-bearing columns.
-function roleColumnLabel(
-  def: RoleDef,
-  positionAmongRole: number,
-  termCode?: string,
-): string {
-  if (def.perTerm && termCode) {
-    return `${def.defaultLabel} — ${termCode}`;
-  }
-  if (def.repeatable) {
-    return `${def.defaultLabel} ${positionAmongRole + 1}`;
-  }
-  return def.defaultLabel;
-}
 
 export function SlotColumnMapper({
   slot,

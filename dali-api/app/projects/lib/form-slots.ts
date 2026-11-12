@@ -1,12 +1,12 @@
 import { prisma } from "~/lib/db.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
 import {
-  hideBuiltinColumn,
+  applyBoardColumnOp,
   parseColumnMapping,
-  showBuiltinColumn,
-  type BoardColumnBuiltin,
   type ColumnMapping,
 } from "./slot-roles";
+import type { ColumnOp } from "~/forms/lib/column-ops";
+import type { Question } from "~/types";
 import { setFormPublished } from "~/forms/lib/form-publish.server";
 
 // Audiences an operator can lock a bound form to (a subset of the signing
@@ -180,26 +180,39 @@ export async function setSlotColumnMapping(
   return { ok: true };
 }
 
-// Add or remove one builtin column from the board's table. Skips the
-// completeness check the full mapper runs, so a board whose mapping is still
-// missing roles can change its columns.
-export async function setSlotBuiltinColumn(
+// One column change from the board's table, saved on the binding's mapping.
+// Skips the completeness check the full mapper runs, so a board whose mapping
+// is still missing roles can change its columns.
+export async function applySlotColumnOp(
   staffingCycleId: string,
   slot: Slot,
-  builtin: BoardColumnBuiltin,
-  shown: boolean,
+  op: ColumnOp,
   userId: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const binding = await prisma.staffingCycleFormBinding.findUnique({
     where: { staffingCycleId_slot: { staffingCycleId, slot } },
-    select: { id: true, columnMapping: true },
+    select: { id: true, formId: true, columnMapping: true },
   });
-  if (!binding) return { ok: false, error: "Connect a form before adding columns." };
-  const mapping = parseColumnMapping(binding.columnMapping);
-  const next = shown ? showBuiltinColumn(mapping, builtin) : hideBuiltinColumn(mapping, builtin);
+  if (!binding) return { ok: false, error: "Connect a form before changing columns." };
+  const [latest, term] = await Promise.all([
+    prisma.formVersion.findFirst({
+      where: { formId: binding.formId },
+      orderBy: { versionNumber: "desc" },
+      select: { questions: true },
+    }),
+    op.op === "role" && op.termId
+      ? prisma.term.findUnique({ where: { id: op.termId }, select: { id: true, code: true } })
+      : null,
+  ]);
+  const result = applyBoardColumnOp(parseColumnMapping(binding.columnMapping), op, {
+    slot,
+    questions: (latest?.questions as unknown as Question[]) ?? [],
+    termCodes: new Map(term ? [[term.id, term.code]] : []),
+  });
+  if (!result.ok) return { ok: false, error: result.reason };
   await prisma.staffingCycleFormBinding.update({
     where: { id: binding.id },
-    data: { columnMapping: next as object, updatedById: userId },
+    data: { columnMapping: result.mapping as object, updatedById: userId },
   });
   return { ok: true };
 }

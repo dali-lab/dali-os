@@ -1,8 +1,9 @@
 import { prisma } from "~/lib/db.server";
 import { resolveTermFilter } from "~/lib/terms";
 import { ensureStaffingCycle } from "./staffing-cycle";
-import { setSlotBuiltinColumn, type Slot } from "./form-slots";
-import { isBoardColumnBuiltin } from "./slot-roles";
+import { applySlotColumnOp, type Slot } from "./form-slots";
+import { parseColumnOp } from "~/forms/lib/column-ops";
+import { parseFormDataJson } from "~/lib/safe-json";
 import { currentTerm, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
@@ -62,16 +63,9 @@ export async function setBoardColumn(
   const roles = await getUserRoles(userId, request);
   if (!(await isFeatureEnabled("form-response-views", userId, roles, request)))
     return Response.json({ error: "Forbidden" }, { status: 403 });
-  const builtin = form.get("builtin");
-  if (!isBoardColumnBuiltin(builtin))
-    return Response.json({ error: "Unknown column" }, { status: 400 });
-  const result = await setSlotBuiltinColumn(
-    cycleId,
-    slot,
-    builtin,
-    form.get("shown") === "1",
-    userId,
-  );
+  const op = parseColumnOp(parseFormDataJson(form.get("op")));
+  if (!op) return Response.json({ error: "Invalid input" }, { status: 400 });
+  const result = await applySlotColumnOp(cycleId, slot, op, userId);
   if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
   return Response.json({ ok: true });
 }

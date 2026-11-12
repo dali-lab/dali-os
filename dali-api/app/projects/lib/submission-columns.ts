@@ -29,6 +29,7 @@ export type ColumnDescriptor = {
   label: string;
   hidden: boolean;
   source: "question" | "builtin";
+  role: string;
   // For builtin columns the loader needs to know which builtin to resolve.
   builtin?: string;
   questionKey?: string;
@@ -57,6 +58,7 @@ export function orderedColumns(
       label: interpolateVars(e.label, vars),
       hidden: e.hidden === true,
       source: e.source,
+      role: e.role,
       ...(e.source === "builtin"
         ? { builtin: e.builtin }
         : { questionKey: e.questionKey }),
