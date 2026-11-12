@@ -29,12 +29,7 @@ import {
 } from "~/components/os-page";
 import { cn } from "~/lib/cn";
 import { redactCoreOnlyProjectFields } from "~/lib/project-field-visibility";
-import {
-  listProjectChartStrings,
-  recordProjectChartString,
-  ChartStringValidationError,
-  PROJECT_FUNDING_TYPES,
-} from "~/lib/chart-string.server";
+import { listProjectChartStrings } from "~/lib/chart-string.server";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
@@ -51,10 +46,8 @@ import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { prisma } from "~/lib/db.server";
 import { activeDomainOptions } from "~/lib/reference-cache.server";
 import { listKnownOrgs, loadProjectInfra } from "~/lib/infra/dashboard.server";
-import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import { listProjectInfraRequests } from "~/lib/infra/requests.server";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
-import { ensureProjectGroup } from "~/lib/groups";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { coreBoardPathFor } from "~/core/lib/taskboard";
@@ -67,17 +60,10 @@ import { ProjectImageBanner } from "../components/ProjectImageBanner";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "../components/ProjectIconPicker";
-import { replaceProjectTerms } from "../lib/project-terms.server";
 import { Markdown } from "~/components/Markdown";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { getUserRoles, isCore, isProjectMember, canManageStaffing, currentTerm, isLabMentor } from "~/lib/roles";
-import {
-  linkProjectPartner,
-  unlinkProjectPartner,
-  updateProjectPartnerDates,
-} from "~/partners/lib/partner-access";
 import { listActiveCoreMembers, personName } from "~/partners/lib/core-members.server";
-import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { maintenanceLabel } from "~/partners/lib/partner-renewals";
 import { getPresenceUser } from "~/lib/presence-user";
 import { TaskBoard, type TaskCreateSeed } from "../components/TaskBoard";
@@ -137,6 +123,8 @@ import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { LEGACY_TAB_TO_TAB } from "../lib/project-tabs";
 import { Button } from "~/components/ui/Button";
+import { PROJECT_STATUSES, type ProjectStatus } from "../lib/project-lifecycle";
+import { runProjectDetailAction } from "../lib/project-detail-actions.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -162,8 +150,7 @@ export const handle = {
 };
 
 
-const STATUSES = ["Active", "Paused", "Archived"] as const;
-type ProjectStatus = (typeof STATUSES)[number];
+const STATUSES = PROJECT_STATUSES;
 
 // The status plate's colours, shared by the read-only StatusBadge and the
 // hero's editable status dropdown so a project's status reads the same whether
@@ -1226,370 +1213,24 @@ export function shouldRevalidate({
   return defaultShouldRevalidate;
 }
 
-// Declared domains for this project. Full-replacement: the incoming set wins.
-// Filtered down to active, real Domain ids so a stale dropdown value can't
-// create orphan rows. Wrapped in a transaction so a partial failure leaves the
-// project's domain list untouched.
-async function replaceProjectDomains(projectId: string, incoming: string[]) {
-  const valid = incoming.length
-    ? await prisma.domain.findMany({
-        where: { id: { in: incoming }, active: true },
-        select: { id: true },
-      })
-    : [];
-  const ids = valid.map((d) => d.id);
-  await prisma.$transaction([
-    prisma.projectDomain.deleteMany({ where: { projectId } }),
-    ...(ids.length
-      ? [
-          prisma.projectDomain.createMany({
-            data: ids.map((domainId) => ({ projectId, domainId })),
-            skipDuplicates: true,
-          }),
-        ]
-      : []),
-  ]);
-}
-
 export async function action({ request, params }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
 
-  // Content edits are open to Core/Admin or anyone staffed on the project;
-  // scope/domain settings (scopesBulk, domains, terms) stay Core/Admin only.
   const core = await isCore(auth.user.sub, request);
   if (!core && !(await isProjectMember(auth.user.sub, params.id, request))) {
     return { error: "You don't have permission to edit this project." };
   }
 
-  const form = await request.formData();
-  const intent = (form.get("intent") as string | null) ?? "details";
-
-  // Per-term Principal Investigator. Core-only on both sides: only Core can
-  // write it, and the PI themselves must be an active Core member — same gate
-  // the renewals board uses so the two surfaces can't drift.
-  if (intent === "pi") {
-    if (!core) return { error: "Only Core can set the project PI." };
-    const termId = String(form.get("termId") ?? "");
-    const piUserId = String(form.get("piUserId") ?? "") || null;
-    if (!termId) return { error: "Missing term." };
-    if (piUserId && !(await isCore(piUserId, request))) {
-      return { error: "A PI must be a Core member." };
-    }
-    if (!(await setTermPi(prisma, { projectId: params.id, termId, piUserId }))) {
-      return { error: "That project is not active in that term." };
-    }
-    return redirect(`/projects/${params.id}`);
-  }
-
-  const SCOPE_INTENTS = [
-    "scopesBulk",
-    "domains",
-    "terms",
-    "visibility",
-    "status",
-    "chart-string",
-    "recordingPolicy",
-  ];
-  if (SCOPE_INTENTS.includes(intent) && !core) {
-    return { error: "Only Core or Admin can change project settings." };
-  }
-
-  // Cloud infra config (Fly org slug / Neon org id / encrypted Fly tokens /
-  // sweep toggle). Same core||staffed gate as the top of this action; tokens are
-  // write-only (blank leaves them unchanged).
-  if (intent === "infra-config") {
-    return saveInfraConfig({ userId: auth.user.sub, projectId: params.id, form, request });
-  }
-
-  // Partner links — Core/Admin only, via the shared helpers so validation
-  // and audit stay identical to the Core Hub org pages.
-  const PARTNER_INTENTS = ["partner-link", "partner-end", "partner-unlink"];
-  if (PARTNER_INTENTS.includes(intent)) {
-    if (!core) {
-      return { error: "Only Core or Admin can manage partner organizations." };
-    }
-    const actor = { actorUserId: auth.user.sub, request };
-    if (intent === "partner-link") {
-      const partnerOrgId = (form.get("partnerOrgId") as string | null) ?? "";
-      if (!partnerOrgId) return { error: "Select an organization." };
-      const result = await linkProjectPartner(
-        { projectId: params.id, partnerOrgId },
-        actor,
-      );
-      return "error" in result ? result : redirect(`/projects/${params.id}`);
-    }
-    const projectPartnerId = (form.get("projectPartnerId") as string | null) ?? "";
-    const existing = await prisma.projectPartner.findFirst({
-      where: { id: projectPartnerId, projectId: params.id },
-      select: { id: true, startedAt: true },
-    });
-    if (!existing) return { error: "Partnership not found." };
-    if (intent === "partner-end") {
-      const result = await updateProjectPartnerDates(
-        { projectPartnerId, startedAt: existing.startedAt, endedAt: new Date() },
-        actor,
-      );
-      return "error" in result ? result : redirect(`/projects/${params.id}`);
-    }
-    const result = await unlinkProjectPartner(projectPartnerId, actor);
-    return "error" in result ? result : redirect(`/projects/${params.id}`);
-  }
-
-  // Payroll chart string. Core-only and append-only: every save writes a new
-  // row and supersedes the previous one for that term, so the history is the
-  // audit trail. Validation is shared with the MCP tool via the same server
-  // helper, so a string rejected there is rejected here.
-  if (intent === "chart-string") {
-    if (!core) return { error: "Only Core can edit payroll chart strings." };
-
-    const chartString = (form.get("chartString") as string | null)?.trim() ?? "";
-    const termId = (form.get("termId") as string | null)?.trim() ?? "";
-    if (!chartString) return { error: "Chart string is required." };
-    if (!termId) return { error: "Pick a term." };
-
-    const typeRaw = (form.get("fundingType") as string | null)?.trim() ?? "";
-    const fundingType = PROJECT_FUNDING_TYPES.includes(
-      typeRaw as (typeof PROJECT_FUNDING_TYPES)[number],
-    )
-      ? (typeRaw as (typeof PROJECT_FUNDING_TYPES)[number])
-      : null;
-
-    const optional = (name: string) =>
-      (form.get(name) as string | null)?.trim() || null;
-
-    try {
-      const result = await recordProjectChartString({
-        projectId: params.id,
-        termId,
-        chartString,
-        fundingType,
-        fpNumber: optional("fpNumber"),
-        awardId: optional("awardId"),
-        rapportName: optional("rapportName"),
-        supersedeReason: optional("supersedeReason"),
-        note: optional("note"),
-        createdById: auth.user.sub,
-      });
-      // Warnings don't block the write — an unfamiliar subactivity or an
-      // unexpected org may be Dartmouth changing something — but the person
-      // who typed it should see them.
-      return {
-        ok: true,
-        chartStringWarnings: result.warnings.map((w) => w.message),
-      };
-    } catch (err) {
-      if (err instanceof ChartStringValidationError) {
-        return { error: err.message };
-      }
-      throw err;
-    }
-  }
-
-  // Header form: name + status + icon, and — from the os hero, which edits the
-  // whole meta row under one pencil — the term and role sets too. The marker
-  // fields say those sets rode along at all: both are full-replacement writes,
-  // so their absence has to mean "leave alone" rather than "clear". They stay
-  // Core-only, matching the standalone `terms`/`domains` intents.
-  if (intent === "header") {
-    const name = (form.get("name") as string | null)?.trim() ?? "";
-    const status = (form.get("status") as string | null) ?? "";
-    const iconRaw = (form.get("iconEmoji") as string | null)?.trim() ?? "";
-    if (!name) return { error: "Project name is required." };
-    if (!STATUSES.includes(status as ProjectStatus)) {
-      return { error: "Invalid status." };
-    }
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { name, status: status as ProjectStatus, iconEmoji: iconRaw || null },
-    });
-    await ensureProjectGroup(params.id, name);
-    if (core && form.get("hasTerms") === "1") {
-      await replaceProjectTerms(params.id, form.getAll("termId").map(String));
-    }
-    if (core && form.get("hasDomains") === "1") {
-      await replaceProjectDomains(params.id, form.getAll("domainId").map(String));
-    }
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Description segment: its own form/submit so it doesn't blank the other
-  // detail fields.
-  if (intent === "description") {
-    const descriptionRaw = (form.get("description") as string | null)?.trim() ?? "";
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { description: descriptionRaw === "" ? null : descriptionRaw },
-    });
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Image-only update: the banner saves immediately on upload (its own fetcher),
-  // independent of the details form. Same gate as above (already checked).
-  if (intent === "update-image") {
-    const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
-    });
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Lifecycle status — Active / Paused / Archived. Core-only (listed in
-  // SCOPE_INTENTS above); edited from Project settings and shown as the
-  // read-only pill in the hero.
-  if (intent === "status") {
-    const status = (form.get("status") as string | null) ?? "";
-    if (!STATUSES.includes(status as ProjectStatus)) {
-      return { error: "Invalid status." };
-    }
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { status: status as ProjectStatus },
-    });
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Private flag. An unchecked checkbox posts nothing, so absence means false.
-  if (intent === "visibility") {
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { isPrivate: form.get("isPrivate") === "on" },
-    });
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Meeting recording (specs/meeting-transcription.md): Disabled hides the
-  // Record button and all three record-prompt surfaces for this project's
-  // meetings. An unchecked Toggle posts nothing, so absence means Disabled.
-  if (intent === "recordingPolicy") {
-    await prisma.project.update({
-      where: { id: params.id },
-      data: { recordingPolicy: form.get("recordingAllowed") === "on" ? "Allowed" : "Disabled" },
-    });
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Per-(domain, term) scope cells. Bulk write: the form names cells as
-  // "scope:<domainId>:<termId>" so a single Save commits every cell at
-  // once. Empty values delete the row to keep the table tidy. A stale
-  // domainId/termId is silently dropped rather than erroring so a partial
-  // form (e.g. domain unlisted after first render) doesn't 500.
-  if (intent === "scopesBulk") {
-    type CellWrite = { domainId: string; termId: string; scope: string };
-    const writes: CellWrite[] = [];
-    for (const [key, value] of form.entries()) {
-      if (!key.startsWith("scope:")) continue;
-      const [, domainId, termId] = key.split(":");
-      if (!domainId || !termId) continue;
-      writes.push({ domainId, termId, scope: String(value).trim() });
-    }
-    if (writes.length === 0) {
-      return redirect(`/projects/${params.id}`);
-    }
-    const ops = writes.map(({ domainId, termId, scope }) =>
-      scope === ""
-        ? prisma.projectDomainScope.deleteMany({
-            where: { projectId: params.id, domainId, termId },
-          })
-        : prisma.projectDomainScope.upsert({
-            where: {
-              projectId_domainId_termId: {
-                projectId: params.id,
-                domainId,
-                termId,
-              },
-            },
-            update: { scope, updatedById: auth.user.sub },
-            create: {
-              projectId: params.id,
-              domainId,
-              termId,
-              scope,
-              updatedById: auth.user.sub,
-            },
-          }),
-    );
-    await prisma.$transaction(ops);
-    return redirect(`/projects/${params.id}`);
-  }
-
-  if (intent === "domains") {
-    await replaceProjectDomains(params.id, form.getAll("domainId").map(String));
-    return redirect(`/projects/${params.id}`);
-  }
-
-  if (intent === "terms") {
-    await replaceProjectTerms(params.id, form.getAll("termId").map(String));
-    return redirect(`/projects/${params.id}`);
-  }
-
-  // Details form: calendar email, repos, deployment. (Description, name/status,
-  // and the image banner are saved by their own segments above.)
-  const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
-  const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
-  const figmaUrlsRaw = (form.get("figmaUrls") as string | null) ?? "";
-  const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
-  const termCountRaw = (form.get("termCount") as string | null) ?? "";
-  const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
-  const slackChannelRaw = (form.get("slackChannelName") as string | null)?.trim() ?? "";
-
-  // Normalize to a GitHub-safe team slug: lowercase, non-alphanumerics → single
-  // hyphens, trimmed. Empty clears the field (automation then skips).
-  const githubTeamSlug =
-    githubTeamRaw === ""
-      ? null
-      : githubTeamRaw
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-
-  // Slack channel name: lowercase, hyphens, ≤80 (Slack's channel-name rules), to
-  // match what the finalize step would derive. Empty clears it. Editing here is
-  // metadata-only — the channel is get-or-created when an automation runs.
-  const slackChannelName =
-    slackChannelRaw === ""
-      ? null
-      : slackChannelRaw
-          .toLowerCase()
-          .replace(/[^a-z0-9-_\s]/g, "")
-          .trim()
-          .replace(/\s+/g, "-")
-          .slice(0, 80);
-
-  // repoUrls textarea: one URL per line, blanks dropped.
-  const repoUrls = repoUrlsRaw
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  // figmaUrls textarea: one URL per line, blanks dropped. Same shape as repos.
-  const figmaUrls = figmaUrlsRaw
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  // termCount is the *expected* span length (≥1), an independent target; the
-  // actual terms live in the ProjectTerm set (intent=terms). Blank/invalid
-  // falls back to 1 rather than erroring the whole form.
-  const termCount = Math.max(1, Math.floor(Number(termCountRaw)) || 1);
-
-
-  await prisma.project.update({
-    where: { id: params.id },
-    data: {
-      calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
-      repoUrls,
-      figmaUrls,
-      deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
-      termCount,
-      githubTeamSlug,
-      slackChannelName,
-    },
+  return runProjectDetailAction({
+    request,
+    projectId: params.id,
+    userId: auth.user.sub,
+    core,
+    form: await request.formData(),
   });
-  return redirect(`/projects/${params.id}`);
 }
 
 export default function ProjectDetail() {
