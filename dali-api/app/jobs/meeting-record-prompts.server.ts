@@ -10,7 +10,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { expandOccurrences, noteForOccurrence, rruleUntilBasic } from "~/lib/meeting-occurrences";
+import { expandOccurrences, noteForOccurrence, rruleUntilBasic } from "~/calendar/lib/meeting-occurrences";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { isGoogleEventCancelled } from "~/calendar/lib/google-calendar.server";
 import type { JobContext, JobResult } from "~/jobs/registry";

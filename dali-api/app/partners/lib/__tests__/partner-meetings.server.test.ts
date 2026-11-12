@@ -7,7 +7,7 @@ vi.mock("~/lib/roles", async (orig) => {
   return { ...real, currentTerm: vi.fn(), getActiveCoreCycleTermIds: vi.fn().mockResolvedValue([]) };
 });
 
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   createScheduledMeeting: vi.fn(),
 }));
 
@@ -30,7 +30,7 @@ vi.mock("~/partners/lib/partner-emails.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
 import { notifyPartners, partnerNotifyRecipients } from "~/partners/lib/partner-notify.server";

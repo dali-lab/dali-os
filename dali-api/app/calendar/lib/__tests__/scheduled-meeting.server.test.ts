@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
-vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 vi.mock("~/lib/pages", () => ({
   createProjectPage: vi.fn(async () => ({ id: "page-project" })),
   createLabMeetingPage: vi.fn(async () => ({ id: "page-lab" })),
@@ -68,10 +68,10 @@ import {
 import { copyPageBody } from "~/lib/page-copy.server";
 import { movePage } from "~/lib/page-move.server";
 import { NotebookError, createNotebook, loadEditableNotebook } from "~/calendar/lib/notebooks.server";
-import { syncMeetingShares } from "~/lib/meeting-shares.server";
+import { syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
-import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
+import { hashTemplateText, normalizeTemplateText } from "~/calendar/lib/meeting-note-template";
 import {
   attachMeetingNote,
   attachMeetingWhiteboard,
@@ -86,7 +86,7 @@ import {
   trackExternalEventAsMeeting,
   tracksAttendance,
   updateScheduledMeeting,
-} from "~/lib/scheduled-meeting";
+} from "~/calendar/lib/scheduled-meeting.server";
 import { isGeneralCalendarEvent } from "~/calendar/lib/general-calendar";
 
 const mockPrisma = prisma as unknown as {

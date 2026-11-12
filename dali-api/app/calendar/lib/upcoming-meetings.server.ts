@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
-import { expandOccurrences, type Occurrence } from "~/lib/meeting-occurrences";
+import { expandOccurrences, type Occurrence } from "~/calendar/lib/meeting-occurrences";
 import { pageOpenHref } from "~/lib/page-href";
 import type { Prisma } from "~/generated/prisma/client";
 

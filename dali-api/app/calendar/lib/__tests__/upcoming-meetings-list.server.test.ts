@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 
 import { prisma } from "~/lib/db.server";
-import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
+import { listUpcomingMeetings } from "~/calendar/lib/upcoming-meetings-list.server";
 
 const mockPrisma = prisma as unknown as {
   scheduledMeeting: { findMany: ReturnType<typeof vi.fn> };

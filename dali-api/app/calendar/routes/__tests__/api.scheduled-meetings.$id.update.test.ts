@@ -10,13 +10,13 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: vi.fn(() => null),
 }));
-vi.mock("~/lib/scheduled-meeting", () => ({ updateScheduledMeeting: vi.fn() }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ updateScheduledMeeting: vi.fn() }));
 vi.mock("~/rooms/lib/rooms.server", () => ({ assertMeetingRoomsFree: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { handlePreflight } from "~/lib/cors";
-import { updateScheduledMeeting } from "~/lib/scheduled-meeting";
+import { updateScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import { action } from "../api.scheduled-meetings.$id.update";

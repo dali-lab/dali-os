@@ -16,7 +16,7 @@ vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { resolveGroupMembers } from "~/lib/groups";
-import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
+import { removeMeetingShares, syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 
 const m = prisma as any;
 const CAN_EDIT = { canView: true, canEdit: true, canComment: true };

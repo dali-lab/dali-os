@@ -4,7 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/scheduled-meeting", () => ({ attachMeetingNote: vi.fn() }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ attachMeetingNote: vi.fn() }));
 vi.mock("~/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   createRecording: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
-import { attachMeetingNote } from "~/lib/scheduled-meeting";
+import { attachMeetingNote } from "~/calendar/lib/scheduled-meeting.server";
 import {
   canRecordInto,
   createRecording,

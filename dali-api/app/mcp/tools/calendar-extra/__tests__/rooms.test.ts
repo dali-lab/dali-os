@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { room: { findUnique: vi.fn() } } }));
 vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
-vi.mock("~/lib/meeting-occurrences", () => ({ buildRule: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-occurrences", () => ({ buildRule: vi.fn() }));
 vi.mock("~/rooms/lib/rooms.server", () => {
   const parseWindowParams = (start: string, end: string) => {
     const window = { start: new Date(start), end: new Date(end) };
@@ -20,7 +20,7 @@ vi.mock("~/rooms/lib/rooms.server", () => {
 });
 
 import { prisma } from "~/lib/db.server";
-import { buildRule } from "~/lib/meeting-occurrences";
+import { buildRule } from "~/calendar/lib/meeting-occurrences";
 import { isLabMember } from "~/lib/roles";
 import {
   cancelRoomBookingAsMember,

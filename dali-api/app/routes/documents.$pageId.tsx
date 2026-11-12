@@ -10,7 +10,7 @@ import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-sl
 import { Menu } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db.server";
-import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
+import { ensureOccurrenceRoster } from "~/calendar/lib/scheduled-meeting.server";
 import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-recording.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";

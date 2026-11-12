@@ -13,7 +13,7 @@ import type { Route } from "./+types/api.meeting-recordings";
 import { requireAuth } from "~/lib/auth";
 import { isAiEnabled } from "~/lib/ai.server";
 import { isTranscriptionEnabled } from "~/lib/transcription/provider";
-import { attachMeetingNote } from "~/lib/scheduled-meeting";
+import { attachMeetingNote } from "~/calendar/lib/scheduled-meeting.server";
 import { pageDocName } from "~/collab/roomName";
 import { logAuditEvent } from "~/lib/audit";
 import {

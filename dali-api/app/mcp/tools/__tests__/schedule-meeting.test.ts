@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/scheduled-meeting", () => ({ createScheduledMeeting: vi.fn() }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ createScheduledMeeting: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), canViewForms: vi.fn(), isLabMember: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ isCoreGroup: vi.fn() }));
 vi.mock("~/rooms/lib/rooms.server", () => ({ assertMeetingRoomsFree: vi.fn() }));
 
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import { isLabMember } from "~/lib/roles";
 import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 import { runScheduleMeeting, ScheduleMeetingError, SCHEDULE_MEETING_TOOL } from "~/mcp/tools/schedule-meeting";

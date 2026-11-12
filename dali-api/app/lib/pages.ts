@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import type { PageKind, Prisma } from "~/generated/prisma/client";
 import { assertUniqueName } from "~/lib/page-names.server";
-import { syncMeetingShares } from "~/lib/meeting-shares.server";
+import { syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 
 // Creates a Page in a project's workspace (the same Page model the project
 // Overview/PRD/Documents-block use). Appends after the current max position

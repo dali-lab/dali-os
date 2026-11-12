@@ -5,8 +5,8 @@ import type { Route } from "./+types/api.desktop.agenda";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { listUpcomingMeetings, type UpcomingMeeting } from "~/lib/upcoming-meetings";
-import { noteForOccurrence } from "~/lib/meeting-occurrences";
+import { listUpcomingMeetings, type UpcomingMeeting } from "~/calendar/lib/upcoming-meetings-list.server";
+import { noteForOccurrence } from "~/calendar/lib/meeting-occurrences";
 
 const NEXT_WINDOW_MS = 12 * 60 * 60 * 1000;
 // Wider than `next` so a member with nothing left today still sees what's first

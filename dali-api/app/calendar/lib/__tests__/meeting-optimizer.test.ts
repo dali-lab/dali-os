@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   optimizeMeetingSchedule,
   type OptimizerMeeting,
-} from "~/lib/meeting-optimizer";
+} from "~/calendar/lib/meeting-optimizer";
 
 const HOUR = 3_600_000;
 const slot = (startMs: number, endMs: number, freeIds: string[]) => ({ startMs, endMs, freeIds });

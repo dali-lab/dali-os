@@ -16,7 +16,7 @@ import { resolveGroupMembers } from "~/lib/groups";
 import {
   optimizeMeetingSchedule,
   type OptimizerMeeting,
-} from "~/lib/meeting-optimizer";
+} from "~/calendar/lib/meeting-optimizer";
 import { prisma } from "~/lib/db.server";
 import {
   formatDateTimeInZone,

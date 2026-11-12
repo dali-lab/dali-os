@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 
-vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { syncMeetingShares } from "~/lib/meeting-shares.server";
+import { syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 import { ensureMeetingNotebook, moveIntoNotebook, trashNotebookIfAbandoned } from "~/lib/pages";
 
 const page = vi.mocked(prisma.page);

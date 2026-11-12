@@ -43,9 +43,9 @@ import { isExistingChoice, type NotebookChoice, type NotebookSpaceChoice } from 
 import { readDocAsBlocks } from "~/collab/read";
 import { pageDocName } from "~/collab/roomName";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
-import { hashTemplateText, normalizeTemplateText } from "~/lib/meeting-note-template";
+import { hashTemplateText, normalizeTemplateText } from "~/calendar/lib/meeting-note-template";
 import { normalizeGuestEmails } from "~/calendar/lib/guest-emails";
-import { syncMeetingShares } from "~/lib/meeting-shares.server";
+import { syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 import {
   expandOccurrences,
   googleSeriesBase,
@@ -57,7 +57,7 @@ import {
   type Occurrence,
   type OccurrenceException,
   type OccurrenceMeeting,
-} from "~/lib/meeting-occurrences";
+} from "~/calendar/lib/meeting-occurrences";
 import type { ScheduledMeeting, MeetingType, AttendanceMode } from "~/generated/prisma/client";
 
 function meetingUid(meetingId: string): string {

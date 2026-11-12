@@ -12,7 +12,7 @@ vi.mock("~/lib/db.server", () => {
   prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => unknown) => fn(prisma));
   return { prisma };
 });
-vi.mock("~/lib/scheduled-meeting", () => ({ CHECK_IN_GRACE_MIN: 15 }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ CHECK_IN_GRACE_MIN: 15 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";

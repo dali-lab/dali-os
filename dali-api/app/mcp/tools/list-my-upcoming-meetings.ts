@@ -4,7 +4,7 @@
 // which also backs the desktop tray's agenda card.
 // Requires the `mcp:read` scope.
 
-import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
+import { listUpcomingMeetings } from "~/calendar/lib/upcoming-meetings-list.server";
 
 export const LIST_MY_UPCOMING_MEETINGS_TOOL = {
   name: "list_my_upcoming_meetings",

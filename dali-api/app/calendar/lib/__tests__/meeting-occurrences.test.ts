@@ -8,7 +8,7 @@ import {
   matchMeetingForEvent,
   nextOpenOccurrence,
   resolveOccurrence,
-} from "~/lib/meeting-occurrences";
+} from "~/calendar/lib/meeting-occurrences";
 
 const START = new Date("2026-07-15T15:00:00Z");
 const WINDOW_START = new Date("2026-07-15T00:00:00Z");

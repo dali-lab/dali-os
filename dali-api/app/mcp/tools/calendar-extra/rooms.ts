@@ -3,7 +3,7 @@
 // checks in ~/lib/rooms.server.
 
 import { prisma } from "~/lib/db.server";
-import { buildRule } from "~/lib/meeting-occurrences";
+import { buildRule } from "~/calendar/lib/meeting-occurrences";
 import { isLabMember } from "~/lib/roles";
 import {
   cancelRoomBookingAsMember,

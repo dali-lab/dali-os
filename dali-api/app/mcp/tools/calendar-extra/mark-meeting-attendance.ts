@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance, parseOccurrenceParam, tracksAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance, parseOccurrenceParam, tracksAttendance } from "~/calendar/lib/scheduled-meeting.server";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError } from "../../registry";
 
 export const MARK_MEETING_ATTENDANCE_DEF = {

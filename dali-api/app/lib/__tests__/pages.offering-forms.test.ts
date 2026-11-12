@@ -6,7 +6,7 @@ const tx = vi.hoisted(() => ({
 }));
 vi.mock("~/lib/db.server", () => ({ prisma: { $transaction: (fn: (t: typeof tx) => unknown) => fn(tx) } }));
 vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
-vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 
 import { ensureOfferingFormsFolder } from "~/lib/pages";
 

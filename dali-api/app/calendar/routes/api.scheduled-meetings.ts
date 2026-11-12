@@ -9,7 +9,7 @@ import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import {
   createScheduledMeeting,
   type ScheduledMeetingScope,
-} from "~/lib/scheduled-meeting";
+} from "~/calendar/lib/scheduled-meeting.server";
 import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 import { meetingNotePath } from "~/lib/note-path.server";
 import { notebookChoiceSchema } from "~/calendar/lib/notebook-choice";

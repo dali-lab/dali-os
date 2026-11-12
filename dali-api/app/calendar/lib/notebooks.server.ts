@@ -18,10 +18,10 @@ import {
   pageDepth,
   trashNotebookIfAbandoned,
 } from "~/lib/pages";
-import { resolveMeetingOccurrence, seedPageFromTemplate } from "~/lib/scheduled-meeting";
+import { resolveMeetingOccurrence, seedPageFromTemplate } from "~/calendar/lib/scheduled-meeting.server";
 import { formatDateShort } from "~/lib/display";
 import { nameConflictResponse } from "~/lib/page-names.server";
-import { removeMeetingShares, syncMeetingShares } from "~/lib/meeting-shares.server";
+import { removeMeetingShares, syncMeetingShares } from "~/calendar/lib/meeting-shares.server";
 
 // A notebook is a Page of kind Notebook with no body; its tabs are its child
 // pages. Renaming one is the ordinary page rename (POST /api/documents/:id), so

@@ -69,7 +69,7 @@ vi.mock("~/calendar/lib/general-calendar", () => ({
   generalCalendarState: vi.fn(),
 }));
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   attachMeetingNote: vi.fn(),
   attachMeetingWhiteboard: vi.fn(),
   cancelScheduledMeeting: vi.fn(),
@@ -119,7 +119,7 @@ import {
   resolveMeetingOccurrence,
   setMeetingProject,
   trackExternalEventAsMeeting,
-} from "~/lib/scheduled-meeting";
+} from "~/calendar/lib/scheduled-meeting.server";
 import { meetingNotePath } from "~/lib/note-path.server";
 import { submitCalendarAction, shouldInvalidateExternalCache } from "~/calendar/lib/calendar-actions.server";
 

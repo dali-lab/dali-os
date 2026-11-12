@@ -19,7 +19,7 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
 vi.mock("~/lib/transcription/provider", () => ({ isTranscriptionEnabled: () => isTranscriptionEnabled() }));
 vi.mock("~/members/lib/personal-notes-actions.server", () => ({ createNote: (...a: unknown[]) => createNote(...a) }));
 vi.mock("~/collab/read", () => ({ readDocAsBlocks: (...a: unknown[]) => readDocAsBlocks(...a) }));
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   resolveMeetingOccurrence: (...a: unknown[]) => resolveMeetingOccurrence(...a),
   attachMeetingNote: (...a: unknown[]) => attachMeetingNote(...a),
 }));

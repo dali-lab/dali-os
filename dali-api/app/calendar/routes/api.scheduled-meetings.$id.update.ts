@@ -7,7 +7,7 @@ import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import {
   updateScheduledMeeting,
   type ScheduledMeetingScope,
-} from "~/lib/scheduled-meeting";
+} from "~/calendar/lib/scheduled-meeting.server";
 import { prisma } from "~/lib/db.server";
 import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 

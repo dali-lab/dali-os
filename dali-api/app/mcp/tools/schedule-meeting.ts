@@ -3,7 +3,7 @@
 // Core meetings, a note notebook, and SelfCheckIn attendance. Mirrors the web
 // api.scheduled-meetings.ts POST. Requires the `mcp:write` scope.
 
-import { createScheduledMeeting, type ScheduledMeetingScope } from "~/lib/scheduled-meeting";
+import { createScheduledMeeting, type ScheduledMeetingScope } from "~/calendar/lib/scheduled-meeting.server";
 import { isCore, canViewForms, isLabMember } from "~/lib/roles";
 import { isCoreGroup } from "~/lib/groups";
 import { notebookChoiceSchema } from "~/calendar/lib/notebook-choice";

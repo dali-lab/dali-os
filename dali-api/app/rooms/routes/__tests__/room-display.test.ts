@@ -10,7 +10,7 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/display-check-ins.server", () => ({ isCheckedIn: vi.fn() }));
 vi.mock("~/wallet/lib/wallet-token.server", () => ({ walletTokensConfigured: vi.fn() }));
 vi.mock("~/wallet/lib/wallet-scan.server", () => ({ resolveScannedMember: vi.fn() }));
-vi.mock("~/lib/scheduled-meeting", () => ({ markMeetingAttendance: vi.fn() }));
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ markMeetingAttendance: vi.fn() }));
 vi.mock("~/rooms/lib/rooms.server", () => ({
   getRoomSchedule: vi.fn(),
   currentEvent: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn() }));
 import { requireRoomDisplay } from "~/rooms/lib/room-display.server";
 import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { resolveScannedMember } from "~/wallet/lib/wallet-scan.server";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
 import { cancelRoomBooking, createRoomBooking, currentEvent, extendRoomBooking, getRoomSchedule } from "~/rooms/lib/rooms.server";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";

@@ -4,7 +4,7 @@ import { isLabMember } from "~/lib/roles";
 import type { ScopeType } from "~/generated/prisma/client";
 import { type CalendarEvent, listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import { isGeneralCalendarEvent } from "~/calendar/lib/general-calendar";
-import { googleInstanceOriginalStart, googleSeriesBase, googleSeriesBaseUID, matchMeetingForEvent, noteForOccurrence, resolveOccurrence } from "~/lib/meeting-occurrences";
+import { googleInstanceOriginalStart, googleSeriesBase, googleSeriesBaseUID, matchMeetingForEvent, noteForOccurrence, resolveOccurrence } from "~/calendar/lib/meeting-occurrences";
 import type { EventAttendeeDTO, EventLinkDTO, EventMeetingDTO, RsvpStatus } from "~/calendar/lib/types";
 
 // Google's responseStatus vocabulary → the labels the detail popover shows,

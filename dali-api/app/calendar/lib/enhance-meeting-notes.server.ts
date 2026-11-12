@@ -31,7 +31,7 @@ import {
 } from "~/components/meeting-recorder/enhance-plan";
 import { speakerFirstNameAt, transcriptParagraphs } from "~/components/meeting-recorder/transcript";
 import type { Channel, RosterUser, Speakers } from "~/components/meeting-recorder/types";
-import { isUntouchedTemplate } from "~/lib/meeting-note-template";
+import { isUntouchedTemplate } from "~/calendar/lib/meeting-note-template";
 import {
   generateAndVerifyEnhancePlan,
   resolveMeetingEnhanceContext,

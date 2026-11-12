@@ -5,7 +5,7 @@
 // is per-week-grid, not "next-N-days inbox".
 
 import { prisma } from "~/lib/db.server";
-import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { expandOccurrences } from "~/calendar/lib/meeting-occurrences";
 
 export type UpcomingMeeting = {
   id: string;

@@ -25,7 +25,7 @@ import {
   linkScheduledMeetingToApplication,
   logPartnerMeeting,
 } from "~/partners/lib/partner-meetings.server";
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 import {
   McpForbiddenError,
   McpNotFoundError,

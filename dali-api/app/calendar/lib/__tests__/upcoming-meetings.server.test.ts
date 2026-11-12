@@ -12,7 +12,7 @@ vi.mock("~/lib/pageAccess.server", async () => {
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
-import { UPCOMING_LIMIT, loadUpcomingMeetings } from "~/lib/upcoming-meetings.server";
+import { UPCOMING_LIMIT, loadUpcomingMeetings } from "~/calendar/lib/upcoming-meetings.server";
 
 const m = prisma as any;
 const NOW = new Date("2026-10-13T12:00:00Z");

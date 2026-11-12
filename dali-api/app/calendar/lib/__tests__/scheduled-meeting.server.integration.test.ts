@@ -7,11 +7,11 @@ vi.mock("~/calendar/lib/google-calendar.server", () => ({
   getGoogleEvent: vi.fn(),
   deleteGoogleCalendarEvent: vi.fn(),
 }));
-vi.mock("~/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(async () => {}) }));
+vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(async () => {}) }));
 
 import { prisma } from "~/lib/db.server";
-import { updateScheduledMeeting } from "~/lib/scheduled-meeting";
-import { expandOccurrences } from "~/lib/meeting-occurrences";
+import { updateScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
+import { expandOccurrences } from "~/calendar/lib/meeting-occurrences";
 import { makeMeeting, makeUser } from "~/lib/__tests__/integration-fixtures.calendar";
 
 const WEEK = 7 * 24 * 3_600_000;

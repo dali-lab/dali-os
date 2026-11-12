@@ -29,7 +29,7 @@ import type { GoogleEventOrigin } from "../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { getGoogleEvent } from "../app/calendar/lib/google-calendar.server";
 import { generalCalendarId } from "../app/calendar/lib/general-calendar";
-import { googleSeriesBase } from "../app/lib/meeting-occurrences";
+import { googleSeriesBase } from "../app/calendar/lib/meeting-occurrences";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });

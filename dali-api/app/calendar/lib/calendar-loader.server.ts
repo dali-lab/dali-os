@@ -8,7 +8,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import { buildClassDestinations, toMemberClassDTO } from "~/lib/member-class.server";
 import { type CalendarEvent, fetchCalendarEvents, getValidAccessTokenForLink } from "~/calendar/lib/google-calendar.server";
 import { generalCalendarState, isGeneralCalendarEvent } from "~/calendar/lib/general-calendar";
-import { noteForOccurrence } from "~/lib/meeting-occurrences";
+import { noteForOccurrence } from "~/calendar/lib/meeting-occurrences";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { meetingLinkRedirect } from "~/calendar/lib/meeting-link.server";
 import { fetchWindow, parseView, viewWindow, weekWindow } from "~/calendar/lib/view-window";
