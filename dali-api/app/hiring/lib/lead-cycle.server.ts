@@ -238,7 +238,7 @@ export async function loadLeadCycle({ request, params }: { request: Request; par
   // lead should see, before clicking Release, when that would also cut off a
   // domain whose own window (domain-windows.ts) is still open.
   const pendingDecisionsWithWarnings = await Promise.all(
-    pendingDecisions.map(async (d: any) => ({
+    pendingDecisions.map(async (d) => ({
       ...d,
       openSiblingDomains:
         d.stage === "Final" && d.type === "Accepted"

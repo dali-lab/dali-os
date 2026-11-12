@@ -4,7 +4,7 @@ export type DecisionSlice = 'invites' | 'finalize' | 'outcomes'
 // `invites` only renders on the round tab that hands off to Interviews, so
 // `outcomes` on the Decisions tab takes every Final: an invite finalized after
 // the lead has moved past that round would otherwise be releasable nowhere.
-export const DECISION_SLICES: Record<DecisionSlice, { title: string; empty: string; include: (d: any) => boolean }> = {
+export const DECISION_SLICES: Record<DecisionSlice, { title: string; empty: string; include: (d: { stage: string; type: string }) => boolean }> = {
   invites: {
     title: 'Interview invites',
     empty: 'No invites ready to send.',

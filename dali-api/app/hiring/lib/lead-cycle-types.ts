@@ -1,4 +1,5 @@
-import { type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
+import type { InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
+import type { LeadCycleData } from "~/hiring/lib/lead-cycle.server";
 
 export interface InterviewConfig {
   id?: string
@@ -35,6 +36,8 @@ export interface RoomHoldConflict {
 
 export interface CycleReviewer {
   id: string
+  userId?: string
+  domainId?: string
   user: { 
     id: string
     firstName: string | null
@@ -69,7 +72,7 @@ export interface InterviewRow {
   }
   assignments: {
     id: string
-    role: string
+    role: 'InDomain' | 'CrossDomain'
     status: string
     cycleInterviewer: {
       userId: string
@@ -89,3 +92,22 @@ export interface PendingInviteRow {
     application: { user: { id: string; firstName: string | null; lastName: string | null } }
   }
 }
+
+export type LeadCycle = LeadCycleData["cycle"];
+export type LeadCycleDomain = LeadCycle["domains"][number];
+export type PendingDecision = LeadCycleData["pendingDecisions"][number];
+export type RubricVersionOption = LeadCycleData["rubricVersionOptions"][number];
+export type CycleForm = LeadCycleData["allForms"][number];
+
+export interface CycleInterviewer {
+  id: string
+  userId: string
+  domainId: string
+  user: { firstName: string | null; lastName: string | null; daliEmail: string | null } | null
+  domain: { id: string; name: string } | null
+  availabilityHours?: number
+  availabilityBlockCount?: number
+  hasCalendar?: boolean
+}
+
+export type InterviewAssignmentRow = InterviewRow["assignments"][number];

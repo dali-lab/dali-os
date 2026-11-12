@@ -108,8 +108,15 @@ export function describeExtension(deltaMs: number): { amount: number; unit: "hou
 // Extending the close date, and when applications actually stop. The close
 // date itself is set on the Term and dates card; this card only renders once
 // one exists.
-export function CloseDateCard({ cycle, cycleStatus }: { cycle: any; cycleStatus: string }) {
-  const closeDate = new Date(cycle.closeDate);
+type CloseDateCycle = {
+  id: string;
+  closeDate: Date | string | null;
+  originalCloseDate: Date | string | null;
+  extensionNoticeSentAt: Date | string | null;
+};
+
+export function CloseDateCard({ cycle, cycleStatus }: { cycle: CloseDateCycle; cycleStatus: string }) {
+  const closeDate = new Date(cycle.closeDate ?? 0);
   const originalCloseDate = cycle.originalCloseDate ? new Date(cycle.originalCloseDate) : null;
   const anchor = originalCloseDate ?? closeDate;
   const extensionMs = originalCloseDate ? closeDate.getTime() - originalCloseDate.getTime() : 0;
