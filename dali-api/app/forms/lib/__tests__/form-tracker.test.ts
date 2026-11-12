@@ -78,6 +78,43 @@ describe("buildTrackerPeople", () => {
   });
 });
 
+describe("buildTrackerPeople banner viewers", () => {
+  it("adds the Banner source and counts viewers as expected, once alongside other sources", () => {
+    const people = buildTrackerPeople({
+      groups: [{ name: "Core", memberIds: ["ada"] }],
+      todos: [{ userId: "bo", readAt: null }],
+      bannerViewerIds: ["ada", "bo", "cy"],
+      respondedIds: none,
+    });
+    const p = byId(people);
+    expect(people).toHaveLength(3);
+    expect(p.ada.sources).toEqual(["Core", "Banner"]);
+    expect(p.bo.sources).toEqual(["Announcement", "Banner"]);
+    expect(p.cy.sources).toEqual(["Banner"]);
+  });
+
+  it("leaves a banner-only viewer remindable and never dismissed", () => {
+    const [only] = buildTrackerPeople({ groups: [], todos: [], bannerViewerIds: ["cy"], respondedIds: none });
+    expect(only.dismissed).toBe(false);
+    expect(remindablePeople([only])).toHaveLength(1);
+  });
+
+  it("keeps a dismissed to-do dismissed even when the banner also reached them", () => {
+    const [p] = buildTrackerPeople({
+      groups: [],
+      todos: [{ userId: "ada", readAt: new Date() }],
+      bannerViewerIds: ["ada"],
+      respondedIds: none,
+    });
+    expect(p.dismissed).toBe(true);
+  });
+
+  it("marks a banner viewer who responded", () => {
+    const [p] = buildTrackerPeople({ groups: [], todos: [], bannerViewerIds: ["ada"], respondedIds: new Set(["ada"]) });
+    expect(p.responded).toBe(true);
+  });
+});
+
 describe("trackerCounts", () => {
   it("is null when nobody is expected", () => {
     expect(trackerCounts([])).toBeNull();

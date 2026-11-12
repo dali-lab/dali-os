@@ -5222,6 +5222,7 @@ model Form {
   // Shares its id with the Page (kind Form) that carries placement, title,
   // and access. Create both through createForm() in form-page.server.ts.
   id        String   @id @default(cuid())
+  banners   Banner[]
   page      Page     @relation("FormPage", fields: [id], references: [id], onDelete: Cascade)
   // Mirrored on Page.title until the cleanup PR drops this column.
   name      String
@@ -8200,9 +8201,13 @@ model Banner {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
+  untilFormId String?
+  untilForm   Form?           @relation(fields: [untilFormId], references: [id], onDelete: SetNull)
+
   impressions BannerImpression[]
 
   @@index([published, startsAt, endsAt])
+  @@index([untilFormId])
 }
 
 // One row per (banner, viewer): what frequency and snooze rules read, and what

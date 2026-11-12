@@ -4,11 +4,18 @@ const db = vi.hoisted(() => ({
   banner: { findMany: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
   bannerImpression: { upsert: vi.fn(), groupBy: vi.fn() },
   user: { findMany: vi.fn() },
+  form: { findMany: vi.fn(), findUnique: vi.fn() },
+  formSubmission: { findMany: vi.fn() },
+}));
+vi.mock("~/forms/lib/form-usages.server", () => ({
+  formUsages: vi.fn().mockResolvedValue([]),
+  managingUsage: vi.fn().mockReturnValue(null),
 }));
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/groups.server", () => ({ isUserInAnyGroup: vi.fn() }));
 
 import { isUserInAnyGroup } from "~/lib/groups.server";
+import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import type { UserRoles } from "~/lib/roles";
 import type { BannerInput } from "~/core/lib/banners";
 import {
@@ -17,6 +24,7 @@ import {
   createBanner,
   listBanners,
   recordBannerEvent,
+  untilFormError,
 } from "~/core/lib/banners.server";
 
 const NOW = new Date("2026-10-24T16:00:00Z");
@@ -56,6 +64,7 @@ function row(over: Record<string, unknown> = {}) {
     startsAt: new Date("2026-10-20T00:00:00Z"),
     endsAt: new Date("2026-11-01T00:00:00Z"),
     published: true,
+    untilFormId: null,
     createdById: "core1",
     createdAt: NOW,
     updatedAt: NOW,
@@ -68,6 +77,10 @@ beforeEach(() => {
   vi.resetAllMocks();
   db.user.findMany.mockResolvedValue([{ id: "core1", firstName: "Maya", lastName: "Patel" }]);
   vi.mocked(isUserInAnyGroup).mockResolvedValue(false);
+  vi.mocked(formUsages).mockResolvedValue([]);
+  vi.mocked(managingUsage).mockReturnValue(null);
+  db.form.findMany.mockResolvedValue([]);
+  db.formSubmission.findMany.mockResolvedValue([]);
 });
 
 describe("audienceIncludes", () => {
@@ -107,6 +120,112 @@ describe("activeBannersFor", () => {
     const out = await activeBannersFor("u1", roles(), NOW);
     expect(out.map((b) => b.id)).toEqual(["fresh", "daily"]);
     expect(out[0]).toMatchObject({ author: "Maya Patel", startsAt: "2026-10-20T00:00:00.000Z" });
+  });
+});
+
+describe("activeBannersFor with a linked form", () => {
+  const form = (over: Record<string, unknown> = {}) => ({
+    id: "f1",
+    name: "Intake",
+    published: true,
+    archivedAt: null,
+    publicToken: "tok",
+    ...over,
+  });
+  const linked = (over: Record<string, unknown> = {}) => row({ untilFormId: "f1", ...over });
+
+  it("asks the form tables nothing when no banner is linked", async () => {
+    db.banner.findMany.mockResolvedValue([row()]);
+    await activeBannersFor("u1", roles(), NOW);
+    expect(db.form.findMany).not.toHaveBeenCalled();
+    expect(db.formSubmission.findMany).not.toHaveBeenCalled();
+  });
+
+  it("looks up the forms and this viewer's submissions once for all linked banners", async () => {
+    db.banner.findMany.mockResolvedValue([linked({ id: "a" }), linked({ id: "b" }), linked({ id: "c", untilFormId: "f2" })]);
+    db.form.findMany.mockResolvedValue([form(), form({ id: "f2" })]);
+    await activeBannersFor("u1", roles(), NOW);
+    expect(db.form.findMany).toHaveBeenCalledTimes(1);
+    expect(db.form.findMany.mock.calls[0][0].where).toEqual({ id: { in: ["f1", "f2"] } });
+    expect(db.formSubmission.findMany).toHaveBeenCalledWith({
+      where: { userId: "u1", formId: { in: ["f1", "f2"] } },
+      select: { formId: true },
+      distinct: ["formId"],
+    });
+  });
+
+  it("does not look up a form for a banner the viewer would not see anyway", async () => {
+    db.banner.findMany.mockResolvedValue([linked({ roles: ["isCore"] })]);
+    await activeBannersFor("u1", roles(), NOW);
+    expect(db.form.findMany).not.toHaveBeenCalled();
+  });
+
+  it("hides the banner once the viewer has filled the form", async () => {
+    db.banner.findMany.mockResolvedValue([linked()]);
+    db.form.findMany.mockResolvedValue([form()]);
+    db.formSubmission.findMany.mockResolvedValue([{ formId: "f1" }]);
+    expect(await activeBannersFor("u1", roles(), NOW)).toEqual([]);
+  });
+
+  it.each([
+    ["missing", []],
+    ["unpublished", [{ published: false }]],
+    ["archived", [{ archivedAt: new Date("2026-10-01T00:00:00Z") }]],
+    ["without a link token", [{ publicToken: null }]],
+  ])("hides the banner when the form is %s", async (_n, overs) => {
+    db.banner.findMany.mockResolvedValue([linked()]);
+    db.form.findMany.mockResolvedValue(overs.map((o) => form(o)));
+    expect(await activeBannersFor("u1", roles(), NOW)).toEqual([]);
+  });
+
+  it("opens the form and labels the button when the author left both empty", async () => {
+    db.banner.findMany.mockResolvedValue([linked()]);
+    db.form.findMany.mockResolvedValue([form()]);
+    const [out] = await activeBannersFor("u1", roles(), NOW);
+    expect(out).toMatchObject({ untilFormId: "f1", ctaUrl: "/forms/fill/tok", ctaLabel: "Fill out the form" });
+  });
+
+  it("keeps a link and label the author set", async () => {
+    db.banner.findMany.mockResolvedValue([linked({ ctaUrl: "/help", ctaLabel: "Read first" })]);
+    db.form.findMany.mockResolvedValue([form()]);
+    const [out] = await activeBannersFor("u1", roles(), NOW);
+    expect(out).toMatchObject({ ctaUrl: "/help", ctaLabel: "Read first" });
+  });
+
+  it("fills in only the missing half", async () => {
+    db.banner.findMany.mockResolvedValue([linked({ ctaLabel: "Start" })]);
+    db.form.findMany.mockResolvedValue([form()]);
+    const [out] = await activeBannersFor("u1", roles(), NOW);
+    expect(out).toMatchObject({ ctaUrl: "/forms/fill/tok", ctaLabel: "Start" });
+  });
+});
+
+describe("untilFormError", () => {
+  const input = (over: Partial<BannerInput> = {}) =>
+    ({ published: true, untilFormId: "f1", ...over }) as BannerInput;
+
+  it("passes drafts, unlinked banners and a good form", async () => {
+    expect(await untilFormError(input({ published: false }))).toBeNull();
+    expect(await untilFormError(input({ untilFormId: null }))).toBeNull();
+    expect(db.form.findUnique).not.toHaveBeenCalled();
+    db.form.findUnique.mockResolvedValue({ published: true, archivedAt: null });
+    expect(await untilFormError(input())).toBeNull();
+    expect(formUsages).toHaveBeenCalledWith("f1");
+  });
+
+  it.each([
+    ["missing", null],
+    ["unpublished", { published: false, archivedAt: null }],
+    ["archived", { published: true, archivedAt: new Date() }],
+  ])("rejects a form that is %s", async (_n, formRow) => {
+    db.form.findUnique.mockResolvedValue(formRow);
+    expect(await untilFormError(input())).toBe("Pick a published form");
+  });
+
+  it("rejects a form another feature manages", async () => {
+    db.form.findUnique.mockResolvedValue({ published: true, archivedAt: null });
+    vi.mocked(managingUsage).mockReturnValue({ kind: "staffing", label: "x" });
+    expect(await untilFormError(input())).toBe("That form is managed by another feature and can't be linked");
   });
 });
 
@@ -153,6 +272,7 @@ describe("createBanner", () => {
     allowSnooze: true,
     startsAt: "2026-10-26T13:00:00.000Z",
     endsAt: "2026-11-02T21:00:00.000Z",
+    untilFormId: null,
     published: false,
   };
 
@@ -172,6 +292,13 @@ describe("createBanner", () => {
     });
     expect(data.startsAt).toEqual(new Date("2026-10-26T13:00:00.000Z"));
   });
+
+  it("stores the linked form and never the derived button values", async () => {
+    db.banner.create.mockResolvedValue({ id: "bn9" });
+    await createBanner({ ...input, untilFormId: "f1" }, "core1");
+    const data = db.banner.create.mock.calls[0][0].data;
+    expect(data).toMatchObject({ untilFormId: "f1", ctaUrl: "", ctaLabel: "" });
+  });
 });
 
 describe("listBanners", () => {
@@ -183,5 +310,16 @@ describe("listBanners", () => {
       ["a", { views: 12, clicks: 3, snoozes: 0 }],
       ["b", { views: 0, clicks: 0, snoozes: 0 }],
     ]);
+  });
+
+  it("names the form a banner is linked to, beside the banner", async () => {
+    db.banner.findMany.mockResolvedValue([
+      row({ id: "a", untilFormId: "f1", untilForm: { name: "Intake" } }),
+      row({ id: "b", untilForm: null }),
+    ]);
+    db.bannerImpression.groupBy.mockResolvedValue([]);
+    const out = await listBanners();
+    expect(out.map((b) => [b.id, b.untilFormName])).toEqual([["a", "Intake"], ["b", null]]);
+    expect(out[0]).toHaveProperty("untilFormId", "f1");
   });
 });

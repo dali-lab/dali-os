@@ -3,7 +3,9 @@ import { fullName } from "~/lib/display";
 import { isUserInAnyGroup } from "~/lib/groups.server";
 import type { UserRoles } from "~/lib/roles";
 import { labToday } from "~/core/lib/listserv";
+import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import {
+  FORM_CTA_LABEL,
   shouldShow,
   type BannerFrequency,
   type BannerInput,
@@ -34,6 +36,7 @@ export type BannerDTO = {
   startsAt: string;
   endsAt: string;
   published: boolean;
+  untilFormId: string | null;
   author: string;
 };
 
@@ -63,6 +66,7 @@ function toDTO(b: BannerRow, author: string): BannerDTO {
     startsAt: b.startsAt.toISOString(),
     endsAt: b.endsAt.toISOString(),
     published: b.published,
+    untilFormId: b.untilFormId,
     author,
   };
 }
@@ -75,9 +79,14 @@ async function authorNames(ids: string[]): Promise<Map<string, string>> {
   return new Map(users.map((u) => [u.id, fullName(u) || "Core"]));
 }
 
-export async function listBanners(): Promise<(BannerDTO & { stats: BannerStats })[]> {
+export async function listBanners(): Promise<
+  (BannerDTO & { stats: BannerStats; untilFormName: string | null })[]
+> {
   const [rows, totals] = await Promise.all([
-    prisma.banner.findMany({ orderBy: [{ startsAt: "desc" }] }),
+    prisma.banner.findMany({
+      orderBy: [{ startsAt: "desc" }],
+      include: { untilForm: { select: { name: true } } },
+    }),
     prisma.bannerImpression.groupBy({
       by: ["bannerId"],
       _sum: { views: true, clicks: true, snoozes: true },
@@ -93,6 +102,7 @@ export async function listBanners(): Promise<(BannerDTO & { stats: BannerStats }
   return rows.map((r) => ({
     ...toDTO(r, names.get(r.createdById) ?? "Core"),
     stats: statsById.get(r.id) ?? { views: 0, clicks: 0, snoozes: 0 },
+    untilFormName: r.untilForm?.name ?? null,
   }));
 }
 
@@ -115,6 +125,19 @@ function inputData(input: BannerInput) {
     startsAt: new Date(input.startsAt),
     endsAt: new Date(input.endsAt),
   };
+}
+
+export async function untilFormError(input: BannerInput): Promise<string | null> {
+  if (!input.published || !input.untilFormId) return null;
+  const form = await prisma.form.findUnique({
+    where: { id: input.untilFormId },
+    select: { published: true, archivedAt: true },
+  });
+  if (!form || !form.published || form.archivedAt) return "Pick a published form";
+  if (managingUsage(await formUsages(input.untilFormId))) {
+    return "That form is managed by another feature and can't be linked";
+  }
+  return null;
 }
 
 export async function createBanner(input: BannerInput, actorId: string): Promise<string> {
@@ -162,7 +185,7 @@ export async function activeBannersFor(
   if (live.length === 0) return [];
   const today = labToday(now);
   const names = await authorNames(live.map((b) => b.createdById));
-  const out: BannerDTO[] = [];
+  const shown: typeof live = [];
   for (const b of live) {
     const seen = b.impressions[0];
     const ok = shouldShow(
@@ -176,9 +199,37 @@ export async function activeBannersFor(
         : null,
       today,
     );
-    if (ok && (await audienceIncludes(b, userId, roles))) {
-      out.push(toDTO(b, names.get(b.createdById) ?? "Core"));
+    if (ok && (await audienceIncludes(b, userId, roles))) shown.push(b);
+  }
+
+  const formIds = [...new Set(shown.flatMap((b) => (b.untilFormId ? [b.untilFormId] : [])))];
+  const [forms, submitted] = formIds.length
+    ? await Promise.all([
+        prisma.form.findMany({
+          where: { id: { in: formIds } },
+          select: { id: true, name: true, published: true, archivedAt: true, publicToken: true },
+        }),
+        prisma.formSubmission.findMany({
+          where: { userId, formId: { in: formIds } },
+          select: { formId: true },
+          distinct: ["formId"],
+        }),
+      ])
+    : [[], []];
+  const formsById = new Map(forms.map((f) => [f.id, f]));
+  const filled = new Set(submitted.map((s) => s.formId));
+
+  const out: BannerDTO[] = [];
+  for (const b of shown) {
+    const dto = toDTO(b, names.get(b.createdById) ?? "Core");
+    if (b.untilFormId) {
+      const form = formsById.get(b.untilFormId);
+      if (filled.has(b.untilFormId)) continue;
+      if (!form || !form.published || form.archivedAt || !form.publicToken) continue;
+      dto.ctaUrl = dto.ctaUrl || `/forms/fill/${form.publicToken}`;
+      dto.ctaLabel = dto.ctaLabel || FORM_CTA_LABEL;
     }
+    out.push(dto);
   }
   return out;
 }

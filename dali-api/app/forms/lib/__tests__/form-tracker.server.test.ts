@@ -48,6 +48,7 @@ beforeEach(() => {
   db.groupDefinition.findMany.mockResolvedValue([{ id: "g1", name: "Core" }]);
   vi.mocked(resolveGroupMembers).mockResolvedValue(["ada", "bo", "cy"]);
   db.notification.findMany.mockResolvedValue([]);
+  db.bannerImpression.findMany.mockResolvedValue([]);
   db.formSubmission.findMany.mockResolvedValue([]);
   db.user.findMany.mockResolvedValue([]);
 });
@@ -62,6 +63,23 @@ describe("computeFormTracker", () => {
     const tracked = await computeFormTracker("f1");
     expect(tracked!.people.map((p) => p.userId).sort()).toEqual(["ada", "bo", "cy", "di"]);
     expect(await loadTrackerCounts("f1")).toEqual({ expected: 4, responded: 1 });
+  });
+
+  it("counts people who saw a live banner linked to the form, and checks their submissions", async () => {
+    vi.mocked(resolveGroupMembers).mockResolvedValue([]);
+    db.groupDefinition.findMany.mockResolvedValue([]);
+    db.bannerImpression.findMany.mockResolvedValue([{ userId: "ed" }, { userId: "fay" }]);
+    db.formSubmission.findMany.mockResolvedValue([{ userId: "fay" }]);
+    const tracked = await computeFormTracker("f1");
+    expect(db.bannerImpression.findMany).toHaveBeenCalledWith({
+      where: { views: { gt: 0 }, banner: { untilFormId: "f1", published: true } },
+      select: { userId: true },
+    });
+    expect(tracked!.people.map((p) => [p.userId, p.sources, p.responded])).toEqual([
+      ["ed", ["Banner"], false],
+      ["fay", ["Banner"], true],
+    ]);
+    expect(db.formSubmission.findMany.mock.calls[0][0].where.userId.in).toEqual(["ed", "fay"]);
   });
 
   it("queries to-dos only, so a reminder never adds anyone", async () => {

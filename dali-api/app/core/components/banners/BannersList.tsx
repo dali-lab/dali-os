@@ -19,7 +19,7 @@ import {
 } from "~/core/lib/banners";
 import type { BannerDTO, BannerStats } from "~/core/lib/banners.server";
 
-type Row = BannerDTO & { stats: BannerStats };
+type Row = BannerDTO & { stats: BannerStats; untilFormName: string | null };
 const FILTERS = ["all", "draft", "scheduled", "live", "ended"] as const satisfies readonly ("all" | BannerStatus)[];
 type Filter = (typeof FILTERS)[number];
 
@@ -92,7 +92,8 @@ export function BannersList({
                 </span>
                 <span className="mt-0.5 block truncate text-xs text-os-muted">
                   {b.trigger === "AppOpen" ? "On opening DALI OS" : `On visiting ${pageLabel(b.triggerPath)}`} ·{" "}
-                  {FREQUENCY_LABEL[b.frequency]} · by {b.author}
+                  {FREQUENCY_LABEL[b.frequency]}
+                  {b.untilFormName ? ` · until they fill ${b.untilFormName}` : ""} · by {b.author}
                 </span>
               </span>
               <span className="hidden w-48 shrink-0 grid-cols-3 gap-3 text-right lg:grid">

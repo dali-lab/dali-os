@@ -38,7 +38,7 @@ type TrackerForm = {
 type Tracked = { form: TrackerForm; people: TrackerPerson[] };
 
 /** Everyone expected to respond, from the form's groups and its to-do
- *  announcements, across all versions. Null when nobody is expected or the
+ *  announcements and banners, across all versions. Null when nobody is expected or the
  *  form belongs to another feature. */
 export async function computeFormTracker(formId: string): Promise<Tracked | null> {
   const form = await prisma.form.findUnique({ where: { id: formId }, select: FORM_SELECT });
@@ -46,7 +46,7 @@ export async function computeFormTracker(formId: string): Promise<Tracked | null
   if (managingUsage(await formUsages(formId))) return null;
 
   const groupIds = form.audience === "Groups" ? form.audienceGroupIds : [];
-  const [groupRows, todos] = await Promise.all([
+  const [groupRows, todos, bannerImpressions] = await Promise.all([
     groupIds.length
       ? prisma.groupDefinition.findMany({
           where: { id: { in: groupIds } },
@@ -57,7 +57,12 @@ export async function computeFormTracker(formId: string): Promise<Tracked | null
       where: { formId, isTodo: true },
       select: { recipientUserId: true, readAt: true },
     }),
+    prisma.bannerImpression.findMany({
+      where: { views: { gt: 0 }, banner: { untilFormId: formId, published: true } },
+      select: { userId: true },
+    }),
   ]);
+  const bannerViewerIds = bannerImpressions.map((i) => i.userId);
   const groups = await Promise.all(
     groupRows.map(async (g) => ({ name: g.name, memberIds: await resolveGroupMembers(g.id) })),
   );
@@ -66,6 +71,7 @@ export async function computeFormTracker(formId: string): Promise<Tracked | null
   const expectedIds = new Set([
     ...groups.flatMap((g) => g.memberIds),
     ...todoRows.map((t) => t.userId),
+    ...bannerViewerIds,
   ]);
   if (expectedIds.size === 0) return null;
 
@@ -77,6 +83,7 @@ export async function computeFormTracker(formId: string): Promise<Tracked | null
   const people = buildTrackerPeople({
     groups,
     todos: todoRows,
+    bannerViewerIds,
     respondedIds: new Set(submissions.flatMap((s) => (s.userId ? [s.userId] : []))),
   });
   return { form, people };

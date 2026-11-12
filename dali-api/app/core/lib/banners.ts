@@ -56,8 +56,20 @@ export const FREQUENCY_LABEL: Record<BannerFrequency, string> = {
 export const FREQUENCY_HELP: Record<BannerFrequency, string> = {
   EveryOpen: "Shows every time until they hide it for the day or the banner ends.",
   Daily: "Shows the first time they see it each day.",
-  Once: "Shows a single time per person, then never again.",
+  Once: "Shows a single time per person, then never again. Not available for a banner linked to a form.",
 };
+
+export const UNTIL_FORM_HELP =
+  "The banner keeps showing for each person until they fill the form, then stops for them. Their other settings still apply.";
+
+export const FORM_AUDIENCE_LABEL: Record<string, string> = {
+  Members: "Lab members",
+  SignedIn: "Anyone signed in",
+  Groups: "Specific groups",
+  Public: "Public",
+};
+
+export const FORM_CTA_LABEL = "Fill out the form";
 
 export const STATUS_LABEL: Record<BannerStatus, string> = {
   live: "Live",
@@ -126,6 +138,7 @@ export const BannerInputSchema = z
     allowSnooze: z.boolean(),
     startsAt: z.string().datetime(),
     endsAt: z.string().datetime(),
+    untilFormId: z.string().min(1).nullable(),
     published: z.boolean(),
   })
   .strict();
@@ -140,9 +153,10 @@ export function validateForPublish(b: BannerInput): BannerErrors {
     b.kind === "Video" ? Boolean(b.videoUrl) : b.kind !== "Text" && Boolean(b.mediaUrl);
   if (!hasMedia && !b.headline) e.content = b.kind === "Text" ? "Add a headline" : "Add media or a headline";
   else if ([b.mediaUrl, b.videoUrl].some((u) => u && !isSafeMediaUrl(u))) e.content = "Media links must start with https://";
-  else if (b.ctaLabel && !CTA_URL.test(b.ctaUrl)) e.content = "Button link must start with / or https://";
+  else if (b.ctaLabel && !(b.untilFormId && !b.ctaUrl) && !CTA_URL.test(b.ctaUrl)) e.content = "Button link must start with / or https://";
   if (!b.everyone && b.roles.length === 0 && b.groupIds.length === 0) e.audience = "Pick an audience";
   if (new Date(b.endsAt) <= new Date(b.startsAt)) e.schedule = "End must be after start";
+  if (b.frequency === "Once" && b.untilFormId) e.trigger = "A banner linked to a form can't show only once";
   if (b.trigger === "Page" && !BANNER_PAGES.some((p) => p.path === b.triggerPath)) e.trigger = "Pick a page";
   return e;
 }

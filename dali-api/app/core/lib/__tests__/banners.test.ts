@@ -6,6 +6,7 @@ import {
   shouldShow,
   snoozeOffered,
   validateForPublish,
+  BannerInputSchema,
   type BannerInput,
 } from "~/core/lib/banners";
 
@@ -97,6 +98,7 @@ describe("validateForPublish", () => {
     allowSnooze: true,
     startsAt: "2026-10-26T13:00:00.000Z",
     endsAt: "2026-11-02T21:00:00.000Z",
+    untilFormId: null,
     published: true,
   };
 
@@ -130,5 +132,52 @@ describe("validateForPublish", () => {
     expect(validateForPublish({ ...base, endsAt: base.startsAt }).schedule).toBe("End must be after start");
     expect(validateForPublish({ ...base, trigger: "Page", triggerPath: "/admin" }).trigger).toBe("Pick a page");
     expect(validateForPublish({ ...base, trigger: "Page", triggerPath: "/calendar" }).trigger).toBeUndefined();
+  });
+
+  it("rejects Once for a banner linked to a form", () => {
+    expect(validateForPublish({ ...base, frequency: "Once", untilFormId: "f1" }).trigger).toBe(
+      "A banner linked to a form can't show only once",
+    );
+    expect(validateForPublish({ ...base, frequency: "Once" }).trigger).toBeUndefined();
+    expect(validateForPublish({ ...base, frequency: "Daily", untilFormId: "f1" }).trigger).toBeUndefined();
+  });
+
+  it("allows a button label without a link only when a form is linked", () => {
+    expect(validateForPublish({ ...base, ctaLabel: "Go" }).content).toBe("Button link must start with / or https://");
+    expect(validateForPublish({ ...base, ctaLabel: "Go", untilFormId: "f1" }).content).toBeUndefined();
+    expect(validateForPublish({ ...base, ctaLabel: "Go", ctaUrl: "http://x", untilFormId: "f1" }).content).toBe(
+      "Button link must start with / or https://",
+    );
+  });
+});
+
+describe("BannerInputSchema untilFormId", () => {
+  const input = {
+    name: "",
+    kind: "Image",
+    mediaUrl: null,
+    videoUrl: null,
+    headline: "Hi",
+    body: "",
+    ctaLabel: "",
+    ctaUrl: "",
+    tone: "Accent",
+    everyone: true,
+    roles: [],
+    groupIds: [],
+    trigger: "AppOpen",
+    triggerPath: null,
+    frequency: "EveryOpen",
+    allowSnooze: true,
+    startsAt: "2026-10-26T13:00:00.000Z",
+    endsAt: "2026-11-02T21:00:00.000Z",
+    published: false,
+  };
+
+  it("accepts null or an id and rejects an empty string or a missing field", () => {
+    expect(BannerInputSchema.safeParse({ ...input, untilFormId: null }).success).toBe(true);
+    expect(BannerInputSchema.safeParse({ ...input, untilFormId: "f1" }).success).toBe(true);
+    expect(BannerInputSchema.safeParse({ ...input, untilFormId: "" }).success).toBe(false);
+    expect(BannerInputSchema.safeParse(input).success).toBe(false);
   });
 });

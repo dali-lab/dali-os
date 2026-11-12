@@ -21,6 +21,7 @@ beforeEach(() => {
     "cycleDomainForm",
     "educationOffering",
     "educationFormBinding",
+    "banner",
   ]) {
     mockPrisma[delegate].findMany?.mockResolvedValue([]);
     mockPrisma[delegate].findFirst?.mockResolvedValue(null);
