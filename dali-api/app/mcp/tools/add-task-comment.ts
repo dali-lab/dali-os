@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
+import { addTaskComment } from "~/projects/lib/task-comments.server";
 
 export const ADD_TASK_COMMENT_TOOL = {
   name: "add_task_comment",
@@ -51,15 +51,7 @@ export async function runAddTaskComment(callerId: string, input: Input) {
     throw new AddTaskCommentError("Forbidden", 403);
   }
 
-  const comment = await prisma.taskComment.create({
-    data: { taskId: input.taskId, authorId: callerId, body },
-    select: { id: true, createdAt: true },
-  });
-
-  void notifyTaskComment({ taskId: input.taskId, authorId: callerId, body }).catch(
-    (err) =>
-      console.error(`mcp add_task_comment: notify failed for ${input.taskId}`, err),
-  );
+  const comment = await addTaskComment({ taskId: input.taskId, authorId: callerId, body });
 
   return {
     id: comment.id,

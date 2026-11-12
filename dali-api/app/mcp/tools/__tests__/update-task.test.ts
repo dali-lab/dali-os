@@ -74,7 +74,7 @@ describe("update_task", () => {
       const cb = fn as (tx: typeof prisma) => Promise<unknown>;
       return cb({
         task: { update: vi.fn() },
-        taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn() },
+        taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
       } as unknown as typeof prisma);
     });
     const out = await runUpdateTask("u1", { taskId: "t1", assigneeUserIds: [] });
@@ -115,7 +115,7 @@ describe("update_task", () => {
     await runUpdateTask("u1", { taskId: "t1", storyId: "s1", epicId: "e-ignored" });
     expect(update).toHaveBeenCalledWith({
       where: { id: "t1" },
-      data: { epicId: "e-A", storyId: "s1" },
+      data: { epicId: "e-A", storyId: "s1", activityAt: expect.any(Date) },
     });
   });
 
@@ -145,7 +145,7 @@ describe("update_task", () => {
     await runUpdateTask("u1", { taskId: "t1", epicId: "e-B" });
     expect(update).toHaveBeenCalledWith({
       where: { id: "t1" },
-      data: { epicId: "e-B", storyId: null },
+      data: { epicId: "e-B", storyId: null, activityAt: expect.any(Date) },
     });
   });
 
@@ -166,5 +166,23 @@ describe("update_task", () => {
     await expect(
       runUpdateTask("u1", { taskId: "t1", storyId: "s1" }),
     ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("bumps activityAt on every write, like the web board", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", projectId: "p1", githubIssueNumber: null, assignees: [] });
+    const update = vi.fn();
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) => {
+      const cb = fn as (tx: typeof prisma) => Promise<unknown>;
+      return cb({
+        task: { update },
+        taskAssignee: { deleteMany: vi.fn(), createMany: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
+      } as unknown as typeof prisma);
+    });
+    await runUpdateTask("u1", { taskId: "t1", title: "New" });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { title: "New", activityAt: expect.any(Date) },
+    });
   });
 });

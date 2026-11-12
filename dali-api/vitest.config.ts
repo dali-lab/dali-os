@@ -26,6 +26,7 @@ export default defineConfig({
         "app/mockData.ts",
         "app/types.ts",
         "app/types/**",
+        "app/test-utils/**",
       ],
     },
   },

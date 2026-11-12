@@ -10,6 +10,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
+import { deleteMentorshipPairs, upsertMentorshipPair } from "~/mentorship/lib/pairs.server";
 import type { McpCtx, McpTool } from "../../registry";
 import { McpForbiddenError, McpNotFoundError, requireForAction } from "../../registry";
 
@@ -69,6 +70,7 @@ export async function runManageMentorshipPair(
     domainId?: string;
     id?: string;
   },
+  ctx?: Pick<McpCtx, "request">,
 ): Promise<unknown> {
   // Both create and delete are Core-only.
   if (!(await isCore(callerId))) {
@@ -80,63 +82,31 @@ export async function runManageMentorshipPair(
     delete: ["id"],
   });
 
-  // ── create ──────────────────────────────────────────────────────────────────
   if (input.action === "create") {
-    // One mentor per mentee per (project, term, domain): reassign an existing
-    // pairing (collapsing any stray extras) instead of adding a second mentor.
-    const existing = await prisma.mentorshipPair.findMany({
-      where: {
-        menteeUserId: input.menteeUserId!,
-        projectId: input.projectId!,
-        termId: input.termId!,
-        domainId: input.domainId!,
-      },
-      select: { id: true },
+    const { id, created } = await upsertMentorshipPair({
+      menteeUserId: input.menteeUserId!,
+      mentorUserId: input.mentorUserId!,
+      projectId: input.projectId!,
+      termId: input.termId!,
+      domainId: input.domainId!,
+      actorId: callerId,
+      request: ctx?.request,
     });
-    if (existing.length > 0) {
-      const [keep, ...extra] = existing;
-      if (extra.length > 0) {
-        await prisma.mentorshipPair.deleteMany({
-          where: { id: { in: extra.map((e) => e.id) } },
-        });
-      }
-      const updated = await prisma.mentorshipPair.update({
-        where: { id: keep.id },
-        data: { mentorUserId: input.mentorUserId!, manual: true },
-        select: { id: true },
-      });
-      return { id: updated.id, created: false };
-    }
-
-    const created = await prisma.mentorshipPair.create({
-      data: {
-        menteeUserId: input.menteeUserId!,
-        mentorUserId: input.mentorUserId!,
-        projectId: input.projectId!,
-        termId: input.termId!,
-        domainId: input.domainId!,
-        // Hand-created via MCP — mark manual so it survives a staffing
-        // re-finalize (mirrors api.mentorship.pairs.ts).
-        manual: true,
-      },
-      select: { id: true },
-    });
-    return { id: created.id, created: true };
+    return { id, created };
   }
 
-  // ── delete ───────────────────────────────────────────────────────────────────
   const pair = await prisma.mentorshipPair.findUnique({
     where: { id: input.id! },
     select: { id: true },
   });
   if (!pair) throw new McpNotFoundError(`Mentorship pair ${input.id} not found`);
 
-  await prisma.mentorshipPair.delete({ where: { id: pair.id } });
+  await deleteMentorshipPairs({ ids: [pair.id], actorId: callerId, request: ctx?.request });
   return { ok: true };
 }
 
 export const MANAGE_MENTORSHIP_PAIR: McpTool = {
   def: MANAGE_MENTORSHIP_PAIR_TOOL,
   run: (ctx: McpCtx, args) =>
-    runManageMentorshipPair(ctx.user.id, args as Parameters<typeof runManageMentorshipPair>[1]),
+    runManageMentorshipPair(ctx.user.id, args as Parameters<typeof runManageMentorshipPair>[1], ctx),
 };

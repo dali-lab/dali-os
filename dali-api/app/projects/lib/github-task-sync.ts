@@ -385,3 +385,18 @@ async function postMissingAssigneesComment(
     );
   }
 }
+
+export async function unlinkTaskFromGithub(
+  taskId: string,
+): Promise<{ noop: true } | { noop: false; previousRepo: string | null; previousIssueNumber: number }> {
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { githubIssueNumber: true, githubRepo: true },
+  });
+  if (!task || task.githubIssueNumber === null) return { noop: true };
+  await prisma.task.update({
+    where: { id: taskId },
+    data: { githubRepo: null, githubIssueNumber: null, githubIssueUrl: null, activityAt: new Date() },
+  });
+  return { noop: false, previousRepo: task.githubRepo, previousIssueNumber: task.githubIssueNumber };
+}
