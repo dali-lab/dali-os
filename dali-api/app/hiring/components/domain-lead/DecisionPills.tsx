@@ -2,7 +2,7 @@ import { cn } from "~/lib/cn";
 import { type DecisionPill, type PrePipelinePill } from "~/hiring/lib/decision-pills";
 import { DECISION_LABELS, DECISION_TONES } from "~/hiring/lib/labels";
 import { Tooltip } from "~/components/ui/floating";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 
 // Stage treatment composes on top of the `border border-current/40` the badge
 // always applies. Draft reads as "tentative" (faded + dashed, same hue);

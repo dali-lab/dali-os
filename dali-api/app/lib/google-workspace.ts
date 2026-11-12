@@ -1,5 +1,6 @@
 import { JWT } from "google-auth-library";
 import { retry } from "./retry";
+import { getEnv } from "~/lib/env.server";
 
 // Google Workspace account provisioning via the Admin SDK Directory API. Used
 // to create a member's @dali.dartmouth.edu account when they're accepted.
@@ -26,7 +27,7 @@ const SCOPES = [
 ];
 
 export const WORKSPACE_DOMAIN =
-  process.env.GOOGLE_WORKSPACE_DOMAIN ?? "dali.dartmouth.edu";
+  getEnv().GOOGLE_WORKSPACE_DOMAIN ?? "dali.dartmouth.edu";
 
 export type WorkspaceResult =
   | { status: "ok"; email: string; created: boolean; tempPassword?: string }
@@ -36,9 +37,9 @@ export type WorkspaceResult =
 // Whether the Workspace integration is configured. Cheap; no network.
 export function workspaceConfigured(): boolean {
   return !!(
-    process.env.GOOGLE_WORKSPACE_SA_EMAIL &&
-    process.env.GOOGLE_WORKSPACE_SA_PRIVATE_KEY &&
-    process.env.GOOGLE_WORKSPACE_ADMIN_EMAIL
+    getEnv().GOOGLE_WORKSPACE_SA_EMAIL &&
+    getEnv().GOOGLE_WORKSPACE_SA_PRIVATE_KEY &&
+    getEnv().GOOGLE_WORKSPACE_ADMIN_EMAIL
   );
 }
 
@@ -84,13 +85,13 @@ function tempPassword(): string {
 
 async function getAccessToken(): Promise<string> {
   // SA private key often arrives with escaped newlines from env; restore them.
-  const key = process.env.GOOGLE_WORKSPACE_SA_PRIVATE_KEY!.replace(/\\n/g, "\n");
+  const key = getEnv().GOOGLE_WORKSPACE_SA_PRIVATE_KEY!.replace(/\\n/g, "\n");
   const jwt = new JWT({
-    email: process.env.GOOGLE_WORKSPACE_SA_EMAIL!,
+    email: getEnv().GOOGLE_WORKSPACE_SA_EMAIL!,
     key,
     scopes: SCOPES,
     // Domain-wide delegation: act as this Workspace admin.
-    subject: process.env.GOOGLE_WORKSPACE_ADMIN_EMAIL!,
+    subject: getEnv().GOOGLE_WORKSPACE_ADMIN_EMAIL!,
   });
   const { access_token } = await jwt.authorize();
   if (!access_token) throw new Error("No access token from service account.");

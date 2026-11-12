@@ -32,6 +32,12 @@ describe("Pill", () => {
     expect(sm).toContain("extra");
   });
 
+  it("xs keeps the 10px infra badge look and stays tinted", () => {
+    const xs = renderToStaticMarkup(<Pill size="xs" tone="success">x</Pill>);
+    expect(xs).toContain("px-1.5 py-0.5 text-[10px]");
+    expect(xs).toContain("bg-os-green/15");
+  });
+
   it("keeps a tinted tone tinted at size sm", () => {
     expect(renderToStaticMarkup(<Pill size="sm" tone="success">x</Pill>)).toContain("bg-os-green/15");
   });

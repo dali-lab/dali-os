@@ -32,6 +32,13 @@ const AUTH = { ok: true, user: { sub: "u1" } };
 const ROLES = { isCore: false, canViewForms: true };
 const request = new Request("http://localhost/drive");
 const run = () => loader({ request } as never);
+const thrown = (p: Promise<unknown>) =>
+  p.then(
+    () => {
+      throw new Error("did not throw");
+    },
+    (e) => e as Response,
+  );
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -61,14 +68,14 @@ describe("drive hub loader", () => {
 
   it("redirects an anonymous visitor, a non-member and a partner before reading anything else", async () => {
     vi.mocked(requireAuth).mockResolvedValue({ ok: false } as never);
-    expect((await run()) as Response).toBeInstanceOf(Response);
+    expect(await thrown(run())).toBeInstanceOf(Response);
     vi.mocked(requireAuth).mockResolvedValue(AUTH as never);
     vi.mocked(isNonMember).mockResolvedValue(true);
-    expect(((await run()) as Response).headers.get("Location")).toBe("/portal");
+    expect((await thrown(run())).headers.get("Location")).toBe("/portal");
     vi.mocked(isNonMember).mockResolvedValue(false);
     const partner = new Response(null, { status: 302 });
     vi.mocked(redirectPartnerToPortal).mockResolvedValue(partner as never);
-    expect(await run()).toBe(partner);
+    expect(await thrown(run())).toBe(partner);
 
     expect(getUserRoles).not.toHaveBeenCalled();
     expect(loadDriveScopes).not.toHaveBeenCalled();

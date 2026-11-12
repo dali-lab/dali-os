@@ -1,13 +1,3 @@
-import { type ProjectStatus } from "~/projects/lib/project-lifecycle";
-
-// The status plate's colours, shared by the read-only StatusBadge and the
-// hero's editable status dropdown so a project's status reads the same whether
-// or not you can change it.
-export const STATUS_PILL_OS: Record<ProjectStatus, string> = {
-  Active: "bg-os-bg/85 text-os-green border-os-green/35",
-  Paused: "bg-os-bg/85 text-os-amber border-os-amber/35",
-  Archived: "bg-os-bg/85 text-os-grey border-os-grey/35",
-};
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
 // content views. Board and Planning are separate tabs (Linear-style: different

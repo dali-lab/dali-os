@@ -6,7 +6,7 @@ import { useToast } from "~/components/ui/toast";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
-import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, type PillTone } from "~/components/ui/Pill";
 import { ReviewModal } from "~/hiring/components/domain-lead/ReviewModal";
 
 export function ReviewerAssignmentCell({ domainApplicationId, reviews, cycleReviewers, editable = true, rubricCriteria = [] }: {

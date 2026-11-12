@@ -34,9 +34,6 @@ export function SetupCard({
   );
 }
 
-// Kept for the two route files other PRs are splitting; import Pill from ~/components/ui/Pill.
-export { Pill, type PillTone } from "~/components/ui/Pill";
-
 /** A select sitting in a row with h-9 DateFields/buttons (see TermDatesCard):
  *  the trigger's padding is swapped for the row height, since cn() doesn't
  *  merge conflicting utilities. */

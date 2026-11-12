@@ -1,6 +1,4 @@
-import { redirect } from "react-router";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer, labMemberOrCore } from "~/lib/lab-viewer.server";
 import { getUserRoles, isCore, isLabMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
@@ -19,27 +17,16 @@ export async function resourcesAccess(
   return core || labMember ? { core } : null;
 }
 
-// The gate every /resources loader and action runs. Throws the redirect or 404
-// itself: the child routes load in parallel with the layout, so each must
-// enforce it rather than lean on the parent.
+// Child routes load in parallel with the layout, so each loader and action runs this itself.
 export async function requireResourcesViewer(request: Request) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) throw redirectToLogin(request);
-  if (await isNonMember(auth, request)) throw redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) throw partnerRedirect;
-
-  const access = await resourcesAccess(auth.user.sub, request);
-  // 404 (not redirect) so a disabled feature isn't reachable by URL and its
-  // existence isn't leaked.
-  if (!access) throw new Response("Not found", { status: 404 });
-  const { core } = access;
+  const { user, roles } = await requireLabViewer(request, {
+    flag: "community",
+    allow: labMemberOrCore,
+  });
 
   return {
-    user: auth.user,
-    core,
-    userName:
-      [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") ||
-      auth.user.email,
+    user,
+    core: roles.isCore,
+    userName: [user.firstName, user.lastName].filter(Boolean).join(" ") || user.email,
   };
 }

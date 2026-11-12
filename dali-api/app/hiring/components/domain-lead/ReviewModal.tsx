@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 
 export function ReviewModal({ review, rubricCriteria, onClose }: {
   review: any;

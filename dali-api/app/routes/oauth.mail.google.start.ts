@@ -14,6 +14,7 @@ import {
   parseConnectTarget,
   serializeConnectTarget,
 } from "~/email/lib/access.server";
+import { getEnv } from "~/lib/env.server";
 
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -26,7 +27,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const expected = await expectedConnectAddress(userId, target, request);
   if (expected === undefined) return new Response("Forbidden", { status: 403 });
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientId = getEnv().GOOGLE_CLIENT_ID;
   if (!clientId) return new Response("GOOGLE_CLIENT_ID not configured", { status: 500 });
 
   const state = randomBytes(16).toString("hex");
