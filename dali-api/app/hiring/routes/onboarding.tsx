@@ -469,7 +469,6 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
   const checked = pending != null ? pending === "true" : invited;
 
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
     <span onClick={(e) => e.stopPropagation()}>
       <Checkbox
         className="inline-flex cursor-pointer items-center gap-2 text-sm text-os-grey"
@@ -505,7 +504,6 @@ function StartTermCell({
   const options = eligibleStartTerms(candidates, row.cycleTermSortKey);
 
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
     <span onClick={(e) => e.stopPropagation()} className="inline-flex flex-col gap-0.5">
       <Select
         ariaLabel={`Start term for ${row.name}`}

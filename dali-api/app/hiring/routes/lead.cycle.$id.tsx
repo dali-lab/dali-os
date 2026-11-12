@@ -3351,7 +3351,6 @@ function DecisionEmailPreviewModal({ decision, email, slot, dates, onClose }: {
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Body</h3>
                 <div
                   className="mt-1 prose prose-sm dark:prose-invert max-w-none text-foreground"
-                  // eslint-disable-next-line react/no-danger
                   dangerouslySetInnerHTML={{ __html: rendered?.html ?? '' }}
                 />
               </div>

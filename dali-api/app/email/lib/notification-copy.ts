@@ -897,6 +897,11 @@ export const NOTIFICATION_SAMPLES: Record<TemplateVariableName, string> = {
   fee: "$5,000.00",
   fundingType: "DALI GL",
   projectTitle: "Gallery Kiosk",
+  answers: "Question: Answer",
+  submittedAt: "Tuesday, April 8 at 2:00 PM ET",
+  startTerm: "27W",
+  respondBy: "Monday, June 8, 2026",
+  formName: "Check-in form",
 };
 
 export function notificationSample(

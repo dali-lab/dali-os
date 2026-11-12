@@ -89,7 +89,7 @@ const CALLER: ToolCaller = {
 };
 
 const text = (t: string): Block => ({ type: "text", text: t });
-const use = (id: string, name: string, input: unknown = {}): Block => ({ type: "tool_use", id, name, input });
+const toolUse = (id: string, name: string, input: unknown = {}): Block => ({ type: "tool_use", id, name, input });
 
 async function ask(turns: Turn[], opts: { signal?: AbortSignal; provider?: "anthropic" | "dartmouth" } = {}) {
   const fake = fakeProvider(turns, opts.provider);
@@ -257,7 +257,7 @@ describe("runAsk", () => {
 
   it("looks something up, then answers citing what it read", async () => {
     const { events, calls } = await ask([
-      { blocks: [use("tu1", "read_page", { pageId: "p1" })], stop: "tool_use" },
+      { blocks: [toolUse("tu1", "read_page", { pageId: "p1" })], stop: "tool_use" },
       { blocks: [text("The launch is May 4 [s1].")], stop: "end_turn" },
     ]);
     expect(events.map((e) => e.type)).toEqual(["status", "sources", "text", "done"]);
@@ -268,7 +268,7 @@ describe("runAsk", () => {
       sources: [{ kind: "document", title: "Launch plan", url: "/documents/p1", ref: "s1", n: 1 }],
     });
     const second = calls[1].messages as { role: string; content: unknown }[];
-    expect(second[1]).toEqual({ role: "assistant", content: [use("tu1", "read_page", { pageId: "p1" })] });
+    expect(second[1]).toEqual({ role: "assistant", content: [toolUse("tu1", "read_page", { pageId: "p1" })] });
     expect(second[2].content).toEqual([
       expect.objectContaining({ type: "tool_result", tool_use_id: "tu1", is_error: false }),
     ]);
@@ -276,7 +276,7 @@ describe("runAsk", () => {
 
   it("retracts text the model wrote before deciding to look something up", async () => {
     const { events } = await ask([
-      { blocks: [text("Let me check."), use("tu1", "read_page")], stop: "tool_use" },
+      { blocks: [text("Let me check."), toolUse("tu1", "read_page")], stop: "tool_use" },
       { blocks: [text("May 4 [s1].")], stop: "end_turn" },
     ]);
     expect(events.slice(0, 2)).toEqual([{ type: "text", delta: "Let me check." }, { type: "retract" }]);
@@ -285,7 +285,7 @@ describe("runAsk", () => {
 
   it("runs every tool in a round and returns one result each", async () => {
     const { calls } = await ask([
-      { blocks: [use("a", "read_page"), use("b", "list_my_tasks")], stop: "tool_use" },
+      { blocks: [toolUse("a", "read_page"), toolUse("b", "list_my_tasks")], stop: "tool_use" },
       { blocks: [text("Done.")], stop: "end_turn" },
     ]);
     const results = (calls[1].messages as { content: { tool_use_id: string }[] }[])[2].content;
@@ -294,7 +294,7 @@ describe("runAsk", () => {
 
   it("drops a citation to a source no tool returned", async () => {
     const { events } = await ask([
-      { blocks: [use("tu1", "read_page")], stop: "tool_use" },
+      { blocks: [toolUse("tu1", "read_page")], stop: "tool_use" },
       { blocks: [text("May 4 [s1], per the board [s4].")], stop: "end_turn" },
     ]);
     expect(done(events).answer).toBe("May 4 [1], per the board.");
@@ -303,7 +303,7 @@ describe("runAsk", () => {
 
   it("tells the model the sixth lookup is its last and stops a seventh", async () => {
     const turns: Turn[] = Array.from({ length: ASK_MAX_TOOL_ROUNDS + 1 }, (_, i) => ({
-      blocks: [use(`t${i}`, "read_page")],
+      blocks: [toolUse(`t${i}`, "read_page")],
       stop: "tool_use",
     }));
     const { events, calls } = await ask(turns);
@@ -318,7 +318,7 @@ describe("runAsk", () => {
 
   it("goes straight to the answer once the token budget is spent", async () => {
     const { calls } = await ask([
-      { blocks: [use("t0", "read_page")], stop: "tool_use", usage: { input_tokens: ASK_INPUT_TOKEN_BUDGET, output_tokens: 5 } },
+      { blocks: [toolUse("t0", "read_page")], stop: "tool_use", usage: { input_tokens: ASK_INPUT_TOKEN_BUDGET, output_tokens: 5 } },
       { blocks: [text("May 4 [s1].")], stop: "end_turn" },
     ]);
     expect(calls).toHaveLength(2);
@@ -328,7 +328,7 @@ describe("runAsk", () => {
 
   it("adds up token usage across rounds", async () => {
     const { usage } = await ask([
-      { blocks: [use("t0", "read_page")], stop: "tool_use", usage: { input_tokens: 300, output_tokens: 20 } },
+      { blocks: [toolUse("t0", "read_page")], stop: "tool_use", usage: { input_tokens: 300, output_tokens: 20 } },
       { blocks: [text("Done.")], stop: "end_turn", usage: { input_tokens: 500, output_tokens: 40 } },
     ]);
     expect(usage).toEqual({ inputTokens: 800, outputTokens: 60 });
@@ -375,7 +375,7 @@ describe("runAsk", () => {
 
 describe("prompt caching", () => {
   const lookupThenAnswer = (): Turn[] => [
-    { blocks: [use("t0", "read_page")], stop: "tool_use" },
+    { blocks: [toolUse("t0", "read_page")], stop: "tool_use" },
     { blocks: [text("May 4 [s1].")], stop: "end_turn" },
   ];
 
@@ -408,7 +408,7 @@ describe("prompt caching", () => {
     const { usage } = await ask(
       [
         {
-          blocks: [use("t0", "read_page")],
+          blocks: [toolUse("t0", "read_page")],
           stop: "tool_use",
           usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 2000 },
         },
@@ -427,7 +427,7 @@ describe("prompt caching", () => {
     const { calls } = await ask(
       [
         {
-          blocks: [use("t0", "read_page")],
+          blocks: [toolUse("t0", "read_page")],
           stop: "tool_use",
           usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: ASK_INPUT_TOKEN_BUDGET },
         },
