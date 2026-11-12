@@ -38,7 +38,7 @@ function hasBannerText(banner: Pick<BannerView, "headline" | "body" | "ctaLabel"
 }
 
 export function bannerCardWidth(banner: BannerView) {
-  return banner.kind === "Poster" && banner.mediaUrl && !hasBannerText(banner) ? POSTER_CARD_WIDTH : BANNER_CARD_WIDTH;
+  return banner.kind === "Poster" ? POSTER_CARD_WIDTH : BANNER_CARD_WIDTH;
 }
 
 /** The banner's own content. `inert` keeps the editor preview from playing or navigating. */
@@ -59,7 +59,7 @@ export function BannerContent({
         <h2
           className={cn(
             "font-heading font-semibold leading-tight",
-            banner.kind === "Text" ? "text-4xl md:text-5xl" : "text-3xl",
+            banner.kind === "Text" ? "text-4xl md:text-5xl" : banner.kind === "Poster" ? "text-2xl" : "text-3xl",
             onTone ? "text-os-bg" : "text-foreground",
           )}
         >
@@ -109,17 +109,21 @@ export function BannerContent({
     return <div className={cn("px-8 py-12 md:px-14 md:py-16", TONE_SURFACE[banner.tone])}>{text}</div>;
   }
   if (banner.kind === "Poster") {
-    if (!text && banner.mediaUrl) {
-      return (
-        <div className="flex justify-center bg-os-well">
-          <img src={banner.mediaUrl} alt={banner.name} className="block h-auto max-h-[80vh] w-full object-contain" />
-        </div>
-      );
-    }
+    const maxHeight = text ? "max-h-[60vh]" : "max-h-[80vh]";
     return (
-      <div className="grid bg-os-card md:grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)]">
-        <div className="max-h-[70vh] bg-os-well">{media("aspect-[3/4]")}</div>
-        {text && <div className="flex flex-col justify-center p-8 md:p-10">{text}</div>}
+      <div className="bg-os-card">
+        {banner.mediaUrl ? (
+          <div className="flex justify-center bg-os-well">
+            <img
+              src={banner.mediaUrl}
+              alt={banner.headline || banner.name}
+              className={cn("block h-auto w-full object-contain", maxHeight)}
+            />
+          </div>
+        ) : (
+          media(cn("aspect-[3/4]", maxHeight))
+        )}
+        {text && <div className="p-6">{text}</div>}
       </div>
     );
   }
@@ -146,7 +150,7 @@ export function BannerContent({
   }
   return (
     <div className="bg-os-card">
-      <div className="max-h-[50vh] overflow-hidden">{media("aspect-[16/9]")}</div>
+      {media("aspect-[16/9]")}
       {text && <div className="p-8">{text}</div>}
     </div>
   );
