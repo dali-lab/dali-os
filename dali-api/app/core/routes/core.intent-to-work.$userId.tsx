@@ -3,7 +3,9 @@ import type { Route } from "./+types/core.intent-to-work.$userId";
 import { coreHandle } from "~/core/coreNav";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canViewStaffing, currentTerm } from "~/lib/roles";
+import { canViewStaffing, currentTerm, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { OPEN_PARAM } from "~/projects/lib/board-filters";
 import { prisma } from "~/lib/db.server";
 import { ensureStaffingCycle } from "~/projects/lib/staffing-cycle";
 import { getSlotBinding } from "~/projects/lib/form-slots";
@@ -33,6 +35,11 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) return portalRedirect;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
+  if (await isFeatureEnabled("form-response-views", auth.user.sub, await getUserRoles(auth.user.sub, request), request)) {
+    const query = new URL(request.url).searchParams;
+    query.set(OPEN_PARAM, params.userId);
+    return redirect(`/core/intent-to-work?${query}`);
+  }
 
   const { termId: filterTermId, isAll } = await resolveTermFilter(request);
   const fallbackTerm = await currentTerm();

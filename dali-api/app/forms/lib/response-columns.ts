@@ -87,7 +87,7 @@ export function applyResultColumnOp(
   op: ColumnOp,
   questions: readonly TableColumn[],
 ): ResultColumnEntry[] | null {
-  if (op.op === "role") return null;
+  if (op.op === "role" || op.op === "statusMap") return null;
   const entries = orderedEntries(config, questions);
   const i = entries.findIndex((e) => e.id === op.id);
   if (i < 0) {

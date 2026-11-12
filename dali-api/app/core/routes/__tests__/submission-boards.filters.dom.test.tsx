@@ -46,6 +46,12 @@ vi.mock("~/projects/lib/submission-view.server", () => ({
 vi.mock("~/projects/components/SlotAdvancedSettingsModal", () => ({
   SlotAdvancedSettingsModal: () => null,
 }));
+const flags = vi.hoisted(() => ({ responseTable: false }));
+vi.mock("~/components/FeatureFlags", () => ({ useFeatureFlag: () => flags.responseTable }));
+vi.mock("~/components/ui/toast", () => ({
+  useToast: () => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), info: vi.fn() }),
+}));
+vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn(), prompt: vi.fn() }) }));
 
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
@@ -150,6 +156,7 @@ async function pick(label: string, trigger = picker) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  flags.responseTable = false;
   vi.mocked(requireAuth).mockResolvedValue({
     ok: true,
     user: { sub: "u1" },
@@ -373,5 +380,72 @@ describe.each(BOARDS)("$name search and column filters in the URL", (board) => {
     expect(params.get("domain")).toBe("d-design");
     expect(params.getAll("f.status")).toEqual(["Yes"]);
     expect(ensureStaffingCycle).toHaveBeenLastCalledWith("t-26s", "26S");
+  });
+});
+
+describe.each(BOARDS)("$name with the response table", (board) => {
+  beforeEach(() => {
+    flags.responseTable = true;
+    vi.mocked(getSlotBinding).mockResolvedValue({ ...BINDING, gateAudience: "Members" } as never);
+    vi.mocked(buildSubmissionView).mockResolvedValue({
+      rows: [
+        {
+          ...row("ada", "Ada Example", ["d-design"], { "q:a": "Yes" }),
+          detailFields: [
+            { key: "q:a", label: "Coming back?", value: "Yes", source: "question", mapped: true },
+            { key: "builtin:termsInLab", label: "Terms in lab", value: "2 terms", source: "builtin", mapped: false },
+          ],
+        },
+      ],
+      tableColumns: [{ key: "q:a", label: "Coming back?", hidden: false, source: "question", role: "display", questionKey: "a" }],
+    } as never);
+  });
+
+  const settingsButton = () => document.querySelector(`button[aria-label='${board.name} settings']`);
+  const memberButton = () =>
+    Array.from(document.querySelectorAll<HTMLButtonElement>("tbody button")).find(
+      (b) => b.textContent === "Ada Example",
+    );
+
+  it("says which form it collects with in place of Advanced settings", async () => {
+    await mount(board);
+    expect(advancedSettings()).toBeUndefined();
+    expect(text()).toContain("Collecting with Staffing form");
+    expect(text()).toContain("Open");
+    expect(text()).toContain("Locks the app for returning members");
+    expect(settingsButton()).toBeTruthy();
+  });
+
+  it("gives viewers the line without the settings menu", async () => {
+    vi.mocked(canManageStaffing).mockResolvedValue(false);
+    await mount(board);
+    expect(text()).toContain("Collecting with Staffing form");
+    expect(settingsButton()).toBeNull();
+  });
+
+  it("shows no settings line for all terms", async () => {
+    await mount(board, `${board.path}?term=${ALL_TERMS}`);
+    expect(text()).not.toContain("Collecting with");
+  });
+
+  it("opens a member in the drawer and keeps it in the URL", async () => {
+    await mount(board);
+    await act(async () => memberButton()!.click());
+    expect(new URLSearchParams(search).get("open")).toBe("ada");
+    const drawer = document.querySelector("[role='dialog']")!;
+    expect(drawer.textContent).toContain("Coming back?");
+    expect(drawer.textContent).toContain("Terms in lab");
+    expect(drawer.textContent).toContain("Not in the table");
+  });
+
+  it("opens the drawer for the member in the URL", async () => {
+    await mount(board, `${board.path}?open=ada`);
+    expect(document.querySelector("[role='dialog']")?.textContent).toContain("Ada Example");
+  });
+
+  it("says to connect a form from the menu when none is connected", async () => {
+    vi.mocked(getSlotBinding).mockResolvedValue(null as never);
+    await mount(board);
+    expect(text()).toContain("Connect a form from the ⋯ menu above");
   });
 });

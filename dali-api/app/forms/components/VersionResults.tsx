@@ -17,6 +17,7 @@ import type { TrackerCounts } from "~/forms/lib/form-tracker";
 import { MultiSelect } from "~/components/ui/floating";
 import { ChevronDown } from "lucide-react";
 import { ResponseTable, type ColumnControls } from "~/forms/components/ResponseTable";
+import { ResponseDrawer } from "~/forms/components/ResponseDrawer";
 import {
   MEMBER_COLUMNS_PARAM,
   MEMBER_HISTORY_COLUMNS,
@@ -42,17 +43,34 @@ function formatTimestamp(iso: string): string {
   });
 }
 
+function responseSubtitle(response: ResponseRow): string {
+  return [
+    response.email,
+    formatTimestamp(response.createdAt),
+    response.edited && "Edited",
+    response.slot,
+    response.submitterIp && `IP ${response.submitterIp}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function PartnerApplicationLink({ response }: { response: ResponseRow }) {
+  if (!response.partnerApplication) return null;
+  return (
+    <Link
+      to={`/core/partners/applications/${response.partnerApplication.id}`}
+      className="mb-4 inline-block text-xs font-medium text-os-accent hover:underline"
+    >
+      Partner application: {response.partnerApplication.title} →
+    </Link>
+  );
+}
+
 function ResponseDetailBody({ response }: { response: ResponseRow }) {
   return (
     <div className="space-y-4">
-      {response.partnerApplication && (
-        <Link
-          to={`/core/partners/applications/${response.partnerApplication.id}`}
-          className="inline-block text-xs font-medium text-os-accent hover:underline"
-        >
-          Partner application: {response.partnerApplication.title} →
-        </Link>
-      )}
+      <PartnerApplicationLink response={response} />
       <dl className="flex flex-col gap-3">
         {response.rows.map((row) => (
           <div key={row.key}>
@@ -90,7 +108,7 @@ function ResponseDelete({ response }: { response: ResponseRow }) {
   const confirmSubmit = useConfirmSubmit();
   if (response.deleteBlocked) {
     return (
-      <p className="mt-6 text-xs text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         This response can't be deleted. {response.deleteBlocked}
       </p>
     );
@@ -99,7 +117,7 @@ function ResponseDelete({ response }: { response: ResponseRow }) {
   return (
     <fetcher.Form
       method="post"
-      className="mt-6 flex items-center gap-3"
+      className="flex items-center gap-3"
       onSubmit={confirmSubmit({
         title: `Delete this response from ${response.name}?`,
         description: [...response.deleteEffects, "This can't be undone."].join(" "),
@@ -383,33 +401,39 @@ export function VersionResults({
         </>
       )}
 
-      <Modal
-        open={selected !== null}
-        onClose={() => setOpenId(null)}
-        labelledBy="response-detail-title"
-        containerClassName={modalCardClass("max-w-2xl")}
-      >
-        {selected && (
-          <>
-            <ModalHeader
-              titleId="response-detail-title"
-              title={selected.name}
-              subtitle={[
-                selected.email,
-                formatTimestamp(selected.createdAt),
-                selected.edited && "Edited",
-                selected.slot,
-                selected.submitterIp && `IP ${selected.submitterIp}`,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-              onClose={() => setOpenId(null)}
-            />
-            <ResponseDetailBody response={selected} />
-            <ResponseDelete response={selected} />
-          </>
-        )}
-      </Modal>
+      {canAddColumns ? (
+        <ResponseDrawer
+          open={selected !== null}
+          onClose={() => setOpenId(null)}
+          title={selected?.name ?? ""}
+          subtitle={selected ? responseSubtitle(selected) : undefined}
+          fields={selected?.rows ?? []}
+          lead={selected && <PartnerApplicationLink response={selected} />}
+          footer={selected && <ResponseDelete response={selected} />}
+        />
+      ) : (
+        <Modal
+          open={selected !== null}
+          onClose={() => setOpenId(null)}
+          labelledBy="response-detail-title"
+          containerClassName={modalCardClass("max-w-2xl")}
+        >
+          {selected && (
+            <>
+              <ModalHeader
+                titleId="response-detail-title"
+                title={selected.name}
+                subtitle={responseSubtitle(selected)}
+                onClose={() => setOpenId(null)}
+              />
+              <ResponseDetailBody response={selected} />
+              <div className="mt-6">
+                <ResponseDelete response={selected} />
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }

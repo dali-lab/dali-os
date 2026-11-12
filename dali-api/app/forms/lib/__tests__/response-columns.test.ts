@@ -125,5 +125,6 @@ describe("applyResultColumnOp", () => {
     expect(applyResultColumnOp([], { op: "hide", id: "q9" }, QUESTIONS)).toBeNull();
     expect(applyResultColumnOp([], { op: "show", id: "member:salary" }, QUESTIONS)).toBeNull();
     expect(applyResultColumnOp([], { op: "role", id: "q1", role: "project", termId: null }, QUESTIONS)).toBeNull();
+    expect(applyResultColumnOp([], { op: "statusMap", id: "q1", statusMap: {} }, QUESTIONS)).toBeNull();
   });
 });

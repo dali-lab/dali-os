@@ -6,7 +6,8 @@ export type ColumnOp =
   | { op: "hide"; id: string }
   | { op: "rename"; id: string; label: string }
   | { op: "move"; id: string; dir: -1 | 1 }
-  | { op: "role"; id: string; role: string; termId: string | null };
+  | { op: "role"; id: string; role: string; termId: string | null }
+  | { op: "statusMap"; id: string; statusMap: Record<string, string> };
 
 export const MAX_COLUMN_LABEL = 120;
 
@@ -29,6 +30,13 @@ export function parseColumnOp(json: unknown): ColumnOp | null {
         (o.termId === undefined || o.termId === null || typeof o.termId === "string")
         ? { op: "role", id: o.id, role: o.role, termId: (o.termId as string | null | undefined) || null }
         : null;
+    case "statusMap": {
+      const m = o.statusMap;
+      if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+      const entries = Object.entries(m as Record<string, unknown>);
+      if (entries.length > 500 || !entries.every(([, v]) => typeof v === "string")) return null;
+      return { op: "statusMap", id: o.id, statusMap: Object.fromEntries(entries) as Record<string, string> };
+    }
     default:
       return null;
   }
