@@ -107,8 +107,7 @@ import { fetchParticipantOptions, useParticipantOptions } from "~/calendar/lib/p
 import { useIsMobile } from "~/hooks/useIsMobile";
 
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
-// UnderlineTabButtons row unconditionally — it isn't the flag-gated AreaPillNav,
-// so it reserves the flush top spacing regardless of the sidebar-redesign flag.
+// row unconditionally, so it reserves the flush top spacing.
 export const handle = {
   areaSubnav: true,
   docKey: "calendar",

@@ -11,7 +11,7 @@ import { roleColor } from "~/calendar/lib/event-block";
 import { CustomHiresManager, archiveCustomHire } from "~/calendar/components/CustomHiresManager";
 import { userLabel } from "~/calendar/components/scheduling";
 import { GeneralCalendarPrompt } from "~/calendar/components/settings-cards";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import type {
   CalendarLinkDTO,
   CalendarView,

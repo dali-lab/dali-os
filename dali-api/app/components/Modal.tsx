@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { modalCardClass } from "~/components/os-chrome";
+import { Z } from "~/components/ui/z";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -75,7 +76,7 @@ export function Modal({
   children,
   initialFocusRef,
   disableEscape = false,
-  className = "fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto",
+  className = `fixed inset-0 ${Z.modal} flex items-center justify-center bg-black/40 p-4 sm:p-6 overflow-y-auto`,
   containerClassName,
 }: ModalProps) {
   const container = containerClassName ?? modalCardClass("max-w-md");

@@ -85,7 +85,7 @@ import { useToast } from "~/components/ui/toast";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { AlertTriangle, Trash2, Plus, CheckCircle, ArrowRight, X, Eye, CheckCircle2, CircleDot, AlertCircle } from 'lucide-react'
 import { useOsChrome } from "~/components/os-chrome";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { buttonClasses } from "~/components/ui/Button";
 import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/OpenApplicationsConfirmModal";
 import { TermDatesCard } from "~/hiring/components/cycle-setup/TermDatesCard";

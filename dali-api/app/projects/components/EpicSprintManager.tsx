@@ -561,10 +561,8 @@ export function EpicSprintManager({
         containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
       >
         {/* Eyebrow rather than a heading: the form's own name field is the
-            prominent title, exactly as in the detail modal. Under os the
-            level moves onto the design's type badge and the heading names the
-            dialog, so the epic's own name can be a field with a required mark
-            on it. */}
+            prominent title, exactly as in the detail modal. The level sits
+            on the type badge and the heading names the dialog. */}
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex min-w-0 items-center gap-2">
               <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
@@ -653,8 +651,8 @@ export function EpicSprintManager({
 
       {/* Clicking an epic or story bar opens the detail/edit modal; a task bar
           defers to the caller, which opens the board's task modal via ?task=.
-          The Edit/New controls (os) and the classic "+ Add epic" button ride in
-          the timeline's own header row, right of the level legend. */}
+          The Edit/New controls ride in the timeline's own header row, right of
+          the level legend. */}
       {view === "timeline" ? (
         // Fullscreen keeps the same timeline mounted inside a fixed shell, so
         // the legend toggles, scroll position and any drag in flight survive

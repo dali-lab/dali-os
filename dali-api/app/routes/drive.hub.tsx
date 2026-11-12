@@ -1933,7 +1933,6 @@ export default function DriveHub() {
             selectedIds={selectedTagIds}
             onToggle={toggleTag}
             onClear={clearTags}
-            os={true}
           />
         </div>
       )}

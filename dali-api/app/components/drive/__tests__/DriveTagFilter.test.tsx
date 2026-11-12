@@ -16,7 +16,6 @@ function render(selectedIds: Set<string>) {
       selectedIds,
       onToggle: () => {},
       onClear: () => {},
-      os: false,
     }),
   );
 }

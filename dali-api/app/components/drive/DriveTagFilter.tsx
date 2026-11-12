@@ -14,13 +14,11 @@ export function DriveTagFilter({
   selectedIds,
   onToggle,
   onClear,
-  os,
 }: {
   tags: FilterTag[];
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
   onClear: () => void;
-  os: boolean;
 }) {
   const values = tags.filter((t) => selectedIds.has(t.id)).map((t) => t.id);
   const count = selectedIds.size;
@@ -50,7 +48,7 @@ export function DriveTagFilter({
       searchPlaceholder="Filter tags"
       noMatchesLabel="No tags match."
       clearLabel="Clear tags"
-      buttonClassName={cn(filterPillClass(os), "w-full sm:w-44", count > 0 && "border-os-accent text-os-accent")}
+      buttonClassName={cn(filterPillClass(), "w-full sm:w-44", count > 0 && "border-os-accent text-os-accent")}
       renderTrigger={({ open }) => (
         <>
           <span className="inline-flex min-w-0 items-center gap-2">

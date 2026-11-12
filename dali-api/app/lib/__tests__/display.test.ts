@@ -10,6 +10,10 @@ describe("initialsFromName", () => {
     expect(initialsFromName("Jane")).toBe("JA");
   });
 
+  it("ignores extra whitespace between and around words", () => {
+    expect(initialsFromName("  Ada   Lovelace  ")).toBe("AL");
+  });
+
   it("uses first and last word for names with many parts", () => {
     expect(initialsFromName("Mary Anne Jones")).toBe("MJ");
   });
