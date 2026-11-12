@@ -28,11 +28,31 @@ vi.mock("~/lib/collabAuth", () => ({
 vi.mock("~/lib/comment-events.server", () => ({
   publishCommentChange: vi.fn(),
 }));
+vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("~/lib/mentions", () => ({
+  extractHandlesFromText: vi.fn(() => []),
+  resolveHandles: vi.fn().mockResolvedValue([]),
+  notifyMentions: vi.fn().mockResolvedValue(undefined),
+  pageDocLink: vi.fn(() => "/"),
+}));
+vi.mock("~/lib/comment-links.server", () => ({
+  docCommentContext: vi.fn().mockResolvedValue({
+    title: "Plan",
+    link: "/documents/page1?comment=c9",
+    replyLink: "/documents/page1",
+    partnerReplyLink: null,
+  }),
+}));
+vi.mock("~/projects/lib/file-notifications.server", () => ({
+  notifyFileComment: vi.fn().mockResolvedValue(undefined),
+}));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
+import { notify } from "~/lib/notify.server";
+import { extractHandlesFromText, resolveHandles, notifyMentions } from "~/lib/mentions";
 import {
   LIST_COMMENTS_TOOL,
   runListComments,
@@ -205,5 +225,49 @@ describe("manage_comment", () => {
     await expect(
       runManageComment("u1", { action: "edit", commentId: "missing", body: "x" }),
     ).rejects.toMatchObject({ name: "ManageCommentError", status: 404 });
+  });
+
+  describe("create notifications (web parity)", () => {
+    beforeEach(() => {
+      vi.mocked(getPageAccess).mockResolvedValue({ canComment: true } as never);
+      mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null, kind: "Doc" });
+      mockPrisma.docComment.create.mockResolvedValue({ id: "c9" });
+    });
+
+    it("notifies the prior thread participants of a reply, not its author", async () => {
+      mockPrisma.docComment.findUnique.mockResolvedValue({ targetType: "doc", targetId: "page1", parentId: null });
+      mockPrisma.docComment.findMany.mockResolvedValue([{ authorId: "u2" }, { authorId: "u1" }]);
+      const out = await runManageComment("u1", {
+        action: "create", targetType: "doc", targetId: "page1", body: "agreed", parentId: "c1",
+      });
+      expect(out).toEqual({ id: "c9" });
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(notify).mock.calls[0]![0]).toMatchObject({
+        eventType: "collab.comment_reply",
+        createdByUserId: "u1",
+        recipients: [{ userId: "u2" }],
+      });
+    });
+
+    it("notifies members mentioned with @handle", async () => {
+      vi.mocked(extractHandlesFromText).mockReturnValue(["ada"]);
+      vi.mocked(resolveHandles).mockResolvedValue(["u2"]);
+      await runManageComment("u1", { action: "create", targetType: "doc", targetId: "page1", body: "hi @ada" });
+      await vi.waitFor(() => expect(notifyMentions).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(notifyMentions).mock.calls[0]![0]).toMatchObject({
+        recipientUserIds: ["u2"],
+        actorId: "u1",
+        preview: "hi @ada",
+      });
+    });
+
+    it("rejects a slide anchor on a page that is not a slide deck", async () => {
+      await expect(
+        runManageComment("u1", {
+          action: "create", targetType: "doc", targetId: "page1", body: "hi",
+          anchor: { kind: "slide", slideId: "s1" },
+        }),
+      ).rejects.toMatchObject({ name: "ManageCommentError", status: 400 });
+    });
   });
 });
