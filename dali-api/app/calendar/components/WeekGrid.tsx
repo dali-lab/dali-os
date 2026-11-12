@@ -1982,7 +1982,7 @@ export function SelectionPopoverPortal({
       // cardRef — picking a role, a date or a time counted as an outside click
       // and closed the whole form. Anything in a floating layer belongs to the
       // card; one shared predicate so this list can't drift from the one
-      // AnchoredPopover uses.
+      // AnchoredCard uses.
       if (isInFloatingLayer(target)) return;
       onDismiss();
     };
