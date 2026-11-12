@@ -21,7 +21,6 @@ import {
 import { Select, Menu } from "~/components/ui/floating";
 import {
   CalendarDays,
-  CalendarX,
   Settings,
   Folder,
   FolderPlus,
@@ -31,12 +30,7 @@ import {
   Info,
   Paperclip,
   Plus,
-  Trash2,
   Upload,
-  Unlink,
-  MoreHorizontal,
-  ExternalLink,
-  Mail,
   NotebookPen,
   Presentation,
   Shapes,
@@ -45,10 +39,10 @@ import type { DriveTypeFilter } from "~/components/drive/type-filter";
 import { useOsChrome } from "~/components/os-chrome";
 import { setPageFavorite } from "~/components/favorites-live";
 import { ChartStringPanel } from "~/projects/components/ChartStringPanel";
-import { OS_DETAIL_CARD, OsTabBar } from "~/components/os-page";
+import { OsTabBar } from "~/components/os-page";
 import { cn } from "~/lib/cn";
 import { Modal, ModalHeader } from "~/components/Modal";
-import { useDialog, useConfirmSubmit } from "~/components/ui/dialog";
+import { useDialog } from "~/components/ui/dialog";
 import { Tooltip } from "~/components/ui/floating";
 import { Toggle } from "~/components/ui/Toggle";
 import { EditableSection } from "~/components/EditableSection";
@@ -59,7 +53,7 @@ import { MonthCalendarPanel } from "~/components/MonthCalendarPanel";
 import { ProjectInfraSection } from "~/projects/components/ProjectInfraSection";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { formatDateShort, formatDateTime } from "~/lib/display";
+import { formatDateTime } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { Avatar } from "~/components/ui/Avatar";
 import { ProjectViewSwitch } from "../components/ProjectViewSwitch";
@@ -93,7 +87,6 @@ import { DriveUploadInput } from "~/components/drive/DriveUploadInput";
 import { useToast } from "~/components/ui/toast";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { LEGACY_TAB_TO_TAB } from "../lib/project-tabs";
-import { Button } from "~/components/ui/Button";
 import { type ProjectStatus } from "../lib/project-lifecycle";
 import { loadProjectDetail } from "../lib/project-detail.server";
 import { runProjectDetailAction } from "../lib/project-detail-actions.server";
@@ -110,17 +103,9 @@ import {
 } from "~/projects/components/detail/constants";
 import { type LoaderData } from "~/projects/components/detail/types";
 import { ProjectHeader } from "~/projects/components/detail/ProjectHeader";
-import {
-  DescriptionSegment,
-  DetailsSegment,
-  DomainScopesSegment,
-  DomainsSegment,
-  MeetingNoteTemplateSegment,
-  RecordingPolicySegment,
-  StatusSegment,
-  TermsSegment,
-  VisibilitySegment,
-} from "~/projects/components/detail/DetailsSegments";
+import { DescriptionSegment, DetailsSegment } from "~/projects/components/detail/DetailsSegments";
+import { DeleteProjectSection, SaveAsTemplateSection, ScopeTab } from "~/projects/components/detail/ProjectSettings";
+import { PartnersSection } from "~/projects/components/detail/PartnersSection";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const p = (data as { project?: { name: string } } | undefined)?.project;
@@ -144,7 +129,6 @@ export const handle = {
   },
   favoriteRoute: true,
 };
-
 
 
 export async function loader(args: Route.LoaderArgs) {
@@ -1157,483 +1141,6 @@ function OverviewTab({
     </div>
   );
 }
-
-// Admin/Core only. Deletion is permanent and the server refuses it once a
-// project has any history, so the affordance stays tucked inside settings and
-// asks for the project name typed back before it fires.
-// Save the project's structure (epics, sprints, tasks, checklists) as a
-// reusable template. Posts to the /projects action (intent=capture). Rendered
-// for Core (canEditScope) as a sibling of the Danger zone in the settings modal.
-function SaveAsTemplateSection({
-  projectId,
-  projectName,
-}: {
-  projectId: string;
-  projectName: string;
-}) {
-  return (
-    <section className="mt-6 border-t border-border pt-5">
-      <h3 className="text-sm font-semibold text-foreground">Save as template</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Capture this project's epics, sprints, and tasks (with checklists) as a reusable
-        template. Sprint dates are stored as offsets and rebased when a new project is created
-        from it. Collaborative doc bodies are not copied.
-      </p>
-      <Form method="post" action="/projects" className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-        <input type="hidden" name="intent" value="capture" />
-        <input type="hidden" name="projectId" value={projectId} />
-        <label className="flex flex-1 flex-col gap-1 text-xs">
-          <span className="text-muted-foreground">Template name</span>
-          <input
-            name="templateName"
-            required
-            defaultValue={`${projectName} template`}
-            className="px-2 py-1.5 text-sm border border-border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-os-accent/30"
-          />
-        </label>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground pb-2">
-          <input type="checkbox" name="includeOverviewPage" className="accent-os-accent" />
-          Include Overview page
-        </label>
-        <Button type="submit" size="sm">
-          Save template
-        </Button>
-      </Form>
-    </section>
-  );
-}
-
-function DeleteProjectSection({
-  projectId,
-  projectName,
-}: {
-  projectId: string;
-  projectName: string;
-}) {
-  const dialog = useDialog();
-  const navigate = useNavigate();
-  const [busy, setBusy] = useState(false);
-  const [blocked, setBlocked] = useState<{ label: string; count: number }[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  async function onDelete() {
-    setBlocked(null);
-    setError(null);
-
-    const typed = await dialog.prompt({
-      title: `Delete "${projectName}"?`,
-      description:
-        "This permanently removes the project. It can't be undone. Archiving keeps the project and its history instead.",
-      label: `Type the project name to confirm`,
-      placeholder: projectName,
-      confirmLabel: "Delete project",
-      tone: "destructive",
-      validate: (value) =>
-        value.trim() === projectName ? null : "That doesn't match the project name.",
-    });
-    if (typed === null) return;
-
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/projects/${projectId}`, { method: "DELETE" });
-      if (res.ok) {
-        navigate("/projects");
-        return;
-      }
-      const body = (await res.json().catch(() => null)) as
-        | { error?: string; blocking?: { label: string; count: number }[] }
-        | null;
-      if (res.status === 409 && body?.blocking?.length) {
-        setBlocked(body.blocking);
-        return;
-      }
-      setError(body?.error ?? "Could not delete this project.");
-    } catch {
-      setError("Could not delete this project.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <section className="mt-6 border-t border-border pt-5">
-      <h3 className="text-sm font-semibold text-destructive">Danger zone</h3>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Deleting is permanent and only possible while a project has no staffing, tasks,
-        meetings, time entries or budget records. Archive it instead to retire a project
-        that has history.
-      </p>
-
-      {blocked && (
-        <div className="mt-3 rounded-md border border-border bg-muted/40 p-3">
-          <p className="text-xs font-medium text-foreground">
-            Still attached to this project:
-          </p>
-          <ul className="mt-1.5 space-y-0.5">
-            {blocked.map((b) => (
-              <li key={b.label} className="text-xs text-muted-foreground">
-                {b.count} {b.label}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
-
-      <button
-        type="button"
-        onClick={onDelete}
-        disabled={busy}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-sm font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-      >
-        <Trash2 className="h-4 w-4" aria-hidden />
-        {busy ? "Deleting…" : "Delete project"}
-      </button>
-    </section>
-  );
-}
-
-function ScopeTab({
-  project,
-  allDomainOptions,
-  plannedTerms,
-  allTermOptions,
-  domainScopeGrid,
-  canEdit,
-  actionError,
-}: {
-  project: LoaderData["project"];
-  allDomainOptions: LoaderData["allDomainOptions"];
-  plannedTerms: LoaderData["plannedTerms"];
-  allTermOptions: LoaderData["allTermOptions"];
-  domainScopeGrid: LoaderData["domainScopeGrid"];
-  canEdit: boolean;
-  actionError?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-4">
-      {actionError && (
-        <div className="bg-destructive/10 border border-destructive/30 text-destructive text-sm rounded-md px-3 py-2">
-          {actionError}
-        </div>
-      )}
-
-      <StatusSegment status={project.status} canEdit={canEdit} />
-
-      <VisibilitySegment isPrivate={project.isPrivate} canEdit={canEdit} />
-
-      <RecordingPolicySegment recordingPolicy={project.recordingPolicy} canEdit={canEdit} />
-
-      <MeetingNoteTemplateSegment meetingNoteTemplate={project.meetingNoteTemplate} />
-
-      {/* Declared domains — editable; if none declared the derived set from
-          assignments + bids is shown as a fallback so a freshly-created
-          project that's mid-staffing still has visible domain context. */}
-      <DomainsSegment
-        declared={project.domains}
-        derived={project.derivedDomains}
-        allDomains={allDomainOptions}
-        canEdit={canEdit}
-      />
-
-      {/* Project terms — the editable term set. Start term and active-this-term
-          are derived from this set; termCount (Details) is the expected target. */}
-      <TermsSegment
-        selected={plannedTerms}
-        allTerms={allTermOptions}
-        expected={project.termCount}
-        canEdit={canEdit}
-      />
-
-      {/* Per-domain, per-term scope grid. One cell per (declared domain ×
-          planned term). Empty cell = no scope written yet. Auto-saves on
-          blur; clearing a cell to empty deletes the row. */}
-      {project.domains.length > 0 && plannedTerms.length > 0 && (
-        <DomainScopesSegment
-          domains={project.domains}
-          terms={plannedTerms}
-          grid={domainScopeGrid}
-          canEdit={canEdit}
-        />
-      )}
-    </div>
-  );
-}
-
-// Per-contact "⋯" menu in the os Partners view: email the person, or (Core)
-// jump to their organization in the CRM.
-function PartnerContactMenu({
-  name,
-  email,
-  orgId,
-  canManage,
-}: {
-  name: string;
-  email: string | null;
-  orgId: string;
-  canManage: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  const itemClass =
-    "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-foreground transition-colors hover:bg-os-container";
-  return (
-    <div ref={ref} className="relative flex-shrink-0">
-      <button
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={`Actions for ${name}`}
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center justify-center rounded-md p-1.5 text-os-grey transition-colors hover:bg-os-container hover:text-foreground"
-      >
-        <MoreHorizontal className="h-4 w-4" />
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-[calc(100%+6px)] z-[100] min-w-[184px] rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
-        >
-          {email && (
-            <a role="menuitem" href={`mailto:${email}`} className={itemClass} onClick={() => setOpen(false)}>
-              <Mail className="h-4 w-4 text-os-grey" /> Email
-            </a>
-          )}
-          {canManage && (
-            <Link role="menuitem" to={`/core/partners/orgs/${orgId}`} className={itemClass} onClick={() => setOpen(false)}>
-              <ExternalLink className="h-4 w-4 text-os-grey" /> View organization
-            </Link>
-          )}
-          {!email && !canManage && (
-            <span className="block px-2.5 py-2 text-sm text-os-muted">No actions</span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// The os Partners view: the people (contacts across the linked orgs) up front,
-// with org lifecycle management (end / unlink) folded behind a Core-only
-// "Organizations" disclosure so the capability isn't lost.
-function PartnersContactsOs({
-  partners,
-  canManage,
-  tz,
-  confirmSubmit,
-}: {
-  partners: LoaderData["project"]["partners"];
-  canManage: boolean;
-  tz: string;
-  confirmSubmit: ReturnType<typeof useConfirmSubmit>;
-}) {
-  const [showOrgs, setShowOrgs] = useState(false);
-  const contacts = partners
-    .filter((p) => !p.endedAt)
-    .flatMap((p) =>
-      p.org.contacts.map((c) => ({ ...c, orgId: p.org.id, orgName: p.org.name })),
-    );
-
-  return (
-    // The design's partner directory: one surface, a row per contact. The
-    // section around it carries no border of its own, so this is where the
-    // list gets its ground.
-    <div className={OS_DETAIL_CARD}>
-      {contacts.length === 0 ? (
-        <p className="py-4 text-sm text-os-muted italic">No partner contacts yet.</p>
-      ) : (
-        <div className="flex flex-col divide-y divide-os-container">
-          {contacts.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 py-2.5">
-              <Avatar name={c.name} size="sm" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-foreground">{c.name}</div>
-                <div className="truncate text-xs text-os-grey">
-                  {c.displayRole ?? "Partner contact"}
-                </div>
-              </div>
-              <PartnerContactMenu
-                name={c.name}
-                email={c.email}
-                orgId={c.orgId}
-                canManage={canManage}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {canManage && partners.length > 0 && (
-        <div className="border-t border-os-container pt-1 pb-1">
-          <button
-            type="button"
-            onClick={() => setShowOrgs((v) => !v)}
-            aria-expanded={showOrgs}
-            className="flex w-full items-center gap-1.5 py-1.5 text-xs font-medium text-os-grey transition-colors hover:text-foreground"
-          >
-            {showOrgs ? (
-              <ChevronDown className="h-3.5 w-3.5" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5" />
-            )}
-            Organizations ({partners.length})
-          </button>
-          {showOrgs && (
-            <div className="flex flex-col divide-y divide-os-container">
-              {partners.map((p) => (
-                <div key={p.id} className="flex items-center gap-2 py-2">
-                  <Link
-                    to={`/core/partners/orgs/${p.org.id}`}
-                    className="min-w-0 flex-1 truncate text-sm text-foreground hover:underline"
-                  >
-                    {p.org.name}
-                  </Link>
-                  {p.endedAt ? (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-muted/50 text-muted-foreground">
-                      Ended {formatDateShort(p.endedAt, tz)}
-                    </span>
-                  ) : p.startedAt ? (
-                    <span className="text-xs text-muted-foreground">
-                      since {formatDateShort(p.startedAt, tz)}
-                    </span>
-                  ) : null}
-                  {!p.endedAt && (
-                    <Form
-                      method="post"
-                      onSubmit={confirmSubmit({
-                        title: `End the partnership with ${p.org.name}?`,
-                        description:
-                          "The record and its dates are kept — this only marks the partnership as ended today.",
-                        confirmLabel: "End partnership",
-                        tone: "destructive",
-                      })}
-                    >
-                      <input type="hidden" name="intent" value="partner-end" />
-                      <input type="hidden" name="projectPartnerId" value={p.id} />
-                      <Tooltip content="End partnership (keeps the record)">
-                        <button
-                          type="submit"
-                          aria-label="End partnership"
-                          className="inline-flex items-center justify-center p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/40 flex-shrink-0"
-                        >
-                          <CalendarX className="w-3.5 h-3.5" />
-                        </button>
-                      </Tooltip>
-                    </Form>
-                  )}
-                  <Form
-                    method="post"
-                    onSubmit={confirmSubmit({
-                      title: `Unlink ${p.org.name}?`,
-                      description:
-                        'This erases the partnership record entirely — use "End partnership" instead to keep the history.',
-                      confirmLabel: "Unlink",
-                      tone: "destructive",
-                    })}
-                  >
-                    <input type="hidden" name="intent" value="partner-unlink" />
-                    <input type="hidden" name="projectPartnerId" value={p.id} />
-                    <Tooltip content="Unlink organization (erases the record)">
-                      <button
-                        type="submit"
-                        aria-label="Unlink organization"
-                        className="inline-flex items-center justify-center p-1.5 rounded-md text-destructive hover:bg-destructive/10 flex-shrink-0"
-                      >
-                        <Unlink className="w-3.5 h-3.5" />
-                      </button>
-                    </Tooltip>
-                  </Form>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PartnersSection({
-  partners,
-  linkablePartnerOrgs,
-  canManage,
-}: {
-  partners: LoaderData["project"]["partners"];
-  linkablePartnerOrgs: LoaderData["linkablePartnerOrgs"];
-  canManage: boolean;
-}) {
-  const confirmSubmit = useConfirmSubmit();
-  const [linking, setLinking] = useState(false);
-  const tz = useUserTimeZone();
-  const { sectionShell, sectionTitle } = useOsChrome();
-
-  return (
-    <section className={sectionShell}>
-      <div className="flex items-center justify-between">
-        <h2 className={sectionTitle}>
-          Partners
-        </h2>
-        {canManage && linkablePartnerOrgs.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setLinking((v) => !v)}
-            className="text-xs font-medium text-os-accent hover:underline"
-          >
-            + Link organization
-          </button>
-        )}
-      </div>
-
-      {linking && canManage && (
-        <Form method="post" className="flex flex-wrap items-end gap-3 bg-muted/20 rounded-lg p-3">
-          <input type="hidden" name="intent" value="partner-link" />
-          <Select
-            name="partnerOrgId"
-            required
-            placeholder="Select an organization…"
-            options={[
-              { value: "", label: "Select an organization…" },
-              ...linkablePartnerOrgs.map((o) => ({ value: o.id, label: o.name })),
-            ]}
-            buttonClassName="h-9 flex-1 min-w-[220px] rounded-lg border border-border bg-background px-3 text-sm inline-flex items-center justify-between gap-1 transition-colors hover:bg-muted/40"
-          />
-          <button
-            type="submit"
-            className="h-9 rounded-lg bg-os-accent text-os-bg text-sm font-medium px-4 hover:opacity-90 transition"
-          >
-            Link
-          </button>
-        </Form>
-      )}
-
-      <PartnersContactsOs
-        partners={partners}
-        canManage={canManage}
-        tz={tz}
-        confirmSubmit={confirmSubmit}
-      />
-    </section>
-  );
-}
-
-// ── ProjectDriveTab ──────────────────────────────────────────────────────────
-// Renders the shared DriveBrowser locked to this project's scope.
 
 // Project drives hold docs, folders and files. Folders are always shown (the
 // browser never filters them out), so the filter only needs the leaf kinds.
