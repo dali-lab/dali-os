@@ -32,7 +32,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Cycles · Hiring · DAL
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) return redirect("/");
 
   const allCycles = await prisma.applicationCycle.findMany({

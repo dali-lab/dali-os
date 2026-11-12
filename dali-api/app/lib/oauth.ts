@@ -1,7 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
-import type { OAuthProvider, OAuthAccountType } from "~/generated/prisma/enums";
 import type { OAuthClient } from "~/generated/prisma/client";
 
 // types
@@ -158,8 +157,6 @@ export async function createOAuthSession(params: {
   codeChallengeMethod: string;
   redirectUri: string;
   state: string;
-  provider: OAuthProvider;
-  accountType?: OAuthAccountType;
   clientId?: string;
   scopes?: string[];
 }) {
@@ -241,8 +238,6 @@ export async function exchangeAuthorizationCode(params: {
 
   return {
     userId: session.userId,
-    provider: session.provider,
-    accountType: session.accountType,
     scopes: session.scopes ?? [],
     clientId: session.clientId ?? params.clientId,
   };

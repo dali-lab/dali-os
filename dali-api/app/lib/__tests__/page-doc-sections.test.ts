@@ -2,37 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   mergeSectionsPayload,
   parseStoredSections,
-  resolveSections,
 } from "~/lib/page-doc-sections";
 
 describe("page-doc-sections", () => {
-  it("synthesizes Overview from legacy body/videoKey when sections empty", () => {
-    const sections = resolveSections({
-      body: { type: "doc", content: [] },
-      videoKey: "page-docs/abc.mp4",
-      sections: null,
-    });
-    expect(sections).toHaveLength(1);
-    expect(sections[0]).toMatchObject({
-      id: "overview",
-      title: "Overview",
-      videoKey: "page-docs/abc.mp4",
-    });
-  });
-
-  it("prefers stored sections over legacy fields", () => {
-    const sections = resolveSections({
-      body: null,
-      videoKey: "legacy",
-      sections: [
-        { id: "a", title: "Start", body: { x: 1 }, videoKey: "a.mp4" },
-        { id: "b", title: "Next", body: null, videoKey: null },
-      ],
-    });
-    expect(sections.map((s) => s.title)).toEqual(["Start", "Next"]);
-    expect(sections[0]?.videoKey).toBe("a.mp4");
-  });
-
   it("parses malformed rows defensively", () => {
     expect(parseStoredSections([null, "x", { title: "  Ok  " }])).toEqual([
       expect.objectContaining({ title: "Ok", videoKey: null }),

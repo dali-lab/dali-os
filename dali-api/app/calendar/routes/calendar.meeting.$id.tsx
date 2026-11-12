@@ -361,7 +361,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (!meeting || meeting.status === "Cancelled") {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
-    const roles = await getUserRoles(auth.user.sub);
+    const roles = await getUserRoles(auth.user.sub, request);
     if (auth.user.sub !== meeting.organizerId && !roles.isCore) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -386,7 +386,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!meeting || meeting.status === "Cancelled") {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   const canEdit = auth.user.sub === meeting.organizerId || roles.isCore;
   if (!canEdit || !roles.canViewForms) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
@@ -414,7 +414,7 @@ async function ipadScanAction(
   if (!meeting || meeting.status === "Cancelled") {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
-  const roles = await getUserRoles(userId);
+  const roles = await getUserRoles(userId, request);
   if (meeting.organizerId !== userId && !roles.isCore) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -3,7 +3,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn().mockReturnValue(true),
-  postMessage: vi.fn().mockResolvedValue({ ts: "1" }),
+  postMessage: vi.fn(),
+}));
+vi.mock("~/lib/outbound.server", () => ({
+  enqueueOutbound: vi.fn().mockResolvedValue({ id: "ob1", deduped: false }),
+  drainNow: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("~/lib/notify.server", () => ({
   notify: vi.fn().mockResolvedValue({ inApp: 2, emailed: 0, slackDmed: 0 }),
@@ -15,6 +19,7 @@ vi.mock("~/projects/lib/project-members.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { postMessage } from "~/slack/lib/slack-client";
 import { notify } from "~/lib/notify.server";
+import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import { runSprintLifecycle } from "~/jobs/sprint-lifecycle.server";
 
@@ -23,6 +28,8 @@ const mockPrisma = prisma as unknown as Record<
   Record<string, ReturnType<typeof vi.fn>>
 >;
 const mockPost = postMessage as unknown as ReturnType<typeof vi.fn>;
+const mockEnqueue = enqueueOutbound as unknown as ReturnType<typeof vi.fn>;
+const mockDrain = drainNow as unknown as ReturnType<typeof vi.fn>;
 const mockNotify = notify as unknown as ReturnType<typeof vi.fn>;
 const mockParticipants =
   currentProjectParticipantIds as unknown as ReturnType<typeof vi.fn>;
@@ -79,11 +86,15 @@ describe("sprint-lifecycle (per-sprint wrap-up)", () => {
     expect(arg.message.dedupKey).toBe(`sprint-closed:p1:${SPRINT2_KEY}`);
     expect(arg.recipients.map((r: { userId: string }) => r.userId).sort()).toEqual(["u1", "u2"]);
 
-    expect(mockPost).toHaveBeenCalledTimes(1);
-    const [channel, text] = mockPost.mock.calls[0];
-    expect(channel).toBe("C123");
-    expect(text).toContain("*Sprint 2* wrapped up");
-    expect(text).toContain("1 of 2 tasks done");
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    const row = mockEnqueue.mock.calls[0][0];
+    expect(row.channel).toBe("slack_channel");
+    expect(row.target).toBe("C123");
+    expect(row.dedupKey).toBe(`slack.sprint_closed:p1:${SPRINT2_KEY}`);
+    expect(row.slackText).toContain("*Sprint 2* wrapped up");
+    expect(row.slackText).toContain("1 of 2 tasks done");
+    expect(mockDrain).toHaveBeenCalledWith(["ob1"]);
+    expect(mockPost).not.toHaveBeenCalled();
     expect(result.items).toBe(1);
   });
 
@@ -94,11 +105,12 @@ describe("sprint-lifecycle (per-sprint wrap-up)", () => {
     expect(result.items).toBe(0);
   });
 
-  it("skips a re-fired tick (dedupKey already claimed → no fresh in-app rows)", async () => {
+  it("skips a re-fired tick (in-app already claimed) and leaves dedup to the outbox", async () => {
     mockNotify.mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 });
     const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockNotify).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled(); // gated on the fresh dispatch
+    expect(mockEnqueue).toHaveBeenCalledTimes(1);
+    expect(mockEnqueue.mock.calls[0][0].dedupKey).toBe(`slack.sprint_closed:p1:${SPRINT2_KEY}`);
     expect(result.items).toBe(0);
   });
 
@@ -106,7 +118,7 @@ describe("sprint-lifecycle (per-sprint wrap-up)", () => {
     mockParticipants.mockResolvedValue(new Set());
     const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockNotify).not.toHaveBeenCalled();
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(result.items).toBe(0);
   });
 
@@ -121,7 +133,7 @@ describe("sprint-lifecycle (per-sprint wrap-up)", () => {
     mockPrisma.project.findMany.mockResolvedValue([activeProject({ slackChannelId: null })]);
     const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockNotify).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(result.items).toBe(1);
   });
 
@@ -129,7 +141,7 @@ describe("sprint-lifecycle (per-sprint wrap-up)", () => {
     delete process.env.NOTIFY_SLACK_DM_OVERRIDE;
     const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(mockNotify).toHaveBeenCalledTimes(1);
-    expect(mockPost).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
     expect(result.items).toBe(1);
   });
 
@@ -143,6 +155,20 @@ describe("sprint-lifecycle (per-sprint wrap-up)", () => {
       .mockResolvedValue([{ status: "Done" }]);
     const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
     expect(result.items).toBe(1);
+    expect(result.note).toContain("1 wrap-up(s) failed");
+  });
+
+  it("keeps going when one project's enqueue throws", async () => {
+    mockPrisma.project.findMany.mockResolvedValue([
+      activeProject(),
+      activeProject({ id: "p2", slackChannelId: "C456" }),
+    ]);
+    mockEnqueue
+      .mockRejectedValueOnce(new Error("db down"))
+      .mockResolvedValueOnce({ id: "ob2", deduped: false });
+    const result = await runSprintLifecycle({ now: NOW, lastSuccessAt: null, settings: {} });
+    expect(mockEnqueue).toHaveBeenCalledTimes(2);
+    expect(mockDrain).toHaveBeenCalledWith(["ob2"]);
     expect(result.note).toContain("1 wrap-up(s) failed");
   });
 });

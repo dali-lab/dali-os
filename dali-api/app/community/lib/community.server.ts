@@ -9,7 +9,7 @@ export async function requireCommunityViewer(request: Request) {
   if (!auth.ok) throw redirectToLogin(request);
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) throw portalRedirect;
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!(await isFeatureEnabled("community", auth.user.sub, roles, request))) {
     throw new Response("Not found", { status: 404 });
   }

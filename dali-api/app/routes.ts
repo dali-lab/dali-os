@@ -1,4 +1,5 @@
 import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
+import { LEGACY_REDIRECTS } from "./lib/legacy-redirects";
 
 export default [
   // UI routes wrapped in the app layout (navbar + view toggle)
@@ -31,8 +32,6 @@ export default [
     // Hiring section. /hiring is My work (the viewer's reviews, interviews and
     // delibs mirror); the tools below are the sidebar's Hiring sub-tabs.
     route("hiring", "hiring/routes/hiring.tsx"),
-    // Redirects into My work, as does hiring/interviews.
-    route("hiring/reviewer", "hiring/routes/reviewer.tsx"),
     route("hiring/reviewer/application/:id", "hiring/routes/reviewer.application.$id.tsx"),
     // Read-only view of this same applicant's earlier, already-decided
     // submission — reviews/decisions from that cycle are never shown.
@@ -49,7 +48,6 @@ export default [
     route("hiring/domain-lead/delibs/:id", "hiring/routes/domain-lead.delibs.$id.tsx"),
     route("hiring/lead", "hiring/routes/lead.tsx"),
     route("hiring/lead/cycle/:id", "hiring/routes/lead.cycle.$id.tsx"),
-    route("hiring/lead/internal-cycle/:id", "hiring/routes/lead.internal-cycle.$id.tsx"),
     // Cross-cycle by design (accepting off a waitlist may land in a later
     // cycle), so it lives beside the other hiring tools, not under /lead.
     route("hiring/waitlists", "hiring/routes/waitlists.tsx"),
@@ -64,13 +62,9 @@ export default [
     // Hiring singleton's slots) — Core-only, the Hiring peer of /core/drive-folders.
     route("hiring/drive-folders", "hiring/routes/hiring.drive-folders.tsx"),
     route("hiring/rubrics/:id", "hiring/routes/rubrics.$id.tsx"),
-    route("hiring/emails", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-hiring" }),
-    route("hiring/emails/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-hiring-id" }),
     route("hiring/confidentiality-agreements/:id", "hiring/routes/confidentiality-agreements.$id.tsx"),
     route("hiring/cycles/:cycleId/confidentiality", "hiring/routes/cycles.$cycleId.confidentiality.tsx"),
-    route("hiring/interviews", "hiring/routes/interviews.tsx"),
     route("hiring/interviews/:interviewId", "hiring/routes/interviews.$interviewId.tsx"),
-    route("hiring/analytics", "hiring/routes/analytics.tsx"),
 
     // Admin: an Overview plus one section per tool family, each with its tools
     // as tabs (app/admin/adminNav.tsx). A section's own URL opens its first tab.
@@ -95,21 +89,8 @@ export default [
     route("admin/onboarding", "admin/routes/admin.activities.tsx"),
     route("admin/onboarding/:id", "admin/routes/admin.activities.$id.tsx"),
     route("admin/rooms", "rooms/routes/admin.rooms.tsx"),
-    ...[
-      "system", "payroll-export", "site-users", "security", "outbound-messages", "email-senders",
-      "analytics", "ai-usage", "activity", "jobs", "infrastructure", "feature-flags", "activities",
-      "activities/:id",
-    ].map((p) => route(`admin/${p}`, "admin/routes/admin.legacy-redirect.ts", { id: `legacy-admin-${p}` })),
-    // Core-area pages that still live under admin/ (members, domains,
-    // announcements, email templates) and the pre-regroup redirects.
-    route("admin/people", "admin/routes/admin.people.tsx"),
-    route("admin/communications", "admin/routes/admin.communications.tsx"),
     route("admin/members", "admin/routes/admin.members.tsx"),
     route("admin/domains", "admin/routes/admin.domains.tsx"),
-    route("admin/announcements", "admin/routes/admin.announcements.tsx"),
-    route("admin/email", "admin/routes/admin.email.tsx"),
-    route("admin/email-templates", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin" }),
-    route("admin/email-templates/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-admin-id" }),
     // Document signing: author agreements, place fields, put versions in force,
     // track signatories.
     route("core/agreements", "signing/routes/core.agreements.tsx"),
@@ -119,10 +100,7 @@ export default [
     route("api/agreements/people", "signing/routes/api.agreements.people.ts"),
     route("api/agreements/issue", "signing/routes/api.agreements.issue.ts"),
 
-    // Core — the lab-process area introduced by the nav-regroup flag. Every
-    // page here except the hub is a pure re-export of its pre-regroup route
-    // (app/core/routes/), so there is one implementation per surface and the
-    // old URL keeps working; the source loaders redirect flag-on viewers here.
+    // Core: the lab-process area. Old addresses redirect through LEGACY_REDIRECTS.
     route("core", "core/routes/core.hub.tsx"),
     route("core/milestones", "core/routes/core.milestones.tsx"),
     route("core/staffing", "core/routes/core.staffing.tsx"),
@@ -133,10 +111,7 @@ export default [
     route("core/level-up", "core/routes/core.level-up.tsx"),
     route("core/level-up/:userId", "core/routes/core.level-up.$userId.tsx"),
     route("core/access", "core/routes/core.access.tsx"),
-    route("core/access/roles", "core/routes/core.access.roles.tsx"),
-    route("core/access/domains", "core/routes/core.access.domains.tsx"),
     route("core/drive-folders", "core/routes/core.drive-folders.tsx"),
-    route("core/rooms", "admin/routes/admin.legacy-redirect.ts", { id: "legacy-core-rooms" }),
     route("rooms", "rooms/routes/rooms.tsx"),
     route("core/communications", "core/routes/core.communications.tsx", [
       index("core/routes/core.communications._index.tsx"),
@@ -147,8 +122,6 @@ export default [
       route("release-notes", "core/routes/core.communications.release-notes.tsx"),
       route("email", "core/routes/core.communications.email.tsx"),
     ]),
-    route("core/communications/email/:id", "admin/routes/admin.email.legacy-redirect.ts", { id: "legacy-email-core-id" }),
-    route("core/communications/email-senders", "core/routes/core.communications.email-senders.tsx"),
 
     // Partner CRM — the internal partner pipeline (board, directory, org and
     // application records), Core-only. The external portal at /partner/*
@@ -168,24 +141,6 @@ export default [
 
     // Projects. The bare /projects route is the area hub (the project list).
     route("projects", "projects/routes/projects.hub.tsx"),
-    route("projects/staffing", "projects/routes/projects.staffing.tsx"),
-    // Staffing input forms (member self-service). Must precede projects/:id
-    // so these literal segments aren't captured by the :id param.
-    route("projects/intent-to-work", "projects/routes/projects.intent-to-work.tsx"),
-    route(
-      "projects/intent-to-work/:userId",
-      "projects/routes/projects.intent-to-work.$userId.tsx",
-    ),
-    route("projects/project-bids", "projects/routes/projects.project-bids.tsx"),
-    route(
-      "projects/project-bids/:userId",
-      "projects/routes/projects.project-bids.$userId.tsx",
-    ),
-    route("projects/level-up", "projects/routes/projects.level-up.tsx"),
-    route(
-      "projects/level-up/:userId",
-      "projects/routes/projects.level-up.$userId.tsx",
-    ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
     route(
       "projects/:id/partner-view",
@@ -254,7 +209,6 @@ export default [
     // Community: map of where alumni are based (members + alumni).
     route("community", "members/routes/community.tsx"),
     route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
-    route("connect/*", "members/routes/connect-redirect.ts"),
     // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
@@ -276,23 +230,12 @@ export default [
     // Anonymous coffee chat invite: accept / decline (recipient) or status (sender).
     route("coffee-chats/:id", "members/routes/coffee-chats.$id.tsx"),
 
-    // Partners — legacy pre-regroup paths. The internal surface moved to
-    // /core/partners (Partner CRM, see the core block above); these redirect,
-    // preserving sub-path and query string. The external portal at /partner/*
-    // (singular) is untouched.
-    route("partners", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-hub" }),
-    route("partners/applications", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-applications" }),
-    route("partners/applications/:id", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-application-id" }),
-    // Literal segments above the param route (repo route-ordering convention).
-    route("partners/:orgId", "partners/routes/partners.legacy-redirect.ts", { id: "legacy-partners-org-id" }),
-
     // Education. Literal "manage" segments must precede the :offeringId param
     // so /education/manage/* isn't captured as an offering id.
     route("education", "education/routes/education.tsx"),
     route("education/compliance", "education/routes/education.compliance.tsx"),
     // Browse-and-manage card list. Literal, so it must precede education/:offeringId.
     route("education/offerings", "education/routes/education.offerings.tsx"),
-    route("education/manage", "education/routes/education.manage.tsx"),
     route("education/manage/new", "education/routes/education.manage.new.tsx"),
     route("education/manage/assignments/:assignmentId", "education/routes/education.manage.assignments.$assignmentId.tsx"),
     route("education/manage/:offeringId", "education/routes/education.manage.$offeringId.tsx"),
@@ -312,10 +255,6 @@ export default [
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
-    // Internal processes. The area hub and JobX are retired; this path is kept
-    // so existing links, favorites, and bookmarks still resolve.
-    route("internal-processes/level-up", "internal-processes/routes/internal-processes.level-up.tsx"),
-
     // Forms. Browsing lives in the unified Drive (/drive); these are the
     // deep-link editor/responses surfaces plus the action-only mutation
     // endpoint the Drive and editor POST to.
@@ -325,7 +264,6 @@ export default [
     route("api/passkey-prompt", "routes/api.passkey-prompt.ts"),
     route("forms/edit/:formId", "forms/routes/forms.edit.$formId.tsx"),
     route("forms/preview-resolve", "forms/routes/forms.preview-resolve.ts"),
-    route("forms/responses/:formId", "forms/routes/forms.responses.$formId.tsx"),
 
     // Internal applicant portal — Interns cycles (Fellowship, intern →
     // full-time) and Lab members cycles (member → Core). Authenticated member
@@ -338,8 +276,6 @@ export default [
     // eligible non-Core members here when a Lab members cycle is open.
     route("fellowship/:cycleId?", "routes/fellowship.tsx"),
     route("core/apply/:cycleId?", "routes/core.tsx"),
-    // Legacy path — old notification/task links pointed at /intern-to-full.
-    route("intern-to-full", "routes/intern-to-full.legacy.tsx"),
 
     // Settings — opened from the sidebar footer icon. Lives under the layout
     // so in-iframe navigation posts `dali:tabNavigated` and the workspace's
@@ -364,7 +300,6 @@ export default [
     route("help/mcp", "routes/help.mcp.tsx"),
     route("help/articles", "routes/help.articles._index.tsx"),
     route("help/articles/:slug", "routes/help.articles.$slug.tsx"),
-    route("help/:slug", "routes/help.$slug.tsx"),
   ]),
 
   // Applicant portal (lightweight layout). /portal is the non-member home
@@ -856,7 +791,6 @@ export default [
   route("api/hiring/cycles/:cycleId/reviewers/:reviewerId", "hiring/routes/api.cycles.$cycleId.reviewers.$reviewerId.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews", "hiring/routes/api.cycles.$cycleId.my-interviews.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/decline", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
-  route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/notes", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.notes.ts"),
   route("api/hiring/cycles/:cycleId/available-slots", "hiring/routes/api.cycles.$cycleId.available-slots.ts"),
   route("api/hiring/cycles/:cycleId/interviews", "hiring/routes/api.cycles.$cycleId.interviews.ts"),
   route("api/hiring/cycles/:cycleId/interviewers", "hiring/routes/api.cycles.$cycleId.interviewers.ts"),
@@ -905,7 +839,6 @@ export default [
   route("api/hiring/delibs/:id", "hiring/routes/api.delibs.$id.ts"),
   route("api/hiring/delibs/:id/moves", "hiring/routes/api.delibs.$id.moves.ts"),
 
-  route("api/hiring/interview-assignments/:id/notes", "hiring/routes/api.interview-assignments.$id.notes.ts"),
 
   // Google calendar (cross-cutting — used by hiring scheduling)
   route("api/google-calendar/busy", "calendar/routes/api.google-calendar.busy.ts"),
@@ -991,4 +924,6 @@ export default [
   route("api/meeting-recordings/:id", "routes/api.meeting-recordings.$id.ts"),
   route("api/meeting-recordings/:id/chunks", "routes/api.meeting-recordings.$id.chunks.ts"),
   route("api/meeting-recordings/:id/result", "routes/api.meeting-recordings.$id.result.ts"),
+
+  ...LEGACY_REDIRECTS.map((r) => route(r.path, "routes/legacy-redirect.ts", { id: `legacy:${r.path}` })),
 ] satisfies RouteConfig;

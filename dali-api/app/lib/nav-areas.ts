@@ -124,10 +124,10 @@ export const NAV_AREAS: NavArea[] = [
     hubPath: "/projects",
     subtabs: [
       { label: "Hub", href: "/projects", icon: LayoutGrid },
-      { label: "Staffing", href: "/projects/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
-      { label: "Intent to Work", href: "/projects/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
-      { label: "Project Bids", href: "/projects/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
-      { label: "Level Up", href: "/projects/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
+      { label: "Staffing", href: "/core/staffing", icon: Kanban, gate: (r) => r.canViewStaffing },
+      { label: "Intent to Work", href: "/core/intent-to-work", icon: ClipboardPen, gate: (r) => r.canViewStaffing },
+      { label: "Project Bids", href: "/core/project-bids", icon: Gavel, gate: (r) => r.canViewStaffing },
+      { label: "Level Up", href: "/core/level-up", icon: ArrowUpCircle, gate: (r) => r.canViewStaffing },
     ],
   },
   {
@@ -208,7 +208,7 @@ export const NAV_AREAS: NavArea[] = [
 // Core gets everything. Drive is not an area here at all — it is pinned under
 // Calendar (see pinnedNavItems). Every Core process page keeps a
 // working pre-regroup URL; the /core/* path is canonical only for flag-on
-// viewers, which the source loaders enforce via regroupRedirect.
+// viewers.
 // ---------------------------------------------------------------------------
 
 // Core's clustered tools as sub-tabs, derived (not duplicated) from

@@ -36,9 +36,6 @@ type DocData = {
   doc: {
     id: string;
     title: string;
-    body: unknown;
-    videoUrl: string | null;
-    hasVideo: boolean;
     sections: SectionData[];
   };
   maintainer: Maintainer | null;

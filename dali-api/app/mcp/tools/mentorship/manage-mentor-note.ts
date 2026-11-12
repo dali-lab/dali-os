@@ -8,8 +8,8 @@
 //              Caller must be the note's author or Core.
 //   delete  — delete a note. Caller must be the note's author or Core.
 //
-// contentJson is a collaborative document (Hocuspocus-owned). The upsert seeds
-// it from the template on creation but never overwrites it directly afterward —
+// The note body lives in its notebook tab (a collaborative document). The upsert
+// seeds it from the template on creation but never overwrites it afterward —
 // use the DocEditor to write. The vibe and metadata fields are plain columns.
 
 import { prisma } from "~/lib/db.server";
@@ -31,7 +31,7 @@ type Vibe = (typeof VIBES)[number];
 export const MANAGE_MENTOR_NOTE_TOOL = {
   name: "manage_mentor_note",
   description:
-    "Create, update, or delete a mentor note. Action 'upsert' opens (or retrieves existing) a note for the caller as mentor for a given mentee/project/term/domain/week. Action 'set_vibe' sets the weekly vibe rating. Action 'delete' removes the note. The note body (contentJson) is collab-owned — write it in the DocEditor, not via this tool.",
+    "Create, update, or delete a mentor note. Action 'upsert' opens (or retrieves existing) a note for the caller as mentor for a given mentee/project/term/domain/week. Action 'set_vibe' sets the weekly vibe rating. Action 'delete' removes the note. The note body is collab-owned — write it in the DocEditor, not via this tool.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -136,7 +136,6 @@ export async function runManageMentorNote(
         termId: input.termId!,
         domainId: input.domainId!,
         weekOf,
-        contentJson: (template?.contentJson ?? {}) as object,
       },
       select: {
         id: true,
@@ -147,10 +146,9 @@ export async function runManageMentorNote(
         domainId: true,
         weekOf: true,
         pageId: true,
-        contentJson: true,
       },
     });
-    await ensureMentorNotePage(created, callerId);
+    await ensureMentorNotePage(created, callerId, { seed: template?.contentJson });
     return { id: created.id, created: true };
   }
 

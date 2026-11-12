@@ -28,3 +28,11 @@ export function freshKey(prefix: string, scope: string): string {
 export function communityEventNearbyKey(eventId: string): string {
   return `community.event_nearby:${eventId}`;
 }
+
+export function sprintClosedSlackKey(projectId: string, bandKey: number): string {
+  return `slack.sprint_closed:${projectId}:${bandKey}`;
+}
+
+export function staffingFinalizeWelcomeKey(cycleId: string, projectId: string): string {
+  return `staffing.finalize_welcome:${cycleId}:${projectId}`;
+}

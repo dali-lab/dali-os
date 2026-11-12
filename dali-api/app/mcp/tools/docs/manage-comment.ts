@@ -5,6 +5,7 @@
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
+import { addReaction, commentReactionStore } from "~/lib/reactions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { requireForAction } from "~/mcp/registry";
 import { commentAnchorSchema } from "~/lib/slide-comments";
@@ -43,7 +44,7 @@ export const MANAGE_COMMENT_TOOL_DEF = {
           y: { type: "number", minimum: 0, maximum: 1 },
         },
         description:
-          "For 'create' on doc targets: a Yjs anchor range ({from, to}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide).",
+          "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide).",
       },
       versionId: { type: "string", description: "For 'create' on file targets: pin to a file version." },
       // For edit/react/unreact/delete
@@ -170,15 +171,10 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
       if (!access.canComment) throw new ManageCommentError("Forbidden", 403);
     }
     if (input.action === "react") {
-      await prisma.docCommentReaction.upsert({
-        where: { commentId_userId_emoji: { commentId: comment.id, userId: callerId, emoji } },
-        create: { commentId: comment.id, userId: callerId, emoji },
-        update: {},
-      });
+      const refused = await addReaction(commentReactionStore(comment.id, callerId, emoji), emoji);
+      if (refused) throw new ManageCommentError("Reaction not allowed", refused);
     } else {
-      await prisma.docCommentReaction.deleteMany({
-        where: { commentId: comment.id, userId: callerId, emoji },
-      });
+      await commentReactionStore(comment.id, callerId, emoji).remove();
     }
     if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return { ok: true };

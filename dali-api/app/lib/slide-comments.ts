@@ -13,9 +13,7 @@ export const textAnchorSchema = z
   .strict()
   .refine((a) => a.elementId === undefined || a.slideId !== undefined, { message: "elementId needs slideId" });
 
-export const rangeAnchorSchema = z.object({ from: z.string(), to: z.string() });
-
-export const commentAnchorSchema = z.union([slideAnchorSchema, textAnchorSchema, rangeAnchorSchema]).nullable().optional();
+export const commentAnchorSchema = z.union([slideAnchorSchema, textAnchorSchema]).nullable().optional();
 
 export type SlideAnchor = z.infer<typeof slideAnchorSchema>;
 export type TextAnchor = z.infer<typeof textAnchorSchema>;

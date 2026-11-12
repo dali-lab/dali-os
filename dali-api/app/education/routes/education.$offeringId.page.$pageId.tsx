@@ -1,15 +1,11 @@
-import { useLoaderData, Link } from "react-router";
+import { useLoaderData } from "react-router";
 import type { Route } from "./+types/education.$offeringId.page.$pageId";
-import { requireEnrollment } from "~/education/lib/access.server";
-import { readMaterialPage } from "~/education/lib/lms.server";
-import { prisma } from "~/lib/db.server";
-import { getCollabToken } from "~/lib/collab-token.server";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { MaterialPageBody } from "~/education/components/MaterialPageBody";
-import { buttonClasses } from "~/components/ui/Button";
+import { OfferingPageView } from "~/education/components/OfferingPageView";
+import { loadMaterialPage } from "~/education/lib/offering-surface.server";
+import { MEMBER_SURFACE, surfaceTitle } from "~/education/lib/offering-surface";
 
 export const meta: Route.MetaFunction = ({ data }) => [
-  { title: `${data?.page.title ?? "Page"} · DALI OS` },
+  { title: surfaceTitle(MEMBER_SURFACE, data?.page.title ?? "Page") },
 ];
 
 export const handle = {
@@ -35,71 +31,8 @@ export const handle = {
   },
 };
 
-export async function loader({ request, params }: Route.LoaderArgs) {
-  const { auth, isManager } = await requireEnrollment(
-    request,
-    params.offeringId!,
-    "member",
-  );
-  const page = await readMaterialPage(params.offeringId!, params.pageId!);
-  if (!page) throw new Response("Not found", { status: 404 });
-  const [offering, me] = await Promise.all([
-    prisma.educationOffering.findUnique({
-      where: { id: params.offeringId! },
-      select: { title: true },
-    }),
-    // Only the shared-doc (co-edit) path needs the author's display name.
-    page.studentEditable
-      ? prisma.user.findUnique({
-          where: { id: auth.user.sub },
-          select: { firstName: true, lastName: true },
-        })
-      : Promise.resolve(null),
-  ]);
-  return {
-    offeringId: params.offeringId!,
-    offeringTitle: offering?.title ?? "Offering",
-    page: {
-      id: page.id,
-      title: page.title,
-      studentEditable: page.studentEditable,
-      // readMaterialPage returns compat ProseMirror JSON for read-only pages; the
-      // read-only DocEditor wants block JSON. Shared docs render live (no content).
-      content: page.studentEditable ? null : ensureBlocks(page.content),
-    },
-    collabToken: page.studentEditable ? await getCollabToken(request) : null,
-    userName: me ? `${me.firstName} ${me.lastName}`.trim() : "Student",
-    isManager,
-  };
-}
+export const loader = (args: Route.LoaderArgs) => loadMaterialPage(args, MEMBER_SURFACE);
 
 export default function MaterialPage() {
-  const { page, collabToken, userName, isManager } = useLoaderData<typeof loader>();
-
-  return (
-    <div className="flex flex-col gap-4 max-w-3xl">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-2xl font-bold text-foreground">
-            {page.title}
-          </h1>
-        </div>
-        {isManager && (
-          <Link
-            to={`/documents/${page.id}`}
-            className={buttonClasses("secondary", "sm")}
-          >
-            Open in editor
-          </Link>
-        )}
-      </header>
-      <MaterialPageBody
-        pageId={page.id}
-        studentEditable={page.studentEditable}
-        content={page.content}
-        collabToken={collabToken}
-        userName={userName}
-      />
-    </div>
-  );
+  return <OfferingPageView surface={MEMBER_SURFACE} {...useLoaderData<typeof loader>()} />;
 }

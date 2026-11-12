@@ -4,7 +4,7 @@ import { fullName } from "~/lib/display";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { summarizeReactions } from "~/lib/reactions";
-import { reactionRefusal, withEmojiImages } from "~/lib/reactions.server";
+import { toggleReaction, withEmojiImages } from "~/lib/reactions.server";
 import { notify } from "~/lib/notify.server";
 import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
 import { BLOG_COMMENT_MAX } from "~/lib/blog-engagement";
@@ -75,21 +75,28 @@ export async function blogEngagementAction(request: Request, viewer: BlogReader,
       if (!post) return fail(404);
       const emoji = text("emoji");
       const mine = { postId, userId: viewer.id, emoji };
-      const { count } = await prisma.blogReaction.deleteMany({ where: mine });
-      if (count > 0) break;
-      const used = await prisma.blogReaction.findMany({
-        where: { postId },
-        select: { emoji: true },
-        distinct: ["emoji"],
-      });
-      const refused = await reactionRefusal(emoji, used.map((r) => r.emoji));
-      if (refused) return fail(refused);
-      await prisma.blogReaction.upsert({
-        where: { postId_userId_emoji: mine },
-        create: mine,
-        update: {},
-      });
-      if (post.authorId !== viewer.id) {
+      const result = await toggleReaction(
+        {
+          remove: async () => (await prisma.blogReaction.deleteMany({ where: mine })).count,
+          usedEmoji: async () =>
+            (
+              await prisma.blogReaction.findMany({
+                where: { postId },
+                select: { emoji: true },
+                distinct: ["emoji"],
+              })
+            ).map((r) => r.emoji),
+          add: () =>
+            prisma.blogReaction.upsert({
+              where: { postId_userId_emoji: mine },
+              create: mine,
+              update: {},
+            }),
+        },
+        emoji,
+      );
+      if (typeof result === "number") return fail(result);
+      if (result === "added" && post.authorId !== viewer.id) {
         await notify({
           eventType: "blog.reaction",
           createdByUserId: viewer.id,

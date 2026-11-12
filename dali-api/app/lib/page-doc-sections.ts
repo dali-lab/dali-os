@@ -10,6 +10,13 @@ export type StoredPageDocSection = {
   videoKey: string | null;
 };
 
+export const EMPTY_OVERVIEW: StoredPageDocSection = {
+  id: "overview",
+  title: "Overview",
+  body: null,
+  videoKey: null,
+};
+
 export function newSectionId(): string {
   return `sec_${randomBytes(8).toString("hex")}`;
 }
@@ -33,24 +40,6 @@ export function parseStoredSections(raw: unknown): StoredPageDocSection[] {
     });
   }
   return out;
-}
-
-/** Prefer stored sections; otherwise synthesize one Overview from legacy fields. */
-export function resolveSections(doc: {
-  body: unknown;
-  videoKey: string | null;
-  sections: unknown;
-}): StoredPageDocSection[] {
-  const stored = parseStoredSections(doc.sections);
-  if (stored.length > 0) return stored;
-  return [
-    {
-      id: "overview",
-      title: "Overview",
-      body: doc.body ?? null,
-      videoKey: doc.videoKey,
-    },
-  ];
 }
 
 /** Normalize a client-submitted sections payload, merging videoKey with prior. */
