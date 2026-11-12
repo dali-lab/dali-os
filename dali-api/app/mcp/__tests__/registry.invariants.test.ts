@@ -89,6 +89,20 @@ describe("MCP registry invariants", () => {
     expect(ASK_TOOL_NAMES.filter((n) => byName.get(n) !== "mcp:read")).toEqual([]);
   });
 
+  it("registers every exported tool definition under mcp/tools", async () => {
+    const registered = new Set(REGISTRY_TOOLS.map((t) => t.def));
+    const modules = import.meta.glob("../tools/**/*.ts") as Record<string, () => Promise<Record<string, unknown>>>;
+    const unregistered: string[] = [];
+    for (const [file, load] of Object.entries(modules)) {
+      if (file.includes("__tests__")) continue;
+      for (const [key, value] of Object.entries(await load())) {
+        const def = value as { name?: unknown; inputSchema?: unknown } | null;
+        if (/_TOOL$/.test(key) && def?.name && def.inputSchema && !registered.has(def as never)) unregistered.push(`${file} ${key}`);
+      }
+    }
+    expect(unregistered).toEqual([]);
+  });
+
   it("only gates tools on registered feature flags", () => {
     const keys = new Set<string>(FEATURE_FLAGS.map((f) => f.key));
     expect(REGISTRY_TOOLS.filter((t) => t.featureFlag && !keys.has(t.featureFlag)).map((t) => t.def.name)).toEqual([]);

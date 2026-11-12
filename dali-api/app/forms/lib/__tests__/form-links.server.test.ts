@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 vi.mock("~/lib/db.server");
 
 import { prisma } from "~/lib/db.server";
-import { loadFormHiringLinks, unlinkHiringForm } from "~/hiring/lib/form-links.server";
+import { loadFormHiringLinks, unlinkHiringForm } from "~/forms/lib/form-links.server";
 
 const db = prisma as any;
 

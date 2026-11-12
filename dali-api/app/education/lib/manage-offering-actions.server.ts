@@ -335,7 +335,7 @@ const saveAttendanceHandler: ManageContentHandler = async ({ formData, offeringI
   return "error" in result ? fail(result) : { ok: true };
 };
 
-export const MANAGE_CONTENT_ACTIONS: Record<string, ManageContentHandler> = {
+export const MANAGE_CONTENT_ACTIONS = {
   "decide-application": decideApplicationHandler,
   "approve-all-pending": approveAllPendingHandler,
   "move-waitlist-entry": moveWaitlistEntryHandler,
@@ -361,9 +361,11 @@ export const MANAGE_CONTENT_ACTIONS: Record<string, ManageContentHandler> = {
   "reopen-offering": reopenOfferingHandler,
   "save-student-note": saveStudentNoteHandler,
   "save-attendance": saveAttendanceHandler,
-};
+} satisfies Record<string, ManageContentHandler>;
 
-export function isManageContentIntent(intent: string): boolean {
+export type ManageContentIntent = keyof typeof MANAGE_CONTENT_ACTIONS;
+
+export function isManageContentIntent(intent: string): intent is ManageContentIntent {
   return Object.hasOwn(MANAGE_CONTENT_ACTIONS, intent);
 }
 

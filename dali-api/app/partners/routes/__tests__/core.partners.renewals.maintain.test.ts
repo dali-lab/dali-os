@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), isNonMember: vi.fn().mockRe
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), currentTerm: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/partners/lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
+vi.mock("~/lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
 vi.mock("~/partners/lib/partner-renewals.server", () => ({
   applyContinue: vi.fn(),
   applyMaintain: vi.fn(),

@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import type { MaintenancePlan } from "~/generated/prisma/enums";
-import { personName } from "./core-members.server";
+import { personName } from "~/lib/core-members.server";
 import { effectivePi } from "./planning-gap";
 import {
   classifyDecision,

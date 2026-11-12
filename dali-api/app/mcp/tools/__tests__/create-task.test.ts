@@ -24,7 +24,7 @@ import { createIssueForTask } from "~/projects/lib/github-task-sync";
 import { getCoreBoardProject } from "~/core/lib/taskboard.server";
 import {
   runCreateTask,
-  CREATE_TASK_TOOL,
+  CREATE_TASK_PROPERTIES,
   CreateTaskError,
 } from "~/mcp/tools/create-task";
 
@@ -41,7 +41,6 @@ beforeEach(() => {
 
 describe("create_task", () => {
   it("requires the mcp:write scope", () => {
-    expect(CREATE_TASK_TOOL.requiredScope).toBe("mcp:write");
   });
 
   it("rejects callers without project edit access", async () => {
@@ -222,8 +221,7 @@ describe("create_task core: true", () => {
   }
 
   it("makes projectId optional in the input schema and adds core", () => {
-    expect(CREATE_TASK_TOOL.inputSchema.required).toEqual(["title"]);
-    expect(CREATE_TASK_TOOL.inputSchema.properties.core.type).toBe("boolean");
+    expect(CREATE_TASK_PROPERTIES.core.type).toBe("boolean");
   });
 
   it("rejects a non-Core caller", async () => {

@@ -1,11 +1,11 @@
 import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
-import { CREATE_TASK_TOOL, runCreateTask } from "../create-task";
-import { UPDATE_TASK_TOOL, runUpdateTask } from "../update-task";
-import { UPDATE_TASK_STATUS_TOOL, runUpdateTaskStatus } from "../update-task-status";
+import { CREATE_TASK_PROPERTIES, runCreateTask } from "../create-task";
+import { UPDATE_TASK_PROPERTIES, runUpdateTask } from "../update-task";
+import { UPDATE_TASK_STATUS_PROPERTIES, runUpdateTaskStatus } from "../update-task-status";
 import { runDeleteTask } from "../delete-task";
-import { SET_TASK_CHECKLIST_TOOL, runSetTaskChecklist } from "../set-task-checklist";
-import { LINK_TASK_TO_GITHUB_TOOL, runLinkTaskToGithub } from "../link-task-to-github";
+import { SET_TASK_CHECKLIST_PROPERTIES, runSetTaskChecklist } from "../set-task-checklist";
+import { LINK_TASK_TO_GITHUB_PROPERTIES, runLinkTaskToGithub } from "../link-task-to-github";
 import { runUnlinkTaskFromGithub } from "../unlink-task-from-github";
 
 const ACTIONS = ["create", "update", "set_status", "set_checklist", "delete", "link_github", "unlink_github"] as const;
@@ -25,14 +25,14 @@ Everything except set_status and set_checklist needs Core or project-member acce
     type: "object" as const,
     properties: {
       action: { type: "string", enum: [...ACTIONS], description: "Operation to perform." },
-      ...CREATE_TASK_TOOL.inputSchema.properties,
-      ...UPDATE_TASK_TOOL.inputSchema.properties,
+      ...CREATE_TASK_PROPERTIES,
+      ...UPDATE_TASK_PROPERTIES,
       status: {
-        ...UPDATE_TASK_STATUS_TOOL.inputSchema.properties.status,
+        ...UPDATE_TASK_STATUS_PROPERTIES.status,
         description: "set_status: the target column. create: defaults to Todo when dueAt is set, otherwise Backlog.",
       },
-      items: { ...SET_TASK_CHECKLIST_TOOL.inputSchema.properties.items, description: "set_checklist: the whole checklist." },
-      repo: LINK_TASK_TO_GITHUB_TOOL.inputSchema.properties.repo,
+      items: { ...SET_TASK_CHECKLIST_PROPERTIES.items, description: "set_checklist: the whole checklist." },
+      repo: LINK_TASK_TO_GITHUB_PROPERTIES.repo,
     },
     required: ["action"],
     additionalProperties: false,
@@ -54,8 +54,8 @@ function pick(args: Record<string, unknown>, keys: string[]): any {
   return Object.fromEntries(keys.filter((k) => args[k] !== undefined).map((k) => [k, args[k]]));
 }
 
-const CREATE_KEYS = Object.keys(CREATE_TASK_TOOL.inputSchema.properties);
-const UPDATE_KEYS = Object.keys(UPDATE_TASK_TOOL.inputSchema.properties);
+const CREATE_KEYS = Object.keys(CREATE_TASK_PROPERTIES);
+const UPDATE_KEYS = Object.keys(UPDATE_TASK_PROPERTIES);
 
 async function run(ctx: McpCtx, args: Record<string, unknown>) {
   const action = args.action as string;

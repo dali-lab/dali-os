@@ -3,23 +3,9 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { redirectToLogin } from "~/lib/login-next";
+import { isOfferingManager } from "~/lib/offering-manager.server";
 
-/**
- * Offering-scoped manager check: Core (which already covers Admin) or an
- * InstructorAssignment for this offering (any term). PMs, mentors etc. get
- * nothing special — education management is instructor/Core only.
- */
-export async function isOfferingManager(
-  userId: string,
-  offeringId: string,
-): Promise<boolean> {
-  if (await isCore(userId)) return true;
-  const row = await prisma.instructorAssignment.findFirst({
-    where: { userId, offeringId },
-    select: { id: true },
-  });
-  return row !== null;
-}
+export { isOfferingManager };
 
 /**
  * Offerings this user may manage. Core sees everything ("all"); instructors
