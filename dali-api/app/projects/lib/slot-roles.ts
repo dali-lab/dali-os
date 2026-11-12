@@ -431,3 +431,62 @@ export function roleLabel(
   if (fromMap) return fromMap.label;
   return SLOT_ROLES[slot].find((d) => d.role === role)?.defaultLabel ?? role;
 }
+
+// Builtins a manager can add to or remove from a board's table with the
+// header's + button and column menu.
+export const BOARD_COLUMN_BUILTINS = [
+  "hiredRoles",
+  "projectHistory",
+  "termsInLab",
+  "currentRole",
+] as const satisfies readonly BuiltinSource[];
+
+export type BoardColumnBuiltin = (typeof BOARD_COLUMN_BUILTINS)[number];
+
+export function isBoardColumnBuiltin(v: unknown): v is BoardColumnBuiltin {
+  return (BOARD_COLUMN_BUILTINS as readonly unknown[]).includes(v);
+}
+
+// Show a builtin column at the end of the table: unhide it when the mapping
+// already has it, else append a new entry.
+export function showBuiltinColumn(
+  mapping: ColumnMapping | null,
+  builtin: BoardColumnBuiltin,
+): ColumnMapping {
+  const entries = mapping?.entries ?? [];
+  const lastOrder = Math.max(-1, ...entries.map((e) => e.order ?? 0));
+  const existing = entries.some((e) => e.source === "builtin" && e.builtin === builtin);
+  return {
+    version: 1,
+    entries: existing
+      ? entries.map((e) =>
+          e.source === "builtin" && e.builtin === builtin
+            ? { ...e, hidden: false, order: lastOrder + 1 }
+            : e,
+        )
+      : [
+          ...entries,
+          {
+            role: builtin,
+            label: BUILTIN_SOURCES[builtin].defaultLabel,
+            source: "builtin",
+            builtin,
+            order: lastOrder + 1,
+          },
+        ],
+  };
+}
+
+// Hide rather than delete, so a required builtin still counts as placed and
+// the detail page keeps showing it.
+export function hideBuiltinColumn(
+  mapping: ColumnMapping | null,
+  builtin: BoardColumnBuiltin,
+): ColumnMapping {
+  return {
+    version: 1,
+    entries: (mapping?.entries ?? []).map((e) =>
+      e.source === "builtin" && e.builtin === builtin ? { ...e, hidden: true } : e,
+    ),
+  };
+}

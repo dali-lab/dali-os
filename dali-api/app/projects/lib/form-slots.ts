@@ -1,6 +1,12 @@
 import { prisma } from "~/lib/db.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
-import { parseColumnMapping, type ColumnMapping } from "./slot-roles";
+import {
+  hideBuiltinColumn,
+  parseColumnMapping,
+  showBuiltinColumn,
+  type BoardColumnBuiltin,
+  type ColumnMapping,
+} from "./slot-roles";
 import { setFormPublished } from "~/forms/lib/form-publish.server";
 
 // Audiences an operator can lock a bound form to (a subset of the signing
@@ -170,6 +176,30 @@ export async function setSlotColumnMapping(
   await prisma.staffingCycleFormBinding.update({
     where: { id: binding.id },
     data: { columnMapping: mapping as object, updatedById: userId },
+  });
+  return { ok: true };
+}
+
+// Add or remove one builtin column from the board's table. Skips the
+// completeness check the full mapper runs, so a board whose mapping is still
+// missing roles can change its columns.
+export async function setSlotBuiltinColumn(
+  staffingCycleId: string,
+  slot: Slot,
+  builtin: BoardColumnBuiltin,
+  shown: boolean,
+  userId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const binding = await prisma.staffingCycleFormBinding.findUnique({
+    where: { staffingCycleId_slot: { staffingCycleId, slot } },
+    select: { id: true, columnMapping: true },
+  });
+  if (!binding) return { ok: false, error: "Connect a form before adding columns." };
+  const mapping = parseColumnMapping(binding.columnMapping);
+  const next = shown ? showBuiltinColumn(mapping, builtin) : hideBuiltinColumn(mapping, builtin);
+  await prisma.staffingCycleFormBinding.update({
+    where: { id: binding.id },
+    data: { columnMapping: next as object, updatedById: userId },
   });
   return { ok: true };
 }
