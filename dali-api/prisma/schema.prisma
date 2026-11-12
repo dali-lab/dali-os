@@ -4505,6 +4505,7 @@ model Task {
 
   @@unique([githubRepo, githubIssueNumber], name: "task_github_issue_unique")
   @@index([projectId])
+  @@index([epicId])
   @@index([storyId])
   @@index([sourceRecordingId])
 }
@@ -4577,6 +4578,7 @@ model TaskAssignee {
   user User @relation(fields: [userId], references: [id])
 
   @@id([taskId, userId])
+  @@index([userId])
 }
 
 model TaskComment {
