@@ -12,6 +12,7 @@ import {
   setSlotBinding,
   setSlotGate,
   setSlotPublished,
+  setSlotBuiltinColumn,
 } from "~/projects/lib/form-slots";
 import { prisma } from "~/lib/db.server";
 
@@ -548,5 +549,41 @@ describe("setSlotPublished", () => {
       ok: false,
       error: "Add at least one question version before publishing.",
     });
+  });
+});
+
+describe("setSlotBuiltinColumn", () => {
+  it("refuses a board with no form connected", async () => {
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue(null);
+    expect(await setSlotBuiltinColumn("c1", "project-bids", "termsInLab", true, "u1")).toEqual({
+      ok: false,
+      error: "Connect a form before adding columns.",
+    });
+    expect(mockPrisma.staffingCycleFormBinding.update).not.toHaveBeenCalled();
+  });
+
+  it("saves the mapping with the column shown or hidden", async () => {
+    mockPrisma.staffingCycleFormBinding.update.mockClear();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ id: "b1", columnMapping: null });
+    expect(await setSlotBuiltinColumn("c1", "intent-to-work", "termsInLab", true, "u1")).toEqual({ ok: true });
+    expect(mockPrisma.staffingCycleFormBinding.update).toHaveBeenCalledWith({
+      where: { id: "b1" },
+      data: {
+        columnMapping: {
+          version: 1,
+          entries: [{ role: "termsInLab", label: "Terms in lab", source: "builtin", builtin: "termsInLab", order: 0 }],
+        },
+        updatedById: "u1",
+      },
+    });
+
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({
+      id: "b1",
+      columnMapping: mockPrisma.staffingCycleFormBinding.update.mock.calls[0][0].data.columnMapping,
+    });
+    await setSlotBuiltinColumn("c1", "intent-to-work", "termsInLab", false, "u1");
+    expect(
+      mockPrisma.staffingCycleFormBinding.update.mock.calls[1][0].data.columnMapping.entries[0].hidden,
+    ).toBe(true);
   });
 });

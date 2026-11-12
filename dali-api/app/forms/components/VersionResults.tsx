@@ -14,12 +14,13 @@ import { FormTracker } from "~/forms/components/FormTracker";
 import { ExportCsvLink } from "~/forms/components/ResultsControls";
 import { ResultsFilterBar, responseCountText, useAnswerFilters } from "~/forms/components/ResultsFilterBar";
 import type { TrackerCounts } from "~/forms/lib/form-tracker";
-import { Menu, MultiSelect } from "~/components/ui/floating";
-import { IconButton } from "~/components/ui/IconButton";
-import { ChevronDown, Plus, X } from "lucide-react";
+import { MultiSelect } from "~/components/ui/floating";
+import { ChevronDown } from "lucide-react";
+import { ResponseTable, type ColumnControls } from "~/forms/components/ResponseTable";
 import {
   MEMBER_COLUMNS_PARAM,
   MEMBER_HISTORY_COLUMNS,
+  isMemberHistoryColumn,
   parseMemberColumns,
   type MemberHistoryColumn,
 } from "~/projects/lib/member-history";
@@ -153,7 +154,7 @@ function MemberColumnsPicker() {
   );
 }
 
-function useAddedColumns(columns: { key: string }[]) {
+function useResultColumns(columns: { key: string }[]): ColumnControls {
   const fetcher = useFetcher<{ ok?: true; error?: string }>();
   const added = columns.flatMap((c) => {
     const key = memberColumnKey(c.key);
@@ -165,57 +166,16 @@ function useAddedColumns(columns: { key: string }[]) {
       { method: "post", preventScrollReset: true },
     );
   return {
-    available: MEMBER_HISTORY_COLUMNS.filter((c) => !added.includes(c.key)),
-    add: (key: MemberHistoryColumn) => save([...added, key]),
-    remove: (key: MemberHistoryColumn) => save(added.filter((k) => k !== key)),
+    available: MEMBER_HISTORY_COLUMNS.filter((c) => !added.includes(c.key)).map((c) => ({
+      key: c.key,
+      label: c.label,
+    })),
+    onAdd: (key) => {
+      if (isMemberHistoryColumn(key)) save([...added, key]);
+    },
+    removable: (key) => memberColumnKey(key) !== null,
+    onRemove: (key) => save(added.filter((k) => k !== memberColumnKey(key))),
   };
-}
-
-function AddColumnMenu({
-  available,
-  onAdd,
-}: {
-  available: { key: MemberHistoryColumn; label: string }[];
-  onAdd: (key: MemberHistoryColumn) => void;
-}) {
-  return (
-    <Menu
-      align="right"
-      ariaLabel="Add a column"
-      trigger={<IconButton label="Add a column" icon={Plus} tooltipSide="top" />}
-    >
-      {available.length > 0 ? (
-        available.map((c) => (
-          <Menu.Item key={c.key} onSelect={() => onAdd(c.key)}>
-            {c.label}
-          </Menu.Item>
-        ))
-      ) : (
-        <Menu.Item disabled>Every column is added</Menu.Item>
-      )}
-    </Menu>
-  );
-}
-
-function AddedColumnHeader({ label, onRemove }: { label: string; onRemove: () => void }) {
-  return (
-    <Menu
-      ariaLabel={`${label} column`}
-      trigger={
-        <button
-          type="button"
-          className="max-w-[16rem] truncate text-left font-medium hover:text-foreground"
-          title={label}
-        >
-          {label}
-        </button>
-      }
-    >
-      <Menu.Item icon={<X className="h-3.5 w-3.5" />} onSelect={onRemove}>
-        Remove column
-      </Menu.Item>
-    </Menu>
-  );
 }
 
 // One version's responses: a page of submissions with a detail modal, a slot
@@ -248,7 +208,7 @@ export function VersionResults({
   } = results;
   const [searchParams, setSearchParams] = useSearchParams();
   const canAddColumns = useFeatureFlag("form-response-views");
-  const addedColumns = useAddedColumns(columns);
+  const columnControls = useResultColumns(columns);
   const urlQuery = searchParams.get("q") ?? "";
   const slot = searchParams.get("slot") ?? "";
   const [query, setQuery] = useState(urlQuery);
@@ -364,119 +324,68 @@ export function VersionResults({
                 )}
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm min-w-[640px]">
-                  <thead className="text-os-grey text-xs">
-                    <tr>
-                      <th className="text-left font-medium px-4 py-3">
-                        Respondent ({matchCount})
-                      </th>
-                      <th className="text-left font-medium px-4 py-3">Email</th>
-                      <th className="text-left font-medium px-4 py-3">
-                        Submitted
-                      </th>
-                      {hasSlotColumn && (
-                        <th className="text-left font-medium px-4 py-3">Slot</th>
-                      )}
-                      {columns.map((c) => {
-                        const added = canAddColumns ? memberColumnKey(c.key) : null;
-                        return (
-                          <th key={c.key} className="text-left font-medium px-4 py-3">
-                            {added ? (
-                              <AddedColumnHeader
-                                label={c.label}
-                                onRemove={() => addedColumns.remove(added)}
-                              />
-                            ) : (
-                              <div className="max-w-[16rem] truncate" title={c.label}>
-                                {c.label}
-                              </div>
-                            )}
-                          </th>
-                        );
-                      })}
-                      {isPartnerApplicationForm && (
-                        <th className="text-left font-medium px-4 py-3">
-                          Partner app
-                        </th>
-                      )}
-                      {canAddColumns && (
-                        <th className="w-10 px-2 py-1.5 text-right">
-                          <AddColumnMenu
-                            available={addedColumns.available}
-                            onAdd={addedColumns.add}
-                          />
-                        </th>
-                      )}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map((r) => (
-                      <tr
-                        key={r.id}
-                        onClick={() => setOpenId(r.id)}
-                        className="border-t border-os-container hover:bg-os-card-hover cursor-pointer"
+              <ResponseTable
+                lead={[
+                  {
+                    key: "name",
+                    label: `Respondent (${matchCount})`,
+                    cell: (r) => (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenId(r.id);
+                        }}
+                        className="text-left hover:underline"
                       >
-                        <td className="px-4 py-2.5 text-foreground font-medium whitespace-nowrap">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenId(r.id);
-                            }}
-                            className="text-left hover:underline"
-                          >
-                            {r.name}
-                          </button>
-                        </td>
-                        <td className="px-4 py-2.5 text-muted-foreground">
-                          {r.email ?? "—"}
-                        </td>
-                        <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">
-                          {formatDate(r.createdAt)}
-                          {r.edited && (
-                            <span className="ml-1.5 text-xs text-os-grey">Edited</span>
-                          )}
-                        </td>
-                        {hasSlotColumn && (
-                          <td className="px-4 py-2.5 text-muted-foreground">
-                            {r.slot ?? "—"}
-                          </td>
-                        )}
-                        {columns.map((c) => {
-                          const value = r.values.get(c.key) ?? "";
-                          return (
-                            <td key={c.key} className="px-4 py-2.5 text-foreground">
-                              <div
-                                className="max-w-[16rem] truncate"
-                                title={value || undefined}
-                              >
-                                {value || "—"}
-                              </div>
-                            </td>
-                          );
-                        })}
-                        {isPartnerApplicationForm && (
-                          <td className="px-4 py-2.5">
-                            {r.partnerApplication ? (
+                        {r.name}
+                      </button>
+                    ),
+                  },
+                  { key: "email", label: "Email", cell: (r) => r.email ?? "—" },
+                  {
+                    key: "submitted",
+                    label: "Submitted",
+                    className: "px-4 py-2.5 text-muted-foreground whitespace-nowrap",
+                    cell: (r) => (
+                      <>
+                        {formatDate(r.createdAt)}
+                        {r.edited && <span className="ml-1.5 text-xs text-os-grey">Edited</span>}
+                      </>
+                    ),
+                  },
+                  ...(hasSlotColumn
+                    ? [{ key: "slot", label: "Slot", cell: (r: (typeof rows)[number]) => r.slot ?? "—" }]
+                    : []),
+                ]}
+                columns={columns}
+                trailing={
+                  isPartnerApplicationForm
+                    ? [
+                        {
+                          key: "partner",
+                          label: "Partner app",
+                          cell: (r) =>
+                            r.partnerApplication ? (
                               <Link
                                 to={`/core/partners/applications/${r.partnerApplication.id}`}
-                                onClick={(e) => e.stopPropagation()}
                                 className="text-xs font-medium text-os-accent hover:underline whitespace-nowrap"
                               >
                                 {r.partnerApplication.title} →
                               </Link>
                             ) : (
                               <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        )}
-                        {canAddColumns && <td />}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                            ),
+                        },
+                      ]
+                    : []
+                }
+                rows={rows}
+                rowKey={(r) => r.id}
+                value={(r, key) => r.values.get(key) ?? ""}
+                onOpen={(r) => setOpenId(r.id)}
+                controls={canAddColumns ? columnControls : null}
+              />
             )}
           </div>
           {(page > 1 || hasNext) && (

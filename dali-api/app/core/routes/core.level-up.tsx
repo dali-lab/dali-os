@@ -38,6 +38,9 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
+import { resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
+import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Question } from "~/types";
 import { conditionalKeys } from "~/forms/lib/form-logic";
 import { isLevel, type Level } from "~/lib/level";
@@ -74,36 +77,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (portalRedirect) return portalRedirect;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
-  const {
-    terms: termOptions,
-    selected: selectedTerm,
-    termId: filterTermId,
-    isAll,
-  } = await resolveTermFilter(request);
-
-  const fallbackTerm = await currentTerm();
-  if (!fallbackTerm && termOptions.length === 0)
-    return { gate: "no-cycle" as const };
-
-  let cycleIds: string[];
-  let cycleName: string;
-  let singleCycleId: string | null;
-  if (isAll) {
-    const cycles = await prisma.staffingCycle.findMany({ select: { id: true } });
-    cycleIds = cycles.map((c) => c.id);
-    cycleName = "all terms";
-    singleCycleId = null;
-  } else {
-    const t =
-      termOptions.find((o) => o.id === filterTermId) ??
-      (fallbackTerm
-        ? { id: fallbackTerm.id, code: fallbackTerm.code }
-        : termOptions[0]);
-    const cycle = await ensureStaffingCycle(t.id, t.code);
-    cycleIds = [cycle.id];
-    cycleName = cycle.name;
-    singleCycleId = cycle.id;
-  }
+  const cycles = await resolveBoardCycles(request, { create: true });
+  if (!cycles) return { gate: "no-cycle" as const };
+  const { termOptions, selectedTerm, isAll, cycleIds, cycleName, singleCycleId } = cycles;
 
   const canManage = await canManageStaffing(auth.user.sub);
   const [binding, selectableForms] = await Promise.all([
@@ -337,10 +313,14 @@ export async function action({ request }: Route.ActionArgs) {
     intent === "set-slot-form" ||
     intent === "set-slot-mapping" ||
     intent === "set-slot-gate" ||
-    intent === "set-slot-published"
+    intent === "set-slot-published" ||
+    intent === "set-slot-column"
   ) {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
+
+    if (intent === "set-slot-column")
+      return setBoardColumn(form, cycle.id, SLOT, auth.user.sub, request);
 
     if (intent === "set-slot-form") {
       const formId = String(form.get("formId") ?? "");
@@ -467,6 +447,7 @@ function Loaded({ data }: { data: LoadedData }) {
   const [domainId, setDomainId] = useSearchParamState("domain");
   const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
   const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
+  const responseTable = useFeatureFlag("form-response-views");
 
   const { filtered } = useFilteredList(data.submissions, {
     search,
@@ -534,6 +515,9 @@ function Loaded({ data }: { data: LoadedData }) {
             shownCount={filtered.length}
           />
         </div>
+        {responseTable && !data.noFormConnected && (
+          <BoardCsvLink slot={SLOT} matching={filtered.length} total={data.submissions.length} />
+        )}
       </div>
 
       <div
@@ -547,6 +531,29 @@ function Loaded({ data }: { data: LoadedData }) {
             No Level Up form is connected for this term. Open{" "}
             <em>Advanced settings</em> to connect one.
           </div>
+        ) : responseTable ? (
+          <BoardTable
+            columns={data.tableColumns}
+            rows={filtered}
+            detailHref={(r) => `/core/level-up/${r.userId}?term=${encodeURIComponent(data.selectedTerm)}`}
+            editable={data.canManage && !data.isAll}
+            trailing={
+              data.canManage
+                ? [
+                    {
+                      key: "actions",
+                      label: "Actions",
+                      cell: (r) => <LevelUpAction row={r} onLevelUp={setConfirmRow} />,
+                    },
+                  ]
+                : []
+            }
+            emptyMessage={
+              data.submissions.length === 0
+                ? "No Level Up submissions yet."
+                : "No members match the current filters."
+            }
+          />
         ) : (
           <LevelUpTable
             columns={data.tableColumns}
@@ -658,10 +665,7 @@ function LevelUpRow({
     targetLevel: Level;
   }) => void;
 }) {
-  const tp = row.targetPromotion;
   const href = `/core/level-up/${row.userId}?term=${encodeURIComponent(selectedTerm)}`;
-
-  const levelLabel: Record<Level, string> = { P1: "P1", P2: "P2", P3: "P3" };
 
   return (
     <tr className="border-t border-border hover:bg-muted/10">
@@ -694,42 +698,65 @@ function LevelUpRow({
       })}
       {canManage && (
         <td className="px-4 py-2">
-          {tp ? (
-            tp.alreadyPromoted ? (
-              <span
-                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-os-green/10 text-os-green border border-os-green/30"
-                title={`Already at ${levelLabel[tp.targetLevel]} in ${tp.domainName}`}
-              >
-                Promoted ✓
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() =>
-                  onLevelUp({
-                    userId: row.userId,
-                    name: row.name,
-                    domainId: tp.domainId,
-                    domainName: tp.domainName,
-                    targetLevel: tp.targetLevel,
-                  })
-                }
-                className={buttonClasses("primary", "xs")}
-              >
-                Level Up → {levelLabel[tp.targetLevel]}
-              </button>
-            )
-          ) : (
-            <span
-              className="text-xs text-muted-foreground"
-              title="Map target-domain and target-level columns to enable this button"
-            >
-              —
-            </span>
-          )}
+          <LevelUpAction row={row} onLevelUp={onLevelUp} />
         </td>
       )}
     </tr>
+  );
+}
+
+type LevelUpTarget = {
+  userId: string;
+  name: string;
+  domainId: string;
+  domainName: string;
+  targetLevel: Level;
+};
+
+function LevelUpAction({
+  row,
+  onLevelUp,
+}: {
+  row: TableRow;
+  onLevelUp: (row: LevelUpTarget) => void;
+}) {
+  const tp = row.targetPromotion;
+  if (!tp) {
+    return (
+      <span
+        className="text-xs text-muted-foreground"
+        title="Map target-domain and target-level columns to enable this button"
+      >
+        —
+      </span>
+    );
+  }
+  if (tp.alreadyPromoted) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-os-green/10 text-os-green border border-os-green/30"
+        title={`Already at ${tp.targetLevel} in ${tp.domainName}`}
+      >
+        Promoted ✓
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        onLevelUp({
+          userId: row.userId,
+          name: row.name,
+          domainId: tp.domainId,
+          domainName: tp.domainName,
+          targetLevel: tp.targetLevel,
+        })
+      }
+      className={buttonClasses("primary", "xs")}
+    >
+      Level Up → {tp.targetLevel}
+    </button>
   );
 }
 
