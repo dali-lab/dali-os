@@ -29,7 +29,7 @@ vi.mock("~/lib/pages", async (importActual) => ({
 }));
 vi.mock("~/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
-vi.mock("~/lib/notebooks.server", () => ({
+vi.mock("~/calendar/lib/notebooks.server", () => ({
   addToNotebook: vi.fn(),
   loadManageableNotebook: vi.fn(),
   notebookErrorResponse: vi.fn(),
@@ -51,7 +51,7 @@ import { logAuditEvent } from "~/lib/audit";
 import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
+import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/calendar/lib/notebooks.server";
 import { loadAncestorChain, type ChainRow } from "~/lib/page-ancestry.server";
 import { findNameConflict } from "~/lib/page-names.server";
 import { movePage, type MovePageBody } from "~/lib/page-move.server";

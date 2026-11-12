@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
-import { meetingNotebookIdentity, type NotebookMeeting } from "~/lib/meeting-notebook";
-import { suggestNotebooks, type NotebookCandidate } from "~/lib/notebook-suggest";
+import { meetingNotebookIdentity, type NotebookMeeting } from "~/calendar/lib/meeting-notebook.server";
+import { suggestNotebooks, type NotebookCandidate } from "~/calendar/lib/notebook-suggest";
 import { formatFiledPath, notebookLocationPartsBulk } from "~/lib/note-path.server";
 import { findRoot } from "~/lib/drive-roots.server";
 

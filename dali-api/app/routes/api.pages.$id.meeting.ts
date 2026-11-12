@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { attachNote, detachNote, notebookErrorResponse } from "~/lib/notebooks.server";
+import { attachNote, detachNote, notebookErrorResponse } from "~/calendar/lib/notebooks.server";
 
 // POST /api/pages/:id/meeting
 //   { intent: "detach-meeting" }                             — a meeting note becomes a plain doc

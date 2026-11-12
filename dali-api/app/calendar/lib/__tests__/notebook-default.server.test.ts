@@ -23,7 +23,7 @@ import { prisma } from "~/lib/db.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { findReceiver, resolveFilingFolder } from "~/lib/drive-receivers.server";
 import { notebookLocationParts } from "~/lib/note-path.server";
-import { resolveDefaultNotebook } from "~/lib/notebook-default.server";
+import { resolveDefaultNotebook } from "~/calendar/lib/notebook-default.server";
 import { findMentorPair } from "~/mentorship/lib/pair-suggestion.server";
 
 const m = prisma as any;

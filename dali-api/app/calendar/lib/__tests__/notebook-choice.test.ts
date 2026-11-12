@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isExistingChoice, notebookChoiceSchema } from "~/lib/notebook-choice";
+import { isExistingChoice, notebookChoiceSchema } from "~/calendar/lib/notebook-choice";
 import { AddMeetingNoteSchema, AddMeetingWhiteboardSchema } from "~/calendar/lib/calendar-schemas";
 
 describe("notebookChoiceSchema", () => {

@@ -19,8 +19,8 @@ import { prisma } from "~/lib/db.server";
 import { findRoot } from "~/lib/drive-roots.server";
 import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { notebookLocationPartsBulk } from "~/lib/note-path.server";
-import { meetingNotebookIdentity } from "~/lib/meeting-notebook";
-import { listNotebooks, MAX_LISTED } from "~/lib/notebook-listing.server";
+import { meetingNotebookIdentity } from "~/calendar/lib/meeting-notebook.server";
+import { listNotebooks, MAX_LISTED } from "~/calendar/lib/notebook-listing.server";
 
 const m = prisma as any;
 const EDIT = { canView: true, canEdit: true, canComment: true };

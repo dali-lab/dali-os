@@ -11,7 +11,7 @@ import { isRoot, nearestRoot, rootBoundMoveError, ROOT_MOVE_ERROR, SYSTEM_FOLDER
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { findNameConflict } from "~/lib/page-names.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/lib/notebooks.server";
+import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/calendar/lib/notebooks.server";
 
 // POST /api/pages/:id/move — move and/or reorder a document.
 //   { parentPageId, beforeId? }                  → reorder within its workspace

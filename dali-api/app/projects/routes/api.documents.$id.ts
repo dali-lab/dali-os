@@ -6,7 +6,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
 import { findNameConflict } from "~/lib/page-names.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { loadManageableNotebook, notebookErrorResponse, trashNotebook } from "~/lib/notebooks.server";
+import { loadManageableNotebook, notebookErrorResponse, trashNotebook } from "~/calendar/lib/notebooks.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
 
 // POST   /api/documents/:id — partial update. Body: any of

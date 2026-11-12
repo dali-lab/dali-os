@@ -29,7 +29,7 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }));
-vi.mock("~/lib/notebooks.server", () => {
+vi.mock("~/calendar/lib/notebooks.server", () => {
   class NotebookError extends Error {
     constructor(
       message: string,
@@ -62,7 +62,7 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadAncestorChain } from "~/lib/page-ancestry.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { logAuditEvent } from "~/lib/audit";
-import { NotebookError, addToNotebook } from "~/lib/notebooks.server";
+import { NotebookError, addToNotebook } from "~/calendar/lib/notebooks.server";
 import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
 import { findNameConflict } from "~/lib/page-names.server";
 import { action } from "../api.pages.$id.move";

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { AssignmentType } from "~/generated/prisma/client";
-import { notebookChoiceSchema } from "~/lib/notebook-choice";
+import { notebookChoiceSchema } from "~/calendar/lib/notebook-choice";
 
 // Minutes from local midnight: 0..1440 (inclusive end allowed for endMinute).
 const minuteOfDay = z.number().int().min(0).max(1440);

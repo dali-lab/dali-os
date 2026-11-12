@@ -4,7 +4,7 @@ import {
   meetingTypeForNotebook,
   termForDate,
   type NotebookMeeting,
-} from "~/lib/meeting-notebook";
+} from "~/calendar/lib/meeting-notebook.server";
 
 const fall = { id: "t-26f", code: "26F", startDate: new Date("2026-09-14T00:00:00Z") };
 const summer = { id: "t-26x", code: "26X", startDate: new Date("2026-06-22T00:00:00Z") };

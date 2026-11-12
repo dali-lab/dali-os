@@ -67,7 +67,7 @@ import {
   setNotebookTemplate,
   setSeriesNotebook,
   trashNotebook,
-} from "~/lib/notebooks.server";
+} from "~/calendar/lib/notebooks.server";
 
 const m = prisma as any;
 const FULL = { canView: true, canEdit: true, canComment: true };

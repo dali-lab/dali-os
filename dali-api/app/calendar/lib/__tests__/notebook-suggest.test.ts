@@ -4,7 +4,7 @@ import {
   suggestNotebooks,
   type NotebookCandidate,
   type SuggestContext,
-} from "~/lib/notebook-suggest";
+} from "~/calendar/lib/notebook-suggest";
 
 const row = (over: Partial<NotebookCandidate> = {}): NotebookCandidate => ({
   id: "nb",

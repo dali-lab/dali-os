@@ -28,7 +28,7 @@ vi.mock("~/calendar/lib/google-calendar.server", () => ({
 }));
 vi.mock("~/lib/page-copy.server", () => ({ copyPageBody: vi.fn() }));
 vi.mock("~/lib/page-move.server", () => ({ movePage: vi.fn() }));
-vi.mock("~/lib/notebooks.server", () => {
+vi.mock("~/calendar/lib/notebooks.server", () => {
   class NotebookError extends Error {
     constructor(
       message: string,
@@ -67,7 +67,7 @@ import {
 } from "~/calendar/lib/google-calendar.server";
 import { copyPageBody } from "~/lib/page-copy.server";
 import { movePage } from "~/lib/page-move.server";
-import { NotebookError, createNotebook, loadEditableNotebook } from "~/lib/notebooks.server";
+import { NotebookError, createNotebook, loadEditableNotebook } from "~/calendar/lib/notebooks.server";
 import { syncMeetingShares } from "~/lib/meeting-shares.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToPlainText } from "~/components/doc/schema/configs";

@@ -12,7 +12,7 @@ import {
 } from "~/lib/scheduled-meeting";
 import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 import { meetingNotePath } from "~/lib/note-path.server";
-import { notebookChoiceSchema } from "~/lib/notebook-choice";
+import { notebookChoiceSchema } from "~/calendar/lib/notebook-choice";
 
 const Base = {
   title: z.string().trim().min(1).max(200),

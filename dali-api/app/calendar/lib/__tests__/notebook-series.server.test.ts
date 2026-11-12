@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { nextNoteTargets } from "~/lib/notebook-series.server";
+import { nextNoteTargets } from "~/calendar/lib/notebook-series.server";
 
 const m = prisma as any;
 const NOW = new Date("2026-09-16T12:00:00Z");

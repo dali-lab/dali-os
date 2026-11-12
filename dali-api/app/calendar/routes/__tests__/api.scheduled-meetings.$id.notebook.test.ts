@@ -5,7 +5,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/notebooks.server", () => {
+vi.mock("~/calendar/lib/notebooks.server", () => {
   class NotebookError extends Error {
     constructor(
       message: string,
@@ -25,7 +25,7 @@ vi.mock("~/lib/notebooks.server", () => {
 });
 
 import { requireMemberSession } from "~/lib/auth";
-import { NotebookError, setSeriesNotebook } from "~/lib/notebooks.server";
+import { NotebookError, setSeriesNotebook } from "~/calendar/lib/notebooks.server";
 import { action } from "../api.scheduled-meetings.$id.notebook";
 
 function post(body: unknown, method = "POST") {
