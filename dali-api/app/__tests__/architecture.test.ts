@@ -168,7 +168,6 @@ const TWO_WAY_DOMAIN_ALLOWLIST: string[] = [
   "forms <-> hiring", // split or redirect-table follow-up
   "forms <-> partners", // split or redirect-table follow-up
   "forms <-> projects", // split or redirect-table follow-up
-  "hiring <-> rooms", // surfaced by the domain moves; split or redirect-table follow-up
   "jobs <-> projects", // split or redirect-table follow-up
   "members <-> projects", // split or redirect-table follow-up
   "mentorship <-> projects", // split or redirect-table follow-up
