@@ -1,7 +1,6 @@
 import type { OnboardingJourneyRole } from "~/generated/prisma/enums";
 import { prisma, Prisma } from "~/lib/db.server";
-import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { fullName, primaryEmail } from "~/lib/display";
@@ -28,11 +27,8 @@ export type JourneyResult<T extends object = object> =
 const fail = (status: number, error: string) => ({ ok: false as const, status, error });
 
 export async function requireJourneyViewer(request: Request): Promise<JourneyViewer> {
-  const auth = await requireAuth(request);
-  if (!auth.ok) throw redirectToLogin(request);
-  const portalRedirect = await redirectNonMemberToPortal(auth, request);
-  if (portalRedirect) throw portalRedirect;
-  const viewer = await resolveJourneyViewer(auth.user.sub, request);
+  const { userId } = await requireLabViewer(request);
+  const viewer = await resolveJourneyViewer(userId, request);
   if (!viewer) throw new Response("Not found", { status: 404 });
   return viewer;
 }
