@@ -22,13 +22,17 @@ async function seedPage(opts: {
   contentDocId?: string;
 }) {
   seq += 1;
+  const author = await prisma.user.create({
+    data: { firstName: "Ada", lastName: `Tester${seq}`, daliEmail: `ada${seq}@example.edu` },
+  });
   const page = await prisma.page.create({
     data: {
       workspaceType: "Lab",
       title: `Page ${seq}`,
+      createdById: author.id,
       archivedAt: opts.archived ? new Date() : null,
       contentDocId: opts.contentDocId ?? null,
-    } as never,
+    },
   });
   const name = opts.contentDocId ?? `doc:${page.id}:body`;
   const doc = await prisma.collabDocument.create({ data: { name, state: new Uint8Array([1]) } });
