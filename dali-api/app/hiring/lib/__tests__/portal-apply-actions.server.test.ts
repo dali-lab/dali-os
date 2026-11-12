@@ -17,6 +17,8 @@ import {
   stopUsingWaitlistedApplication,
 } from "~/hiring/lib/continued-interest.server";
 import {
+  NEW_APPLICATION_ACTIONS,
+  OWNED_APPLICATION_ACTIONS,
   PORTAL_APPLY_ACTIONS,
   resolveApplyTarget,
   runPortalApplyAction,
@@ -54,6 +56,11 @@ describe("portal apply dispatch", () => {
     expect(Object.keys(PORTAL_APPLY_ACTIONS).sort()).toEqual(
       ["create-draft", "save-draft", "stop-using-waitlisted", "submit", "update-domains", "use-waitlisted"].sort(),
     );
+  });
+
+  it("splits the intents into those that start an application and those that act on one", () => {
+    expect(Object.keys(NEW_APPLICATION_ACTIONS).sort()).toEqual(["create-draft", "use-waitlisted"]);
+    expect(Object.keys(OWNED_APPLICATION_ACTIONS).sort()).toEqual(["save-draft", "stop-using-waitlisted", "submit", "update-domains"]);
   });
 
   it("answers an unknown intent on an owned open application", async () => {

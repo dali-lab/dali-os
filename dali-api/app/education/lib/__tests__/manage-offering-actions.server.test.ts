@@ -57,6 +57,7 @@ import { saveAttendance } from "~/education/lib/attendance.server";
 import { bindOfferingCertificateTemplate } from "~/education/lib/certificate-templates.server";
 import {
   MANAGE_CONTENT_ACTIONS,
+  isManageContentIntent,
   runManageOfferingAction,
 } from "../manage-offering-actions.server";
 
@@ -80,6 +81,8 @@ beforeEach(() => {
 describe("content intents", () => {
   it("registers the 25 content intents", () => {
     expect(Object.keys(MANAGE_CONTENT_ACTIONS)).toHaveLength(25);
+    expect(Object.keys(MANAGE_CONTENT_ACTIONS).every(isManageContentIntent)).toBe(true);
+    expect(["toString", "update-offering"].some(isManageContentIntent)).toBe(false);
   });
 
   it("returns 403 for a non-manager and runs nothing", async () => {
