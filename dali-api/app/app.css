@@ -298,7 +298,7 @@ html.dark,
 
   /* blue text → lighter/brighter for dark bg */
   .text-blue-600, .text-blue-700 { color: hsl(213 80% 70%) !important; }
-  .text-blue-800, .text-blue-900 { color: hsl(213 80% 80%) !important; }
+  .text-blue-900 { color: hsl(213 80% 80%) !important; }
 
   /* blue borders → muted */
   .border-blue-100, .border-blue-200 { border-color: hsl(215 40% 28%) !important; }

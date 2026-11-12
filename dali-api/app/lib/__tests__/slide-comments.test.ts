@@ -25,7 +25,6 @@ describe("commentAnchorSchema", () => {
     [{ kind: "slide", slideId: "s1", x: 0.25, y: 1 }],
     [{ kind: "blocknote" }],
     [{ kind: "blocknote", slideId: "s1", elementId: "body" }],
-    [{ from: "a", to: "b" }],
     [null],
     [undefined],
   ])("accepts %j", (anchor) => {
@@ -39,6 +38,7 @@ describe("commentAnchorSchema", () => {
     ["x out of range", { kind: "slide", slideId: "s1", x: 1.5, y: 0.5 }],
     ["negative y", { kind: "slide", slideId: "s1", x: 0.5, y: -0.1 }],
     ["string coordinate", { kind: "slide", slideId: "s1", x: "0.5", y: "0.5" }],
+    ["legacy from/to anchor", { from: "a", to: "b" }],
     ["unknown kind", { kind: "pin", slideId: "s1" }],
     ["extra keys", { kind: "slide", slideId: "s1", html: "<b>" }],
     ["element without slide", { kind: "blocknote", elementId: "body" }],
