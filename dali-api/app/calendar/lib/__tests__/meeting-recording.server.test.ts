@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
+vi.mock("~/lib/collabAuth.server", () => ({ authorizeCollabDoc: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/transcription/provider", () => ({ getTranscriptionProvider: vi.fn() }));
 
 import { prisma, Prisma } from "~/lib/db.server";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { getTranscriptionProvider } from "~/lib/transcription/provider";
 import {

@@ -7,13 +7,13 @@ vi.mock("~/lib/db.server", () => ({
     user: { findUnique: vi.fn() },
   },
 }));
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]),
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import {
   permissionAtLeast,
   sharePermissionFor,

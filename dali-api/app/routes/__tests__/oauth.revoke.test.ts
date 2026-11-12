@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const mockRevokeSession = vi.hoisted(() => vi.fn());
-vi.mock("~/lib/session", () => ({
+vi.mock("~/lib/session.server", () => ({
   revokeSession: mockRevokeSession,
   hashSessionId: (raw: string) => `hash:${raw}`,
 }));

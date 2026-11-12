@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { notify } from "~/lib/notify.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { fullName } from "~/lib/display";

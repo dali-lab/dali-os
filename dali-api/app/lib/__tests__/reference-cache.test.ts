@@ -45,7 +45,7 @@ import {
   invalidateReferenceCacheForWrite,
 } from "~/lib/reference-cache.server";
 import { resolveTermFilter, termWindows } from "~/lib/terms";
-import { listAllGroups, listVisibleGroupIdsForUser, loadGroupArchiveContext } from "~/lib/groups";
+import { listAllGroups, listVisibleGroupIdsForUser, loadGroupArchiveContext } from "~/lib/groups.server";
 
 const nextTick = () => new Promise((r) => setImmediate(r));
 const request = new Request("http://test/?term=all");

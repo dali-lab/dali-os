@@ -26,7 +26,7 @@ import { LoadMore, type LoadMoreProps } from "~/components/ui/Pager";
 import { cn } from "~/lib/cn";
 import { projectWorkMeta, type ProjectWorkItem } from "~/lib/project-work";
 import { isProjectWorkEvent } from "~/lib/notification-events";
-// The client mirror of ~/lib/tasks' `Task`, so the shell's panel pulls in no
+// The client mirror of ~/lib/tasks.server' `Task`, so the shell's panel pulls in no
 // server code (see NotificationBell).
 import type { OpenTask } from "~/components/NotificationBell";
 import { ANSWER_TO_CLEAR_EVENTS } from "~/members/lib/coffee-chat";

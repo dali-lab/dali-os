@@ -15,7 +15,7 @@ vi.mock("~/hiring/lib/applicant-groups.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { getOpenCycles } from "~/hiring/lib/cycles";
-import { getInternalCycleApplyTasks } from "~/lib/tasks";
+import { getInternalCycleApplyTasks } from "~/lib/tasks.server";
 
 const mockPrisma = prisma as unknown as Record<string, any>;
 const mockGetOpenCycles = getOpenCycles as unknown as ReturnType<typeof vi.fn>;

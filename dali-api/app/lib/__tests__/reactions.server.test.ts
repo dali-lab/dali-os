@@ -6,7 +6,7 @@ const s3 = vi.hoisted(() => ({
   getDownloadUrl: vi.fn(async (key: string) => `https://s3.test/${key}`),
 }));
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
-vi.mock("~/lib/s3", () => s3);
+vi.mock("~/lib/s3.server", () => s3);
 
 import data from "@emoji-mart/data/sets/15/native.json";
 import { addReaction, isStandardEmoji, listCustomEmoji, reactionRefusal, toggleReaction } from "../reactions.server";

@@ -20,7 +20,7 @@ const KindEnum = z.enum([
 // "whole lab", any number of groups, and any number of individuals. At least
 // one source must be present (enforced after resolution). `isTodo` + `dueAt`
 // + `formId` power the Announcements composer: a todo surfaces in the
-// recipient's Tasks sidebar / Home banner (see ~/lib/tasks), `dueAt` is its
+// recipient's Tasks sidebar / Home banner (see ~/lib/tasks.server), `dueAt` is its
 // deadline, and `formId` optionally attaches a published form to fill.
 // `sendAt` (future instant) schedules instead of sending — the row waits in
 // ScheduledAnnouncement until the scheduled-announcements job fires it.

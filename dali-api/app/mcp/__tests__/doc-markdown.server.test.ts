@@ -8,11 +8,11 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 
-vi.mock("~/lib/s3", () => ({ putObject: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ putObject: vi.fn() }));
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
 
 import { lookup } from "node:dns/promises";
-import { putObject } from "~/lib/s3";
+import { putObject } from "~/lib/s3.server";
 import { prisma } from "~/lib/db.server";
 import { checkInlineRefs, parseInlineMarkdown, parseMarkdown } from "../doc-markdown.server";
 

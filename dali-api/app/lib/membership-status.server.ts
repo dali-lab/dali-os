@@ -12,7 +12,7 @@ import { prisma } from "~/lib/db.server";
 import {
   refreshDartmouthSignals,
   type RefreshOptions,
-} from "~/lib/dartmouth-refresh";
+} from "~/lib/dartmouth-refresh.server";
 import { isGraduateProgramClass } from "~/lib/dartmouth-people";
 
 // Dartmouth Commencement is mid-June. June 15 is the conservative cutoff for

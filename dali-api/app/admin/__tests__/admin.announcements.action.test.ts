@@ -7,7 +7,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: vi.fn() }));
 vi.mock("~/components/doc", () => ({ DocEditor: () => null }));
 
 import { prisma } from "~/lib/db.server";

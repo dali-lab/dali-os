@@ -7,7 +7,7 @@ import {
 } from "../app/projects/lib/bid-validation.js";
 import { interpretIntentForm } from "../app/projects/lib/intent-form-interpreter.js";
 import { replaceIntentSet } from "../app/projects/lib/intent-validation.js";
-import { syncDefaultGroups } from "../app/lib/groups.js";
+import { syncDefaultGroups } from "../app/lib/groups.server.js";
 import { ensureAllRoots } from "../app/drive/lib/drive-roots.server.js";
 import { parseChartString } from "../app/lib/chart-string.js";
 import { seedEducationDemo } from "./seeds/education-demo.js";

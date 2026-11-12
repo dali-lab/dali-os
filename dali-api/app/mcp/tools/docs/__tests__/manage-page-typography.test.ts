@@ -56,7 +56,7 @@ vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   pageDepth: vi.fn(),
   MAX_PAGE_DEPTH: 2,
   isAncestorOf: vi.fn(),

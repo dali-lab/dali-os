@@ -6,7 +6,7 @@ import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { downloadFileName } from "~/lib/file-download-name";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 
 const LINK_SECONDS = 5 * 60;
 const VERSION_SELECT = { id: true, fileName: true, s3Key: true } as const;

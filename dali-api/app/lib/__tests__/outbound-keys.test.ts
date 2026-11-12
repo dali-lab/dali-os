@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { freshKey, sprintClosedSlackKey, staffingFinalizeWelcomeKey } from "~/lib/outbound-keys";
+import { freshKey, sprintClosedSlackKey, staffingFinalizeWelcomeKey } from "~/lib/outbound-keys.server";
 
 describe("freshKey", () => {
   it("is unique per call so the (channel, dedupKey) claim never coalesces a resend", () => {

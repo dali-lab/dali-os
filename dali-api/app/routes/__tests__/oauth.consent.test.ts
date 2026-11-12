@@ -9,7 +9,7 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn().mockResolvedValue(false),
   isAdmin: vi.fn().mockResolvedValue(false),
 }));
-vi.mock("~/lib/oauth", () => ({
+vi.mock("~/lib/oauth.server", () => ({
   getOAuthClient: vi.fn().mockResolvedValue({ clientId: "c1", name: "Claude Code" }),
   generateAuthorizationCode: vi.fn().mockResolvedValue("code-1"),
   authorizationResponseUrl: ({ redirectUri, query }: any) =>

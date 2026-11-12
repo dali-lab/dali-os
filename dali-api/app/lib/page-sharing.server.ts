@@ -12,7 +12,7 @@
 
 import { BadRequestError } from "~/lib/http-error";
 import { prisma } from "~/lib/db.server";
-import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import { cachedForRequest } from "~/lib/request-cache";
 import type { SharePrincipalType, SharePermission } from "~/generated/prisma/client";
 

@@ -4,11 +4,11 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/tasks", async (importOriginal) => ({
+vi.mock("~/lib/tasks.server", async (importOriginal) => ({
   // SELF_CLEARING_FORM_TODO stays real — the mark-all-read test asserts the
   // exact predicate the endpoint excludes.
   SELF_CLEARING_FORM_TODO: (
-    await importOriginal<typeof import("~/lib/tasks")>()
+    await importOriginal<typeof import("~/lib/tasks.server")>()
   ).SELF_CLEARING_FORM_TODO,
   listOpenTasksPage: vi.fn(),
   listMyProjectTasksPage: vi.fn(),
@@ -18,10 +18,10 @@ vi.mock("~/lib/tasks", async (importOriginal) => ({
   listNotificationHistory: vi.fn(),
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(async () => ({})) }));
-vi.mock("~/lib/notifications", async (importOriginal) => ({
+vi.mock("~/lib/notifications.server", async (importOriginal) => ({
   // annotateDesktopFeed stays real — the legacy-payload test covers the
   // desktop/urgent derivation it adds.
-  ...(await importOriginal<typeof import("~/lib/notifications")>()),
+  ...(await importOriginal<typeof import("~/lib/notifications.server")>()),
   listMyNotifications: vi.fn(),
   listRetiredMeetingPingIds: vi.fn(),
 }));
@@ -36,11 +36,11 @@ import {
   projectTasksTotal,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
-} from "~/lib/tasks";
+} from "~/lib/tasks.server";
 import {
   listMyNotifications,
   listRetiredMeetingPingIds,
-} from "~/lib/notifications";
+} from "~/lib/notifications.server";
 import { loader, action } from "~/routes/api.notifications";
 
 const USER_ID = "user-1";

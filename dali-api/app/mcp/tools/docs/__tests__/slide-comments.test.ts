@@ -22,7 +22,7 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
-vi.mock("~/lib/collabAuth", () => ({
+vi.mock("~/lib/collabAuth.server", () => ({
   hydrateAuthors: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("~/lib/comment-events.server", () => ({

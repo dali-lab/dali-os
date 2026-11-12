@@ -23,8 +23,8 @@ const rateLimit = vi.hoisted(() => vi.fn((): unknown => null));
 vi.mock("~/lib/db.server", () => ({ prisma: db }));
 vi.mock("~/lib/notify.server", () => ({ notify }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (url: string | null) => url) }));
-vi.mock("~/lib/s3", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
-vi.mock("~/lib/mentions", () => mentions);
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/mentions.server", () => mentions);
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: rateLimit }));
 
 import {

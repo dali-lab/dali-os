@@ -16,7 +16,7 @@ import type {
   ProjectStatus,
 } from "~/generated/prisma/enums";
 import { githubTeamSlug } from "~/lib/github-slug";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import { duplicatePage } from "~/drive/lib/page-copy.server";
 
 // ─── Blueprint shape (version 1) ─────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import type { Route } from "./+types/logout";
 import { clearSessionCookie, parseSessionId } from "~/lib/cookies";
-import { hashSessionId, revokeSession } from "~/lib/session";
+import { hashSessionId, revokeSession } from "~/lib/session.server";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 

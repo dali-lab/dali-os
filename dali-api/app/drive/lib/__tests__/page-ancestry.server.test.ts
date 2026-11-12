@@ -11,7 +11,7 @@ import {
   chainGoverningScope,
   type ChainRow,
 } from "~/drive/lib/page-ancestry.server";
-import { pageDepth, isAncestorOf, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { pageDepth, isAncestorOf, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 
 const m = prisma as any;
 

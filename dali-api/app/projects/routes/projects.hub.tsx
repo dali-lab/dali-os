@@ -24,7 +24,7 @@ import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { timed } from "~/lib/server-timing";
 import { githubTeamSlug } from "~/lib/github-slug";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   listProvisionTargets,

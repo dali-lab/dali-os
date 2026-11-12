@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("~/lib/mentions", () => ({
+vi.mock("~/lib/mentions.server", () => ({
   extractHandlesFromText: vi.fn(() => []),
   resolveHandles: vi.fn().mockResolvedValue([]),
   notifyMentions: vi.fn().mockResolvedValue(undefined),
@@ -23,7 +23,7 @@ vi.mock("~/projects/lib/file-notifications.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { CommentCreateError, createDocComment } from "../doc-comments.server";

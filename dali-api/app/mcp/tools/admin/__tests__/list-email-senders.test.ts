@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/gmail-integration", () => ({
+vi.mock("~/lib/gmail-integration.server", () => ({
   listSenderIntegrations: vi.fn(),
 }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
 }));
 
-import { listSenderIntegrations } from "~/lib/gmail-integration";
+import { listSenderIntegrations } from "~/lib/gmail-integration.server";
 import { isCore } from "~/lib/roles";
 import {
   runListEmailSenders,

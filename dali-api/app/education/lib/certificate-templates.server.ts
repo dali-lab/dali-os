@@ -5,7 +5,7 @@
 // the EducationCertificate.
 
 import { prisma } from "~/lib/db.server";
-import { getObjectBytes, getDownloadUrl } from "~/lib/s3";
+import { getObjectBytes, getDownloadUrl } from "~/lib/s3.server";
 import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import { parsePlacedFields, type PlacedField } from "./certificate-fields";
 

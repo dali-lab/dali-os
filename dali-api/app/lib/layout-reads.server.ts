@@ -3,7 +3,7 @@ import { isLabMentor } from "~/lib/roles";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { listFavoritesAndRecents } from "~/lib/user-pages.server";
 import { viewerHasUnseenReleaseNotes } from "~/lib/release-notes.server";
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import { getAppGateOutstanding } from "~/signing/lib/state.server";
 import { getBoundFormGateOutstanding } from "~/forms/lib/gate.server";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";

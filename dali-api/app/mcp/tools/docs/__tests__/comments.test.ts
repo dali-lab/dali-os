@@ -22,15 +22,15 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
-vi.mock("~/lib/collabAuth", () => ({
+vi.mock("~/lib/collabAuth.server", () => ({
   hydrateAuthors: vi.fn().mockResolvedValue([]),
 }));
-vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn(), getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: vi.fn(), getDownloadUrl: vi.fn() }));
 vi.mock("~/lib/comment-events.server", () => ({
   publishCommentChange: vi.fn(),
 }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("~/lib/mentions", () => ({
+vi.mock("~/lib/mentions.server", () => ({
   extractHandlesFromText: vi.fn(() => []),
   resolveHandles: vi.fn().mockResolvedValue([]),
   notifyMentions: vi.fn().mockResolvedValue(undefined),
@@ -53,7 +53,7 @@ import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { notify } from "~/lib/notify.server";
-import { extractHandlesFromText, resolveHandles, notifyMentions } from "~/lib/mentions";
+import { extractHandlesFromText, resolveHandles, notifyMentions } from "~/lib/mentions.server";
 import {
   LIST_COMMENTS_TOOL,
   runListComments,

@@ -128,33 +128,8 @@ function loadAppSources(): Map<string, string> {
 const ROUTE_IMPORT_ALLOWLIST: string[] = [];
 
 const SERVER_ONLY_LIB_ALLOWLIST: string[] = [
-  "app/lib/auth.ts -> db.server", // .server rename (domain moves)
-  "app/lib/collabAuth.ts -> db.server", // .server rename (domain moves)
-  "app/lib/core-cycle.ts -> db.server", // .server rename (domain moves)
-  "app/lib/dartmouth-refresh.ts -> db.server", // .server rename (domain moves)
-  "app/lib/db-transaction-hooks.ts -> node:*", // .server rename (domain moves)
-  "app/lib/github-webhook.ts -> node:*", // .server rename (domain moves)
-  "app/lib/gmail-integration.ts -> db.server", // .server rename (domain moves)
-  "app/lib/groups.ts -> db.server", // .server rename (domain moves)
-  "app/lib/handle.ts -> db.server", // .server rename (domain moves)
-  "app/lib/mcp-auth.ts -> db.server", // .server rename (domain moves)
-  "app/lib/membership-status.ts -> db.server", // .server rename (domain moves)
-  "app/lib/mentions.ts -> db.server", // .server rename (domain moves)
-  "app/lib/notifications.ts -> db.server", // .server rename (domain moves)
-  "app/lib/oauth.ts -> db.server", // .server rename (domain moves)
-  "app/lib/oauth.ts -> node:*", // .server rename (domain moves)
-  "app/lib/outbound-keys.ts -> node:*", // .server rename (domain moves)
-  "app/lib/pages.ts -> db.server", // .server rename (domain moves)
-  "app/lib/pairing.ts -> node:*", // .server rename (domain moves)
-  "app/lib/presence-user.ts -> db.server", // .server rename (domain moves)
-  "app/lib/release-notes-draft.ts -> node:*", // .server rename (domain moves)
-  "app/lib/roles.ts -> db.server", // .server rename (domain moves)
-  "app/lib/s3.ts -> @aws-sdk/*", // .server rename (domain moves)
-  "app/lib/session.ts -> db.server", // .server rename (domain moves)
-  "app/lib/session.ts -> node:*", // .server rename (domain moves)
-  "app/lib/tasks.ts -> db.server", // .server rename (domain moves)
-  "app/lib/transcription/hmac.ts -> node:*", // .server rename (domain moves)
-  "app/lib/zoom.ts -> db.server", // .server rename (domain moves)
+  "app/lib/auth.ts -> db.server",
+  "app/lib/roles.ts -> db.server",
 ];
 
 const TWO_WAY_DOMAIN_ALLOWLIST: string[] = [

@@ -10,7 +10,7 @@ import {
   DESKTOP_ABSOLUTE_TTL_MS,
   PAIRING_TTL_MS,
   HANDOFF_TTL_MS,
-} from "~/lib/pairing";
+} from "~/lib/pairing.server";
 
 describe("generateRawCode", () => {
   it("is a 43-char base64url string (32 random bytes)", () => {

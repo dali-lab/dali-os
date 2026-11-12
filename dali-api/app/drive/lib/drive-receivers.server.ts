@@ -1,7 +1,7 @@
 import { isUniqueViolation } from "~/lib/prisma-errors";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { MAX_PAGE_DEPTH } from "~/lib/pages";
+import { MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import { ensureRoot, rootKeyFor, type RootKey } from "~/drive/lib/drive-roots.server";
 import { CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
 import {

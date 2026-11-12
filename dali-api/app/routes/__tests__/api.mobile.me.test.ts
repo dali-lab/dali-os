@@ -12,7 +12,7 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   requireMobileUser: (...a: unknown[]) => requireMobileUser(...a),
 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: (...a: unknown[]) => currentTerm(...a) }));
-vi.mock("~/lib/groups", () => ({ listActiveGroupNamesForUser: (...a: unknown[]) => listActiveGroupNamesForUser(...a) }));
+vi.mock("~/lib/groups.server", () => ({ listActiveGroupNamesForUser: (...a: unknown[]) => listActiveGroupNamesForUser(...a) }));
 vi.mock("~/lib/mobile-members.server", () => ({
   memberSummaryFor: (...a: unknown[]) => memberSummaryFor(...a),
   termFactsForUser: (...a: unknown[]) => termFactsForUser(...a),

@@ -4,7 +4,7 @@ import {
   PAGE_ACCESS_SELECT,
   type PageShape,
 } from "~/lib/pageAccess.server";
-import { moveIntoNotebook } from "~/lib/pages";
+import { moveIntoNotebook } from "~/lib/pages.server";
 import { nameConflictResponse } from "~/drive/lib/page-names.server";
 
 export class NotebookError extends Error {

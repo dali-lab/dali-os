@@ -10,7 +10,7 @@ import {
   NOT_CANCELLED_MEETING,
   STALE_AFTER_EVENTS,
   liveMeetingPingClauses,
-} from "~/lib/notifications";
+} from "~/lib/notifications.server";
 import {
   OPEN_WORK_STATUSES,
   projectTaskLink,

@@ -5,7 +5,7 @@ import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { nameConflictResponse } from "~/drive/lib/page-names.server";
-import { createProjectPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { createProjectPage, pageDepth, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 
 // POST /api/projects/:id/documents
 //

@@ -7,7 +7,7 @@ import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson, idSchema } from "~/lib/validate";
 import { assignInterviewers, releaseInterviewRoom } from "~/hiring/lib/scheduling";
 import { interviewChangeDeadlines } from "~/hiring/lib/interview-time";
-// import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+// import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom.server"; // S2S Zoom not configured yet
 import { provisionInterviewMeet, deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { getInterviewerRecipients, sendInterviewCancelEmails, sendInterviewInviteEmails } from "~/hiring/lib/interview-emails";
 import {

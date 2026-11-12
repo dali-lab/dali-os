@@ -6,7 +6,7 @@ import { cn } from "~/lib/cn";
 import { relativeTime } from "~/lib/relative-time";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { requireFeedbackViewer } from "~/lib/feedback.server";
-import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions.server";
 import { toggleReaction } from "~/lib/reactions.server";
 import {
   FEEDBACK_BODY_MAX,

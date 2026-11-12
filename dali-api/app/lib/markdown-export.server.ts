@@ -2,7 +2,7 @@ import { blocksToMarkdown, type DocBlock } from "~/collab/blocknote-server";
 import { buildDriveZip, MAX_ZIP_BYTES, MAX_ZIP_FILES, type ZipSource } from "~/drive/lib/drive-download.server";
 import { downloadFileName, uniqueNames } from "~/lib/file-download-name";
 import { isReservedUploadKey } from "~/lib/file-validation";
-import { headObject } from "~/lib/s3";
+import { headObject } from "~/lib/s3.server";
 import { RAW_UPLOAD_PATH } from "~/lib/upload-src";
 
 const MEDIA_TYPES = new Set(["image", "video", "file"]);

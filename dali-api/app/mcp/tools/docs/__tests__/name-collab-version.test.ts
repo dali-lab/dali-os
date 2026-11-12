@@ -9,7 +9,7 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 
-vi.mock("~/lib/collabAuth", () => ({
+vi.mock("~/lib/collabAuth.server", () => ({
   authorizeCollabDoc: vi.fn(),
   hydrateAuthors: vi.fn().mockResolvedValue([]),
 }));
@@ -23,7 +23,7 @@ vi.mock("~/collab/persistence", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import {
   NAME_COLLAB_VERSION_TOOL,
   runNameCollabVersion,

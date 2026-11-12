@@ -13,7 +13,7 @@ import { readLiveDeck, transactDeck } from "~/collab/deck-live.server";
 import { deckMissingSlots, toRenderDeck } from "~/collab/read-deck.server";
 import { repairDeckSlots } from "~/components/slides/deck/deck-ops";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { parseSlideLink } from "~/lib/slide-comments";
 import { isCore } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";

@@ -1,5 +1,5 @@
 import type { Route } from "./+types/oauth.revoke";
-import { revokeSession, hashSessionId } from "~/lib/session";
+import { revokeSession, hashSessionId } from "~/lib/session.server";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { clearSessionCookie, parseSessionId } from "~/lib/cookies";

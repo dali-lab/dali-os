@@ -3,7 +3,7 @@ import { htmlFrameDocument } from "~/components/slides/deck/html-element";
 import { htmlPreviewSize, htmlPreviewVersion } from "~/components/slides/deck/html-preview";
 import { themeById } from "~/components/slides/deck/themes";
 import { renderHtmlToPng } from "~/lib/pdf/render.server";
-import { getObjectWithMetadata, isS3Configured, putObject } from "~/lib/s3";
+import { getObjectWithMetadata, isS3Configured, putObject } from "~/lib/s3.server";
 
 export const htmlPreviewKey = (pageId: string, elementId: string): string => `slides/html-previews/${pageId}/${elementId}.png`;
 

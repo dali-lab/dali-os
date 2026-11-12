@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { BadRequestError, ConflictError } from "~/lib/http-error";
 import { geocodePlace } from "~/lib/geocode.server";
-import { normalizeHandle } from "~/lib/handle";
+import { normalizeHandle } from "~/lib/handle.server";
 import { uniqueViolationFields } from "~/lib/prisma-errors";
 import { isValidTimezone } from "~/lib/timezone";
 

@@ -1,4 +1,4 @@
-import { getDownloadUrl, isS3Configured } from "./s3";
+import { getDownloadUrl, isS3Configured } from "./s3.server";
 
 const PHOTO_URL_WINDOW_S = 3600;
 

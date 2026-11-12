@@ -8,7 +8,7 @@
 import { prisma } from "~/lib/db.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { sprintClosedSlackKey } from "~/lib/outbound-keys";
+import { sprintClosedSlackKey } from "~/lib/outbound-keys.server";
 import { notify } from "~/lib/notify.server";
 import { currentProjectParticipantIds } from "~/projects/lib/project-members.server";
 import { slackSendAllowed } from "~/slack/lib/send-gate";

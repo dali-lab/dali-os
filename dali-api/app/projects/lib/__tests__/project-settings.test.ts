@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { project: { update: vi.fn() } } }));
-vi.mock("~/lib/groups", () => ({ ensureProjectGroup: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ ensureProjectGroup: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import {
   linesToList,
   normalizeGithubTeamSlug,

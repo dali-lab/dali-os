@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma } from "~/lib/db.server";
 import { getActiveCoreCycleTermIds, currentTerm } from "~/lib/roles";
-import { coreCycleTermIds } from "~/lib/core-cycle";
+import { coreCycleTermIds } from "~/lib/core-cycle.server";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import {
   isCoreCycleEligible,
@@ -20,7 +20,7 @@ vi.mock("~/lib/roles", () => ({
   getActiveCoreCycleTermIds: vi.fn(),
   currentTerm: vi.fn(),
 }));
-vi.mock("~/lib/core-cycle", () => ({ coreCycleTermIds: vi.fn() }));
+vi.mock("~/lib/core-cycle.server", () => ({ coreCycleTermIds: vi.fn() }));
 vi.mock("~/lib/promotion-notify.server", () => ({
   notifyAdminsOfPromotion: vi.fn().mockResolvedValue(undefined),
 }));

@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { geocodePlace } from "~/lib/geocode.server";
 import { notify } from "~/lib/notify.server";
-import { communityEventNearbyKey } from "~/lib/outbound-keys";
+import { communityEventNearbyKey } from "~/lib/outbound-keys.server";
 import { fullName } from "~/lib/display";
 import { APPLICATION_TZ, formatInTimeZone } from "~/lib/timezone";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";

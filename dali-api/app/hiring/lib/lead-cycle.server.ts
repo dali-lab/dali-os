@@ -16,7 +16,7 @@ import { getCycleProgress } from "~/hiring/lib/cycle-phases.server";
 import { getHiringEmail, listHiringEmails } from "~/hiring/lib/hiring-emails.server";
 import { roundsWithBoards } from "~/hiring/lib/cycle-timeline.server";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { CONTINUED_INTEREST_SLOT } from "~/hiring/lib/email-variables";
 import { pendingForHiringLead } from "~/hiring/lib/decision-pills";
 import { type HiringEventRow, type EventCheckIn } from "~/hiring/components/cycle-setup/ApplicationEventsCard";

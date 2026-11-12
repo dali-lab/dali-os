@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   logAuditEvent: vi.fn(async () => {}),
 }));
 
-vi.mock("~/lib/s3", () => ({ getDownloadUrl: mocks.getDownloadUrl }));
+vi.mock("~/lib/s3.server", () => ({ getDownloadUrl: mocks.getDownloadUrl }));
 vi.mock("~/lib/auth", () => ({
   requireAuth: mocks.requireAuth,
   isNonMember: mocks.isNonMember,

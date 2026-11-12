@@ -6,9 +6,9 @@ import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { logAuditEvent } from "~/lib/audit";
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 import { downloadFileName } from "~/lib/file-download-name";
-import { hydrateAuthors } from "~/lib/collabAuth";
+import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { notifyFileNewVersion } from "../lib/file-notifications.server";
 
 // GET    /api/files/:id           — version list (newest first) + signed download URLs

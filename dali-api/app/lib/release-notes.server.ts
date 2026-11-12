@@ -2,14 +2,14 @@ import { redirect } from "react-router";
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { requireLabViewer, labMemberOrCore } from "~/lib/lab-viewer.server";
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
-import { copyObject, getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
+import { copyObject, getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { logAuditEvent } from "~/lib/audit";
 import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
 import { getFrontendUrl } from "~/lib/app-env";
-import { resolveAllLabMembers, resolveGroupMembers } from "~/lib/groups";
+import { resolveAllLabMembers, resolveGroupMembers } from "~/lib/groups.server";
 import {
   groupRecapsByWeek,
   releaseNotePost,

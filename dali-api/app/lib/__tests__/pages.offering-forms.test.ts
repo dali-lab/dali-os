@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server", () => ({ prisma: { $transaction: (fn: (t: typeof tx) 
 vi.mock("~/drive/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn() }));
 
-import { ensureOfferingFormsFolder } from "~/lib/pages";
+import { ensureOfferingFormsFolder } from "~/lib/pages.server";
 
 beforeEach(() => {
   vi.resetAllMocks();

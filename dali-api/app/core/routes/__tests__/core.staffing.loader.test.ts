@@ -24,7 +24,7 @@ vi.mock("~/lib/roles", () => ({
 }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => u) }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn(async () => "tok") }));
-vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => null) }));
+vi.mock("~/lib/presence-user.server", () => ({ getPresenceUser: vi.fn(async () => null) }));
 vi.mock("~/components/collab/PresenceProvider", () => ({ PresenceProvider: () => null }));
 vi.mock("~/components/collab/PresenceBar", () => ({ PresenceBar: () => null }));
 vi.mock("~/components/os-chrome", () => ({ useOsChrome: vi.fn() }));

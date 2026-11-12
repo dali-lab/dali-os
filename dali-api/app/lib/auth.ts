@@ -5,7 +5,7 @@ import {
   looksLikeWellFormedSessionId,
 } from "~/lib/cookies";
 import { logAuditEvent } from "~/lib/audit";
-import { lookupSession, rollSession, hashSessionId } from "~/lib/session";
+import { lookupSession, rollSession, hashSessionId } from "~/lib/session.server";
 import { withCors } from "~/lib/cors";
 import { getUserRoles, isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";

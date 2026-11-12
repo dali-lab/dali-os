@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { resolveCoreActor } from "~/jobs/core-actor.server";
 import { ensureAllRoots } from "~/drive/lib/drive-roots.server";
-import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import type { JobResult } from "~/jobs/registry";
 
 export const LEGACY_HIRING_FOLDER_TITLES = ["Hiring Forms", "Application Templates", "Rubrics"] as const;

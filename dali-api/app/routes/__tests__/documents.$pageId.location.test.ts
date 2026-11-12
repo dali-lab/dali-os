@@ -27,7 +27,7 @@ vi.mock("~/calendar/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn
 vi.mock("~/lib/user-pages.server", () => ({ isFavorited: vi.fn(), recordPageVisit: vi.fn() }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
-vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn() }));
+vi.mock("~/lib/presence-user.server", () => ({ getPresenceUser: vi.fn() }));
 vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   ACTIVE_RECORDING_STATUSES: [],
   latestRecordingFor: vi.fn(),

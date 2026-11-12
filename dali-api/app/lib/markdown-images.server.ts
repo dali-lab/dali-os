@@ -6,7 +6,7 @@ import { markdownImageAlt, markdownImageTag } from "~/components/doc/schema/medi
 import { categorize, resolveContentType } from "~/lib/file-type";
 import { isBlockedUpload, isReservedUploadKey, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { createRequestGuard, type Resolver } from "~/lib/pdf/render-guard.server";
-import { putObject } from "~/lib/s3";
+import { putObject } from "~/lib/s3.server";
 import { RAW_UPLOAD_PATH, rawUploadSrc } from "~/lib/upload-src";
 import { parseVideoEmbed } from "~/lib/video-embed";
 

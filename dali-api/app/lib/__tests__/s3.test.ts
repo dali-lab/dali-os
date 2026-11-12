@@ -28,7 +28,7 @@ import {
   headObject,
   putObject,
   putObjectStream,
-} from "~/lib/s3";
+} from "~/lib/s3.server";
 import { MAX_FILE_STORE_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 
 afterEach(() => {

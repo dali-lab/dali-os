@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn(),
   resolveAllLabMembers: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups";
+import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups.server";
 import { sendAnnouncement } from "~/lib/announcements.server";
 
 const mockPrisma = prisma as unknown as Record<

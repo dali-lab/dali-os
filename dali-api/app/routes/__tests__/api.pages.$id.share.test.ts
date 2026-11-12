@@ -7,7 +7,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
 }));
 vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: vi.fn() }));
 vi.mock("~/lib/page-sharing.server", async () => {
   const { BadRequestError } = await import("~/lib/http-error");
   return {
@@ -34,7 +34,7 @@ vi.mock("~/drive/lib/page-audience.server", () => ({ describePageAudience: vi.fn
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { isLabMember } from "~/lib/roles";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import { listPageShares, addPageShare, removePageShare, SharePrincipalError } from "~/lib/page-sharing.server";
 import {
   requirePageShareManager,

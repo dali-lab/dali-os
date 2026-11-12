@@ -184,7 +184,7 @@ async function main() {
     }
     try {
       await apply(p);
-      const { moveIntoNotebook } = await import("../app/lib/pages");
+      const { moveIntoNotebook } = await import("../app/lib/pages.server");
       for (const m of p.notebookMoves) {
         try {
           await moveIntoNotebook(m.pageId, m.notebookId);

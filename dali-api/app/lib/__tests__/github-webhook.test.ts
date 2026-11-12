@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import crypto from "node:crypto";
-import { verifyGithubSignature } from "../github-webhook";
+import { verifyGithubSignature } from "../github-webhook.server";
 
 const SECRET = "test-webhook-secret";
 

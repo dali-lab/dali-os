@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/handle", () => ({ assignHandleIfMissing: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("~/lib/handle.server", () => ({ assignHandleIfMissing: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/admin/lib/eligibility.server", () => ({ addOrUpdateEligibility: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";

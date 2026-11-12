@@ -9,7 +9,7 @@ vi.mock("~/drive/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { assertUniqueName } from "~/drive/lib/page-names.server";
-import { createLabPage, createProjectPage } from "~/lib/pages";
+import { createLabPage, createProjectPage } from "~/lib/pages.server";
 
 const m = prisma as any;
 

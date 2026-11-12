@@ -4,7 +4,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   currentTerm: vi.fn(),
 }));
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("~/signing/lib/state.server", () => ({

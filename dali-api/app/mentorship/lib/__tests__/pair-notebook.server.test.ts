@@ -13,7 +13,7 @@ vi.mock("~/lib/db.server", () => ({
     $transaction: vi.fn(),
   },
 }));
-vi.mock("~/lib/pages", () => ({ ensureMeetingNotebook: vi.fn(), createNotebookTab: vi.fn() }));
+vi.mock("~/lib/pages.server", () => ({ ensureMeetingNotebook: vi.fn(), createNotebookTab: vi.fn() }));
 vi.mock("~/drive/lib/drive-receivers.server", () => ({
   resolveFilingFolder: vi.fn(),
   singletonSlot: vi.fn((processType: string, folderType: string) => ({ processType, folderType })),
@@ -21,7 +21,7 @@ vi.mock("~/drive/lib/drive-receivers.server", () => ({
 vi.mock("~/collab/write", () => ({ replaceCollabDocContent: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { createNotebookTab, ensureMeetingNotebook } from "~/lib/pages";
+import { createNotebookTab, ensureMeetingNotebook } from "~/lib/pages.server";
 import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import { replaceCollabDocContent } from "~/collab/write";
 import {

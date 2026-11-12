@@ -20,7 +20,7 @@ import {
   requireNoteOwner,
 } from "./personal-notes.server";
 import { assertUniqueName } from "~/drive/lib/page-names.server";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages.server";
 import type { SharePrincipalType } from "~/generated/prisma/client";
 
 // Validate that `parentPageId` is a Folder the owner controls, deep enough to

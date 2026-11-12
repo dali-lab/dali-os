@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue({ inApp: 0, emailed: 0, slackDmed: 0 }) }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (v: string | null) => v) }));
 vi.mock("~/forms/lib/form-usages.server", () => ({
@@ -12,7 +12,7 @@ vi.mock("~/forms/lib/form-usages.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { notify } from "~/lib/notify.server";
 import { managingUsage } from "~/forms/lib/form-usages.server";
 import {

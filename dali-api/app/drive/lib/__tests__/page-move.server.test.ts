@@ -23,8 +23,8 @@ vi.mock("~/lib/roles", () => ({
 vi.mock("~/lib/offering-manager.server", () => ({ isOfferingManager: vi.fn() }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/pages", async (importActual) => ({
-  ...(await importActual<typeof import("~/lib/pages")>()),
+vi.mock("~/lib/pages.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/lib/pages.server")>()),
   collectSubtree: vi.fn(),
 }));
 vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: vi.fn() }));
@@ -48,7 +48,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
-import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages";
+import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages.server";
 import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { addToNotebook, loadManageableNotebook, notebookErrorResponse } from "~/drive/lib/notebook-access.server";

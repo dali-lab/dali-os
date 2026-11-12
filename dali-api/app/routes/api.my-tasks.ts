@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.my-tasks";
 import { requireAuth } from "~/lib/auth";
-import { listMyProjectTasksPage, listOpenTasksPage } from "~/lib/tasks";
+import { listMyProjectTasksPage, listOpenTasksPage } from "~/lib/tasks.server";
 
 // Further pages of the My Tasks lists. `kind=open` is the notification-backed
 // list (keyset cursor); `kind=project` is assigned project work (offset cursor).

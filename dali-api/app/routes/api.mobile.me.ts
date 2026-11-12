@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.mobile.me";
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
-import { listActiveGroupNamesForUser } from "~/lib/groups";
+import { listActiveGroupNamesForUser } from "~/lib/groups.server";
 import { leadLabels, orderedEmails, parseStatusBody } from "~/lib/mobile-format";
 import { memberSummaryFor, termFactsForUser } from "~/lib/mobile-members.server";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";

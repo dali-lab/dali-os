@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.groups";
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";

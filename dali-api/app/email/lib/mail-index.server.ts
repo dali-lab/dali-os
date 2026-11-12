@@ -10,7 +10,7 @@ import { PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { parseAddressList } from "~/email/lib/address-list";
 import { senderAddress } from "~/email/lib/format";
 import { getMailboxToken, MailboxError, type MessageMeta } from "~/email/lib/gmail-mailbox.server";
-import { getMailboxReader, noteSenderHealth } from "~/lib/gmail-integration";
+import { getMailboxReader, noteSenderHealth } from "~/lib/gmail-integration.server";
 import { GoogleOAuthError, refreshGoogleToken } from "~/lib/google-oauth";
 import { getEnv } from "~/lib/env.server";
 

@@ -10,13 +10,13 @@ import {
   projectTasksTotal,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
-} from "~/lib/tasks";
+} from "~/lib/tasks.server";
 import {
   listMyNotifications,
   annotateDesktopFeed,
   annotateRecordPromptFeed,
   listRetiredMeetingPingIds,
-} from "~/lib/notifications";
+} from "~/lib/notifications.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 

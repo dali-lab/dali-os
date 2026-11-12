@@ -6,7 +6,7 @@
 // "who owes this" is defined in exactly one place.
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { getSignerCohorts } from "~/signing/lib/state.server";
 import { AUDIENCE_RESOLVERS } from "~/signing/lib/audiences";
 import { existingBoundSubmission, formFillAccess } from "~/forms/lib/public-form";

@@ -7,7 +7,7 @@ vi.mock("~/lib/roles", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { resolveDynamicQuery, listVisibleGroupIdsForUser } from "../groups";
+import { resolveDynamicQuery, listVisibleGroupIdsForUser } from "../groups.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 

@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { blocksToFullHtml, type DocBlock } from "~/collab/blocknote-server";
-import { getObjectBytes } from "~/lib/s3";
+import { getObjectBytes } from "~/lib/s3.server";
 import type { PageTypography } from "~/drive/lib/page-typography";
 
 const require = createRequire(import.meta.url);

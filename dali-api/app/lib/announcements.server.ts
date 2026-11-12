@@ -6,7 +6,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups";
+import { resolveGroupMembers, resolveAllLabMembers } from "~/lib/groups.server";
 import type { NotificationKind } from "~/generated/prisma/client";
 
 export type AnnouncementInput = {

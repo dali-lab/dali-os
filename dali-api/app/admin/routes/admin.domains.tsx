@@ -2,7 +2,7 @@ import { redirect } from "react-router";
 import type { Route } from "./+types/admin.domains";
 import { adminHandle } from "~/admin/adminNav";
 import { prisma } from "~/lib/db.server";
-import { ensureDomainGroup } from "~/lib/groups";
+import { ensureDomainGroup } from "~/lib/groups.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isAdmin, isCore, currentTerm } from "~/lib/roles";
 import { describeDomainUsage, DOMAIN_USAGE_COUNT_SELECT } from "~/admin/lib/domain-usage";

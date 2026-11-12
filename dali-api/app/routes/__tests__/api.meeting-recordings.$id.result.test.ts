@@ -7,7 +7,7 @@ vi.mock("~/calendar/lib/meeting-recording.server", () => ({ applyResult: vi.fn()
 
 import { prisma } from "~/lib/db.server";
 import { applyResult } from "~/calendar/lib/meeting-recording.server";
-import { signHmac } from "~/lib/transcription/hmac";
+import { signHmac } from "~/lib/transcription/hmac.server";
 import { action } from "~/routes/api.meeting-recordings.$id.result";
 
 const SECRET = "test-callback-secret";

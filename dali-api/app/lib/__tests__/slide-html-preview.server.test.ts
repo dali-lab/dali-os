@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn(), getObjectWithMetadata: vi.fn(), putObject: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: vi.fn(), getObjectWithMetadata: vi.fn(), putObject: vi.fn() }));
 vi.mock("~/lib/pdf/render.server", () => ({ renderHtmlToPng: vi.fn() }));
 
 import type { DeckRead } from "~/collab/read-deck.server";
 import { htmlPreviewVersion } from "~/components/slides/deck/html-preview";
 import { renderHtmlToPng } from "~/lib/pdf/render.server";
-import { getObjectWithMetadata, isS3Configured, putObject } from "~/lib/s3";
+import { getObjectWithMetadata, isS3Configured, putObject } from "~/lib/s3.server";
 import { getHtmlPreview, htmlPreviewKey } from "~/lib/slide-html-preview.server";
 
 const PNG = Buffer.from([1, 2, 3]);

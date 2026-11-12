@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { canViewForms, isCore } from "~/lib/roles";
-import { isCoreGroup } from "~/lib/groups";
+import { isCoreGroup } from "~/lib/groups.server";
 import { parseJson } from "~/lib/validate";
 import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import {

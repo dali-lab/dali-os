@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("~/lib/db.server", () => ({ prisma: h.prisma }));
 vi.mock("~/lib/roles", () => ({ currentTerm: h.currentTerm }));
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   isUserActiveInTerm: h.isUserActiveInTerm,
   resolveGroupMembers: h.resolveGroupMembers,
   resolveDynamicQuery: vi.fn(),

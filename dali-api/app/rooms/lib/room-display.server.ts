@@ -4,7 +4,7 @@
 // scoped to the display's rooms (its own, plus the second room beside it).
 
 import { prisma } from "~/lib/db.server";
-import { generateRawCode, generateUserCode, hashCode, normalizeUserCode } from "~/lib/pairing";
+import { generateRawCode, generateUserCode, hashCode, normalizeUserCode } from "~/lib/pairing.server";
 
 export const SETUP_CODE_TTL_MS = 10 * 60 * 1000;
 // lastSeenAt is informational (Core's "last check-in" column); don't write it

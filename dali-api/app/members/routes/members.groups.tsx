@@ -4,7 +4,7 @@ import { MultiSelect, Tooltip } from "~/components/ui/floating";
 import type { Route } from "./+types/members.groups";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canViewForms, currentTermMemberWhere } from "~/lib/roles";

@@ -6,7 +6,7 @@
 // `mcp:write`.
 
 import { prisma } from "~/lib/db.server";
-import { isSelfClearingFormTodo, SELF_CLEARING_FORM_TODO } from "~/lib/tasks";
+import { isSelfClearingFormTodo, SELF_CLEARING_FORM_TODO } from "~/lib/tasks.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 

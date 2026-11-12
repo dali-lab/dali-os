@@ -10,7 +10,7 @@ import {
   isSenderConnected,
   noteSenderHealth,
   getHiringCalendarSender,
-} from "~/lib/gmail-integration";
+} from "~/lib/gmail-integration.server";
 
 const mockPrisma = prisma as unknown as {
   gmailIntegration: {

@@ -32,7 +32,7 @@ vi.mock("~/lib/roles", () => ({
   getActiveCoreCycleTermIds,
   getAdminUserIdsFromEnv: adminEnv,
 }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers }));
 vi.mock("~/activities/mechanics/registry.server", () => ({ mechanicServer: () => mech.current }));
 vi.mock("~/lib/layout-cache.server", () => ({
   LAB_SCOPE: "lab",

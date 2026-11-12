@@ -27,7 +27,7 @@ import { join } from "node:path";
 import Papa from "papaparse";
 import { PrismaClient } from "../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { putObject } from "../app/lib/s3.js";
+import { putObject } from "../app/lib/s3.server.js";
 import {
   matchProject,
   normalizeName,

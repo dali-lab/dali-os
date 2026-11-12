@@ -97,7 +97,7 @@ const prisma = {
 
 vi.mock("~/lib/db.server", () => ({ get prisma() { return prisma; } }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: s.audit }));
-vi.mock("~/lib/core-cycle", () => ({ coreCycleTermIds: vi.fn(async (id: string) => [id]) }));
+vi.mock("~/lib/core-cycle.server", () => ({ coreCycleTermIds: vi.fn(async (id: string) => [id]) }));
 vi.mock("~/lib/core-members.server", () => ({
   personName: (u: { firstName: string | null }) => u.firstName ?? "Unknown",
 }));

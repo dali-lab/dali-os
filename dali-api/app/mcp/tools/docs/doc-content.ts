@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { findBlogPost } from "~/blog/lib/blog-post.server";
 import { blocksToMarkdown, markdownToBlocks, type DocBlock } from "~/collab/blocknote-server";
 import { blogPostRoomName, pageDocName } from "~/collab/roomName";

@@ -22,7 +22,7 @@
  */
 
 import { prisma } from "../app/lib/db.server.js";
-import { ensureMeetingNotebook, moveIntoNotebook } from "../app/lib/pages.js";
+import { ensureMeetingNotebook, moveIntoNotebook } from "../app/lib/pages.server.js";
 import { meetingNotebookIdentity, termForDate } from "../app/calendar/lib/meeting-notebook.server.js";
 import { termWindows } from "../app/lib/terms.js";
 

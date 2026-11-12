@@ -15,7 +15,7 @@ import { getUserRoles, isAdmin } from "~/lib/roles";
 import { isAiEnabled } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
 import { checkRateLimit } from "~/lib/rate-limit";
-import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s3";
+import { deleteObject, getDownloadUrl, isS3Configured, putObject } from "~/lib/s3.server";
 import { extractJobsFromPdf } from "~/members/lib/resume-extract.server";
 import type { ImportedJob } from "~/members/lib/work-history-import";
 

@@ -9,7 +9,7 @@ import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
 import { getUserRoles, isLabMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getUploadPost, headObject, isS3Configured } from "~/lib/s3";
+import { getUploadPost, headObject, isS3Configured } from "~/lib/s3.server";
 import { fileMatchesAccept, uploadCapForKey } from "~/lib/file-validation";
 import {
   applyGalleryIntent,

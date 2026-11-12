@@ -8,7 +8,7 @@ import {
   moveIntoNotebook,
   trashNotebookIfAbandoned,
   type MeetingNotebookDestination,
-} from "~/lib/pages";
+} from "~/lib/pages.server";
 import { resolveFilingFolder, projectSlot, singletonSlot } from "~/drive/lib/drive-receivers.server";
 import { meetingNotebookIdentity, meetingTypeForNotebook, termForDate } from "~/calendar/lib/meeting-notebook.server";
 import { termWindows } from "~/lib/terms";

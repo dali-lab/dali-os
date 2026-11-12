@@ -9,7 +9,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/read-only-roles.server", () => ({ readOnlyRoles: vi.fn(async () => ({ isAlumni: true })) }));
 vi.mock("~/lib/shell-user.server", () => ({ loadShellUser: vi.fn(async () => ({ timeZone: "America/New_York", birthday: null })) }));
-vi.mock("~/lib/tasks", () => ({ listMyProjectTasks: vi.fn(async () => []), listOpenTasks: vi.fn(async () => []) }));
+vi.mock("~/lib/tasks.server", () => ({ listMyProjectTasks: vi.fn(async () => []), listOpenTasks: vi.fn(async () => []) }));
 vi.mock("~/lib/roles", () => ({ currentTermStrict: vi.fn(async () => null), getUserRoles: vi.fn(async () => ({})) }));
 vi.mock("~/components/CommandPalette", () => ({ resultIcon: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn(async () => false) }));

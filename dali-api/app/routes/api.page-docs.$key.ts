@@ -5,10 +5,10 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { notify } from "~/lib/notify.server";
-import { extractMentionUserIds, notifyMentions, pageDocLink } from "~/lib/mentions";
+import { extractMentionUserIds, notifyMentions, pageDocLink } from "~/lib/mentions.server";
 import { fullName } from "~/lib/display";
 import {
   EMPTY_OVERVIEW,

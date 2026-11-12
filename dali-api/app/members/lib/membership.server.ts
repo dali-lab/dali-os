@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { addOrUpdateEligibility } from "~/admin/lib/eligibility.server";
 import type { Level } from "~/admin/lib/eligibility";
-import { assignHandleIfMissing } from "~/lib/handle";
+import { assignHandleIfMissing } from "~/lib/handle.server";
 
 // Promote an existing User to a lab member (DALIMember marker row), optionally
 // granting domain eligibility. Used by:

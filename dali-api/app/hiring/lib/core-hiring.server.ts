@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { currentTerm, getActiveCoreCycleTermIds } from "~/lib/roles";
-import { coreCycleTermIds } from "~/lib/core-cycle";
-import { commencementDate } from "~/lib/membership-status";
+import { coreCycleTermIds } from "~/lib/core-cycle.server";
+import { commencementDate } from "~/lib/membership-status.server";
 import { notifyAdminsOfPromotion } from "~/lib/promotion-notify.server";
 import type { AcceptContext, AcceptResult } from "./applicant-groups.server";
 

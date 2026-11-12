@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   listAllGroups: vi.fn(),
 }));
 
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import { runListGroups, LIST_GROUPS_TOOL } from "~/mcp/tools/list-groups";
 
 beforeEach(() => {

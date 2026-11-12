@@ -11,14 +11,14 @@ vi.mock("~/collab/read", () => ({
 vi.mock("~/collab/write", () => ({
   replaceCollabDocContent: vi.fn(),
 }));
-vi.mock("~/lib/collabAuth", () => ({
+vi.mock("~/lib/collabAuth.server", () => ({
   authorizeCollabDoc: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { readDocAsBlocks } from "~/collab/read";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { replaceCollabDocContent } from "~/collab/write";
 import {
   runListProjectPages,

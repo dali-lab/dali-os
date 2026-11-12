@@ -23,7 +23,7 @@ vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(),
   drainNow: vi.fn(),
 }));
-vi.mock("~/lib/gmail-integration", () => ({
+vi.mock("~/lib/gmail-integration.server", () => ({
   getSender: vi.fn().mockResolvedValue({
     id: "g-1",
     refreshToken: "rt",

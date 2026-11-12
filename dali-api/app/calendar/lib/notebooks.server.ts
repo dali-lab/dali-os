@@ -16,7 +16,7 @@ import {
   moveIntoNotebook,
   pageDepth,
   trashNotebookIfAbandoned,
-} from "~/lib/pages";
+} from "~/lib/pages.server";
 import { seedPageFromTemplate } from "~/calendar/lib/meeting-artifacts.server";
 import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { formatDateShort } from "~/lib/display";

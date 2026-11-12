@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { fullName } from "~/lib/display";
-import { isUserInAnyGroup } from "~/lib/groups";
+import { isUserInAnyGroup } from "~/lib/groups.server";
 import type { UserRoles } from "~/lib/roles";
 import { labToday } from "~/core/lib/listserv";
 import {

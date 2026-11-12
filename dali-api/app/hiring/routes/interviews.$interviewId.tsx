@@ -7,7 +7,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from '~/lib/login-next'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from '~/lib/presence-user'
+import { getPresenceUser } from '~/lib/presence-user.server'
 import { requirePageSignedOrRedirect } from '~/hiring/lib/confidentiality'
 import { presignAnswers } from '~/hiring/lib/presign'
 import { ensureBlocks } from '~/collab/legacy/pm-to-blocknote'

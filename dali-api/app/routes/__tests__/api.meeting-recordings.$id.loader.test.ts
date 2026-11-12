@@ -7,11 +7,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn() }));
+vi.mock("~/lib/collabAuth.server", () => ({ authorizeCollabDoc: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { loader } from "~/routes/api.meeting-recordings.$id";
 
 function get(): Request {

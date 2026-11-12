@@ -22,7 +22,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
   isUnderGoverningScope: vi.fn(),
   PAGE_ACCESS_SELECT: { id: true },
 }));
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   collectSubtree: vi.fn(),
   createLabPage: vi.fn(),
   createNotebookTab: vi.fn(),
@@ -47,7 +47,7 @@ import {
   moveIntoNotebook,
   pageDepth,
   trashNotebookIfAbandoned,
-} from "~/lib/pages";
+} from "~/lib/pages.server";
 import { seedPageFromTemplate } from "~/calendar/lib/meeting-artifacts.server";
 import { resolveMeetingOccurrence } from "~/calendar/lib/meeting-roster.server";
 import { formatDateShort } from "~/lib/display";

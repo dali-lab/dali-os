@@ -7,7 +7,7 @@ const mockLookupSession = vi.hoisted(() => vi.fn());
 const mockRollSession = vi.hoisted(() => vi.fn());
 const mockVerifyBearer = vi.hoisted(() => vi.fn());
 
-vi.mock("~/lib/session", () => ({
+vi.mock("~/lib/session.server", () => ({
   lookupSession: mockLookupSession,
   rollSession: mockRollSession,
 }));

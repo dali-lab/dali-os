@@ -8,12 +8,12 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 
-vi.mock("~/lib/groups", () => ({ ensureMentorsGroup: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("~/lib/groups.server", () => ({ ensureMentorsGroup: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 vi.mock("~/drive/lib/page-ancestry.server", () => ({ loadAncestorChain: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { ensureMentorsGroup } from "~/lib/groups";
+import { ensureMentorsGroup } from "~/lib/groups.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadAncestorChain } from "~/drive/lib/page-ancestry.server";
 import { ROOTS, findRoot, ensureRoot, ensureAllRoots, isRoot, editableFolderInRoot } from "~/drive/lib/drive-roots.server";

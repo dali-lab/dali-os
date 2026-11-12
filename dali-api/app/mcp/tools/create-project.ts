@@ -5,7 +5,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import { githubTeamSlug } from "~/lib/github-slug";
 
 const PROJECT_STATUSES = ["Active", "Paused", "Archived"] as const;

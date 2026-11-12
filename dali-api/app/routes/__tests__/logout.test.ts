@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { session: { findUnique: vi.fn() } } }));
-vi.mock("~/lib/session", () => ({ hashSessionId: vi.fn(), revokeSession: vi.fn() }));
+vi.mock("~/lib/session.server", () => ({ hashSessionId: vi.fn(), revokeSession: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/betterauth.server", () => ({ auth: { api: { signOut: vi.fn() } } }));
 vi.mock("~/lib/impersonation-restore.server", () => ({

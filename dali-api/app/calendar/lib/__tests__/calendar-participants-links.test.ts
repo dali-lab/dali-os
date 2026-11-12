@@ -22,7 +22,7 @@ vi.mock("~/calendar/lib/external-cache.server", () => ({
   markCalendarChanged: vi.fn(async () => {}),
 }));
 vi.mock("~/calendar/lib/sub-calendar.server", () => ({ setSubCalendarEnabled: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listAllGroups: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listAllGroups: vi.fn() }));
 vi.mock("~/mentorship/lib/pair-suggestion.server", () => ({ listMentorPairs: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/lib/member-class.server", () => {
@@ -100,7 +100,7 @@ vi.mock("~/calendar/lib/meeting-link.server", () => ({ meetingLinkRedirect: vi.f
 
 import { prisma } from "~/lib/db.server";
 import { currentTermMemberWhere } from "~/lib/roles";
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import { listMentorPairs } from "~/mentorship/lib/pair-suggestion.server";
 import { buildCalendarLinkDTO, loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 

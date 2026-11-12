@@ -50,7 +50,7 @@ import { isDomainLead, isCore, isProjectMember, isLabMember } from "~/lib/roles"
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
-import { authorizeCollabDoc } from "../collabAuth";
+import { authorizeCollabDoc } from "../collabAuth.server";
 
 const mockPrisma = prisma as any;
 

@@ -11,7 +11,7 @@ vi.mock("~/lib/fileAccess.server", () => ({ canViewFile: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({
   redirectToLogin: () => new Response(null, { status: 302, headers: { Location: "/login" } }),
 }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn().mockResolvedValue("https://signed.example/file"),
   isS3Configured: vi.fn(),
 }));
@@ -20,7 +20,7 @@ import { requireAuth, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { loader } from "~/projects/routes/api.files.$id.download";
 
 const db = prisma as unknown as {

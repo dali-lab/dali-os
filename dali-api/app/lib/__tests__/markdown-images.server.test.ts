@@ -7,7 +7,7 @@ import {
 } from "~/lib/markdown-images.server";
 import { MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 
-vi.mock("~/lib/s3", () => ({ putObject: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ putObject: vi.fn() }));
 
 const putObject = vi.fn();
 const fetchMock = vi.fn();

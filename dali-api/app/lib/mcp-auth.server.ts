@@ -10,7 +10,7 @@
 // `verifyGrantAndMembership()` to avoid duplication.
 
 import { parseSessionId } from "~/lib/cookies";
-import { lookupSession, rollSession } from "~/lib/session";
+import { lookupSession, rollSession } from "~/lib/session.server";
 import { prisma } from "~/lib/db.server";
 import { auth } from "~/lib/betterauth.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";

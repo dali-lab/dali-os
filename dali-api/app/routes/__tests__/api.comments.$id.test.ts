@@ -18,7 +18,7 @@ vi.mock("~/lib/cors", () => ({
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
-vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn(), getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: vi.fn(), getDownloadUrl: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";

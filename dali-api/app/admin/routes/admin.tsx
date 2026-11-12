@@ -6,7 +6,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { cn } from "~/lib/cn";
-import { listSenderIntegrations } from "~/lib/gmail-integration";
+import { listSenderIntegrations } from "~/lib/gmail-integration.server";
 import { EMAIL_PURPOSE_KEYS, EMAIL_PURPOSES } from "~/lib/email-identities";
 import { ADMIN_OVERVIEW } from "~/admin/adminNav";
 import { loadAdminAttention } from "~/admin/lib/attention.server";

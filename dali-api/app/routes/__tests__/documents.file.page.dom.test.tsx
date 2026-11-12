@@ -9,8 +9,8 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), redirectPartnerToPortal: vi
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/fileAccess.server", () => ({ canViewFile: vi.fn(), canEditFile: vi.fn(), canManageFileSharing: vi.fn() }));
-vi.mock("~/lib/s3", () => ({ getDownloadUrl: vi.fn() }));
-vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/collabAuth.server", () => ({ hydrateAuthors: vi.fn() }));
 vi.mock("~/drive/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/lib/upload-client", () => ({ formatBytes: (n: number) => `${Math.round(n / 1024)} KB`, uploadFileToS3: vi.fn() }));
 vi.mock("~/components/collab/CommentsRail", () => ({ CommentsRail: () => null }));

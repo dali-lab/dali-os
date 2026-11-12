@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { getUploadPost, isS3Configured } from "~/lib/s3";
+import { getUploadPost, isS3Configured } from "~/lib/s3.server";
 import {
   FORM_UPLOAD_CAP,
   fileMatchesAccept,

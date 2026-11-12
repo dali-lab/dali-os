@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/oauth", () => ({
+vi.mock("~/lib/oauth.server", () => ({
   exchangeAuthorizationCode: vi.fn(),
   buildUserInfo: vi.fn(() => ({})),
   getOAuthClient: vi.fn(),
@@ -25,7 +25,7 @@ vi.mock("~/lib/betterauth-session.server", () => ({ mintBetterAuthSession: vi.fn
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { buildUserInfo, exchangeAuthorizationCode, getOAuthClient } from "~/lib/oauth";
+import { buildUserInfo, exchangeAuthorizationCode, getOAuthClient } from "~/lib/oauth.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/routes/oauth.token";

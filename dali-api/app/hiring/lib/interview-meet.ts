@@ -21,7 +21,7 @@ import {
   type GoogleAttendee,
   type GoogleCalendarAuth,
 } from "~/calendar/lib/google-calendar.server";
-import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration";
+import { getHiringCalendarSender, noteSenderHealth } from "~/lib/gmail-integration.server";
 import { getGmailAccessToken } from "~/lib/gmail";
 
 const HIRING_CALENDAR_EMAIL =

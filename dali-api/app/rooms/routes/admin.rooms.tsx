@@ -15,7 +15,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { parseForm } from "~/lib/validate";
-import { formatUserCode } from "~/lib/pairing";
+import { formatUserCode } from "~/lib/pairing.server";
 import { createDisplaySetupCode } from "~/rooms/lib/room-display.server";
 import { getActiveDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";

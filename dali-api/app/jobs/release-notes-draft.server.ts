@@ -6,7 +6,7 @@ import { getFeatureFlagRows } from "~/lib/feature-flags.server";
 import { githubAppClient, parseRepo } from "~/lib/github";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { listObjectKeys } from "~/lib/s3";
+import { listObjectKeys } from "~/lib/s3.server";
 import type { JobResult } from "~/jobs/registry";
 import {
   MAX_COMMITS,
@@ -23,7 +23,7 @@ import {
   selectPrsToDraft,
   type PullForPrompt,
   type PullSummary,
-} from "~/lib/release-notes-draft";
+} from "~/lib/release-notes-draft.server";
 import { RELEASE_NOTE_CAPTURE_KEY_PREFIX } from "~/lib/release-notes";
 import { getEnv } from "~/lib/env.server";
 

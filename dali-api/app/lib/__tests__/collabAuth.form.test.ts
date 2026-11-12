@@ -5,7 +5,7 @@ vi.mock("~/forms/lib/form-access.server", () => ({ canBuildForm: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { canBuildForm } from "~/forms/lib/form-access.server";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 
 beforeEach(() => {
   vi.resetAllMocks();

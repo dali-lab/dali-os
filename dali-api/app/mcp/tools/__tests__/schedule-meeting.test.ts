@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ createScheduledMeeting: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), canViewForms: vi.fn(), isLabMember: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ isCoreGroup: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ isCoreGroup: vi.fn() }));
 vi.mock("~/rooms/lib/rooms.server", () => ({ assertMeetingRoomsFree: vi.fn() }));
 
 import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";

@@ -18,7 +18,7 @@ vi.mock("~/lib/ai.server", () => ({
 }));
 vi.mock("~/lib/ai-usage.server", () => ({ recordTokenUsage: vi.fn() }));
 vi.mock("~/lib/log.server", () => ({ logError: vi.fn() }));
-vi.mock("~/lib/s3", () => ({ listObjectKeys: vi.fn(async () => []) }));
+vi.mock("~/lib/s3.server", () => ({ listObjectKeys: vi.fn(async () => []) }));
 
 import { prisma } from "~/lib/db.server";
 import { getAppEnv } from "~/lib/app-env";
@@ -26,7 +26,7 @@ import { getFeatureFlagRows } from "~/lib/feature-flags.server";
 import { githubAppClient } from "~/lib/github";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { listObjectKeys } from "~/lib/s3";
+import { listObjectKeys } from "~/lib/s3.server";
 import { logError } from "~/lib/log.server";
 import { runReleaseNotesDraft } from "../release-notes-draft.server";
 

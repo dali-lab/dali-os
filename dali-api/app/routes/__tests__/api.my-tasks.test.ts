@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/tasks", () => ({
+vi.mock("~/lib/tasks.server", () => ({
   listOpenTasksPage: vi.fn(),
   listMyProjectTasksPage: vi.fn(),
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { listOpenTasksPage, listMyProjectTasksPage } from "~/lib/tasks";
+import { listOpenTasksPage, listMyProjectTasksPage } from "~/lib/tasks.server";
 import { loader } from "~/routes/api.my-tasks";
 
 const call = (query: string) =>
