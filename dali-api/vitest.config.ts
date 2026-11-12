@@ -23,7 +23,6 @@ export default defineConfig({
         "app/**/*.test.{ts,tsx}",
         "app/**/*.d.ts",
         "app/routes.ts",
-        "app/mockData.ts",
         "app/types.ts",
         "app/types/**",
         "app/test-utils/**",

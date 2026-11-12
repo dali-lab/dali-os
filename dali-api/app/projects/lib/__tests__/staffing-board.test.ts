@@ -5,7 +5,6 @@ import {
   matchesDomainFilter,
   projectFinalizeState,
   resolveAssignmentDomains,
-  resolveAssignmentInputs,
   UNASSIGNED,
   type Assignment,
   type MemberInput,
@@ -304,65 +303,6 @@ describe("buildBoard cardOrder", () => {
     expect(board.p1.map((c) => c.userId)).toEqual(["b", "a"]);
   });
 });
-
-describe("resolveAssignmentInputs", () => {
-  it("returns the bid for the target project when present", () => {
-    const out = resolveAssignmentInputs(
-      member({
-        preferences: [
-          { projectId: "p1", domainId: "d1", level: "P2", preferenceRank: 2, notes: null },
-          { projectId: "p2", domainId: "d2", level: "P1", preferenceRank: 1, notes: null },
-        ],
-      }),
-      "p1",
-    );
-    expect(out).toEqual({ domainId: "d1", level: "P2" });
-  });
-
-  it("falls back to the member's top-ranked preference when they didn't bid on the target", () => {
-    const out = resolveAssignmentInputs(
-      member({
-        preferences: [
-          { projectId: "p2", domainId: "d2", level: "P1", preferenceRank: 1, notes: null },
-          { projectId: "p3", domainId: "d3", level: "P2", preferenceRank: 3, notes: null },
-        ],
-      }),
-      "p99",
-    );
-    expect(out).toEqual({ domainId: "d2", level: "P1" });
-  });
-
-  it("falls back to a single domain eligibility when the member has no bid", () => {
-    const out = resolveAssignmentInputs(
-      member({
-        preferences: [],
-        domainLevels: [{ domainId: "d-fs", domainName: "Fullstack", level: "P3" }],
-      }),
-      "p1",
-    );
-    expect(out).toEqual({ domainId: "d-fs", level: "P3" });
-  });
-
-  it("returns null when the member has no bid and no eligibility", () => {
-    const out = resolveAssignmentInputs(member({ preferences: [], domainLevels: [] }), "p1");
-    expect(out).toBeNull();
-  });
-
-  it("seeds the first eligibility when the member has no bid and multiple eligibilities", () => {
-    const out = resolveAssignmentInputs(
-      member({
-        preferences: [],
-        domainLevels: [
-          { domainId: "d1", domainName: "Eng", level: "P2" },
-          { domainId: "d2", domainName: "Design", level: "P1" },
-        ],
-      }),
-      "p1",
-    );
-    expect(out).toEqual({ domainId: "d1", level: "P2" });
-  });
-});
-
 describe("resolveAssignmentDomains", () => {
   it("returns every bid domain for the target project", () => {
     const out = resolveAssignmentDomains(

@@ -11,7 +11,6 @@ vi.mock("~/lib/db.server", () => {
 import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks, stateToBlocks, ydocToBlocks } from "../read";
 import { BLOCKNOTE_FRAGMENT, blocksToFragment, plainTextToBlocks } from "../blocknote-server";
-import { collabDocToProseMirror } from "../export";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 
 const mockPrisma = prisma as any;
@@ -172,8 +171,8 @@ describe("throwaway decodes keep commented text", () => {
     expect(blocksToPlainText(stateToBlocks(stateOf(docWithCommentMark("hello"))).blocks)).toBe("hello");
   });
 
-  it("collabDocToProseMirror keeps text under a comment mark", async () => {
+  it("readDocAsBlocks keeps text under a comment mark", async () => {
     mockPrisma.collabDocument.findUnique.mockResolvedValue({ state: stateOf(docWithCommentMark("hello")) });
-    expect(JSON.stringify(await collabDocToProseMirror("doc:p1:body"))).toContain("hello");
+    expect(blocksToPlainText(await readDocAsBlocks("doc:p1:body"))).toBe("hello");
   });
 });
