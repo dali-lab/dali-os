@@ -7,7 +7,8 @@ const read = (p: string) => readFileSync(resolve(__dirname, "../..", p), "utf8")
 describe("status meanings use the os status tokens", () => {
   it.each([
     ["education/components/RosterMatrix.tsx", "text-os-green"],
-    ["education/routes/education.tsx", 'success: "bg-os-green"'],
+    ["components/ui/Pill.tsx", 'success: "bg-os-green/15 text-os-green"'],
+    ["education/routes/education.tsx", 'Approved: "success"'],
     ["members/components/ComplianceBlock.tsx", "bg-os-green/10"],
     ["members/components/MemberProfileView.tsx", '"bg-os-green"'],
     ["admin/components/PayrollUploadModal.tsx", "text-os-green"],

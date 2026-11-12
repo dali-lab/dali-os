@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Form, Link } from "react-router";
 import { Select } from "~/components/ui/floating";
+import { Z } from "~/components/ui/z";
 import {
   CalendarX,
   ChevronRight,
@@ -68,7 +69,7 @@ function PartnerContactMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+6px)] z-[100] min-w-[184px] rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]"
+          className={`absolute right-0 top-[calc(100%+6px)] ${Z.top} min-w-[184px] rounded-xl border border-os-container bg-os-card p-1.5 shadow-[0_12px_32px_var(--color-os-shadow)]`}
         >
           {email && (
             <a role="menuitem" href={`mailto:${email}`} className={itemClass} onClick={() => setOpen(false)}>
