@@ -7,6 +7,7 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/drive/lib/drive-scopes.server", () => ({ loadDriveScopes: vi.fn() }));
 vi.mock("~/drive/lib/drive-hub.server", () => ({
