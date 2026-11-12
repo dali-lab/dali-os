@@ -65,7 +65,7 @@ The DALI OS MCP server (the `dalios` tools, when connected) reads real staging/p
 
 These live in `.github/workflows/`. Gating on PRs (treat failures as blocking):
 - `test.yml` — Vitest unit tests (Prisma mocked), Vitest integration tests (`*.integration.test.ts`, real Postgres), and Playwright E2E against a real Postgres service container. Use an integration test when the behavior depends on the database itself: raw SQL, transactions, unique constraints, cascades, locking. The unit job also reports V8 coverage to the run summary and uploads the HTML report as the `coverage-report` artifact; coverage is reported, not gated.
-- `build-check.yml` — Docker build validation via flyctl. The build runs `react-router build`, not `tsc`, so **no CI job typechecks**; run `npm run typecheck` yourself when you touch TS.
+- `build-check.yml` — Docker build validation via flyctl. The build runs `react-router build`, not `tsc`, so it doesn't typecheck. `typecheck-api` in `test.yml` does, but is non-blocking while baseline errors remain; run `npm run typecheck` yourself when you touch TS.
 - `migration-check.yml` — Prisma migration safety: no schema drift, no deleted applied migrations, pgfence safety analysis.
 - `codeql.yml` — static security scanning.
 - `preview-deploy.yml` — per-PR Neon branch + Fly app, opt-in: add the `preview` label to a PR (don't worry about this one unless it's failing specifically). `preview-teardown.yml` and `preview-sweeper.yml` clean them up.

@@ -12,6 +12,12 @@ on:
         value: ${{ jobs.filter.outputs.asr }}
       migrations:
         value: ${{ jobs.filter.outputs.migrations }}
+      desktop:
+        value: ${{ jobs.filter.outputs.desktop }}
+      ios:
+        value: ${{ jobs.filter.outputs.ios }}
+      mobile:
+        value: ${{ jobs.filter.outputs.mobile }}
 
 jobs:
   filter:
@@ -20,6 +26,9 @@ jobs:
       api: ${{ steps.filter.outputs.api }}
       asr: ${{ steps.filter.outputs.asr }}
       migrations: ${{ steps.filter.outputs.migrations }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+      ios: ${{ steps.filter.outputs.ios }}
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
       - id: filter
         env:
@@ -29,7 +38,7 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -uo pipefail
-          all() { printf 'api=true\nasr=true\nmigrations=true\n' >> "$GITHUB_OUTPUT"; exit 0; }
+          all() { printf 'api=true\nasr=true\nmigrations=true\ndesktop=true\nios=true\nmobile=true\n' >> "$GITHUB_OUTPUT"; exit 0; }
           [ "$EVENT" = "pull_request" ] || all
           FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename') || all
           [ "$(wc -l <<<"$FILES")" -lt 3000 ] || all
@@ -40,4 +49,7 @@ jobs:
             echo "api=$(grep -vE '^(specs/|mobile/|desktop/|ios/|jobx-extension/|asr/|[^/]+\.(md|html)$)' <<<"$FILES" | grep -q . && echo true || echo false)"
             echo "asr=$(has '^asr/')"
             echo "migrations=$(has '^dali-api/prisma/')"
+            echo "desktop=$(has '^desktop/')"
+            echo "ios=$(has '^ios/')"
+            echo "mobile=$(has '^mobile/')"
           } | tee -a "$GITHUB_OUTPUT"
