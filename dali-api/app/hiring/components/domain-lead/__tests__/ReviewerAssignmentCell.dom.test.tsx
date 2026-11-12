@@ -5,8 +5,20 @@ import { renderDom } from "~/test-utils/render";
 import { ToastProvider } from "~/components/ui/toast";
 import { DialogProvider } from "~/components/ui/dialog";
 import { ReviewerAssignmentCell } from "../ReviewerAssignmentCell";
+import type { CycleReviewerRow } from "../table-shared";
 
-const cycleReviewers = [{ id: "cr1", user: { firstName: "Grace", lastName: "Hopper" } }];
+const now = new Date("2026-11-01T00:00:00.000Z");
+const cycleReviewers: CycleReviewerRow[] = [
+  {
+    id: "cr1",
+    createdAt: now,
+    updatedAt: now,
+    userId: "u9",
+    applicationCycleId: "c1",
+    domainId: "d1",
+    user: { id: "u9", daliEmail: null, firstName: "Grace", lastName: "Hopper" },
+  },
+];
 
 function mount(editable: boolean) {
   const Stub = createRoutesStub([

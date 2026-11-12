@@ -154,7 +154,7 @@ describe("people and projects", () => {
     expect(await sources("search_directory", { results: [{ id: "u2", firstName: "Grace", lastName: "Hopper" }] })).toEqual([
       { kind: "person", title: "Grace Hopper", url: "/members/u2" },
     ]);
-    expect(await sources("get_member_profile", { id: "u3", firstName: "Ada", lastName: null })).toEqual([
+    expect(await sources("get_member_profile", { id: "u3", firstName: "Ada", lastName: undefined })).toEqual([
       { kind: "person", title: "Ada", url: "/members/u3" },
     ]);
   });
@@ -189,7 +189,7 @@ describe("people and projects", () => {
 
 describe("documents", () => {
   it("cites a page where it opens", async () => {
-    expect(await sources("read_page", { id: "p1", title: "Plan", kind: "Document" })).toEqual([
+    expect(await sources("read_page", { id: "p1", title: "Plan", kind: "FreeForm" })).toEqual([
       { kind: "document", title: "Plan", url: "/documents/p1" },
     ]);
     expect((await sources("read_page", { id: "w1", title: "Board", kind: "Whiteboard" }))[0].url).toBe("/whiteboard/w1");
@@ -198,7 +198,7 @@ describe("documents", () => {
   it("cites every page in a project tree, nested ones included", async () => {
     const out = await sources("list_project_pages", {
       pages: [
-        { id: "p1", title: "Overview", kind: "Document", children: [{ id: "p2", title: "Notes", kind: "Document", children: [] }] },
+        { id: "p1", title: "Overview", kind: "FreeForm", children: [{ id: "p2", title: "Notes", kind: "FreeForm", children: [] }] },
         { id: "d1", title: "Deck", kind: "Slides", children: [] },
       ],
     });
@@ -225,8 +225,8 @@ describe("meetings", () => {
   it("drops interviews from upcoming meetings", async () => {
     const payload = {
       meetings: [
-        { id: "m1", title: "Standup", startsAt: "2026-11-05T14:00:00.000Z", source: "dali" },
-        { id: "i1", title: "Interview: Applicant", startsAt: "2026-11-05T16:00:00.000Z", source: "interview" },
+        { id: "m1", title: "Standup", startsAt: "2026-11-05T14:00:00.000Z", source: "dali" as const },
+        { id: "i1", title: "Interview: Applicant", startsAt: "2026-11-05T16:00:00.000Z", source: "interview" as const },
       ],
     };
     const filtered = ASK_TOOLS.list_my_upcoming_meetings.filter!(payload) as typeof payload;
@@ -278,9 +278,9 @@ describe("every Ask tool cites from a realistic payload", () => {
       kinds: ["person"],
     },
     get_member_profile: { payload: { id: "u1", firstName: "Ada", lastName: "Lovelace" }, kinds: ["person"] },
-    read_page: { payload: { id: "p1", title: "Plan", kind: "Document", workspaceType: "Project" }, kinds: ["document"] },
+    read_page: { payload: { id: "p1", title: "Plan", kind: "FreeForm", workspaceType: "Project" }, kinds: ["document"] },
     list_project_pages: {
-      payload: { pages: [{ id: "p1", title: "Overview", kind: "Document", children: [] }] },
+      payload: { pages: [{ id: "p1", title: "Overview", kind: "FreeForm", children: [] }] },
       kinds: ["document"],
     },
     get_meeting: { payload: { meetingId: "m1", title: "Sync", startsAt: "2026-11-05T14:00:00.000Z" }, kinds: ["meeting"] },
