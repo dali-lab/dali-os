@@ -446,6 +446,18 @@ describe("restoreVersion", () => {
     expect(disconnect).toHaveBeenCalledOnce();
   });
 
+  it("keeps text under a comment mark from the snapshot", async () => {
+    const snapshot = blockNoteDoc("hello");
+    snapshot.transact(() => findXmlText(snapshot.getXmlFragment("blocknote"))[0].format(0, 5, { "comment--abc": { id: "abc" } } as any));
+    db.collabDocumentVersion.findUnique.mockResolvedValue({ name: "doc:p1:body", state: stateOf(snapshot) });
+    const live = blockNoteDoc("current");
+    const { server } = fakeServer(live);
+
+    await restoreVersion(server, "doc:p1:body", "v1");
+
+    expect(blocksToPlainText(fragmentToBlocks(live.getXmlFragment("blocknote")))).toBe("hello");
+  });
+
   it("restores a pre-migration legacy snapshot through the PM mapper", async () => {
     db.collabDocumentVersion.findUnique.mockResolvedValue({ name: "doc:p1:body", state: stateOf(legacyDoc("ancient")) });
     const live = new Y.Doc();

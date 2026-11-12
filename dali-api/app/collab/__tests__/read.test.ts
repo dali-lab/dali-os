@@ -10,10 +10,48 @@ vi.mock("~/lib/db.server", () => {
 
 import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks, stateToBlocks, ydocToBlocks } from "../read";
-import { blocksToFragment, plainTextToBlocks } from "../blocknote-server";
+import { BLOCKNOTE_FRAGMENT, blocksToFragment, plainTextToBlocks } from "../blocknote-server";
+import { collabDocToProseMirror } from "../export";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 
 const mockPrisma = prisma as any;
+
+
+function docWithCommentMark(text = "hello"): Y.Doc {
+  const doc = new Y.Doc();
+  doc.transact(() => blocksToFragment(plainTextToBlocks(text), doc.getXmlFragment(BLOCKNOTE_FRAGMENT)));
+  doc.transact(() => {
+    const t = findXmlText(doc.getXmlFragment(BLOCKNOTE_FRAGMENT))[0];
+    t.format(0, text.length, { "comment--abc": { id: "abc" } } as any);
+  });
+  return doc;
+}
+
+function docWithUnknownNode(text = "hello"): Y.Doc {
+  const doc = new Y.Doc();
+  const fragment = doc.getXmlFragment(BLOCKNOTE_FRAGMENT);
+  doc.transact(() => blocksToFragment(plainTextToBlocks(text), fragment));
+  doc.transact(() => {
+    const container = (fragment.get(0) as Y.XmlElement).get(0) as Y.XmlElement;
+    const ghost = new Y.XmlElement("notInServerSchema");
+    const ghostText = new Y.XmlText();
+    ghostText.insert(0, "ghost");
+    ghost.insert(0, [ghostText]);
+    container.push([ghost]);
+  });
+  return doc;
+}
+
+function findXmlText(el: Y.XmlFragment | Y.XmlElement, out: Y.XmlText[] = []): Y.XmlText[] {
+  for (let i = 0; i < el.length; i++) {
+    const c = el.get(i);
+    if (c instanceof Y.XmlText) out.push(c);
+    else if (c instanceof Y.XmlElement) findXmlText(c, out);
+  }
+  return out;
+}
+
+const stateOf = (doc: Y.Doc) => Buffer.from(Y.encodeStateAsUpdate(doc));
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -104,5 +142,38 @@ describe("readDocAsBlocks", () => {
     });
     const blocks = await readDocAsBlocks("doc:x:body");
     expect(blocksToPlainText(blocks)).toBe("still tiptap");
+  });
+});
+
+describe("ydocToBlocks on a live doc", () => {
+  it("returns the known blocks and leaves a doc with an unknown node untouched", () => {
+    const doc = docWithUnknownNode("hello");
+    const before = stateOf(doc);
+    const updates: Uint8Array[] = [];
+    doc.on("update", (u: Uint8Array) => updates.push(u));
+
+    const { blocks } = ydocToBlocks(doc);
+
+    expect(blocksToPlainText(blocks)).toContain("hello");
+    expect(updates).toEqual([]);
+    expect(stateOf(doc).equals(before)).toBe(true);
+  });
+
+  it("keeps text under a comment mark and leaves the live doc untouched", () => {
+    const doc = docWithCommentMark("hello");
+    const before = stateOf(doc);
+    expect(blocksToPlainText(ydocToBlocks(doc).blocks)).toBe("hello");
+    expect(stateOf(doc).equals(before)).toBe(true);
+  });
+});
+
+describe("throwaway decodes keep commented text", () => {
+  it("stateToBlocks reads text under a comment mark", () => {
+    expect(blocksToPlainText(stateToBlocks(stateOf(docWithCommentMark("hello"))).blocks)).toBe("hello");
+  });
+
+  it("collabDocToProseMirror keeps text under a comment mark", async () => {
+    mockPrisma.collabDocument.findUnique.mockResolvedValue({ state: stateOf(docWithCommentMark("hello")) });
+    expect(JSON.stringify(await collabDocToProseMirror("doc:p1:body"))).toContain("hello");
   });
 });
