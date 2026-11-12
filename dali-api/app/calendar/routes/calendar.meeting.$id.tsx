@@ -27,7 +27,7 @@ import { requireAuth, redirectNonMemberToPortal, isNonMember } from "~/lib/auth"
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { walletTokensConfigured } from "~/lib/wallet-token";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { getActiveDisplayScan, startDisplayScan, stopDisplayScan } from "~/lib/display-scan.server";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";

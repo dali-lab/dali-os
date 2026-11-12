@@ -37,20 +37,20 @@ vi.mock("node:fs", () => {
 vi.mock("~/lib/db.server", () => ({
   prisma: { user: { findUnique: vi.fn(), update: vi.fn() } },
 }));
-vi.mock("~/lib/wallet-token", () => ({
+vi.mock("~/wallet/lib/wallet-token.server", () => ({
   walletTokensConfigured: vi.fn(() => true),
   signWalletToken: vi.fn((id: string, secret: string) => `token:${id}:${secret}`),
   ensureWalletSecret: vi.fn(async () => "member-secret"),
   signWalletAuthToken: vi.fn((id: string) => `auth:${id}`),
 }));
-vi.mock("~/lib/wallet-pass-fields.server", () => ({ resolveWalletPassFields: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-pass-fields.server", () => ({ resolveWalletPassFields: vi.fn() }));
 vi.mock("~/lib/app-env", () => ({ getApiBaseUrl: () => "https://api.example.edu" }));
 
 import fs from "node:fs";
 import { prisma } from "~/lib/db.server";
-import { walletTokensConfigured } from "~/lib/wallet-token";
-import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
-import { walletAppleConfigured, buildAppleWalletPass } from "~/lib/wallet-apple.server";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
+import { resolveWalletPassFields } from "~/wallet/lib/wallet-pass-fields.server";
+import { walletAppleConfigured, buildAppleWalletPass } from "~/wallet/lib/wallet-apple.server";
 
 const m = prisma as any;
 const ENV = {

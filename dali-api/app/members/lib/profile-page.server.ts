@@ -51,10 +51,10 @@ import {
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
 import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
-import { rotateWalletSecret } from "~/lib/wallet-token";
-import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
-import { walletGoogleConfigured } from "~/lib/wallet-google.server";
+import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
+import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
+import { walletGoogleConfigured } from "~/wallet/lib/wallet-google.server";
 import { hasOutgoingCoffeeChat, sendCoffeeChatInvite } from "~/members/lib/coffee-chat.server";
 import {
   dateToMonth,

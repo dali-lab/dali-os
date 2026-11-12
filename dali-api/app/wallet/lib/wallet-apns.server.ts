@@ -11,7 +11,7 @@
 
 import http2 from "node:http2";
 import { prisma } from "~/lib/db.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
 
 // APNs host: prod by default. Point at the sandbox host during development
 // by setting APPLE_PASS_APNS_HOST=https://api.sandbox.push.apple.com.

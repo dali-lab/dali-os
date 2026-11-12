@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { classifyWalletScanFailure, memberIdFromToken, verifyWalletToken } from "~/lib/wallet-token";
+import { classifyWalletScanFailure, memberIdFromToken, verifyWalletToken } from "~/wallet/lib/wallet-token.server";
 
 export type ScannedMember = {
   id: string;

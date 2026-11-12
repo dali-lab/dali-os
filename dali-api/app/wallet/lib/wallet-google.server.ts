@@ -19,8 +19,8 @@ import {
   walletTokensConfigured,
   signWalletToken,
   ensureWalletSecret,
-} from "~/lib/wallet-token";
-import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
+} from "~/wallet/lib/wallet-token.server";
+import { resolveWalletPassFields } from "~/wallet/lib/wallet-pass-fields.server";
 
 // Google Wallet REST API base + the object-issuer scope the SA needs.
 const WALLET_API_BASE = "https://walletobjects.googleapis.com/walletobjects/v1";

@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.mobile.pass";
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
-import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
-import { ensureWalletSecret, signWalletToken, walletTokensConfigured } from "~/lib/wallet-token";
+import { resolveWalletPassFields } from "~/wallet/lib/wallet-pass-fields.server";
+import { ensureWalletSecret, signWalletToken, walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { checkInLocation, formatPassDate, passAccessLevel, passDisplayId } from "~/lib/mobile-format";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 

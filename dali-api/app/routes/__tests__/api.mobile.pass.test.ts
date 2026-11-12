@@ -11,16 +11,16 @@ vi.mock("~/lib/mobile-auth.server", async (importOriginal) => ({
   requireMobileUser: (...a: unknown[]) => requireMobileUser(...a),
 }));
 vi.mock("~/lib/roles", () => ({ currentTerm: (...a: unknown[]) => currentTerm(...a) }));
-vi.mock("~/lib/wallet-pass-fields.server", () => ({
+vi.mock("~/wallet/lib/wallet-pass-fields.server", () => ({
   resolveWalletPassFields: (...a: unknown[]) => resolveWalletPassFields(...a),
 }));
-vi.mock("~/lib/wallet-token", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/wallet-token")>()),
+vi.mock("~/wallet/lib/wallet-token.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/wallet/lib/wallet-token.server")>()),
   ensureWalletSecret: (...a: unknown[]) => ensureWalletSecret(...a),
 }));
 
 import { mockedPrisma } from "~/test-utils/prisma";
-import { verifyWalletToken } from "~/lib/wallet-token";
+import { verifyWalletToken } from "~/wallet/lib/wallet-token.server";
 import { loader } from "../api.mobile.pass";
 
 const db = mockedPrisma();

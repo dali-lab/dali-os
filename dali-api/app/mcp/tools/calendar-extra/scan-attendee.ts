@@ -10,7 +10,7 @@ import {
   memberIdFromToken,
   verifyWalletToken,
   walletTokensConfigured,
-} from "~/lib/wallet-token";
+} from "~/wallet/lib/wallet-token.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { McpNotFoundError, McpForbiddenError, McpInvalidError } from "../../registry";
 

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { PKPass } from "passkit-generator";
 import { prisma } from "~/lib/db.server";
-import { walletTokensConfigured, signWalletToken, ensureWalletSecret, signWalletAuthToken } from "~/lib/wallet-token";
-import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
+import { walletTokensConfigured, signWalletToken, ensureWalletSecret, signWalletAuthToken } from "~/wallet/lib/wallet-token.server";
+import { resolveWalletPassFields } from "~/wallet/lib/wallet-pass-fields.server";
 import { getApiBaseUrl } from "~/lib/app-env";
 
 // Apple Wallet (.pkpass) pass generator for DALI membership passes. Signs passes

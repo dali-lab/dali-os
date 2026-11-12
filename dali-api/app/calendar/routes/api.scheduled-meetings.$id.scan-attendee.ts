@@ -12,7 +12,7 @@ import {
   memberIdFromToken,
   verifyWalletToken,
   walletTokensConfigured,
-} from "~/lib/wallet-token";
+} from "~/wallet/lib/wallet-token.server";
 
 // POST /api/scheduled-meetings/:id/scan-attendee
 //

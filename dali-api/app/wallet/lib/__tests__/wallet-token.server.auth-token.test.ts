@@ -4,7 +4,7 @@ import { describe, expect, it, beforeEach, vi } from "vitest";
 // need a real DB connection.
 vi.mock("~/lib/db.server");
 
-import { signWalletAuthToken, verifyWalletAuthToken } from "./wallet-token";
+import { signWalletAuthToken, verifyWalletAuthToken } from "../wallet-token.server";
 
 describe("signWalletAuthToken / verifyWalletAuthToken", () => {
   beforeEach(() => {

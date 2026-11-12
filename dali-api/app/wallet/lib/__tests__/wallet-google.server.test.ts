@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 // exercises the pure object-id parser.
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
-import { userIdFromGoogleObjectId } from "~/lib/wallet-google.server";
+import { userIdFromGoogleObjectId } from "~/wallet/lib/wallet-google.server";
 
 const ISSUER = "3388000000012345678";
 

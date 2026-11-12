@@ -43,11 +43,11 @@ vi.mock("~/lib/db.server", () => ({
     walletPassRegistration: { findMany: vi.fn(), deleteMany: vi.fn() },
   },
 }));
-vi.mock("~/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
-import { pushWalletPassUpdate, pushAllWalletPassUpdates } from "~/lib/wallet-apns.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
+import { pushWalletPassUpdate, pushAllWalletPassUpdates } from "~/wallet/lib/wallet-apns.server";
 
 const m = prisma as any;
 const ENV = {

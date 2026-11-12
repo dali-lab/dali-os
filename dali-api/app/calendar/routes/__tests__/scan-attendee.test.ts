@@ -21,7 +21,7 @@ vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn() }));
 vi.mock("~/lib/scheduled-meeting", () => ({
   markMeetingAttendance: vi.fn(),
 }));
-vi.mock("~/lib/wallet-token", () => ({
+vi.mock("~/wallet/lib/wallet-token.server", () => ({
   memberIdFromToken: vi.fn(),
   verifyWalletToken: vi.fn(),
   walletTokensConfigured: vi.fn(),
@@ -34,7 +34,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { markMeetingAttendance } from "~/lib/scheduled-meeting";
-import { memberIdFromToken, verifyWalletToken, walletTokensConfigured } from "~/lib/wallet-token";
+import { memberIdFromToken, verifyWalletToken, walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { action } from "~/calendar/routes/api.scheduled-meetings.$id.scan-attendee";
 
 const m = {

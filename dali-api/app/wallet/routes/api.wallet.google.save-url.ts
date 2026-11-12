@@ -3,7 +3,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import {
   walletGoogleConfigured,
   buildGoogleWalletSaveUrl,
-} from "~/lib/wallet-google.server";
+} from "~/wallet/lib/wallet-google.server";
 
 // GET /api/wallet/google/save-url
 //

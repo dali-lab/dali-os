@@ -10,7 +10,7 @@ import {
   verifyWalletToken,
   memberIdFromToken,
   walletTokensConfigured,
-} from "~/lib/wallet-token";
+} from "~/wallet/lib/wallet-token.server";
 
 const GLOBAL = "test-wallet-global-secret";
 const MEMBER = "member-secret-abc";

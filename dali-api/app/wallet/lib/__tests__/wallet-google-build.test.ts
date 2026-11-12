@@ -18,18 +18,18 @@ vi.mock("google-auth-library", () => ({
     authorize = authorize;
   },
 }));
-vi.mock("~/lib/wallet-token", () => ({
+vi.mock("~/wallet/lib/wallet-token.server", () => ({
   walletTokensConfigured: tokensConfigured,
   ensureWalletSecret: ensureSecret,
   signWalletToken: signToken,
 }));
-vi.mock("~/lib/wallet-pass-fields.server", () => ({ resolveWalletPassFields: resolveFields }));
+vi.mock("~/wallet/lib/wallet-pass-fields.server", () => ({ resolveWalletPassFields: resolveFields }));
 
 import {
   buildGoogleWalletSaveUrl,
   patchAllGoogleWalletObjects,
   walletGoogleConfigured,
-} from "~/lib/wallet-google.server";
+} from "~/wallet/lib/wallet-google.server";
 
 const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
   modulusLength: 2048,

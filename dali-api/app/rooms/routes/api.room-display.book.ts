@@ -1,8 +1,8 @@
 import type { Route } from "./+types/api.room-display.book";
 import { z } from "zod";
 import { parseJson } from "~/lib/validate";
-import { walletTokensConfigured } from "~/lib/wallet-token";
-import { resolveScannedMember } from "~/lib/wallet-scan.server";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
+import { resolveScannedMember } from "~/wallet/lib/wallet-scan.server";
 import { displayRoom, displayUnauthorized, requireRoomDisplay } from "~/lib/room-display.server";
 import { createRoomBooking } from "~/lib/rooms.server";
 

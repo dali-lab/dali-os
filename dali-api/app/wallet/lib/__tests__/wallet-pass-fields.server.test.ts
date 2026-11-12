@@ -10,7 +10,7 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
 }));
 
-import { resolveWalletPassFields } from "~/lib/wallet-pass-fields.server";
+import { resolveWalletPassFields } from "~/wallet/lib/wallet-pass-fields.server";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 

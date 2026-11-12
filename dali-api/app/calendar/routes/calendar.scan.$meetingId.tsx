@@ -3,7 +3,7 @@ import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { getUserRoles, isProjectMember } from "~/lib/roles";
-import { walletTokensConfigured } from "~/lib/wallet-token";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { AttendeeScanner } from "~/components/AttendeeScanner";
 import { useOsChrome } from "~/components/os-chrome";
 import type { Route } from "./+types/calendar.scan.$meetingId";

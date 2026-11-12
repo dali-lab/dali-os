@@ -6,9 +6,9 @@ import { getApiBaseUrl } from "~/lib/app-env";
 import {
   walletGoogleConfigured,
   patchAllGoogleWalletObjects,
-} from "~/lib/wallet-google.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
-import { pushAllWalletPassUpdates } from "~/lib/wallet-apns.server";
+} from "~/wallet/lib/wallet-google.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
+import { pushAllWalletPassUpdates } from "~/wallet/lib/wallet-apns.server";
 
 export type WalletBroadcastResult = {
   google: { configured: boolean; total: number; patched: number; skipped: number; failed: number };

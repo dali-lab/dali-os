@@ -52,10 +52,10 @@ vi.mock("~/lib/group-kind", () => ({
 vi.mock("~/admin/lib/eligibility", () => ({ ALLOWED_LEVELS: [], parseLevel: vi.fn() }));
 vi.mock("~/admin/lib/eligibility.server", () => ({}));
 vi.mock("~/lib/handle", () => ({ normalizeHandle: vi.fn() }));
-vi.mock("~/lib/wallet-token", () => ({ rotateWalletSecret: vi.fn() }));
-vi.mock("~/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
-vi.mock("~/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn(() => false) }));
-vi.mock("~/lib/wallet-google.server", () => ({ walletGoogleConfigured: vi.fn(() => false) }));
+vi.mock("~/wallet/lib/wallet-token.server", () => ({ rotateWalletSecret: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn(() => false) }));
+vi.mock("~/wallet/lib/wallet-google.server", () => ({ walletGoogleConfigured: vi.fn(() => false) }));
 vi.mock("~/lib/timezone", () => ({ isValidTimezone: vi.fn() }));
 vi.mock("~/lib/geocode.server", () => ({ geocodePlace: vi.fn() }));
 vi.mock("~/members/lib/coffee-chat.server", () => ({
@@ -73,7 +73,7 @@ vi.mock("~/mentorship/lib/visibility", () => ({
 
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { listProfileNotes, listSharedWithMe } from "~/members/lib/personal-notes.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
 import { isAdmin, isCore, isLabMentor } from "~/lib/roles";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import { mentorshipPairWhere } from "~/mentorship/lib/visibility";

@@ -53,7 +53,7 @@ import { termWindows } from "~/lib/terms";
 import { APPLICATION_TZ, getZonedYMD } from "~/lib/timezone";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
-import { walletTokensConfigured } from "~/lib/wallet-token";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;

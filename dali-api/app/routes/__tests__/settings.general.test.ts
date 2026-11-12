@@ -6,13 +6,13 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/auth")>()),
   requireAuth: vi.fn(),
 }));
-vi.mock("~/lib/wallet-token", () => ({ rotateWalletSecret: vi.fn() }));
-vi.mock("~/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-token.server", () => ({ rotateWalletSecret: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
 vi.mock("~/lib/settings-page.server", () => ({}));
 
 import { requireAuth } from "~/lib/auth";
-import { rotateWalletSecret } from "~/lib/wallet-token";
-import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
+import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
+import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
 import { action } from "~/routes/settings.general";
 
 const mockAuth = requireAuth as ReturnType<typeof vi.fn>;
