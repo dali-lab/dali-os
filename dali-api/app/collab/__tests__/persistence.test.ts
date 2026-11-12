@@ -4,7 +4,7 @@ import * as Y from "yjs";
 // Mock prisma before importing the module under test
 vi.mock("~/lib/db.server", () => {
   const mock: any = {
-    mentorNote: { findUnique: vi.fn(), updateMany: vi.fn() },
+    blogPost: { findUnique: vi.fn(), updateMany: vi.fn() },
     collabDocument: { findUnique: vi.fn(), upsert: vi.fn() },
     collabDocumentVersion: { findFirst: vi.fn(), create: vi.fn() },
     applicationReview: { findUnique: vi.fn(), update: vi.fn() },
@@ -420,10 +420,10 @@ describe("storeDocument never decodes the live doc", () => {
     const updates: Uint8Array[] = [];
     doc.on("update", (u: Uint8Array) => updates.push(u));
 
-    await storeDocument("mentorNote:n1:body", doc);
+    await storeDocument("blogPost:n1:body", doc);
 
     expect(updates).toEqual([]);
     expect(stateOf(doc).equals(before)).toBe(true);
-    expect(mockPrisma.mentorNote.updateMany).toHaveBeenCalled();
+    expect(mockPrisma.blogPost.updateMany).toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import * as Y from "yjs";
 vi.mock("~/lib/db.server", () => {
   const mock: any = {
     mentorNote: { findUnique: vi.fn(), updateMany: vi.fn() },
+    blogPost: { findUnique: vi.fn(), updateMany: vi.fn() },
     mentorNoteTemplate: { findUnique: vi.fn(), update: vi.fn() },
   };
   return { prisma: mock };
@@ -195,15 +196,15 @@ describe("syncRegistryDocBack leaves the live doc alone", () => {
     const updates: Uint8Array[] = [];
     doc.on("update", (u: Uint8Array) => updates.push(u));
 
-    await syncRegistryDocBack("mentorNote", "n1", doc);
+    await syncRegistryDocBack("blogPost", "n1", doc);
 
     expect(updates).toEqual([]);
     expect(stateOf(doc).equals(before)).toBe(true);
   });
 
-  it("writes the commented text into the source column", async () => {
-    await syncRegistryDocBack("mentorNote", "n1", docWithCommentMark("hello"));
-    const data = mockPrisma.mentorNote.updateMany.mock.calls[0][0].data;
+  it("writes the commented text into the blog post column", async () => {
+    await syncRegistryDocBack("blogPost", "n1", docWithCommentMark("hello"));
+    const data = mockPrisma.blogPost.updateMany.mock.calls[0][0].data;
     expect(blocksToPlainText(data.contentJson)).toBe("hello");
   });
 
