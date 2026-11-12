@@ -120,7 +120,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // limited to Core/Admin and assigned reviewers. A plain reviewer (and a
   // domain lead on a Core cycle) sees only the domains they cover for this
   // cycle — hitting a URL outside that bounces back to the list.
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   const isCoreCycle = isAdminOnlyCycle(da.application.applicationCycle.applicants);
   // Admin always; Core (hiring lead) only on non-Core cycles. On Core cycles,
   // plain Core membership grants nothing — access is Admin + assigned reviewers.
@@ -581,7 +581,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   });
   if (!da) return Response.json({ error: "Application not found" }, { status: 404 });
 
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!canEditHiringNote(roles, isAdminOnlyCycle(da.application.applicationCycle.applicants))) {
     return Response.json({ error: "You can't edit this note." }, { status: 403 });
   }

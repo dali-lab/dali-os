@@ -141,7 +141,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     authorPhotoUrl: photoById.get(r.authorId) ?? null,
     body: r.body,
     bodyJson: r.bodyJson as BodySegment[] | null,
-    anchor: r.anchor as { from: string; to: string } | null,
+    anchor: r.anchor as Record<string, unknown> | null,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     versionId: r.versionId,

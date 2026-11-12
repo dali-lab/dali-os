@@ -25,7 +25,7 @@ vi.mock("~/lib/betterauth-session.server", () => ({ mintBetterAuthSession: vi.fn
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { exchangeAuthorizationCode, getOAuthClient } from "~/lib/oauth";
+import { buildUserInfo, exchangeAuthorizationCode, getOAuthClient } from "~/lib/oauth";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/routes/oauth.token";
@@ -48,8 +48,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(exchangeAuthorizationCode).mockResolvedValue({
     userId: "u1",
-    provider: "google",
-    accountType: "member",
     scopes: ["mcp:read", "mcp:admin"],
     clientId: "c1",
   } as any);
@@ -90,6 +88,19 @@ describe("oauth.token audit", () => {
     for (const secret of ["the-code", "the-verifier", "raw"]) {
       expect(logged).not.toContain(secret);
     }
+  });
+
+  it("builds userinfo as a member", async () => {
+    await action(
+      tokenRequest({
+        grant_type: "authorization_code",
+        code: "the-code",
+        code_verifier: "the-verifier",
+        redirect_uri: "http://cb",
+        client_id: "c1",
+      }),
+    );
+    expect(buildUserInfo).toHaveBeenCalledWith(expect.anything(), "member");
   });
 
   it("does not log an unsupported grant type or a failed exchange", async () => {

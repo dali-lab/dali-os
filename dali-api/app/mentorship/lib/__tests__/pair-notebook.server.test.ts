@@ -42,7 +42,6 @@ const NOTE: MentorNoteRef = {
   ...PAIR,
   weekOf: new Date("2026-10-12T00:00:00Z"),
   pageId: null,
-  contentJson: {},
 };
 const BLOCKS = [{ type: "paragraph", content: "hello" }];
 
@@ -205,62 +204,46 @@ describe("ensureMentorNotePage", () => {
     expect(tabUserShare.principalId).toBe("u_mentor");
   });
 
-  it("renames an existing room and its versions to the page room in the same transaction that claims the note", async () => {
-    m.collabDocument.findUnique.mockResolvedValue({ id: "cd1" });
-    m.collabDocument.updateMany.mockResolvedValue({ count: 1 });
+  it("claims the note for the new tab and never renames any room", async () => {
+    expect(await ensureMentorNotePage(NOTE, "u_mentor")).toEqual({ pageId: "tab1" });
 
-    expect(await ensureMentorNotePage({ ...NOTE, contentJson: BLOCKS }, "u_mentor")).toEqual({ pageId: "tab1" });
-
-    expect(m.$transaction).toHaveBeenCalledTimes(1);
     expect(m.mentorNote.updateMany).toHaveBeenCalledWith({ where: { id: "n1", pageId: null }, data: { pageId: "tab1" } });
-    expect(m.collabDocument.updateMany).toHaveBeenCalledWith({
-      where: { name: "mentorNote:n1:body" },
-      data: { name: "doc:tab1:body" },
-    });
-    expect(m.collabDocumentVersion.updateMany).toHaveBeenCalledWith({
-      where: { name: "mentorNote:n1:body" },
-      data: { name: "doc:tab1:body" },
-    });
-    expect(replaceCollabDocContent).not.toHaveBeenCalled();
+    expect(m.collabDocument.updateMany).not.toHaveBeenCalled();
+    expect(m.collabDocumentVersion.updateMany).not.toHaveBeenCalled();
   });
 
-  it("claims the note before renaming, so a lost race renames nothing", async () => {
-    m.collabDocument.findUnique.mockResolvedValue({ id: "cd1" });
+  it("a lost claim race deletes the new tab and returns the winner's page", async () => {
     m.mentorNote.updateMany.mockResolvedValue({ count: 0 });
     m.mentorNote.findUniqueOrThrow.mockResolvedValue({ pageId: "tab_winner" });
 
     expect(await ensureMentorNotePage(NOTE, "u_mentor")).toEqual({ pageId: "tab_winner" });
 
-    expect(m.collabDocument.updateMany).not.toHaveBeenCalled();
-    expect(m.collabDocumentVersion.updateMany).not.toHaveBeenCalled();
     expect(m.page.delete).toHaveBeenCalledWith({ where: { id: "tab1" } });
   });
 
-  it("materialises a room from contentJson when the note was never opened in collab", async () => {
-    await ensureMentorNotePage({ ...NOTE, contentJson: BLOCKS }, "u_mentor");
+  it("seeds the tab's room from the given blocks", async () => {
+    await ensureMentorNotePage(NOTE, "u_mentor", { seed: BLOCKS });
 
     expect(replaceCollabDocContent).toHaveBeenCalledWith("doc:tab1:body", BLOCKS, "u_mentor");
-    expect(m.mentorNote.updateMany).toHaveBeenCalledWith({ where: { id: "n1", pageId: null }, data: { pageId: "tab1" } });
   });
 
-  it("maps legacy ProseMirror contentJson to blocks when materialising", async () => {
+  it("maps legacy ProseMirror template JSON to blocks when seeding", async () => {
     const pm = { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Legacy" }] }] };
 
-    await ensureMentorNotePage({ ...NOTE, contentJson: pm }, "u_mentor");
+    await ensureMentorNotePage(NOTE, "u_mentor", { seed: pm });
 
     const written = vi.mocked(replaceCollabDocContent).mock.calls[0][1] as any[];
-    expect(Array.isArray(written)).toBe(true);
     expect(JSON.stringify(written)).toContain("Legacy");
   });
 
   it("writes no room for an empty note", async () => {
-    await ensureMentorNotePage({ ...NOTE, contentJson: {} }, "u_mentor");
+    await ensureMentorNotePage(NOTE, "u_mentor", { seed: {} });
 
     expect(replaceCollabDocContent).not.toHaveBeenCalled();
   });
 
-  it("deletes the new tab and rethrows when the claim transaction fails", async () => {
-    m.$transaction.mockRejectedValue(new Error("db down"));
+  it("deletes the new tab and rethrows when the claim fails", async () => {
+    m.mentorNote.updateMany.mockRejectedValue(new Error("db down"));
 
     await expect(ensureMentorNotePage(NOTE, "u_mentor")).rejects.toThrow("db down");
 

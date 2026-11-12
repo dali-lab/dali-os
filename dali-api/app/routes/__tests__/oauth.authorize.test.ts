@@ -112,6 +112,29 @@ describe("GET /oauth/authorize rate limiting", () => {
   });
 });
 
+describe("GET /oauth/authorize provider and account type", () => {
+  it.each(["cas", "unknown"])("proceeds with provider=%s and records neither", async (provider) => {
+    const params = new URLSearchParams(new URL(makeRequest("9.9.8.1").url).search);
+    params.set("provider", provider);
+    params.set("account_type", "dartmouth");
+    mockGetOAuthClient.mockResolvedValue({
+      ...(await mockGetOAuthClient()),
+      allowedProviders: ["google"],
+      requiredAccountType: "member",
+    });
+    const res = await loader({
+      request: new Request(`http://localhost/oauth/authorize?${params}`, {
+        headers: { "X-Forwarded-For": "9.9.8.1" },
+      }),
+    } as any);
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("location")!, "http://localhost").searchParams.get("error")).toBeNull();
+    const created = vi.mocked(createOAuthSession).mock.calls[0][0];
+    expect(created).not.toHaveProperty("provider");
+    expect(created).not.toHaveProperty("accountType");
+  });
+});
+
 describe("GET /oauth/authorize scopes", () => {
   // The metadata advertises mcp:admin, so connectors ask for it — including
   // ones registered before it existed, whose allowedScopes lack it.

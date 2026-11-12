@@ -45,7 +45,7 @@ function parseRoles(raw: string | null): string[] {
 export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) return redirect("/");
 
   // /core/agreements/:id redirects to the Drive-namespaced route. Path-keyed:

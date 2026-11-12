@@ -25,8 +25,14 @@ import {
   type SnapshotBlock,
   type StoredEnhanceNotes,
 } from "~/components/meeting-recorder/enhance-plan";
-import { TRANSCRIPT_MAX } from "~/routes/api.ai.meeting-notes";
 import { z } from "zod";
+
+// Shared by the Write notes and Enhance routes and the MCP tool: one per-user burst budget.
+export const AI_BURST_MAX = 10;
+export const AI_BURST_WINDOW_MS = 60_000;
+
+// About 150k tokens, roughly twelve hours of speech; still fits Haiku 4.5's 200k context on the gateway.
+export const TRANSCRIPT_MAX = 600_000;
 
 const MAX_BLOCKS = 500;
 // The SDK refuses non-streaming requests above ~21k max tokens.

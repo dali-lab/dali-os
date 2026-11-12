@@ -13,7 +13,7 @@ vi.mock("~/lib/general-calendar", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { meetingsForExternalEvents } from "~/calendar/routes/calendar.server";
+import { meetingsForExternalEvents } from "~/calendar/lib/calendar-external.server";
 import type { CalendarEvent } from "~/lib/google-calendar";
 
 const mockPrisma = prisma as unknown as {

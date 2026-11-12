@@ -18,7 +18,6 @@ export type MentorNoteRef = PairKey & {
   id: string;
   weekOf: Date;
   pageId: string | null;
-  contentJson: unknown;
 };
 
 export function pairNotebookKey(pair: PairKey): string {
@@ -37,10 +36,6 @@ export function weekTabTitle(weekOf: Date): string {
     timeZone: "UTC",
   });
   return `Week of ${date}`;
-}
-
-export function legacyMentorNoteRoom(noteId: string): string {
-  return `mentorNote:${noteId}:body`;
 }
 
 async function coreGroupId(): Promise<string> {
@@ -100,13 +95,14 @@ export async function ensurePairNotebook(input: PairKey & { actorId: string }): 
 }
 
 /**
- * Give a note its tab in the pair notebook and move its body to the tab's room.
- * Idempotent: a note that already has a page returns it. An existing
- * `mentorNote:<id>:body` room is renamed to `doc:<pageId>:body` in the same
- * transaction that claims the note, so no history is rewritten; a note never
- * opened in collab gets a room materialised from `contentJson`.
+ * Give a note its tab in the pair notebook, seeding the tab's room from `seed`.
+ * Idempotent: a note that already has a page returns it.
  */
-export async function ensureMentorNotePage(note: MentorNoteRef, actorId: string): Promise<{ pageId: string }> {
+export async function ensureMentorNotePage(
+  note: MentorNoteRef,
+  actorId: string,
+  { seed }: { seed?: unknown } = {},
+): Promise<{ pageId: string }> {
   if (note.pageId) return { pageId: note.pageId };
 
   const notebook = await ensurePairNotebook({ ...note, actorId });
@@ -117,25 +113,17 @@ export async function ensureMentorNotePage(note: MentorNoteRef, actorId: string)
     meetingOccurrenceStart: note.weekOf,
   });
 
-  const oldRoom = legacyMentorNoteRoom(note.id);
   const newRoom = pageDocName(tab.id);
   try {
     await grantAuthorAndCoreEdit(tab.id, note.mentorId, actorId);
-    const hasRoom = (await prisma.collabDocument.findUnique({ where: { name: oldRoom }, select: { id: true } })) !== null;
-    const blocks = hasRoom ? [] : ensureBlocks(note.contentJson);
+    const blocks = ensureBlocks(seed);
     if (blocks.length > 0) await replaceCollabDocContent(newRoom, blocks, actorId);
 
-    const claimed = await prisma.$transaction(async (tx) => {
-      const claim = await tx.mentorNote.updateMany({
-        where: { id: note.id, pageId: null },
-        data: { pageId: tab.id },
-      });
-      if (claim.count === 0) return false;
-      await tx.collabDocument.updateMany({ where: { name: oldRoom }, data: { name: newRoom } });
-      await tx.collabDocumentVersion.updateMany({ where: { name: oldRoom }, data: { name: newRoom } });
-      return true;
+    const claim = await prisma.mentorNote.updateMany({
+      where: { id: note.id, pageId: null },
+      data: { pageId: tab.id },
     });
-    if (!claimed) {
+    if (claim.count === 0) {
       await prisma.page.delete({ where: { id: tab.id } });
       const winner = await prisma.mentorNote.findUniqueOrThrow({ where: { id: note.id }, select: { pageId: true } });
       return { pageId: winner.pageId! };

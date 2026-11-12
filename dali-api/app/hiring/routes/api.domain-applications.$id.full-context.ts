@@ -65,7 +65,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // they cover for this cycle. Cycle access alone would otherwise leak full
   // application content across domains an interviewer/other-domain reviewer
   // isn't assigned to.
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore && !roles.isDomainLead) {
     const assigned = await prisma.cycleReviewer.findFirst({
       where: { userId: auth.user.sub, applicationCycleId: cycleId, domainId: da.domainId },

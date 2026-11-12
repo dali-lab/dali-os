@@ -791,7 +791,6 @@ export default [
   route("api/hiring/cycles/:cycleId/reviewers/:reviewerId", "hiring/routes/api.cycles.$cycleId.reviewers.$reviewerId.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews", "hiring/routes/api.cycles.$cycleId.my-interviews.ts"),
   route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/decline", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.decline.ts"),
-  route("api/hiring/cycles/:cycleId/my-interviews/:interviewId/notes", "hiring/routes/api.cycles.$cycleId.my-interviews.$interviewId.notes.ts"),
   route("api/hiring/cycles/:cycleId/available-slots", "hiring/routes/api.cycles.$cycleId.available-slots.ts"),
   route("api/hiring/cycles/:cycleId/interviews", "hiring/routes/api.cycles.$cycleId.interviews.ts"),
   route("api/hiring/cycles/:cycleId/interviewers", "hiring/routes/api.cycles.$cycleId.interviewers.ts"),
@@ -840,7 +839,6 @@ export default [
   route("api/hiring/delibs/:id", "hiring/routes/api.delibs.$id.ts"),
   route("api/hiring/delibs/:id/moves", "hiring/routes/api.delibs.$id.moves.ts"),
 
-  route("api/hiring/interview-assignments/:id/notes", "hiring/routes/api.interview-assignments.$id.notes.ts"),
 
   // Google calendar (cross-cutting — used by hiring scheduling)
   route("api/google-calendar/busy", "calendar/routes/api.google-calendar.busy.ts"),

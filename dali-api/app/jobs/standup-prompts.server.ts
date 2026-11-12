@@ -6,7 +6,7 @@
 import { prisma } from "~/lib/db.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
 import { shouldRunDigest, weekdayInZone } from "~/lib/notification-digest.server";
-import { jobChannelPostAllowed } from "~/jobs/job-slack";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
@@ -25,7 +25,7 @@ export async function runStandupPrompts({
   if (!shouldRunDigest("Daily", lastSuccessAt, now, { sendHourEt: settings.sendHourEt })) {
     return { items: 0, note: "outside send window" };
   }
-  if (!slackConfigured() || !jobChannelPostAllowed()) {
+  if (!slackConfigured() || !slackSendAllowed()) {
     return { items: 0, note: "slack unavailable or non-prod" };
   }
 

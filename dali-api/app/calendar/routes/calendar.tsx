@@ -28,7 +28,8 @@ import {
 import { formatDayRange, formatPayPeriod, payPeriodFor } from "~/lib/pay-period";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
-import { loadCalendarData, submitCalendarAction } from "./calendar.server";
+import { loadCalendarData } from "~/calendar/lib/calendar-loader.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 import { entriesInHoursScope, timesheetWeekBounds } from "~/calendar/lib/timesheet-day";
 import type { Route } from "./+types/calendar";
 import { Tooltip, InfoTip } from "~/components/ui/floating";

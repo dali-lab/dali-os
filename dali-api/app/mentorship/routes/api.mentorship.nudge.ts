@@ -5,9 +5,9 @@ import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import {
   notify,
-  slackDmAllowed,
   absoluteLink,
   type NotifyRecipient,
 } from "~/lib/notify.server";
@@ -150,7 +150,7 @@ export async function action({ request }: Route.ActionArgs) {
   const link = "/mentorship/browse";
   const absLink = absoluteLink(link);
   const weekStamp = new Date().toISOString().slice(0, 10);
-  const canSlack = slackConfigured() && slackDmAllowed();
+  const canSlack = slackConfigured() && slackSendAllowed();
 
   const messaged: string[] = [];
   const skippedNoSlack: string[] = [];

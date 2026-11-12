@@ -628,7 +628,6 @@ describe("runSearch — guides", () => {
       {
         pageKey: "drive.mine",
         title: "My Drive",
-        body: null,
         sections: [
           {
             id: "s1",

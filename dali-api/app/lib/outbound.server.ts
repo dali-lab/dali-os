@@ -26,6 +26,7 @@ import {
 import { getObjectBytes } from "~/lib/s3";
 import type { KnownBlock } from "@slack/web-api";
 import { getAppEnv } from "~/lib/app-env";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import type { EmailSendPurpose } from "~/generated/prisma/client";
 import type { JobContext, JobResult } from "~/jobs/registry";
 
@@ -81,12 +82,6 @@ const DEFAULT_DRAIN: DrainConfig = {
   baseBackoffSeconds: 60,
   lockSeconds: 120,
 };
-
-// Slack is prod-only: the staging DB is a prod snapshot, so real Slack ids live
-// there and a staging send would reach real people. Mirrors notify.server.ts.
-function slackAllowed(): boolean {
-  return getAppEnv() === "prod" || process.env.NOTIFY_SLACK_DM_OVERRIDE === "1";
-}
 
 function isUniqueViolation(err: unknown): boolean {
   // Duck-type on the Prisma error code rather than instanceof — robust whether
@@ -333,7 +328,7 @@ async function sendOne(
   if (row.channel === "slack_dm" || row.channel === "slack_channel") {
     // Defense-in-depth: never reach real Slack ids from dev/staging even if a
     // producer enqueued one. Cancel rather than retry forever.
-    if (!slackConfigured() || !slackAllowed()) {
+    if (!slackConfigured() || !slackSendAllowed()) {
       return { cancel: true, reason: `slack not allowed in ${getAppEnv()}` };
     }
     const text = row.slackText ?? row.bodyText ?? row.subject ?? "";

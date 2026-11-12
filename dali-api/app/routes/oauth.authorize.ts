@@ -10,7 +10,6 @@ import { checkRateLimit } from "~/lib/rate-limit";
 import { isImpersonating, requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
-import type { OAuthAccountType, OAuthProvider } from "~/generated/prisma/enums";
 import { getOAuthIssuer } from "~/lib/app-env";
 
 const RATE_LIMIT_MAX = 10;
@@ -62,8 +61,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const state = url.searchParams.get("state");
   const codeChallenge = url.searchParams.get("code_challenge");
   const codeChallengeMethod = url.searchParams.get("code_challenge_method");
-  const providerParam = url.searchParams.get("provider");
-  const accountTypeParam = url.searchParams.get("account_type");
   const scopeParam = url.searchParams.get("scope");
 
   if (!clientId) {
@@ -95,35 +92,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       "invalid_request",
       "code_challenge with method S256 is required",
     );
-  }
-
-  // Provider must be one of the client's allowedProviders. It no longer picks
-  // how the user signs in (that's /login); it is only recorded on the session.
-  const provider = providerParam ?? client.allowedProviders[0];
-  if (!provider || !client.allowedProviders.includes(provider)) {
-    return clientError(
-      redirectUri,
-      state,
-      "invalid_request",
-      "provider is not allowed for this client",
-    );
-  }
-
-  // accountType: pinned by the client if requiredAccountType is set; the
-  // query-param value (if any) must match. Otherwise the param flows through.
-  let accountType: OAuthAccountType | undefined;
-  if (client.requiredAccountType) {
-    if (accountTypeParam && accountTypeParam !== client.requiredAccountType) {
-      return clientError(
-        redirectUri,
-        state,
-        "invalid_request",
-        "account_type does not match client requirement",
-      );
-    }
-    accountType = client.requiredAccountType as OAuthAccountType;
-  } else if (accountTypeParam) {
-    accountType = accountTypeParam as OAuthAccountType;
   }
 
   // Scopes: space-delimited per RFC 6749 §3.3. Must all be in allowedScopes —
@@ -164,8 +132,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     codeChallengeMethod,
     redirectUri,
     state,
-    provider: provider as OAuthProvider,
-    accountType,
     clientId: client.clientId,
     scopes: requestedScopes,
   });

@@ -29,7 +29,7 @@ vi.mock("~/lib/google-calendar", () => ({
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { respondToGoogleEventAsSelf } from "~/lib/google-calendar";
-import { submitCalendarAction } from "~/calendar/routes/calendar.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 const mockPrisma = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const mockAuth = requireAuth as ReturnType<typeof vi.fn>;
