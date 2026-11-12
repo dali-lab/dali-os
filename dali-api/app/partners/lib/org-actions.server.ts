@@ -628,7 +628,7 @@ const invoiceStatus: OrgActionHandler = async ({ form, userId }) => {
   return { ok: true };
 };
 
-export const PARTNER_ORG_ACTIONS: Record<string, OrgActionHandler> = {
+export const PARTNER_ORG_ACTIONS = {
   "org-details": orgDetails,
   "send-signin-link": sendSigninLink,
   "member-role": memberRole,
@@ -646,13 +646,18 @@ export const PARTNER_ORG_ACTIONS: Record<string, OrgActionHandler> = {
   "org-merge": orgMerge,
   "invoice-save": invoiceSave,
   "invoice-status": invoiceStatus,
-};
+} satisfies Record<string, OrgActionHandler>;
+
+export type PartnerOrgIntent = keyof typeof PARTNER_ORG_ACTIONS;
+
+export function isPartnerOrgIntent(intent: string): intent is PartnerOrgIntent {
+  return Object.hasOwn(PARTNER_ORG_ACTIONS, intent);
+}
 
 export async function runPartnerOrgAction(
   ctx: PartnerOrgActionContext,
   intent: string,
 ): Promise<PartnerOrgActionResult> {
-  const handler = Object.hasOwn(PARTNER_ORG_ACTIONS, intent) ? PARTNER_ORG_ACTIONS[intent] : null;
-  if (!handler) return { error: "Unknown action." };
-  return handler(ctx);
+  if (!isPartnerOrgIntent(intent)) return { error: "Unknown action." };
+  return PARTNER_ORG_ACTIONS[intent](ctx);
 }
