@@ -1,143 +1,17 @@
-import { useLoaderData, Link } from "react-router";
+import { useLoaderData } from "react-router";
 import type { Route } from "./+types/portal.education.$offeringId.assignments.$assignmentId";
-import { requireEnrollment } from "~/education/lib/access.server";
-import {
-  getAssignmentForStudent,
-  submitAssignment,
-  ensureDocSubmissionRow,
-} from "~/education/lib/assignments.server";
-import { readDocAsBlocks } from "~/collab/read";
-import { AssignmentWorkArea } from "~/education/components/AssignmentWorkArea";
-import { formatDateTime } from "~/lib/display";
-import { getCollabToken } from "~/lib/collab-token.server";
+import { AssignmentView } from "~/education/components/AssignmentView";
+import { loadAssignment, submitAssignmentAction } from "~/education/lib/offering-surface.server";
+import { PORTAL_SURFACE, surfaceTitle } from "~/education/lib/offering-surface";
 
 export const meta: Route.MetaFunction = ({ data }) => [
-  { title: `${data?.assignment.title ?? "Assignment"} · DALI` },
+  { title: surfaceTitle(PORTAL_SURFACE, data?.assignment.title ?? "Assignment") },
 ];
 
-export async function loader({ request, params }: Route.LoaderArgs) {
-  const { auth, applicationId } = await requireEnrollment(
-    request,
-    params.offeringId!,
-    "portal",
-  );
-  const result = await getAssignmentForStudent({
-    assignmentId: params.assignmentId!,
-    offeringId: params.offeringId!,
-    studentId: auth.user.sub,
-  });
-  if (!result) throw new Response("Not found", { status: 404 });
+export const loader = (args: Route.LoaderArgs) => loadAssignment(args, PORTAL_SURFACE);
 
-  // For Doc-type assignments, ensure a submission row exists with contentDocId
-  // set so the collab editor has a room to bind to before the student submits.
-  if (
-    result.assignment.submissionType === "Doc" &&
-    applicationId !== null &&
-    !result.submission?.contentDocId
-  ) {
-    await ensureDocSubmissionRow({
-      assignmentId: params.assignmentId!,
-      studentId: auth.user.sub,
-      applicationId,
-    });
-    const refreshed = await getAssignmentForStudent({
-      assignmentId: params.assignmentId!,
-      offeringId: params.offeringId!,
-      studentId: auth.user.sub,
-    });
-    if (refreshed) result.submission = refreshed.submission;
-  }
-
-  const instructionsContent = result.assignment.instructionsDocId
-    ? await readDocAsBlocks(result.assignment.instructionsDocId)
-    : null;
-
-  // Feedback blocks (released once graded).
-  const feedbackContent =
-    result.submission?.gradedAt != null
-      ? await readDocAsBlocks(`edusubmission:${result.submission.id}:feedback`)
-      : null;
-
-  return {
-    offeringId: params.offeringId!,
-    assignment: { ...result.assignment, instructionsContent },
-    submission: result.submission
-      ? {
-          ...result.submission,
-          files: (result.submission.files as { key: string; name: string }[]) ?? [],
-          feedbackContent,
-        }
-      : null,
-    canSubmit: applicationId !== null,
-    collabToken: await getCollabToken(request),
-    userName: `${auth.user.firstName ?? ""} ${auth.user.lastName ?? ""}`.trim(),
-  };
-}
-
-export async function action({ request, params }: Route.ActionArgs) {
-  const { auth, applicationId } = await requireEnrollment(
-    request,
-    params.offeringId!,
-    "portal",
-  );
-  if (!applicationId)
-    return Response.json({ error: "Not enrolled." }, { status: 403 });
-  const formData = await request.formData();
-  let files: { key: string; name: string }[] = [];
-  try {
-    const parsed: unknown = JSON.parse(String(formData.get("files") ?? "[]"));
-    if (Array.isArray(parsed)) {
-      files = parsed.filter(
-        (f): f is { key: string; name: string } =>
-          !!f && typeof f === "object" && typeof (f as { key?: unknown }).key === "string",
-      );
-    }
-  } catch {
-    return Response.json({ error: "Invalid file list." }, { status: 400 });
-  }
-  const result = await submitAssignment({
-    assignmentId: params.assignmentId!,
-    offeringId: params.offeringId!,
-    studentId: auth.user.sub,
-    applicationId,
-    textContent: String(formData.get("textContent") ?? ""),
-    files,
-    link: String(formData.get("link") ?? ""),
-  });
-  if ("error" in result)
-    return Response.json({ error: result.error }, { status: result.status });
-  return { ok: true };
-}
+export const action = (args: Route.ActionArgs) => submitAssignmentAction(args, PORTAL_SURFACE);
 
 export default function PortalAssignment() {
-  const { offeringId, assignment, submission, canSubmit, collabToken, userName } =
-    useLoaderData<typeof loader>();
-
-  return (
-    <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-4">
-      <header>
-        <p className="text-xs text-muted-foreground">
-          <Link
-            to={`/portal/education/${offeringId}/hub?tab=assignments`}
-            className="hover:underline"
-          >
-            ← Assignments
-          </Link>
-        </p>
-        <h1 className="mt-1 font-heading text-4xl font-medium text-foreground">
-          {assignment.title}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {assignment.dueAt ? `Due ${formatDateTime(assignment.dueAt)}` : "No due date"}
-        </p>
-      </header>
-      <AssignmentWorkArea
-        assignment={assignment}
-        submission={submission}
-        canSubmit={canSubmit}
-        collabToken={collabToken}
-        userName={userName}
-      />
-    </div>
-  );
+  return <AssignmentView surface={PORTAL_SURFACE} {...useLoaderData<typeof loader>()} />;
 }

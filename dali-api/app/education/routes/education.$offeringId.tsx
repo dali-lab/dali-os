@@ -2,7 +2,7 @@ import { redirect, useLoaderData, Link, Form } from "react-router";
 import { redirectToLogin } from "~/lib/login-next";
 import type { Route } from "./+types/education.$offeringId";
 import { requireAuth } from "~/lib/auth";
-import { withdrawApplication } from "~/education/lib/decisions.server";
+import { withdrawOfferingAction } from "~/education/lib/offering-surface.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import {
   getOfferingDetail,
@@ -105,20 +105,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   };
 }
 
-export async function action({ request, params }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
-  const formData = await request.formData();
-  if (formData.get("intent") !== "withdraw")
-    return Response.json({ error: "Unknown intent" }, { status: 400 });
-  const result = await withdrawApplication({
-    userId: auth.user.sub,
-    offeringId: params.offeringId!,
-  });
-  if ("error" in result && typeof result.error === "string")
-    return Response.json({ error: result.error }, { status: result.status });
-  return { ok: true };
-}
+export const action = withdrawOfferingAction;
 
 // One labelled fact in the header summary. Same tone vocabulary the catalog
 // cards use, so a closing deadline or a full offering reads the same here.

@@ -51,7 +51,7 @@ describe("manage_task", () => {
   ] as const)("%s calls its runner as the caller and returns its result", async (action, args, runner, expected) => {
     vi.mocked(runner).mockResolvedValue({ from: action } as never);
     await expect(run({ action, ...args })).resolves.toEqual({ from: action });
-    expect(runner).toHaveBeenCalledWith("u1", expected);
+    expect(runner).toHaveBeenCalledWith("u1", expected, ...(action === "delete" ? [ctx] : []));
   });
 
   it("passes each runner only its own fields", async () => {

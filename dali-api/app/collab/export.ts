@@ -5,6 +5,7 @@ import type { PMNode } from "./export-html";
 import { BLOCKNOTE_FRAGMENT, LEGACY_PM_FRAGMENT, blocksToHtml, fragmentToBlocks } from "./blocknote-server";
 import { blocksToPmDoc } from "./legacy/blocknote-to-pm";
 import { readDocAsBlocks } from "./read";
+import { stripCommentFormats } from "./comment-formats";
 
 // Server-side export pipeline for collab documents:
 //   CollabDocument.state (Yjs binary) → blocks (readDocAsBlocks) → HTML/etc.
@@ -35,6 +36,7 @@ export async function collabDocToProseMirror(documentName: string): Promise<PMNo
     Y.applyUpdate(ydoc, new Uint8Array(row.state));
     const blocknote = ydoc.getXmlFragment(BLOCKNOTE_FRAGMENT);
     if (blocknote.length > 0) {
+      ydoc.transact(() => stripCommentFormats(blocknote));
       return blocksToPmDoc(fragmentToBlocks(blocknote));
     }
     if (ydoc.getXmlFragment(LEGACY_PM_FRAGMENT).length === 0) return EMPTY_DOC;

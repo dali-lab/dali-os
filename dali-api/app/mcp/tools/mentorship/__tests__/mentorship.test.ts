@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
+vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isLabMentor: vi.fn() };
@@ -49,6 +50,7 @@ vi.mock("~/mcp/registry", () => {
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMentor } from "~/lib/roles";
+import { logAuditEvent } from "~/lib/audit";
 
 import {
   runListMentorNotes,
@@ -557,10 +559,44 @@ describe("manage_mentorship_pair", () => {
   it("Core can delete an existing pair", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.mentorshipPair.findUnique.mockResolvedValue({ id: PAIR_ID });
-    mockPrisma.mentorshipPair.delete.mockResolvedValue({});
+    mockPrisma.mentorshipPair.deleteMany.mockResolvedValue({ count: 1 });
 
     const out = await runManageMentorshipPair(ME, { action: "delete", id: PAIR_ID });
     expect(out).toMatchObject({ ok: true });
+  });
+
+  it("create writes a mentorship.pair.create audit event with the request", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.mentorshipPair.findMany.mockResolvedValue([]);
+    mockPrisma.mentorshipPair.create.mockResolvedValue({ id: PAIR_ID });
+    const request = new Request("http://localhost/mcp");
+    await runManageMentorshipPair(
+      ME,
+      { action: "create", menteeUserId: MENTEE, mentorUserId: ME, projectId: "p", termId: "t", domainId: "d" },
+      { request },
+    );
+    expect(logAuditEvent).toHaveBeenCalledWith({
+      action: "mentorship.pair.create",
+      userId: ME,
+      targetId: PAIR_ID,
+      metadata: { menteeUserId: MENTEE, mentorUserId: ME, projectId: "p", termId: "t", domainId: "d" },
+      request,
+    });
+  });
+
+  it("delete writes a mentorship.pair.delete audit event", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.mentorshipPair.findUnique.mockResolvedValue({ id: PAIR_ID });
+    mockPrisma.mentorshipPair.deleteMany.mockResolvedValue({ count: 1 });
+    await runManageMentorshipPair(ME, { action: "delete", id: PAIR_ID });
+    expect(logAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "mentorship.pair.delete",
+        userId: ME,
+        targetId: PAIR_ID,
+        metadata: { ids: [PAIR_ID], deleted: 1 },
+      }),
+    );
   });
 
   it("delete 404s on missing pair", async () => {

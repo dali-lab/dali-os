@@ -25,14 +25,35 @@ vi.mock("~/lib/pageAccess.server", () => ({
 vi.mock("~/lib/collabAuth", () => ({
   hydrateAuthors: vi.fn().mockResolvedValue([]),
 }));
+vi.mock("~/lib/s3", () => ({ isS3Configured: vi.fn(), getDownloadUrl: vi.fn() }));
 vi.mock("~/lib/comment-events.server", () => ({
   publishCommentChange: vi.fn(),
+}));
+vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("~/lib/mentions", () => ({
+  extractHandlesFromText: vi.fn(() => []),
+  resolveHandles: vi.fn().mockResolvedValue([]),
+  notifyMentions: vi.fn().mockResolvedValue(undefined),
+  pageDocLink: vi.fn(() => "/"),
+}));
+vi.mock("~/lib/comment-links.server", () => ({
+  docCommentContext: vi.fn().mockResolvedValue({
+    title: "Plan",
+    link: "/documents/page1?comment=c9",
+    replyLink: "/documents/page1",
+    partnerReplyLink: null,
+  }),
+}));
+vi.mock("~/projects/lib/file-notifications.server", () => ({
+  notifyFileComment: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
+import { notify } from "~/lib/notify.server";
+import { extractHandlesFromText, resolveHandles, notifyMentions } from "~/lib/mentions";
 import {
   LIST_COMMENTS_TOOL,
   runListComments,
@@ -57,7 +78,7 @@ const mockPrisma = prisma as unknown as {
   page: { findUnique: ReturnType<typeof vi.fn> };
   pageDoc: { findUnique: ReturnType<typeof vi.fn> };
   projectFileVersion: { findFirst: ReturnType<typeof vi.fn> };
-  docCommentReaction: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn> };
+  docCommentReaction: { upsert: ReturnType<typeof vi.fn>; deleteMany: ReturnType<typeof vi.fn>; findMany: ReturnType<typeof vi.fn> };
 };
 
 function comment(id: string, parentId: string | null, createdAt: string) {
@@ -188,6 +209,39 @@ describe("manage_comment", () => {
     expect(publishCommentChange).toHaveBeenCalledExactlyOnceWith("page1");
   });
 
+  describe("react validation", () => {
+    beforeEach(() => {
+      mockPrisma.docComment.findUnique.mockResolvedValue({
+        id: "c1", authorId: "u2", targetType: "doc", targetId: "page1", parentId: null,
+      });
+      vi.mocked(getPageAccess).mockResolvedValue({ canComment: true } as never);
+      mockPrisma.docCommentReaction.findMany.mockResolvedValue([]);
+    });
+
+    it("rejects text that is not an emoji with 400 and stores nothing", async () => {
+      await expect(
+        runManageComment("u1", { action: "react", commentId: "c1", emoji: "not-an-emoji" }),
+      ).rejects.toMatchObject({ name: "ManageCommentError", status: 400 });
+      expect(mockPrisma.docCommentReaction.upsert).not.toHaveBeenCalled();
+      expect(publishCommentChange).not.toHaveBeenCalled();
+    });
+
+    it("rejects a new emoji past the cap with 409 and stores nothing", async () => {
+      mockPrisma.docCommentReaction.findMany.mockResolvedValue(
+        Array.from({ length: 20 }, (_, i) => ({ emoji: `e${i}` })),
+      );
+      await expect(
+        runManageComment("u1", { action: "react", commentId: "c1", emoji: "👍" }),
+      ).rejects.toMatchObject({ name: "ManageCommentError", status: 409 });
+      expect(mockPrisma.docCommentReaction.upsert).not.toHaveBeenCalled();
+    });
+
+    it("stores a valid emoji", async () => {
+      await runManageComment("u1", { action: "react", commentId: "c1", emoji: "👍" });
+      expect(mockPrisma.docCommentReaction.upsert).toHaveBeenCalledOnce();
+    });
+  });
+
   it("allows the author to edit their comment", async () => {
     mockPrisma.docComment.findUnique.mockResolvedValue({
       id: "c1", authorId: "u1", targetType: "doc", targetId: "page1", parentId: null,
@@ -205,5 +259,49 @@ describe("manage_comment", () => {
     await expect(
       runManageComment("u1", { action: "edit", commentId: "missing", body: "x" }),
     ).rejects.toMatchObject({ name: "ManageCommentError", status: 404 });
+  });
+
+  describe("create notifications (web parity)", () => {
+    beforeEach(() => {
+      vi.mocked(getPageAccess).mockResolvedValue({ canComment: true } as never);
+      mockPrisma.page.findUnique.mockResolvedValue({ archivedAt: null, kind: "Doc" });
+      mockPrisma.docComment.create.mockResolvedValue({ id: "c9" });
+    });
+
+    it("notifies the prior thread participants of a reply, not its author", async () => {
+      mockPrisma.docComment.findUnique.mockResolvedValue({ targetType: "doc", targetId: "page1", parentId: null });
+      mockPrisma.docComment.findMany.mockResolvedValue([{ authorId: "u2" }, { authorId: "u1" }]);
+      const out = await runManageComment("u1", {
+        action: "create", targetType: "doc", targetId: "page1", body: "agreed", parentId: "c1",
+      });
+      expect(out).toEqual({ id: "c9" });
+      await vi.waitFor(() => expect(notify).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(notify).mock.calls[0]![0]).toMatchObject({
+        eventType: "collab.comment_reply",
+        createdByUserId: "u1",
+        recipients: [{ userId: "u2" }],
+      });
+    });
+
+    it("notifies members mentioned with @handle", async () => {
+      vi.mocked(extractHandlesFromText).mockReturnValue(["ada"]);
+      vi.mocked(resolveHandles).mockResolvedValue(["u2"]);
+      await runManageComment("u1", { action: "create", targetType: "doc", targetId: "page1", body: "hi @ada" });
+      await vi.waitFor(() => expect(notifyMentions).toHaveBeenCalledTimes(1));
+      expect(vi.mocked(notifyMentions).mock.calls[0]![0]).toMatchObject({
+        recipientUserIds: ["u2"],
+        actorId: "u1",
+        preview: "hi @ada",
+      });
+    });
+
+    it("rejects a slide anchor on a page that is not a slide deck", async () => {
+      await expect(
+        runManageComment("u1", {
+          action: "create", targetType: "doc", targetId: "page1", body: "hi",
+          anchor: { kind: "slide", slideId: "s1" },
+        }),
+      ).rejects.toMatchObject({ name: "ManageCommentError", status: 400 });
+    });
   });
 });

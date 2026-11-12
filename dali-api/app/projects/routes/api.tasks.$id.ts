@@ -1,12 +1,10 @@
 import type { Route } from "./+types/api.tasks.$id";
-import { prisma, Prisma } from "~/lib/db.server";
+import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { logAuditEvent } from "~/lib/audit";
 import { fullName } from "~/lib/display";
-import { syncIssueForTask } from "../lib/github-task-sync";
-import { notifyTaskAssigned } from "../lib/task-notifications.server";
-import { parseChecklistInput, type ChecklistItem } from "../lib/task-checklist";
+import { parseChecklistInput } from "../lib/task-checklist";
+import { deleteTask, TaskUpdateError, updateTask, type TaskPatch } from "../lib/task-update.server";
 
 // GET    /api/tasks/:id — minimal task card for the doc editor's taskMention
 //        hover card and task block (TaskMentionHoverCard.tsx): status, title,
@@ -157,7 +155,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const task = await prisma.task.findUnique({
     where: { id: params.id },
-    select: { id: true, title: true, githubIssueNumber: true, projectId: true, epicId: true, storyId: true },
+    select: { id: true, projectId: true },
   });
   if (!task) {
     return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
@@ -166,21 +164,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
-    // Same rows and order as MCP manage_task delete; TaskReminder rows cascade via
-    // their onDelete: Cascade FK. A linked GitHub issue is left as-is on GH —
-    // deleting here only severs the mirror.
-    await prisma.$transaction([
-      prisma.taskAssignee.deleteMany({ where: { taskId: params.id } }),
-      prisma.taskComment.deleteMany({ where: { taskId: params.id } }),
-      prisma.task.delete({ where: { id: params.id } }),
-    ]);
-    await logAuditEvent({
-      action: "task.delete",
-      userId: gate.auth.user.sub,
-      targetId: params.id,
-      metadata: { title: task.title, projectId: task.projectId },
-      request,
-    });
+    await deleteTask({ taskId: task.id, actorId: gate.auth.user.sub, request });
     return withCors(request, Response.json({ ok: true }));
   }
 
@@ -194,207 +178,57 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  // Build a partial update: a key being present (even null) is a write; an
-  // absent key is a no-op. Assignee changes are handled separately below
-  // because they hit the TaskAssignee join table, not Task itself.
-  const data: {
-    dueAt?: Date | null;
-    startsAt?: Date | null;
-    title?: string;
-    description?: string | null;
-    priority?: Priority;
-    domainId?: string | null;
-    epicId?: string | null;
-    storyId?: string | null;
-    checklist?: ChecklistItem[] | typeof Prisma.JsonNull;
-  } = {};
+  const patch: TaskPatch = {};
   if ("dueAt" in body) {
     const parsed = parseDueAt(body.dueAt);
     if (parsed === "invalid") {
       return withCors(request, Response.json({ error: "Invalid dueAt" }, { status: 400 }));
     }
-    data.dueAt = parsed;
+    patch.dueAt = parsed;
   }
   if ("startsAt" in body) {
     const parsed = parseDueAt(body.startsAt);
     if (parsed === "invalid") {
       return withCors(request, Response.json({ error: "Invalid startsAt" }, { status: 400 }));
     }
-    data.startsAt = parsed;
+    patch.startsAt = parsed;
   }
   if ("title" in body) {
     const trimmed = (body.title ?? "").trim();
     if (!trimmed) {
       return withCors(request, Response.json({ error: "Title is required" }, { status: 400 }));
     }
-    data.title = trimmed;
+    patch.title = trimmed;
   }
-  // Description is plain Markdown on the column, edited in the task modal the
-  // same way the project's own description is. (It used to be a collab doc
-  // that mirrored down to this column, which is why it wasn't accepted here.)
   if ("description" in body) {
     const trimmed = body.description?.trim() ?? "";
-    data.description = trimmed === "" ? null : trimmed;
+    patch.description = trimmed === "" ? null : trimmed;
   }
-  if ("priority" in body && body.priority) {
-    data.priority = body.priority;
-  }
-  if ("domainId" in body) {
-    data.domainId = body.domainId ?? null;
-  }
-  // Epic/story assignments are validated against the task's own project so one
-  // project's member can't attach tasks to another project's board.
-  // Epic and story are reconciled together, never independently: a story pins
-  // its epic (UserStory.epicId is required). An explicit story wins and sets
-  // the epic; a bare epic change drops a now-orphaned story so task.epicId and
-  // task.storyId can't diverge. Only fields that actually change are written.
-  const epicInBody = "epicId" in body;
-  const storyInBody = "storyId" in body;
-  if (epicInBody || storyInBody) {
-    const currentEpicId = task.epicId ?? null;
-    const currentStoryId = task.storyId ?? null;
-    let nextEpicId = epicInBody ? body.epicId ?? null : currentEpicId;
-    let nextStoryId = storyInBody ? body.storyId ?? null : currentStoryId;
-
-    if (nextStoryId !== null) {
-      const story = await prisma.userStory.findUnique({
-        where: { id: nextStoryId },
-        select: { epicId: true, epic: { select: { projectId: true } } },
-      });
-      if (!story || story.epic.projectId !== task.projectId) {
-        return withCors(
-          request,
-          Response.json({ error: "Story is not part of this project" }, { status: 400 }),
-        );
-      }
-      if (storyInBody) {
-        // A story set in this request pins the epic, overriding any epic here.
-        nextEpicId = story.epicId;
-      } else if (nextEpicId !== story.epicId) {
-        // Story carried over from the task, but the epic moved out from under
-        // it — drop the orphan rather than leave epic/story mismatched.
-        nextStoryId = null;
-      }
-    }
-
-    // Validate a free-standing epic (one not already vouched for by a story).
-    if (nextStoryId === null && nextEpicId !== null && nextEpicId !== currentEpicId) {
-      const epic = await prisma.epic.findUnique({
-        where: { id: nextEpicId },
-        select: { projectId: true },
-      });
-      if (!epic || epic.projectId !== task.projectId) {
-        return withCors(
-          request,
-          Response.json({ error: "Epic is not part of this project" }, { status: 400 }),
-        );
-      }
-    }
-
-    if (nextEpicId !== currentEpicId) data.epicId = nextEpicId;
-    if (nextStoryId !== currentStoryId) data.storyId = nextStoryId;
-  }
+  if ("priority" in body && body.priority) patch.priority = body.priority;
+  if ("domainId" in body) patch.domainId = body.domainId ?? null;
+  if ("epicId" in body) patch.epicId = body.epicId ?? null;
+  if ("storyId" in body) patch.storyId = body.storyId ?? null;
   if ("checklist" in body) {
     if (body.checklist === null) {
-      data.checklist = Prisma.JsonNull;
+      patch.checklist = null;
     } else {
       const parsed = parseChecklistInput(body.checklist);
       if (parsed === null) {
-        return withCors(
-          request,
-          Response.json({ error: "Invalid checklist" }, { status: 400 }),
-        );
+        return withCors(request, Response.json({ error: "Invalid checklist" }, { status: 400 }));
       }
-      // Prisma 7 distinguishes "set to JSON null" vs "unset"; use the
-      // sentinel for an empty checklist so the column is cleared.
-      data.checklist = parsed.length === 0 ? Prisma.JsonNull : parsed;
+      patch.checklist = parsed;
     }
   }
+  if (Array.isArray(body.assigneeIds)) patch.assigneeUserIds = body.assigneeIds;
+  if (body.dependsOn !== undefined) patch.dependsOnTaskIds = body.dependsOn;
 
-  // Assignees are a full replacement: drop existing rows, then create the
-  // new set. Wrapped in a transaction with the Task update so a partial
-  // failure leaves the task untouched.
-  const wantsAssignees = "assigneeIds" in body && Array.isArray(body.assigneeIds);
-
-  // Dependencies are replaced wholesale, as the story edge is: each id must be
-  // another task in this project. (Cycles aren't blocked — the edge is
-  // advisory, and the unique index dedupes repeats.)
-  const dependsOn =
-    body.dependsOn === undefined
-      ? null
-      : [...new Set(body.dependsOn)].filter((x) => x && x !== params.id);
-  if (dependsOn && dependsOn.length > 0) {
-    const valid = await prisma.task.count({
-      where: { id: { in: dependsOn }, projectId: task.projectId },
-    });
-    if (valid !== dependsOn.length) {
-      return withCors(
-        request,
-        Response.json({ error: "Invalid dependency target" }, { status: 400 }),
-      );
+  try {
+    await updateTask({ taskId: task.id, actorId: gate.auth.user.sub, patch });
+  } catch (err) {
+    if (err instanceof TaskUpdateError) {
+      return withCors(request, Response.json({ error: err.message }, { status: err.status }));
     }
-  }
-
-  if (Object.keys(data).length === 0 && !wantsAssignees && !dependsOn) {
-    return withCors(request, Response.json({ ok: true }));
-  }
-
-  let addedAssigneeIds: string[] = [];
-  await prisma.$transaction(async (tx) => {
-    // Any real edit here — a field or the assignee set — is "activity" for
-    // the board's new-updates indicator (see Task.activityAt).
-    await tx.task.update({ where: { id: params.id }, data: { ...data, activityAt: new Date() } });
-    if (wantsAssignees) {
-      const prior = await tx.taskAssignee.findMany({
-        where: { taskId: params.id },
-        select: { userId: true },
-      });
-      const priorIds = new Set(prior.map((p) => p.userId));
-      await tx.taskAssignee.deleteMany({ where: { taskId: params.id } });
-      const ids = body.assigneeIds ?? [];
-      if (ids.length > 0) {
-        await tx.taskAssignee.createMany({
-          data: ids.map((userId) => ({ taskId: params.id, userId })),
-          skipDuplicates: true,
-        });
-      }
-      addedAssigneeIds = ids.filter((id) => !priorIds.has(id));
-    }
-    if (dependsOn) {
-      await tx.taskDependency.deleteMany({ where: { taskId: params.id } });
-      if (dependsOn.length > 0) {
-        await tx.taskDependency.createMany({
-          data: dependsOn.map((depId) => ({ taskId: params.id, dependsOnTaskId: depId })),
-        });
-      }
-    }
-  });
-
-  if (addedAssigneeIds.length > 0) {
-    void notifyTaskAssigned({
-      taskId: params.id,
-      addedUserIds: addedAssigneeIds,
-      actorUserId: gate.auth.user.sub,
-    }).catch((err) =>
-      console.error(`task ${params.id}: assignment notify failed`, err),
-    );
-  }
-
-  // Mirror to GitHub when this linked task changes a field the issue reflects:
-  // the title, its assignees, or any field rendered in the issue body
-  // (description + the metadata line — see buildIssueBody in github-task-sync).
-  const syncableChanged =
-    "title" in body ||
-    wantsAssignees ||
-    "description" in body ||
-    "priority" in body ||
-    "dueAt" in body ||
-    "domainId" in body ||
-    "epicId" in body;
-  if (task.githubIssueNumber !== null && syncableChanged) {
-    void syncIssueForTask(params.id).catch((err) =>
-      console.error(`task ${params.id}: github sync failed`, err),
-    );
+    throw err;
   }
 
   return withCors(request, Response.json({ ok: true }));

@@ -7,7 +7,7 @@ import { relativeTime } from "~/lib/relative-time";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { requireFeedbackViewer } from "~/lib/feedback.server";
 import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
-import { reactionRefusal } from "~/lib/reactions.server";
+import { toggleReaction } from "~/lib/reactions.server";
 import {
   FEEDBACK_BODY_MAX,
   FEEDBACK_COMMENT_MAX,
@@ -76,21 +76,27 @@ export async function action({ request }: Route.ActionArgs) {
       const emoji = text("emoji");
       if (!(await postExists(postId))) return fail(404);
       const mine = { postId, userId: user.sub, emoji };
-      const { count } = await prisma.feedbackReaction.deleteMany({ where: mine });
-      if (count === 0) {
-        const used = await prisma.feedbackReaction.findMany({
-          where: { postId },
-          select: { emoji: true },
-          distinct: ["emoji"],
-        });
-        const refused = await reactionRefusal(emoji, used.map((r) => r.emoji));
-        if (refused) return fail(refused);
-        await prisma.feedbackReaction.upsert({
-          where: { postId_userId_emoji: mine },
-          create: mine,
-          update: {},
-        });
-      }
+      const result = await toggleReaction(
+        {
+          remove: async () => (await prisma.feedbackReaction.deleteMany({ where: mine })).count,
+          usedEmoji: async () =>
+            (
+              await prisma.feedbackReaction.findMany({
+                where: { postId },
+                select: { emoji: true },
+                distinct: ["emoji"],
+              })
+            ).map((r) => r.emoji),
+          add: () =>
+            prisma.feedbackReaction.upsert({
+              where: { postId_userId_emoji: mine },
+              create: mine,
+              update: {},
+            }),
+        },
+        emoji,
+      );
+      if (typeof result === "number") return fail(result);
       break;
     }
     case "comment": {
