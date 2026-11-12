@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { searchAll } from "~/components/drive/DriveBrowser";
+import { searchAll } from "~/components/drive/browser-items";
 import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
 import type { DriveItem } from "~/drive/lib/drive.server";
 
