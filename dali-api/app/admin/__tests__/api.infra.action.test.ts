@@ -7,7 +7,8 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => new Response("Forbidden", { status: 403 })),
 }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn(), getUserRoles: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/infra/project-infra.server", () => ({ getProjectInfraCreds: vi.fn() }));
 vi.mock("~/lib/infra/fly.server", () => ({
@@ -29,7 +30,8 @@ vi.mock("~/lib/infra/neon.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isAdmin } from "~/lib/roles";
+import { isCore, isAdmin, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { logAuditEvent } from "~/lib/audit";
 import { getProjectInfraCreds } from "~/lib/infra/project-infra.server";
 import * as fly from "~/lib/infra/fly.server";
@@ -113,6 +115,13 @@ const WRITES = [
   neon.deleteBranch,
 ];
 
+const CREDS = {
+  flyWriteToken: "fly-write-fake",
+  neonOrgId: "org-1",
+  flyAppNames: ["client-app", "dali-api-prod", "keep-me", "dali-api-staging"],
+  neonProjectIds: ["n1"],
+};
+
 function expectNoWrites() {
   for (const w of WRITES) expect(w).not.toHaveBeenCalled();
   expect(logAuditEvent).not.toHaveBeenCalled();
@@ -123,7 +132,9 @@ beforeEach(() => {
   m(requireAuth).mockResolvedValue({ ok: true, user: { sub: "ada" } });
   m(isCore).mockResolvedValue(true);
   m(isAdmin).mockResolvedValue(false);
-  m(getProjectInfraCreds).mockResolvedValue({ flyWriteToken: "fly-write-fake", neonOrgId: "org-1" });
+  m(getUserRoles).mockResolvedValue({ isCore: true, isAdmin: false });
+  m(isFeatureEnabled).mockResolvedValue(true);
+  m(getProjectInfraCreds).mockResolvedValue(CREDS);
   m(neon.pollOperations).mockResolvedValue(undefined);
   m(neon.endpointAction).mockResolvedValue(["op1"]);
   m(neon.updateEndpoint).mockResolvedValue(["op2"]);
@@ -240,7 +251,7 @@ describe("infra action per-intent behavior", () => {
   });
 
   it.each(["fly.machine", "fly.scale"])("%s 400s without a Fly write token", async (intent) => {
-    m(getProjectInfraCreds).mockResolvedValue({ flyWriteToken: null });
+    m(getProjectInfraCreds).mockResolvedValue({ ...CREDS, flyWriteToken: null });
     const res = await call(CORE_BODIES[intent]);
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "No Fly write token configured for this project" });
@@ -333,7 +344,7 @@ describe("infra action per-intent behavior", () => {
     });
 
     it("400s without a Fly write token", async () => {
-      m(getProjectInfraCreds).mockResolvedValue({ flyWriteToken: null });
+      m(getProjectInfraCreds).mockResolvedValue({ ...CREDS, flyWriteToken: null });
       const res = await call(ADMIN_BODIES["fly.destroy"]);
       expect(res.status).toBe(400);
       expect(fly.destroyApp).not.toHaveBeenCalled();
@@ -365,7 +376,7 @@ describe("infra action per-intent behavior", () => {
     });
 
     it("neon.project.create needs an org id", async () => {
-      m(getProjectInfraCreds).mockResolvedValue({ flyWriteToken: null, neonOrgId: null });
+      m(getProjectInfraCreds).mockResolvedValue({ ...CREDS, flyWriteToken: null, neonOrgId: null });
       const res = await call(ADMIN_BODIES["neon.project.create"]);
       expect(res.status).toBe(400);
       expect(neon.createProject).not.toHaveBeenCalled();
@@ -454,5 +465,99 @@ describe("infra action per-intent behavior", () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "fly exploded" });
     expect(logAuditEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe("infra action feature flag", () => {
+  it("refuses every intent when infra-dashboard is off, before reading the project", async () => {
+    m(isFeatureEnabled).mockResolvedValue(false);
+    m(isAdmin).mockResolvedValue(true);
+    for (const body of [...Object.values(CORE_BODIES), ...Object.values(ADMIN_BODIES)]) {
+      expect((await call(body)).status).toBe(403);
+    }
+    expect(isFeatureEnabled).toHaveBeenCalledWith("infra-dashboard", "ada", expect.anything(), expect.anything());
+    expect(getProjectInfraCreds).not.toHaveBeenCalled();
+    expectNoWrites();
+  });
+});
+
+describe("infra action protected resources", () => {
+  const PROTECTED_FLY_BODIES = [
+    { ...CORE_BODIES["fly.machine"], app: "dali-api-prod", kind: "restart" },
+    { ...CORE_BODIES["fly.machine"], app: "dali-api-prod", kind: "start" },
+    { ...CORE_BODIES["fly.machine"], app: "dali-api-prod", kind: "stop" },
+    { ...CORE_BODIES["fly.machine"], app: "dali-api-prod", kind: "suspend" },
+    { ...CORE_BODIES["fly.scale"], app: "dali-api-prod" },
+    { ...ADMIN_BODIES["fly.destroy"], app: "dali-api-prod" },
+    { ...ADMIN_BODIES.reap, app: "dali-api-prod" },
+  ];
+  const PROTECTED_NEON_BODIES = [
+    { ...CORE_BODIES["neon.endpoint"], kind: "suspend" },
+    { ...CORE_BODIES["neon.endpoint"], kind: "restart" },
+    { ...CORE_BODIES["neon.endpoint"], kind: "start" },
+    CORE_BODIES["neon.autoscale"],
+    ADMIN_BODIES["neon.quota"],
+    ADMIN_BODIES["neon.project.delete"],
+    ADMIN_BODIES["neon.branch.delete"],
+    { intent: "reap", projectId: "p1", kind: "neon-endpoint", neonProjectId: "n1", endpointId: "e1" },
+    { intent: "reap", projectId: "p1", kind: "neon-branch", neonProjectId: "n1", branchId: "b1" },
+  ];
+
+  it.each([false, true])("refuses every mutation on a protected Fly app (admin=%s)", async (admin) => {
+    m(isAdmin).mockResolvedValue(admin);
+    for (const body of PROTECTED_FLY_BODIES) {
+      const res = await call(body);
+      expect(res.status).toBe(403);
+    }
+    expectNoWrites();
+  });
+
+  it.each([false, true])("refuses every mutation on a protected Neon project (admin=%s)", async (admin) => {
+    process.env.INFRA_PROTECTED_NEON_PROJECTS = "n1";
+    m(isAdmin).mockResolvedValue(admin);
+    for (const body of PROTECTED_NEON_BODIES) {
+      const res = await call(body);
+      expect(res.status).toBe(403);
+    }
+    expectNoWrites();
+  });
+});
+
+describe("infra action resource membership", () => {
+  it("refuses a Fly app that is not linked to the project", async () => {
+    m(isAdmin).mockResolvedValue(true);
+    for (const body of [
+      { ...CORE_BODIES["fly.machine"], app: "stranger" },
+      { ...CORE_BODIES["fly.scale"], app: "stranger" },
+      { ...ADMIN_BODIES["fly.destroy"], app: "stranger" },
+      { ...ADMIN_BODIES.reap, app: "stranger" },
+    ]) {
+      const res = await call(body);
+      expect(res.status).toBe(403);
+      expect((await res.json()).error).toContain("not linked");
+    }
+    expectNoWrites();
+  });
+
+  it("refuses a Neon project that is not linked to the project", async () => {
+    m(isAdmin).mockResolvedValue(true);
+    for (const body of [
+      { ...CORE_BODIES["neon.endpoint"], neonProjectId: "other" },
+      { ...CORE_BODIES["neon.autoscale"], neonProjectId: "other" },
+      { ...ADMIN_BODIES["neon.quota"], neonProjectId: "other" },
+      { ...ADMIN_BODIES["neon.project.delete"], neonProjectId: "other" },
+      { ...ADMIN_BODIES["neon.branch.delete"], neonProjectId: "other" },
+      { intent: "reap", projectId: "p1", kind: "neon-endpoint", neonProjectId: "other", endpointId: "e1" },
+    ]) {
+      expect((await call(body)).status).toBe(403);
+    }
+    expectNoWrites();
+  });
+
+  it("still allows an unprotected, linked resource", async () => {
+    expect((await call(CORE_BODIES["fly.machine"])).status).toBe(200);
+    expect((await call(CORE_BODIES["neon.endpoint"])).status).toBe(200);
+    expect(fly.machineAction).toHaveBeenCalled();
+    expect(neon.endpointAction).toHaveBeenCalled();
   });
 });

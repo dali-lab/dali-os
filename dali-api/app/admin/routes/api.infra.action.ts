@@ -1,16 +1,8 @@
-// Infrastructure dashboard write actions. All Fly/Neon mutations funnel through
-// here. Gating: reads + safe reversible actions are Core; provisioning, quotas,
-// and destructive actions are Admin. The protected-resource allowlist
-// (guard.server.ts) hard-blocks the platform's own infra regardless of role.
-// Every action is audited with non-secret metadata.
-//
-// `projectId` = the DALI Project (carries the infra config/tokens); for Neon
-// actions the target Neon project is a separate `neonProjectId`.
-
 import type { Route } from "./+types/api.infra.action";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isCore, isAdmin } from "~/lib/roles";
+import { isCore, isAdmin, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 import { prisma } from "~/lib/db.server";
@@ -120,6 +112,10 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   if (!(await isCore(auth.user.sub))) return forbidden(request);
+  const roles = await getUserRoles(auth.user.sub, request);
+  if (!(await isFeatureEnabled("infra-dashboard", auth.user.sub, roles, request))) {
+    return forbidden(request);
+  }
 
   const parsed = await parseJson(request, Body);
   if (parsed instanceof Response) return parsed;
@@ -143,6 +139,18 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   try {
+    const target = resourceTarget(parsed);
+    if (target.flyApp) {
+      assertFlyAppMutable(target.flyApp);
+      if (!creds.flyAppNames.includes(target.flyApp)) return notLinked(target.flyApp);
+    }
+    if (target.neonProjectId) {
+      assertNeonProjectMutable(target.neonProjectId);
+      if (!creds.neonProjectIds.includes(target.neonProjectId)) {
+        return notLinked(target.neonProjectId);
+      }
+    }
+
     switch (parsed.intent) {
       case "fly.machine": {
         const tok = needFlyWrite();
@@ -176,7 +184,6 @@ export async function action({ request }: Route.ActionArgs) {
       case "fly.destroy": {
         const tok = needFlyWrite();
         if (tok instanceof Response) return tok;
-        assertFlyAppMutable(parsed.app);
         if (parsed.target === "app") {
           await fly.destroyApp(tok, parsed.app);
         } else if (parsed.target === "machine") {
@@ -227,7 +234,6 @@ export async function action({ request }: Route.ActionArgs) {
         return Response.json({ ok: true });
       }
       case "neon.quota": {
-        assertNeonProjectMutable(parsed.neonProjectId);
         await neon.setProjectQuota(parsed.neonProjectId, parsed.quota);
         await audit(auth.user.sub, "infra.neon.quota", parsed.neonProjectId, request, {
           projectId: parsed.projectId,
@@ -252,7 +258,6 @@ export async function action({ request }: Route.ActionArgs) {
         return Response.json({ ok: true, neonProjectId: projectId });
       }
       case "neon.project.delete": {
-        assertNeonProjectMutable(parsed.neonProjectId);
         await neon.deleteProject(parsed.neonProjectId);
         await audit(auth.user.sub, "infra.neon.destroy", parsed.neonProjectId, request, {
           projectId: parsed.projectId,
@@ -261,7 +266,6 @@ export async function action({ request }: Route.ActionArgs) {
         return Response.json({ ok: true });
       }
       case "neon.branch.delete": {
-        assertNeonProjectMutable(parsed.neonProjectId);
         const ops = await neon.deleteBranch(parsed.neonProjectId, parsed.branchId);
         await neon.pollOperations(parsed.neonProjectId, ops).catch(() => {});
         await audit(auth.user.sub, "infra.neon.destroy", parsed.branchId, request, {
@@ -276,18 +280,15 @@ export async function action({ request }: Route.ActionArgs) {
           const tok = needFlyWrite();
           if (tok instanceof Response) return tok;
           if (!parsed.app) return badReq("app required");
-          assertFlyAppMutable(parsed.app);
           await fly.destroyApp(tok, parsed.app);
         } else if (parsed.kind === "neon-branch") {
           if (!parsed.neonProjectId || !parsed.branchId)
             return badReq("neonProjectId + branchId required");
-          assertNeonProjectMutable(parsed.neonProjectId);
           const ops = await neon.deleteBranch(parsed.neonProjectId, parsed.branchId);
           await neon.pollOperations(parsed.neonProjectId, ops).catch(() => {});
         } else {
           if (!parsed.neonProjectId || !parsed.endpointId)
             return badReq("neonProjectId + endpointId required");
-          assertNeonProjectMutable(parsed.neonProjectId);
           await neon.endpointAction(parsed.neonProjectId, parsed.endpointId, "suspend");
         }
         await audit(
@@ -307,6 +308,32 @@ export async function action({ request }: Route.ActionArgs) {
     const message = err instanceof Error ? err.message : String(err);
     return Response.json({ error: message }, { status: 502 });
   }
+}
+
+function resourceTarget(p: Parsed): { flyApp?: string; neonProjectId?: string } {
+  switch (p.intent) {
+    case "fly.machine":
+    case "fly.scale":
+    case "fly.destroy":
+      return { flyApp: p.app };
+    case "neon.endpoint":
+    case "neon.autoscale":
+    case "neon.quota":
+    case "neon.project.delete":
+    case "neon.branch.delete":
+      return { neonProjectId: p.neonProjectId };
+    case "reap":
+      return { flyApp: p.app, neonProjectId: p.neonProjectId };
+    default:
+      return {};
+  }
+}
+
+function notLinked(resource: string): Response {
+  return Response.json(
+    { error: `"${resource}" is not linked to this project.` },
+    { status: 403 },
+  );
 }
 
 function badReq(message: string): Response {
