@@ -1,3 +1,4 @@
+import { getEnv } from "~/lib/env.server";
 // Protected platform infra refuses every mutating dashboard action, for every role.
 
 const DEFAULT_PROTECTED_FLY_APPS = ["dali-api-prod", "dali-api-staging"];
@@ -7,18 +8,18 @@ function splitEnv(v: string | undefined): string[] {
 }
 
 export function protectedFlyApps(): string[] {
-  const self = process.env.FLY_APP_NAME;
+  const self = getEnv().FLY_APP_NAME;
   return [
     ...new Set([
       ...DEFAULT_PROTECTED_FLY_APPS,
       ...(self ? [self] : []),
-      ...splitEnv(process.env.INFRA_PROTECTED_FLY_APPS),
+      ...splitEnv(getEnv().INFRA_PROTECTED_FLY_APPS),
     ]),
   ];
 }
 
 export function protectedNeonProjectIds(): string[] {
-  return splitEnv(process.env.INFRA_PROTECTED_NEON_PROJECTS);
+  return splitEnv(getEnv().INFRA_PROTECTED_NEON_PROJECTS);
 }
 
 export function isFlyAppProtected(appName: string): boolean {

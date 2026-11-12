@@ -106,28 +106,20 @@ export const ENV_NAMES = Object.keys(shape) as EnvName[];
 
 type Source = Record<string, string | undefined>;
 
-function inspect(source: Source) {
+function read(source: Source): Env {
   const values: Env = {};
-  const missing: string[] = [];
-  const invalid: string[] = [];
-  const deployed = getAppEnv() !== "dev";
   for (const name of ENV_NAMES) {
     const raw = source[name];
     if (raw !== undefined) values[name] = raw;
-    if (raw === undefined || raw === "") {
-      if (deployed && (REQUIRED_DEPLOYED_ENV as readonly string[]).includes(name)) missing.push(name);
-      continue;
-    }
-    if (!shape[name].safeParse(raw).success) invalid.push(name);
   }
-  return { values, missing, invalid };
+  return values;
 }
 
 let cached: Env | null = null;
 
 export function getEnv(): Env {
-  if (process.env.VITEST) return inspect(process.env).values;
-  cached ??= inspect(process.env).values;
+  if (process.env.VITEST) return read(process.env);
+  cached ??= read(process.env);
   return cached;
 }
 
@@ -136,7 +128,17 @@ export function resetEnvForTests(): void {
 }
 
 export function checkEnv(source: Source = process.env): { missing: string[]; invalid: string[] } {
-  const { missing, invalid } = inspect(source);
+  const deployed = getAppEnv() !== "dev";
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  for (const name of ENV_NAMES) {
+    const raw = source[name];
+    if (raw === undefined || raw === "") {
+      if (deployed && (REQUIRED_DEPLOYED_ENV as readonly string[]).includes(name)) missing.push(name);
+    } else if (!shape[name].safeParse(raw).success) {
+      invalid.push(name);
+    }
+  }
   return { missing, invalid };
 }
 

@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { getEnv } from "~/lib/env.server";
 
 // AES-256-GCM with a 12-byte IV. Versioned ciphertext format:
 //   v1:<iv-b64>:<tag-b64>:<ct-b64>
@@ -11,7 +12,7 @@ const IV_BYTES = 12;
 const KEY_BYTES = 32;
 
 function getKey(): Buffer {
-  const raw = process.env.CALENDAR_TOKEN_KEY;
+  const raw = getEnv().CALENDAR_TOKEN_KEY;
   if (!raw) {
     throw new Error(
       "CALENDAR_TOKEN_KEY is not set. Generate one with: openssl rand -base64 32",
