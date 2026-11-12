@@ -89,6 +89,7 @@ import { useDialog } from "~/components/ui/dialog";
 import { readEmojiSuggestionsPreference } from "~/lib/emoji-suggestions";
 import { isCommandKShortcut, paintFormatShortcut } from "~/lib/shortcuts";
 import { modalCardClass } from "~/components/os-chrome";
+import { useTabAcceptsSuggestion } from "./schema/suggestion-tab";
 
 export default function DocEditorImpl(props: DocEditorProps) {
   const features = resolveFeatures(props.features);
@@ -314,6 +315,7 @@ function DocView(
 ) {
   const { editor, features, collabEntry } = props;
   useDocChrome(editor, props);
+  useTabAcceptsSuggestion(editor as never);
   const isDark = useIsDark();
   const toast = useToast();
   const dialog = useDialog();
