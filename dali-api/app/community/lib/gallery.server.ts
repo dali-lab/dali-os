@@ -61,6 +61,7 @@ const IMAGE_URL_WINDOW_S = 3600;
 // the browser loads a photo once rather than on every visit. Without S3 (local
 // dev) the session-authed redirect route still works.
 export async function galleryImageUrl(key: string) {
+  if (/^https?:\/\//.test(key)) return key;
   if (!isS3Configured()) return `/api/upload/raw?key=${encodeURIComponent(key)}`;
   return getDownloadUrl(key, { cacheFor: IMAGE_URL_WINDOW_S });
 }
@@ -163,6 +164,17 @@ export async function loadGalleryPage(viewer: GalleryViewer, query: FeedQuery) {
     posts: await toTiles(page, viewer),
     nextCursor: more ? page[page.length - 1].id : null,
   };
+}
+
+/** The newest photos for a highlights surface; hidden posts stay off it for everyone. */
+export async function loadGalleryHighlights(viewer: GalleryViewer, count: number) {
+  const rows = await prisma.galleryPost.findMany({
+    where: { ...visibleTo(viewer), hiddenAt: null },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: count,
+    select: TILE_SELECT,
+  });
+  return toTiles(rows, viewer);
 }
 
 const PEOPLE_LIMIT = 5;

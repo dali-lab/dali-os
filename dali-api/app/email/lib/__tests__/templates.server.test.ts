@@ -6,6 +6,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import {
+  EmailTemplateRequiredVarsError,
   MissingEmailTemplateError,
   getEmailTemplate,
   listEmailTemplates,
@@ -93,6 +94,33 @@ describe("saveEmailTemplate", () => {
       where: { key: SKIPPING },
     });
     expect(mockPrisma.emailTemplate.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("saveEmailTemplate required variables", () => {
+  const CREDENTIALS = "hiring:onboarding:Credentials" as const;
+
+  it("refuses a credentials body that drops a required placeholder", async () => {
+    await expect(
+      saveEmailTemplate(CREDENTIALS, { subject: "s", body: "Log in with {{daliEmail}}" }, "u1"),
+    ).rejects.toBeInstanceOf(EmailTemplateRequiredVarsError);
+    expect(mockPrisma.emailTemplate.upsert).not.toHaveBeenCalled();
+  });
+
+  it("saves when both required placeholders are present", async () => {
+    await saveEmailTemplate(
+      CREDENTIALS,
+      { subject: "s", body: "{{daliEmail}} / {{tempPassword}}" },
+      "u1",
+    );
+    expect(mockPrisma.emailTemplate.upsert).toHaveBeenCalled();
+  });
+
+  it("still allows blanking both fields, which reverts to the default copy", async () => {
+    await saveEmailTemplate(CREDENTIALS, { subject: "", body: "" }, "u1");
+    expect(mockPrisma.emailTemplate.deleteMany).toHaveBeenCalledWith({
+      where: { key: CREDENTIALS },
+    });
   });
 });
 

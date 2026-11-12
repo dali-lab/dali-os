@@ -25,6 +25,7 @@ vi.mock("~/lib/roles", () => ({
   getUserRoles: vi.fn(),
 }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
+vi.mock("~/lib/read-only-roles.server", () => ({ readOnlyRoles: vi.fn() }));
 vi.mock("~/calendar/lib/meeting-link.server", () => ({ meetingLinkRedirect: vi.fn(async () => null) }));
 vi.mock("~/lib/google-calendar", () => ({
   fetchCalendarEvents: vi.fn(),
@@ -33,6 +34,7 @@ vi.mock("~/lib/google-calendar", () => ({
 }));
 
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
+import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isLabMember, currentTerm, getUserRoleInstances, canViewForms, isCore, getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { fetchCalendarEvents, getValidAccessTokenForLink, listCalendarsForLink } from "~/lib/google-calendar";
@@ -69,6 +71,7 @@ beforeEach(() => {
   invalidateExternalCache(USER);
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER } } as never);
   vi.mocked(redirectNonMemberToPortal).mockResolvedValue(null as never);
+  vi.mocked(readOnlyRoles).mockResolvedValue({ isAlumni: false } as never);
   vi.mocked(isImpersonating).mockReturnValue(false);
   vi.mocked(isLabMember).mockResolvedValue(true);
   vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26F" } as never);
@@ -95,6 +98,15 @@ beforeEach(() => {
 });
 
 describe("loadCalendarData", () => {
+  it("sends an alumni viewer to Community before reading anything", async () => {
+    vi.mocked(readOnlyRoles).mockResolvedValue({ isAlumni: true } as never);
+    const res = await run();
+    expect(res).toBeInstanceOf(Response);
+    expect(res.headers.get("Location")).toBe("/community");
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(getValidAccessTokenForLink).not.toHaveBeenCalled();
+  });
+
   it("sends a lab member on the portal mount to /calendar before reading anything", async () => {
     const res = await run({ portal: true });
     expect(res).toBeInstanceOf(Response);

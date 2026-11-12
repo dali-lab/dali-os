@@ -69,11 +69,16 @@ describe("onboardingEmailHtml", () => {
     });
 
     it("fills them into an operator-edited template too", async () => {
-      vi.mocked(prisma.emailTemplate.findUnique).mockResolvedValueOnce({
-        key: "hiring:onboarding:NextSteps",
-        subject: "Next steps",
-        body: "Accept by {{respondBy}}. See you in {{startTerm}}.",
-      } as any);
+      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
+        where: { key: string };
+      }) =>
+        args.where.key === "hiring:onboarding:NextSteps"
+          ? {
+              key: "hiring:onboarding:NextSteps",
+              subject: "Next steps",
+              body: "Accept by {{respondBy}}. See you in {{startTerm}}.",
+            }
+          : null) as any);
       const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", {
         startTerm: "26F",
         respondBy: "Friday, September 4, 2026",
@@ -88,6 +93,24 @@ describe("onboardingEmailHtml", () => {
       const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", { startTerm: "<b>27W</b>" });
       expect(html).not.toContain("<b>27W</b>");
       expect(html).toContain("&lt;b&gt;27W&lt;/b&gt;");
+    });
+  });
+
+  describe("credentials block", () => {
+    it("uses the operator's edited credentials copy when one is saved", async () => {
+      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
+        where: { key: string };
+      }) =>
+        args.where.key === "hiring:onboarding:Credentials"
+          ? {
+              key: "hiring:onboarding:Credentials",
+              subject: "s",
+              body: "Custom: {{daliEmail}} + {{tempPassword}} at {{loginUrl}}",
+            }
+          : null) as any);
+      const html = await onboardingEmailHtml("ada.l@dali.dartmouth.edu", "pw-one-time-42");
+      expect(html).toContain("Custom: ada.l@dali.dartmouth.edu + pw-one-time-42");
+      expect(html).toContain("https://os.dali.dartmouth.edu/login");
     });
   });
 });

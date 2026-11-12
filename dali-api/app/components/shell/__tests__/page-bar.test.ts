@@ -99,30 +99,29 @@ describe("pageBarCrumbs for alumni", () => {
   it("puts Community under Lab, like the rail", () => {
     for (const community of [true, false]) {
       expect(crumbsAt("/community", leaf("/community", "Community"), "Community", ALUM, community)).toEqual([
-        "Lab → /projects",
+        "Lab → /currently",
         "Community",
       ]);
     }
   });
 
-  it("puts the community pages straight under Lab, not under Community", () => {
+  it("files the community pages under Community, which claims /community/*", () => {
     expect(crumbsAt("/community/gallery", leaf("/community/gallery", "Gallery"), "Gallery", ALUM)).toEqual([
-      "Lab → /projects",
+      "Lab → /currently",
+      "Community → /community",
       "Gallery",
     ]);
     expect(
       crumbsAt(`/community/gallery/${ID}`, [...leaf("/community/gallery", "Gallery"), ...leaf(`/community/gallery/${ID}`, "Spring demo")], "Spring demo", ALUM),
-    ).toEqual(["Lab → /projects", "Gallery → /community/gallery", "Spring demo"]);
+    ).toEqual(["Lab → /currently", "Community → /community", "Gallery → /community/gallery", "Spring demo"]);
     expect(crumbsAt("/community/opportunities", leaf("/community/opportunities", "Opportunities"), "Opportunities", ALUM)).toEqual([
-      "Lab → /projects",
+      "Lab → /currently",
       "Opportunities",
     ]);
-    expect(crumbsAt("/resources", [], "Resources", ALUM)).toEqual(["Lab → /projects", "Stories"]);
   });
 
-  it("files a story under Stories by its title", () => {
+  it("files a story under Stories by its title, off the Lab trail", () => {
     expect(crumbsAt(`/resources/blog/${ID}`, leaf(`/resources/blog/${ID}`, "Demo day"), "Demo day", ALUM)).toEqual([
-      "Lab → /projects",
       "Stories → /resources",
       "Demo day",
     ]);
@@ -130,7 +129,7 @@ describe("pageBarCrumbs for alumni", () => {
 
   it("files a member's profile under Community", () => {
     expect(crumbsAt(`/members/${ID}`, leaf(`/members/${ID}`, "Ada Lovelace"), "Ada Lovelace", ALUM)).toEqual([
-      "Lab → /projects",
+      "Lab → /currently",
       "Community → /community",
       "Ada Lovelace",
     ]);
@@ -159,7 +158,6 @@ describe("pageBarCrumbs for alumni", () => {
       "Coffee chat with Ada",
     ]);
     expect(crumbsAt(`/resources/write/${ID}`, [], "Draft", ALUM)).toEqual([
-      "Lab → /projects",
       "Stories → /resources",
       "Write",
       "Details",

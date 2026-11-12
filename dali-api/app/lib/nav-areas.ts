@@ -406,13 +406,12 @@ const ALUMNI_AREAS: NavArea[] = [
     key: "projects",
     label: "Lab",
     icon: FolderKanban,
-    hubPath: "/projects",
+    hubPath: "/currently",
     subtabs: [
-      { label: "Projects", href: "/projects", icon: FolderKanban },
+      // Projects, Stories and the Gallery are reached from this page's links.
+      { label: "Currently at DALI", href: "/currently", icon: Sparkles },
       ALUMNI_COMMUNITY_NAV_ITEM,
       { label: "Opportunities", href: "/community/opportunities", icon: Lightbulb },
-      { label: "Gallery", href: "/community/gallery", icon: Images },
-      { label: "Stories", href: "/resources", icon: Newspaper },
       REFER_NAV_ITEM,
     ],
   },

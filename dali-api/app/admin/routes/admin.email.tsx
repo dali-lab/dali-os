@@ -31,6 +31,7 @@ import {
   type EmailTemplateKey,
 } from "~/email/lib/registry";
 import {
+  EmailTemplateRequiredVarsError,
   listEmailTemplates,
   listEmailTemplateVersions,
   rollbackEmailTemplate,
@@ -134,15 +135,20 @@ export async function action({ request }: Route.ActionArgs) {
   const key = rawKey;
 
   if (intent === "save") {
-    await saveEmailTemplate(
-      key,
-      {
-        subject: (formData.get("subject") as string) ?? "",
-        body: (formData.get("body") as string) ?? "",
-      },
-      auth.user.sub,
-      request,
-    );
+    try {
+      await saveEmailTemplate(
+        key,
+        {
+          subject: (formData.get("subject") as string) ?? "",
+          body: (formData.get("body") as string) ?? "",
+        },
+        auth.user.sub,
+        request,
+      );
+    } catch (err) {
+      if (err instanceof EmailTemplateRequiredVarsError) return { error: err.message };
+      throw err;
+    }
     // `stay` is the in-place editor on another page (EmailEditorModal), which
     // closes itself rather than landing on the list here.
     if (formData.get("stay")) return { saved: true as const };

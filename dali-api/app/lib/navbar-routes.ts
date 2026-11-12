@@ -9,6 +9,7 @@ const NAVBAR_PATHS = new Set([
   "/core",
   "/drive",
   "/resources",
+  "/currently",
   "/members",
   "/members/groups",
   "/core/partners",

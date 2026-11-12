@@ -187,6 +187,7 @@ export default [
       "projects/routes/projects.level-up.$userId.tsx",
     ),
     route("projects/:id", "projects/routes/projects.$id.tsx"),
+    route("projects/:id/showcase", "projects/routes/projects.$id.showcase.tsx"),
     route(
       "projects/:id/partner-view",
       "projects/routes/projects.$id.partner-view.tsx",
@@ -255,6 +256,7 @@ export default [
     route("community", "members/routes/community.tsx"),
     route("community/events/:id/calendar.ics", "members/routes/community.events.$id.calendar.ts"),
     route("connect/*", "members/routes/connect-redirect.ts"),
+    route("currently", "routes/currently.tsx"),
     // Community: the alumni map lives here in the sidebar, alongside these.
     route("community/opportunities", "community/routes/community.opportunities.tsx"),
     route("community/gallery", "community/routes/community.gallery.tsx"),
