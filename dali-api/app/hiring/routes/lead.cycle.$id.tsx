@@ -45,8 +45,9 @@ import { CONTINUED_INTEREST_SLOT, LATER_INTERVIEW_INVITE_SLOT, decisionSlot, rel
 import { loadLeadCycle } from "~/hiring/lib/lead-cycle.server";
 import type { InterviewConfig, RoomHoldConflict, RoomHoldConflictItem, CycleReviewer, InterviewRow, PendingInviteRow } from "~/hiring/lib/lead-cycle-types";
 import { AVAILABILITY_ORDER, AVAILABILITY_NOTE } from "~/hiring/lib/lead-cycle-types";
+import { reassignInterviewer, type ReassignTarget } from "~/hiring/components/lead-cycle/interview-actions";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
-import { canOverrideAvailability, seatEligible, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
+import { seatEligible, type InterviewerAvailability } from "~/hiring/lib/interviewer-pool";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Toggle } from "~/components/ui/Toggle";
 import { DateField } from "~/components/ui/DateField";
@@ -2362,33 +2363,15 @@ export default function HiringLeadCycleDetails() {
             toast.error(body.error ?? 'Failed to update location')
           }
         }
-        async function reassign(interview: any, a: any, to: { id: string; name: string; availability: InterviewerAvailability }) {
-          const override = canOverrideAvailability(to.availability)
-          if (
-            !(await dialog.confirm({
-              title: override ? `Assign ${to.name} anyway?` : 'Reassign interviewer?',
-              description: override
-                ? `${to.availability === 'busy'
-                    ? `${to.name}'s calendar shows a conflict at this time.`
-                    : `${to.name} has no calendar or working hours set up, so DALI OS can't tell if they're free.`} Check with them first. Emails the removed interviewer and ${to.name} about the change.`
-                : 'Emails the removed interviewer and the replacement interviewer about the change.',
-              confirmLabel: override ? 'Assign anyway' : 'Reassign',
-              tone: 'destructive',
-            }))
-          )
-            return
-          const res = await fetch(`/api/hiring/interviews/${interview.id}/reassign`, {
-            method: 'POST', credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ assignmentId: a.id, newCycleInterviewerId: to.id, ...(override && { override: true }) }),
+        const reassign = (interview: any, a: any, to: ReassignTarget) =>
+          reassignInterviewer({
+            interview,
+            assignment: a,
+            to,
+            dialog,
+            toast,
+            refresh: () => Promise.all([loadInterviews(), loadInterviewers(), loadCoverage()]),
           })
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}))
-            toast.error(body.error ?? 'Failed to reassign interviewer')
-            return
-          }
-          window.location.reload()
-        }
         async function cancelInterview(interview: any) {
           const u = interview.domainApplication.application.user
           const name = `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || 'this applicant'
