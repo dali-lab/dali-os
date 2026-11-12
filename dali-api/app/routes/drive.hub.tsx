@@ -24,8 +24,7 @@ import {
 } from "lucide-react";
 import { useState, useCallback, useEffect, useRef, useId, useMemo } from "react";
 import type { ReactNode } from "react";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { setPageFavorite } from "~/components/favorites-live";
@@ -148,11 +147,7 @@ export function shouldRevalidate({
 export type DocTagOut = { id: string; label: string; slug: string; color: string | null };
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const userId = auth.user.sub;
   const [roles, termFilter] = await Promise.all([

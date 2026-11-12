@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, useLoaderData } from "react-router";
 import { Bell, SquareCheck } from "lucide-react";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import { listMyProjectTasks, listOpenTasks } from "~/lib/tasks";
 import { loadShellUser } from "~/lib/shell-user.server";
 import { isBirthdayToday } from "~/members/lib/warmth";
@@ -36,11 +35,7 @@ import type { Route } from "./+types/home";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const __loaderStart = performance.now();
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const me = await loadShellUser(auth.user.sub, request);
   const tz = resolveUserTimeZone(me);
