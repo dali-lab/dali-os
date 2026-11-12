@@ -1183,7 +1183,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   // already loaded (the current sprint is derived from term spans), so the bar
   // costs no extra query. aiTldrStale compares the current facts fingerprint
   // against the one the cached summary was written from; the client regenerates
-  // when it differs (see ProjectStatusBar).
+  // when it differs.
   const statusNow = new Date();
   const statusFacts = computeProjectStatus(
     {
