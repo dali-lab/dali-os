@@ -28,7 +28,8 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { getActiveCycleById } from "~/hiring/lib/cycles";
-import { action, buildSections, computeRequiredProgress } from "~/routes/portal.apply";
+import { action } from "~/routes/portal.apply";
+import { buildSections, computeRequiredProgress } from "~/hiring/lib/apply-sections";
 
 const mockPrisma = prisma as unknown as {
   application: {

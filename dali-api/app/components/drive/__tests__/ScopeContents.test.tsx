@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DndContext } from "@dnd-kit/core";
-import { ScopeContents, SearchResults, searchAll } from "~/components/drive/DriveBrowser";
+import { ScopeContents } from "~/components/drive/ScopeContents";
+import { SearchResults } from "~/components/drive/SearchResults";
+import { searchAll } from "~/components/drive/browser-items";
 import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
 import type { DriveItem } from "~/drive/lib/drive.server";
 

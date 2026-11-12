@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { itemIcon } from "~/components/drive/DriveBrowser";
+import { itemIcon } from "~/components/drive/item-icons";
 import { RECEIVER_LABELS } from "~/drive/lib/drive-receivers";
 import type { DriveItem } from "~/drive/lib/drive.server";
 

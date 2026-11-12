@@ -1,18 +1,11 @@
-// Manual invoice tracking for one partner org — mounted on the org page's
-// Finance tab (core.partners.orgs.$orgId.tsx). Posts intents "invoice-save"
-// (create) and "invoice-status" (status change) to that route's own action,
-// which calls upsertInvoice / setInvoiceStatus (app/partners/lib/
-// partner-finance.server.ts). Submits straight to the current route — no
-// cross-route redirect to work around (unlike the application modal's
-// postPartnerApplicationIntent helper), so this just uses <Form>.
-
-import { useState } from "react";
-import { Form } from "react-router";
+import { useEffect, useState } from "react";
+import { Form, useFetcher } from "react-router";
 import { Plus } from "lucide-react";
 import { Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
+import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 import { formatUsd } from "~/lib/money";
 import type { PartnerInvoiceStatus } from "~/generated/prisma/enums";
@@ -46,6 +39,33 @@ function dateStr(value: string | Date | null): string | null {
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(value);
   return isNaN(d.getTime()) ? null : d.toLocaleDateString();
+}
+
+function InvoiceStatusSelect({
+  invoiceId,
+  status,
+}: {
+  invoiceId: string;
+  status: PartnerInvoiceStatus;
+}) {
+  const fetcher = useFetcher<{ error?: string }>();
+  const toast = useToast();
+  const error = fetcher.data?.error;
+  useEffect(() => {
+    if (error) toast.error(error);
+  }, [error, toast]);
+  return (
+    <Select
+      name="status"
+      value={status}
+      ariaLabel="Invoice status"
+      options={STATUS_OPTIONS}
+      onChange={(value) =>
+        fetcher.submit({ intent: "invoice-status", invoiceId, status: value }, { method: "post" })
+      }
+      buttonClassName="inline-flex items-center gap-1 text-xs text-foreground"
+    />
+  );
 }
 
 export function InvoicesPanel({
@@ -139,28 +159,7 @@ export function InvoicesPanel({
                     aria-hidden
                   />
                   {canEdit ? (
-                    <Form method="post" className="inline-flex">
-                      <input type="hidden" name="intent" value="invoice-status" />
-                      <input type="hidden" name="invoiceId" value={inv.id} />
-                      <Select
-                        name="status"
-                        defaultValue={inv.status}
-                        ariaLabel="Invoice status"
-                        options={STATUS_OPTIONS}
-                        onChange={(value) => {
-                          const fd = new FormData();
-                          fd.set("intent", "invoice-status");
-                          fd.set("invoiceId", inv.id);
-                          fd.set("status", value);
-                          fetch(window.location.pathname, {
-                            method: "POST",
-                            credentials: "include",
-                            body: fd,
-                          }).then(() => window.location.reload());
-                        }}
-                        buttonClassName="inline-flex items-center gap-1 text-xs text-foreground"
-                      />
-                    </Form>
+                    <InvoiceStatusSelect invoiceId={inv.id} status={inv.status} />
                   ) : (
                     <span className="pr-1">{inv.status}</span>
                   )}
