@@ -2,6 +2,7 @@
 // and text search. Heavy columns (bodyHtml, attachments) are left out: the
 // retention janitor zeroes them after send and they don't help triage.
 
+import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { useEffect, useState } from "react";
 import { Form, redirect, useFetcher, useLoaderData, useSearchParams } from "react-router";
 import { ChevronDown, Hash, Mail, RotateCw, X } from "lucide-react";
@@ -23,7 +24,7 @@ import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore, isAdmin } from "~/lib/roles";
-import { fullName } from "~/lib/display";
+import { formatMonthDayTime, fullName } from "~/lib/display";
 
 export const handle = adminHandle("outbox");
 
@@ -184,16 +185,6 @@ export async function action({ request }: Route.ActionArgs) {
 
 // ─── UI ────────────────────────────────────────────────────────────────────
 
-function formatTime(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 const STATUS_VIEW: Record<string, { tone: Tone; label: string }> = {
   Pending: { tone: "warn", label: "Pending" },
   Sending: { tone: "warn", label: "Sending" },
@@ -222,6 +213,7 @@ function Detail({ term, value, mono }: { term: string; value: string; mono?: boo
 }
 
 function MessageItem({ msg, open, onToggle }: { msg: MessageRow; open: boolean; onToggle: () => void }) {
+  const timeZone = useUserTimeZone();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const dialog = useDialog();
   const { actionBtn, actionBtnPrimary } = useOsChrome();
@@ -266,8 +258,8 @@ function MessageItem({ msg, open, onToggle }: { msg: MessageRow; open: boolean; 
           <span className="block truncate text-sm text-os-grey">
             {recipient}
             <span className="text-os-muted">
-              {msg.subject && msg.eventType ? ` · ${msg.eventType}` : ""} · {formatTime(msg.createdAt)}
-              {msg.sentAt ? ` · sent ${formatTime(msg.sentAt)}` : ""}
+              {msg.subject && msg.eventType ? ` · ${msg.eventType}` : ""} · {formatMonthDayTime(msg.createdAt, timeZone)}
+              {msg.sentAt ? ` · sent ${formatMonthDayTime(msg.sentAt, timeZone)}` : ""}
             </span>
           </span>
           {msg.lastError && !open && (
@@ -304,8 +296,8 @@ function MessageItem({ msg, open, onToggle }: { msg: MessageRow; open: boolean; 
               <Detail term="Status" value={view.label} />
               <Detail term="Target" value={msg.target} mono />
               <Detail term="Event" value={msg.eventType ?? "—"} mono />
-              <Detail term="Created" value={formatTime(msg.createdAt)} />
-              <Detail term="Sent" value={formatTime(msg.sentAt)} />
+              <Detail term="Created" value={formatMonthDayTime(msg.createdAt, timeZone)} />
+              <Detail term="Sent" value={formatMonthDayTime(msg.sentAt, timeZone)} />
             </dl>
             {msg.lastError && (
               <p className="break-all rounded-lg bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
