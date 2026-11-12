@@ -103,15 +103,16 @@ test.describe('KanbanBoard drag (TaskBoard)', () => {
     await expect(card).toBeVisible();
 
     // Watch for the move POST that the optimistic hook fires.
-    const movePromise = page.waitForRequest(
-      (req) =>
-        /\/api\/tasks\/[^/]+\/move$/.test(req.url()) && req.method() === 'POST',
+    const movePromise = page.waitForResponse(
+      (res) =>
+        /\/api\/tasks\/[^/]+\/move$/.test(res.url()) && res.request().method() === 'POST',
     );
 
     await dragHandleTo(page, card, inProgressColumn);
 
-    const moveReq = await movePromise;
-    expect(moveReq.postDataJSON()).toMatchObject({ status: 'InProgress' });
+    const moveRes = await movePromise;
+    expect(moveRes.ok()).toBe(true);
+    expect(moveRes.request().postDataJSON()).toMatchObject({ status: 'InProgress' });
 
     // Optimistic render: the card now lives in the "In progress" column.
     await expect(

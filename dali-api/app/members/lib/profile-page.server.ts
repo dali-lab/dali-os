@@ -50,7 +50,7 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
-import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
+import { getOnboardingFormBinding } from "~/hiring/lib/onboarding-form.server";
 import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
 import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
 import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
@@ -457,13 +457,10 @@ async function redirectIfPendingOnboarding(userId: string): Promise<void> {
     select: { onboardedAt: true },
   });
   if (!membership || membership.onboardedAt !== null) return;
-  const profileForm = await prisma.form.findFirst({
-    where: { name: NEW_MEMBER_PROFILE_FORM_NAME, published: true },
-    select: { publicToken: true },
-  });
-  if (!profileForm?.publicToken) return;
+  const profileForm = await getOnboardingFormBinding();
+  if (!profileForm?.published || !profileForm.publicToken) return;
   const submitted = await prisma.formSubmission.count({
-    where: { userId, form: { name: NEW_MEMBER_PROFILE_FORM_NAME } },
+    where: { userId, formId: profileForm.formId },
   });
   if (submitted === 0) throw redirect(`/forms/fill/${profileForm.publicToken}`);
 }

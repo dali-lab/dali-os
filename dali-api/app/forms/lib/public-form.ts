@@ -37,10 +37,10 @@ import {
 } from "~/forms/lib/form-answers";
 import {
   interpretProfileForm,
-  NEW_MEMBER_PROFILE_FORM_NAME,
   type ProfileUpdate,
 } from "~/members/lib/profile-form-interpreter";
 import { clearOnboardingTask } from "~/members/lib/welcome.server";
+import { isOnboardingProfileForm } from "~/hiring/lib/onboarding-form.server";
 import { syncSlackUserId } from "~/slack/lib/slack-sync.server";
 import { notifyFormSubmission, sendFormReceipt } from "./submission-notify.server";
 import { resolvePrefill } from "./prefill.server";
@@ -812,7 +812,7 @@ export async function submitMemberForm(args: {
     // Members only: a non-member admitted by a SignedIn/Groups audience must
     // not write profile fields by submitting a form with the reserved name.
     const isProfileForm =
-      form.name === NEW_MEMBER_PROFILE_FORM_NAME &&
+      (await isOnboardingProfileForm(form.id)) &&
       Boolean(await requireMember(args.userId));
     let profileUpdate: ProfileUpdate | null = null;
     if (isProfileForm) {

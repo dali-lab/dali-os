@@ -19,7 +19,6 @@ import { PrismaClient } from "../../app/generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { promoteToMember } from "../../app/members/lib/membership.server.js";
 import { sendWelcome } from "../../app/members/lib/welcome.server.js";
-import { NEW_MEMBER_PROFILE_FORM_NAME } from "../../app/members/lib/profile-form-interpreter.js";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
@@ -110,12 +109,15 @@ function newPublicToken(): string {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Create + publish the profile form, keeping its questions in sync with
-// PROFILE_QUESTIONS (idempotent by name). Consumers read the LATEST version, so
-// when the questions change we add a new version; otherwise nothing changes.
+const PROFILE_FORM_NAME = "Welcome to DALI! 👋";
+
+// Create, publish and bind the profile form, keeping its questions in sync with
+// PROFILE_QUESTIONS (idempotent through the binding). Consumers read the LATEST
+// version, so when the questions change we add a new version.
 async function ensureProfileForm(createdById: string): Promise<void> {
+  const binding = await prisma.onboardingProfileFormBinding.findFirst({ select: { formId: true } });
   const existing = await prisma.form.findFirst({
-    where: { name: NEW_MEMBER_PROFILE_FORM_NAME },
+    where: binding ? { id: binding.formId } : { name: PROFILE_FORM_NAME },
     select: {
       id: true,
       published: true,
@@ -129,14 +131,14 @@ async function ensureProfileForm(createdById: string): Promise<void> {
   });
 
   if (!existing) {
-    await prisma.form.create({
+    const created = await prisma.form.create({
       data: {
-        name: NEW_MEMBER_PROFILE_FORM_NAME,
+        name: PROFILE_FORM_NAME,
         createdBy: { connect: { id: createdById } },
         page: {
           create: {
             workspaceType: "Lab" as const,
-            title: NEW_MEMBER_PROFILE_FORM_NAME,
+            title: PROFILE_FORM_NAME,
             kind: "Form" as const,
             createdById,
             linkAccess: "LabMembers" as const,
@@ -154,8 +156,17 @@ async function ensureProfileForm(createdById: string): Promise<void> {
           },
         },
       },
+      select: { id: true },
+    });
+    await prisma.onboardingProfileFormBinding.create({
+      data: { formId: created.id, updatedById: createdById },
     });
     return;
+  }
+  if (!binding) {
+    await prisma.onboardingProfileFormBinding.create({
+      data: { formId: existing.id, updatedById: createdById },
+    });
   }
 
   const latest = existing.versions[0];
@@ -205,7 +216,7 @@ async function main() {
   // Publish the onboarding profile form so the welcome path can attach it.
   if (actor) {
     await ensureProfileForm(actor);
-    console.log(`  ✓ "${NEW_MEMBER_PROFILE_FORM_NAME}" form ensured + published`);
+    console.log(`  ✓ "${PROFILE_FORM_NAME}" form ensured + published`);
   }
 
   let seeded = 0;

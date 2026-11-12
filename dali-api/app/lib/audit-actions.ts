@@ -90,6 +90,8 @@ export const AUDIT_ACTIONS = [
   // one row marks a reviewing session; metadata says whether identity was blinded.
   "application.view",
   // Application events (help hours, socials, info sessions) on a cycle.
+  "hiring.onboarding-form.set",
+  "hiring.onboarding-form.clear",
   "hiring.event.create",
   "hiring.event.update",
   "hiring.event.delete",

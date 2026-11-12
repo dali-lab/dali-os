@@ -103,15 +103,13 @@ function ResponseDetailBody({ response }: { response: ResponseRow }) {
   );
 }
 
-// Owner delete of one response, or the reason it has to stay. The form action
-// refuses locked responses too; this just says why instead of offering a button.
 function ResponseDelete({ response }: { response: ResponseRow }) {
   const fetcher = useFetcher<{ ok?: true; error?: string }>();
   const confirmSubmit = useConfirmSubmit();
-  if (response.lockReason) {
+  if (response.deleteBlocked) {
     return (
       <p className="text-xs text-muted-foreground">
-        This response can't be deleted. {response.lockReason}
+        This response can't be deleted. {response.deleteBlocked}
       </p>
     );
   }
@@ -122,7 +120,7 @@ function ResponseDelete({ response }: { response: ResponseRow }) {
       className="flex items-center gap-3"
       onSubmit={confirmSubmit({
         title: `Delete this response from ${response.name}?`,
-        description: "This can't be undone.",
+        description: [...response.deleteEffects, "This can't be undone."].join(" "),
         tone: "destructive",
         confirmLabel: "Delete",
       })}
