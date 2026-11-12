@@ -3,7 +3,7 @@
 // Popover kit, same optimistic-move hook, same column collapse/menu
 // conventions. specs/partner-crm.md §4.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useRevalidator } from "react-router";
 import type { DragEndEvent } from "@dnd-kit/core";
 import { ChevronsLeft, ChevronsRight, MoreHorizontal } from "lucide-react";
@@ -17,6 +17,7 @@ import {
   type StatusAccent,
 } from "~/components/board/status-accent";
 import { cn } from "~/lib/cn";
+import { isList, listCodec, usePersistedState } from "~/hooks/usePersistedState";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import {
   PARTNER_STAGES,
@@ -37,6 +38,7 @@ import { PartnerCard } from "./PartnerCard";
 const META_TEXT = "text-xs";
 
 const COLLAPSED_KEY = "partnerboard:collapsedCols";
+const stageListCodec = listCodec<PartnerStage>((v): v is PartnerStage => PARTNER_STAGES.includes(v as PartnerStage));
 
 // The os shell's accent reads the same status-token families TaskBoard draws
 // its columns from, so the two boards share a palette. Backlog~backlog,
@@ -80,26 +82,12 @@ export function PartnerBoard({
 
   const [celebrate, setCelebrate] = useState(false);
 
-  const [collapsedCols, setCollapsedCols] = useState<PartnerStage[]>([]);
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(COLLAPSED_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as string[];
-        setCollapsedCols(parsed.filter((s): s is PartnerStage => PARTNER_STAGES.includes(s as PartnerStage)));
-      }
-    } catch {
-      /* unreadable / malformed: start expanded */
-    }
-  }, []);
-  const persistCollapsed = useCallback((next: PartnerStage[]) => {
-    setCollapsedCols(next);
-    try {
-      window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
-    } catch {
-      /* private-mode / storage-disabled: fall back to in-memory only */
-    }
-  }, []);
+  const [collapsedCols, persistCollapsed] = usePersistedState<PartnerStage[]>(
+    COLLAPSED_KEY,
+    [],
+    isList<PartnerStage>,
+    stageListCodec,
+  );
   const toggleCollapsed = useCallback(
     (stage: PartnerStage) =>
       persistCollapsed(

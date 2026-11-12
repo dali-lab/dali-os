@@ -139,7 +139,7 @@ export default function CycleConfidentialityPage() {
         </p>
         <Link
           to="/"
-          className="inline-block text-sm font-medium text-blue-600 hover:text-blue-700"
+          className="inline-block text-sm font-medium text-os-accent hover:text-os-accent-hover"
         >
           Open home
         </Link>
@@ -178,7 +178,7 @@ export default function CycleConfidentialityPage() {
   return (
     <div className="max-w-3xl mx-auto py-10 space-y-6">
       <div className="flex items-center gap-3">
-        <ShieldCheck className="w-6 h-6 text-blue-600" />
+        <ShieldCheck className="w-6 h-6 text-os-accent" />
         <h1 className="text-2xl font-bold text-foreground">
           Confidentiality agreement
         </h1>

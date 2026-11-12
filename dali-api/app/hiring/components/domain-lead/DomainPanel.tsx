@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { cn } from "~/lib/cn";
 import { useCurrentMembers } from "~/hiring/lib/current-members";
-import { useNavigate, useSearchParams, useRevalidator } from "react-router";
+import { Link, useNavigate, useSearchParams, useRevalidator } from "react-router";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { useToast } from "~/components/ui/toast";
 import { summarizeDecisionPills, synthesizePrePipelinePill, currentDecisionId, findFinalizableDraft } from "~/hiring/lib/decision-pills";
@@ -524,7 +524,19 @@ export function DomainPanel({ entry, allForms, emailEngagement }: { entry: Domai
                                 onClick={() => openReview(row)}
                                 className={cn(OS_TABLE_ROW, row.daId && "cursor-pointer")}
                               >
-                                <td className="px-6 py-4 font-medium text-foreground">{row.name}</td>
+                                <td className="px-6 py-4 font-medium text-foreground">
+                                  {row.daId ? (
+                                    <Link
+                                      to={`/hiring/domain-lead/application/${row.daId}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="hover:underline"
+                                    >
+                                      {row.name}
+                                    </Link>
+                                  ) : (
+                                    row.name
+                                  )}
+                                </td>
                                 <td className="px-6 py-4 text-muted-foreground">{row.time}</td>
                                 <td className="px-6 py-4 text-muted-foreground text-xs">
                                   {row.location}

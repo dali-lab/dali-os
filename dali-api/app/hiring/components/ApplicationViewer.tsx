@@ -62,7 +62,7 @@ const COLOR_CLASSES: Record<HighlightColor, string> = {
   yellow: 'bg-os-amber/15 border-b-2 border-os-amber',
   green: 'bg-os-green/15 border-b-2 border-os-green',
   red: 'bg-destructive/15 border-b-2 border-destructive',
-  blue: 'bg-blue-200 border-b-2 border-blue-400',
+  blue: 'bg-[var(--os-role-blue-fill)] border-b-2 border-[var(--os-role-blue-ink)]',
 }
 
 const COLOR_OPTIONS: HighlightColor[] = ['yellow', 'green', 'red', 'blue']
@@ -126,11 +126,11 @@ function AnnotationMark({
           className="fixed z-50 pointer-events-none -translate-x-1/2"
           style={{ left: tooltip.left, top: tooltip.top, bottom: tooltip.bottom, maxWidth: TOOLTIP_MAX_WIDTH }}
         >
-          {tooltip.below && <span className="block w-2 h-2 bg-gray-900 rotate-45 mx-auto -mb-1" />}
-          <span className="block bg-gray-900 text-white text-xs rounded-lg px-3 py-2 whitespace-pre-wrap shadow-lg">
+          {tooltip.below && <span className="block w-2 h-2 bg-os-fg rotate-45 mx-auto -mb-1" />}
+          <span className="block bg-os-fg text-os-bg text-xs rounded-lg px-3 py-2 whitespace-pre-wrap shadow-lg">
             {ann.comment}
           </span>
-          {!tooltip.below && <span className="block w-2 h-2 bg-gray-900 rotate-45 mx-auto -mt-1" />}
+          {!tooltip.below && <span className="block w-2 h-2 bg-os-fg rotate-45 mx-auto -mt-1" />}
         </span>
         </FloatingPortal>
       )}
@@ -315,7 +315,7 @@ function AnnotatableField({
               <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                 {readOnly ? 'Annotation' : popover.annotationId ? 'Edit annotation' : 'Add annotation'}
               </span>
-              <button onClick={() => setPopover(null)} className="text-muted-foreground/70 hover:text-muted-foreground">
+              <button type="button" aria-label="Close" onClick={() => setPopover(null)} className="text-muted-foreground/70 hover:text-muted-foreground">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -330,13 +330,13 @@ function AnnotatableField({
                 <div className="flex gap-1.5 mb-2">
                   {COLOR_OPTIONS.map((c) => (
                     <button key={c} onClick={() => setPendingColor(c)}
-                      className={`w-6 h-6 rounded-full border-2 transition-transform ${c === 'yellow' ? 'bg-os-amber/25' : c === 'green' ? 'bg-os-green/25' : c === 'red' ? 'bg-destructive/25' : 'bg-blue-300'} ${pendingColor === c ? 'border-gray-700 scale-110' : 'border-transparent'}`} />
+                      className={`w-6 h-6 rounded-full border-2 transition-transform ${c === 'yellow' ? 'bg-os-amber/25' : c === 'green' ? 'bg-os-green/25' : c === 'red' ? 'bg-destructive/25' : 'bg-os-accent/30'} ${pendingColor === c ? 'border-os-grey scale-110' : 'border-transparent'}`} />
                   ))}
                 </div>
                 <textarea autoFocus rows={3} value={pendingComment}
                   onChange={(e) => setPendingComment(e.target.value)}
                   placeholder="Add a comment... (optional)"
-                  className="w-full text-sm text-foreground border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="w-full text-sm text-foreground border border-border rounded-lg p-2 resize-none focus:outline-none focus:ring-1 focus:ring-os-accent/60"
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave(); if (e.key === 'Escape') setPopover(null) }}
                 />
                 <div className="flex gap-2 mt-2">

@@ -128,7 +128,7 @@ export function DecisionEmailPreviewModal({ decision, email, slot, dates, onClos
               </div>
             </>
           ) : (
-            <div className="rounded-lg bg-orange-50 border border-orange-200 p-4 text-sm text-orange-800">
+            <div className="rounded-lg bg-[var(--os-role-orange-fill)] border border-[var(--os-role-orange-ink)]/30 p-4 text-sm text-[var(--os-role-orange-ink)]">
               <p className="font-medium">No email is written for {decision.type}.</p>
               <p className="mt-1">Releasing it sends nothing. Write one on Setup under Decision emails.</p>
             </div>
@@ -138,7 +138,7 @@ export function DecisionEmailPreviewModal({ decision, email, slot, dates, onClos
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+            className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
           >
             Close
           </button>

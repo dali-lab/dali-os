@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { MoreHorizontal, Radio as RadioIcon } from "lucide-react";
 import { Menu } from "~/components/ui/floating";
+import { flagCodec, usePersistedState } from "~/hooks/usePersistedState";
 import { desktopVersion } from "~/lib/desktop";
 import { isRecordPromptWindow } from "./meeting-recorder/record-prompt-window";
 
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
 const dismissKey = (meetingId: string, occurrenceStart: string) =>
   `dali:record-prompt-not-now:${meetingId}:${occurrenceStart}`;
 
@@ -44,7 +46,7 @@ export function RecordPromptBanner({
   onRecord?: () => void;
   onDontSuggest?: () => void;
 }) {
-  const [dismissed, setDismissed] = useState(true);
+  const [dismissed, setDismissed] = usePersistedState(dismissKey(meetingId, occurrenceStart), false, isBoolean, flagCodec);
   const [live, setLive] = useState(false);
   // Inside the desktop shell the app raises its own floating prompt, so the
   // page stays quiet there. Resolved in an effect: the shell marker only
@@ -53,12 +55,7 @@ export function RecordPromptBanner({
 
   useEffect(() => {
     setInDesktopShell(desktopVersion() != null);
-    try {
-      setDismissed(window.localStorage.getItem(dismissKey(meetingId, occurrenceStart)) === "1");
-    } catch {
-      setDismissed(false);
-    }
-  }, [meetingId, occurrenceStart]);
+  }, []);
 
   useEffect(() => {
     const start = new Date(occurrenceStart).getTime();
@@ -81,11 +78,6 @@ export function RecordPromptBanner({
   }
 
   function notNow() {
-    try {
-      window.localStorage.setItem(dismissKey(meetingId, occurrenceStart), "1");
-    } catch {
-      // Storage unavailable — the banner just reappears next visit.
-    }
     setDismissed(true);
   }
 

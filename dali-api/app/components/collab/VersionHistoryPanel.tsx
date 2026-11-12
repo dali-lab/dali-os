@@ -88,7 +88,7 @@ function InlineLabelEditor({
       <button
         type="button"
         onClick={() => onSave(value)}
-        className="text-green-600 hover:text-green-700 rounded p-0.5 hover:bg-muted"
+        className="text-os-green rounded p-0.5 hover:bg-muted"
         aria-label="Save name"
       >
         <Check className="w-3 h-3" aria-hidden />
@@ -428,7 +428,7 @@ export function VersionHistoryPanel({ documentName, canEdit, onClose }: VersionH
             </>
           )}
           {error && (
-            <div className="px-6 py-2 text-xs text-red-600 border-t border-red-100 bg-red-50">
+            <div className="px-6 py-2 text-xs text-os-red border-t border-os-red/20 bg-os-red/10">
               {error}
             </div>
           )}

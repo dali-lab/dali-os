@@ -831,9 +831,13 @@ export default function HiringOnboarding() {
                           size="sm"
                           className="flex-shrink-0"
                         />
-                        <span className="truncate text-base font-medium text-foreground">
+                        <Link
+                          to={`/members/${r.userId}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="truncate text-base font-medium text-foreground hover:underline"
+                        >
                           {r.name}
-                        </span>
+                        </Link>
                       </div>
                     </td>
                     {allCycles && <td className="px-6 py-3.5 text-os-grey">{r.cycleName}</td>}

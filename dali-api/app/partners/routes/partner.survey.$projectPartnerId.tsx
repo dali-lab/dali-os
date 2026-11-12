@@ -182,7 +182,7 @@ export default function PartnerSurvey({ actionData }: Route.ComponentProps) {
       </p>
 
       {error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 rounded-lg px-4 py-3">{error}</p>
+        <p className="mb-4 text-sm text-os-red bg-os-red/10 rounded-lg px-4 py-3">{error}</p>
       )}
 
       <Form method="post" onSubmit={checkRequired} className="flex flex-col gap-6">

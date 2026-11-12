@@ -23,7 +23,7 @@ export function RubricPreviewModal({ rv, onClose }: {
           <h2 id={headingId} className="text-lg font-bold text-foreground">
             {rv.rubric?.name ?? 'Rubric'} — v{rv.versionNumber}
           </h2>
-          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
+          <button type="button" aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground">
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { fullName } from "~/lib/display";
 import { Avatar } from "~/components/ui/Avatar";
 import { LoadMore } from "~/components/ui/Pager";
@@ -101,9 +101,13 @@ export function MembersTable({
                     <Avatar photoUrl={m.photoUrl} name={name} size="sm" userId={m.id} className="flex-shrink-0" />
                     <div className="flex min-w-0 flex-col leading-tight">
                       <span className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-medium text-foreground">
+                        <Link
+                          to={`/members/${m.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="truncate text-sm font-medium text-foreground hover:underline"
+                        >
                           {m.firstName} {m.lastName}
-                        </span>
+                        </Link>
                         {isNew && <NewDot />}
                         {m.birthday && isBirthdayToday(new Date(m.birthday), new Date()) && <BirthdayBadge />}
                         {m.isStaff && <RoleTag>Staff</RoleTag>}

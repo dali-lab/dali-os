@@ -45,14 +45,14 @@ function CopyBlock({ content }: { content: string }) {
   }
   return (
     <div className="relative mt-2">
-      <pre className="overflow-x-auto rounded bg-zinc-900 p-3 pr-10 text-xs text-zinc-100 whitespace-pre">
+      <pre className="overflow-x-auto rounded bg-os-well p-3 pr-10 text-xs text-foreground whitespace-pre">
         {content}
       </pre>
       <button
         type="button"
         onClick={copy}
         aria-label="Copy to clipboard"
-        className="absolute top-2 right-2 p-1.5 rounded text-zinc-400 hover:text-white hover:bg-white/10"
+        className="absolute top-2 right-2 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-os-hover"
       >
         {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
       </button>
