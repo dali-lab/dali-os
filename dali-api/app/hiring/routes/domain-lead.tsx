@@ -1,25 +1,17 @@
 import { useState, useEffect, useMemo } from "react";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
-import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { cn } from "~/lib/cn";
 import { useCurrentMembers } from "~/hiring/lib/current-members";
 import { Form, Link, useActionData, useLoaderData, useNavigate, useNavigation, useSearchParams, useRevalidator, useSubmit } from "react-router";
 import { redirect } from "react-router";
 import type { Route } from "./+types/domain-lead";
-import { prisma } from "~/lib/db.server";
-import { getUserRoles } from "~/lib/roles";
 import { requireAuth } from "~/lib/auth";
 import { Plus, Trash2, X, ChevronDown, ChevronUp } from "lucide-react";
-import { addDomainChallenge, removeDomainChallenge } from "~/hiring/lib/application-form.server";
-import { logAuditEvent } from "~/lib/audit";
-import { setDomainReady } from "~/hiring/lib/domain-windows.server";
-import { inferDomainApplicationStatus } from "~/hiring/lib/domain-application-status";
-import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { getReviewStatus } from "~/hiring/lib/review-status";
-import { buildCriteriaList } from "~/hiring/lib/rubric-criteria";
-import { confidentialityBlock, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
+import { loadDomainLeadDashboard } from "~/hiring/lib/domain-lead-dashboard.server";
+import { DOMAIN_LEAD_ACTIONS, resolveLeadDomain } from "~/hiring/lib/domain-lead-actions.server";
 import { Modal } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 import {
@@ -30,12 +22,8 @@ import {
   type PrePipelinePill,
   findFinalizableDraft,
 } from "~/hiring/lib/decision-pills";
-import type { ApplicationCycleStatus } from "~/generated/prisma/enums";
-import type { DecisionType, Question } from "~/types";
-import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
 import { HiringFormEmbed } from "~/hiring/components/HiringFormEmbed";
 import { formatVersionLabel } from "~/lib/formatVersion";
-import { selectActiveCycleForDomainLead } from "~/hiring/lib/cycle-picker";
 import {
   DECISION_LABELS,
   DECISION_TONES,
@@ -44,8 +32,7 @@ import {
   STATUS_TONES,
 } from "~/hiring/lib/labels";
 import { Select, Tooltip, InfoTip } from "~/components/ui/floating";
-import { interviewerCalendars } from "~/hiring/lib/interview-availability.server";
-import { FIRST_INTERVIEW_ROUND_ID, delibRounds, parseTimeline } from "~/hiring/lib/cycle-timeline";
+import { delibRounds } from "~/hiring/lib/cycle-timeline";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { buttonClasses } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
@@ -56,8 +43,7 @@ import { AlertIcon, Pill, type PillTone, SetupCard, pillTrigger, rowTrigger } fr
 import { DomainSubRow, SubRowEmpty, SubRowVersion } from "~/hiring/components/cycle-setup/DomainSubRow";
 import { ChallengeFormPicker } from "~/hiring/components/cycle-setup/ChallengeLine";
 import { DomainRosterCard, type RosterPerson } from "~/hiring/components/cycle-setup/DomainRosterCard";
-import { addDomainMentors, domainMentorIds } from "~/hiring/lib/cycle-rosters.server";
-import { getEngagementSummaries, type EngagementSummary } from "~/hiring/lib/email-engagement.server";
+import { type EngagementSummary } from "~/hiring/lib/email-engagement.server";
 import { ApplicantEngagementChip } from "~/hiring/components/ApplicantEmailPanel";
 import { canAssignReviewersIn, domainReviewStatus } from "~/hiring/lib/domain-windows";
 
@@ -70,509 +56,22 @@ export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
   return skipClientOnlySearchChange(args, LOADER_SEARCH_PARAMS);
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return { domainData: [], pillRoles: null };
-
-  const [roles, assignments] = await Promise.all([
-    getUserRoles(auth.user.sub, request),
-    prisma.domainLeadAssignment.findMany({
-      where: { userId: auth.user.sub },
-      include: { domain: true },
-    }),
-  ]);
-  const pillRoles = {
-    isCore: roles.isCore,
-    isDomainLead: roles.isDomainLead,
-    isAdmin: roles.isAdmin,
-    isInterviewer: roles.isInterviewer,
-  };
-
-  if (assignments.length === 0) {
-    return { domainData: [], pillRoles };
-  }
-
-  // One query across every assignment's domain instead of one per domain
-  // (previously an N+1: a separate 6-level-deep findMany per domain lead
-  // assignment). Reshaped per assignment below to the exact shape a
-  // per-domain query would have returned.
-  const domainIds = assignments.map((a) => a.domainId);
-  const allCyclesShared = await prisma.applicationCycle.findMany({
-    where: {
-      domains: { some: { domainId: { in: domainIds } } },
-    },
-    include: {
-      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      domains: { where: { domainId: { in: domainIds } } },
-      applications: {
-        include: {
-          user: true,
-          statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-          domainApplications: {
-            where: {
-              selected: true,
-              domainId: { in: domainIds },
-            },
-            include: {
-              domain: true,
-              reviews: {
-                include: {
-                  cycleReviewer: {
-                    include: { user: { select: { firstName: true, lastName: true, daliEmail: true } } },
-                  },
-                },
-              },
-              decisions: { orderBy: { createdAt: "desc" } },
-              // Scheduled drives status inference; Completed feeds the
-              // pre-decision "Post-interview" pill in the table.
-              // Cancelled rows stay filtered out (audit-only).
-              interviews: { where: { status: { in: ["Scheduled", "Completed"] } } },
-            },
-          },
-        },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const [allForms, domainData] = await Promise.all([
-    prisma.form.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    Promise.all(
-    assignments.map(async (assignment) => {
-      // Narrow the shared fetch to exactly what a per-domain query would
-      // have returned: only this domain's DomainApplicationCycle row, and
-      // only this domain's selected DomainApplications on each application.
-      const allCycles = allCyclesShared
-        .filter((c) => c.domains.some((d) => d.domainId === assignment.domainId))
-        .map((c) => ({
-          ...c,
-          domains: c.domains.filter((d) => d.domainId === assignment.domainId),
-          applications: c.applications.map((app) => ({
-            ...app,
-            domainApplications: app.domainApplications.filter((da) => da.domainId === assignment.domainId),
-          })),
-        }));
-
-      // Cycles eligible for the picker: every cycle this domain has ever run,
-      // in any status. Several can be active at once, and Completed ones are
-      // offered so a lead can reopen a past cycle to read its reviews,
-      // interviews and decisions back. Which one is shown *by default* is a
-      // separate question — see selectActiveCycleForDomainLead, where a
-      // Completed cycle is only ever reached through ?cycle=.
-      // No extra query cost: allCycles above already loads them all.
-      const candidateCycles = allCycles.filter((c) =>
-        Boolean(c.statusUpdates[0]?.newStatus),
-      );
-      const availableCycles = candidateCycles.map((c) => ({
-        id: c.id,
-        name: c.name,
-        status: c.statusUpdates[0]?.newStatus ?? null,
-      }));
-
-      const requestedCycleId = new URL(request.url).searchParams.get("cycle");
-      const activeCycle = selectActiveCycleForDomainLead(candidateCycles, requestedCycleId);
-
-      if (!activeCycle) return [{ assignment, cycle: null, availableCycles, apps: [], linkedChallengeForms: [], isChallengeReady: false, interviews: [], reviewers: [], delibsSessions: [], draftDecisions: [], cycleReviewersForDomain: [], delibRounds: [] as DomainRoundSummary[], rubricVersionOptions: [], currentRubricVersionId: null, rubricCriteria: [], interviewers: [], hasApplicationReviews: false, confidentialityRequired: null as null | "no_agreement" | "unsigned" }];
-
-      return [await (async (cycle) => {
-
-      // Pure reads off `cycle` — no await needed — computed up front so the
-      // batch below can use them.
-      const currentStatus = cycle?.statusUpdates[0]?.newStatus ?? "Draft";
-      const daDomainMatch = { domainId: assignment.domainId };
-
-      const currentRubricVersionId = cycle.domains[0]?.rubricVersionId ?? null;
-      const reviewScope = {
-        ...daDomainMatch,
-        application: { applicationCycleId: cycle.id },
-      };
-
-      // Everything here depends only on cycle.id / domainId (or chains on a
-      // true dependency inside its own entry), so it is one wave. Reads of
-      // applicant data run alongside the confidentiality check and are dropped
-      // by the sanitizing return below when it blocks.
-      const [
-        confState,
-        linkedChallengeFormsRaw,
-        interviews,
-        reviewers,
-        delibsSessions,
-        delibRoundSummaries,
-        draftDecisions,
-        cycleReviewersForDomain,
-        { rubricVersionOptions, rubricCriteria },
-        interviewers,
-        hasApplicationReviews,
-      ] = await Promise.all([
-        getCycleConfidentialityState(auth.user.sub, cycle.id),
-
-        // Drive challenge Forms linked to this domain in this cycle. The latest
-        // version's questions power the inline embed preview (HiringFormEmbed).
-        prisma.cycleDomainForm.findMany({
-          where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-          include: {
-            form: {
-              select: {
-                id: true,
-                name: true,
-                versions: { orderBy: { versionNumber: "desc" }, take: 1, select: { questions: true } },
-              },
-            },
-          },
-        }),
-
-        // Interviews for this domain in this cycle. Both Scheduled and Completed
-        // rows appear in the dashboard table — only cancelled rows are excluded
-        // (audit-only). Load for any non-Draft cycle: an interview can be booked
-        // while the cycle is still Open (a Released invite + scheduled slot), and
-        // those applicants must surface in the Interviews section rather than
-        // vanishing (they're excluded from Reviews).
-        currentStatus !== "Draft" && cycle
-          ? prisma.interview.findMany({
-              where: {
-                applicationCycleId: cycle.id,
-                status: { in: ["Scheduled", "Completed"] },
-                domainApplication: {
-                  domainId: assignment.domainId,
-                },
-              },
-              include: {
-                domainApplication: {
-                  include: {
-                    domain: true,
-                    application: {
-                      include: {
-                        user: { select: { firstName: true, lastName: true } },
-                      },
-                    },
-                  },
-                },
-                room: { select: { id: true, name: true } },
-                assignments: {
-                  where: { status: "Active" },
-                  include: {
-                    cycleInterviewer: {
-                      include: { user: true, domain: true },
-                    },
-                  },
-                },
-              },
-              orderBy: { startTime: "asc" },
-            })
-          : Promise.resolve([] as never[]),
-
-        // Reviewers for this domain in this cycle
-        cycle
-          ? prisma.cycleReviewer.findMany({
-              where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-              include: { user: true, domain: true },
-            })
-          : Promise.resolve([] as never[]),
-
-        // Delibs sessions for this domain+cycle
-        cycle
-          ? prisma.delibsSession.findMany({
-              where: { domainId: assignment.domainId, applicationCycleId: cycle.id },
-              orderBy: { createdAt: "desc" },
-            })
-          : Promise.resolve([] as never[]),
-
-        // Each delib round in the cycle's timeline, with how many of this
-        // domain's applicants qualify for its board right now.
-        cycle
-          ? Promise.all(
-              delibRounds(parseTimeline(cycle.timeline)).map(async (r) => ({
-                id: r.id,
-                label: r.label,
-                isFinal: r.isFinal,
-                leadsToInterviews: r.leadsToInterviews,
-                count: await prisma.domainApplication.count({
-                  where: {
-                    selected: true,
-                    ...daDomainMatch,
-                    application: { applicationCycleId: cycle.id, ...inReviewPipelineFilter },
-                    ...(await delibsQualifier(cycle, r.id, assignment.domainId)),
-                  },
-                }),
-              })),
-            )
-          : Promise.resolve([] as DomainRoundSummary[]),
-
-        // Draft decisions (for finalization after delibs close)
-        prisma.decision.findMany({
-          where: { stage: "Draft", domainApplication: reviewScope },
-          include: {
-            domainApplication: {
-              include: { application: { include: { user: { select: { firstName: true, lastName: true } } } } },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-        }),
-
-        // Cycle reviewers for this domain (for the reviewer assignment picker)
-        prisma.cycleReviewer.findMany({
-          where: { applicationCycleId: cycle.id, domainId: assignment.domainId },
-          include: { user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } } },
-        }),
-
-        // Rubrics are not domain-specific, so every version is eligible. The
-        // criteria list for the ReviewModal's score labels covers the current
-        // domain rubric, the general rubric and any versions pinned on this
-        // domain's reviews, so scores keyed by an older rubric version still
-        // resolve instead of leaking raw crit-<ts>.
-        Promise.all([
-          prisma.rubricVersion.findMany({
-            include: { rubric: { select: { name: true } }, createdBy: { select: { firstName: true, lastName: true } } },
-            orderBy: { createdAt: "desc" },
-          }),
-          prisma.applicationReview.findMany({
-            where: { domainApplication: reviewScope, rubricVersionId: { not: null } },
-            select: { rubricVersionId: true },
-            distinct: ["rubricVersionId"],
-          }),
-        ]).then(async ([rubricVersionOptions, pinned]) => {
-          const generalCriteria = cycle.generalRubricVersionId
-            ? ((rubricVersionOptions.find((rv) => rv.id === cycle.generalRubricVersionId)
-                ?.criteria as any[] | null) ?? undefined)
-            : undefined;
-          return {
-            rubricVersionOptions,
-            rubricCriteria: await buildCriteriaList({
-              domainRubricVersionId: currentRubricVersionId,
-              generalCriteria,
-              pinnedVersionIds: pinned.map((r) => r.rubricVersionId),
-            }),
-          };
-        }),
-
-        // Interviewers for this domain on the cycle's first Interviews round,
-        // with the hours their DALI OS calendar leaves free inside its window.
-        // Later rounds' rosters live on the cycle's own Interviews tabs.
-        Promise.all([
-          prisma.cycleInterviewer.findMany({
-            where: {
-              applicationCycleId: cycle.id,
-              domainId: assignment.domainId,
-              interviewRoundId: FIRST_INTERVIEW_ROUND_ID,
-            },
-            include: {
-              user: { select: { id: true, firstName: true, lastName: true, daliEmail: true } },
-            },
-          }),
-          cycle.hasInterviews
-            ? prisma.interviewConfig.findUnique({
-                where: {
-                  applicationCycleId_interviewRoundId: {
-                    applicationCycleId: cycle.id,
-                    interviewRoundId: FIRST_INTERVIEW_ROUND_ID,
-                  },
-                },
-              })
-            : null,
-        ]).then(async ([interviewersRaw, interviewConfig]) => {
-          const calendars = interviewConfig
-            ? await interviewerCalendars(interviewersRaw.map((i) => i.userId), interviewConfig)
-            : new Map();
-          return interviewersRaw.map((i) => {
-            const blocks: { startTime: Date; endTime: Date }[] = calendars.get(i.userId)?.available ?? [];
-            const totalMs = blocks.reduce((sum, b) => sum + (b.endTime.getTime() - b.startTime.getTime()), 0);
-            return {
-              ...i,
-              availabilityHours: totalMs / (1000 * 60 * 60),
-              hasCalendar: calendars.get(i.userId)?.hasCalendar ?? false,
-            };
-          });
-        }),
-
-        prisma.applicationReview
-          .count({ where: { domainApplication: reviewScope } })
-          .then((n) => n > 0),
-      ]);
-
-      const confidentialityRequired = confidentialityBlock(confState);
-      const linkedChallengeForms = linkedChallengeFormsRaw.map((cdf) => ({
-        id: cdf.id,
-        formId: cdf.formId,
-        name: cdf.form.name,
-        questions: normalizeQuestionBodies(
-          (cdf.form.versions[0]?.questions as unknown as Question[]) ?? [],
-        ),
-      }));
-
-      // isReady lives on DomainApplicationCycle (per domain+cycle, not per challenge version)
-      const isChallengeReady = cycle.domains[0]?.isReady ?? false;
-
-      const apps = cycle.applications.filter((app) => {
-        const latestStatus = app.statusUpdates[0]?.newStatus;
-        return (
-          latestStatus === "Submitted" &&
-          app.domainApplications.some((da) => da.submittedAt != null)
-        );
-      });
-
-      // Compute inferred status for each domain application
-      const appsWithStatus = apps.map((app: any) => ({
-        ...app,
-        domainApplications: app.domainApplications.map((da: any) => ({
-          ...da,
-          inferredStatus: inferDomainApplicationStatus(
-            { ...da, application: { statusUpdates: app.statusUpdates } },
-            currentStatus as ApplicationCycleStatus,
-          ),
-        })),
-      }));
-
-      // When the user has not signed the cycle's confidentiality agreement,
-      // strip every sensitive data path: applicant identities (cycle.applications),
-      // assigned applications, scheduled interviews, draft decisions, and delibs
-      // sessions. The dashboard still loads so the domain lead can see static
-      // setup (challenges, rubric, team, counts that depend only on staff side)
-      // and gets a placeholder pointing at the sign page.
-      if (confidentialityRequired) {
-        const sanitizedCycle = { ...cycle, applications: [] };
-        return {
-          assignment,
-          cycle: sanitizedCycle,
-          availableCycles,
-          apps: [] as never[],
-          linkedChallengeForms,
-          isChallengeReady,
-          interviews: [] as never[],
-          reviewers,
-          delibsSessions: [] as never[],
-          draftDecisions: [] as never[],
-          cycleReviewersForDomain,
-          delibRounds: [] as DomainRoundSummary[],
-          rubricVersionOptions,
-          currentRubricVersionId,
-          rubricCriteria,
-          interviewers,
-          hasApplicationReviews,
-          confidentialityRequired,
-        };
-      }
-
-      return { assignment, cycle, availableCycles, apps: appsWithStatus, linkedChallengeForms, isChallengeReady, interviews, reviewers, delibsSessions, draftDecisions, cycleReviewersForDomain, delibRounds: delibRoundSummaries, rubricVersionOptions, currentRubricVersionId, rubricCriteria, interviewers, hasApplicationReviews, confidentialityRequired: null as null | "no_agreement" | "unsigned" };
-      })(activeCycle)];
-    })
-    ),
-  ]);
-
-  const flat = domainData.flat();
-  const applicantUserIds = flat.flatMap((d: any) => (d.apps ?? []).map((a: any) => a.userId as string));
-  const emailSummaries = await getEngagementSummaries(applicantUserIds);
-
-  return { domainData: flat, pillRoles, allForms, emailEngagement: Object.fromEntries(emailSummaries) };
+export async function loader(args: Route.LoaderArgs) {
+  return loadDomainLeadDashboard(args);
 }
 
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const formData = await request.formData();
-  const intent = formData.get("intent");
+  const intent = String(formData.get("intent") ?? "");
 
-  // Every intent acts on one domain, and only that domain's lead may act.
-  const domainId =
-    intent === "remove-challenge-form"
-      ? (await prisma.cycleDomainForm.findUnique({
-          where: { id: String(formData.get("cdfId") ?? "") },
-          select: { domainId: true },
-        }))?.domainId
-      : String(formData.get("domainId") ?? "");
-  const lead =
-    domainId &&
-    (await prisma.domainLeadAssignment.findFirst({ where: { userId: auth.user.sub, domainId }, select: { id: true } }));
-  if (!domainId || !lead) return Response.json({ error: "Forbidden" }, { status: 403 });
+  const domainId = await resolveLeadDomain(formData, auth.user.sub);
+  if (!domainId) return Response.json({ error: "Forbidden" }, { status: 403 });
 
-  if (intent === "add-domain-mentors") {
-    const cycleId = String(formData.get("cycleId") ?? "");
-    const role = formData.get("role");
-    if (role !== "reviewer" && role !== "interviewer") {
-      return Response.json({ error: "Unknown role" }, { status: 400 });
-    }
-    const linked = await prisma.domainApplicationCycle.findUnique({
-      where: { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } },
-      select: { domainId: true },
-    });
-    if (!linked) return Response.json({ error: "That domain isn't in this cycle" }, { status: 400 });
-    const added = await addDomainMentors(cycleId, domainId, role, request, undefined, auth.user.sub);
-    // Nothing added means either no mentors, or all of them already on it.
-    const notice =
-      added > 0
-        ? `Added ${added} mentor${added === 1 ? "" : "s"}.`
-        : (await domainMentorIds(domainId, request)).length
-          ? "Everyone's already on the roster."
-          : "This domain has no mentors yet.";
-    return { notice };
-  }
-
-  if (intent === "set-rubric") {
-    const cycleId = formData.get("cycleId") as string;
-    const rubricVersionId = (formData.get("rubricVersionId") as string) || null;
-
-    const hasAssignedReviews = await prisma.applicationReview.count({
-      where: {
-        domainApplication: {
-          domainId,
-          application: { applicationCycleId: cycleId },
-        },
-      },
-    });
-    if (hasAssignedReviews > 0) {
-      return redirect("/hiring/domain-lead");
-    }
-
-    const rubricKey = { domainId_applicationCycleId: { domainId, applicationCycleId: cycleId } };
-    const before = await prisma.domainApplicationCycle.findUnique({
-      where: rubricKey,
-      select: { rubricVersionId: true },
-    });
-    await prisma.domainApplicationCycle.update({
-      where: rubricKey,
-      data: { rubricVersionId },
-    });
-    await logAuditEvent({
-      action: "domain.rubric.set",
-      userId: auth.user.sub,
-      targetId: domainId,
-      metadata: { cycleId, before: before?.rubricVersionId ?? null, after: rubricVersionId },
-      request,
-    });
-    return redirect("/hiring/domain-lead");
-  }
-
-  if (intent === "create-challenge-form") {
-    // Link the picked form, or auto-create a Drive challenge Form (Draft only).
-    await addDomainChallenge(
-      formData.get("cycleId") as string,
-      domainId,
-      auth.user.sub,
-      (formData.get("formId") as string) || null,
-      request,
-    );
-    return redirect("/hiring/domain-lead");
-  }
-
-  if (intent === "remove-challenge-form") {
-    // Draft only, and refused once an applicant picked a version of the form.
-    await removeDomainChallenge(formData.get("cdfId") as string, undefined, {
-      actorId: auth.user.sub,
-      request,
-    });
-    return redirect("/hiring/domain-lead");
-  }
-
-  if (intent === "mark-ready" || intent === "unmark-ready") {
-    const cycleId = formData.get("cycleId") as string;
-    const refused = await setDomainReady(cycleId, domainId, intent === "mark-ready", {
-      actorId: auth.user.sub,
-      request,
-    });
-    if (refused) return { error: refused };
-    return redirect("/hiring/domain-lead");
-  }
-
-  return redirect("/hiring/domain-lead");
+  const handler = Object.hasOwn(DOMAIN_LEAD_ACTIONS, intent) ? DOMAIN_LEAD_ACTIONS[intent] : null;
+  if (!handler) return redirect("/hiring/domain-lead");
+  return handler({ request, formData, domainId, actorId: auth.user.sub });
 }
 
 export default function DomainLeadDashboard() {

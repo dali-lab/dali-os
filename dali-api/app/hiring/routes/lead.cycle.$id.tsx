@@ -57,6 +57,7 @@ import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { ConfidentialityAgreementPicker } from "~/hiring/components/ConfidentialityAgreementPicker";
 import { STATUS_TONES, STATUS_LABELS } from "~/hiring/lib/labels";
 import { zonedDayStartUtc, getZonedYMD, formatInTimeZone, APPLICATION_TZ, APPLICATION_TZ_LABEL } from "~/lib/timezone";
+import { decisionEmailVars } from "~/hiring/lib/decision-email-vars";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const name = (data as any)?.cycle?.name;
