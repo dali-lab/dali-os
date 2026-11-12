@@ -29,11 +29,11 @@ vi.mock("~/lib/display", () => ({
   fullName: (u: { firstName: string; lastName: string }) =>
     `${u.firstName} ${u.lastName}`.trim(),
 }));
-vi.mock("~/lib/meeting-recording.server", () => ({ canReadRecording: vi.fn() }));
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({ canReadRecording: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { canReadRecording } from "~/lib/meeting-recording.server";
+import { canReadRecording } from "~/calendar/lib/meeting-recording.server";
 import { runGetMeeting, GET_MEETING_DEF } from "~/mcp/tools/calendar-extra/get-meeting";
 
 const mockPrisma = prisma as unknown as {

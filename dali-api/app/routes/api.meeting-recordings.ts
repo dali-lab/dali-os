@@ -22,7 +22,7 @@ import {
   projectRecordingDisabled,
   recordingDeepLink,
   type RecordingClient,
-} from "~/lib/meeting-recording.server";
+} from "~/calendar/lib/meeting-recording.server";
 
 const clientString = (value: unknown) =>
   typeof value === "string" && value ? value.slice(0, 32) : undefined;

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   RETRY_PENDING_MARKER: "__retry_pending__",
   applyResult: vi.fn(),
   finalizeEmpty: vi.fn(),
@@ -10,7 +10,7 @@ vi.mock("~/lib/meeting-recording.server", () => ({
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { applyResult, finalizeEmpty, startProcessing } from "~/lib/meeting-recording.server";
+import { applyResult, finalizeEmpty, startProcessing } from "~/calendar/lib/meeting-recording.server";
 import { deletePrefix } from "~/lib/transcription/chunks.server";
 import { runRecordingFinalizer } from "~/jobs/recording-finalizer.server";
 

@@ -28,7 +28,7 @@ vi.mock("~/lib/user-pages.server", () => ({ isFavorited: vi.fn(), recordPageVisi
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn() }));
 vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn() }));
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   ACTIVE_RECORDING_STATUSES: [],
   latestRecordingFor: vi.fn(),
 }));
@@ -44,7 +44,7 @@ import { notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
 import { canManageNotebook } from "~/calendar/lib/notebooks.server";
 import { nextNoteTargets } from "~/calendar/lib/notebook-series.server";
 import { getUserRoles } from "~/lib/roles";
-import { latestRecordingFor } from "~/lib/meeting-recording.server";
+import { latestRecordingFor } from "~/calendar/lib/meeting-recording.server";
 import { loader } from "../documents.$pageId";
 
 const db = prisma as any;

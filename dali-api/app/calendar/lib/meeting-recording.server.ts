@@ -16,7 +16,7 @@ import type { Channel, ProcessRequest, ProcessRequestChannel, ProcessRequestSegm
 import { assignSpeakers, wordsToLines, mergeChannels, dedupeCrossChannel } from "~/lib/transcription/words";
 import type { Word, DiarizationSegment, RawLine } from "~/lib/transcription/words";
 import type { MeetingRecording, MeetingRecordingStatus } from "~/generated/prisma/client";
-import type { TranscriptLine } from "~/lib/meeting-transcript";
+import type { TranscriptLine } from "~/calendar/lib/meeting-transcript";
 
 // Anything older than this, never finalized, is an abandoned recording
 // (closed tab, crashed app, crashed browser) — not merely stopped.

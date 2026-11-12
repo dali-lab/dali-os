@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchRosterOwner, verifyEnhancePlan } from "~/lib/meeting-notes-verify";
+import { matchRosterOwner, verifyEnhancePlan } from "~/calendar/lib/meeting-notes-verify";
 import type { EnhancePlan } from "~/components/meeting-recorder/enhance-plan";
 
 const lines = [

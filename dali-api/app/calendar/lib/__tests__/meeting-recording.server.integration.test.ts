@@ -10,8 +10,8 @@ import {
   recordChunk,
   requestStop,
   resumeRecording,
-} from "~/lib/meeting-recording.server";
-import { makeUser } from "../../../integration/factories-misc";
+} from "~/calendar/lib/meeting-recording.server";
+import { makeUser } from "../../../../integration/factories-misc";
 
 const DOC = "doc:note1:body";
 

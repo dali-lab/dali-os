@@ -5,7 +5,7 @@
 import type { Route } from "./+types/api.meeting-recordings.active";
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { documentTitle } from "~/lib/meeting-recording.server";
+import { documentTitle } from "~/calendar/lib/meeting-recording.server";
 import { NO_SOUND_AFTER_SECONDS } from "~/lib/transcription/pcm-level";
 
 export async function loader({ request }: Route.LoaderArgs) {

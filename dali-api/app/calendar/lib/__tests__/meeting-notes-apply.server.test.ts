@@ -10,7 +10,7 @@ import {
   ensureTranscriptToggle,
   hasEnhanceMarkInTree,
   hasTranscriptToggle,
-} from "~/lib/meeting-notes-apply.server";
+} from "~/calendar/lib/meeting-notes-apply.server";
 
 const CTX = { pageId: "p1", recordingId: "rec1" };
 

@@ -31,7 +31,7 @@ import {
   resumeRecording,
   setSpeakers,
   startProcessing,
-} from "~/lib/meeting-recording.server";
+} from "~/calendar/lib/meeting-recording.server";
 
 const rec = (over: Record<string, unknown> = {}) =>
   ({

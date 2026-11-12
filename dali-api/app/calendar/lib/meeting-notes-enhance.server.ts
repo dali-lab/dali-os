@@ -11,8 +11,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { generateShortText, resolveAiProvider, stripJsonFences } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { formatRecordingTranscript, storedLines } from "~/lib/meeting-recording.server";
-import { verifyEnhancePlan, type VerifyRosterUser } from "~/lib/meeting-notes-verify";
+import { formatRecordingTranscript, storedLines } from "~/calendar/lib/meeting-recording.server";
+import { verifyEnhancePlan, type VerifyRosterUser } from "~/calendar/lib/meeting-notes-verify";
 import { fullName } from "~/lib/display";
 import { currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";

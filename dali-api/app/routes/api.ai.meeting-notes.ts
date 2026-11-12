@@ -13,11 +13,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { requireAuth } from "~/lib/auth";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/lib/meeting-recording.server";
+import { canRecordInto, documentTitle, formatRecordingTranscript } from "~/calendar/lib/meeting-recording.server";
 import { checkRateLimit } from "~/lib/rate-limit";
 import { prisma } from "~/lib/db.server";
 import { aiQuotaResponse, claimAiQuota } from "~/lib/ai-quota.server";
-import { AI_BURST_MAX, AI_BURST_WINDOW_MS, TRANSCRIPT_MAX } from "~/lib/meeting-notes-enhance.server";
+import { AI_BURST_MAX, AI_BURST_WINDOW_MS, TRANSCRIPT_MAX } from "~/calendar/lib/meeting-notes-enhance.server";
 
 export interface MeetingNotesResponse {
   markdown: string;

@@ -8,7 +8,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/project-access", () => ({ canEditProject: vi.fn() }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canReadRecording: vi.fn(),
   canRecordInto: vi.fn(),
   claimRecording: vi.fn(),
@@ -38,7 +38,7 @@ vi.mock("~/projects/lib/task-create.server", () => {
 import { requireAuth } from "~/lib/auth";
 import { canEditProject } from "~/lib/project-access";
 import { prisma } from "~/lib/db.server";
-import { canRecordInto } from "~/lib/meeting-recording.server";
+import { canRecordInto } from "~/calendar/lib/meeting-recording.server";
 import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
 import { action } from "~/routes/api.meeting-recordings.$id";
 

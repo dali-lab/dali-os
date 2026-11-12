@@ -23,8 +23,8 @@ vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   resolveMeetingOccurrence: (...a: unknown[]) => resolveMeetingOccurrence(...a),
   attachMeetingNote: (...a: unknown[]) => attachMeetingNote(...a),
 }));
-vi.mock("~/lib/meeting-recording.server", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/lib/meeting-recording.server")>()),
+vi.mock("~/calendar/lib/meeting-recording.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/calendar/lib/meeting-recording.server")>()),
   canReadRecording: (...a: unknown[]) => canReadRecording(...a),
   canRecordInto: (...a: unknown[]) => canRecordInto(...a),
   resolveSpeakerNames: (...a: unknown[]) => resolveSpeakerNames(...a),

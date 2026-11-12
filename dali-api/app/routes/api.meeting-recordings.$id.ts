@@ -38,7 +38,7 @@ import {
   setSpeakers,
   startProcessing,
   storedLines,
-} from "~/lib/meeting-recording.server";
+} from "~/calendar/lib/meeting-recording.server";
 import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
 import { isTaskStatus, type TaskStatus } from "~/projects/lib/task-board";
 import { actionItemMatchesBlock, type StoredEnhanceNotes } from "~/components/meeting-recorder/enhance-plan";

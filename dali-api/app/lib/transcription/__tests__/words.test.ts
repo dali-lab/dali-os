@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { assignSpeakers, dedupeCrossChannel, mergeChannels, wordsToLines } from "~/lib/transcription/words";
-import type { TranscriptLine } from "~/lib/meeting-transcript";
+import type { TranscriptLine } from "~/calendar/lib/meeting-transcript";
 
 describe("assignSpeakers", () => {
   it("tags each word with the segment covering its midpoint", () => {

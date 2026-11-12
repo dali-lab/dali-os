@@ -4,7 +4,7 @@ import {
   meetingNotesMarkdown,
   transcriptParagraphs,
   transcriptText,
-} from "~/lib/meeting-transcript";
+} from "~/calendar/lib/meeting-transcript";
 
 describe("formatClock", () => {
   it("shows minutes and seconds, and hours once past one", () => {

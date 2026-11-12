@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
-import { blocksForPrompt } from "~/lib/meeting-notes-enhance.server";
+import { blocksForPrompt } from "~/calendar/lib/meeting-notes-enhance.server";
 
 describe("blocksForPrompt", () => {
   it("lists top-level blocks as [id] (type) text", () => {

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({ attachMeetingNote: vi.fn() }));
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   createRecording: vi.fn(),
   projectRecordingDisabled: vi.fn(),
@@ -22,7 +22,7 @@ import {
   canRecordInto,
   createRecording,
   projectRecordingDisabled,
-} from "~/lib/meeting-recording.server";
+} from "~/calendar/lib/meeting-recording.server";
 import { action } from "~/routes/api.meeting-recordings";
 
 function post(body: unknown): Request {
