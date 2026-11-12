@@ -330,8 +330,8 @@ describe("org-delete", () => {
   }
 
   it("refuses an org that still has members, projects, applications or invites", async () => {
-    for (const c of [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]] as const) {
-      counts(...c);
+    for (const c of [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]] as [number, number, number, number][]) {
+      counts(c[0], c[1], c[2], c[3]);
       expect(await run("org-delete")).toEqual({
         error: expect.stringContaining("Only an empty organization"),
       });

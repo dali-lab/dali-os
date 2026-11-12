@@ -3,12 +3,12 @@ import type { DriveItem } from "~/drive/lib/drive.server";
 import { sortItems } from "../browser-items";
 
 const item = (over: Partial<DriveItem> & { id: string; title: string }): DriveItem =>
-  ({ type: "page", updatedAt: "2026-01-01T00:00:00Z", ...over }) as DriveItem;
+  ({ type: "page", updatedAt: new Date("2026-01-01T00:00:00Z"), ...over }) as DriveItem;
 
 const items = [
-  item({ id: "b", title: "Beta", updatedAt: "2026-03-01T00:00:00Z", sizeBytes: 10 }),
-  item({ id: "a", title: "alpha", updatedAt: "2026-01-01T00:00:00Z", sizeBytes: 300 }),
-  item({ id: "f", title: "Zeta folder", type: "folder", updatedAt: "2026-02-01T00:00:00Z" }),
+  item({ id: "b", title: "Beta", updatedAt: new Date("2026-03-01T00:00:00Z"), sizeBytes: 10 }),
+  item({ id: "a", title: "alpha", updatedAt: new Date("2026-01-01T00:00:00Z"), sizeBytes: 300 }),
+  item({ id: "f", title: "Zeta folder", type: "folder", updatedAt: new Date("2026-02-01T00:00:00Z") }),
 ];
 
 describe("sortItems", () => {
