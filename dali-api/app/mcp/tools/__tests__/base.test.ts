@@ -160,12 +160,12 @@ const CTX: McpCtx = {
 };
 const ARGS = { id: "x1" };
 
-type Shape = "caller" | "user" | "args" | "callerOnly" | "userOnly" | "none";
+type Shape = "caller" | "callerArgs" | "user" | "args" | "callerOnly" | "userOnly" | "none";
 
 const EXPECTED: [string, string, Shape][] = [
   ["whoami", "runWhoami", "userOnly"],
-  ["list_my_notifications", "runListMyNotifications", "caller"],
-  ["list_my_upcoming_meetings", "runListMyUpcomingMeetings", "caller"],
+  ["list_my_notifications", "runListMyNotifications", "callerArgs"],
+  ["list_my_upcoming_meetings", "runListMyUpcomingMeetings", "callerArgs"],
   ["find_mutual_freebusy", "runFindMutualFreebusy", "caller"],
   ["search_directory", "runSearchDirectory", "args"],
   ["get_member_profile", "runGetMemberProfile", "caller"],
@@ -207,7 +207,8 @@ const EXPECTED: [string, string, Shape][] = [
 ];
 
 const EXPECTED_CALL: Record<Shape, unknown[]> = {
-  caller: ["u1", ARGS],
+  caller: ["u1", ARGS, CTX],
+  callerArgs: ["u1", ARGS],
   user: [CTX.user, ARGS],
   args: [ARGS],
   callerOnly: ["u1"],

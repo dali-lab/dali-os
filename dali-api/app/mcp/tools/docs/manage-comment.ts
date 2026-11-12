@@ -7,7 +7,8 @@ import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { requireForAction } from "~/mcp/registry";
-import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
+import { commentAnchorSchema } from "~/lib/slide-comments";
+import { createDocComment, CommentCreateError } from "~/lib/doc-comments.server";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
 export const MANAGE_COMMENT_TOOL_DEF = {
@@ -120,76 +121,23 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
       throw new ManageCommentError("Forbidden", 403);
     }
 
-    // Validate target exists
-    let targetExists = false;
-    if (targetType === "doc") {
-      const page = await prisma.page.findUnique({ where: { id: targetId }, select: { archivedAt: true } });
-      targetExists = !!page && page.archivedAt === null;
-    } else if (targetType === "pagedoc") {
-      const doc = await prisma.pageDoc.findUnique({ where: { id: targetId }, select: { id: true } });
-      targetExists = doc !== null;
-    } else {
-      const file = await prisma.projectFile.findUnique({ where: { id: targetId }, select: { archivedAt: true } });
-      targetExists = !!file && file.archivedAt === null;
-    }
-    if (!targetExists) throw new ManageCommentError("Target not found", 404);
-
-    // Validate parentId (replies must point at a root comment on same target)
-    if (input.parentId) {
-      const parent = await prisma.docComment.findUnique({
-        where: { id: input.parentId },
-        select: { targetType: true, targetId: true, parentId: true },
-      });
-      if (!parent || parent.targetType !== targetType || parent.targetId !== targetId || parent.parentId !== null) {
-        throw new ManageCommentError("Invalid parent comment", 400);
-      }
-    }
-
     const parsedAnchor = commentAnchorSchema.safeParse(targetType === "doc" ? (input.anchor ?? null) : null);
     if (!parsedAnchor.success) throw new ManageCommentError("Invalid anchor", 400);
-    const anchor = parsedAnchor.data ?? null;
-    if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
-      const page = await prisma.page.findUnique({ where: { id: targetId }, select: { kind: true } });
-      if (page?.kind !== "Slides") throw new ManageCommentError("Slide anchors only apply to slide decks", 400);
-    }
 
-    // For file comments, resolve versionId
-    let versionId: string | null = null;
-    if (targetType === "file") {
-      if (input.versionId) {
-        const version = await prisma.projectFileVersion.findFirst({
-          where: { id: input.versionId, fileId: targetId },
-          select: { id: true },
-        });
-        if (!version) throw new ManageCommentError("Invalid version", 400);
-        versionId = version.id;
-      } else {
-        versionId =
-          (
-            await prisma.projectFile.findUnique({
-              where: { id: targetId },
-              select: { currentVersionId: true },
-            })
-          )?.currentVersionId ?? null;
-      }
-    }
-
-    const created = await prisma.docComment.create({
-      data: {
+    try {
+      return await createDocComment({
         targetType,
         targetId,
-        parentId: input.parentId ?? null,
+        parentId: input.parentId,
         authorId: callerId,
         body,
-        ...(anchor !== null ? { anchor } : {}),
-        fileId: targetType === "file" ? targetId : null,
-        versionId,
-      },
-      select: { id: true },
-    });
-
-    if (targetType === "doc") publishCommentChange(targetId);
-    return { id: created.id };
+        anchor: parsedAnchor.data,
+        versionId: input.versionId,
+      });
+    } catch (err) {
+      if (err instanceof CommentCreateError) throw new ManageCommentError(err.message, err.status);
+      throw err;
+    }
   }
 
   const comment = await requireComment(input.commentId!);

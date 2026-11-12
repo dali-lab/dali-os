@@ -2,6 +2,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
+import type { McpCtx } from "../registry";
+import { deleteTask } from "~/projects/lib/task-update.server";
 
 export const DELETE_TASK_TOOL = {
   name: "delete_task",
@@ -27,7 +29,7 @@ export class DeleteTaskError extends Error {
   }
 }
 
-export async function runDeleteTask(callerId: string, input: Input) {
+export async function runDeleteTask(callerId: string, input: Input, ctx?: Pick<McpCtx, "request">) {
   const task = await prisma.task.findUnique({
     where: { id: input.taskId },
     select: { id: true, projectId: true },
@@ -38,11 +40,7 @@ export async function runDeleteTask(callerId: string, input: Input) {
     throw new DeleteTaskError("Forbidden", 403);
   }
 
-  await prisma.$transaction([
-    prisma.taskAssignee.deleteMany({ where: { taskId: input.taskId } }),
-    prisma.taskComment.deleteMany({ where: { taskId: input.taskId } }),
-    prisma.task.delete({ where: { id: input.taskId } }),
-  ]);
+  await deleteTask({ taskId: input.taskId, actorId: callerId, request: ctx?.request });
 
   return { ok: true, taskId: input.taskId };
 }

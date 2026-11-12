@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({
   prisma: {
-    task: { findUnique: vi.fn() },
+    task: { findUnique: vi.fn(), update: vi.fn() },
     projectFile: { findUnique: vi.fn() },
     taskFileLink: {
       deleteMany: vi.fn(),
@@ -23,7 +23,7 @@ import {
 } from "~/mcp/tools/projects-extra/manage-task-files";
 
 const mockPrisma = prisma as unknown as {
-  task: { findUnique: ReturnType<typeof vi.fn> };
+  task: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
   projectFile: { findUnique: ReturnType<typeof vi.fn> };
   taskFileLink: {
     deleteMany: ReturnType<typeof vi.fn>;
@@ -68,6 +68,18 @@ describe("manage_task_files", () => {
     expect(mockPrisma.taskFileLink.deleteMany).toHaveBeenCalledWith({
       where: { taskId: "t1", fileId: "f1" },
     });
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { activityAt: expect.any(Date) },
+    });
+  });
+
+  it("does not bump activityAt when unlinking a file that was not linked", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.task.findUnique.mockResolvedValue({ id: "t1", projectId: "p1" });
+    mockPrisma.taskFileLink.deleteMany.mockResolvedValue({ count: 0 });
+    await runManageTaskFiles("u1", { action: "unlink", taskId: "t1", fileId: "f1" });
+    expect(mockPrisma.task.update).not.toHaveBeenCalled();
   });
 
   it("links a file and returns metadata", async () => {
@@ -84,6 +96,10 @@ describe("manage_task_files", () => {
     mockPrisma.taskFileLink.createMany.mockResolvedValue({ count: 1 });
     const out = await runManageTaskFiles("u1", { action: "link", taskId: "t1", fileId: "f1" });
     expect(out).toMatchObject({ ok: true, id: "f1", title: "My File", versionCount: 3 });
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { activityAt: expect.any(Date) },
+    });
   });
 
   it("rejects linking a file from a different project", async () => {
