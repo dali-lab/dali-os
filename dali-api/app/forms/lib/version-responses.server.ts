@@ -20,6 +20,7 @@ import {
   type MemberHistoryColumn,
 } from "~/projects/lib/member-history";
 import { loadMemberHistories } from "~/projects/lib/member-history.server";
+import { responseColumnId } from "~/forms/lib/response-columns";
 
 export const RESPONSES_PAGE_SIZE = 50;
 
@@ -101,6 +102,28 @@ export type ResponseRow = {
   rows: FormAnswerRow[];
 };
 
+// Member columns (hired roles, history) for a set of respondents, in the order
+// given. Anonymous respondents get blank cells.
+export async function memberColumnValues(
+  keys: MemberHistoryColumn[],
+  userIds: (string | null)[],
+) {
+  const defs = keys.flatMap((k) => MEMBER_HISTORY_COLUMNS.filter((c) => c.key === k));
+  const columns = defs.map((c) => ({ key: responseColumnId(c.key), label: c.label }));
+  const histories = defs.length
+    ? await loadMemberHistories([...new Set(userIds.filter((id): id is string => id !== null))])
+    : null;
+  const now = new Date();
+  return {
+    columns,
+    rowsFor(userId: string | null): FormAnswerRow[] {
+      const history = userId ? histories?.get(userId) : undefined;
+      const text = history ? memberHistoryText(history, now) : null;
+      return defs.map((c, i) => ({ ...columns[i], value: text?.[c.key] ?? "" }));
+    },
+  };
+}
+
 export type VersionResponses = Awaited<ReturnType<typeof loadVersionResponses>>;
 
 // Responses submitted against one frozen version of a form. Results live with
@@ -170,15 +193,10 @@ export async function loadVersionResponses(
     })),
   );
 
-  const memberColumns = MEMBER_HISTORY_COLUMNS.filter((c) =>
-    filters.memberColumns?.includes(c.key),
-  ).map((c) => ({ key: `member:${c.key}`, label: c.label, column: c.key }));
-  const histories = memberColumns.length
-    ? await loadMemberHistories([
-        ...new Set(submissions.flatMap((s) => (s.userId ? [s.userId] : []))),
-      ])
-    : null;
-  const now = new Date();
+  const member = await memberColumnValues(
+    filters.memberColumns ?? [],
+    submissions.map((s) => s.userId),
+  );
 
   const responses: ResponseRow[] = submissions.map((s, i) => ({
     id: s.id,
@@ -194,18 +212,8 @@ export async function loadVersionResponses(
     slot: s.slot,
     submitterIp: s.submitterIp,
     partnerApplication: s.partnerApplication,
-    rows: [...grid.rowsBySubmission[i], ...memberRows(s.userId)],
+    rows: [...grid.rowsBySubmission[i], ...member.rowsFor(s.userId)],
   }));
-
-  function memberRows(userId: string | null) {
-    const history = userId ? histories?.get(userId) : undefined;
-    const text = history ? memberHistoryText(history, now) : null;
-    return memberColumns.map((c) => ({
-      key: c.key,
-      label: c.label,
-      value: text?.[c.column] ?? "",
-    }));
-  }
 
   return {
     versionId,
@@ -214,7 +222,7 @@ export async function loadVersionResponses(
     matchCount,
     page,
     hasNext,
-    columns: [...grid.columns, ...memberColumns.map(({ key, label }) => ({ key, label }))],
+    columns: [...grid.columns, ...member.columns],
     slotOptions: slots.flatMap((s) => (s.slot ? [s.slot] : [])),
     filterQuestions: filters.questions ? filterableQuestions(filters.questions, refLabels ?? undefined) : [],
     responses,

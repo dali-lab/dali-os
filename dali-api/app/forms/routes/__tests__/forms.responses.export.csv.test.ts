@@ -14,12 +14,19 @@ vi.mock("~/forms/lib/answer-rows.server", () => ({
   buildResponseGrid: vi.fn(async () => ({ columns: [], rowsBySubmission: [] })),
   responsesCsvRows: vi.fn(() => [["Name"]]),
 }));
-vi.mock("~/forms/lib/version-responses.server", () => ({ versionResponsesWhere: vi.fn() }));
+vi.mock("~/forms/lib/version-responses.server", () => ({
+  versionResponsesWhere: vi.fn(),
+  memberColumnValues: vi.fn(),
+}));
+vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canBuildForm } from "~/forms/lib/form-access.server";
-import { versionResponsesWhere } from "~/forms/lib/version-responses.server";
+import { memberColumnValues, versionResponsesWhere } from "~/forms/lib/version-responses.server";
+import { buildResponseGrid, responsesCsvRows, type FormAnswerRow } from "~/forms/lib/answer-rows.server";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loader } from "~/forms/routes/forms.responses.$formId.export.csv";
 
 const db = prisma as unknown as {
@@ -48,6 +55,40 @@ beforeEach(() => {
   db.formVersion.findFirst.mockResolvedValue({ id: "v2", questions });
   db.formSubmission.findMany.mockResolvedValue([]);
   vi.mocked(versionResponsesWhere).mockResolvedValue({ formId: "f1", formVersionId: "v2", id: { in: ["s1"] } });
+  vi.mocked(memberColumnValues).mockResolvedValue({ columns: [], rowsFor: () => [] });
+});
+
+describe("export.csv added columns", () => {
+  const member = {
+    columns: [{ key: "member:termsInLab", label: "Terms in lab" as const }],
+    rowsFor: (userId: string | null): FormAnswerRow[] => [
+      { key: "member:termsInLab", label: "Terms in lab", value: userId ? "2 terms: 26W, 26F" : "" },
+    ],
+  };
+
+  beforeEach(() => {
+    db.form.findUnique.mockResolvedValue({ id: "f1", name: "Intake", responseColumns: ["member:termsInLab"] });
+    db.formSubmission.findMany.mockResolvedValue([
+      { createdAt: new Date("2026-11-01"), answers: {}, slot: null, userId: "u9", user: { firstName: "Ada", lastName: "L" }, formVersion: { versionNumber: 2, questions: [] } },
+    ]);
+    vi.mocked(memberColumnValues).mockResolvedValue(member);
+    vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [[]] } as never);
+  });
+
+  it("includes the form's saved columns when the flag is on", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+    await call("version=2");
+    expect(memberColumnValues).toHaveBeenCalledWith(["termsInLab"], ["u9"]);
+    const [columns, responses] = vi.mocked(responsesCsvRows).mock.calls[0];
+    expect(columns).toEqual(member.columns);
+    expect(responses[0].rows).toEqual(member.rowsFor("u9"));
+  });
+
+  it("leaves them out when the flag is off", async () => {
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+    await call("version=2");
+    expect(memberColumnValues).toHaveBeenCalledWith([], ["u9"]);
+  });
 });
 
 describe("export.csv filters", () => {

@@ -5,10 +5,10 @@ const TERM_SELECT = { select: { code: true, sortKey: true, startDate: true } } a
 
 export async function loadMemberHistories(userIds: string[]): Promise<Map<string, MemberHistory>> {
   const byUser = new Map<string, MemberHistory>(
-    userIds.map((id) => [id, { projects: [], core: [] }]),
+    userIds.map((id) => [id, { projects: [], core: [], eligibilities: [] }]),
   );
   if (userIds.length === 0) return byUser;
-  const [projects, core] = await Promise.all([
+  const [projects, core, eligibilities] = await Promise.all([
     prisma.projectAssignment.findMany({
       where: { userId: { in: userIds } },
       select: {
@@ -24,8 +24,18 @@ export async function loadMemberHistories(userIds: string[]): Promise<Map<string
       where: { userId: { in: userIds } },
       select: { userId: true, leadTitle: true, term: TERM_SELECT },
     }),
+    prisma.domainEligibility.findMany({
+      where: { userId: { in: userIds } },
+      select: {
+        userId: true,
+        level: true,
+        domainId: true,
+        domain: { select: { displayName: true } },
+      },
+    }),
   ]);
   for (const a of projects) byUser.get(a.userId)?.projects.push(a);
   for (const c of core) byUser.get(c.userId)?.core.push(c);
+  for (const e of eligibilities) byUser.get(e.userId)?.eligibilities.push(e);
   return byUser;
 }

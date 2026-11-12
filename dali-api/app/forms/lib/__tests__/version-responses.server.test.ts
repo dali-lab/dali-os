@@ -254,6 +254,7 @@ describe("loadVersionResponses member columns", () => {
   const history = {
     projects: [{ level: "P2", domainId: "eng", project: { name: "Evergreen" }, domain: { displayName: "Engineering" }, term: f26 }],
     core: [],
+    eligibilities: [{ level: "P2", domainId: "eng", domain: { displayName: "Engineering" } }],
   };
 
   beforeEach(() => {
@@ -268,26 +269,30 @@ describe("loadVersionResponses member columns", () => {
     expect(r.responses[0].rows.map((x) => x.key)).toEqual(["q1"]);
   });
 
-  it("appends the chosen columns in a fixed order and fills them for signed-in respondents", async () => {
+  it("appends the chosen columns in the order given and fills them for signed-in respondents", async () => {
     vi.useFakeTimers({ now: new Date("2026-11-11"), toFake: ["Date"] });
     db.formSubmission.findMany.mockResolvedValue([
       submission(1),
       submission(2, { userId: "u1" }),
       submission(3, { userId: null, user: null, submitterName: "Guest" }),
     ]);
-    const r = await loadVersionResponses("f1", "v1", { memberColumns: ["currentRole", "projectHistory"] });
+    const r = await loadVersionResponses("f1", "v1", {
+      memberColumns: ["currentRole", "hiredRoles", "projectHistory"],
+    });
     vi.useRealTimers();
 
     expect(loadMemberHistories).toHaveBeenCalledWith(["u1"]);
     expect(r.columns).toEqual([
       { key: "q1", label: "Role" },
-      { key: "member:projectHistory", label: "Project history" },
       { key: "member:currentRole", label: "Current role" },
+      { key: "member:hiredRoles", label: "Hired roles" },
+      { key: "member:projectHistory", label: "Project history" },
     ]);
     expect(r.responses[0].rows.slice(1)).toEqual([
-      { key: "member:projectHistory", label: "Project history", value: "Evergreen (26F)" },
       { key: "member:currentRole", label: "Current role", value: "26F: Engineering (P2)" },
+      { key: "member:hiredRoles", label: "Hired roles", value: "Engineering (P2)" },
+      { key: "member:projectHistory", label: "Project history", value: "Evergreen (26F)" },
     ]);
-    expect(r.responses[2].rows.slice(1).map((x) => x.value)).toEqual(["", ""]);
+    expect(r.responses[2].rows.slice(1).map((x) => x.value)).toEqual(["", "", ""]);
   });
 });
