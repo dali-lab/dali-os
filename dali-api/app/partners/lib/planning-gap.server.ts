@@ -3,7 +3,7 @@ import { currentTerm } from "~/lib/roles";
 import { ACTIVE_LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 import { parseColumnMapping, type ColumnMapping } from "~/projects/lib/slot-roles";
 import { interpretIntentForm } from "~/projects/lib/intent-form-interpreter";
-import { listActiveCoreMembers, personName, type CoreMemberOption } from "./core-members.server";
+import { listActiveCoreMembers, personName, type CoreMemberOption } from "~/lib/core-members.server";
 import { PLANNING_NOTE_SELECT, toPlanningNoteView, type PlanningNoteView } from "./planning-notes.server";
 import { listReturnableProjects, type ReturnableProject } from "./partner-returns.server";
 import type { MaintenancePlan } from "~/generated/prisma/enums";

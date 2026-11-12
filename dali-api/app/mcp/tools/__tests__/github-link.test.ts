@@ -16,11 +16,9 @@ import { isCore } from "~/lib/roles";
 import { createIssueForTask, unlinkTaskFromGithub } from "~/projects/lib/github-task-sync";
 import {
   runLinkTaskToGithub,
-  LINK_TASK_TO_GITHUB_TOOL,
 } from "~/mcp/tools/link-task-to-github";
 import {
   runUnlinkTaskFromGithub,
-  UNLINK_TASK_FROM_GITHUB_TOOL,
 } from "~/mcp/tools/unlink-task-from-github";
 
 const mockPrisma = prisma as unknown as {
@@ -30,11 +28,6 @@ const mockPrisma = prisma as unknown as {
 beforeEach(() => vi.clearAllMocks());
 
 describe("github link / unlink", () => {
-  it("scopes are right", () => {
-    expect(LINK_TASK_TO_GITHUB_TOOL.requiredScope).toBe("mcp:write");
-    expect(UNLINK_TASK_FROM_GITHUB_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("link rejects when already linked", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     mockPrisma.task.findUnique.mockResolvedValue({

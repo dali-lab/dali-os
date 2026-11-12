@@ -235,9 +235,9 @@ export function CoverageHeatmap({ coverage }: { coverage: CoverageData | null })
                       {booked > 0 && (
                         <span className="absolute top-0.5 right-0.5 flex gap-0.5">
                           {Array.from({ length: Math.min(booked, 3) }).map((_, i) => (
-                            <span key={i} className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+                            <span key={i} className="w-1.5 h-1.5 rounded-full bg-os-accent" />
                           ))}
-                          {booked > 3 && <span className="text-[9px] text-blue-700 font-bold leading-none">+</span>}
+                          {booked > 3 && <span className="text-[9px] text-os-accent font-bold leading-none">+</span>}
                         </span>
                       )}
                     </td>
@@ -265,7 +265,7 @@ export function CoverageHeatmap({ coverage }: { coverage: CoverageData | null })
           <span className="w-3 h-3 rounded bg-os-green/25" />7+
         </span>
         <span className="inline-flex items-center gap-1.5 ml-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-blue-600" />booked
+          <span className="w-1.5 h-1.5 rounded-full bg-os-accent" />booked
         </span>
       </div>
     </SetupCard>

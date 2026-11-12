@@ -291,7 +291,7 @@ export function EventRsvpControl({
         <p className="mt-1.5 text-[12px] text-os-grey">You haven&rsquo;t replied yet.</p>
       )}
       {(error ?? fetcher.data?.error) && (
-        <p className="mt-1.5 text-[12px] text-red-600">{error ?? fetcher.data?.error}</p>
+        <p className="mt-1.5 text-[12px] text-os-red">{error ?? fetcher.data?.error}</p>
       )}
       {showPropose && (
         <button
@@ -620,7 +620,7 @@ export function MeetingDetailToggles({ meeting }: { meeting: NonNullable<EventBl
         label="Add to timesheet"
       />
       {timesheetFetcher.data?.error && (
-        <p className="text-[12px] text-red-600">{timesheetFetcher.data.error}</p>
+        <p className="text-[12px] text-os-red">{timesheetFetcher.data.error}</p>
       )}
     </div>
   );

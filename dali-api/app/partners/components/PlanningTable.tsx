@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
+import { stringSetCodec, usePersistedState } from "~/hooks/usePersistedState";
 import type { PlanningDomainRow, PlanningGapModel } from "../lib/planning-gap";
 import { SourceBar } from "./planning/SourceBar";
 import { GapPill } from "./planning/GapPill";
@@ -15,32 +16,20 @@ export function spotsLabel(renewing: number, fresh: number): string {
   return `${total} (${renewing} renewing, ${fresh} new)`;
 }
 
+const isStringSet = (v: unknown): v is Set<string> => v instanceof Set;
+
 function useOpenDomains() {
-  const [open, setOpen] = useState<Set<string>>(new Set());
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(PLANNING_OPEN_KEY);
-      if (raw) {
-        const parsed: unknown = JSON.parse(raw);
-        if (Array.isArray(parsed)) setOpen(new Set(parsed.filter((v): v is string => typeof v === "string")));
-      }
-    } catch {
-      setOpen(new Set());
-    }
-  }, []);
-  const toggle = useCallback((id: string) => {
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      try {
-        window.localStorage.setItem(PLANNING_OPEN_KEY, JSON.stringify([...next]));
-      } catch {
+  const [open, setOpen] = usePersistedState<Set<string>>(PLANNING_OPEN_KEY, new Set(), isStringSet, stringSetCodec);
+  const toggle = useCallback(
+    (id: string) =>
+      setOpen((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
         return next;
-      }
-      return next;
-    });
-  }, []);
+      }),
+    [setOpen],
+  );
   return { open, toggle };
 }
 

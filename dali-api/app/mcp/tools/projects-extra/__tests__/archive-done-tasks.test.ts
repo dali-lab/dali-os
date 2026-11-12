@@ -9,13 +9,13 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/jobs/task-auto-archive.server", () => ({
+vi.mock("~/projects/lib/task-archive.server", () => ({
   archiveTerminalTasks: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { archiveTerminalTasks } from "~/jobs/task-auto-archive.server";
+import { archiveTerminalTasks } from "~/projects/lib/task-archive.server";
 import {
   runArchiveDoneTasks,
   ARCHIVE_DONE_TASKS_TOOL,

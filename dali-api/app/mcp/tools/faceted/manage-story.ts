@@ -3,9 +3,9 @@
 
 import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
-import { CREATE_STORY_TOOL, runCreateStory } from "../create-story";
-import { UPDATE_STORY_TOOL, runUpdateStory } from "../update-story";
-import { DELETE_STORY_TOOL, runDeleteStory } from "../delete-story";
+import { CREATE_STORY_PROPERTIES, CREATE_STORY_REQUIRED, runCreateStory } from "../create-story";
+import { UPDATE_STORY_PROPERTIES, UPDATE_STORY_REQUIRED, runUpdateStory } from "../update-story";
+import { DELETE_STORY_PROPERTIES, DELETE_STORY_REQUIRED, runDeleteStory } from "../delete-story";
 
 const MANAGE_STORY_DEF = {
   name: "manage_story",
@@ -22,11 +22,11 @@ const MANAGE_STORY_DEF = {
         description: "Operation to perform.",
       },
       // create fields
-      ...CREATE_STORY_TOOL.inputSchema.properties,
+      ...CREATE_STORY_PROPERTIES,
       // update fields
-      ...UPDATE_STORY_TOOL.inputSchema.properties,
+      ...UPDATE_STORY_PROPERTIES,
       // delete fields
-      ...DELETE_STORY_TOOL.inputSchema.properties,
+      ...DELETE_STORY_PROPERTIES,
     },
     required: ["action"],
     additionalProperties: false,
@@ -35,9 +35,9 @@ const MANAGE_STORY_DEF = {
 };
 
 const ACTION_REQUIRED: Record<string, string[]> = {
-  create: CREATE_STORY_TOOL.inputSchema.required,
-  update: UPDATE_STORY_TOOL.inputSchema.required,
-  delete: DELETE_STORY_TOOL.inputSchema.required,
+  create: CREATE_STORY_REQUIRED,
+  update: UPDATE_STORY_REQUIRED,
+  delete: DELETE_STORY_REQUIRED,
 };
 
 async function run(ctx: McpCtx, args: Record<string, unknown>) {

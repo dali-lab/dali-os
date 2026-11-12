@@ -835,7 +835,7 @@ export function AcceptedView({ cycleName, forMembers = false }: { cycleName: str
         <div className="px-6 py-4 border-b border-os-green/35">
           <h3 className="font-heading text-base font-bold text-foreground">Onboarding Checklist</h3>
         </div>
-        <div className="divide-y divide-green-100">
+        <div className="divide-y divide-os-green/20">
           {CHECKLIST.map(item => (
             <Checkbox
               key={item.id}

@@ -406,7 +406,7 @@ export function SigningDocumentDetail() {
                     </span>
                   )}
                   {v.publishedAt ? (
-                    <span className="text-xs text-green-600 inline-flex items-center gap-1">
+                    <span className="text-xs text-os-green inline-flex items-center gap-1">
                       <CheckCircle2 className="w-3 h-3" /> published
                     </span>
                   ) : (
@@ -703,7 +703,7 @@ export function SigningDocumentDetail() {
               )}
             </div>
             {actionData?.error && (
-              <p className="text-xs text-red-600">{actionData.error}</p>
+              <p className="text-xs text-os-red">{actionData.error}</p>
             )}
             <div className="flex justify-end gap-2">
               <button
@@ -734,7 +734,7 @@ export function SigningDocumentDetail() {
                     <input type="hidden" name="versionId" value={selectedVersion.id} />
                     <button
                       type="submit"
-                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
+                      className="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md text-os-bg bg-os-green hover:bg-os-green/90"
                     >
                       <CheckCircle2 className="w-4 h-4" /> Publish
                     </button>
@@ -951,7 +951,7 @@ function BindingsPanel() {
 
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <div>
-                <p className="text-xs font-semibold text-green-700 mb-1">
+                <p className="text-xs font-semibold text-os-green mb-1">
                   Signed ({roster.signed.length})
                 </p>
                 <ul className="space-y-0.5 max-h-40 overflow-y-auto">
@@ -975,7 +975,7 @@ function BindingsPanel() {
               </div>
               {roster.outstanding !== null && (
                 <div>
-                  <p className="text-xs font-semibold text-amber-700 mb-1">
+                  <p className="text-xs font-semibold text-os-amber mb-1">
                     Outstanding ({roster.outstanding.length})
                   </p>
                   <ul className="space-y-0.5 max-h-40 overflow-y-auto">

@@ -19,7 +19,7 @@ vi.mock("~/forms/lib/form-access.server", () => ({
 vi.mock("~/forms/lib/forms-data", () => ({ loadFormForEdit: vi.fn(), runFormsAction: vi.fn() }));
 vi.mock("~/drive/lib/drive-crumbs.server", () => ({ driveFolderCrumbs: vi.fn() }));
 vi.mock("~/forms/lib/form-usages.server", () => ({ formUsages: vi.fn(), managingUsage: vi.fn() }));
-vi.mock("~/hiring/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
+vi.mock("~/forms/lib/form-links.server", () => ({ loadFormHiringLinks: vi.fn(), unlinkHiringForm: vi.fn() }));
 vi.mock("~/forms/lib/mapped-questions.server", () => ({
   mappedQuestionFeatures: async () => new Map(),
 }));
@@ -42,7 +42,7 @@ import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access
 import { loadFormForEdit, runFormsAction } from "~/forms/lib/forms-data";
 import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
-import { loadFormHiringLinks, unlinkHiringForm } from "~/hiring/lib/form-links.server";
+import { loadFormHiringLinks, unlinkHiringForm } from "~/forms/lib/form-links.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";

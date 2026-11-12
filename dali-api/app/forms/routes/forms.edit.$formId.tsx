@@ -17,7 +17,7 @@ import { formFillers } from "~/forms/lib/prefill.server";
 import {
   loadFormHiringLinks,
   unlinkHiringForm,
-} from "~/hiring/lib/form-links.server";
+} from "~/forms/lib/form-links.server";
 import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";

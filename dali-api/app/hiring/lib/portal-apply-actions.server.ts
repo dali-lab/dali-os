@@ -612,17 +612,25 @@ const submit: OwnedApplicationHandler = async ({ userId, request, formData, cycl
   return redirect(existingSubmitted ? tracker : `${tracker}&just-submitted=1`);
 };
 
-export const NEW_APPLICATION_ACTIONS: Record<string, NewApplicationHandler> = {
+export const NEW_APPLICATION_ACTIONS = {
   "create-draft": createDraft,
   "use-waitlisted": reuseWaitlisted,
-};
+} satisfies Record<string, NewApplicationHandler>;
 
-export const OWNED_APPLICATION_ACTIONS: Record<string, OwnedApplicationHandler> = {
+export type NewApplicationIntent = keyof typeof NEW_APPLICATION_ACTIONS;
+
+export const OWNED_APPLICATION_ACTIONS = {
   "stop-using-waitlisted": stopUsingWaitlisted,
   "update-domains": updateDomains,
   "save-draft": saveDraft,
   "submit": submit,
-};
+} satisfies Record<string, OwnedApplicationHandler>;
+
+export type OwnedApplicationIntent = keyof typeof OWNED_APPLICATION_ACTIONS;
+
+function isOwnedApplicationIntent(intent: string): intent is OwnedApplicationIntent {
+  return Object.hasOwn(OWNED_APPLICATION_ACTIONS, intent);
+}
 
 export const PORTAL_APPLY_ACTIONS = { ...NEW_APPLICATION_ACTIONS, ...OWNED_APPLICATION_ACTIONS };
 
@@ -643,7 +651,7 @@ export async function resolveApplyTarget(
   return cycle && owned ? { cycle, applicationId: owned.id } : null;
 }
 
-function isNewApplicationIntent(intent: string): boolean {
+function isNewApplicationIntent(intent: string): intent is NewApplicationIntent {
   return Object.hasOwn(NEW_APPLICATION_ACTIONS, intent);
 }
 
@@ -673,7 +681,7 @@ export async function runPortalApplyAction(request: Request) {
   if (isNewApplicationIntent(intent)) {
     return NEW_APPLICATION_ACTIONS[intent]({ ...base, applicationId });
   }
-  if (Object.hasOwn(OWNED_APPLICATION_ACTIONS, intent) && applicationId) {
+  if (isOwnedApplicationIntent(intent) && applicationId) {
     return OWNED_APPLICATION_ACTIONS[intent]({ ...base, applicationId });
   }
   return { error: "Unknown intent" };

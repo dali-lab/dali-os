@@ -5,21 +5,6 @@ import { canEditProject } from "./access";
 import type { McpCtx } from "../registry";
 import { deleteTask } from "~/projects/lib/task-update.server";
 
-export const DELETE_TASK_TOOL = {
-  name: "delete_task",
-  description:
-    "Delete a project task (cascades to its assignees and comments). Requires Core or project-member access. Prefer setting status to Cancelled if the task should remain in history.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: { type: "string", minLength: 1 },
-    },
-    required: ["taskId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
-
 type Input = { taskId: string };
 
 export class DeleteTaskError extends Error {

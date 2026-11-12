@@ -26,7 +26,7 @@ import { PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
 import { FormQrDialog } from "~/forms/components/FormQrDialog";
-import type { HiringFormLink } from "~/hiring/lib/form-links.server";
+import type { HiringFormLink } from "~/forms/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { InfoBody } from "~/components/form-builder/info-body";
 import { isLayoutOnly } from "~/forms/lib/form-answers";

@@ -418,7 +418,16 @@ export function VersionResults({
                         className="border-t border-os-container hover:bg-os-card-hover cursor-pointer"
                       >
                         <td className="px-4 py-2.5 text-foreground font-medium whitespace-nowrap">
-                          {r.name}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenId(r.id);
+                            }}
+                            className="text-left hover:underline"
+                          >
+                            {r.name}
+                          </button>
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground">
                           {r.email ?? "—"}

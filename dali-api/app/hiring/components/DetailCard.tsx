@@ -1,6 +1,6 @@
 import type React from "react";
 import { cn } from "~/lib/cn";
-import { PANEL_CARD, PANEL_HEADER, PANEL_TITLE } from "~/hiring/components/ApplicantPanel";
+import { PANEL_CARD, PANEL_HEADER, PANEL_TITLE } from "~/components/ApplicantPanel";
 
 // A titled block on the hiring detail routes (Reviews, Interviews) with a
 // right-aligned header slot. Same card as ApplicantPanel, so an empty block

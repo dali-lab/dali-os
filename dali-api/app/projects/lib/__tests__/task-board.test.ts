@@ -15,6 +15,7 @@ import {
   openDependencies,
   isTaskFinished,
   seedTaskLinks,
+  coreBoardPathFor,
   type TaskCardModel,
   type TermWindow,
 } from "../task-board";
@@ -449,5 +450,15 @@ describe("seedTaskLinks", () => {
       epicId: "",
       storyId: "",
     });
+  });
+});
+
+describe("coreBoardPathFor", () => {
+  it("carries the open task over to the Core board", () => {
+    expect(coreBoardPathFor("https://os.test/projects/core1?tab=board&task=t1")).toBe("/core?task=t1");
+  });
+
+  it("lands on the board when no task is open", () => {
+    expect(coreBoardPathFor("https://os.test/projects/core1?tab=drive")).toBe("/core");
   });
 });

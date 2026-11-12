@@ -1,4 +1,5 @@
 import type { CycleApplicants } from "~/generated/prisma/enums";
+export { applicantPortalPath } from "~/lib/applicant-portal-path";
 import { defaultTimeline, type Timeline } from "./cycle-timeline";
 
 // Client-safe helpers for a cycle's `applicants` setting. The server-only
@@ -23,18 +24,6 @@ export function isMemberApplicants(a: CycleApplicants): boolean {
  *  members and domain leads get no blanket access. */
 export function isAdminOnlyCycle(a: CycleApplicants): boolean {
   return a === "LabMembers";
-}
-
-/** Where an applicant fills in this cycle's application. */
-export function applicantPortalPath(a: CycleApplicants, cycleId: string): string {
-  switch (a) {
-    case "Students":
-      return `/portal/apply/${cycleId}`;
-    case "Interns":
-      return `/fellowship/${cycleId}`;
-    case "LabMembers":
-      return `/core/apply/${cycleId}`;
-  }
 }
 
 /** Starting stages for a new cycle, by group. Editable until the cycle opens.

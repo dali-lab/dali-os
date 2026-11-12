@@ -10,7 +10,6 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import {
   runSetTaskChecklist,
-  SET_TASK_CHECKLIST_TOOL,
 } from "~/mcp/tools/set-task-checklist";
 
 const mockPrisma = prisma as unknown as {
@@ -20,10 +19,6 @@ const mockPrisma = prisma as unknown as {
 beforeEach(() => vi.clearAllMocks());
 
 describe("set_task_checklist", () => {
-  it("requires mcp:write", () => {
-    expect(SET_TASK_CHECKLIST_TOOL.requiredScope).toBe("mcp:write");
-  });
-
   it("allows assignee, normalizes items, returns count", async () => {
     mockPrisma.task.findUnique.mockResolvedValue({
       id: "t1",

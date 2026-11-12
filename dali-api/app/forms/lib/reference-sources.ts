@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { partnerOrgIdsForUser } from "~/partners/lib/partner-access";
+import { partnerOrgIdsForUser } from "~/lib/partner-orgs.server";
 import {
   REFERENCE_SOURCE_LABELS,
   isReferenceSourceKey,

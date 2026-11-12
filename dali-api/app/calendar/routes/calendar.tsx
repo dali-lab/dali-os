@@ -102,6 +102,18 @@ import { CalendarSettingsModal } from "~/calendar/components/CalendarSettingsMod
 import { CalendarSidebar } from "~/calendar/components/CalendarSidebar";
 import { fetchParticipantOptions, useParticipantOptions } from "~/calendar/lib/participant-options";
 import { useIsMobile } from "~/hooks/useIsMobile";
+import { usePersistedState, stringSetCodec } from "~/hooks/usePersistedState";
+import {
+  CALENDAR_HIDDEN_CALS_KEY,
+  CALENDAR_HOURS_SCOPE_KEY,
+  CALENDAR_LAYERS_KEY,
+  CALENDAR_ROLE_COLORS_KEY,
+  hoursScopeCodec,
+  isHoursScope,
+  isLayerVisibility,
+  isPlainObject,
+  layersCodec,
+} from "~/calendar/lib/saved-view-prefs";
 
 // `areaSubnav` (not `areaPills`) because calendar renders its own day/week/month
 // row unconditionally, so it reserves the flush top spacing.
@@ -184,10 +196,6 @@ export default function CalendarPage() {
 /* Calendar.                                                           */
 /* ------------------------------------------------------------------ */
 
-const CALENDAR_LAYERS_KEY = "dali:calendar:layers";
-const CALENDAR_HIDDEN_CALS_KEY = "dali:calendar:hiddenCals";
-const CALENDAR_ROLE_COLORS_KEY = "dali:calendar:roleColors";
-const CALENDAR_HOURS_SCOPE_KEY = "dali:calendar:hoursScope";
 
 // One screen, three views, toggleable colored layers. Scheduling and timesheet
 // are reachable from the Create menu (they reuse the existing Schedule/Timesheet
@@ -250,66 +258,27 @@ function CalendarScreen({ data }: { data: LoaderData }) {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // Per-role colours for logged time, persisted like the hidden-calendar set.
-  const [roleColors, setRoleColors] = useState<Record<string, string>>(() => {
-    try {
-      const stored = window.localStorage.getItem(CALENDAR_ROLE_COLORS_KEY);
-      if (stored) return JSON.parse(stored) as Record<string, string>;
-    } catch {
-      /* ignore */
-    }
-    return {};
-  });
+  const [roleColors, setRoleColors] = usePersistedState<Record<string, string>>(
+    CALENDAR_ROLE_COLORS_KEY,
+    {},
+    isPlainObject,
+  );
   const [hoveredRoleKey, setHoveredRoleKey] = useState<string | null>(null);
-  const setRoleColor = (roleKey: string, hex: string) =>
-    setRoleColors((prev) => {
-      const next = { ...prev, [roleKey]: hex };
-      try {
-        window.localStorage.setItem(CALENDAR_ROLE_COLORS_KEY, JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
+  const setRoleColor = (roleKey: string, hex: string) => setRoleColors((prev) => ({ ...prev, [roleKey]: hex }));
 
-  // Week or pay period for the rail's role totals. Payroll is approved per
-  // period, so that stays the default; the week is what tells a member how
-  // they're pacing inside it. Persisted like the colours — a member who thinks
-  // in weeks shouldn't have to re-pick on every visit.
-  const [hoursScope, setHoursScope] = useState<TimesheetHoursScope>(() => {
-    try {
-      return window.localStorage.getItem(CALENDAR_HOURS_SCOPE_KEY) === "week" ? "week" : "period";
-    } catch {
-      return "period";
-    }
-  });
-  const changeHoursScope = (scope: TimesheetHoursScope) => {
-    setHoursScope(scope);
-    try {
-      window.localStorage.setItem(CALENDAR_HOURS_SCOPE_KEY, scope);
-    } catch {
-      /* ignore */
-    }
-  };
+  const [hoursScope, changeHoursScope] = usePersistedState<TimesheetHoursScope>(
+    CALENDAR_HOURS_SCOPE_KEY,
+    "period",
+    isHoursScope,
+    hoursScopeCodec,
+  );
 
-  const [layers, setLayers] = useState<LayerVisibility>(() => {
-    const base: LayerVisibility = { ...DEFAULT_LAYER_VISIBILITY };
-    if (typeof window === "undefined") return base;
-    try {
-      const stored = window.localStorage.getItem(CALENDAR_LAYERS_KEY);
-      if (stored) return { ...base, ...(JSON.parse(stored) as Partial<LayerVisibility>) };
-    } catch {
-      /* ignore */
-    }
-    return base;
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(CALENDAR_LAYERS_KEY, JSON.stringify(layers));
-    } catch {
-      /* ignore */
-    }
-  }, [layers]);
+  const [layers, setLayers] = usePersistedState<LayerVisibility>(
+    CALENDAR_LAYERS_KEY,
+    DEFAULT_LAYER_VISIBILITY,
+    isLayerVisibility,
+    layersCodec,
+  );
   const setLayer = (key: keyof LayerVisibility, value: boolean) =>
     setLayers((p) => (p[key] === value ? p : { ...p, [key]: value }));
 
@@ -322,24 +291,12 @@ function CalendarScreen({ data }: { data: LoaderData }) {
       return next;
     });
 
-  // Linked calendars hidden on the grid (display only — still fetched, still
-  // count for availability). Persisted so a hidden calendar stays hidden.
-  const [hiddenCals, setHiddenCals] = useState<Set<string>>(() => {
-    try {
-      const stored = window.localStorage.getItem(CALENDAR_HIDDEN_CALS_KEY);
-      if (stored) return new Set(JSON.parse(stored) as string[]);
-    } catch {
-      /* ignore */
-    }
-    return new Set();
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(CALENDAR_HIDDEN_CALS_KEY, JSON.stringify([...hiddenCals]));
-    } catch {
-      /* ignore */
-    }
-  }, [hiddenCals]);
+  const [hiddenCals, setHiddenCals] = usePersistedState<Set<string>>(
+    CALENDAR_HIDDEN_CALS_KEY,
+    new Set(),
+    (v): v is Set<string> => v instanceof Set,
+    stringSetCodec,
+  );
   const toggleHiddenCal = (id: string) =>
     setHiddenCals((prev) => {
       const next = new Set(prev);

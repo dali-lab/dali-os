@@ -63,7 +63,7 @@ import { PropertyRail } from "../components/application/PropertyRail";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { postPartnerApplicationIntent } from "../lib/partner-detail-fetch";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
-import { listActiveCoreMembers, resolveApplicationIcon } from "../lib/core-members.server";
+import { listActiveCoreMembers, resolveApplicationIcon } from "~/lib/core-members.server";
 import { DetailsLayout, RailGroup, STAGE_TONE } from "../components/application/rail";
 import { initialRecordTab, type RecordTab } from "../lib/record-tab";
 import { EvaluationTab } from "../components/application/EvaluationTab";

@@ -73,7 +73,7 @@ vi.mock("~/lib/ai.server", () => ({ isAiEnabled: vi.fn().mockReturnValue(false) 
 vi.mock("~/drive/lib/drive-scopes.server", () => ({ loadProjectDriveScope: vi.fn().mockResolvedValue(null) }));
 vi.mock("~/drive/lib/drive.server", () => ({ PROJECT_PAGE_SELECT: {}, PROJECT_FILE_SELECT: {} }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn() }));
-vi.mock("~/partners/lib/core-members.server", () => ({
+vi.mock("~/lib/core-members.server", () => ({
   listActiveCoreMembers: vi.fn().mockResolvedValue([]),
   personName: vi.fn(),
 }));
