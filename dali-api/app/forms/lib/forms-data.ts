@@ -23,8 +23,7 @@ import { isLayoutOnly } from "~/forms/lib/form-answers";
 import { showIfProblems } from "~/forms/lib/form-logic";
 import { mappedQuestionFeatures } from "./mapped-questions.server";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
-import { parseResponseColumns } from "./response-columns";
-import type { MemberHistoryColumn } from "~/projects/lib/member-history";
+import { parseResultColumns, type ResultColumnEntry } from "./response-columns";
 
 function prefillFits(q: Question): boolean {
   const key = q.data.prefill;
@@ -256,7 +255,7 @@ export type FormDetail = {
   draft: { questions: Question[]; description: unknown } | null;
   workspaceType: string | null;
   iconEmoji: string | null;
-  responseColumns: MemberHistoryColumn[];
+  responseColumns: ResultColumnEntry[];
 };
 
 // The full form + every version (newest last), for the dedicated editor page.
@@ -304,7 +303,7 @@ export async function loadFormForEdit(
     audienceGroupIds: form.audienceGroupIds,
     workspaceType: form.page?.workspaceType ?? null,
     iconEmoji: form.page?.iconEmoji ?? null,
-    responseColumns: parseResponseColumns(form.responseColumns),
+    responseColumns: parseResultColumns(form.responseColumns),
     versions: form.versions.map((v) => ({
       id: v.id,
       versionNumber: v.versionNumber,

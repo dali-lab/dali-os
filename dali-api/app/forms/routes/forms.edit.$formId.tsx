@@ -22,7 +22,14 @@ import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
 import { parseMemberColumns } from "~/projects/lib/member-history";
-import { validResponseColumns, responseColumnId } from "~/forms/lib/response-columns";
+import {
+  applyResultColumnOp,
+  parseResultColumns,
+  responseColumnId,
+} from "~/forms/lib/response-columns";
+import { parseColumnOp } from "~/forms/lib/column-ops";
+import { unionResponseColumns } from "~/forms/lib/answer-rows.server";
+import type { Question } from "~/types";
 import { parseFormDataJson } from "~/lib/safe-json";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
@@ -158,9 +165,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         slot: url.searchParams.get("slot") ?? "",
         answers,
         questions: resultsVersion.questions,
-        memberColumns: savedColumns
+        columns: savedColumns
           ? form.responseColumns
-          : parseMemberColumns(url.searchParams),
+          : parseMemberColumns(url.searchParams).map((k) => ({ id: responseColumnId(k) })),
       })
     : null;
   const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;
@@ -240,15 +247,34 @@ export async function action({ request, params }: Route.ActionArgs) {
     return deleted;
   }
 
-  if (intent === "set-response-columns") {
+  if (intent === "response-column") {
     const roles = await getUserRoles(auth.user.sub, request);
     if (!(await isFeatureEnabled("form-response-views", auth.user.sub, roles, request)))
       return forbidden(request);
-    const columns = validResponseColumns(parseFormDataJson(formData.get("columns")));
-    if (!columns) return Response.json({ error: "Unknown column" }, { status: 400 });
+    const op = parseColumnOp(parseFormDataJson(formData.get("op")));
+    if (!op) return Response.json({ error: "Invalid input" }, { status: 400 });
+    const [form, versions] = await Promise.all([
+      prisma.form.findUnique({ where: { id: params.formId }, select: { responseColumns: true } }),
+      prisma.formVersion.findMany({
+        where: { formId: params.formId },
+        select: { versionNumber: true, questions: true },
+      }),
+    ]);
+    if (!form) return Response.json({ error: "Not found" }, { status: 404 });
+    const next = applyResultColumnOp(
+      parseResultColumns(form.responseColumns),
+      op,
+      unionResponseColumns(
+        versions.map((v) => ({
+          versionNumber: v.versionNumber,
+          questions: (v.questions as unknown as Question[]) ?? [],
+        })),
+      ),
+    );
+    if (!next) return Response.json({ error: "Unknown column" }, { status: 400 });
     await prisma.form.update({
       where: { id: params.formId },
-      data: { responseColumns: columns.map(responseColumnId) },
+      data: { responseColumns: next },
     });
     return { ok: true };
   }

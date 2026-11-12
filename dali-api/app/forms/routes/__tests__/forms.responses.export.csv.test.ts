@@ -67,27 +67,44 @@ describe("export.csv added columns", () => {
   };
 
   beforeEach(() => {
-    db.form.findUnique.mockResolvedValue({ id: "f1", name: "Intake", responseColumns: ["member:termsInLab"] });
+    db.form.findUnique.mockResolvedValue({
+      id: "f1",
+      name: "Intake",
+      responseColumns: [{ id: "member:termsInLab" }, { id: "a", label: "Coming back?" }, { id: "f", hidden: true }],
+    });
     db.formSubmission.findMany.mockResolvedValue([
       { createdAt: new Date("2026-11-01"), answers: {}, slot: null, userId: "u9", user: { firstName: "Ada", lastName: "L" }, formVersion: { versionNumber: 2, questions: [] } },
     ]);
     vi.mocked(memberColumnValues).mockResolvedValue(member);
-    vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [[]] } as never);
+    vi.mocked(buildResponseGrid).mockResolvedValue({
+      columns: [
+        { key: "a", label: "A" },
+        { key: "f", label: "F" },
+      ],
+      rowsBySubmission: [[]],
+    } as never);
   });
 
-  it("includes the form's saved columns when the flag is on", async () => {
+  it("exports the saved columns in order, renamed, without hidden ones, when the flag is on", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     await call("version=2");
     expect(memberColumnValues).toHaveBeenCalledWith(["termsInLab"], ["u9"]);
     const [columns, responses] = vi.mocked(responsesCsvRows).mock.calls[0];
-    expect(columns).toEqual(member.columns);
+    expect(columns).toEqual([
+      { key: "member:termsInLab", label: "Terms in lab" },
+      { key: "a", label: "Coming back?" },
+    ]);
     expect(responses[0].rows).toEqual(member.rowsFor("u9"));
   });
 
-  it("leaves them out when the flag is off", async () => {
+  it("exports every question as asked when the flag is off", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     await call("version=2");
     expect(memberColumnValues).toHaveBeenCalledWith([], ["u9"]);
+    expect(vi.mocked(responsesCsvRows).mock.calls[0][0]).toEqual([
+      { key: "a", label: "A" },
+      { key: "f", label: "F" },
+    ]);
   });
 });
 

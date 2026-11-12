@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({
-  prisma: { term: { findMany: vi.fn() }, form: { findUnique: vi.fn(), update: vi.fn() } },
+  prisma: {
+    term: { findMany: vi.fn() },
+    form: { findUnique: vi.fn(), update: vi.fn() },
+    formVersion: { findMany: vi.fn() },
+  },
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
@@ -91,7 +95,7 @@ describe("forms.edit loader results paging", () => {
       slot: "Tue",
       answers: [],
       questions: [],
-      memberColumns: ["termsInLab"],
+      columns: [{ id: "member:termsInLab" }],
     });
   });
 
@@ -110,13 +114,13 @@ describe("forms.edit loader results paging", () => {
       slot: "",
       answers: [],
       questions: [],
-      memberColumns: [],
+      columns: [],
     });
   });
 });
 
 describe("forms.edit saved response columns", () => {
-  const withVersion = (responseColumns: string[]) =>
+  const withVersion = (responseColumns: unknown[]) =>
     vi.mocked(loadFormForEdit).mockResolvedValue({
       id: "f1",
       folderPageId: null,
@@ -127,48 +131,66 @@ describe("forms.edit saved response columns", () => {
   const resultsReq = new Request("http://os.test/forms/edit/f1?view=results&show=responses&member=projectHistory");
 
   it("loads the form's saved columns and ignores the URL when the flag is on", async () => {
-    withVersion(["hiredRoles", "termsInLab"]);
+    withVersion([{ id: "member:hiredRoles" }, { id: "q1", label: "Role" }]);
     vi.mocked(isFeatureEnabled).mockResolvedValue(true);
     await loader({ request: resultsReq, params: { formId: "f1" } } as never);
-    expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.memberColumns).toEqual(["hiredRoles", "termsInLab"]);
+    expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.columns).toEqual([
+      { id: "member:hiredRoles" },
+      { id: "q1", label: "Role" },
+    ]);
   });
 
   it("keeps reading the URL when the flag is off", async () => {
-    withVersion(["hiredRoles"]);
+    withVersion([{ id: "member:hiredRoles" }]);
     vi.mocked(isFeatureEnabled).mockResolvedValue(false);
     await loader({ request: resultsReq, params: { formId: "f1" } } as never);
-    expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.memberColumns).toEqual(["projectHistory"]);
+    expect(vi.mocked(loadVersionResponses).mock.calls[0][2]?.columns).toEqual([{ id: "member:projectHistory" }]);
   });
 
-  const save = (columns: string) => {
+  const save = (op: unknown) => {
     const body = new FormData();
-    body.set("intent", "set-response-columns");
-    body.set("columns", columns);
+    body.set("intent", "response-column");
+    body.set("op", JSON.stringify(op));
     return action({
       request: new Request("http://os.test/forms/edit/f1", { method: "POST", body }),
       params: { formId: "f1" },
     } as never) as Promise<any>;
   };
+  const savedForm = (responseColumns: unknown) => {
+    (prisma as any).form.findUnique.mockResolvedValue({ responseColumns });
+    (prisma as any).formVersion.findMany.mockResolvedValue([
+      { versionNumber: 1, questions: [{ key: "q1", type: "text", data: { label: "Role" } }] },
+      {
+        versionNumber: 2,
+        questions: [
+          { key: "q1", type: "text", data: { label: "Role" } },
+          { key: "q2", type: "text", data: { label: "Days" } },
+        ],
+      },
+    ]);
+  };
 
-  it("saves the columns in the order given", async () => {
+  it("applies the op against every version's questions and saves the full list", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(true);
-    expect(await save(JSON.stringify(["member:termsInLab", "member:hiredRoles"]))).toEqual({ ok: true });
+    savedForm(["member:termsInLab"]);
+    expect(await save({ op: "move", id: "member:termsInLab", dir: -1 })).toEqual({ ok: true });
     expect((prisma as any).form.update).toHaveBeenCalledWith({
       where: { id: "f1" },
-      data: { responseColumns: ["member:termsInLab", "member:hiredRoles"] },
+      data: { responseColumns: [{ id: "q1" }, { id: "member:termsInLab" }, { id: "q2" }] },
     });
   });
 
-  it("rejects an unknown column without saving", async () => {
+  it("rejects a malformed op or an unknown column without saving", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(true);
-    const res = await save(JSON.stringify(["member:salary"]));
-    expect(res.status).toBe(400);
+    savedForm(null);
+    expect((await save({ op: "drop", id: "q1" })).status).toBe(400);
+    expect((await save({ op: "hide", id: "q9" })).status).toBe(400);
     expect((prisma as any).form.update).not.toHaveBeenCalled();
   });
 
   it("refuses to save while the flag is off", async () => {
     vi.mocked(isFeatureEnabled).mockResolvedValue(false);
-    const res = await save(JSON.stringify(["member:hiredRoles"]));
+    const res = await save({ op: "show", id: "member:hiredRoles" });
     expect(res.status).toBe(403);
     expect((prisma as any).form.update).not.toHaveBeenCalled();
   });
@@ -176,7 +198,7 @@ describe("forms.edit saved response columns", () => {
   it("refuses someone who can't build the form", async () => {
     vi.mocked(canBuildForm).mockResolvedValue(false);
     vi.mocked(isFeatureEnabled).mockResolvedValue(true);
-    const res = await save(JSON.stringify(["member:hiredRoles"]));
+    const res = await save({ op: "show", id: "member:hiredRoles" });
     expect(res.status).toBe(403);
     expect((prisma as any).form.update).not.toHaveBeenCalled();
   });
@@ -508,7 +530,7 @@ describe("forms.edit summary", () => {
       slot: "",
       answers: [{ key: "a", kind: "blank" }],
       questions: version.questions,
-      memberColumns: [],
+      columns: [],
     });
   });
 

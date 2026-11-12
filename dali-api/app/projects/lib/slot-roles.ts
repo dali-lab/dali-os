@@ -14,6 +14,10 @@ import { isIntentStatus, type IntentStatusValue } from "./intent-status";
 import type { Question } from "~/types";
 import { conditionalKeys } from "~/forms/lib/form-logic";
 import type { Slot } from "./form-slots";
+import { placeholder } from "~/lib/template-variables";
+import { defaultStatusMap } from "./intent-form-interpreter";
+import { moveAmongVisible, type ColumnOp } from "~/forms/lib/column-ops";
+import { columnKey } from "./submission-columns";
 
 // `QuestionTypeConstraint` still declares each role's intended shape (and
 // drives the `person` identity boundary), but mapping a question to a role no
@@ -314,61 +318,8 @@ export function validateMapping(
   questions: Question[],
   mapping: ColumnMapping | null,
 ): MappingCheck {
-  const roleDefs = SLOT_ROLES[slot];
-  const byKey = new Map(questions.map((q) => [q.key, q]));
-  const conditional = conditionalKeys(questions);
-  // Only per-term roles (intent-status) still reject a duplicate: two status
-  // columns for the same term is a real conflict. Repeatable roles don't.
-  const seenPerTerm = new Set<string>();
-
-  for (const e of mapping?.entries ?? []) {
-    const def = roleDefs.find((d) => d.role === e.role);
-    if (!def) {
-      return { ok: false, reason: `Unknown column "${e.role}" in mapping.` };
-    }
-    if (e.source === "builtin") {
-      // A builtin entry can't go stale on re-versioning (no questionKey). It
-      // just has to exist and match the role's constraint.
-      const src = BUILTIN_SOURCES[e.builtin];
-      if (!src || src.constraint !== def.constraint) {
-        return {
-          ok: false,
-          reason: `The "${def.defaultLabel}" column can't be filled by that source.`,
-        };
-      }
-    } else {
-      const q = byKey.get(e.questionKey);
-      if (!q) {
-        return {
-          ok: false,
-          reason:
-            "The form was changed and the column mapping is out of date — re-map its questions.",
-        };
-      }
-      if (conditional.has(q.key)) {
-        return {
-          ok: false,
-          reason: `Question "${q.data.label}" is only shown sometimes, so it can't fill the "${def.defaultLabel}" column.`,
-        };
-      }
-      if (!questionFitsConstraint(q, def.constraint)) {
-        return {
-          ok: false,
-          reason: `Question "${q.data.label}" can't fill the "${def.defaultLabel}" column (wrong question type).`,
-        };
-      }
-    }
-    if (def.perTerm) {
-      const dupKey = `${e.role}:${e.termId ?? ""}`;
-      if (seenPerTerm.has(dupKey)) {
-        return {
-          ok: false,
-          reason: `The "${def.defaultLabel}" column is mapped more than once for the same term.`,
-        };
-      }
-      seenPerTerm.add(dupKey);
-    }
-  }
+  const problem = mappingEntryProblem(slot, questions, mapping);
+  if (problem) return { ok: false, reason: problem };
 
   // Slot-level completeness — required role counts + required builtins must
   // all be present. Reported as one combined "Still need" message so a
@@ -382,6 +333,57 @@ export function validateMapping(
   }
 
   return { ok: true };
+}
+
+// The first entry the slot can't use, ignoring whether required roles are
+// all placed yet. Column edits from the board's table check only this, so a
+// half-mapped board can still change columns.
+export function mappingEntryProblem(
+  slot: Slot,
+  questions: Question[],
+  mapping: ColumnMapping | null,
+): string | null {
+  const roleDefs = SLOT_ROLES[slot];
+  const byKey = new Map(questions.map((q) => [q.key, q]));
+  const conditional = conditionalKeys(questions);
+  // Only per-term roles (intent-status) still reject a duplicate: two status
+  // columns for the same term is a real conflict. Repeatable roles don't.
+  const seenPerTerm = new Set<string>();
+
+  for (const e of mapping?.entries ?? []) {
+    const def = roleDefs.find((d) => d.role === e.role);
+    if (!def) {
+      return `Unknown column "${e.role}" in mapping.`;
+    }
+    if (e.source === "builtin") {
+      // A builtin entry can't go stale on re-versioning (no questionKey). It
+      // just has to exist and match the role's constraint.
+      const src = BUILTIN_SOURCES[e.builtin];
+      if (!src || src.constraint !== def.constraint) {
+        return `The "${def.defaultLabel}" column can't be filled by that source.`;
+      }
+    } else {
+      const q = byKey.get(e.questionKey);
+      if (!q) {
+        return "The form was changed and the column mapping is out of date — re-map its questions.";
+      }
+      if (conditional.has(q.key)) {
+        return `Question "${q.data.label}" is only shown sometimes, so it can't fill the "${def.defaultLabel}" column.`;
+      }
+      if (!questionFitsConstraint(q, def.constraint)) {
+        return `Question "${q.data.label}" can't fill the "${def.defaultLabel}" column (wrong question type).`;
+      }
+    }
+    if (def.perTerm) {
+      const dupKey = `${e.role}:${e.termId ?? ""}`;
+      if (seenPerTerm.has(dupKey)) {
+        return `The "${def.defaultLabel}" column is mapped more than once for the same term.`;
+      }
+      seenPerTerm.add(dupKey);
+    }
+  }
+
+  return null;
 }
 
 // What's still missing from a slot's mapping for it to be considered
@@ -477,16 +479,173 @@ export function showBuiltinColumn(
   };
 }
 
-// Hide rather than delete, so a required builtin still counts as placed and
-// the detail page keeps showing it.
-export function hideBuiltinColumn(
+
+// A role column's starting label: repeatable roles count up ("Project 2"),
+// per-term roles name the term ("Status — 27W", or the {{term}} token for
+// the bound cycle's own term).
+export function roleColumnLabel(
+  def: RoleDef,
+  positionAmongRole: number,
+  termCode?: string,
+): string {
+  if (def.perTerm && termCode) return `${def.defaultLabel} — ${termCode}`;
+  if (def.repeatable) return `${def.defaultLabel} ${positionAmongRole + 1}`;
+  return def.defaultLabel;
+}
+
+// Roles a question column can feed on this slot, besides plain display.
+export function questionRoles(slot: Slot): RoleDef[] {
+  return SLOT_ROLES[slot].filter(
+    (d) => d.constraint !== "person" && d.constraint !== "display",
+  );
+}
+
+export type RoleChoice = { value: string; label: string };
+
+// The "Feeds staffing as" menu for a question column. A per-term role is one
+// choice per term plus one for the bound cycle's own term; the value carries
+// the term as "role@termId" ("role@" for the cycle's term).
+export function questionRoleChoices(
+  slot: Slot,
+  terms: readonly { id: string; code: string }[],
+): RoleChoice[] {
+  const out: RoleChoice[] = [{ value: "display", label: "Nothing, just show it" }];
+  for (const def of questionRoles(slot)) {
+    if (!def.perTerm) {
+      out.push({ value: def.role, label: def.defaultLabel });
+      continue;
+    }
+    out.push({ value: `${def.role}@`, label: `${def.defaultLabel} for this cycle's term` });
+    for (const t of terms) out.push({ value: `${def.role}@${t.id}`, label: `${def.defaultLabel} for ${t.code}` });
+  }
+  return out;
+}
+
+export function roleChoiceValue(e: { role: string; termId?: string }, slot: Slot): string {
+  const def = SLOT_ROLES[slot].find((d) => d.role === e.role);
+  return def?.perTerm ? `${e.role}@${e.termId ?? ""}` : e.role;
+}
+
+export function parseRoleChoice(value: string): { role: string; termId: string | null } {
+  const [role, termId] = value.split("@");
+  return { role, termId: termId || null };
+}
+
+
+// One column change from a board's table, applied to its mapping. Ids are the
+// table's column keys ("q:<key>", "builtin:<name>", "@<termId>" for per-term
+// columns). Returns the reason when the change can't apply.
+export function applyBoardColumnOp(
   mapping: ColumnMapping | null,
-  builtin: BoardColumnBuiltin,
-): ColumnMapping {
-  return {
+  op: ColumnOp,
+  ctx: { slot: Slot; questions: Question[]; termCodes: ReadonlyMap<string, string> },
+): { ok: true; mapping: ColumnMapping } | { ok: false; reason: string } {
+  const entries = [...(mapping?.entries ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const renumber = (list: ColumnMappingEntry[]): ColumnMapping => ({
     version: 1,
-    entries: (mapping?.entries ?? []).map((e) =>
-      e.source === "builtin" && e.builtin === builtin ? { ...e, hidden: true } : e,
-    ),
+    entries: list.map((e, order) => ({ ...e, order })),
+  });
+  const i = entries.findIndex((e) => columnKey(e) === op.id);
+  const q = (key: string) => ctx.questions.find((x) => x.key === key);
+  const fail = (reason: string) => ({ ok: false as const, reason });
+
+  let next: ColumnMapping;
+  if (op.op === "show") {
+    const builtin = op.id.startsWith("builtin:") ? op.id.slice("builtin:".length) : null;
+    if (i >= 0) {
+      next = renumber([...entries.filter((_, j) => j !== i), { ...entries[i], hidden: false }]);
+    } else if (builtin !== null) {
+      if (!isBoardColumnBuiltin(builtin)) return fail("Unknown column.");
+      next = showBuiltinColumn(renumber(entries), builtin);
+    } else {
+      const question = op.id.startsWith("q:") ? q(op.id.slice(2)) : undefined;
+      if (!question) return fail("Unknown column.");
+      next = renumber([
+        ...entries,
+        { role: "display", label: question.data.label, source: "question", questionKey: question.key },
+      ]);
+    }
+  } else {
+    if (i < 0) return fail("Unknown column.");
+    const e = entries[i];
+    const replace = (x: ColumnMappingEntry) => renumber(entries.map((y, j) => (j === i ? x : y)));
+    switch (op.op) {
+      case "hide":
+        next = replace({ ...e, hidden: true });
+        break;
+      case "rename":
+        if (!op.label) return fail("A column needs a name.");
+        next = replace({ ...e, label: op.label });
+        break;
+      case "move":
+        next = renumber(moveAmongVisible(entries, i, op.dir, (x) => !x.hidden));
+        break;
+      case "role": {
+        if (e.source !== "question") return fail("Only a question column can feed staffing.");
+        const question = q(e.questionKey);
+        if (!question) return fail("That question is no longer on the form.");
+        const { termId: _t, statusMap: _s, ...base } = e;
+        if (op.role === "display") {
+          next = replace({ ...base, role: "display", label: question.data.label });
+          break;
+        }
+        const def = questionRoles(ctx.slot).find((d) => d.role === op.role);
+        if (!def) return fail("Unknown staffing role.");
+        if (!def.perTerm && op.termId) return fail("Unknown staffing role.");
+        if (op.termId && !ctx.termCodes.has(op.termId)) return fail("Unknown term.");
+        const position = entries.filter((x, j) => j !== i && x.role === def.role).length;
+        const termCode = def.perTerm ? (op.termId ? ctx.termCodes.get(op.termId) : placeholder("term")) : undefined;
+        const statusMap =
+          def.role === "intent-status"
+            ? e.role === "intent-status" && e.statusMap
+              ? e.statusMap
+              : defaultStatusMap(question.data.options ?? [])
+            : undefined;
+        next = replace({
+          ...base,
+          role: def.role,
+          label: roleColumnLabel(def, position, termCode),
+          ...(op.termId ? { termId: op.termId } : {}),
+          ...(statusMap && Object.keys(statusMap).length > 0 ? { statusMap } : {}),
+        });
+        break;
+      }
+    }
+  }
+  const problem = mappingEntryProblem(ctx.slot, ctx.questions, next);
+  if (problem && problem !== mappingEntryProblem(ctx.slot, ctx.questions, mapping)) return fail(problem);
+  return { ok: true, mapping: next };
+}
+
+export type BoardColumn = { key: string; label: string; role?: string };
+
+// What a board's table needs for its columns: the visible ones (question
+// columns carry their "Feeds staffing as" choice), what the + button can
+// add, and the role choices for question columns.
+export function boardTableModel(
+  slot: Slot,
+  mapping: ColumnMapping | null,
+  visible: readonly { key: string; label: string; source: "question" | "builtin"; role: string; termId?: string }[],
+  questions: readonly { key: string; label: string }[],
+  terms: readonly { id: string; code: string }[],
+): { columns: BoardColumn[]; addable: { key: string; label: string }[]; roleChoices: RoleChoice[] } {
+  const entries = [...(mapping?.entries ?? [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const mappedQuestions = new Set(entries.flatMap((e) => (e.source === "question" ? [e.questionKey] : [])));
+  const placedBuiltins = new Set(entries.flatMap((e) => (e.source === "builtin" ? [e.builtin] : [])));
+  return {
+    columns: visible.map((c) => ({
+      key: c.key,
+      label: c.label,
+      ...(c.source === "question" ? { role: roleChoiceValue(c, slot) } : {}),
+    })),
+    addable: [
+      ...entries.filter((e) => e.hidden).map((e) => ({ key: columnKey(e), label: e.label })),
+      ...questions.filter((q) => !mappedQuestions.has(q.key)).map((q) => ({ key: `q:${q.key}`, label: q.label })),
+      ...BOARD_COLUMN_BUILTINS.filter((b) => !placedBuiltins.has(b)).map((b) => ({
+        key: `builtin:${b}`,
+        label: BUILTIN_SOURCES[b].defaultLabel,
+      })),
+    ],
+    roleChoices: questionRoleChoices(slot, terms),
   };
 }

@@ -10,11 +10,26 @@ vi.mock("~/components/ui/floating", () => ({
     ({ trigger, children, ariaLabel }: { trigger: React.ReactNode; children: React.ReactNode; ariaLabel: string }) =>
       createElement("div", { "data-menu": ariaLabel }, trigger, children),
     {
-      Item: ({ children, onSelect, disabled }: { children: React.ReactNode; onSelect?: () => void; disabled?: boolean }) =>
-        createElement("button", { onClick: onSelect, disabled, "data-item": "" }, children),
+      Item: ({
+        children,
+        onSelect,
+        disabled,
+        checked,
+      }: {
+        children: React.ReactNode;
+        onSelect?: () => void;
+        disabled?: boolean;
+        checked?: boolean;
+      }) =>
+        createElement("button", { onClick: onSelect, disabled, "data-item": "", "aria-checked": checked }, children),
+      Sub: ({ label, children }: { label: string; children: React.ReactNode }) =>
+        createElement("div", { "data-sub": label }, children),
+      Separator: () => null,
     },
   ),
 }));
+const prompt = vi.fn();
+vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ prompt }) }));
 vi.mock("~/components/ui/IconButton", () => ({
   IconButton: ({ label }: { label: string }) => createElement("button", { "aria-label": label }),
 }));
@@ -79,27 +94,69 @@ describe("ResponseTable", () => {
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("with controls, offers available columns and removes removable ones", async () => {
-    const controls: ColumnControls = {
-      available: [{ key: "hiredRoles", label: "Hired roles" }],
-      onAdd: vi.fn(),
-      removable: (key) => key.startsWith("member:"),
-      onRemove: vi.fn(),
-    };
-    await render({ controls });
-    expect(container.querySelector("[aria-label='Add a column']")).not.toBeNull();
-    const items = () => [...container.querySelectorAll("[data-item]")] as HTMLButtonElement[];
-    await click(items().find((b) => b.textContent === "Hired roles")!);
-    expect(controls.onAdd).toHaveBeenCalledWith("hiredRoles");
-    expect(container.querySelector("[data-menu='Coming back column']")).toBeNull();
-    await click(container.querySelector("[data-menu='Terms in lab column'] [data-item]"));
-    expect(controls.onRemove).toHaveBeenCalledWith("member:termsInLab");
+  const controls = (over: Partial<ColumnControls> = {}): ColumnControls => ({
+    available: [{ key: "member:hiredRoles", label: "Hired roles" }],
+    edit: vi.fn(),
+    ...over,
+  });
+  const items = (menu: string) =>
+    [...container.querySelectorAll(`[data-menu='${menu}'] [data-item]`)] as HTMLButtonElement[];
+  const item = (menu: string, text: string) => items(menu).find((b) => b.textContent === text)!;
+
+  it("+ shows a column that isn't in the table", async () => {
+    const c = controls();
+    await render({ controls: c });
+    await click(item("Add a column", "Hired roles"));
+    expect(c.edit).toHaveBeenCalledWith({ op: "show", id: "member:hiredRoles" });
   });
 
   it("says so when every column is added", async () => {
-    await render({ controls: { available: [], onAdd: vi.fn(), removable: () => false, onRemove: vi.fn() } });
-    const item = container.querySelector("[data-menu='Add a column'] [data-item]") as HTMLButtonElement;
-    expect(item.textContent).toBe("Every column is added");
-    expect(item.disabled).toBe(true);
+    await render({ controls: controls({ available: [] }) });
+    const only = items("Add a column")[0];
+    expect(only.textContent).toBe("Every column is added");
+    expect(only.disabled).toBe(true);
+  });
+
+  it("each column's menu hides and moves it, with the ends disabled", async () => {
+    const c = controls();
+    await render({ controls: c });
+    expect(item("Coming back column", "Move left").disabled).toBe(true);
+    expect(item("Terms in lab column", "Move right").disabled).toBe(true);
+    await click(item("Coming back column", "Move right"));
+    expect(c.edit).toHaveBeenCalledWith({ op: "move", id: "q1", dir: 1 });
+    await click(item("Terms in lab column", "Hide column"));
+    expect(c.edit).toHaveBeenCalledWith({ op: "hide", id: "member:termsInLab" });
+  });
+
+  it("renames through the prompt, trimmed, and does nothing when cancelled or unchanged", async () => {
+    const c = controls();
+    await render({ controls: c });
+    prompt.mockResolvedValueOnce("  When  ");
+    await click(item("Coming back column", "Rename"));
+    expect(c.edit).toHaveBeenCalledWith({ op: "rename", id: "q1", label: "When" });
+    prompt.mockResolvedValueOnce(null);
+    await click(item("Coming back column", "Rename"));
+    prompt.mockResolvedValueOnce("Coming back");
+    await click(item("Coming back column", "Rename"));
+    expect(c.edit).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers Feeds staffing as only where the table gives a role menu", async () => {
+    const onRole = vi.fn();
+    await render({
+      controls: controls({
+        roleMenu: (key) =>
+          key === "q1"
+            ? { choices: [{ value: "display", label: "Nothing, just show it" }, { value: "project", label: "Project" }], value: "display" }
+            : null,
+        onRole,
+      }),
+    });
+    expect(container.querySelectorAll("[data-sub='Feeds staffing as']")).toHaveLength(1);
+    expect(item("Coming back column", "Nothing, just show it").getAttribute("aria-checked")).toBe("true");
+    await click(item("Coming back column", "Nothing, just show it"));
+    expect(onRole).not.toHaveBeenCalled();
+    await click(item("Coming back column", "Project"));
+    expect(onRole).toHaveBeenCalledWith("q1", "project");
   });
 });

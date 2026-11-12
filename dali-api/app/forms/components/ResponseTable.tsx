@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
-import { Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, EyeOff, Pencil, Plus } from "lucide-react";
 import { Menu } from "~/components/ui/floating";
 import { IconButton } from "~/components/ui/IconButton";
+import { useDialog } from "~/components/ui/dialog";
+import { MAX_COLUMN_LABEL, type ColumnOp } from "~/forms/lib/column-ops";
 
 export type TableColumn = { key: string; label: string };
 
@@ -14,13 +16,17 @@ export type FixedColumn<R> = {
   className?: string;
 };
 
-// The + button and per-column remove menu. Only for people who can change
-// the table's columns.
+export type RoleMenu = { choices: { value: string; label: string }[]; value: string };
+
+// The + button and each column's menu. Only for people who can change the
+// table's columns.
 export type ColumnControls = {
+  // Columns the + button can show: hidden ones and ones not added yet.
   available: TableColumn[];
-  onAdd: (key: string) => void;
-  removable: (key: string) => boolean;
-  onRemove: (key: string) => void;
+  edit: (op: ColumnOp) => void;
+  // "Feeds staffing as" for a column, on a board's question columns.
+  roleMenu?: (key: string) => RoleMenu | null;
+  onRole?: (key: string, value: string) => void;
 };
 
 const TH = "text-left font-medium px-4 py-3";
@@ -55,10 +61,15 @@ export function ResponseTable<R>({
                 {c.label}
               </th>
             ))}
-            {columns.map((c) => (
+            {columns.map((c, i) => (
               <th key={c.key} className={TH}>
-                {controls?.removable(c.key) ? (
-                  <RemovableHeader label={c.label} onRemove={() => controls.onRemove(c.key)} />
+                {controls ? (
+                  <ColumnMenu
+                    column={c}
+                    first={i === 0}
+                    last={i === columns.length - 1}
+                    controls={controls}
+                  />
                 ) : (
                   <div className="max-w-[16rem] truncate" title={c.label}>
                     {c.label}
@@ -73,7 +84,10 @@ export function ResponseTable<R>({
             ))}
             {controls && (
               <th className="w-10 px-2 py-1.5 text-right">
-                <AddColumnMenu available={controls.available} onAdd={controls.onAdd} />
+                <AddColumnMenu
+                  available={controls.available}
+                  onAdd={(id) => controls.edit({ op: "show", id })}
+                />
               </th>
             )}
           </tr>
@@ -152,22 +166,86 @@ function AddColumnMenu({
   );
 }
 
-function RemovableHeader({ label, onRemove }: { label: string; onRemove: () => void }) {
+function ColumnMenu({
+  column,
+  first,
+  last,
+  controls,
+}: {
+  column: TableColumn;
+  first: boolean;
+  last: boolean;
+  controls: ColumnControls;
+}) {
+  const dialog = useDialog();
+  const id = column.key;
+  const roles = controls.roleMenu?.(id) ?? null;
+  async function rename() {
+    const label = await dialog.prompt({
+      title: "Rename column",
+      label: "Column name",
+      defaultValue: column.label,
+      confirmLabel: "Rename",
+      validate: (v) =>
+        !v.trim()
+          ? "Give the column a name."
+          : v.trim().length > MAX_COLUMN_LABEL
+            ? `Keep it under ${MAX_COLUMN_LABEL} characters.`
+            : null,
+    });
+    if (label !== null && label.trim() !== column.label) {
+      controls.edit({ op: "rename", id, label: label.trim() });
+    }
+  }
   return (
     <Menu
-      ariaLabel={`${label} column`}
+      ariaLabel={`${column.label} column`}
       trigger={
         <button
           type="button"
           className="max-w-[16rem] truncate text-left font-medium hover:text-foreground"
-          title={label}
+          title={column.label}
         >
-          {label}
+          {column.label}
         </button>
       }
     >
-      <Menu.Item icon={<X className="h-3.5 w-3.5" />} onSelect={onRemove}>
-        Remove column
+      <Menu.Item icon={<Pencil className="h-3.5 w-3.5" />} onSelect={() => void rename()}>
+        Rename
+      </Menu.Item>
+      <Menu.Item
+        icon={<ArrowLeft className="h-3.5 w-3.5" />}
+        disabled={first}
+        onSelect={() => controls.edit({ op: "move", id, dir: -1 })}
+      >
+        Move left
+      </Menu.Item>
+      <Menu.Item
+        icon={<ArrowRight className="h-3.5 w-3.5" />}
+        disabled={last}
+        onSelect={() => controls.edit({ op: "move", id, dir: 1 })}
+      >
+        Move right
+      </Menu.Item>
+      {roles && (
+        <Menu.Sub label="Feeds staffing as">
+          {roles.choices.map((r) => (
+            <Menu.Item
+              key={r.value}
+              checked={r.value === roles.value}
+              onSelect={() => r.value !== roles.value && controls.onRole?.(id, r.value)}
+            >
+              {r.label}
+            </Menu.Item>
+          ))}
+        </Menu.Sub>
+      )}
+      <Menu.Separator />
+      <Menu.Item
+        icon={<EyeOff className="h-3.5 w-3.5" />}
+        onSelect={() => controls.edit({ op: "hide", id })}
+      >
+        Hide column
       </Menu.Item>
     </Menu>
   );

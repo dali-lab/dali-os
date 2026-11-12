@@ -20,7 +20,11 @@ import {
   type MemberHistoryColumn,
 } from "~/projects/lib/member-history";
 import { loadMemberHistories } from "~/projects/lib/member-history.server";
-import { responseColumnId } from "~/forms/lib/response-columns";
+import {
+  arrangeResultColumns,
+  responseColumnId,
+  type ResultColumnEntry,
+} from "~/forms/lib/response-columns";
 
 export const RESPONSES_PAGE_SIZE = 50;
 
@@ -31,7 +35,8 @@ export type ResponseFilters = {
   answers?: AnswerFilter[];
   // The version's questions; answer filters are built against them.
   questions?: Question[];
-  memberColumns?: MemberHistoryColumn[];
+  // Saved column order, labels and hidden set, with any member columns.
+  columns?: ResultColumnEntry[];
 };
 
 export function searchWords(q = ""): string[] {
@@ -191,8 +196,9 @@ export async function loadVersionResponses(
     })),
   );
 
+  const arranged = arrangeResultColumns(grid.columns, filters.columns ?? []);
   const member = await memberColumnValues(
-    filters.memberColumns ?? [],
+    arranged.members,
     submissions.map((s) => s.userId),
   );
 
@@ -226,7 +232,8 @@ export async function loadVersionResponses(
     matchCount,
     page,
     hasNext,
-    columns: [...grid.columns, ...member.columns],
+    columns: arranged.visible,
+    hiddenColumns: arranged.hidden,
     slotOptions: slots.flatMap((s) => (s.slot ? [s.slot] : [])),
     filterQuestions: filters.questions ? filterableQuestions(filters.questions, refLabels ?? undefined) : [],
     responses,

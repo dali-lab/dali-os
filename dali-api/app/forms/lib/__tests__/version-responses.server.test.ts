@@ -289,7 +289,7 @@ describe("loadVersionResponses member columns", () => {
       submission(3, { userId: null, user: null, submitterName: "Guest" }),
     ]);
     const r = await loadVersionResponses("f1", "v1", {
-      memberColumns: ["currentRole", "hiredRoles", "projectHistory"],
+      columns: [{ id: "member:currentRole" }, { id: "member:hiredRoles" }, { id: "member:projectHistory" }],
     });
     vi.useRealTimers();
 
@@ -306,5 +306,24 @@ describe("loadVersionResponses member columns", () => {
       { key: "member:projectHistory", label: "Project history", value: "Evergreen (26F)" },
     ]);
     expect(r.responses[2].rows.slice(1).map((x) => x.value)).toEqual(["", "", ""]);
+  });
+
+  it("follows saved order, labels and hidden columns, and lists what + can add", async () => {
+    db.formSubmission.findMany.mockResolvedValue([submission(2, { userId: "u1" })]);
+    const r = await loadVersionResponses("f1", "v1", {
+      columns: [
+        { id: "member:termsInLab", label: "Terms" },
+        { id: "q1", hidden: true },
+        { id: "member:hiredRoles", hidden: true },
+      ],
+    });
+    expect(r.columns).toEqual([{ key: "member:termsInLab", label: "Terms" }]);
+    expect(r.hiddenColumns.map((c) => c.key)).toEqual([
+      "q1",
+      "member:hiredRoles",
+      "member:projectHistory",
+      "member:currentRole",
+    ]);
+    expect(r.responses[0].rows.map((x) => x.key)).toEqual(["q1", "member:termsInLab"]);
   });
 });

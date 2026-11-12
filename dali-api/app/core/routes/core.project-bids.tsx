@@ -35,6 +35,7 @@ import { resolveTermFilter } from "~/lib/terms";
 import {
   parseColumnMapping,
   validateMapping,
+  boardTableModel,
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
@@ -94,10 +95,6 @@ export async function loader({ request }: Route.LoaderArgs) {
     formId: binding?.formId ?? null,
   });
   const submissions = view.rows;
-  const tableColumns = view.tableColumns.map((c) => ({
-    key: c.key,
-    label: c.label,
-  }));
 
   // The bound form's latest-version questions drive the column mapper, and
   // validating the saved mapping against them warns a manager (before any
@@ -134,6 +131,14 @@ export async function loader({ request }: Route.LoaderArgs) {
   // (The all-terms aggregate has no single slot to bind, so it's exempt.)
   const noFormConnected = !isAll && !binding;
 
+  const columnModel = boardTableModel(
+    SLOT,
+    binding?.mapping ?? null,
+    view.tableColumns,
+    formQuestions,
+    [],
+  );
+
   const domainOptions = await prisma.domain.findMany({
     orderBy: { displayName: "asc" },
     select: { id: true, displayName: true },
@@ -147,7 +152,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     domainOptions,
     isAll,
     submissions,
-    tableColumns,
+    tableColumns: columnModel.columns,
+    addableColumns: columnModel.addable,
+    roleChoices: columnModel.roleChoices,
     canManage,
     binding,
     selectableForms,
@@ -374,6 +381,8 @@ function Loaded({
         ) : responseTable ? (
           <BoardTable
             columns={data.tableColumns}
+            addable={data.addableColumns}
+            roleChoices={data.roleChoices}
             rows={filtered}
             detailHref={(r) => `/core/project-bids/${r.userId}?term=${encodeURIComponent(data.selectedTerm)}`}
             editable={data.canManage && !data.isAll}
