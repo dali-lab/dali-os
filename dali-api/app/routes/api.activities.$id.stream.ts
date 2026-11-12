@@ -13,7 +13,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return new Response("Unauthorized", { status: 401 });
   const userId = auth.user.sub;
-  const roles = await getUserRoles(userId);
+  const roles = await getUserRoles(userId, request);
   const found = await getActivityForMember(params.id, userId, roles);
   if (!found || !found.assigned) return new Response("Not found", { status: 404 });
 

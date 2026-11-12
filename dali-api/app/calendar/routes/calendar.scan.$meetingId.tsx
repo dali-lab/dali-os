@@ -28,7 +28,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const portalRedirect = await redirectNonMemberToPortal(auth, request);
   if (portalRedirect) throw portalRedirect;
 
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
 
   const meeting = await prisma.scheduledMeeting.findUnique({
     where: { id: params.meetingId },
