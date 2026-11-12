@@ -9,13 +9,12 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn() }));
 vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: vi.fn() }));
 vi.mock("~/components/doc", () => ({ DocEditor: () => null }));
-vi.mock("~/core/lib/regroup-redirect.server", () => ({ regroupRedirect: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-import { action } from "~/admin/routes/admin.announcements";
+import { action } from "~/core/routes/core.communications.announcements";
 
 function cancel(id: string, intent = "cancel-scheduled") {
   const body = new FormData();

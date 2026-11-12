@@ -9,11 +9,8 @@
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin } from "~/lib/roles";
+import { isManualCheckInOpen } from "~/lib/check-in-window";
 import type { HiringEvent, HiringEventKind } from "~/generated/prisma/client";
-
-// Check-in stays reachable this long past the event's end, so a late QR scan
-// still counts, then auto-closes even if Core forgets to close it by hand.
-const CHECKIN_GRACE_MS = 30 * 60 * 1000;
 
 export type HiringEventWithCount = HiringEvent & {
   _count: { attendances: number };
@@ -143,13 +140,8 @@ export async function deleteHiringEvent(args: {
 
 export type HiringEventWindow = { endsAt: Date; checkInOpenAt: Date | null };
 
-/**
- * Whether an applicant can self-check-in right now: Core has opened it AND
- * we're still inside the event's grace window. Same shape as
- * isSessionCheckInOpen (app/education/lib/session-checkin.server.ts).
- */
 export function isEventCheckInOpen(event: HiringEventWindow, now: Date = new Date()): boolean {
-  return event.checkInOpenAt != null && now.getTime() <= event.endsAt.getTime() + CHECKIN_GRACE_MS;
+  return isManualCheckInOpen(event, now);
 }
 
 export async function setEventCheckInOpen(args: {

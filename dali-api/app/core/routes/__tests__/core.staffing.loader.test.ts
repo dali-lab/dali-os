@@ -28,17 +28,17 @@ vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => null)
 vi.mock("~/components/collab/PresenceProvider", () => ({ PresenceProvider: () => null }));
 vi.mock("~/components/collab/PresenceBar", () => ({ PresenceBar: () => null }));
 vi.mock("~/components/os-chrome", () => ({ useOsChrome: vi.fn() }));
-vi.mock("../../components/StaffingBoard", () => ({ StaffingBoard: () => null }));
-vi.mock("../../lib/staffing-cycle", () => ({ ensureStaffingCycle: vi.fn() }));
-vi.mock("../../lib/form-slots", () => ({ getSlotBinding: vi.fn() }));
-vi.mock("../../lib/submission-view.server", () => ({ buildSubmissionView: vi.fn() }));
+vi.mock("~/projects/components/StaffingBoard", () => ({ StaffingBoard: () => null }));
+vi.mock("~/projects/lib/staffing-cycle", () => ({ ensureStaffingCycle: vi.fn() }));
+vi.mock("~/projects/lib/form-slots", () => ({ getSlotBinding: vi.fn() }));
+vi.mock("~/projects/lib/submission-view.server", () => ({ buildSubmissionView: vi.fn() }));
 
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canViewStaffing, canManageStaffing } from "~/lib/roles";
-import { ensureStaffingCycle } from "../../lib/staffing-cycle";
-import { getSlotBinding } from "../../lib/form-slots";
-import { buildSubmissionView } from "../../lib/submission-view.server";
-import { loader } from "../projects.staffing";
+import { ensureStaffingCycle } from "~/projects/lib/staffing-cycle";
+import { getSlotBinding } from "~/projects/lib/form-slots";
+import { buildSubmissionView } from "~/projects/lib/submission-view.server";
+import { loader } from "../core.staffing";
 
 const TERM = {
   id: "t1",

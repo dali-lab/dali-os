@@ -29,9 +29,9 @@ vi.mock("~/components/os-chrome", () => ({
 vi.mock("~/admin/lib/eligibility.server", () => ({
   applyEligibilityWithNotify: vi.fn(),
 }));
-vi.mock("../../lib/staffing-cycle", () => ({ ensureStaffingCycle: vi.fn() }));
-vi.mock("../../lib/intent-validation", () => ({ resyncIntentSets: vi.fn() }));
-vi.mock("../../lib/form-slots", () => ({
+vi.mock("~/projects/lib/staffing-cycle", () => ({ ensureStaffingCycle: vi.fn() }));
+vi.mock("~/projects/lib/intent-validation", () => ({ resyncIntentSets: vi.fn() }));
+vi.mock("~/projects/lib/form-slots", () => ({
   getSlotBinding: vi.fn(),
   isGateAudience: vi.fn(),
   listSelectableForms: vi.fn(),
@@ -40,10 +40,10 @@ vi.mock("../../lib/form-slots", () => ({
   setSlotGate: vi.fn(),
   setSlotPublished: vi.fn(),
 }));
-vi.mock("../../lib/submission-view.server", () => ({
+vi.mock("~/projects/lib/submission-view.server", () => ({
   buildSubmissionView: vi.fn(),
 }));
-vi.mock("../../components/SlotAdvancedSettingsModal", () => ({
+vi.mock("~/projects/components/SlotAdvancedSettingsModal", () => ({
   SlotAdvancedSettingsModal: () => null,
 }));
 
@@ -51,12 +51,12 @@ import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { ALL_TERMS } from "~/lib/terms.shared";
-import { ensureStaffingCycle } from "../../lib/staffing-cycle";
-import { getSlotBinding, listSelectableForms } from "../../lib/form-slots";
-import { buildSubmissionView } from "../../lib/submission-view.server";
-import * as intentToWork from "../projects.intent-to-work";
-import * as projectBids from "../projects.project-bids";
-import * as levelUp from "../projects.level-up";
+import { ensureStaffingCycle } from "~/projects/lib/staffing-cycle";
+import { getSlotBinding, listSelectableForms } from "~/projects/lib/form-slots";
+import { buildSubmissionView } from "~/projects/lib/submission-view.server";
+import * as intentToWork from "../core.intent-to-work";
+import * as projectBids from "../core.project-bids";
+import * as levelUp from "../core.level-up";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -295,18 +295,18 @@ describe("Level Up row links", () => {
 
   it("carry the current term to the member's page", async () => {
     await mount(levelUpBoard);
-    expect(memberLink()?.getAttribute("href")).toBe("/projects/level-up/ada?term=t-26f");
+    expect(memberLink()?.getAttribute("href")).toBe("/core/level-up/ada?term=t-26f");
   });
 
   it("carry a picked term to the member's page", async () => {
     await mount(levelUpBoard);
     await pick("26S");
-    expect(memberLink()?.getAttribute("href")).toBe("/projects/level-up/ada?term=t-26s");
+    expect(memberLink()?.getAttribute("href")).toBe("/core/level-up/ada?term=t-26s");
   });
 
   it("carry All terms to the member's page", async () => {
     await mount(levelUpBoard, `${levelUpBoard.path}?term=${ALL_TERMS}`);
-    expect(memberLink()?.getAttribute("href")).toBe("/projects/level-up/ada?term=all");
+    expect(memberLink()?.getAttribute("href")).toBe("/core/level-up/ada?term=all");
   });
 });
 

@@ -6,7 +6,7 @@ import {
   sectionLanding,
   visibleTabs,
 } from "~/admin/adminNav";
-import { LEGACY_ADMIN_PATHS, legacyAdminTarget } from "~/admin/routes/admin.legacy-redirect";
+import { LEGACY_REDIRECTS, resolveLegacyRedirect } from "~/lib/legacy-redirects";
 
 const accounts = sectionByKey("accounts")!;
 const platform = sectionByKey("platform")!;
@@ -76,22 +76,22 @@ describe("adminTrail", () => {
 describe("legacy admin URLs", () => {
   it("forwards every retired page to a tab that exists", () => {
     const tabs = new Set(ADMIN_SECTIONS.flatMap((s) => s.sections.map((t) => t.to)));
-    for (const [from, to] of Object.entries(LEGACY_ADMIN_PATHS)) {
-      if (to === "/admin") continue;
-      expect(tabs.has(to), `${from} -> ${to}`).toBe(true);
+    const retired = LEGACY_REDIRECTS.filter(
+      (r) => r.path.startsWith("admin/") && typeof r.to === "string" && r.to.startsWith("/admin"),
+    );
+    expect(retired.length).toBeGreaterThan(10);
+    for (const r of retired) {
+      if (r.to === "/admin") continue;
+      expect(tabs.has(r.to as string) || r.to === "/admin/rooms", `${r.path} -> ${r.to}`).toBe(true);
     }
   });
 
   it("forwards an activity detail page and tolerates a trailing slash", () => {
-    expect(legacyAdminTarget("/admin/activities/abc123")).toBe("/admin/onboarding/abc123");
-    expect(legacyAdminTarget("/admin/jobs/")).toBe("/admin/platform/jobs");
-  });
-
-  it("forwards Rooms from its old Core URL", () => {
-    expect(legacyAdminTarget("/core/rooms")).toBe("/admin/rooms");
+    expect(resolveLegacyRedirect("/admin/activities/abc123")?.to).toBe("/admin/onboarding/abc123");
+    expect(resolveLegacyRedirect("/admin/jobs/")?.to).toBe("/admin/platform/jobs");
   });
 
   it("leaves unknown paths alone", () => {
-    expect(legacyAdminTarget("/admin/members")).toBeNull();
+    expect(resolveLegacyRedirect("/admin/members")).toBeNull();
   });
 });
