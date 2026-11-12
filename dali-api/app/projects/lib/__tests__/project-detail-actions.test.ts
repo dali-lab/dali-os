@@ -156,9 +156,17 @@ describe("header", () => {
     });
   });
 
-  it("saves name, status and icon, and syncs the project group", async () => {
-    await run({ intent: "header", name: " Atlas ", status: "Paused", iconEmoji: "" }, false);
+  it("saves name, status and icon for Core, and syncs the project group", async () => {
+    await run({ intent: "header", name: " Atlas ", status: "Paused", iconEmoji: "" }, true);
     expect(updateData()).toEqual({ name: "Atlas", status: "Paused", iconEmoji: null });
+    expect(ensureProjectGroup).toHaveBeenCalledWith("p1", "Atlas");
+  });
+
+  it("ignores status from a non-Core member but still renames", async () => {
+    expect(await run({ intent: "header", name: "Atlas", status: "Archived", iconEmoji: "x" }, false)).toBeInstanceOf(
+      Response,
+    );
+    expect(updateData()).toEqual({ name: "Atlas", iconEmoji: "x" });
     expect(ensureProjectGroup).toHaveBeenCalledWith("p1", "Atlas");
   });
 

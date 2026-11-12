@@ -1,7 +1,6 @@
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { ensureProjectGroup } from "~/lib/groups";
 import { saveInfraConfig } from "~/lib/infra/config-save.server";
 import {
   recordProjectChartString,
@@ -16,6 +15,7 @@ import {
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { replaceProjectTerms } from "./project-terms.server";
 import { PROJECT_STATUSES, type ProjectStatus } from "./project-lifecycle";
+import { linesToList, updateProjectSettings } from "./project-settings.server";
 
 export type ProjectActionResult =
   | Response
@@ -141,16 +141,16 @@ const chartString: ProjectActionHandler = async ({ projectId, userId, core, form
 const header: ProjectActionHandler = async ({ projectId, core, form }) => {
   const name = (form.get("name") as string | null)?.trim() ?? "";
   const status = (form.get("status") as string | null) ?? "";
-  const iconRaw = (form.get("iconEmoji") as string | null)?.trim() ?? "";
+  const iconEmoji = (form.get("iconEmoji") as string | null) ?? "";
   if (!name) return { error: "Project name is required." };
   if (!PROJECT_STATUSES.includes(status as ProjectStatus)) {
     return { error: "Invalid status." };
   }
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { name, status: status as ProjectStatus, iconEmoji: iconRaw || null },
+  await updateProjectSettings({
+    projectId,
+    isCore: core,
+    patch: { name, iconEmoji, ...(core ? { status } : {}) },
   });
-  await ensureProjectGroup(projectId, name);
   if (core && form.get("hasTerms") === "1") {
     await replaceProjectTerms(projectId, form.getAll("termId").map(String));
   }
@@ -160,48 +160,41 @@ const header: ProjectActionHandler = async ({ projectId, core, form }) => {
   return back(projectId);
 };
 
-const description: ProjectActionHandler = async ({ projectId, form }) => {
-  const descriptionRaw = (form.get("description") as string | null)?.trim() ?? "";
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { description: descriptionRaw === "" ? null : descriptionRaw },
-  });
+const description: ProjectActionHandler = async ({ projectId, core, form }) => {
+  const value = (form.get("description") as string | null) ?? "";
+  await updateProjectSettings({ projectId, isCore: core, patch: { description: value } });
   return back(projectId);
 };
 
-const updateImage: ProjectActionHandler = async ({ projectId, form }) => {
-  const imageUrlRaw = (form.get("imageUrl") as string | null)?.trim() ?? "";
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { imageUrl: imageUrlRaw === "" ? null : imageUrlRaw },
-  });
+const updateImage: ProjectActionHandler = async ({ projectId, core, form }) => {
+  const imageUrl = (form.get("imageUrl") as string | null) ?? "";
+  await updateProjectSettings({ projectId, isCore: core, patch: { imageUrl } });
   return back(projectId);
 };
 
-const status: ProjectActionHandler = async ({ projectId, form }) => {
+const status: ProjectActionHandler = async ({ projectId, core, form }) => {
   const value = (form.get("status") as string | null) ?? "";
   if (!PROJECT_STATUSES.includes(value as ProjectStatus)) {
     return { error: "Invalid status." };
   }
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { status: value as ProjectStatus },
+  await updateProjectSettings({ projectId, isCore: core, patch: { status: value } });
+  return back(projectId);
+};
+
+const visibility: ProjectActionHandler = async ({ projectId, core, form }) => {
+  await updateProjectSettings({
+    projectId,
+    isCore: core,
+    patch: { isPrivate: form.get("isPrivate") === "on" },
   });
   return back(projectId);
 };
 
-const visibility: ProjectActionHandler = async ({ projectId, form }) => {
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { isPrivate: form.get("isPrivate") === "on" },
-  });
-  return back(projectId);
-};
-
-const recordingPolicy: ProjectActionHandler = async ({ projectId, form }) => {
-  await prisma.project.update({
-    where: { id: projectId },
-    data: { recordingPolicy: form.get("recordingAllowed") === "on" ? "Allowed" : "Disabled" },
+const recordingPolicy: ProjectActionHandler = async ({ projectId, core, form }) => {
+  await updateProjectSettings({
+    projectId,
+    isCore: core,
+    patch: { recordingPolicy: form.get("recordingAllowed") === "on" ? "Allowed" : "Disabled" },
   });
   return back(projectId);
 };
@@ -239,51 +232,19 @@ const terms: ProjectActionHandler = async ({ projectId, form }) => {
   return back(projectId);
 };
 
-const details: ProjectActionHandler = async ({ projectId, form }) => {
-  const calendarEmailRaw = (form.get("calendarEmail") as string | null)?.trim() ?? "";
-  const repoUrlsRaw = (form.get("repoUrls") as string | null) ?? "";
-  const figmaUrlsRaw = (form.get("figmaUrls") as string | null) ?? "";
-  const deploymentUrlRaw = (form.get("deploymentUrl") as string | null)?.trim() ?? "";
-  const termCountRaw = (form.get("termCount") as string | null) ?? "";
-  const githubTeamRaw = (form.get("githubTeamSlug") as string | null)?.trim() ?? "";
-  const slackChannelRaw = (form.get("slackChannelName") as string | null)?.trim() ?? "";
-
-  const githubTeamSlug =
-    githubTeamRaw === ""
-      ? null
-      : githubTeamRaw
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "-")
-          .replace(/^-+|-+$/g, "");
-
-  const slackChannelName =
-    slackChannelRaw === ""
-      ? null
-      : slackChannelRaw
-          .toLowerCase()
-          .replace(/[^a-z0-9-_\s]/g, "")
-          .trim()
-          .replace(/\s+/g, "-")
-          .slice(0, 80);
-
-  const lines = (raw: string) =>
-    raw
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-  const termCount = Math.max(1, Math.floor(Number(termCountRaw)) || 1);
-
-  await prisma.project.update({
-    where: { id: projectId },
-    data: {
-      calendarEmail: calendarEmailRaw === "" ? null : calendarEmailRaw,
-      repoUrls: lines(repoUrlsRaw),
-      figmaUrls: lines(figmaUrlsRaw),
-      deploymentUrl: deploymentUrlRaw === "" ? null : deploymentUrlRaw,
-      termCount,
-      githubTeamSlug,
-      slackChannelName,
+const details: ProjectActionHandler = async ({ projectId, core, form }) => {
+  const text = (name: string) => (form.get(name) as string | null) ?? "";
+  await updateProjectSettings({
+    projectId,
+    isCore: core,
+    patch: {
+      calendarEmail: text("calendarEmail"),
+      repoUrls: linesToList(text("repoUrls")),
+      figmaUrls: linesToList(text("figmaUrls")),
+      deploymentUrl: text("deploymentUrl"),
+      termCount: Number(text("termCount")),
+      githubTeamSlug: text("githubTeamSlug"),
+      slackChannelName: text("slackChannelName"),
     },
   });
   return back(projectId);
