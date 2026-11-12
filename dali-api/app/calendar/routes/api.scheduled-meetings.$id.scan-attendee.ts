@@ -6,7 +6,7 @@ import { isCore, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import {
   classifyWalletScanFailure,
   memberIdFromToken,

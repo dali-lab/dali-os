@@ -21,18 +21,10 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 vi.mock("~/lib/db.server");
-// Keep the real (pure) isWithinCheckInWindow — the tool now shares it — and mock
-// only the DB-touching markMeetingAttendance.
-vi.mock("~/calendar/lib/scheduled-meeting.server", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("~/calendar/lib/scheduled-meeting.server")>();
-  return {
-    ...actual,
-    markMeetingAttendance: vi.fn(),
-  };
-});
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({ markMeetingAttendance: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import {
   runCheckInToMeeting,
   CHECK_IN_TO_MEETING_DEF,

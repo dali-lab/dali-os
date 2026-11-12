@@ -13,19 +13,12 @@ vi.mock("~/lib/cors", () => ({
   withCors: vi.fn((_req: Request, res: Response) => res),
   handlePreflight: vi.fn(() => null),
 }));
-vi.mock("~/calendar/lib/scheduled-meeting.server", async (importOriginal) => {
-  const real = await importOriginal<typeof import("~/calendar/lib/scheduled-meeting.server")>();
-  return {
-    tracksAttendance: real.tracksAttendance,
-    parseOccurrenceParam: real.parseOccurrenceParam,
-    markMeetingAttendance: vi.fn(),
-  };
-});
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({ markMeetingAttendance: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import { action } from "../api.scheduled-meetings.$id.attendance";
 
 const findMeeting = vi.mocked(prisma.scheduledMeeting.findUnique);

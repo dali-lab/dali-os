@@ -15,7 +15,7 @@ import {
   type Occurrence,
   type OccurrenceException,
 } from "~/calendar/lib/meeting-occurrences";
-import { CHECK_IN_GRACE_MIN } from "~/calendar/lib/scheduled-meeting.server";
+import { CHECK_IN_GRACE_MIN } from "~/calendar/lib/meeting-occurrences";
 import { currentTerm, isCore } from "~/lib/roles";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import type { Prisma, RoomBookingSource } from "~/generated/prisma/client";

@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import {
   classifyWalletScanFailure,
   memberIdFromToken,

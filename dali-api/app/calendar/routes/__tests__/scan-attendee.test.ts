@@ -18,7 +18,7 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/validate", () => ({ parseJson: vi.fn() }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn() }));
-vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({
   markMeetingAttendance: vi.fn(),
 }));
 vi.mock("~/wallet/lib/wallet-token.server", () => ({
@@ -33,7 +33,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import { memberIdFromToken, verifyWalletToken, walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 import { action } from "~/calendar/routes/api.scheduled-meetings.$id.scan-attendee";
 

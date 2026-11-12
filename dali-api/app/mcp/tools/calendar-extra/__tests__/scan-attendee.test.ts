@@ -25,7 +25,7 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({
   markMeetingAttendance: vi.fn(),
 }));
 vi.mock("~/wallet/lib/wallet-token.server", () => ({
@@ -40,7 +40,7 @@ vi.mock("~/lib/photo", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance } from "~/calendar/lib/scheduled-meeting.server";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import { walletTokensConfigured, memberIdFromToken, verifyWalletToken } from "~/wallet/lib/wallet-token.server";
 import { runScanAttendee, SCAN_ATTENDEE_DEF } from "~/mcp/tools/calendar-extra/scan-attendee";
 

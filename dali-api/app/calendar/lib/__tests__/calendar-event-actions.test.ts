@@ -70,15 +70,22 @@ vi.mock("~/calendar/lib/general-calendar", () => ({
 }));
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
 vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
-  attachMeetingNote: vi.fn(),
-  attachMeetingWhiteboard: vi.fn(),
   cancelScheduledMeeting: vi.fn(),
-  ownsGoogleEvent: vi.fn(),
-  parseOccurrenceParam: vi.fn((v: unknown) => (v ? { parsed: v } : undefined)),
-  resolveMeetingOccurrence: vi.fn(),
-  setMeetingProject: vi.fn(),
   trackExternalEventAsMeeting: vi.fn(),
   updateScheduledMeeting: vi.fn(),
+}));
+vi.mock("~/calendar/lib/meeting-artifacts.server", () => ({
+  attachMeetingNote: vi.fn(),
+  attachMeetingWhiteboard: vi.fn(),
+  setMeetingProject: vi.fn(),
+}));
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({
+  resolveMeetingOccurrence: vi.fn(),
+}));
+vi.mock("~/calendar/lib/meeting-occurrences", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("~/calendar/lib/meeting-occurrences")>()),
+  ownsGoogleEvent: vi.fn(),
+  parseOccurrenceParam: vi.fn((v: unknown) => (v ? { parsed: v } : undefined)),
 }));
 vi.mock("~/lib/note-path.server", () => ({ meetingNotePath: vi.fn() }));
 vi.mock("~/rooms/lib/rooms.server", () => ({

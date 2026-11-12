@@ -6,7 +6,7 @@ import { pageDocName } from "~/collab/roomName";
 import { parseJson } from "~/lib/validate";
 import { createNote } from "~/members/lib/personal-notes-actions.server";
 import { PageNameConflictError } from "~/drive/lib/page-names.server";
-import { attachMeetingNote } from "~/calendar/lib/scheduled-meeting.server";
+import { attachMeetingNote } from "~/calendar/lib/meeting-artifacts.server";
 import { actionItemsOf, notePageId } from "~/lib/mobile-notes";
 import { CURSOR_DONE, decodeCursor, joinPairCursor, keysetAfter, keysetPage, splitPairCursor } from "~/lib/pagination";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";

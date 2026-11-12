@@ -7,6 +7,7 @@
 
 import rrulePkg from "rrule";
 import { APPLICATION_TZ, fromWallClock, toWallClock } from "~/lib/timezone";
+import type { MeetingType } from "~/generated/prisma/client";
 
 const { RRule, rrulestr } = rrulePkg as unknown as {
   RRule: typeof import("rrule").RRule;
@@ -318,4 +319,106 @@ export function followingRule(recurrence: string | string[], seriesStart: Date, 
   const before = built.all().filter((d) => d < splitAt).length;
   const remaining = Number(count.split("=")[1]) - before;
   return [...base, `COUNT=${Math.max(remaining, 1)}`].join(";");
+}
+
+
+/**
+ * Whether a meeting keeps an attendance roster: it has a type, a notebook, a
+ * self check-in, or invited people. Shared by the roster reconcile on edit and
+ * the manual attendance route and MCP tool.
+ */
+export function tracksAttendance(meeting: {
+  meetingType: MeetingType | null;
+  notebookId: string | null;
+  attendanceMode: string | null;
+  participantUserIds: string[];
+}): boolean {
+  return (
+    meeting.meetingType != null ||
+    meeting.notebookId != null ||
+    meeting.attendanceMode === "SelfCheckIn" ||
+    meeting.participantUserIds.length > 0
+  );
+}
+
+// Grace on either side of a meeting during which self-check-in / wallet-pass
+// scan is accepted: from CHECK_IN_GRACE_MIN before the scheduled start to
+// CHECK_IN_GRACE_MIN after the scheduled end.
+export const CHECK_IN_GRACE_MIN = 15;
+
+// How far either side of `now` to look for an occurrence. An exception can move
+// an occurrence off its original slot, and expandOccurrences filters by ORIGINAL
+// start, so the scan band has to be wider than the window being tested — a week
+// covers "we moved this Tuesday's meeting to Thursday" without expanding a
+// pointless number of occurrences.
+const OCCURRENCE_SCAN_BAND_MS = 7 * 24 * 60 * 60_000;
+
+/**
+ * Whether `now` falls within the check-in window of ANY occurrence of a meeting.
+ * Shared by the self-check-in route (api.scheduled-meetings.$id.check-in.ts),
+ * the wallet-pass scan route (api.scheduled-meetings.$id.scan-attendee.ts) and
+ * the equivalent MCP tools so the window math has one definition.
+ *
+ * Recurrence is the whole reason this takes a meeting rather than a bare date.
+ * `selectedAt` is the FIRST occurrence and never advances, so testing it
+ * directly meant a weekly meeting only accepted check-ins during its very first
+ * sitting — every occurrence after that reported "window closed" while the
+ * meeting was in progress. Exceptions matter for the same reason: a rescheduled
+ * occurrence has to be judged at its new time, not its original slot.
+ *
+ * A meeting with no scheduled time yet has no window (nothing to be early or
+ * late for), so this returns false — callers that want to distinguish "no time
+ * set" from "window closed" check selectedAt first.
+ */
+export function isWithinCheckInWindow(
+  meeting: {
+    selectedAt: Date | null;
+    durationMinutes: number;
+    recurrenceRule?: string | null;
+  },
+  exceptions: OccurrenceException[] = [],
+  now: number = Date.now(),
+): boolean {
+  if (!meeting.selectedAt) return false;
+  const graceMs = CHECK_IN_GRACE_MIN * 60_000;
+  const occurrences = expandOccurrences(
+    {
+      selectedAt: meeting.selectedAt,
+      durationMinutes: meeting.durationMinutes,
+      recurrenceRule: meeting.recurrenceRule ?? null,
+    },
+    exceptions,
+    new Date(now - OCCURRENCE_SCAN_BAND_MS),
+    new Date(now + OCCURRENCE_SCAN_BAND_MS),
+  );
+  return occurrences.some(
+    (occ) => now >= occ.start.getTime() - graceMs && now <= occ.end.getTime() + graceMs,
+  );
+}
+
+/** An `occurrence` query/body param (ISO instant) → Date; anything else → null,
+ *  which resolves to the first occurrence. */
+export function parseOccurrenceParam(raw: unknown): Date | null {
+  if (typeof raw !== "string" || !raw) return null;
+  const d = new Date(raw);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** DALI only writes to a Google event it created. Null origin is a legacy row, treated as created. */
+export function ownsGoogleEvent(meeting: {
+  googleEventOrigin?: "Created" | "Tracked" | null;
+  externalEventId: string | null;
+}): boolean {
+  if (meeting.googleEventOrigin === "Tracked") return false;
+  return !(meeting.externalEventId && googleSeriesBase(meeting.externalEventId) !== meeting.externalEventId);
+}
+
+/** Whether a meeting still has an occurrence ahead of `now`. A series is treated
+ *  as ongoing; an unscheduled (Searching) meeting hasn't happened yet. */
+export function meetingIsUpcoming(
+  meeting: { selectedAt: Date | null; durationMinutes: number; recurrenceRule: string | null },
+  now: Date,
+): boolean {
+  if (meeting.recurrenceRule || !meeting.selectedAt) return true;
+  return meeting.selectedAt.getTime() + meeting.durationMinutes * 60_000 > now.getTime();
 }
