@@ -10,7 +10,7 @@ import {
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { getFrontendUrl } from "~/lib/app-env";
 import { slackSendAllowed } from "~/slack/lib/send-gate";
-import { slackConfigured, sendDm } from "~/slack/lib/slack-client";
+import { slackConfigured } from "~/slack/lib/slack-client";
 
 // Deep-link for the welcome todo and Core reminders.
 export const ONBOARDING_LINK = "/onboarding";
@@ -176,14 +176,24 @@ export async function sendOnboardingReminders(args: {
 
     let count = 0;
     let skipped = 0;
+    const slackIds: Array<string | null> = [];
     for (const u of users) {
       if (!u.slackUserId) {
         skipped++;
         continue;
       }
-      await sendDm(u.slackUserId, text);
+      const { id } = await enqueueOutbound({
+        channel: "slack_dm",
+        target: u.slackUserId,
+        recipientUserId: u.id,
+        slackText: text,
+        eventType: ONBOARDING_REMINDER_EVENT_TYPE,
+        createdByUserId: args.actorId,
+      });
+      slackIds.push(id);
       count++;
     }
+    await drainNow(slackIds);
     return { count, skipped };
   }
 
@@ -221,6 +231,7 @@ export async function sendOnboardingReminders(args: {
       bodyText: mail.text,
       recipientUserId: u.id,
       eventType: "member.onboarding",
+      createdByUserId: args.actorId,
     });
     ids.push(id);
     count++;
