@@ -15,7 +15,6 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { ChevronLeft, ChevronRight, GripVertical, MoreHorizontal, Plus } from "lucide-react";
 import { OsPageHeader } from "~/components/os-section";
-import { useOsChrome } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { IconButton } from "~/components/ui/IconButton";
@@ -73,7 +72,6 @@ function useSend(): Send {
 }
 
 export function MilestonesPage({ page }: { page: MilestonesPageData }) {
-  const { os } = useOsChrome();
   return (
     <div className="flex flex-col gap-6">
       <OsPageHeader title="Milestones" description="Goals and plans for each week of the term." />
@@ -81,7 +79,7 @@ export function MilestonesPage({ page }: { page: MilestonesPageData }) {
       {page.term ? (
         <TermBody key={page.term.id} page={page} />
       ) : (
-        <div className={cn(os && "rounded-os-card bg-os-card")}>
+        <div className="rounded-os-card bg-os-card">
           <EmptyState className="py-12">
             {page.missingLabel} isn't set up yet. An admin needs to add the term first.
           </EmptyState>
@@ -142,7 +140,6 @@ const collision: CollisionDetection = (args) => {
 function TermBody({ page }: { page: MilestonesPageData }) {
   const term = page.term!;
   const send = useSend();
-  const { os } = useOsChrome();
   const [params, setParams] = useSearchParams();
   const [items, setItems] = useState<MilestoneItem[]>(page.items ?? []);
   useEffect(() => setItems(page.items ?? []), [page.items]);
@@ -193,7 +190,7 @@ function TermBody({ page }: { page: MilestonesPageData }) {
     <DndContext sensors={sensors} collisionDetection={collision} onDragEnd={onDragEnd}>
       <div className="flex flex-col gap-5">
         {empty && (
-          <div className={cn(os && "rounded-os-card bg-os-card")}>
+          <div className="rounded-os-card bg-os-card">
             <EmptyState
               actions={
                 <>
@@ -301,10 +298,9 @@ function WeekDetail({
   members: Member[];
   send: Send;
 }) {
-  const { os } = useOsChrome();
   const range = weekRange(term.startMs, week);
   return (
-    <section className={cn(os && "rounded-os-card bg-os-card", "flex flex-col gap-6 p-5")}>
+    <section className={"rounded-os-card bg-os-card flex flex-col gap-6 p-5"}>
       <header>
         <h2 className="font-heading text-lg font-semibold text-foreground">
           Week {week}
@@ -517,8 +513,7 @@ function ItemRow({ item, members, send }: { item: MilestoneItem; members: Member
 }
 
 function SideCards({ page, week, items }: { page: MilestonesPageData; week: number; items: MilestoneItem[] }) {
-  const { os } = useOsChrome();
-  const card = cn(os && "rounded-os-card bg-os-card", "flex flex-col gap-2 p-4");
+  const card = "rounded-os-card bg-os-card flex flex-col gap-2 p-4";
   const lastYearItems = (page.lastYearItems ?? []).filter((i) => i.week === week);
   const next = [week + 1, week + 2].filter((w) => w <= 10);
   return (

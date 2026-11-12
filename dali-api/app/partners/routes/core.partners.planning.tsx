@@ -26,8 +26,6 @@ import { TermFilter } from "~/components/TermFilter";
 import { Toggle } from "~/components/ui/Toggle";
 import { Tooltip } from "~/components/ui/floating";
 import { SegmentedTabButtons } from "~/components/AreaPillNav";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
@@ -210,7 +208,6 @@ const GROUP_BY = ["project", "domain"] as const;
 
 export default function PartnersPlanning() {
   const data = useLoaderData<typeof loader>();
-  const { os } = useOsChrome();
   const [view, setView] = useSearchParamChoice("group", GROUP_BY, "project");
   const [includePotential, setIncludePotential] = useState(false);
   const [includeBacklog, setIncludeBacklog] = useState(false);
@@ -266,7 +263,7 @@ export default function PartnersPlanning() {
           {view === "domain" && data.hasIntentData && (
             <Link
               to={termHref}
-              className={cn("shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground", !os && "underline")}
+              className="shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground"
             >
               {data.replied} of {data.roster} replied
             </Link>

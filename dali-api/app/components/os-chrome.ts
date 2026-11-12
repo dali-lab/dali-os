@@ -25,7 +25,6 @@ export function modalCardClass(size?: string) {
 
 export function useOsChrome() {
   return {
-    os: true as const,
     /** A panel surface: a settings card, an inline form, a section header. */
     card: "rounded-os-card bg-os-card",
     /** A page's large surfaces — a full-width table, a grid, a long form. */

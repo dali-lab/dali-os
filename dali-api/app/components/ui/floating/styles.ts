@@ -28,13 +28,11 @@ export const OS_SELECT_TRIGGER_CLASS =
 /**
  * The roomy toolbar filter pill — the Term / Domain / Website controls that sit
  * in a page's filter row. One definition so those rows can't drift apart; pass
- * a width alongside it (`cn(filterPillClass(os), "w-full sm:w-40")`).
+ * a width alongside it (`cn(filterPillClass(), "w-full sm:w-40")`).
  */
 export const OS_FILTER_PILL_CLASS =
   "inline-flex h-9 items-center justify-between gap-2 rounded-lg border border-border bg-card px-4 text-sm text-foreground transition-colors hover:bg-muted/40";
 
-// The `os` arg is vestigial (the dali.os pill is the only one now); kept
-// optional so the remaining call sites compile until they drop it.
-export function filterPillClass(_os?: boolean) {
+export function filterPillClass() {
   return OS_FILTER_PILL_CLASS;
 }

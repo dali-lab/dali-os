@@ -15,95 +15,48 @@ import { OS_SURFACE_CLASS, filterPillClass } from "./floating/styles";
  */
 
 /** The trigger pill. `active` when at least one slice is on. */
-export function customizeButtonClass(os: boolean, active: boolean) {
-  return cn(
-    filterPillClass(os),
-    "gap-2",
-    !os && "px-3 py-1.5 text-xs",
-    active && (os ? "border-os-accent text-os-accent" : "border-accent-coral"),
-  );
+export function customizeButtonClass(active: boolean) {
+  return cn(filterPillClass(), "gap-2", active && "border-os-accent text-os-accent");
 }
 
 /** Pass to <Popover panelClassName>. */
-export function filterPanelClass(_os?: boolean) {
+export function filterPanelClass() {
   return cn(
     "z-[60] w-72 overflow-y-auto p-3 focus:outline-none",
     OS_SURFACE_CLASS,
   );
 }
 
-export function FilterCountBadge({ os, count }: { os: boolean; count: number }) {
+export function FilterCountBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
-    <span
-      className={cn(
-        "rounded-[6px] px-1.5 py-0.5 text-[10px] font-semibold leading-none",
-        os ? "bg-os-accent text-os-bg" : "bg-accent-coral text-navy-deep",
-      )}
-    >
+    <span className="rounded-[6px] bg-os-accent px-1.5 py-0.5 text-[10px] font-semibold leading-none text-os-bg">
       {count}
     </span>
   );
 }
 
-export function FilterResetButton({
-  os,
-  onClick,
-}: {
-  os: boolean;
-  onClick: () => void;
-}) {
+export function FilterResetButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        "text-xs underline-offset-2 hover:underline",
-        os ? "text-os-accent" : "text-accent-coral",
-      )}
+      className="text-xs text-os-accent underline-offset-2 hover:underline"
     >
       Reset
     </button>
   );
 }
 
-export function FilterSectionLabel({
-  os,
-  children,
-}: {
-  os: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className={cn(
-        "text-sm font-semibold",
-        os ? "text-os-muted" : "text-muted-foreground",
-      )}
-    >
-      {children}
-    </span>
-  );
+export function FilterSectionLabel({ children }: { children: ReactNode }) {
+  return <span className="text-sm font-semibold text-os-muted">{children}</span>;
 }
 
 /** Every row in a panel body labels itself the same way, so the panel reads
  *  down one label column instead of a different label style per control. */
-function FilterLabel({
-  os,
-  hint,
-  children,
-}: {
-  os: boolean;
-  hint?: ReactNode;
-  children: ReactNode;
-}) {
+function FilterLabel({ hint, children }: { hint?: ReactNode; children: ReactNode }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 text-sm font-semibold",
-        os ? "text-os-grey" : "text-muted-foreground",
-      )}
-    >
+    <span className="inline-flex items-center gap-1 text-sm font-semibold text-os-grey">
       {children}
       {hint}
     </span>
@@ -114,20 +67,16 @@ function FilterLabel({
  *  `hint` sits beside the label — an <InfoTip>, typically. */
 export function FilterField({
   label,
-  os,
   hint,
   children,
 }: {
   label: string;
-  os: boolean;
   hint?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <FilterLabel os={os} hint={hint}>
-        {label}
-      </FilterLabel>
+      <FilterLabel hint={hint}>{label}</FilterLabel>
       {children}
     </div>
   );
@@ -136,17 +85,15 @@ export function FilterField({
 /** A labelled row of pills — the panel's default control. */
 export function FilterGroup({
   label,
-  os,
   hint,
   children,
 }: {
   label: string;
-  os: boolean;
   hint?: ReactNode;
   children: ReactNode;
 }) {
   return (
-    <FilterField label={label} os={os} hint={hint}>
+    <FilterField label={label} hint={hint}>
       <div className="flex flex-wrap gap-1.5">{children}</div>
     </FilterField>
   );
@@ -157,12 +104,10 @@ export function FilterGroup({
  *  way a bare <Toggle> (label to the right of the switch, a size up) does. */
 export function FilterToggleRow({
   label,
-  os,
   checked,
   onChange,
 }: {
   label: ReactNode;
-  os: boolean;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
@@ -170,7 +115,7 @@ export function FilterToggleRow({
     <Toggle
       label={label}
       className="w-full flex-row-reverse justify-between"
-      labelClassName={cn("text-xs", os ? "text-os-grey" : "text-muted-foreground")}
+      labelClassName="text-xs text-os-grey"
       checked={checked}
       onChange={(e) => onChange(e.target.checked)}
     />
@@ -185,24 +130,37 @@ const PILL_SIZES = {
   md: "h-9 px-4 text-sm",
 } as const;
 
+export function filterPillStateClass(
+  selected: boolean,
+  size: keyof typeof PILL_SIZES,
+  variant: "default" | "filled",
+) {
+  if (variant === "filled") {
+    return selected
+      ? "border-os-accent bg-os-accent font-medium text-background"
+      : cn(
+          "border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+          size === "md" && "bg-card",
+        );
+  }
+  return selected
+    ? "border-os-accent bg-os-accent/15 text-os-accent"
+    : "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground";
+}
+
+/** `filled` is the solid accent selection the education catalog uses beside its search field. */
 export function FilterPill({
-  os,
   selected,
   onClick,
   children,
   size = "sm",
-  tone = "coral",
+  variant = "default",
 }: {
-  os: boolean;
   selected: boolean;
   onClick: () => void;
   children: ReactNode;
   size?: keyof typeof PILL_SIZES;
-  /** Selected-state accent outside the os shell. "blue" is the os accent —
-   *  the same blue the member shell marks a selection with — which resolves
-   *  globally (html.light / .dark), not only inside `.os-shell`, so the portal
-   *  can use it too. */
-  tone?: "coral" | "blue";
+  variant?: "default" | "filled";
 }) {
   return (
     <button
@@ -213,24 +171,7 @@ export function FilterPill({
         "max-w-full truncate rounded-lg border transition-colors",
         size === "md" && "inline-flex items-center",
         PILL_SIZES[size],
-        // At md the unselected pill sits on the card surface so the row reads
-        // as one control set with the search field next to it.
-        size === "md" && !selected && !os && "bg-card",
-        selected
-          ? os
-            ? "border-os-accent bg-os-accent/15 text-os-accent"
-            : tone === "blue"
-              // Filled, not tinted: at md the pills sit beside a search field
-              // on the same card surface, where a coloured outline alone reads
-              // as just another bordered control. text-background inverts with
-              // the theme, which matters here — the os accent is a deep teal on
-              // paper and a pale cyan in dark, so a fixed ink would fail on one
-              // of them.
-              ? "border-os-accent bg-os-accent font-medium text-background"
-              : "border-accent-coral bg-accent-coral/10 text-accent-coral"
-          : os
-            ? "border-os-container text-os-grey hover:border-os-container-hi hover:text-foreground"
-            : "border-border text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+        filterPillStateClass(selected, size, variant),
       )}
     >
       {children}
