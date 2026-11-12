@@ -746,6 +746,7 @@ export default [
 
   // Form responses CSV export (resource route — same bare-body reasoning).
   route("forms/responses/:formId/export.csv", "forms/routes/forms.responses.$formId.export.csv.ts"),
+  route("core/board-export.csv", "core/routes/core.board-export.csv.ts"),
 
   // Payroll reconcile — upload (multipart action) + per-view CSV export.
   // Resource routes registered OUTSIDE the app layout (bare bodies, no shell).

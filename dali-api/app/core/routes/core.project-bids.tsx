@@ -24,6 +24,8 @@ import {
 import { ColumnFilters, useColumnFilters } from "~/projects/components/ColumnFilters";
 import { SlotAdvancedSettingsModal } from "~/projects/components/SlotAdvancedSettingsModal";
 import { SubmissionDatabase } from "~/projects/components/SubmissionDatabase";
+import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
 import { DomainFilter } from "~/projects/components/DomainFilter";
@@ -36,6 +38,7 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
+import { resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
 import type { Question } from "~/types";
 import { conditionalKeys } from "~/forms/lib/form-logic";
 
@@ -64,42 +67,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (portalRedirect) return portalRedirect;
   if (!(await canViewStaffing(auth.user.sub))) return redirect("/");
 
-  const {
-    terms: termOptions,
-    selected: selectedTerm,
-    termId: filterTermId,
-    isAll,
-  } = await resolveTermFilter(request);
-
-  const fallbackTerm = await currentTerm();
-  if (!fallbackTerm && termOptions.length === 0)
-    return { gate: "no-cycle" as const };
-
-  // Which staffing cycle(s) feed the board:
-  //  - All terms → every existing cycle (read-only aggregate; don't create).
-  //  - A specific term (default = current) → that term's cycle, get-or-create
-  //    so the live cycle keeps its existing auto-provision behavior.
-  let cycleIds: string[];
-  let cycleName: string;
-  let singleCycleId: string | null;
-  if (isAll) {
-    const cycles = await prisma.staffingCycle.findMany({
-      select: { id: true },
-    });
-    cycleIds = cycles.map((c) => c.id);
-    cycleName = "all terms";
-    singleCycleId = null;
-  } else {
-    const t =
-      termOptions.find((o) => o.id === filterTermId) ??
-      (fallbackTerm
-        ? { id: fallbackTerm.id, code: fallbackTerm.code }
-        : termOptions[0]);
-    const cycle = await ensureStaffingCycle(t.id, t.code);
-    cycleIds = [cycle.id];
-    cycleName = cycle.name;
-    singleCycleId = cycle.id;
-  }
+  const cycles = await resolveBoardCycles(request, { create: true });
+  if (!cycles) return { gate: "no-cycle" as const };
+  const { termOptions, selectedTerm, isAll, cycleIds, cycleName, singleCycleId } = cycles;
 
   // The generic-form slot binding is per-cycle, so it only applies to the
   // single-term view. In the all-terms aggregate there's no one slot to bind,
@@ -259,6 +229,9 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ ok: true });
   }
 
+  if (intent === "set-slot-column")
+    return setBoardColumn(form, cycle.id, SLOT, auth.user.sub, request);
+
   if (intent === "set-slot-gate") {
     const raw = String(form.get("gateAudience") ?? "");
     const audience = raw === "" ? null : raw;
@@ -314,6 +287,7 @@ function Loaded({
   const [domainId, setDomainId] = useSearchParamState("domain");
   const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
   const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
+  const responseTable = useFeatureFlag("form-response-views");
 
   const { filtered } = useFilteredList(data.submissions, {
     search,
@@ -385,6 +359,9 @@ function Loaded({
             shownCount={filtered.length}
           />
         </div>
+        {responseTable && !data.noFormConnected && (
+          <BoardCsvLink slot={SLOT} matching={filtered.length} total={data.submissions.length} />
+        )}
       </div>
 
       <div className="bg-card border border-border rounded-lg overflow-hidden">
@@ -394,6 +371,18 @@ function Loaded({
             <em>Advanced settings</em> to connect one so members can submit
             bids — bids only exist through the form.
           </div>
+        ) : responseTable ? (
+          <BoardTable
+            columns={data.tableColumns}
+            rows={filtered}
+            detailHref={(r) => `/core/project-bids/${r.userId}?term=${encodeURIComponent(data.selectedTerm)}`}
+            editable={data.canManage && !data.isAll}
+            emptyMessage={
+              data.submissions.length === 0
+                ? "No bid submissions yet."
+                : "No members match the current filters."
+            }
+          />
         ) : (
           <SubmissionDatabase
             columns={data.tableColumns}
