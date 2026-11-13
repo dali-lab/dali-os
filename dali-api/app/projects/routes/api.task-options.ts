@@ -4,7 +4,10 @@ import { requireAuth, requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { fullName } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
-import { currentTerm, isCore } from "~/lib/roles";
+import { currentTerm, getUserRoles, isCore } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { listActiveCoreMembers } from "~/lib/core-members.server";
+import { getCoreBoardProject } from "~/core/lib/taskboard.server";
 import { assignableAssignments } from "../lib/task-board";
 
 // GET /api/task-options — active projects the caller can add tasks to.
@@ -18,6 +21,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (projectId) {
     const gate = await requireProjectEditAccess(request, projectId);
     if (!gate.ok) return gate.response;
+    const project = await prisma.project.findUnique({ where: { id: projectId }, select: { kind: true } });
+    if (project?.kind === "CoreBoard") {
+      return withCors(request, Response.json({ members: await listActiveCoreMembers(request) }));
+    }
     const [term, assignments] = await Promise.all([
       currentTerm(request),
       prisma.projectAssignment.findMany({
@@ -41,14 +48,21 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  const core = await isCore(auth.user.sub);
-  const projects = await prisma.project.findMany({
-    where: {
-      status: "Active",
-      ...(core ? {} : { assignments: { some: { userId: auth.user.sub } } }),
-    },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
-  });
-  return withCors(request, Response.json({ projects }));
+  const userId = auth.user.sub;
+  const core = await isCore(userId);
+  const [projects, coreBoard] = await Promise.all([
+    prisma.project.findMany({
+      where: {
+        status: "Active",
+        kind: "Standard",
+        ...(core ? {} : { assignments: { some: { userId } } }),
+      },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+    core && (await isFeatureEnabled("core-taskboard", userId, await getUserRoles(userId, request)))
+      ? getCoreBoardProject()
+      : null,
+  ]);
+  return withCors(request, Response.json({ projects: coreBoard ? [coreBoard, ...projects] : projects }));
 }
