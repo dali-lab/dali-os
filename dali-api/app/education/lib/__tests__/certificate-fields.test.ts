@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  backgroundIssue,
   fieldBox,
   LINE_HEIGHT,
   parsePlacedFields,
@@ -133,5 +134,29 @@ describe("shrinkFontSize", () => {
 
   it("stops at 40 percent of the set size", () => {
     expect(shrinkFontSize(40, 100, 1000)).toBe(16);
+  });
+});
+
+describe("backgroundIssue", () => {
+  it.each([
+    ["image/png", "uploads/a.png"],
+    ["image/jpeg", "uploads/a.jpg"],
+    ["image/jpg", "uploads/a.jpg"],
+    ["IMAGE/PNG; charset=binary", "uploads/a"],
+    [null, "uploads/a.png"],
+    [null, "uploads/a.JPEG"],
+  ])("accepts %s %s", (type, key) => {
+    expect(backgroundIssue(type, key)).toBeNull();
+  });
+
+  it("flags a PDF by type or, with no type, by extension", () => {
+    expect(backgroundIssue("application/pdf", "uploads/a.png")).toBe("pdf");
+    expect(backgroundIssue(null, "uploads/Certificate_2.pdf")).toBe("pdf");
+  });
+
+  it("flags other formats as unsupported", () => {
+    expect(backgroundIssue("image/webp", "uploads/a.webp")).toBe("unsupported");
+    expect(backgroundIssue("image/svg+xml", "uploads/a.svg")).toBe("unsupported");
+    expect(backgroundIssue(null, "uploads/a")).toBe("unsupported");
   });
 });

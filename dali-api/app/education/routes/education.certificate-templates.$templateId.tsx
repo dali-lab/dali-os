@@ -5,7 +5,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import {
   getCertificateTemplate,
-  getCertificateTemplateBgUrl,
+  getCertificateTemplateBackground,
   renameCertificateTemplate,
   saveCertificateTemplateFields,
 } from "~/education/lib/certificate-templates.server";
@@ -34,10 +34,10 @@ export async function loader({
   const t = await getCertificateTemplate(params.templateId!);
   if (!t) throw new Response("Not found", { status: 404 });
 
-  const bgUrl = await getCertificateTemplateBgUrl(t.backgroundFileId);
-  if (!bgUrl) throw new Response("Not found", { status: 404 });
+  const background = await getCertificateTemplateBackground(t.backgroundFileId);
+  if (!background) throw new Response("Not found", { status: 404 });
 
-  return { template: t, bgUrl };
+  return { template: t, ...background };
 }
 
 export async function action({
@@ -83,7 +83,7 @@ export async function action({
 }
 
 export default function CertificateTemplateEditorRoute() {
-  const { template, bgUrl } = useLoaderData<typeof loader>();
+  const { template, bgUrl, bgIssue } = useLoaderData<typeof loader>();
   const [name, setName] = useState(template.name);
   const dialog = useDialog();
   const renameFetcher = useFetcher<{ ok?: boolean; error?: string }>();
@@ -132,6 +132,7 @@ export default function CertificateTemplateEditorRoute() {
       <CertificateTemplateEditor
         templateId={template.id}
         bgUrl={bgUrl}
+        bgIssue={bgIssue}
         bgWidth={template.bgWidth}
         bgHeight={template.bgHeight}
         initialFields={template.fields}

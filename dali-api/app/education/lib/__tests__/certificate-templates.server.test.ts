@@ -22,7 +22,7 @@ import { prisma } from "~/lib/db.server";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3.server";
 import { resolveFilingFolder } from "~/drive/lib/drive-receivers.server";
 import {
-  getCertificateTemplateBgUrl,
+  getCertificateTemplateBackground,
   listCertificateTemplates,
   getCertificateTemplate,
   createCertificateTemplate,
@@ -59,12 +59,12 @@ function templateExists(exists: boolean) {
 }
 
 describe("background resolution", () => {
-  it("getCertificateTemplateBgUrl presigns the current version inline, defaulting to image/png", async () => {
+  it("getCertificateTemplateBackground presigns the current version inline, defaulting to image/png", async () => {
     mockPrisma.projectFile.findFirst.mockResolvedValue({
       currentVersion: { s3Key: "uploads/bg.png", contentType: null },
     });
     vi.mocked(getDownloadUrl).mockResolvedValue("https://s3/bg");
-    expect(await getCertificateTemplateBgUrl("f1")).toBe("https://s3/bg");
+    expect(await getCertificateTemplateBackground("f1")).toEqual({ bgUrl: "https://s3/bg", bgIssue: null });
     expect(getDownloadUrl).toHaveBeenCalledWith("uploads/bg.png", {
       contentType: "image/png",
       inline: true,
@@ -75,11 +75,19 @@ describe("background resolution", () => {
     });
   });
 
+  it("reports a PDF background instead of signing it", async () => {
+    mockPrisma.projectFile.findFirst.mockResolvedValue({
+      currentVersion: { s3Key: "uploads/certificate-templates/bg.pdf", contentType: "application/pdf" },
+    });
+    expect(await getCertificateTemplateBackground("f1")).toEqual({ bgUrl: null, bgIssue: "pdf" });
+    expect(getDownloadUrl).not.toHaveBeenCalled();
+  });
+
   it("returns null when the file is archived or has no version", async () => {
     mockPrisma.projectFile.findFirst.mockResolvedValue(null);
-    expect(await getCertificateTemplateBgUrl("f1")).toBeNull();
+    expect(await getCertificateTemplateBackground("f1")).toBeNull();
     mockPrisma.projectFile.findFirst.mockResolvedValue({ currentVersion: null });
-    expect(await getCertificateTemplateBgUrl("f1")).toBeNull();
+    expect(await getCertificateTemplateBackground("f1")).toBeNull();
     expect(getDownloadUrl).not.toHaveBeenCalled();
   });
 });
@@ -146,6 +154,8 @@ describe("createCertificateTemplate", () => {
   it.each([
     [{ name: "   " }, "Name is required"],
     [{ s3Key: "other/bg.png" }, "Invalid background image"],
+    [{ contentType: "application/pdf", s3Key: "uploads/bg.pdf" }, "The background must be a PNG or JPG image"],
+    [{ contentType: "image/webp" }, "The background must be a PNG or JPG image"],
     [{ bgWidth: 0 }, "Background dimensions are required"],
     [{ bgHeight: -5 }, "Background dimensions are required"],
     [{ bgWidth: NaN }, "Background dimensions are required"],

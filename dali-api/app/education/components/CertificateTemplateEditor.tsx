@@ -19,6 +19,7 @@ import {
   LINE_HEIGHT,
   shrinkFontSize,
   upgradeLegacyField,
+  type BackgroundIssue,
   type CertificateFieldKey,
   type FieldFit,
   type PlacedField,
@@ -113,12 +114,14 @@ function FieldText({
 
 export function CertificateTemplateEditor({
   bgUrl,
+  bgIssue = null,
   bgWidth,
   bgHeight,
   initialFields,
 }: {
   templateId: string;
-  bgUrl: string;
+  bgUrl: string | null;
+  bgIssue?: BackgroundIssue | null;
   bgWidth: number;
   bgHeight: number;
   initialFields: PlacedField[];
@@ -227,7 +230,15 @@ export function CertificateTemplateEditor({
             className="relative w-full overflow-hidden rounded-lg border border-border bg-muted [container-type:inline-size] focus:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
             style={{ aspectRatio: `${bgWidth} / ${bgHeight}` }}
           >
-            <img src={bgUrl} alt="Certificate background" draggable={false} className="absolute inset-0 h-full w-full select-none" />
+            {bgUrl ? (
+              <img src={bgUrl} alt="Certificate background" draggable={false} className="absolute inset-0 h-full w-full select-none" />
+            ) : (
+              <p data-background-issue className="absolute inset-x-0 top-0 p-4 text-sm text-muted-foreground">
+                {bgIssue === "pdf"
+                  ? "This background is a PDF. Export it as a PNG or JPG and replace it in Drive."
+                  : "This background isn't a PNG or JPG. Replace it in Drive with a PNG or JPG."}
+              </p>
+            )}
             {fields.map((f) => {
               const el = slide.elements.find((e) => e.id === f.key)!;
               return (

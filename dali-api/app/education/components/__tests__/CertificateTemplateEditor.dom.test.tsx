@@ -33,8 +33,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function mount(initialFields: PlacedField[]) {
-  act(() => root.render(createElement(CertificateTemplateEditor, { templateId: "t1", bgUrl: "/bg.png", bgWidth: 1000, bgHeight: 800, initialFields })));
+function mount(initialFields: PlacedField[], background: { bgUrl: string | null; bgIssue?: "pdf" | "unsupported" | null } = { bgUrl: "/bg.png" }) {
+  act(() => root.render(createElement(CertificateTemplateEditor, { templateId: "t1", ...background, bgWidth: 1000, bgHeight: 800, initialFields })));
 }
 const hit = (key: string) => container.querySelector<HTMLElement>(`[data-hit="${key}"]`);
 const stage = () => container.querySelector<HTMLElement>("[data-certificate-stage]")!;
@@ -187,5 +187,23 @@ describe("CertificateTemplateEditor", () => {
   it("tells the editor that saving restyles issued certificates", () => {
     mount([box]);
     expect(container.textContent).toContain("restyles every certificate already issued");
+  });
+
+  it("shows the background image when there is one", () => {
+    mount([box]);
+    expect(container.querySelector("img")?.getAttribute("src")).toBe("/bg.png");
+    expect(container.querySelector("[data-background-issue]")).toBeNull();
+  });
+
+  it("asks for a PNG or JPG instead of a broken image when the background is a PDF", () => {
+    mount([box], { bgUrl: null, bgIssue: "pdf" });
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("[data-background-issue]")?.textContent).toBe("This background is a PDF. Export it as a PNG or JPG and replace it in Drive.");
+    expect(hit("offeringTitle")).not.toBeNull();
+  });
+
+  it("names any other unsupported background generically", () => {
+    mount([box], { bgUrl: null, bgIssue: "unsupported" });
+    expect(container.querySelector("[data-background-issue]")?.textContent).toBe("This background isn't a PNG or JPG. Replace it in Drive with a PNG or JPG.");
   });
 });
