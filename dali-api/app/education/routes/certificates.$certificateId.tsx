@@ -5,7 +5,8 @@ import { redirectToLogin } from "~/lib/login-next";
 import { getCertificate } from "~/education/lib/certificates.server";
 import { getCertificateWebTemplate } from "~/education/lib/certificate-templates.server";
 import { isOfferingManager } from "~/education/lib/access.server";
-import { certificateFieldValue, type PlacedField } from "~/education/lib/certificate-fields";
+import { certificateFieldValue, isBoxField, LINE_HEIGHT, type PlacedField } from "~/education/lib/certificate-fields";
+import { fieldValues, templateFieldSizes } from "~/education/lib/certificate-pdf.server";
 import { formatDateShort } from "~/lib/display";
 import { buttonClasses } from "~/components/ui/Button";
 
@@ -32,30 +33,23 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const webTemplate = certificate.templateId
     ? await getCertificateWebTemplate(certificate.templateId)
     : null;
+  const templateValues = webTemplate ? fieldValues(certificate) : null;
+  const fieldSizes =
+    webTemplate && templateValues
+      ? templateFieldSizes(webTemplate.fields, templateValues, webTemplate.bgWidth)
+      : [];
 
-  return { certificate, isOwner, webTemplate };
+  return { certificate, isOwner, webTemplate, templateValues, fieldSizes };
 }
 
 export default function CertificatePage() {
-  const { certificate, webTemplate } = useLoaderData<typeof loader>();
+  const { certificate, webTemplate, templateValues, fieldSizes } = useLoaderData<typeof loader>();
 
   return (
     <div className="min-h-screen bg-section-bg p-4 sm:p-10 print:bg-white print:p-0">
       <div className="mx-auto max-w-3xl flex flex-col gap-4">
-        {webTemplate ? (
-          <CertificateTemplateView
-            template={webTemplate}
-            values={{
-              studentName: certificate.studentName,
-              offeringTitle: certificate.offeringTitle,
-              dateRange:
-                certificate.startsAt && certificate.endsAt
-                  ? `${formatDateShort(certificate.startsAt)} – ${formatDateShort(certificate.endsAt)}`
-                  : "",
-              instructors: certificate.instructorNames.join(", "),
-              issuedDate: formatDateShort(certificate.issuedAt),
-            }}
-          />
+        {webTemplate && templateValues ? (
+          <CertificateTemplateView template={webTemplate} values={templateValues} sizes={fieldSizes} />
         ) : (
           <div className="bg-card border-4 border-accent-coral rounded-lg p-10 sm:p-14 text-center shadow-brand-2 print:shadow-none">
             <div className="border border-dark-blue rounded-md p-8 sm:p-12">
@@ -135,9 +129,11 @@ export default function CertificatePage() {
 function CertificateTemplateView({
   template,
   values,
+  sizes,
 }: {
   template: { bgUrl: string; bgWidth: number; bgHeight: number; fields: PlacedField[] };
   values: Parameters<typeof certificateFieldValue>[1];
+  sizes: number[];
 }) {
   return (
     <div
@@ -152,11 +148,39 @@ function CertificateTemplateView({
       {template.fields.map((f, i) => {
         const text = certificateFieldValue(f.key, values);
         if (!text) return null;
+        const size = sizes[i] ?? f.fontSize;
+        const common = {
+          fontSize: `${(size / template.bgWidth) * 100}cqw`,
+          color: f.color,
+          fontWeight: f.bold ? 700 : 400,
+          fontFamily: "Helvetica, Arial, sans-serif",
+        };
+        if (isBoxField(f)) {
+          return (
+            <span
+              key={`${f.key}-${i}`}
+              data-field={f.key}
+              className="absolute overflow-hidden break-words"
+              style={{
+                ...common,
+                left: `${f.x * 100}%`,
+                top: `${f.y * 100}%`,
+                width: `${f.w * 100}%`,
+                textAlign: f.align,
+                lineHeight: LINE_HEIGHT,
+              }}
+            >
+              {text}
+            </span>
+          );
+        }
         return (
           <span
             key={`${f.key}-${i}`}
+            data-field={f.key}
             className="absolute whitespace-nowrap leading-none"
             style={{
+              ...common,
               left: `${f.x * 100}%`,
               top: `${f.y * 100}%`,
               transform:
@@ -165,10 +189,6 @@ function CertificateTemplateView({
                   : f.align === "right"
                     ? "translateX(-100%)"
                     : undefined,
-              fontSize: `${(f.fontSize / template.bgWidth) * 100}cqw`,
-              color: f.color,
-              fontWeight: f.bold ? 700 : 400,
-              fontFamily: "Helvetica, Arial, sans-serif",
             }}
           >
             {text}

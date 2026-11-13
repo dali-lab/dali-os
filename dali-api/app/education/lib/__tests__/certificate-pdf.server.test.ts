@@ -121,7 +121,7 @@ describe("template design", () => {
 
   it("anchors left-aligned text at the fractional position and styles it", async () => {
     await renderCertificatePdf(cert, template([field({})]));
-    expect(texts()).toEqual([["Ada Lovelace", 500, 200, { lineBreak: false }]]);
+    expect(texts()).toEqual([["Ada Lovelace", 500, 200, { lineBreak: false, height: 600 }]]);
     expect(h.state.calls).toContainEqual({ op: "fontSize", args: [30] });
     expect(h.state.calls).toContainEqual({ op: "fillColor", args: ["#112233"] });
     expect(h.state.calls).toContainEqual({ op: "font", args: ["Helvetica"] });

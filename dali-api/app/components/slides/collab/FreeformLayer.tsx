@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 import { Lock } from "lucide-react";
 import { cropByHandle, fullRect } from "~/components/slides/deck/crop";
 import { expandToLeaves, explicitPlacement, placedElements, selectionTarget, type Placed, type PlacedLive } from "~/components/slides/deck/freeform";
-import { boundsOf, gapsFor, intersects, rotatedBounds, type Gap, type Handle, type Rect } from "~/components/slides/deck/geometry";
-import { STAGE_H, STAGE_W } from "~/components/slides/deck/layouts";
+import { boundsOf, gapsFor, intersects, rotatedBounds, SLIDE_STAGE, type Gap, type Handle, type Rect, type Stage } from "~/components/slides/deck/geometry";
 import type { RenderElement, RenderSlide } from "~/components/slides/deck/snapshot";
 import { cn } from "~/lib/cn";
 import { applyGesture, isDrag, marqueeRect, type Gesture, type GestureFrame, type GestureKind } from "./gesture";
@@ -23,27 +22,27 @@ const HANDLES: Array<{ handle: Handle; left: string; top: string; cursor: string
 ];
 
 const pct = (n: number, of: number) => `${(n / of) * 100}%`;
-const boxStyle = (r: Rect & { rot?: number }) => ({
+const boxStyle = (r: Rect & { rot?: number }, stage: Stage = SLIDE_STAGE) => ({
   position: "absolute" as const,
-  left: pct(r.x, STAGE_W),
-  top: pct(r.y, STAGE_H),
-  width: pct(r.w, STAGE_W),
-  height: pct(r.h, STAGE_H),
+  left: pct(r.x, stage.w),
+  top: pct(r.y, stage.h),
+  width: pct(r.w, stage.w),
+  height: pct(r.h, stage.h),
   ...(r.rot ? { transform: `rotate(${r.rot}deg)` } : {}),
 });
 
 export const FRAME_OUTSET = 4;
 
 /** A box drawn FRAME_OUTSET screen pixels outside `r` on every side, with its border outside that gap. Percent children land on the outset edge. */
-export const outsetStyle = (r: Rect & { rot?: number }, border: number) => {
+export const outsetStyle = (r: Rect & { rot?: number }, border: number, stage: Stage = SLIDE_STAGE) => {
   const edge = FRAME_OUTSET + border;
   return {
-    ...boxStyle(r),
+    ...boxStyle(r, stage),
     boxSizing: "content-box" as const,
-    left: `calc(${pct(r.x, STAGE_W)} - ${edge}px)`,
-    top: `calc(${pct(r.y, STAGE_H)} - ${edge}px)`,
-    width: `calc(${pct(r.w, STAGE_W)} + ${FRAME_OUTSET * 2}px)`,
-    height: `calc(${pct(r.h, STAGE_H)} + ${FRAME_OUTSET * 2}px)`,
+    left: `calc(${pct(r.x, stage.w)} - ${edge}px)`,
+    top: `calc(${pct(r.y, stage.h)} - ${edge}px)`,
+    width: `calc(${pct(r.w, stage.w)} + ${FRAME_OUTSET * 2}px)`,
+    height: `calc(${pct(r.h, stage.h)} + ${FRAME_OUTSET * 2}px)`,
   };
 };
 
@@ -54,13 +53,16 @@ export interface FreeformLayerProps {
   selection: string[];
   onSelect: (ids: string[]) => void;
   editingId: string | null;
-  onEdit: (id: string | null) => void;
+  onEdit?: (id: string | null) => void;
   prefs: SnapPrefs;
-  armed: ArmedTool | null;
-  onPlace: (tool: ArmedTool, at: { x: number; y: number }) => void;
+  armed?: ArmedTool | null;
+  onPlace?: (tool: ArmedTool, at: { x: number; y: number }) => void;
   onLive: (live: Map<string, PlacedLive> | null) => void;
   onCommit: (updates: Record<string, PlacedLive>, opts?: { duplicate?: boolean }) => void;
-  onActivate: (id: string, at: { x: number; y: number }) => void;
+  onActivate?: (id: string, at: { x: number; y: number }) => void;
+  stage?: Stage;
+  rotatable?: boolean;
+  handlesFor?: (el: RenderElement) => Handle[];
   cropId?: string | null;
   renderBar?: (info: { rect: Rect & { rot?: number }; single: RenderElement | null; editing: boolean; cropping: boolean }) => ReactNode;
 }
@@ -72,13 +74,13 @@ export interface BarSpot {
 }
 
 /** Where the format bar sits for a selection's frame: above it, or below when the frame is too near the top of the slide. */
-export function barSpot(rect: Rect): BarSpot {
-  const left = pct(Math.min(Math.max(rect.x + rect.w / 2, STAGE_W * 0.2), STAGE_W * 0.8), STAGE_W);
-  if (rect.y < 220) return { left, top: pct(rect.y + rect.h, STAGE_H), transform: "translate(-50%, 14px)" };
-  return { left, top: pct(rect.y, STAGE_H), transform: "translate(-50%, calc(-100% - 44px))" };
+export function barSpot(rect: Rect, stage: Stage = SLIDE_STAGE): BarSpot {
+  const left = pct(Math.min(Math.max(rect.x + rect.w / 2, stage.w * 0.2), stage.w * 0.8), stage.w);
+  if (rect.y < (stage.h * 220) / 1080) return { left, top: pct(rect.y + rect.h, stage.h), transform: "translate(-50%, 14px)" };
+  return { left, top: pct(rect.y, stage.h), transform: "translate(-50%, calc(-100% - 44px))" };
 }
 
-function GapMarks({ gaps }: { gaps: Gap[] }) {
+function GapMarks({ gaps, stage }: { gaps: Gap[]; stage: Stage }) {
   return (
     <>
       {gaps.map((g, i) => (
@@ -89,8 +91,8 @@ function GapMarks({ gaps }: { gaps: Gap[] }) {
           className="pointer-events-none absolute flex items-center justify-center"
           style={
             g.axis === "x"
-              ? { left: pct(g.from, STAGE_W), width: pct(g.to - g.from, STAGE_W), top: pct(g.at, STAGE_H), height: 0 }
-              : { top: pct(g.from, STAGE_H), height: pct(g.to - g.from, STAGE_H), left: pct(g.at, STAGE_W), width: 0 }
+              ? { left: pct(g.from, stage.w), width: pct(g.to - g.from, stage.w), top: pct(g.at, stage.h), height: 0 }
+              : { top: pct(g.from, stage.h), height: pct(g.to - g.from, stage.h), left: pct(g.at, stage.w), width: 0 }
           }
         >
           <span className="absolute bg-os-accent" style={g.axis === "x" ? { left: 0, right: 0, height: 1 } : { top: 0, bottom: 0, width: 1 }} />
@@ -113,7 +115,24 @@ interface Active {
 }
 
 /** The editing surface over a slide: hit areas, selection frames, handles, guides and the marquee. Draws nothing the doc stores. */
-export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, prefs, armed, onPlace, onLive, onCommit, onActivate, cropId = null, renderBar }: FreeformLayerProps) {
+export function FreeformLayer({
+  slide,
+  selection,
+  onSelect,
+  editingId,
+  onEdit,
+  prefs,
+  armed = null,
+  onPlace,
+  onLive,
+  onCommit,
+  onActivate,
+  stage = SLIDE_STAGE,
+  rotatable = true,
+  handlesFor,
+  cropId = null,
+  renderBar,
+}: FreeformLayerProps) {
   const ref = useRef<HTMLDivElement>(null);
   const active = useRef<Active | null>(null);
   const latest = useRef({ slide, selection, onSelect, onEdit, onLive, onCommit, prefs });
@@ -147,8 +166,8 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
 
   const toUnits = useCallback((clientX: number, clientY: number) => {
     const box = ref.current!.getBoundingClientRect();
-    return { x: ((clientX - box.left) / box.width) * STAGE_W, y: ((clientY - box.top) / box.height) * STAGE_H };
-  }, []);
+    return { x: ((clientX - box.left) / box.width) * stage.w, y: ((clientY - box.top) / box.height) * stage.h };
+  }, [stage.w, stage.h]);
 
   const listen = (onMove: (e: PointerEvent) => void, onUp: (e: PointerEvent) => void) => {
     const up = (e: PointerEvent) => {
@@ -179,7 +198,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
       kind: gestureKind,
       start,
       others,
-      snap: { threshold: (8 * STAGE_W) / ref.current!.getBoundingClientRect().width, items: p.items, margins: p.margins },
+      snap: { threshold: (8 * stage.w) / ref.current!.getBoundingClientRect().width, items: p.items, margins: p.margins, ...(stage === SLIDE_STAGE ? {} : { stage }) },
       origin: toUnits(e.clientX, e.clientY),
     };
     const state: Active = {
@@ -224,12 +243,12 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
     e.stopPropagation();
     if (armed) {
       e.preventDefault();
-      onPlace(armed, toUnits(e.clientX, e.clientY));
+      onPlace?.(armed, toUnits(e.clientX, e.clientY));
       return;
     }
     e.preventDefault();
     const target = selectionTarget(slide, id);
-    onEdit(null);
+    onEdit?.(null);
     (document.activeElement as HTMLElement | null)?.blur?.();
     if (e.shiftKey) {
       onSelect(selection.includes(target) ? selection.filter((s) => s !== target) : [...selection, target]);
@@ -266,10 +285,10 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
   const onBackgroundDown = (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
     if (armed) {
-      onPlace(armed, toUnits(e.clientX, e.clientY));
+      onPlace?.(armed, toUnits(e.clientX, e.clientY));
       return;
     }
-    onEdit(null);
+    onEdit?.(null);
     (document.activeElement as HTMLElement | null)?.blur?.();
     const from = toUnits(e.clientX, e.clientY);
     const base = e.shiftKey ? selection : [];
@@ -306,6 +325,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
       ? gapsFor(selectionBounds, [rotatedBounds(hoverEl.placed)])
       : [];
   const grid = prefs.grid;
+  const gridStep = stage.w / 24;
   const live = frame?.readout;
   const altDuplicate = Boolean(frame && active.current?.alt);
 
@@ -324,7 +344,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
           style={{
             backgroundImage:
               "linear-gradient(to right, color-mix(in srgb, var(--os-accent-ink) 22%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--os-accent-ink) 22%, transparent) 1px, transparent 1px)",
-            backgroundSize: `${(80 / STAGE_W) * 100}% ${(80 / STAGE_H) * 100}%`,
+            backgroundSize: `${(gridStep / stage.w) * 100}% ${(gridStep / stage.h) * 100}%`,
           }}
         />
       )}
@@ -335,7 +355,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
           alt=""
           src={singleItem.element.src}
           className="pointer-events-none absolute max-w-none object-cover opacity-40"
-          style={boxStyle({ ...fullRect(singleItem.placed, singleItem.element.crop), rot: singleItem.placed.rot })}
+          style={boxStyle({ ...fullRect(singleItem.placed, singleItem.element.crop), rot: singleItem.placed.rot }, stage)}
         />
       )}
       {items.map(({ element, placed }) => {
@@ -348,27 +368,27 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
             onPointerDown={(e) => onItemDown(e, element.id)}
             onPointerEnter={() => setHovered(element.id)}
             onPointerLeave={() => setHovered((h) => (h === element.id ? null : h))}
-            onDoubleClick={(e) => onActivate(element.id, { x: e.clientX, y: e.clientY })}
+            onDoubleClick={(e) => onActivate?.(element.id, { x: e.clientX, y: e.clientY })}
             className={cn("absolute", editing ? "pointer-events-none" : element.locked ? "cursor-default" : "cursor-move")}
-            style={boxStyle(placed)}
+            style={boxStyle(placed, stage)}
           />
         );
       })}
       {hoverRect && (
-        <div data-hover-outline aria-hidden className="pointer-events-none absolute border border-os-accent/60" style={outsetStyle(hoverRect, 1)} />
+        <div data-hover-outline aria-hidden className="pointer-events-none absolute border border-os-accent/60" style={outsetStyle(hoverRect, 1, stage)} />
       )}
       {lockedHover && (
         <span
           data-lock-badge
           aria-label="Locked"
           className="pointer-events-none absolute flex items-center justify-center rounded-full bg-os-card text-os-grey shadow-sm ring-1 ring-os-container"
-          style={{ left: pct(lockedHover.x + lockedHover.w, STAGE_W), top: pct(lockedHover.y, STAGE_H), width: 22, height: 22, transform: "translate(-120%, 20%)" }}
+          style={{ left: pct(lockedHover.x + lockedHover.w, stage.w), top: pct(lockedHover.y, stage.h), width: 22, height: 22, transform: "translate(-120%, 20%)" }}
         >
           <Lock className="h-3 w-3" aria-hidden />
         </span>
       )}
       {frameRect && (
-        <div data-selection-frame style={{ ...outsetStyle(frameRect, 1.5), pointerEvents: "none" }} className="border-[1.5px] border-os-accent">
+        <div data-selection-frame style={{ ...outsetStyle(frameRect, 1.5, stage), pointerEvents: "none" }} className="border-[1.5px] border-os-accent">
           {editingId !== null && singleItem && (
             <>
               {(["top", "bottom"] as const).map((side) => (
@@ -393,7 +413,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
           )}
           {singleItem && !locked && (
             <>
-              {HANDLES.map((h) => (
+              {HANDLES.filter((h) => !handlesFor || handlesFor(singleItem.element).includes(h.handle)).map((h) => (
                 <button
                   key={h.handle}
                   type="button"
@@ -417,7 +437,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
                   style={{ left: h.left, top: h.top, cursor: h.cursor }}
                 />
               ))}
-              {!cropping && (
+              {!cropping && rotatable && (
               <button
                 type="button"
                 tabIndex={-1}
@@ -433,7 +453,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
                 style={{ left: "50%", top: -28 }}
               />
               )}
-              {!cropping && <span aria-hidden className="pointer-events-none absolute w-px bg-os-accent" style={{ left: "50%", top: -18, height: 18 }} />}
+              {!cropping && rotatable && <span aria-hidden className="pointer-events-none absolute w-px bg-os-accent" style={{ left: "50%", top: -18, height: 18 }} />}
               {kind === "rotate" && live && (
                 <span data-rotate-badge className="absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-os-accent px-1.5 py-0.5 text-[11px] font-medium text-os-bg" style={{ left: "50%", top: -52 }}>
                   {signed(Math.round(live.rot))}°
@@ -447,7 +467,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
         <span
           data-freeform-badge
           className="pointer-events-none absolute whitespace-nowrap rounded-md bg-os-accent px-1.5 py-0.5 text-[11px] font-medium text-os-bg"
-          style={{ left: pct(singleItem.placed.x, STAGE_W), top: pct(singleItem.placed.y, STAGE_H), transform: "translateY(-150%)" }}
+          style={{ left: pct(singleItem.placed.x, stage.w), top: pct(singleItem.placed.y, stage.h), transform: "translateY(-150%)" }}
         >
           {singleItem.placed.rot ? `Freeform ${signed(Math.round(singleItem.placed.rot))}°` : "Freeform"}
         </span>
@@ -460,16 +480,16 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
           className="pointer-events-none absolute bg-os-accent"
           style={
             g.axis === "x"
-              ? { left: pct(g.pos, STAGE_W), top: pct(g.from, STAGE_H), height: pct(g.to - g.from, STAGE_H), width: 1 }
-              : { top: pct(g.pos, STAGE_H), left: pct(g.from, STAGE_W), width: pct(g.to - g.from, STAGE_W), height: 1 }
+              ? { left: pct(g.pos, stage.w), top: pct(g.from, stage.h), height: pct(g.to - g.from, stage.h), width: 1 }
+              : { top: pct(g.pos, stage.h), left: pct(g.from, stage.w), width: pct(g.to - g.from, stage.w), height: 1 }
           }
         />
       ))}
-      <GapMarks gaps={frame?.gaps ?? altGaps} />
+      <GapMarks gaps={frame?.gaps ?? altGaps} stage={stage} />
       {frame && altDuplicate && (
         <>
           {[...frame.placed.values()].map((p, i) => (
-            <span key={`d${i}`} data-duplicate-ghost aria-hidden className="pointer-events-none absolute border border-dashed border-os-accent bg-os-accent/10" style={boxStyle(p)} />
+            <span key={`d${i}`} data-duplicate-ghost aria-hidden className="pointer-events-none absolute border border-dashed border-os-accent bg-os-accent/10" style={boxStyle(p, stage)} />
           ))}
         </>
       )}
@@ -477,7 +497,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
         <span
           data-readout
           className="pointer-events-none absolute whitespace-nowrap rounded-md bg-os-card px-1.5 py-0.5 text-[11px] font-medium text-os-fg shadow-sm ring-1 ring-os-container"
-          style={{ left: pct(selectionBounds.x, STAGE_W), top: pct(selectionBounds.y + selectionBounds.h, STAGE_H), transform: "translateY(8px)" }}
+          style={{ left: pct(selectionBounds.x, stage.w), top: pct(selectionBounds.y + selectionBounds.h, stage.h), transform: "translateY(8px)" }}
         >
           {kind === "resize" ? `W ${live.w} · H ${live.h}` : `X ${live.x} · Y ${live.y}`}
         </span>
@@ -486,7 +506,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
         <div
           data-format-bar-anchor
           className="absolute"
-          style={{ ...barSpot(frameRect), zIndex: 7 }}
+          style={{ ...barSpot(frameRect, stage), zIndex: 7 }}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
@@ -494,7 +514,7 @@ export function FreeformLayer({ slide, selection, onSelect, editingId, onEdit, p
         </div>
       )}
       {marquee && (
-        <span data-marquee aria-hidden className="pointer-events-none absolute border border-os-accent bg-os-accent/10" style={boxStyle(marquee)} />
+        <span data-marquee aria-hidden className="pointer-events-none absolute border border-os-accent bg-os-accent/10" style={boxStyle(marquee, stage)} />
       )}
     </div>
   );
