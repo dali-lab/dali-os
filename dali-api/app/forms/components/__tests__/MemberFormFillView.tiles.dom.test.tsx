@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
+const navigate = vi.fn();
 vi.mock("react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-router")>()),
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
 }));
 vi.mock("~/components/doc", () => ({ DocEditor: () => null }));
 
@@ -43,13 +44,18 @@ const submit = () =>
     container.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 
-function mount(props: { tileSeed?: string | null; required?: boolean }) {
+function mount(props: { tileSeed?: string | null; required?: boolean; allowExit?: boolean; next?: string }) {
   act(() => {
     root.render(
       createElement(
         MemberFormShell,
-        { flush: Boolean(props.tileSeed), children: null },
-        createElement(MemberFormFillView, { data: data(props.required), tileSeed: props.tileSeed }),
+        { flush: Boolean(props.tileSeed), allowExit: props.allowExit, children: null },
+        createElement(MemberFormFillView, {
+          data: data(props.required),
+          tileSeed: props.tileSeed,
+          allowExit: props.allowExit,
+          next: props.next,
+        }),
       ),
     );
   });
@@ -70,6 +76,8 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  navigate.mockReset();
+  delete (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP;
 });
 
 describe("MemberFormFillView with a tile strip", () => {
@@ -119,6 +127,59 @@ describe("MemberFormFillView with a tile strip", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(strip()?.dataset.phase).toBe("idle");
     expect(text()).toContain("\"Your name\" is required.");
+  });
+});
+
+describe("MemberFormFillView done screen exit", () => {
+  const buttons = () => [...container.querySelectorAll("button")].map((b) => b.textContent);
+  const click = (label: string) =>
+    act(() => {
+      [...container.querySelectorAll("button")].find((b) => b.textContent === label)!.click();
+    });
+
+  beforeEach(() => {
+    respond(200, {});
+  });
+
+  it("gives desktop a Done button after a tile-strip submit", async () => {
+    (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
+    mount({ tileSeed: "cm_form_rsvp", allowExit: true });
+    await submit();
+    expect(text()).toContain("Thanks for submitting!");
+    click("Done");
+    expect(navigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives desktop a Done button after a plain submit", async () => {
+    (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
+    mount({ tileSeed: null, allowExit: true });
+    await submit();
+    expect(text()).toContain("Submitted");
+    expect(buttons()).toContain("Done");
+  });
+
+  it("leaves the web done screen to the browser's own Back", async () => {
+    mount({ tileSeed: "cm_form_rsvp", allowExit: true });
+    await submit();
+    expect(text()).toContain("Thanks for submitting!");
+    expect(buttons()).not.toContain("Done");
+  });
+
+  it("shows no Done button where the route disallows exit", async () => {
+    (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
+    mount({ tileSeed: "cm_form_rsvp" });
+    await submit();
+    expect(buttons()).not.toContain("Done");
+  });
+
+  it("offers Continue instead of Done when the fill carries a next page", async () => {
+    (window as { __DALI_DESKTOP?: unknown }).__DALI_DESKTOP = { version: "1.0.0" };
+    mount({ tileSeed: "cm_form_rsvp", allowExit: true, next: "/calendar" });
+    await submit();
+    expect(buttons()).toContain("Continue");
+    expect(buttons()).not.toContain("Done");
+    click("Continue");
+    expect(navigate).toHaveBeenCalledWith("/calendar");
   });
 });
 

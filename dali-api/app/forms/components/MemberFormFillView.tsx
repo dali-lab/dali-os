@@ -219,12 +219,14 @@ export function MemberFormFillView({
     }
   }
 
-  const continueButton = next && (
+  const continueButton = next ? (
     <div className="mt-6">
       <Button variant="primary" size="sm" onClick={() => navigate(next)}>
         Continue
       </Button>
     </div>
+  ) : (
+    allowExit && <FormDoneButton />
   );
 
   const confirmation =
@@ -376,14 +378,12 @@ export function MemberFormFillView({
 // This route renders outside the app layout, so on the desktop shell (a bare
 // WKWebView with no browser back button) the form would otherwise be a dead
 // end. Web keeps its own browser chrome.
-export function FormExitButton() {
+function useFormExit() {
   const navigate = useNavigate();
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     setIsDesktop(desktopVersion() !== null);
   }, []);
-
-  if (!isDesktop) return null;
 
   const exit = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -392,6 +392,25 @@ export function FormExitButton() {
       navigate("/");
     }
   };
+
+  return isDesktop ? exit : null;
+}
+
+function FormDoneButton() {
+  const exit = useFormExit();
+  if (!exit) return null;
+  return (
+    <div className="mt-6">
+      <Button variant="primary" size="sm" onClick={exit}>
+        Done
+      </Button>
+    </div>
+  );
+}
+
+export function FormExitButton() {
+  const exit = useFormExit();
+  if (!exit) return null;
 
   return (
     <button
