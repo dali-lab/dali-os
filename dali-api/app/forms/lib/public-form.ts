@@ -5,6 +5,7 @@
 // so the fill surface stays small and auditable.
 
 import { prisma } from "~/lib/db.server";
+import { logAuditEvent } from "~/lib/audit";
 import type { Question } from "~/types";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
@@ -688,22 +689,7 @@ export async function submitMemberForm(args: {
       },
       // Slot bindings tell us if this form drives a staffing flow. Resolved
       // server-side from the binding table — never trusted from the client.
-      cycleBindings: {
-        select: {
-          slot: true,
-          columnMapping: true,
-          updatedAt: true,
-          formVersionId: true,
-          staffingCycle: {
-            select: {
-              id: true,
-              termId: true,
-              maxPreferencesPerMember: true,
-              term: { select: { code: true } },
-            },
-          },
-        },
-      },
+      cycleBindings: { select: BOUND_CYCLE_BINDING_SELECT },
     },
   });
   if (!form) {
@@ -859,6 +845,62 @@ export async function submitMemberForm(args: {
     return { ok: true };
   }
 
+  const recorded = await recordStaffingSubmission({
+    form,
+    version,
+    questions,
+    staffingBinding,
+    userId: args.userId,
+    answers: args.answers,
+  });
+  if ("error" in recorded) return recorded;
+  submissionId = recorded.submissionId;
+  await notifySubmitted();
+  return { ok: true };
+}
+
+const BOUND_CYCLE_BINDING_SELECT = {
+  slot: true,
+  columnMapping: true,
+  updatedAt: true,
+  formVersionId: true,
+  staffingCycle: {
+    select: {
+      id: true,
+      termId: true,
+      maxPreferencesPerMember: true,
+      term: { select: { code: true } },
+    },
+  },
+} as const;
+
+type BoundCycleBinding = {
+  slot: string;
+  columnMapping: unknown;
+  updatedAt: Date;
+  formVersionId: string | null;
+  staffingCycle: {
+    id: string;
+    termId: string;
+    maxPreferencesPerMember: number;
+    term: { code: string };
+  };
+};
+
+// Records a response to a form bound to a staffing slot and writes what it
+// feeds (bids, intent) in the same transaction. Members submitting and
+// staffing managers adding a response for someone both come through here.
+async function recordStaffingSubmission(args: {
+  form: { id: string; cycleBindings: BoundCycleBinding[] };
+  version: { id: string };
+  questions: Question[];
+  staffingBinding: BoundCycleBinding;
+  userId: string;
+  answers: Record<string, unknown>;
+  enteredById?: string | null;
+}): Promise<{ ok: true; submissionId: string } | { error: string; status: number }> {
+  const { staffingBinding } = args;
+  let submissionId: string | null = null;
   // A bound staffing form ALWAYS records its raw submission — the slot's
   // board is a database view of submissions, not a fixed-shape record. The
   // saved column mapping is additive: when project/domain (or intent-status)
@@ -879,7 +921,7 @@ export async function submitMemberForm(args: {
       args.userId,
       [
         ...new Set([
-          ...cycleIdsForSlot(form.cycleBindings, slot, version.id),
+          ...cycleIdsForSlot(args.form.cycleBindings, slot, args.version.id),
           cycle.id,
         ]),
       ],
@@ -890,7 +932,7 @@ export async function submitMemberForm(args: {
   }
 
   const mapping = parseColumnMapping(staffingBinding.columnMapping);
-  const mapCheck = validateMapping(slot, questions, mapping);
+  const mapCheck = validateMapping(slot, args.questions, mapping);
   // A genuinely broken mapping (wrong question type, stale key) can't be
   // interpreted, but the submission still belongs in the database — record it
   // and skip the staffing feed rather than losing the member's answers.
@@ -918,10 +960,11 @@ export async function submitMemberForm(args: {
         submissionId = (
           await tx.formSubmission.create({
           data: {
-            formId: form.id,
-            formVersionId: version.id,
+            formId: args.form.id,
+            formVersionId: args.version.id,
             userId: args.userId,
             staffingCycleId: cycle.id,
+            enteredById: args.enteredById ?? null,
             slot: "project-bids",
             answers: args.answers as object,
           },
@@ -931,12 +974,11 @@ export async function submitMemberForm(args: {
         // Replace (not merge) so a resubmission with fewer bids removes the
         // old ones; an empty set clears them, matching prior behaviour.
         await replaceBidSet(tx, args.userId, cycle.id, bidsToWrite);
-        await closeFormTodos(tx, args.userId, form.id);
+        await closeFormTodos(tx, args.userId, args.form.id);
       }),
     );
     if ("error" in recorded) return recorded;
-    await notifySubmitted();
-    return { ok: true };
+    return { ok: true, submissionId: submissionId! };
   }
 
   if (slot === "level-up") {
@@ -945,22 +987,22 @@ export async function submitMemberForm(args: {
         submissionId = (
           await tx.formSubmission.create({
           data: {
-            formId: form.id,
-            formVersionId: version.id,
+            formId: args.form.id,
+            formVersionId: args.version.id,
             userId: args.userId,
             staffingCycleId: cycle.id,
+            enteredById: args.enteredById ?? null,
             slot,
             answers: args.answers as object,
           },
             select: { id: true },
           })
         ).id;
-        await closeFormTodos(tx, args.userId, form.id);
+        await closeFormTodos(tx, args.userId, args.form.id);
       }),
     );
     if ("error" in recorded) return recorded;
-    await notifySubmitted();
-    return { ok: true };
+    return { ok: true, submissionId: submissionId! };
   }
 
   // slot === "intent-to-work": one IntentToWork row per mapped term, when the
@@ -982,10 +1024,11 @@ export async function submitMemberForm(args: {
       submissionId = (
         await tx.formSubmission.create({
         data: {
-          formId: form.id,
-          formVersionId: version.id,
+          formId: args.form.id,
+          formVersionId: args.version.id,
           userId: args.userId,
           staffingCycleId: cycle.id,
+          enteredById: args.enteredById ?? null,
           slot: "intent-to-work",
           answers: args.answers as object,
         },
@@ -993,12 +1036,89 @@ export async function submitMemberForm(args: {
         })
       ).id;
       await replaceIntentSet(tx, args.userId, cycle.id, intentRows);
-      await closeFormTodos(tx, args.userId, form.id);
+      await closeFormTodos(tx, args.userId, args.form.id);
     }),
   );
   if ("error" in recorded) return recorded;
-  await notifySubmitted();
-  return { ok: true };
+  return { ok: true, submissionId: submissionId! };
+}
+
+// A staffing manager adds a response for a member who didn't fill the form
+// themselves, e.g. intent someone gave in person. Same checks and staffing
+// writes as a member's own submission, recorded with who entered it. Works
+// while the form is closed. The caller checks the manager may manage staffing.
+export async function submitStaffingFormFor(args: {
+  staffingCycleId: string;
+  slot: Slot;
+  userId: string;
+  enteredById: string;
+  versionId: string;
+  versionUpdatedAt?: string;
+  answers: Record<string, unknown>;
+  request?: Request;
+}): Promise<{ ok: true; submissionId: string } | { error: string; status: number }> {
+  const binding = await prisma.staffingCycleFormBinding.findUnique({
+    where: { staffingCycleId_slot: { staffingCycleId: args.staffingCycleId, slot: args.slot } },
+    select: { formId: true },
+  });
+  if (!binding) return { error: "No form is connected for this term.", status: 404 };
+  const [form, member] = await Promise.all([
+    prisma.form.findUnique({
+      where: { id: binding.formId },
+      select: {
+        id: true,
+        versions: {
+          where: { id: args.versionId },
+          select: { id: true, questions: true, updatedAt: true },
+        },
+        cycleBindings: { select: BOUND_CYCLE_BINDING_SELECT },
+      },
+    }),
+    prisma.user.findFirst({
+      where: { id: args.userId, daliMember: { isNot: null } },
+      select: { id: true },
+    }),
+  ]);
+  if (!form) return { error: "No form is connected for this term.", status: 404 };
+  if (!member) return { error: "That member wasn't found.", status: 404 };
+  const stale = staleVersionError(form.versions[0], args.versionUpdatedAt);
+  if (stale) return stale;
+  const version = await resolveSubmitVersion(form);
+  if (!version) return { error: "This form has no questions yet.", status: 404 };
+  const staffingBinding = form.cycleBindings.find(
+    (b) => b.slot === args.slot && b.staffingCycle.id === args.staffingCycleId,
+  )!;
+
+  const questions = (version.questions as unknown as Question[]) ?? [];
+  const bad = await validateAnswers(
+    questionsAsServed(questions, form.cycleBindings, version.id),
+    args.answers,
+    args.userId,
+  );
+  if (bad) return bad;
+
+  const recorded = await recordStaffingSubmission({
+    form,
+    version,
+    questions,
+    staffingBinding,
+    userId: args.userId,
+    answers: args.answers,
+    enteredById: args.enteredById,
+  });
+  if ("error" in recorded) {
+    return recorded.status === 409
+      ? { error: "They already have a response for this term. Delete it first to replace it.", status: 409 }
+      : recorded;
+  }
+  await logAuditEvent({
+    action: "form.response.add",
+    userId: args.enteredById,
+    targetId: recorded.submissionId,
+    metadata: { formId: form.id, slot: args.slot, memberId: args.userId },
+    request: args.request,
+  });
+  return recorded;
 }
 
 // Mark the member's open announcement-todo notifications that pointed at this

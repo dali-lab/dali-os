@@ -279,6 +279,7 @@ export const AUDIT_ACTIONS = [
   "drive.item.move",
   // Trash actions; metadata carries the item kind and title (purge is permanent).
   "drive.trash.archive-form",
+  "form.response.add",
   "form.response.delete",
   "form.response.edit",
   "form.reminder.send",

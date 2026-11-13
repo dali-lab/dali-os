@@ -6,6 +6,8 @@ import { parseColumnOp } from "~/forms/lib/column-ops";
 import { parseFormDataJson } from "~/lib/safe-json";
 import { currentTerm, getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { resyncIntentSets } from "./intent-validation";
+import { deleteFormResponse } from "~/forms/lib/form-response.server";
 
 // Which staffing cycles a slot board reads for the viewed ?term=: every cycle
 // for "All terms", else the selected term's cycle (the current term by
@@ -67,5 +69,40 @@ export async function setBoardColumn(
   if (!op) return Response.json({ error: "Invalid input" }, { status: 400 });
   const result = await applySlotColumnOp(cycleId, slot, op, userId);
   if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+  // Stored intent follows the mapping, as when the full mapper saves.
+  if (slot === "intent-to-work" && (op.op === "role" || op.op === "statusMap")) {
+    await resyncIntentSets(cycleId, result.mapping);
+  }
+  return Response.json({ ok: true });
+}
+
+// The "delete-response" board intent, from the detail drawer. Removes the
+// response and what it fed, like deleting it from the form's results. The
+// caller has already checked the user manages staffing.
+export async function deleteBoardResponse(
+  form: FormData,
+  cycleId: string,
+  slot: Slot,
+  userId: string,
+  request: Request,
+): Promise<Response> {
+  const roles = await getUserRoles(userId, request);
+  if (!(await isFeatureEnabled("form-response-views", userId, roles, request)))
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  const submissionId = form.get("submissionId");
+  if (typeof submissionId !== "string" || !submissionId)
+    return Response.json({ error: "Invalid input" }, { status: 400 });
+  const submission = await prisma.formSubmission.findFirst({
+    where: { id: submissionId, staffingCycleId: cycleId, slot },
+    select: { formId: true },
+  });
+  if (!submission) return Response.json({ error: "That response wasn't found." }, { status: 404 });
+  const result = await deleteFormResponse({
+    formId: submission.formId,
+    submissionId,
+    actorId: userId,
+    request,
+  });
+  if ("error" in result) return Response.json({ error: result.error }, { status: result.status });
   return Response.json({ ok: true });
 }

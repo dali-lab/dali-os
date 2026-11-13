@@ -188,7 +188,7 @@ export async function applySlotColumnOp(
   slot: Slot,
   op: ColumnOp,
   userId: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; mapping: ColumnMapping } | { ok: false; error: string }> {
   const binding = await prisma.staffingCycleFormBinding.findUnique({
     where: { staffingCycleId_slot: { staffingCycleId, slot } },
     select: { id: true, formId: true, columnMapping: true },
@@ -214,7 +214,7 @@ export async function applySlotColumnOp(
     where: { id: binding.id },
     data: { columnMapping: result.mapping as object, updatedById: userId },
   });
-  return { ok: true };
+  return { ok: true, mapping: result.mapping };
 }
 
 // Upsert the binding for (cycle, slot). `formId` is validated against an

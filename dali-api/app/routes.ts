@@ -603,6 +603,7 @@ export default [
   route("api/staffing/term-channel", "projects/routes/api.staffing.term-channel.ts"),
   route("api/staffing/sync-teams", "projects/routes/api.staffing.sync-teams.ts"),
   route("api/staffing/board-member", "projects/routes/api.staffing.board-member.ts"),
+  route("api/staffing/responses", "projects/routes/api.staffing.responses.ts"),
   route("api/staffing/events", "projects/routes/api.staffing.events.ts"),
   route("api/staffing/reorder", "projects/routes/api.staffing.reorder.ts"),
   route("api/staffing/mentor-role", "projects/routes/api.staffing.mentor-role.ts"),

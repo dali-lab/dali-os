@@ -72,6 +72,9 @@ export function MemberFormFillView({
   // person's saved answers from showing to another on the same browser.
   saveProgress = false,
   progressUserId = null,
+  // Where a new response posts, when not the form's own fill endpoint (a
+  // staffing manager adding a response for a member).
+  submitUrl,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
@@ -83,6 +86,7 @@ export function MemberFormFillView({
   editing?: { answers: Record<string, string> };
   saveProgress?: boolean;
   progressUserId?: string | null;
+  submitUrl?: string;
 }) {
   const navigate = useNavigate();
   const [answers, setAnswers] = useState<Record<string, string>>(
@@ -192,7 +196,7 @@ export function MemberFormFillView({
     }
     const submitted = pruneHiddenAnswers(questions, answers);
     try {
-      const res = await fetch(`/api/forms/fill/${data.token}`, {
+      const res = await fetch(editing || !submitUrl ? `/api/forms/fill/${data.token}` : submitUrl, {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

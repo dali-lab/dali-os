@@ -51,7 +51,10 @@ vi.mock("~/components/FeatureFlags", () => ({ useFeatureFlag: () => flags.respon
 vi.mock("~/components/ui/toast", () => ({
   useToast: () => Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn(), info: vi.fn() }),
 }));
-vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn(), prompt: vi.fn() }) }));
+vi.mock("~/components/ui/dialog", () => ({
+  useDialog: () => ({ confirm: vi.fn(), prompt: vi.fn() }),
+  useConfirmSubmit: () => () => undefined,
+}));
 
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { canManageStaffing, canViewStaffing, currentTerm } from "~/lib/roles";
@@ -441,6 +444,40 @@ describe.each(BOARDS)("$name with the response table", (board) => {
   it("opens the drawer for the member in the URL", async () => {
     await mount(board, `${board.path}?open=ada`);
     expect(document.querySelector("[role='dialog']")?.textContent).toContain("Ada Example");
+  });
+
+  const addButton = () =>
+    Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Add response");
+  const deleteButton = () =>
+    Array.from(document.querySelectorAll("[role='dialog'] button")).find((b) => b.textContent === "Delete response");
+
+  it("offers Add response to managers on a single term only", async () => {
+    await mount(board);
+    expect(addButton()).toBeTruthy();
+    act(() => root.unmount());
+    container.remove();
+    await mount(board, `${board.path}?term=${ALL_TERMS}`);
+    expect(addButton()).toBeUndefined();
+  });
+
+  it("gives viewers no Add response or Delete response", async () => {
+    vi.mocked(canManageStaffing).mockResolvedValue(false);
+    await mount(board, `${board.path}?open=ada`);
+    expect(addButton()).toBeUndefined();
+    expect(deleteButton()).toBeUndefined();
+  });
+
+  it("lets managers delete from the drawer, and says who added a response", async () => {
+    vi.mocked(buildSubmissionView).mockResolvedValue({
+      rows: [{ ...row("ada", "Ada Example", ["d-design"]), submissionId: "s1", enteredBy: "Grace Example" }],
+      tableColumns: [],
+    } as never);
+    await mount(board, `${board.path}?open=ada`);
+    expect(deleteButton()).toBeTruthy();
+    expect(document.querySelector("[role='dialog']")?.textContent).toContain("Added by Grace Example");
+    const form = deleteButton()!.closest("form")!;
+    expect(new FormData(form).get("intent")).toBe("delete-response");
+    expect(new FormData(form).get("submissionId")).toBe("s1");
   });
 
   it("says to connect a form from the menu when none is connected", async () => {

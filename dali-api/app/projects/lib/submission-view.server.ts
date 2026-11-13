@@ -22,7 +22,10 @@ import {
 import { loadMemberHistories } from "./member-history.server";
 
 export type ResolvedRow = {
+  submissionId: string;
   userId: string;
+  // The staffing manager who added the response for the member, by name.
+  enteredBy: string | null;
   name: string;
   email: string | null;
   // Domain ids the member has eligibility in — used by the board's domain
@@ -114,9 +117,11 @@ export async function buildSubmissionView(args: {
     },
     orderBy: { createdAt: "desc" },
     select: {
+      id: true,
       userId: true,
       answers: true,
       user: { select: { firstName: true, lastName: true, daliEmail: true } },
+      enteredBy: { select: { firstName: true, lastName: true } },
     },
   });
   // One row per member: the most recent submission wins (createdAt desc, so
@@ -210,7 +215,9 @@ export async function buildSubmissionView(args: {
     ];
 
     return {
+      submissionId: s.id,
       userId: s.userId!,
+      enteredBy: s.enteredBy ? `${s.enteredBy.firstName} ${s.enteredBy.lastName}`.trim() : null,
       name: `${s.user!.firstName} ${s.user!.lastName}`,
       email: s.user!.daliEmail,
       domainIds: (histories.get(s.userId!)?.eligibilities ?? []).map((e) => e.domainId),
