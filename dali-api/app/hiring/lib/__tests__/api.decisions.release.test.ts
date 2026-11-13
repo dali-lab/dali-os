@@ -17,16 +17,20 @@ vi.mock("~/members/lib/membership.server", () => ({
 }));
 vi.mock("~/members/lib/welcome.server", () => ({
   sendWelcome: vi.fn().mockResolvedValue({ notified: true }),
-  // Async like the real one: a sync stub is what let a missing `await` ship
-  // "[object Promise]" in place of the onboarding block.
-  onboardingEmailHtml: vi.fn(
-    async (
-      daliEmail: string | null,
-      tempPassword: string | null = null,
-      vars: { startTerm?: string; respondBy?: string } = {},
-    ) =>
-      `<onboarding dali="${daliEmail ?? ""}" pw="${tempPassword ?? ""}" term="${vars.startTerm ?? ""}" by="${vars.respondBy ?? ""}"/>`,
+  // Mirrors the real fallback shape so the letter's credential placeholders
+  // render observable values on every path.
+  acceptanceEmailVars: vi.fn(
+    (
+      provision: { daliEmail?: string | null; daliTempPassword?: string | null } | null,
+      existingDaliEmail: string | null = null,
+    ) => ({
+      loginUrl: "https://os.test/login",
+      slackUrl: "https://slack.test",
+      daliEmail: provision?.daliEmail ?? existingDaliEmail ?? "email-pending",
+      tempPassword: provision?.daliTempPassword ?? "password-fallback",
+    }),
   ),
+  acceptanceLogoHtml: vi.fn(() => "<logo/>"),
 }));
 vi.mock("~/members/lib/provisioning.server", () => ({
   provisionNewMember: vi.fn().mockResolvedValue({
@@ -46,9 +50,8 @@ import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
-import { sendWelcome } from "~/members/lib/welcome.server";
+import { sendWelcome, acceptanceEmailVars } from "~/members/lib/welcome.server";
 import { provisionNewMember } from "~/members/lib/provisioning.server";
-import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/hiring/routes/api.decisions.$id.release";
 
@@ -122,11 +125,16 @@ function setupApplicantContext(
       user: {
         firstName: "Ada",
         dartmouthEmail: "ada@dartmouth.edu",
+        daliEmail: null,
         netId: null,
       },
     },
   });
 }
+
+// An Accepted letter must carry the credential placeholders or the release is
+// refused, so the fixtures include them by default.
+const CREDS = "Log in with {{daliEmail}} and {{tempPassword}}.";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -158,7 +166,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome, {{firstName}}!", body: "Hi {{firstName}},\n\nYou're in." });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome, {{firstName}}!", body: `Hi {{firstName}},\n\nYou're in. ${CREDS}` });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -174,10 +182,37 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(emailCall.target).toBe("ada@dartmouth.edu");
     expect(emailCall.subject).toBe("Welcome, Ada!");
     expect(emailCall.bodyHtml).toContain("Hi Ada,");
-    // The onboarding block is appended to the Accepted decision email so the
-    // member gets a single email (no separate welcome message).
-    expect(emailCall.bodyHtml).toContain("<onboarding");
-    expect(emailCall.bodyHtml).not.toContain("[object Promise]");
+    // The letter renders the credential placeholders itself, and the logo is
+    // appended in code.
+    expect(emailCall.bodyHtml).toContain("Log in with email-pending and password-fallback.");
+    expect(emailCall.bodyHtml).toContain("<logo/>");
+  });
+
+  it("refuses an Accepted release whose letter dropped a credential placeholder", async () => {
+    setupAuth();
+    setupFinalDecision("Accepted");
+    setupApplicantContext();
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({
+      subject: "Welcome!",
+      body: "Hi {{firstName}}, your email is {{daliEmail}}.",
+    });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/\{\{tempPassword\}\}/);
+    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
+    expect(promoteToMember).not.toHaveBeenCalled();
+    expect(mockEnqueue).not.toHaveBeenCalled();
+  });
+
+  it("does not require credential placeholders outside Accepted letters", async () => {
+    setupAuth();
+    setupFinalDecision("Waitlisted");
+    setupApplicantContext();
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Waitlist", body: "Hi {{firstName}}" });
+
+    const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
+    expect(res.status).toBe(201);
   });
 
   it("interpolates {{domain}} from domainApplication.domain.name", async () => {
@@ -299,7 +334,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: `Hi {{firstName}} ${CREDS}` });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -318,7 +353,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: `Hi {{firstName}} ${CREDS}` });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -351,7 +386,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
-    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: `Hi {{firstName}} ${CREDS}` });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -389,7 +424,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       slack: { status: "skipped", message: "" },
       gmail: { status: "skipped", message: "" },
     } as any);
-    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: `Hi {{firstName}} ${CREDS}` });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
@@ -398,7 +433,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     );
   });
 
-  it("renders the temp password into the onboarding email but NEVER into the audit log", async () => {
+  it("renders the temp password into the acceptance email but NEVER into the audit log", async () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();
@@ -408,19 +443,18 @@ describe("POST /api/hiring/decisions/:id/release", () => {
       github: { status: "skipped", message: "" },
       slack: { status: "skipped", message: "" },
     } as any);
-    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: `Hi {{firstName}} ${CREDS}` });
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
     expect(res.status).toBe(201);
 
-    // The temp password is passed to onboardingEmailHtml (→ into the email body).
-    expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith(
-      "ada.lovelace@dali.dartmouth.edu",
-      "s3cr3t-temp-pw",
-      {},
+    // The letter's placeholders render the provisioned credentials into the body.
+    const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
+    expect(emailCall.bodyHtml).toContain(
+      "Log in with ada.lovelace@dali.dartmouth.edu and s3cr3t-temp-pw.",
     );
 
-    // …and it must NOT appear anywhere in the audit metadata.
+    // …and the password must NOT appear anywhere in the audit metadata.
     const auditMeta = vi.mocked(logAuditEvent).mock.calls.at(-1)?.[0].metadata;
     const serialized = JSON.stringify(auditMeta);
     expect(serialized).not.toContain("s3cr3t-temp-pw");
@@ -438,10 +472,11 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     expect(promoteToMember).not.toHaveBeenCalled();
     expect(provisionNewMember).not.toHaveBeenCalled();
     expect(sendWelcome).not.toHaveBeenCalled();
-    // …but the decision email still goes out — without the onboarding block.
+    // …but the decision email still goes out — without credentials or the logo.
     const emailCall = mockEnqueue.mock.calls.map((c: any[]) => c[0]).find((a: any) => a.channel === "email");
     expect(emailCall).toBeDefined();
-    expect(emailCall.bodyHtml).not.toContain("<onboarding");
+    expect(acceptanceEmailVars).not.toHaveBeenCalled();
+    expect(emailCall.bodyHtml).not.toContain("<logo/>");
   });
 
   it("still releases (201) when provisioning throws — failure is isolated", async () => {
@@ -449,7 +484,7 @@ describe("POST /api/hiring/decisions/:id/release", () => {
     setupFinalDecision("Accepted");
     setupApplicantContext();
     vi.mocked(provisionNewMember).mockRejectedValueOnce(new Error("workspace 500"));
-    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: "Hi {{firstName}}" });
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue({ subject: "Welcome!", body: `Hi {{firstName}} ${CREDS}` });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const res = await action({ request: makeRequest(), params: { id: DECISION_ID }, context: {} } as any);
@@ -474,10 +509,11 @@ describe("POST /api/hiring/decisions/:id/release — {{startTerm}} and {{respond
     vi.useRealTimers();
   });
 
-  // The decision letter and the appended next-steps block are separate templates.
-  function templates(letter: { subject: string; body: string }, nextStepsBody = "Next steps.") {
-    mockPrisma.emailTemplate.findUnique.mockImplementation(async ({ where }: any) =>
-      where.key === "hiring:onboarding:NextSteps" ? { subject: "Next steps", body: nextStepsBody } : letter,
+  // One letter carries the whole acceptance; Accepted fixtures add the
+  // credential placeholders the send-time check requires.
+  function templates(letter: { subject: string; body: string }, accepted = true) {
+    mockPrisma.emailTemplate.findUnique.mockResolvedValue(
+      accepted ? { ...letter, body: `${letter.body} ${CREDS}` } : letter,
     );
   }
 
@@ -511,26 +547,22 @@ describe("POST /api/hiring/decisions/:id/release — {{startTerm}} and {{respond
     expect(sentEmail().bodyHtml).toContain("Starting in 26F.");
   });
 
-  it("passes the same values to the next-steps block and appends it awaited", async () => {
+  it("renders the credential fallbacks into the letter alongside the dates", async () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext({ startTermCode: "27W", offerRespondBy: OFFER_BY });
-    templates({ subject: "Welcome", body: "Hi" }, "Deadline {{respondBy}} for {{startTerm}}");
+    templates({ subject: "Welcome", body: "Accept by {{respondBy}} for {{startTerm}}." });
 
     await release();
-    expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith(null, null, {
-      startTerm: "27W",
-      respondBy: "Monday, June 8, 2026",
-    });
-    expect(sentEmail().bodyHtml).toContain('term="27W" by="Monday, June 8, 2026"');
-    expect(sentEmail().bodyHtml).not.toContain("[object Promise]");
+    expect(sentEmail().bodyHtml).toContain("Accept by Monday, June 8, 2026 for 27W.");
+    expect(sentEmail().bodyHtml).toContain("Log in with email-pending and password-fallback.");
   });
 
   it("fills the waitlist deadline into the Waitlisted letter", async () => {
     setupAuth();
     setupFinalDecision("Waitlisted");
     setupApplicantContext({ offerRespondBy: OFFER_BY, waitlistRespondBy: WAITLIST_BY });
-    templates({ subject: "Waitlist", body: "Opt in by {{respondBy}}." });
+    templates({ subject: "Waitlist", body: "Opt in by {{respondBy}}." }, false);
 
     const res = await release();
     expect(res.status).toBe(201);
@@ -550,17 +582,6 @@ describe("POST /api/hiring/decisions/:id/release — {{startTerm}} and {{respond
     expect(promoteToMember).not.toHaveBeenCalled();
     expect(provisionNewMember).not.toHaveBeenCalled();
     expect(mockEnqueue).not.toHaveBeenCalled();
-  });
-
-  it("refuses when only the next-steps block quotes {{respondBy}}", async () => {
-    setupAuth();
-    setupFinalDecision("Accepted");
-    setupApplicantContext({ startTermCode: "27W" });
-    templates({ subject: "Welcome", body: "Hi {{firstName}}" }, "Accept by {{respondBy}}.");
-
-    const res = await release();
-    expect(res.status).toBe(409);
-    expect(mockPrisma.decision.create).not.toHaveBeenCalled();
   });
 
   it("refuses once the offer deadline has passed", async () => {
@@ -591,24 +612,14 @@ describe("POST /api/hiring/decisions/:id/release — {{startTerm}} and {{respond
     setupAuth();
     setupFinalDecision("Waitlisted");
     setupApplicantContext({ offerRespondBy: OFFER_BY });
-    templates({ subject: "Waitlist", body: "Opt in by {{respondBy}}." });
+    templates({ subject: "Waitlist", body: "Opt in by {{respondBy}}." }, false);
 
     const res = await release();
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/no waitlist response date/);
   });
 
-  it("doesn't check the next-steps block for a Waitlisted release", async () => {
-    setupAuth();
-    setupFinalDecision("Waitlisted");
-    setupApplicantContext({ waitlistRespondBy: WAITLIST_BY });
-    templates({ subject: "Waitlist", body: "Hi" }, "Accept by {{respondBy}}.");
-
-    const res = await release();
-    expect(res.status).toBe(201);
-  });
-
-  it("releases a letter that uses neither token with no dates set", async () => {
+  it("releases a letter that uses neither date token with no dates set", async () => {
     setupAuth();
     setupFinalDecision("Accepted");
     setupApplicantContext();

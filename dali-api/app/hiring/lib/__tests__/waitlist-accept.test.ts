@@ -23,29 +23,35 @@ vi.mock("~/members/lib/provisioning.server", () => ({
 }));
 vi.mock("~/members/lib/welcome.server", () => ({
   sendWelcome: vi.fn(async () => ({ notified: true })),
-  onboardingEmailHtml: vi.fn(
-    async (
-      daliEmail: string | null,
-      tempPassword: string | null = null,
-      vars: { startTerm?: string; respondBy?: string } = {},
-    ) => `<onboarding dali="${daliEmail ?? ""}" pw="${tempPassword ?? ""}" term="${vars.startTerm ?? ""}" by="${vars.respondBy ?? ""}"/>`,
+  acceptanceEmailVars: vi.fn(
+    (
+      provision: { daliEmail?: string | null; daliTempPassword?: string | null } | null,
+      existingDaliEmail: string | null = null,
+    ) => ({
+      loginUrl: "https://os.test/login",
+      slackUrl: "https://slack.test",
+      daliEmail: provision?.daliEmail ?? existingDaliEmail ?? "email-pending",
+      tempPassword: provision?.daliTempPassword ?? "password-fallback",
+    }),
   ),
+  acceptanceLogoHtml: vi.fn(() => "<logo/>"),
 }));
 vi.mock("~/hiring/lib/hiring-emails.server", () => ({ getHiringEmail: vi.fn() }));
-vi.mock("~/email/lib/templates.server", () => ({ getEmailTemplate: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { enqueueOutbound } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
-import { onboardingEmailHtml } from "~/members/lib/welcome.server";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
-import { getEmailTemplate } from "~/email/lib/templates.server";
 import { acceptFromWaitlist } from "~/hiring/lib/waitlist.server";
 
 // 11:59:59 PM Eastern, Monday June 8 2026.
 const OFFER_BY = new Date("2026-06-09T03:59:59.999Z");
 
 const db = prisma as any;
+
+// The Accepted letter must carry the credential placeholders or the accept is
+// refused, so the fixtures include them by default.
+const CREDS = "Log in with {{daliEmail}} and {{tempPassword}}.";
 
 function setupWaitlisted(
   opts: { startTermCode?: string | null; cycleTermCode?: string | null; offerRespondBy?: Date | null } = {},
@@ -78,9 +84,10 @@ function setupWaitlisted(
   return tx;
 }
 
-function templates(letter: { subject: string; body: string }, nextStepsBody = "Next steps.") {
-  vi.mocked(getHiringEmail).mockResolvedValue(letter);
-  vi.mocked(getEmailTemplate).mockResolvedValue({ subject: "Next steps", body: nextStepsBody });
+function templates(letter: { subject: string; body: string }, withCreds = true) {
+  vi.mocked(getHiringEmail).mockResolvedValue(
+    withCreds ? { ...letter, body: `${letter.body} ${CREDS}` } : letter,
+  );
 }
 
 function accept() {
@@ -105,28 +112,26 @@ afterEach(() => {
 });
 
 describe("acceptFromWaitlist — acceptance email", () => {
-  it("appends the awaited onboarding block, never a Promise", async () => {
+  it("renders the provisioned credentials into the letter and appends the logo", async () => {
     setupWaitlisted({ startTermCode: "27W", offerRespondBy: OFFER_BY });
     templates({ subject: "Welcome, {{firstName}}", body: "You're in." });
 
     const result = await accept();
     expect(result).toMatchObject({ ok: true, releasedDecisionId: "dec-released" });
     expect(sentEmail().subject).toBe("Welcome, Ada");
-    expect(sentEmail().bodyHtml).toContain(`<onboarding dali="ada.lovelace@dali.dartmouth.edu" pw="${ONE_TIME}"`);
-    expect(sentEmail().bodyHtml).not.toContain("[object Promise]");
+    expect(sentEmail().bodyHtml).toContain(
+      `Log in with ada.lovelace@dali.dartmouth.edu and ${ONE_TIME}.`,
+    );
+    expect(sentEmail().bodyHtml).toContain("<logo/>");
   });
 
-  it("fills {{startTerm}} and {{respondBy}} into the letter and the next-steps block", async () => {
+  it("fills {{startTerm}} and {{respondBy}} into the letter", async () => {
     setupWaitlisted({ startTermCode: "27W", cycleTermCode: "26F", offerRespondBy: OFFER_BY });
-    templates({ subject: "Starting {{startTerm}}", body: "Reply by {{respondBy}}." }, "By {{respondBy}}");
+    templates({ subject: "Starting {{startTerm}}", body: "Reply by {{respondBy}}." });
 
     await accept();
     expect(sentEmail().subject).toBe("Starting 27W");
     expect(sentEmail().bodyHtml).toContain("Reply by Monday, June 8, 2026.");
-    expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith("ada.lovelace@dali.dartmouth.edu", ONE_TIME, {
-      startTerm: "27W",
-      respondBy: "Monday, June 8, 2026",
-    });
   });
 
   it("falls back to the cycle's term when the applicant didn't pick one", async () => {
@@ -150,12 +155,17 @@ describe("acceptFromWaitlist — acceptance email", () => {
     expect(enqueueOutbound).not.toHaveBeenCalled();
   });
 
-  it("refuses when only the next-steps block quotes {{respondBy}}", async () => {
-    setupWaitlisted({ startTermCode: "27W" });
-    templates({ subject: "Welcome", body: "Hi" }, "Accept by {{respondBy}}.");
+  it("refuses before any write when the letter dropped a credential placeholder", async () => {
+    const tx = setupWaitlisted({ startTermCode: "27W", offerRespondBy: OFFER_BY });
+    templates({ subject: "Welcome", body: "Your email is {{daliEmail}}." }, false);
 
-    expect(await accept()).toMatchObject({ ok: false, reason: "email-vars" });
+    const result = await accept();
+    expect(result).toMatchObject({ ok: false, reason: "email-vars" });
+    expect((result as any).message).toMatch(/\{\{tempPassword\}\}/);
     expect(db.$transaction).not.toHaveBeenCalled();
+    expect(tx.decision.create).not.toHaveBeenCalled();
+    expect(promoteToMember).not.toHaveBeenCalled();
+    expect(enqueueOutbound).not.toHaveBeenCalled();
   });
 
   it("refuses once the offer deadline has passed, the usual case for a late waitlist accept", async () => {
@@ -169,11 +179,13 @@ describe("acceptFromWaitlist — acceptance email", () => {
     expect(db.$transaction).not.toHaveBeenCalled();
   });
 
-  it("accepts with no dates set when no template uses them", async () => {
+  it("accepts with no dates set when the letter uses no date token", async () => {
     setupWaitlisted();
     templates({ subject: "Welcome", body: "Hi {{firstName}}" });
 
     expect(await accept()).toMatchObject({ ok: true });
-    expect(vi.mocked(onboardingEmailHtml)).toHaveBeenCalledWith("ada.lovelace@dali.dartmouth.edu", ONE_TIME, {});
+    expect(sentEmail().bodyHtml).toContain(
+      `Log in with ada.lovelace@dali.dartmouth.edu and ${ONE_TIME}.`,
+    );
   });
 });

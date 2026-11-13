@@ -1,149 +1,70 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// onboardingEmailHtml reads its prose from the template store now, so the stub
-// needs the one accessor that path uses. findUnique → null means no operator has
-// edited it, which falls back to the registry wording these assertions describe.
-vi.mock("~/lib/db.server", () => ({
-  prisma: { emailTemplate: { findUnique: vi.fn(async () => null) } },
-}));
+vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 
-import { prisma } from "~/lib/db.server";
-import { onboardingEmailHtml } from "~/members/lib/welcome.server";
+import { acceptanceEmailVars, acceptanceLogoHtml } from "~/members/lib/welcome.server";
 
-describe("onboardingEmailHtml", () => {
+describe("acceptanceEmailVars", () => {
   const OLD_ENV = { ...process.env };
   beforeEach(() => {
     process.env.FRONTEND_URL = "https://os.dali.dartmouth.edu";
-    delete process.env.SLACK_INVITE_URL;
+    delete process.env.SLACK_WORKSPACE_URL;
   });
   afterEach(() => {
     process.env = { ...OLD_ENV };
   });
 
-  it("renders the temp password + DALI email when both are present", async () => {
-    const html = await onboardingEmailHtml("test.onboarding@dali.dartmouth.edu", "temp-pw-123");
-    expect(html).toContain("test.onboarding@dali.dartmouth.edu");
-    expect(html).toContain("temp-pw-123");
-    expect(html).toContain("set a password on first login");
-    expect(html).toContain("https://os.dali.dartmouth.edu/login");
+  it("passes the provisioned address and one-time password through for a new account", () => {
+    const vars = acceptanceEmailVars({
+      daliEmail: "test.onboarding@dali.dartmouth.edu",
+      daliTempPassword: "temp-pw-123",
+    });
+    expect(vars.daliEmail).toBe("test.onboarding@dali.dartmouth.edu");
+    expect(vars.tempPassword).toBe("temp-pw-123");
+    expect(vars.loginUrl).toBe("https://os.dali.dartmouth.edu/login");
+    expect(vars.slackUrl).toBe("https://dali-lab.slack.com");
   });
 
-  it("does not show a password when none is provided (account already existed)", async () => {
-    const html = await onboardingEmailHtml("test.onboarding@dali.dartmouth.edu", null);
-    expect(html).toContain("test.onboarding@dali.dartmouth.edu");
-    expect(html).toContain("existing password");
-    expect(html).not.toContain("Password:");
+  it("points at the existing password when the account already existed", () => {
+    const vars = acceptanceEmailVars({
+      daliEmail: "test.onboarding@dali.dartmouth.edu",
+      daliTempPassword: null,
+    });
+    expect(vars.daliEmail).toBe("test.onboarding@dali.dartmouth.edu");
+    expect(vars.tempPassword).toBe("your existing password");
   });
 
-  it("shows the 'account is being set up' fallback when there's no DALI email", async () => {
-    const html = await onboardingEmailHtml(null, null);
-    expect(html).toContain("being set up");
-    expect(html).not.toContain("Password:");
+  it("falls back to the member's existing DALI address when nothing was provisioned", () => {
+    const vars = acceptanceEmailVars(null, "core.member@dali.dartmouth.edu");
+    expect(vars.daliEmail).toBe("core.member@dali.dartmouth.edu");
+    expect(vars.tempPassword).toBe("your existing password");
   });
 
-  it("shows the workspace 'a teammate will add you' line", async () => {
-    const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
-    expect(html).toContain("teammate will add you");
-    expect(html).toContain("https://dali-lab.slack.com");
-    expect(html).not.toContain("Join the DALI Slack");
+  it("says the login details arrive separately when provisioning hasn't finished", () => {
+    const vars = acceptanceEmailVars({ daliEmail: null, daliTempPassword: null });
+    expect(vars.daliEmail).toContain("arrive in a separate email");
+    expect(vars.tempPassword).toContain("arriving with your DALI email");
   });
 
-  it("stays manual even if SLACK_INVITE_URL is set (Enterprise has no public links)", async () => {
-    process.env.SLACK_INVITE_URL = "https://join.slack.com/t/dali-lab/shared_invite/zt-abc";
-    const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw");
-    expect(html).toContain("teammate will add you");
-    expect(html).not.toContain("Join the DALI Slack");
-    expect(html).not.toContain("https://join.slack.com/t/dali-lab/shared_invite/zt-abc");
+  it("uses SLACK_WORKSPACE_URL when set, without a trailing slash", () => {
+    process.env.SLACK_WORKSPACE_URL = "https://dali.enterprise.slack.com/";
+    const vars = acceptanceEmailVars(null);
+    expect(vars.slackUrl).toBe("https://dali.enterprise.slack.com");
+  });
+});
+
+describe("acceptanceLogoHtml", () => {
+  const OLD_ENV = { ...process.env };
+  beforeEach(() => {
+    process.env.FRONTEND_URL = "https://os.dali.dartmouth.edu";
+  });
+  afterEach(() => {
+    process.env = { ...OLD_ENV };
   });
 
-  describe("next-steps block", () => {
-    it("fills the start term and respond-by date into the default copy", async () => {
-      const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", {
-        startTerm: "27W",
-        respondBy: "Monday, June 8, 2026",
-      });
-      expect(html).toContain("The deadline to accept your offer and complete onboarding is Monday, June 8, 2026.");
-      expect(html).toContain("an incredible 27W together");
-      expect(html).not.toContain("26F");
-      expect(html).not.toContain("June 8th");
-    });
-
-    it("fills them into an operator-edited template too", async () => {
-      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
-        where: { key: string };
-      }) =>
-        args.where.key === "hiring:onboarding:NextSteps"
-          ? {
-              key: "hiring:onboarding:NextSteps",
-              subject: "Next steps",
-              body: "Accept by {{respondBy}}. See you in {{startTerm}}.",
-            }
-          : null) as any);
-      const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", {
-        startTerm: "26F",
-        respondBy: "Friday, September 4, 2026",
-      });
-      expect(html).toContain("Accept by Friday, September 4, 2026. See you in 26F.");
-      expect(vi.mocked(prisma.emailTemplate.findUnique)).toHaveBeenCalledWith({
-        where: { key: "hiring:onboarding:NextSteps" },
-      });
-    });
-
-    it("escapes the values it splices in", async () => {
-      const html = await onboardingEmailHtml("a@dali.dartmouth.edu", "pw", { startTerm: "<b>27W</b>" });
-      expect(html).not.toContain("<b>27W</b>");
-      expect(html).toContain("&lt;b&gt;27W&lt;/b&gt;");
-    });
-  });
-
-  describe("credentials block", () => {
-    it("uses the operator's edited credentials copy when one is saved", async () => {
-      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
-        where: { key: string };
-      }) =>
-        args.where.key === "hiring:onboarding:Credentials"
-          ? {
-              key: "hiring:onboarding:Credentials",
-              subject: "s",
-              body: "Custom: {{daliEmail}} + {{tempPassword}} at {{loginUrl}}",
-            }
-          : null) as any);
-      const html = await onboardingEmailHtml("ada.l@dali.dartmouth.edu", "pw-one-time-42");
-      expect(html).toContain("Custom: ada.l@dali.dartmouth.edu + pw-one-time-42");
-      expect(html).toContain("https://os.dali.dartmouth.edu/login");
-    });
-
-    it("uses the operator's existing-account copy when there's no temp password", async () => {
-      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
-        where: { key: string };
-      }) =>
-        args.where.key === "hiring:onboarding:CredentialsExisting"
-          ? {
-              key: "hiring:onboarding:CredentialsExisting",
-              subject: "s",
-              body: "Welcome back: {{daliEmail}} at {{loginUrl}}",
-            }
-          : null) as any);
-      const html = await onboardingEmailHtml("ada.l@dali.dartmouth.edu", null);
-      expect(html).toContain("Welcome back: ada.l@dali.dartmouth.edu");
-      expect(html).toContain("https://os.dali.dartmouth.edu/login");
-      expect(html).not.toContain("Password:");
-    });
-
-    it("uses the operator's account-pending copy when there's no DALI email", async () => {
-      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
-        where: { key: string };
-      }) =>
-        args.where.key === "hiring:onboarding:CredentialsPending"
-          ? {
-              key: "hiring:onboarding:CredentialsPending",
-              subject: "s",
-              body: "Hang tight, your account is on its way.",
-            }
-          : null) as any);
-      const html = await onboardingEmailHtml(null, null);
-      expect(html).toContain("Hang tight, your account is on its way.");
-      expect(html).not.toContain("Password:");
-    });
+  it("renders the absolute logo image", () => {
+    const html = acceptanceLogoHtml();
+    expect(html).toContain('src="https://os.dali.dartmouth.edu/logo-blue.png"');
+    expect(html).toContain("<img");
   });
 });

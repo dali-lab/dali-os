@@ -21,7 +21,7 @@ const mockPrisma = prisma as unknown as Record<
 > & { $transaction: ReturnType<typeof vi.fn> };
 
 // A key whose absence blocks a release, and one whose absence just skips.
-const BLOCKING = "hiring:decision:Accepted" as const;
+const BLOCKING = "hiring:decision:Rejected" as const;
 const SKIPPING = "hiring:notification:InterviewReminderApplicant" as const;
 
 beforeEach(() => {
@@ -98,28 +98,28 @@ describe("saveEmailTemplate", () => {
 });
 
 describe("saveEmailTemplate required variables", () => {
-  const CREDENTIALS = "hiring:onboarding:Credentials" as const;
+  const ACCEPTED = "hiring:decision:Accepted" as const;
 
-  it("refuses a credentials body that drops a required placeholder", async () => {
+  it("refuses an Accepted body that drops a required credential placeholder", async () => {
     await expect(
-      saveEmailTemplate(CREDENTIALS, { subject: "s", body: "Log in with {{daliEmail}}" }, "u1"),
+      saveEmailTemplate(ACCEPTED, { subject: "s", body: "Log in with {{daliEmail}}" }, "u1"),
     ).rejects.toBeInstanceOf(EmailTemplateRequiredVarsError);
     expect(mockPrisma.emailTemplate.upsert).not.toHaveBeenCalled();
   });
 
   it("saves when both required placeholders are present", async () => {
     await saveEmailTemplate(
-      CREDENTIALS,
+      ACCEPTED,
       { subject: "s", body: "{{daliEmail}} / {{tempPassword}}" },
       "u1",
     );
     expect(mockPrisma.emailTemplate.upsert).toHaveBeenCalled();
   });
 
-  it("still allows blanking both fields, which reverts to the default copy", async () => {
-    await saveEmailTemplate(CREDENTIALS, { subject: "", body: "" }, "u1");
+  it("still allows blanking both fields, which turns the letter off", async () => {
+    await saveEmailTemplate(ACCEPTED, { subject: "", body: "" }, "u1");
     expect(mockPrisma.emailTemplate.deleteMany).toHaveBeenCalledWith({
-      where: { key: CREDENTIALS },
+      where: { key: ACCEPTED },
     });
   });
 });
@@ -227,7 +227,7 @@ describe("renderEmailTemplate applies the registry's whenMissing rule", () => {
 
   it("names the email in the error so an operator knows what to write", async () => {
     await expect(renderEmailTemplate(BLOCKING, { firstName: "Ada" })).rejects.toThrow(
-      /Decision: accepted/,
+      /Decision: not accepted/,
     );
   });
 });
