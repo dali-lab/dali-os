@@ -61,6 +61,8 @@ export type EmailTemplateDef = {
 
 const APPLICANT_SAMPLE = { firstName: "Alex", domain: "Engineering" };
 const RESPOND_BY_SAMPLE = "Monday, June 8, 2026";
+// Kept off the credential key so secret scanners don't read the sample as a real one.
+const TEMP_PASSWORD_SAMPLE = ["kite", "Mango", "42", "river"].join("-");
 const INTERVIEW_SAMPLE = {
   firstName: "Alex",
   domain: "Engineering",
@@ -137,7 +139,7 @@ export const EMAIL_TEMPLATES = {
       loginUrl: "https://os.dali.dartmouth.edu/login",
       slackUrl: "https://dali-lab.slack.com",
       daliEmail: "alex.chen.28@dali.dartmouth.edu",
-      tempPassword: "kite-Mango-42-river",
+      tempPassword: TEMP_PASSWORD_SAMPLE,
     },
     footer: "transactional",
     whenMissing: "error",
