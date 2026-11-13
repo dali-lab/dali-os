@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn(), requireProjectEditAccess: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn(), getUserRoles: vi.fn() }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
+vi.mock("~/lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
+vi.mock("~/core/lib/taskboard.server", () => ({ getCoreBoardProject: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -11,10 +14,13 @@ vi.mock("~/lib/cors", () => ({
 import { requireAuth, requireProjectEditAccess } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { currentTerm, isCore } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { listActiveCoreMembers } from "~/lib/core-members.server";
+import { getCoreBoardProject } from "~/core/lib/taskboard.server";
 import { loader } from "~/projects/routes/api.task-options";
 
 const mockPrisma = prisma as unknown as {
-  project: { findMany: ReturnType<typeof vi.fn> };
+  project: { findMany: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> };
   projectAssignment: { findMany: ReturnType<typeof vi.fn> };
 };
 
@@ -30,12 +36,17 @@ const person = (id: string, firstName: string, termId: string, sortKey: number) 
 });
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
   vi.mocked(requireProjectEditAccess).mockResolvedValue({ ok: true } as never);
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(currentTerm).mockResolvedValue({ id: "t2" } as never);
   mockPrisma.project.findMany = vi.fn().mockResolvedValue([{ id: "p1", name: "Campus Compost" }]);
+  mockPrisma.project.findUnique = vi.fn().mockResolvedValue({ kind: "Standard" });
   mockPrisma.projectAssignment.findMany = vi.fn().mockResolvedValue([]);
+  vi.mocked(isFeatureEnabled).mockResolvedValue(true);
+  vi.mocked(getCoreBoardProject).mockResolvedValue({ id: "core", name: "Core" });
+  vi.mocked(listActiveCoreMembers).mockResolvedValue([]);
 });
 
 describe("GET /api/task-options", () => {
@@ -44,14 +55,35 @@ describe("GET /api/task-options", () => {
     expect(await res.json()).toEqual({ projects: [{ id: "p1", name: "Campus Compost" }] });
     expect(mockPrisma.project.findMany.mock.calls[0]![0].where).toEqual({
       status: "Active",
+      kind: "Standard",
       assignments: { some: { userId: "u1" } },
     });
   });
 
-  it("gives Core every active project", async () => {
-    vi.mocked(isCore).mockResolvedValue(true);
+  it("never offers the Core board outside Core", async () => {
     await get();
-    expect(mockPrisma.project.findMany.mock.calls[0]![0].where).toEqual({ status: "Active" });
+    expect(getCoreBoardProject).not.toHaveBeenCalled();
+  });
+
+  it("gives Core every active project, with the Core board first", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    const res = await get();
+    expect(await res.json()).toEqual({
+      projects: [
+        { id: "core", name: "Core" },
+        { id: "p1", name: "Campus Compost" },
+      ],
+    });
+    expect(mockPrisma.project.findMany.mock.calls[0]![0].where).toEqual({ status: "Active", kind: "Standard" });
+    expect(isFeatureEnabled).toHaveBeenCalledWith("core-taskboard", "u1", undefined);
+  });
+
+  it("leaves the Core board out while the taskboard flag is off", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(isFeatureEnabled).mockResolvedValue(false);
+    const res = await get();
+    expect(await res.json()).toEqual({ projects: [{ id: "p1", name: "Campus Compost" }] });
+    expect(getCoreBoardProject).not.toHaveBeenCalled();
   });
 
   it("requires a session", async () => {
@@ -87,6 +119,14 @@ describe("GET /api/task-options?projectId=", () => {
     vi.mocked(requireProjectEditAccess).mockResolvedValue({ ok: false, response: new Response(null, { status: 403 }) } as never);
     const res = await get("?projectId=p1");
     expect(res.status).toBe(403);
+    expect(mockPrisma.projectAssignment.findMany).not.toHaveBeenCalled();
+  });
+
+  it("offers active Core members on the Core board", async () => {
+    mockPrisma.project.findUnique = vi.fn().mockResolvedValue({ kind: "CoreBoard" });
+    vi.mocked(listActiveCoreMembers).mockResolvedValue([{ userId: "u1", name: "Ada Park" }]);
+    const res = await get("?projectId=core");
+    expect(await res.json()).toEqual({ members: [{ userId: "u1", name: "Ada Park" }] });
     expect(mockPrisma.projectAssignment.findMany).not.toHaveBeenCalled();
   });
 });
