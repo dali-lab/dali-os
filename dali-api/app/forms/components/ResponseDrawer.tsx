@@ -31,8 +31,8 @@ export function ResponseDrawer({
 }) {
   return (
     <Drawer open={open} onClose={onClose} title={title} footer={footer}>
+      {subtitle && <p className="shrink-0 px-6 pb-4 text-xs text-muted-foreground">{subtitle}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-        {subtitle && <p className="-mt-2 mb-4 text-xs text-muted-foreground">{subtitle}</p>}
         {lead}
         <dl className="flex flex-col gap-4">
           {fields.map((f) => (
