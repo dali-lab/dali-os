@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { createRoutesStub } from "react-router";
 import { parsePlacedFields, type PlacedField } from "~/education/lib/certificate-fields";
 import { CertificateTemplateEditor } from "../CertificateTemplateEditor";
 
@@ -13,9 +14,11 @@ const box: PlacedField = { key: "offeringTitle", x: 0.1, y: 0.1, w: 0.4, fontSiz
 let container: HTMLDivElement;
 let root: Root;
 const fetchMock = vi.fn();
+let saved: Array<{ intent: string | null; fields: string }>;
 
 beforeEach(() => {
   vi.useFakeTimers();
+  saved = [];
   fetchMock.mockReset();
   fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
   vi.stubGlobal("fetch", fetchMock);
@@ -34,7 +37,18 @@ afterEach(() => {
 });
 
 function mount(initialFields: PlacedField[]) {
-  act(() => root.render(createElement(CertificateTemplateEditor, { templateId: "t1", bgUrl: "/bg.png", bgWidth: 1000, bgHeight: 800, initialFields })));
+  const Stub = createRoutesStub([
+    {
+      path: "/t",
+      Component: () => createElement(CertificateTemplateEditor, { templateId: "t1", bgUrl: "/bg.png", bgWidth: 1000, bgHeight: 800, initialFields }),
+      action: async ({ request }) => {
+        const form = await request.formData();
+        saved.push({ intent: form.get("intent") as string | null, fields: String(form.get("fields")) });
+        return { ok: true };
+      },
+    },
+  ]);
+  act(() => root.render(createElement(Stub, { initialEntries: ["/t"] })));
 }
 const hit = (key: string) => container.querySelector<HTMLElement>(`[data-hit="${key}"]`);
 const stage = () => container.querySelector<HTMLElement>("[data-certificate-stage]")!;
@@ -56,7 +70,11 @@ function select(k: string) {
   fire(window, "pointerup", { clientX: 250, clientY: 215 });
 }
 const left = (k: string) => parseFloat(hit(k)!.style.left);
-const savedFields = (i = 0) => parsePlacedFields(JSON.parse(new URLSearchParams(fetchMock.mock.calls[i][1].body).get("fields")!));
+const savedFields = (i = 0) => parsePlacedFields(JSON.parse(saved[i].fields));
+const settle = () =>
+  act(async () => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  });
 
 describe("CertificateTemplateEditor", () => {
   it("opens a legacy anchor field as a box without moving its anchor", () => {
@@ -64,7 +82,7 @@ describe("CertificateTemplateEditor", () => {
     expect(left("studentName")).toBeCloseTo(15);
     expect(parseFloat(hit("studentName")!.style.width)).toBeCloseTo(70);
     act(() => vi.advanceTimersByTime(3000));
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(saved).toEqual([]);
   });
 
   it("adds a field as a selected, centred box with the right default fit", () => {
@@ -77,7 +95,7 @@ describe("CertificateTemplateEditor", () => {
     expect(container.querySelector("[aria-label='Text fit'] [aria-checked='true']")!.textContent).toBe("Wrap");
   });
 
-  it("commits a drag as fractions of the page", () => {
+  it("commits a drag as fractions of the page", async () => {
     mount([box]);
     const el = hit("offeringTitle")!;
     fire(el, "pointerdown", { clientX: 100, clientY: 60 });
@@ -85,6 +103,7 @@ describe("CertificateTemplateEditor", () => {
     fire(window, "pointerup", { clientX: 140, clientY: 60 });
     expect(left("offeringTitle")).toBeCloseTo(18);
     act(() => vi.advanceTimersByTime(800));
+    await settle();
     expect(savedFields()[0]).toMatchObject({ key: "offeringTitle", x: 0.18, w: 0.4 });
   });
 
@@ -132,7 +151,7 @@ describe("CertificateTemplateEditor", () => {
     expect(hit("offeringTitle")).not.toBeNull();
   });
 
-  it("selects several fields with shift-click and aligns them to each other", () => {
+  it("selects several fields with shift-click and aligns them to each other", async () => {
     mount([box, { ...box, key: "dateRange", x: 0.3, y: 0.6 }]);
     select("offeringTitle");
     fire(hit("dateRange")!, "pointerdown", { clientX: 250, clientY: 250, shiftKey: true });
@@ -143,28 +162,30 @@ describe("CertificateTemplateEditor", () => {
       (container.querySelector("button[aria-label='Align left']") as HTMLButtonElement).click();
     });
     act(() => vi.advanceTimersByTime(800));
+    await settle();
     const [a, b] = savedFields();
     expect(a.x).toBeCloseTo(b.x);
   });
 
-  it("aligns a single field to the page", () => {
+  it("aligns a single field to the page", async () => {
     mount([box]);
     select("offeringTitle");
     act(() => {
       (container.querySelector("button[aria-label='Align center']") as HTMLButtonElement).click();
     });
     act(() => vi.advanceTimersByTime(800));
+    await settle();
     expect(savedFields()[0].x).toBeCloseTo(0.3);
   });
 
-  it("edits style from the format bar and autosaves the parsed fields", () => {
+  it("edits style from the format bar and autosaves the parsed fields", async () => {
     mount([box]);
     select("offeringTitle");
     click("Shrink");
     act(() => vi.advanceTimersByTime(800));
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
-    expect(new URLSearchParams(fetchMock.mock.calls[0][1].body).get("intent")).toBe("save-fields");
+    await settle();
+    expect(saved).toHaveLength(1);
+    expect(saved[0].intent).toBe("save-fields");
     expect(savedFields()).toEqual([{ ...box, fit: "shrink" }]);
   });
 
