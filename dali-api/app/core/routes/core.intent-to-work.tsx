@@ -27,6 +27,8 @@ import { SlotAdvancedSettingsModal } from "~/projects/components/SlotAdvancedSet
 import { SubmissionDatabase } from "~/projects/components/SubmissionDatabase";
 import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
 import { BoardSettings } from "~/projects/components/BoardSettings";
+import { AddResponseDialog } from "~/projects/components/AddResponseDialog";
+import { Button } from "~/components/ui/Button";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { TermFilter } from "~/components/TermFilter";
@@ -41,7 +43,7 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
-import { resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
+import { deleteBoardResponse, resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
 import type { Question } from "~/types";
 import { conditionalKeys } from "~/forms/lib/form-logic";
 
@@ -153,7 +155,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   return {
     gate: "ok" as const,
-    cycle: { name: cycleName },
+    cycle: { name: cycleName, id: singleCycleId },
     termOptions,
     selectedTerm,
     domainOptions,
@@ -246,6 +248,9 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "set-slot-column")
     return setBoardColumn(form, cycle.id, SLOT, auth.user.sub, request);
 
+  if (intent === "delete-response")
+    return deleteBoardResponse(form, cycle.id, SLOT, auth.user.sub, request);
+
   if (intent === "set-slot-gate") {
     const raw = String(form.get("gateAudience") ?? "");
     const audience = raw === "" ? null : raw;
@@ -305,6 +310,7 @@ function Loaded({
   const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
   const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
   const responseTable = useFeatureFlag("form-response-views");
+  const [adding, setAdding] = useState(false);
 
   const { filtered } = useFilteredList(data.submissions, {
     search,
@@ -356,6 +362,15 @@ function Loaded({
         />
       )}
 
+      {adding && data.cycle.id && (
+        <AddResponseDialog
+          cycleId={data.cycle.id}
+          slot={SLOT}
+          slotLabel="Intent to Work"
+          onClose={() => setAdding(false)}
+        />
+      )}
+
       {data.mappingWarning && (
         <div className="rounded-md border border-os-amber/40 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
           <span className="font-medium">Heads up:</span> {data.mappingWarning}{" "}
@@ -386,6 +401,11 @@ function Loaded({
         {responseTable && !data.noFormConnected && (
           <BoardCsvLink slot={SLOT} matching={filtered.length} total={data.submissions.length} />
         )}
+        {responseTable && data.canManage && data.cycle.id && data.binding && (
+          <Button variant="secondary" size="sm" className="h-8" onClick={() => setAdding(true)}>
+            Add response
+          </Button>
+        )}
       </div>
 
       <div
@@ -411,6 +431,7 @@ function Loaded({
             roleChoices={data.roleChoices}
             rows={filtered}
             editable={data.canManage && !data.isAll}
+            canDelete={data.canManage && !data.isAll}
             emptyMessage={
               data.submissions.length === 0
                 ? "No intent submissions yet."

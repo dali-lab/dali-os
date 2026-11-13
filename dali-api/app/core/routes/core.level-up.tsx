@@ -39,9 +39,11 @@ import {
   type ColumnMapping,
 } from "~/projects/lib/slot-roles";
 import { buildSubmissionView } from "~/projects/lib/submission-view.server";
-import { resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
+import { deleteBoardResponse, resolveBoardCycles, setBoardColumn } from "~/projects/lib/slot-board.server";
 import { BoardCsvLink, BoardTable } from "~/projects/components/BoardTable";
 import { BoardSettings } from "~/projects/components/BoardSettings";
+import { AddResponseDialog } from "~/projects/components/AddResponseDialog";
+import { Button } from "~/components/ui/Button";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import type { Question } from "~/types";
 import { conditionalKeys } from "~/forms/lib/form-logic";
@@ -322,13 +324,16 @@ export async function action({ request }: Route.ActionArgs) {
     intent === "set-slot-mapping" ||
     intent === "set-slot-gate" ||
     intent === "set-slot-published" ||
-    intent === "set-slot-column"
+    intent === "set-slot-column" ||
+    intent === "delete-response"
   ) {
     if (!(await canManageStaffing(auth.user.sub)))
       return Response.json({ error: "Forbidden" }, { status: 403 });
 
     if (intent === "set-slot-column")
       return setBoardColumn(form, cycle.id, SLOT, auth.user.sub, request);
+    if (intent === "delete-response")
+      return deleteBoardResponse(form, cycle.id, SLOT, auth.user.sub, request);
 
     if (intent === "set-slot-form") {
       const formId = String(form.get("formId") ?? "");
@@ -456,6 +461,7 @@ function Loaded({ data }: { data: LoadedData }) {
   const [search, setSearch] = useSearchParamState("q", { debounceMs: 300 });
   const columnFilters = useColumnFilters(data.tableColumns, [], { inUrl: true });
   const responseTable = useFeatureFlag("form-response-views");
+  const [adding, setAdding] = useState(false);
 
   const { filtered } = useFilteredList(data.submissions, {
     search,
@@ -507,6 +513,15 @@ function Loaded({ data }: { data: LoadedData }) {
         />
       )}
 
+      {adding && data.cycle.id && (
+        <AddResponseDialog
+          cycleId={data.cycle.id}
+          slot={SLOT}
+          slotLabel="Level Up"
+          onClose={() => setAdding(false)}
+        />
+      )}
+
       {data.mappingWarning && (
         <div className="rounded-md border border-os-amber/30 bg-os-amber/10 px-3 py-2 text-sm text-os-amber">
           <span className="font-medium">Heads up:</span> {data.mappingWarning}
@@ -535,6 +550,11 @@ function Loaded({ data }: { data: LoadedData }) {
         {responseTable && !data.noFormConnected && (
           <BoardCsvLink slot={SLOT} matching={filtered.length} total={data.submissions.length} />
         )}
+        {responseTable && data.canManage && data.cycle.id && data.binding && (
+          <Button variant="secondary" size="sm" className="h-8" onClick={() => setAdding(true)}>
+            Add response
+          </Button>
+        )}
       </div>
 
       <div
@@ -559,6 +579,7 @@ function Loaded({ data }: { data: LoadedData }) {
             roleChoices={data.roleChoices}
             rows={filtered}
             editable={data.canManage && !data.isAll}
+            canDelete={data.canManage && !data.isAll}
             drawerFooter={
               data.canManage ? (r) => <LevelUpAction row={r} onLevelUp={setConfirmRow} /> : undefined
             }

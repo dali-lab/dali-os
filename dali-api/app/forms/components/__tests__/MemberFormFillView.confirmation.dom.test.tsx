@@ -34,6 +34,8 @@ async function fill(props: {
   tileSeed?: string | null;
   doneContent?: React.ReactNode;
   editing?: boolean;
+  submitUrl?: string;
+  extraBody?: Record<string, string>;
 }) {
   vi.stubGlobal(
     "fetch",
@@ -53,7 +55,9 @@ async function fill(props: {
         },
         tileSeed: props.tileSeed ?? null,
         doneContent: props.doneContent,
-        editing: props.editing,
+        editing: props.editing ? { answers: {} } : undefined,
+        submitUrl: props.submitUrl,
+        extraBody: props.extraBody,
       } as never),
     );
   });
@@ -105,5 +109,27 @@ describe("confirmation message on an edit", () => {
     await fill({ confirmationMessage: MESSAGE, editing: true });
     expect(text()).toContain("Response updated");
     expect(text()).not.toContain("Ask in the staffing channel");
+  });
+});
+
+describe("submit address", () => {
+  const call = () => vi.mocked(fetch).mock.calls[0] as unknown as [string, RequestInit];
+
+  it("posts to the form's own fill endpoint by default", async () => {
+    await fill({});
+    expect(call()[0]).toBe("/api/forms/fill/tok");
+  });
+
+  it("posts a new response to submitUrl with the extra fields", async () => {
+    await fill({ submitUrl: "/api/staffing/responses", extraBody: { userId: "m1" } });
+    expect(call()[0]).toBe("/api/staffing/responses");
+    expect(call()[1].method).toBe("POST");
+    expect(JSON.parse(String(call()[1].body))).toMatchObject({ versionId: "v1", userId: "m1" });
+  });
+
+  it("keeps an edit on the form's own endpoint", async () => {
+    await fill({ submitUrl: "/api/staffing/responses", editing: true });
+    expect(call()[0]).toBe("/api/forms/fill/tok");
+    expect(call()[1].method).toBe("PATCH");
   });
 });

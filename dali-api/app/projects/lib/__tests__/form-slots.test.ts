@@ -571,7 +571,10 @@ describe("applySlotColumnOp", () => {
     mockPrisma.staffingCycleFormBinding.update.mockClear();
     mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ id: "b1", formId: "f1", columnMapping: null });
     mockPrisma.formVersion.findFirst.mockResolvedValue({ questions: QUESTIONS });
-    expect(await applySlotColumnOp("c1", "intent-to-work", { op: "show", id: "q:back" }, "u1")).toEqual({ ok: true });
+    expect(await applySlotColumnOp("c1", "intent-to-work", { op: "show", id: "q:back" }, "u1")).toMatchObject({
+      ok: true,
+      mapping: { version: 1 },
+    });
     expect(mockPrisma.formVersion.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({ where: { formId: "f1" }, orderBy: { versionNumber: "desc" } }),
     );
@@ -605,7 +608,7 @@ describe("applySlotColumnOp", () => {
       { op: "role", id: "q:back", role: "intent-status", termId: "t27w" },
       "u1",
     );
-    expect(r).toEqual({ ok: true });
+    expect(r).toMatchObject({ ok: true });
     expect(mockPrisma.term.findUnique).toHaveBeenCalledWith({ where: { id: "t27w" }, select: { id: true, code: true } });
     expect(mockPrisma.staffingCycleFormBinding.update.mock.calls[0][0].data.columnMapping.entries[0]).toMatchObject({
       label: "Status — 27W",

@@ -12,6 +12,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
+import { useConfirmSubmit } from "~/components/ui/dialog";
 import { StatusAnswerMap } from "./SlotColumnMapper";
 import {
   parseRoleChoice,
@@ -24,6 +25,8 @@ import type { Slot } from "~/projects/lib/form-slots";
 import { OPEN_PARAM } from "~/projects/lib/board-filters";
 
 type BoardRow = {
+  submissionId: string;
+  enteredBy: string | null;
   userId: string;
   name: string;
   email: string | null;
@@ -44,6 +47,31 @@ function useColumnEdits() {
       { intent: "set-slot-column", op: JSON.stringify(op) },
       { method: "post", preventScrollReset: true },
     );
+}
+
+function DeleteResponse({ row }: { row: BoardRow }) {
+  const fetcher = useFetcher<{ ok?: true; error?: string }>();
+  const confirmSubmit = useConfirmSubmit();
+  const error = fetcher.state === "idle" ? fetcher.data?.error : undefined;
+  return (
+    <fetcher.Form
+      method="post"
+      className="flex items-center gap-3"
+      onSubmit={confirmSubmit({
+        title: `Delete ${row.name}'s response?`,
+        description: "What it fed into staffing goes with it. This can't be undone.",
+        tone: "destructive",
+        confirmLabel: "Delete",
+      })}
+    >
+      <input type="hidden" name="intent" value="delete-response" />
+      <input type="hidden" name="submissionId" value={row.submissionId} />
+      <Button type="submit" variant="destructive" size="sm" disabled={fetcher.state !== "idle"}>
+        {fetcher.state !== "idle" ? "Deleting…" : "Delete response"}
+      </Button>
+      {error && <span className="text-xs text-destructive">{error}</span>}
+    </fetcher.Form>
+  );
 }
 
 function StatusAnswersDialog({
@@ -99,6 +127,7 @@ export function BoardTable<R extends BoardRow>({
   roleChoices,
   rows,
   editable,
+  canDelete = false,
   trailing,
   drawerFooter,
   emptyMessage,
@@ -108,6 +137,7 @@ export function BoardTable<R extends BoardRow>({
   roleChoices: RoleChoice[];
   rows: R[];
   editable: boolean;
+  canDelete?: boolean;
   trailing?: FixedColumn<R>[];
   drawerFooter?: (row: R) => ReactNode;
   emptyMessage: string;
@@ -179,14 +209,23 @@ export function BoardTable<R extends BoardRow>({
         open={open !== null}
         onClose={() => setOpen(null)}
         title={open?.name ?? ""}
-        subtitle={open?.email ?? undefined}
+        subtitle={
+          [open?.email, open?.enteredBy && `Added by ${open.enteredBy}`].filter(Boolean).join(" · ") || undefined
+        }
         fields={(open?.detailFields ?? []).map((f) => ({
           key: f.key,
           label: f.label,
           value: f.value,
           ...(f.mapped ? {} : { note: "Not in the table" }),
         }))}
-        footer={open && drawerFooter?.(open)}
+        footer={
+          open && (drawerFooter || canDelete) ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {drawerFooter?.(open)}
+              {canDelete && <DeleteResponse row={open} />}
+            </div>
+          ) : undefined
+        }
       />
       {statusColumn && (
         <StatusAnswersDialog

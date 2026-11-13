@@ -277,6 +277,7 @@ model User {
   formsCreated          Form[]
   formVersions          FormVersion[]
   formSubmissions       FormSubmission[]
+  formSubmissionsEntered FormSubmission[] @relation("FormSubmissionEnteredBy")
   formBindingsSet       StaffingCycleFormBinding[]
 
   // ─── Phase 1: education back-relations ────────────────────────────────────
@@ -5387,6 +5388,11 @@ model FormSubmission {
   // Null for public/external submissions (no authenticated user).
   userId String?
   user   User?   @relation(fields: [userId], references: [id])
+
+  // A staffing manager who added this response for the member; null when the
+  // member submitted it themselves.
+  enteredById String?
+  enteredBy   User?   @relation("FormSubmissionEnteredBy", fields: [enteredById], references: [id], onDelete: SetNull)
 
   // Captured only for public submissions; null for internal ones.
   submitterName  String?
