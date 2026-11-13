@@ -254,15 +254,18 @@ export async function sendOnboardingReminders(args: {
 // address that doesn't exist.
 //
 // tempPassword is the one-time initial password for a freshly-created account
-// (the account forces a password change at first login). When present it's shown
-// alongside the email so the member can actually sign in. It is null when the
-// account already existed (re-release) — then we just tell them to use their
-// existing password. SECURITY: this is a live credential; it must only ever be
-// rendered into this email, never logged.
-// Async because the prose is operator-editable now: the deadline, the
-// required-event day, the term and the sign-off live in the
-// hiring:onboarding:NextSteps template rather than in constants here, where they
-// went stale silently and needed a deploy to correct.
+// (the account forces a password change at first login). When present, the
+// operator-editable hiring:onboarding:Credentials template renders it alongside
+// the email so the member can actually sign in (the template's save guard keeps
+// both placeholders in the body). It is null when the account already existed
+// (re-release) — then the CredentialsExisting template tells them to use their
+// existing password, and CredentialsPending covers the no-account-yet case.
+// SECURITY: this is a live credential; it must only ever be rendered into this
+// email, never logged.
+// Async because the prose is operator-editable: the credentials block, the
+// deadline, the required-event day, the term and the sign-off live in the
+// hiring:onboarding:* templates rather than in constants here, where they went
+// stale silently and needed a deploy to correct.
 export async function onboardingEmailHtml(
   daliEmail: string | null,
   tempPassword: string | null = null,
@@ -275,8 +278,6 @@ export async function onboardingEmailHtml(
   const loginUrl = `${base}/login`;
   const logoUrl = `${base}/logo-blue.png`;
 
-  const loginLink = `<a href="${loginUrl}">DALI OS</a>`;
-
   // Our Slack is on Enterprise, which disallows the public shared invite-link
   // feature, and the programmatic admin.users.invite isn't available to us
   // either — so workspace invites are always done by hand. The template tells
@@ -284,18 +285,26 @@ export async function onboardingEmailHtml(
   const slackUrl =
     (process.env.SLACK_WORKSPACE_URL ?? "https://dali-lab.slack.com").replace(/\/$/, "");
 
+  // All three branches have whenMissing "default", so none comes back empty.
   let accountBlock: string;
   if (daliEmail && tempPassword) {
-    accountBlock = `
-      <p>As your first onboarding step, log in to ${loginLink} with your new credentials:</p>
-      <p style="margin:8px 0;padding:12px 16px;background:#f3f4f6;border-radius:6px;font-family:monospace;">
-        DALI email: <strong>${daliEmail}</strong><br/>
-        Password: <strong>${tempPassword}</strong> (you'll be asked to set a password on first login).
-      </p>`;
+    const credentials = await renderEmailTemplate("hiring:onboarding:Credentials", {
+      loginUrl,
+      daliEmail,
+      tempPassword,
+    });
+    accountBlock = credentials?.html ?? "";
   } else if (daliEmail) {
-    accountBlock = `<p>As your first onboarding step, log in to ${loginLink} with your new DALI email: <strong>${daliEmail}</strong> and your existing password.</p>`;
+    const credentials = await renderEmailTemplate("hiring:onboarding:CredentialsExisting", {
+      loginUrl,
+      daliEmail,
+    });
+    accountBlock = credentials?.html ?? "";
   } else {
-    accountBlock = `<p>Your DALI account is being set up — you'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.</p>`;
+    const credentials = await renderEmailTemplate("hiring:onboarding:CredentialsPending", {
+      loginUrl,
+    });
+    accountBlock = credentials?.html ?? "";
   }
 
   // whenMissing is "default", so this never comes back empty.

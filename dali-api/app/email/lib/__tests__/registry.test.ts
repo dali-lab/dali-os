@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  EMAIL_TEMPLATE_APPENDS,
   EMAIL_TEMPLATE_KEYS,
   educationKey,
   emailTemplateDef,
@@ -56,6 +57,45 @@ describe("registry integrity", () => {
       expect(def.label.length).toBeGreaterThan(0);
       expect(def.description.endsWith("."), `${key}: ${def.description}`).toBe(true);
     }
+  });
+
+  it("declares required variables that the key lists and its defaults use", () => {
+    for (const key of EMAIL_TEMPLATE_KEYS) {
+      const def = emailTemplateDef(key);
+      for (const v of def.requiredVariables ?? []) {
+        expect(def.variables, `${key} requires undeclared {{${v}}}`).toContain(v);
+        // A required variable the fallback copy itself omits would make the
+        // default unsaveable and the send broken.
+        expect(def.defaults?.body ?? "", `${key} defaults are missing {{${v}}}`).toContain(
+          `{{${v}}}`,
+        );
+      }
+    }
+  });
+
+  it("appends only real keys, so the preview stitches what the send stitches", () => {
+    for (const [key, appendKeys] of Object.entries(EMAIL_TEMPLATE_APPENDS)) {
+      expect(isEmailTemplateKey(key)).toBe(true);
+      for (const appended of appendKeys ?? []) {
+        expect(isEmailTemplateKey(appended), `${key} appends unknown ${appended}`).toBe(true);
+      }
+    }
+    expect(EMAIL_TEMPLATE_APPENDS["hiring:decision:Accepted"]).toEqual([
+      "hiring:onboarding:Credentials",
+      "hiring:onboarding:NextSteps",
+    ]);
+  });
+
+  it("guards the credentials block so a save can't drop the login details", () => {
+    const def = emailTemplateDef("hiring:onboarding:Credentials");
+    expect(def.requiredVariables).toEqual(["daliEmail", "tempPassword"]);
+    expect(def.whenMissing).toBe("default");
+
+    const existing = emailTemplateDef("hiring:onboarding:CredentialsExisting");
+    expect(existing.requiredVariables).toEqual(["daliEmail"]);
+    expect(existing.whenMissing).toBe("default");
+
+    expect(emailTemplateDef("hiring:onboarding:CredentialsPending").whenMissing).toBe("default");
   });
 });
 
@@ -126,17 +166,23 @@ describe("isEmailTemplateKey", () => {
 });
 
 describe("the collapse covered what the old stores held", () => {
-  it("counts the feature templates: 18 hiring slots, 1 onboarding block, 5 education", () => {
+  it("counts the feature templates: 19 hiring slots, 4 onboarding blocks, 5 education", () => {
     const hiringSlots = EMAIL_TEMPLATE_KEYS.filter(
       (k) => k.startsWith("hiring:decision:") || k.startsWith("hiring:notification:"),
     );
     const onboarding = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("hiring:onboarding:"));
     const education = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("education:"));
     expect(hiringSlots).toHaveLength(19);
-    // Not a slot: appended to the Accepted letter, so it has no NotificationType
-    // of its own. It exists so the acceptance deadline and sign-off stop living
-    // in library code where they went stale silently.
-    expect(onboarding).toEqual(["hiring:onboarding:NextSteps"]);
+    // Not slots: appended to the Accepted letter, so they have no
+    // NotificationType of their own. They exist so the credentials block, the
+    // acceptance deadline and the sign-off stop living in library code where
+    // they went stale silently.
+    expect(onboarding).toEqual([
+      "hiring:onboarding:Credentials",
+      "hiring:onboarding:CredentialsExisting",
+      "hiring:onboarding:CredentialsPending",
+      "hiring:onboarding:NextSteps",
+    ]);
     // The 4 statuses plus decision:Promoted.
     expect(education).toHaveLength(5);
   });
