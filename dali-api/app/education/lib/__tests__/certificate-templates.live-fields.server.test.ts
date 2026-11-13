@@ -39,3 +39,20 @@ describe("issued certificates follow the live template", () => {
     expect(db.certificateTemplate.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "t1", archivedAt: null } }));
   });
 });
+
+describe("templates whose background is not an image", () => {
+  beforeEach(() => {
+    db.certificateTemplate.findFirst.mockResolvedValue({ backgroundFileId: "f", bgWidth: 842, bgHeight: 595, fields: [field] });
+    db.projectFile.findFirst.mockResolvedValue({ currentVersion: { s3Key: "uploads/certificate-templates/bg.pdf", contentType: "application/pdf" } });
+  });
+
+  it("fall back to the built-in design for the PDF without fetching the file", async () => {
+    expect(await getCertificateRenderTemplate("t1")).toBeNull();
+    expect(getObjectBytes).not.toHaveBeenCalled();
+  });
+
+  it("fall back to the built-in design on the certificate page without signing a link", async () => {
+    expect(await getCertificateWebTemplate("t1")).toBeNull();
+    expect(getDownloadUrl).not.toHaveBeenCalled();
+  });
+});
