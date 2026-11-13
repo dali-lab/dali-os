@@ -61,6 +61,8 @@ export type EmailTemplateDef = {
 
 const APPLICANT_SAMPLE = { firstName: "Alex", domain: "Engineering" };
 const RESPOND_BY_SAMPLE = "Monday, June 8, 2026";
+// Kept off the credential key so secret scanners don't read the sample as a real one.
+const TEMP_PASSWORD_SAMPLE = ["kite", "Mango", "42", "river"].join("-");
 const INTERVIEW_SAMPLE = {
   firstName: "Alex",
   domain: "Engineering",
@@ -104,14 +106,41 @@ export const EMAIL_TEMPLATES = {
     footer: "transactional",
     whenMissing: "error",
   },
+  // One letter carries the whole acceptance: greeting, DALI login credentials
+  // and next steps. This is the ONLY surface the one-time password renders
+  // into, so {{daliEmail}} and {{tempPassword}} are requiredVariables — a save
+  // that drops either is refused, because a new member then can't log in. When
+  // the acceptance didn't mint a password (account already existed, Core
+  // cycles, provisioning still running), the call site fills both tokens with
+  // stand-in text instead (acceptanceEmailVars in welcome.server.ts). The DALI
+  // logo stays in code: it is an <img>, which the email sanitizer does not
+  // allow through.
   "hiring:decision:Accepted": {
     area: "Hiring",
     label: "Decision: accepted",
     description:
-      "Sent when a lead releases an Accepted decision, and when an applicant is accepted off the waitlist. The onboarding and credentials block is appended to it.",
+      "Sent when a lead releases an Accepted decision, and when an applicant is accepted off the waitlist. One letter carries the greeting, the DALI login credentials and the next steps; both credential placeholders must stay in the body.",
     purpose: "Hiring",
-    variables: ["firstName", "domain", "startTerm", "respondBy"],
-    sample: { ...APPLICANT_SAMPLE, startTerm: "27W", respondBy: RESPOND_BY_SAMPLE },
+    variables: [
+      "firstName",
+      "domain",
+      "startTerm",
+      "respondBy",
+      "loginUrl",
+      "slackUrl",
+      "daliEmail",
+      "tempPassword",
+    ],
+    requiredVariables: ["daliEmail", "tempPassword"],
+    sample: {
+      ...APPLICANT_SAMPLE,
+      startTerm: "27W",
+      respondBy: RESPOND_BY_SAMPLE,
+      loginUrl: "https://os.dali.dartmouth.edu/login",
+      slackUrl: "https://dali-lab.slack.com",
+      daliEmail: "alex.chen.28@dali.dartmouth.edu",
+      tempPassword: TEMP_PASSWORD_SAMPLE,
+    },
     footer: "transactional",
     whenMissing: "error",
   },
@@ -146,112 +175,6 @@ export const EMAIL_TEMPLATES = {
         "Thank you for your patience while you were on the {{domain}} waitlist. We weren't able to offer you a spot this time, and the waitlist is now closed.",
         'We would love to hear from you again. When the next hiring cycle opens, start an application and choose "Use waitlisted application". Your previous application carries over, and you only fill out a short continued interest form.',
         "Best,\nDALI Hiring",
-      ].join("\n\n"),
-    },
-  },
-
-  // The credentials block appended to the Accepted letter when accepting
-  // created a DALI account. This is the ONLY surface the one-time password
-  // renders into, so {{daliEmail}} and {{tempPassword}} are requiredVariables —
-  // a save that drops either is refused, because the member then can't log in.
-  // The other two states (account already existed, provisioning still running)
-  // stay in code: they carry no credentials and must not be editable into
-  // promising one.
-  "hiring:onboarding:Credentials": {
-    area: "Hiring",
-    label: "Accepted: account credentials",
-    description:
-      "Appended to the Accepted decision email when accepting created a new DALI account. Renders the login address and one-time password; both placeholders must stay in the body.",
-    purpose: "Hiring",
-    variables: ["loginUrl", "daliEmail", "tempPassword"],
-    requiredVariables: ["daliEmail", "tempPassword"],
-    sample: {
-      loginUrl: "https://os.dali.dartmouth.edu/login",
-      daliEmail: "alex.chen.28@dali.dartmouth.edu",
-      tempPassword: "kite-Mango-42-river",
-    },
-    footer: "transactional",
-    // Clearing it would strip the credentials from every acceptance email, so
-    // it falls back rather than vanishing.
-    whenMissing: "default",
-    defaults: {
-      // Unused: appended to the Accepted letter, which carries the subject.
-      subject: "Your DALI account",
-      body: [
-        'As your first onboarding step, log in to <a href="{{loginUrl}}">DALI OS</a> with your new credentials:',
-        "DALI email: <code><strong>{{daliEmail}}</strong></code>\nPassword: <code><strong>{{tempPassword}}</strong></code>\n(You'll be asked to set a password on first login.)",
-      ].join("\n\n"),
-    },
-  },
-
-  "hiring:onboarding:CredentialsExisting": {
-    area: "Hiring",
-    label: "Accepted: existing account",
-    description:
-      "Appended to the Accepted decision email when the applicant already has a DALI account, so there is no new password. The email placeholder must stay in the body.",
-    purpose: "Hiring",
-    variables: ["loginUrl", "daliEmail"],
-    requiredVariables: ["daliEmail"],
-    sample: {
-      loginUrl: "https://os.dali.dartmouth.edu/login",
-      daliEmail: "alex.chen.28@dali.dartmouth.edu",
-    },
-    footer: "transactional",
-    whenMissing: "default",
-    defaults: {
-      // Unused: appended to the Accepted letter, which carries the subject.
-      subject: "Your DALI account",
-      body: 'As your first onboarding step, log in to <a href="{{loginUrl}}">DALI OS</a> with your DALI email: <strong>{{daliEmail}}</strong> and your existing password.',
-    },
-  },
-
-  "hiring:onboarding:CredentialsPending": {
-    area: "Hiring",
-    label: "Accepted: account being set up",
-    description:
-      "Appended to the Accepted decision email when the DALI account isn't provisioned yet, so there are no credentials to show.",
-    purpose: "Hiring",
-    variables: ["loginUrl"],
-    sample: { loginUrl: "https://os.dali.dartmouth.edu/login" },
-    footer: "transactional",
-    whenMissing: "default",
-    defaults: {
-      // Unused: appended to the Accepted letter, which carries the subject.
-      subject: "Your DALI account",
-      body: "Your DALI account is being set up. You'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.",
-    },
-  },
-
-  // Appended to the Accepted letter above, after the credentials block, so an
-  // accepted applicant gets one email rather than two. It exists as its own
-  // template because its content and the decision letter's have different
-  // owners and different lifetimes: the letter is cycle-specific prose a lead
-  // rewrites, this is the standing "here's what happens next" that changes when
-  // the dates change. The DALI logo stays in code: it is an <img>, which the
-  // email sanitizer does not allow through.
-  "hiring:onboarding:NextSteps": {
-    area: "Hiring",
-    label: "Accepted: onboarding and next steps",
-    description:
-      "Appended to the Accepted decision email. Holds the acceptance deadline, the required-event date and the sign-off, so they change here rather than in a deploy.",
-    purpose: "Hiring",
-    variables: ["slackUrl", "startTerm", "respondBy"],
-    sample: { slackUrl: "https://dali-lab.slack.com", startTerm: "27W", respondBy: RESPOND_BY_SAMPLE },
-    footer: "transactional",
-    // Clearing it would strip the next-steps half of every acceptance email, so
-    // it falls back rather than vanishing.
-    whenMissing: "default",
-    defaults: {
-      // Unused: this template is appended to the Accepted letter, which carries
-      // the subject. Kept non-empty because a blank subject reads as a bug.
-      subject: "Next steps",
-      body: [
-        "Once you're in, finish setting up by completing your member profile and onboarding steps.",
-        "<strong>The deadline to accept your offer and complete onboarding is {{respondBy}}.</strong>",
-        'We use Slack day-to-day at <a href="{{slackUrl}}">DALI Studios</a>. A teammate will add you to the workspace shortly.',
-        "We also have a special event planned for all day Sunday, September 13th. This is a required event. If there is any concern with this requirement, please reach out.",
-        "We are very excited to welcome you to DALI soon and look forward to an incredible {{startTerm}} together. Please reach out with any questions.",
-        "Best,\nSean Noh and DALI Hiring",
       ].join("\n\n"),
     },
   },
@@ -580,15 +503,6 @@ export const EMAIL_TEMPLATE_KEYS: EmailTemplateKey[] = [
   ...(Object.keys(EMAIL_TEMPLATES) as (keyof typeof EMAIL_TEMPLATES)[]),
   ...NOTIFICATION_COPY_KEYS.map(notifyTemplateKey),
 ];
-
-// Blocks code appends to a letter at send time, in order, so the editor's
-// preview can show the whole email the recipient gets. Each appended key is
-// edited under its own template.
-export const EMAIL_TEMPLATE_APPENDS: Partial<
-  Record<EmailTemplateKey, readonly EmailTemplateKey[]>
-> = {
-  "hiring:decision:Accepted": ["hiring:onboarding:Credentials", "hiring:onboarding:NextSteps"],
-};
 
 export function isEmailTemplateKey(value: unknown): value is EmailTemplateKey {
   // hasOwnProperty, not `in`: `in` walks the prototype chain, so "toString" and

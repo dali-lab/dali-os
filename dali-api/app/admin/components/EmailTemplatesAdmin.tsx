@@ -13,7 +13,6 @@ import { useToast } from "~/components/ui/toast";
 import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import {
-  EMAIL_TEMPLATE_APPENDS,
   EMAIL_TEMPLATE_KEYS,
   emailTemplateDef,
   type EmailTemplateKey,
@@ -58,56 +57,6 @@ function uneditedLabel(when: WhenMissing): string {
     case "default":
       return "Using the built-in wording";
   }
-}
-
-// The blocks code appends to this letter at send time, rendered from their
-// EFFECTIVE copy with their own samples, so the preview shows the whole email
-// the recipient gets — including where credentials land in an acceptance.
-type AppendedPreview = { key: EmailTemplateKey; label: string; html: string };
-
-function appendedPreviews(
-  templateKey: EmailTemplateKey,
-  rows: readonly AdminEmailRow[],
-): AppendedPreview[] {
-  return (EMAIL_TEMPLATE_APPENDS[templateKey] ?? []).map((key) => {
-    const def = emailTemplateDef(key);
-    const row = rows.find((r) => r.key === key);
-    const copy = {
-      subject: row?.subject ?? def.defaults?.subject ?? "",
-      body: row?.body ?? def.defaults?.body ?? "",
-    };
-    return { key, label: def.label, html: renderEmail(copy, def.sample as never).html };
-  });
-}
-
-function AppendedPreviewBlocks({
-  items,
-  onOpen,
-}: {
-  items: AppendedPreview[];
-  /** Set where the editor can switch templates in place; otherwise plain text. */
-  onOpen?: (key: EmailTemplateKey) => void;
-}) {
-  return (
-    <>
-      {items.map((a) => (
-        <div key={a.key} className="mt-4 border-t border-dashed border-os-container pt-4">
-          <p className="mb-2 text-xs text-os-muted">
-            Appended automatically at send time — edited as{" "}
-            {onOpen ? (
-              <button type="button" className="underline" onClick={() => onOpen(a.key)}>
-                {a.label}
-              </button>
-            ) : (
-              <span className="font-medium">{a.label}</span>
-            )}
-          </p>
-          {/* Safe: renderEmail runs the body through DOMPurify. */}
-          <div className="text-os-grey" dangerouslySetInnerHTML={{ __html: a.html }} />
-        </div>
-      ))}
-    </>
-  );
 }
 
 // Soft lint, carried over from the hiring editor: a warning never blocks a save.
@@ -182,9 +131,7 @@ export function EmailTemplatesAdmin({
         key={`${openKey}:${row?.updatedAt ?? "unedited"}`}
         templateKey={openKey}
         row={row}
-        allRows={rows}
         versions={versions}
-        onOpenTemplate={(key) => setSearchParams({ key }, { replace: true, preventScrollReset: true })}
       />
     </div>
   );
@@ -213,15 +160,11 @@ function groupByArea(query: string, byKey: Map<EmailTemplateKey, AdminEmailRow>)
 function TemplatePanel({
   templateKey,
   row,
-  allRows,
   versions,
-  onOpenTemplate,
 }: {
   templateKey: EmailTemplateKey;
   row: AdminEmailRow | null;
-  allRows: AdminEmailRow[];
   versions: AdminEmailVersion[];
-  onOpenTemplate: (key: EmailTemplateKey) => void;
 }) {
   const os = useOsChrome();
   const toast = useToast();
@@ -235,7 +178,6 @@ function TemplatePanel({
 
   const warnings = useMemo(() => lint(`${subject}\n${body}`, def.variables), [subject, body, def.variables]);
   const preview = useMemo(() => renderEmail({ subject, body }, def.sample as never), [subject, body, def.sample]);
-  const appended = useMemo(() => appendedPreviews(templateKey, allRows), [templateKey, allRows]);
 
   const handled = useRef<unknown>(null);
   useEffect(() => {
@@ -345,7 +287,6 @@ function TemplatePanel({
           <p className="mb-3 font-semibold text-foreground">{preview.subject}</p>
           {/* Safe: renderEmail runs the body through DOMPurify. */}
           <div className="text-os-grey" dangerouslySetInnerHTML={{ __html: preview.html }} />
-          <AppendedPreviewBlocks items={appended} onOpen={onOpenTemplate} />
         </div>
       </section>
 
@@ -410,7 +351,6 @@ export function EmailEditorModal({
       key={row?.updatedAt ?? "unedited"}
       templateKey={templateKey}
       row={row}
-      allRows={loader.data.rows}
       versions={loader.data.versions}
       onClose={onClose}
     />
@@ -420,13 +360,11 @@ export function EmailEditorModal({
 function EmailEditor({
   templateKey,
   row,
-  allRows,
   versions,
   onClose,
 }: {
   templateKey: EmailTemplateKey;
   row: AdminEmailRow | null;
-  allRows?: AdminEmailRow[];
   versions: AdminEmailVersion[];
   /** Set when opened in place on another page: saves stay on that page. */
   onClose?: () => void;
@@ -434,7 +372,7 @@ function EmailEditor({
   const [, setSearchParams] = useSearchParams();
   const def = emailTemplateDef(templateKey);
   const nav = useNavigation();
-  const fetcher = useFetcher<{ saved?: true }>();
+  const fetcher = useFetcher<{ saved?: true; error?: string }>();
   const inPlace = !!onClose;
   const EditorForm = inPlace ? fetcher.Form : Form;
   const formProps = inPlace ? { action: EDITOR_ROUTE } : {};
@@ -461,10 +399,6 @@ function EmailEditor({
   const preview = useMemo(
     () => renderEmail({ subject, body }, def.sample as never),
     [subject, body, def.sample],
-  );
-  const appended = useMemo(
-    () => appendedPreviews(templateKey, allRows ?? []),
-    [templateKey, allRows],
   );
 
   return (
@@ -530,6 +464,9 @@ function EmailEditor({
               Never filled for this email: {warnings.unfilled.map((t) => `{{${t}}}`).join(", ")}.
             </p>
           ) : null}
+          {fetcher.state === "idle" && fetcher.data?.error ? (
+            <p className="text-xs text-os-red">{fetcher.data.error}</p>
+          ) : null}
 
           <div className="flex items-center gap-2">
             <button
@@ -560,7 +497,6 @@ function EmailEditor({
             <p className="font-medium mb-2">{preview.subject}</p>
             {/* Safe: renderEmail runs the body through DOMPurify. */}
             <div dangerouslySetInnerHTML={{ __html: preview.html }} />
-            <AppendedPreviewBlocks items={appended} />
           </div>
         </div>
 

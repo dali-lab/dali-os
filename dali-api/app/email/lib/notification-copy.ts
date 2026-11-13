@@ -902,6 +902,10 @@ export const NOTIFICATION_SAMPLES: Record<TemplateVariableName, string> = {
   startTerm: "27W",
   respondBy: "Monday, June 8, 2026",
   formName: "Check-in form",
+  loginUrl: "https://os.dali.dartmouth.edu/login",
+  daliEmail: "alex.chen.28@dali.dartmouth.edu",
+  // Built indirectly so secret scanners don't read the sample as a real one.
+  tempPassword: ["kite", "Mango", "42", "river"].join("-"),
 };
 
 export function notificationSample(

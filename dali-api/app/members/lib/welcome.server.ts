@@ -1,7 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
 import { renderMemberEmail } from "~/email/lib/layout.server";
-import { renderEmailTemplate } from "~/email/lib/templates.server";
 import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import {
   renderNotificationCopy,
@@ -26,9 +25,9 @@ export const ONBOARDING_REMINDER_EVENT_TYPE = "member.onboarding.reminder" as co
 // never block the acceptance/release that triggered it, so callers wrap this in
 // try/catch.
 //
-// The onboarding *email* is no longer sent separately: its content is folded
-// into the Accepted decision email at the release call site via
-// `onboardingEmailHtml` below, so an accepted applicant receives a single email.
+// The onboarding *email* is no longer sent separately: the Accepted decision
+// letter renders the credentials itself (via `acceptanceEmailVars` below), so
+// an accepted applicant receives a single email.
 //
 // Idempotent: re-running creates another notification only if the member has no
 // open onboarding todo, so a re-release won't spam them.
@@ -241,42 +240,28 @@ export async function sendOnboardingReminders(args: {
   return { count, skipped };
 }
 
-// Onboarding block appended to the Accepted decision email so a new member gets
-// a single email. The acceptance greeting ("Hi <name>, congratulations…") comes
-// from the lead-authored decision template; this block adds the first onboarding
-// step (log in to DALI OS with the new credentials), the profile nudge, the
-// sign-off, and the DALI logo.
+// The variables the Accepted letter's credential placeholders render from. One
+// lead-authored template carries the whole acceptance email, and its save guard
+// keeps {{daliEmail}} and {{tempPassword}} in the body — so this fills both
+// tokens on every path rather than leaving one blank:
 //
-// daliEmail is the newly-provisioned @dali.dartmouth.edu login address. It may
-// be null when Workspace provisioning hasn't completed yet (e.g. a transient
-// failure) — in that case we say the account is still being set up rather than
-// showing a blank "ready" line, so the member isn't told to log in with an
-// address that doesn't exist.
-//
-// tempPassword is the one-time initial password for a freshly-created account
-// (the account forces a password change at first login). When present, the
-// operator-editable hiring:onboarding:Credentials template renders it alongside
-// the email so the member can actually sign in (the template's save guard keeps
-// both placeholders in the body). It is null when the account already existed
-// (re-release) — then the CredentialsExisting template tells them to use their
-// existing password, and CredentialsPending covers the no-account-yet case.
-// SECURITY: this is a live credential; it must only ever be rendered into this
-// email, never logged.
-// Async because the prose is operator-editable: the credentials block, the
-// deadline, the required-event day, the term and the sign-off live in the
-// hiring:onboarding:* templates rather than in constants here, where they went
-// stale silently and needed a deploy to correct.
-export async function onboardingEmailHtml(
-  daliEmail: string | null,
-  tempPassword: string | null = null,
-  decisionVars: { startTerm?: string; respondBy?: string } = {},
-): Promise<string> {
+// - New account: the provisioned address and the one-time password (the account
+//   forces a password change at first login). SECURITY: the password is a live
+//   credential; it must only ever be rendered into this email, never logged.
+// - Account already existed (re-release, or a Core-cycle acceptance of a
+//   current member): their address plus "your existing password" in place of a
+//   one-time one.
+// - Workspace provisioning not finished (e.g. a transient failure): stand-in
+//   text saying the login details arrive separately, so the member isn't told
+//   to log in with an address that doesn't exist.
+export function acceptanceEmailVars(
+  provision: { daliEmail?: string | null; daliTempPassword?: string | null } | null,
+  existingDaliEmail: string | null = null,
+): { loginUrl: string; slackUrl: string; daliEmail: string; tempPassword: string } {
   // getFrontendUrl(), not process.env.FRONTEND_URL: a PR preview app sets only
   // API_BASE_URL, so reading the raw var there left base="" and shipped a
-  // relative "/login" and "/logo-blue.png" into an email, where neither resolves.
+  // relative "/login" into an email, where it doesn't resolve.
   const base = getFrontendUrl().replace(/\/$/, "");
-  const loginUrl = `${base}/login`;
-  const logoUrl = `${base}/logo-blue.png`;
 
   // Our Slack is on Enterprise, which disallows the public shared invite-link
   // feature, and the programmatic admin.users.invite isn't available to us
@@ -285,34 +270,20 @@ export async function onboardingEmailHtml(
   const slackUrl =
     (process.env.SLACK_WORKSPACE_URL ?? "https://dali-lab.slack.com").replace(/\/$/, "");
 
-  // All three branches have whenMissing "default", so none comes back empty.
-  let accountBlock: string;
-  if (daliEmail && tempPassword) {
-    const credentials = await renderEmailTemplate("hiring:onboarding:Credentials", {
-      loginUrl,
-      daliEmail,
-      tempPassword,
-    });
-    accountBlock = credentials?.html ?? "";
-  } else if (daliEmail) {
-    const credentials = await renderEmailTemplate("hiring:onboarding:CredentialsExisting", {
-      loginUrl,
-      daliEmail,
-    });
-    accountBlock = credentials?.html ?? "";
-  } else {
-    const credentials = await renderEmailTemplate("hiring:onboarding:CredentialsPending", {
-      loginUrl,
-    });
-    accountBlock = credentials?.html ?? "";
-  }
+  const daliEmail = provision?.daliEmail ?? existingDaliEmail ?? null;
+  const tempPassword = provision?.daliTempPassword ?? null;
+  return {
+    loginUrl: `${base}/login`,
+    slackUrl,
+    daliEmail: daliEmail ?? "still being set up, it will arrive in a separate email",
+    tempPassword:
+      tempPassword ?? (daliEmail ? "your existing password" : "arriving with your DALI email"),
+  };
+}
 
-  // whenMissing is "default", so this never comes back empty.
-  const nextSteps = await renderEmailTemplate("hiring:onboarding:NextSteps", { slackUrl, ...decisionVars });
-
-  return `
-    ${accountBlock}
-    ${nextSteps?.html ?? ""}
-    <p><img src="${logoUrl}" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>
-  `;
+// Appended after the Accepted letter in code: the logo is an <img>, which the
+// email sanitizer does not allow through an operator-authored body.
+export function acceptanceLogoHtml(): string {
+  const base = getFrontendUrl().replace(/\/$/, "");
+  return `<p><img src="${base}/logo-blue.png" alt="DALI Lab" width="96" style="display:block;border:0;"/></p>`;
 }
