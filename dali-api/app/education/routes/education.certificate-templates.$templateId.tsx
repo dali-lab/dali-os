@@ -1,4 +1,4 @@
-import { redirect, useLoaderData, useFetcher, Link } from "react-router";
+import { redirect, useLoaderData, useFetcher, type ShouldRevalidateFunctionArgs } from "react-router";
 import { useState } from "react";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -11,9 +11,9 @@ import {
 } from "~/education/lib/certificate-templates.server";
 import { parsePlacedFields } from "~/education/lib/certificate-fields";
 import { CertificateTemplateEditor } from "~/education/components/CertificateTemplateEditor";
+import { SAVE_FIELDS_INTENT } from "~/education/lib/use-certificate-autosave";
 import { Button } from "~/components/ui/Button";
 import { useDialog } from "~/components/ui/dialog";
-import { ChevronLeft } from "lucide-react";
 
 // Route types aren't generated until the route is registered in routes.ts, so
 // we use loose arg types here rather than importing from ./+types/...
@@ -40,6 +40,11 @@ export async function loader({
   return { template: t, bgUrl };
 }
 
+export function shouldRevalidate({ formData, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs) {
+  if (formData?.get("intent") === SAVE_FIELDS_INTENT) return false;
+  return defaultShouldRevalidate;
+}
+
 export async function action({
   request,
   params,
@@ -55,7 +60,7 @@ export async function action({
   const intent = String(formData.get("intent") ?? "");
   const id = params.templateId!;
 
-  if (intent === "save-fields") {
+  if (intent === SAVE_FIELDS_INTENT) {
     let parsed: unknown = [];
     try {
       parsed = JSON.parse(String(formData.get("fields") ?? "[]"));
@@ -106,15 +111,6 @@ export default function CertificateTemplateEditorRoute() {
 
   return (
     <div className="flex flex-col gap-6 px-4 py-6 max-w-5xl mx-auto">
-      {/* Back link */}
-      <Link
-        to="/education/certificate-templates"
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeft className="h-3.5 w-3.5" />
-        Templates
-      </Link>
-
       {/* Header */}
       <div className="flex items-center gap-3">
         <h1 className="text-xl font-semibold text-foreground">{name}</h1>
