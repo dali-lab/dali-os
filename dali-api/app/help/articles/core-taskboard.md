@@ -4,7 +4,7 @@ summary: Track Core's own tasks on a board and plan each week of the term with m
 audience: [core]
 flag: core-taskboard
 paths: [/core, /core/milestones]
-keywords: [core, taskboard, milestones, plan, term, week, goals, kanban, fill from last year]
+keywords: [core, taskboard, /task, milestones, plan, term, week, goals, kanban, fill from last year]
 ---
 
 The Core area has two tabs for Core's own work. **Taskboard** is a board of Core's tasks. **Milestones** is the plan for a term, week by week. Only Core members can see them, and any Core member can edit everything.
@@ -12,6 +12,8 @@ The Core area has two tabs for Core's own work. **Taskboard** is a board of Core
 ## Taskboard
 
 Open **Taskboard** at [/core](/core). It shows Core's tasks in five columns: Backlog, To do, In progress, In review and Done. Drag a card to change its status. Select a card to open the task, where you can add comments, a checklist, files, assignees and a due date. Use **New task** to add one, and the filters above the board to narrow it by assignee or search.
+
+You can also add a Core task from a doc that isn't in a project. Type **/task** and pick **Core** as the project. The owner list shows this term's Core members.
 
 ## Milestones and plan items
 
