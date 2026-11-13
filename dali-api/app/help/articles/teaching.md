@@ -2,7 +2,7 @@
 title: Teaching an offering
 summary: Run an education offering as an instructor or Core member, from setup and sessions to grading, applications and close-out.
 audience: [instructor, core]
-paths: [/education/manage/new, /education/manage/:offeringId, /education/manage/assignments/:assignmentId, /education/offerings]
+paths: [/education/certificate-templates, /education/manage/new, /education/manage/:offeringId, /education/manage/assignments/:assignmentId, /education/offerings]
 keywords: [instructor, teach, manage, roster, attendance, grade, announcement, close out, certificate, waitlist, materials, assignments]
 ---
 
@@ -62,6 +62,15 @@ The **Discussion** tab has **New post** for the class discussion and **New annou
 ## Feedback
 
 The **Feedback** tab shows responses to the session feedback form, which is sent to students marked Present after each session. Instructors see responses anonymized and shuffled, and only once there are at least three. Core sees names and the instructor exit survey.
+
+## Certificate templates (Core)
+
+Core designs completion certificates in [Certificate templates](/education/certificate-templates). Open a template to place fields on its background image.
+
+- **Add field** puts a text box on the page. Drag it to move it, and drag a side handle to set how wide it is. Shift-click or drag across the page to select several fields, then use **Align** to line them up with the page or with each other.
+- Arrow keys nudge the selected fields, **Delete** removes them, and ⌘Z undoes the last change. Guides appear as you drag. Hold ⌘ to skip snapping.
+- In the bar above a selected field, choose its font size, bold, alignment and color. **Wrap** breaks long text onto more lines inside the box. **Shrink** makes the text smaller until it fits on one line. The student name shrinks by default.
+- Changes save on their own. Saving a template restyles every certificate already issued from it, including ones students have already downloaded.
 
 ## Close out
 
