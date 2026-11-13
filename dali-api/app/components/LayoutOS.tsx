@@ -224,6 +224,7 @@ export function LayoutOS({
   const navFlags = {
     community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
+    'education-taskboard': useFeatureFlag('education-taskboard'),
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
     'core-taskboard': useFeatureFlag('core-taskboard'),
   }

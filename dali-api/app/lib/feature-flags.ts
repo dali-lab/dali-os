@@ -80,6 +80,12 @@ export const FEATURE_FLAGS = [
       "Project-hub-style education catalog — a grid of cover cards with a per-offering emoji, a search field, and a Miniseries/Workshop type filter — on both /education (members) and /portal/education (applicants). Also switches the applicant portal home to conditional action cards (Apply to DALI, Apply to an offering, My applications, My courses) that link to the combined /portal/applications history. The offering emoji picker and the applications page ship regardless; this flag only gates the redesigned surfaces. Ships off.",
   },
   {
+    key: "education-taskboard",
+    label: "Education taskboard",
+    description:
+      "The Taskboard tab under Education for Core: plan tasks and milestones by year, term and week, with unfinished tasks rolling into the current week. Ships off.",
+  },
+  {
     key: "community",
     label: "Community",
     description:

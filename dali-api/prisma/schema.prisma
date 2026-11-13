@@ -286,6 +286,7 @@ model User {
 
   // ─── Education LMS expansion back-relations ───────────────────────────────
   educationDiscussionPosts    EducationDiscussionPost[] @relation("EducationDiscussionAuthor")
+  educationTasksCreated       EducationTask[]           @relation("EducationTaskCreator")
   educationNoteFeedbackAuthor EducationStudentNote[]    @relation("EduNoteFeedbackAuthor")
   educationNoteInternalAuthor EducationStudentNote[]    @relation("EduNoteInternalAuthor")
   ceCredits                   CECredit[]                @relation("CECreditUser")
@@ -3478,6 +3479,7 @@ model Term {
   domainLeadAssignments DomainLeadAssignment[]
   coreAssignments       CoreAssignment[]
   instructorAssignments InstructorAssignment[]
+  educationPeriod       EducationPeriod?
   technigalaAssignments TechnigalaAssignment[]
   staffingCycles        StaffingCycle[]
   projectTermStatuses   ProjectTermStatus[]
@@ -8226,6 +8228,82 @@ model BannerImpression {
   createdAt  DateTime  @default(now())
 
   @@unique([bannerId, userId])
+}
+
+enum EducationPeriodKind {
+  Term
+  Interim
+  Custom
+}
+
+enum EducationTaskStatus {
+  Backlog
+  Todo
+  Doing
+  Done
+}
+
+model EducationPeriod {
+  id        String              @id @default(cuid())
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+  name      String
+  shortName String
+  kind      EducationPeriodKind
+  startDate DateTime
+  weekCount Int
+  termId    String?             @unique
+  term      Term?               @relation(fields: [termId], references: [id], onDelete: SetNull)
+
+  milestones EducationMilestone[]
+  tasks      EducationTask[]
+
+  @@index([startDate])
+}
+
+model EducationMilestone {
+  id          String          @id @default(cuid())
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  periodId    String
+  period      EducationPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  startWeek   Int
+  endWeek     Int
+
+  tasks EducationTask[]
+
+  @@index([periodId])
+}
+
+model EducationTask {
+  id          String              @id @default(cuid())
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  title       String
+  description String?
+  periodId    String
+  period      EducationPeriod     @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  milestoneId String?
+  milestone   EducationMilestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  week        Int
+  weekday     Int
+  status      EducationTaskStatus @default(Backlog)
+  position    Float               @default(0)
+  completedAt DateTime?
+  assigneeIds String[]            @default([])
+  createdById String
+  createdBy   User                @relation("EducationTaskCreator", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([periodId, week])
+  @@index([milestoneId])
+}
+
+model EducationTaskboardSettings {
+  id        String   @id @default("default")
+  termWeeks Int      @default(10)
+  updatedAt DateTime @updatedAt
 }
 
 // Core's free-text status note for a project or partner application, shown

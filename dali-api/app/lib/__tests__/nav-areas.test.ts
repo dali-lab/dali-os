@@ -665,6 +665,27 @@ describe("shellPageIcon", () => {
   });
 });
 
+describe("education taskboard tab", () => {
+  const tabsFor = (flags: Parameters<typeof areasFor>[0], roles: RoleFlags) =>
+    visibleSubtabs(areasFor(flags).find((a) => a.key === "education")!, roles).map((t) => t.href);
+
+  it("is hidden while the flag is off, even for Core", () => {
+    expect(tabsFor({}, CORE)).not.toContain("/education/taskboard");
+  });
+
+  it("shows for Core once the flag is on", () => {
+    expect(tabsFor({ "education-taskboard": true }, CORE)).toContain("/education/taskboard");
+  });
+
+  it("stays hidden from non-Core members with the flag on", () => {
+    expect(tabsFor({ "education-taskboard": true }, NOBODY)).not.toContain("/education/taskboard");
+  });
+
+  it("leaves the existing education tabs alone", () => {
+    expect(tabsFor({}, CORE)).toEqual(["/education", "/education/offerings", "/education/compliance"]);
+  });
+});
+
 describe("core-taskboard flag", () => {
   const coreHrefs = (flags: object) =>
     visibleSubtabs(visibleAreas(CORE, flags).find((a) => a.key === "core")!, CORE).map((t) => t.href);

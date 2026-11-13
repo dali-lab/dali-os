@@ -1,0 +1,32 @@
+:root {
+  --tb-accent-tint: color-mix(in srgb, var(--color-os-accent) 16%, transparent);
+  --tb-amber-tint: rgba(242, 184, 75, 0.16);
+  --tb-milestone: #c9b2f5;
+  --tb-milestone-tint: rgba(201, 178, 245, 0.16);
+}
+
+html.light,
+html.light .os-shell,
+.light {
+  --tb-accent-tint: color-mix(in srgb, var(--color-os-accent) 14%, transparent);
+  --tb-amber-tint: #fbefdc;
+  --tb-milestone: #6b4ac2;
+  --tb-milestone-tint: #ece6f8;
+}
+
+@keyframes taskboard-panel-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.taskboard-panel-content {
+  animation: taskboard-panel-fade 220ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .taskboard-panel-content {
+    animation: none;
+  }
+}

@@ -176,3 +176,37 @@ export async function deleteWorkExperiences(userEmail: string, companies: string
     await client.end();
   }
 }
+
+export async function resetTaskboard() {
+  const client = new pg.Client(DATABASE_URL);
+  await client.connect();
+  try {
+    await client.query(`DELETE FROM "EducationTask" WHERE "periodId" IN (SELECT id FROM "EducationPeriod" WHERE name LIKE 'E2E %')`);
+    await client.query(`DELETE FROM "EducationMilestone" WHERE "periodId" IN (SELECT id FROM "EducationPeriod" WHERE name LIKE 'E2E %')`);
+    await client.query(`DELETE FROM "EducationPeriod" WHERE name LIKE 'E2E %'`);
+  } finally {
+    await client.end();
+  }
+}
+
+export async function seedTaskboard(): Promise<string> {
+  await resetTaskboard();
+  const client = new pg.Client(DATABASE_URL);
+  await client.connect();
+  try {
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO "EducationPeriod" (id, "updatedAt", name, "shortName", kind, "startDate", "weekCount")
+       VALUES (gen_random_uuid()::text, now(), 'E2E term', 'E2E', 'Term',
+               date_trunc('week', now() + interval '1 day')::date - interval '1 day' - interval '14 days', 10)
+       RETURNING id`,
+    );
+    await client.query(
+      `INSERT INTO "EducationMilestone" (id, "updatedAt", "periodId", name, "startWeek", "endWeek")
+       VALUES (gen_random_uuid()::text, now(), $1, 'E2E milestone', 1, 10)`,
+      [rows[0].id],
+    );
+    return rows[0].id;
+  } finally {
+    await client.end();
+  }
+}

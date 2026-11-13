@@ -243,6 +243,7 @@ export default [
     // Before education/:offeringId so the literal path isn't read as an offering id.
     route("education/certificate-templates", "education/routes/education.certificate-templates.tsx"),
     route("education/certificate-templates/:templateId", "education/routes/education.certificate-templates.$templateId.tsx"),
+    route("education/taskboard", "education/routes/education.taskboard.tsx"),
     route("education/:offeringId", "education/routes/education.$offeringId.tsx"),
     route("education/:offeringId/apply", "education/routes/education.$offeringId.apply.tsx"),
     route("education/:offeringId/hub", "education/routes/education.$offeringId.hub.tsx"),
