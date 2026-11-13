@@ -57,12 +57,11 @@ import { selectionFacts } from "./actions";
 import { contextSelection, reduceEditing, type EditEvent, type EditState } from "./editing-model";
 import { imageFilesOf } from "./drop-images";
 import type { FormatBarHandlers } from "./FormatBar";
+import { inEditable } from "./gesture";
 import { useSnapPrefs } from "./snap-prefs";
 import type { StageFreeform } from "./SlideStage";
 import { formatWholeText } from "./text-format";
 import { useSlideDrags, type DeckDoc } from "./useDeckDoc";
-
-const inEditable = (target: EventTarget | null) => Boolean((target as HTMLElement | null)?.closest?.("[contenteditable='true'], input, textarea, select"));
 
 type At = { x: number; y: number };
 type Point = At;

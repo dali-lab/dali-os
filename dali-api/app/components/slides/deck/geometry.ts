@@ -70,10 +70,18 @@ export interface Gap {
   value: number;
 }
 
+export interface Stage {
+  w: number;
+  h: number;
+}
+
+export const SLIDE_STAGE: Stage = { w: STAGE_W, h: STAGE_H };
+
 export interface SnapOptions {
   threshold: number;
   items: boolean;
   margins: boolean;
+  stage?: Stage;
 }
 
 interface Target {
@@ -86,12 +94,14 @@ const spanOf = (r: Rect, axis: Axis): [number, number] => (axis === "x" ? [r.y, 
 
 function targetsFor(axis: Axis, others: Rect[], opts: SnapOptions): Target[] {
   const out: Target[] = [];
-  const full: [number, number] = axis === "x" ? [0, STAGE_H] : [0, STAGE_W];
-  const size = axis === "x" ? STAGE_W : STAGE_H;
+  const stage = opts.stage ?? SLIDE_STAGE;
+  const full: [number, number] = axis === "x" ? [0, stage.h] : [0, stage.w];
+  const size = axis === "x" ? stage.w : stage.h;
   const slide = [0, size / 2, size];
   const margins = axis === "x" ? [MARGIN_X, STAGE_W - MARGIN_X] : [MARGIN_TOP, MARGIN_BOTTOM];
+  const slideMargins = stage.w === STAGE_W && stage.h === STAGE_H;
   for (const pos of slide) out.push({ pos, span: full });
-  if (opts.margins) for (const pos of margins) out.push({ pos, span: full });
+  if (opts.margins && slideMargins) for (const pos of margins) out.push({ pos, span: full });
   if (opts.items) for (const r of others) for (const pos of lines(r, axis)) out.push({ pos, span: spanOf(r, axis) });
   return out;
 }
@@ -110,10 +120,11 @@ function bestDelta(moving: number[], targets: Target[], threshold: number): numb
 function guidesFor(axis: Axis, rect: Rect, others: Rect[], opts: SnapOptions): Guide[] {
   const out: Guide[] = [];
   const mine = spanOf(rect, axis);
+  const stage = opts.stage ?? SLIDE_STAGE;
   for (const line of lines(rect, axis)) {
     for (const t of targetsFor(axis, others, opts)) {
       if (Math.abs(t.pos - line) > EPS) continue;
-      const full = t.span[0] === 0 && (t.span[1] === STAGE_H || t.span[1] === STAGE_W);
+      const full = t.span[0] === 0 && (t.span[1] === stage.h || t.span[1] === stage.w);
       const from = full ? 0 : Math.min(mine[0], t.span[0]);
       const to = full ? t.span[1] : Math.max(mine[1], t.span[1]);
       if (!out.some((g) => g.pos === t.pos && g.from === from && g.to === to)) out.push({ axis, pos: t.pos, from, to });

@@ -1,13 +1,7 @@
 import PDFDocument from "pdfkit";
 import { formatDateShort } from "~/lib/display";
-import { certificateFieldValue, type PlacedField } from "./certificate-fields";
+import { certificateFieldValue, isBoxField, shrinkFontSize, type BoxField, type PlacedField } from "./certificate-fields";
 import type { OfferingType } from "~/education/lib/offering-type";
-
-// A one-page certificate. Two render paths: the built-in DALI design (fixed
-// pdfkit layout — a designed artifact, not a document render), and a
-// template-backed design (an operator-uploaded background image with dynamic
-// fields placed on top). Which one is used is decided by the certificate's
-// resolved templateId; see certificate-templates.server.ts.
 
 export type CertificateData = {
   studentName: string;
@@ -33,8 +27,7 @@ export function renderCertificatePdf(
   return template ? renderTemplatePdf(cert, template) : renderBuiltinPdf(cert);
 }
 
-/** Resolved string for each placeable field key. */
-function fieldValues(cert: CertificateData): Parameters<typeof certificateFieldValue>[1] {
+export function fieldValues(cert: Pick<CertificateData, "studentName" | "offeringTitle" | "startsAt" | "endsAt" | "instructorNames" | "issuedAt">): Parameters<typeof certificateFieldValue>[1] {
   return {
     studentName: cert.studentName,
     offeringTitle: cert.offeringTitle,
@@ -47,9 +40,30 @@ function fieldValues(cert: CertificateData): Parameters<typeof certificateFieldV
   };
 }
 
-// The page is sized to the background's pixel dimensions (1px = 1pt), so a
-// field's fractional (x, y) maps to the same spot here as in the editor
-// preview. `align` treats (x, y) as the text's left edge / centre / right edge.
+type Measurer = Pick<InstanceType<typeof PDFDocument>, "font" | "fontSize" | "widthOfString">;
+
+function boxFontSize(doc: Measurer, f: BoxField, text: string, bgWidth: number): number {
+  doc.font(f.bold ? "Helvetica-Bold" : "Helvetica").fontSize(f.fontSize);
+  if (f.fit !== "shrink") return f.fontSize;
+  return shrinkFontSize(f.fontSize, f.w * bgWidth, doc.widthOfString(text));
+}
+
+/** The size each field draws at, in field order: shrink fields scaled to fit their box, all others as set. */
+export function templateFieldSizes(
+  fields: PlacedField[],
+  values: Parameters<typeof certificateFieldValue>[1],
+  bgWidth: number,
+): number[] {
+  const doc = new PDFDocument({ size: [bgWidth, bgWidth], margin: 0 });
+  doc.on("data", () => {});
+  const sizes = fields.map((f) => {
+    const text = certificateFieldValue(f.key, values);
+    return isBoxField(f) && text ? boxFontSize(doc, f, text, bgWidth) : f.fontSize;
+  });
+  doc.end();
+  return sizes;
+}
+
 function renderTemplatePdf(
   cert: CertificateData,
   t: CertificateTemplateRender,
@@ -67,15 +81,22 @@ function renderTemplatePdf(
     for (const f of t.fields) {
       const text = certificateFieldValue(f.key, values);
       if (!text) continue;
+      const py = f.y * t.bgHeight;
+      const height = t.bgHeight - py;
+      if (isBoxField(f)) {
+        const size = boxFontSize(doc, f, text, t.bgWidth);
+        doc.fontSize(size).fillColor(f.color);
+        doc.text(text, f.x * t.bgWidth, py, { width: f.w * t.bgWidth, align: f.align, height });
+        continue;
+      }
       doc
         .font(f.bold ? "Helvetica-Bold" : "Helvetica")
         .fontSize(f.fontSize)
         .fillColor(f.color);
       const w = doc.widthOfString(text);
       const px = f.x * t.bgWidth;
-      const py = f.y * t.bgHeight;
       const x = f.align === "center" ? px - w / 2 : f.align === "right" ? px - w : px;
-      doc.text(text, x, py, { lineBreak: false });
+      doc.text(text, x, py, { lineBreak: false, height });
     }
     doc.end();
   });
