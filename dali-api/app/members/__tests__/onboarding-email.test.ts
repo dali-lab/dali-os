@@ -112,5 +112,38 @@ describe("onboardingEmailHtml", () => {
       expect(html).toContain("Custom: ada.l@dali.dartmouth.edu + pw-one-time-42");
       expect(html).toContain("https://os.dali.dartmouth.edu/login");
     });
+
+    it("uses the operator's existing-account copy when there's no temp password", async () => {
+      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
+        where: { key: string };
+      }) =>
+        args.where.key === "hiring:onboarding:CredentialsExisting"
+          ? {
+              key: "hiring:onboarding:CredentialsExisting",
+              subject: "s",
+              body: "Welcome back: {{daliEmail}} at {{loginUrl}}",
+            }
+          : null) as any);
+      const html = await onboardingEmailHtml("ada.l@dali.dartmouth.edu", null);
+      expect(html).toContain("Welcome back: ada.l@dali.dartmouth.edu");
+      expect(html).toContain("https://os.dali.dartmouth.edu/login");
+      expect(html).not.toContain("Password:");
+    });
+
+    it("uses the operator's account-pending copy when there's no DALI email", async () => {
+      vi.mocked(prisma.emailTemplate.findUnique).mockImplementation((async (args: {
+        where: { key: string };
+      }) =>
+        args.where.key === "hiring:onboarding:CredentialsPending"
+          ? {
+              key: "hiring:onboarding:CredentialsPending",
+              subject: "s",
+              body: "Hang tight, your account is on its way.",
+            }
+          : null) as any);
+      const html = await onboardingEmailHtml(null, null);
+      expect(html).toContain("Hang tight, your account is on its way.");
+      expect(html).not.toContain("Password:");
+    });
   });
 });

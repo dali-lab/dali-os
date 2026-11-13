@@ -184,6 +184,44 @@ export const EMAIL_TEMPLATES = {
     },
   },
 
+  "hiring:onboarding:CredentialsExisting": {
+    area: "Hiring",
+    label: "Accepted: existing account",
+    description:
+      "Appended to the Accepted decision email when the applicant already has a DALI account, so there is no new password. The email placeholder must stay in the body.",
+    purpose: "Hiring",
+    variables: ["loginUrl", "daliEmail"],
+    requiredVariables: ["daliEmail"],
+    sample: {
+      loginUrl: "https://os.dali.dartmouth.edu/login",
+      daliEmail: "alex.chen.28@dali.dartmouth.edu",
+    },
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      // Unused: appended to the Accepted letter, which carries the subject.
+      subject: "Your DALI account",
+      body: 'As your first onboarding step, log in to <a href="{{loginUrl}}">DALI OS</a> with your DALI email: <strong>{{daliEmail}}</strong> and your existing password.',
+    },
+  },
+
+  "hiring:onboarding:CredentialsPending": {
+    area: "Hiring",
+    label: "Accepted: account being set up",
+    description:
+      "Appended to the Accepted decision email when the DALI account isn't provisioned yet, so there are no credentials to show.",
+    purpose: "Hiring",
+    variables: ["loginUrl"],
+    sample: { loginUrl: "https://os.dali.dartmouth.edu/login" },
+    footer: "transactional",
+    whenMissing: "default",
+    defaults: {
+      // Unused: appended to the Accepted letter, which carries the subject.
+      subject: "Your DALI account",
+      body: "Your DALI account is being set up. You'll receive your DALI login email shortly. In the meantime you can finish the rest of your onboarding below.",
+    },
+  },
+
   // Appended to the Accepted letter above, after the credentials block, so an
   // accepted applicant gets one email rather than two. It exists as its own
   // template because its content and the decision letter's have different

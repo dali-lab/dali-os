@@ -90,6 +90,12 @@ describe("registry integrity", () => {
     const def = emailTemplateDef("hiring:onboarding:Credentials");
     expect(def.requiredVariables).toEqual(["daliEmail", "tempPassword"]);
     expect(def.whenMissing).toBe("default");
+
+    const existing = emailTemplateDef("hiring:onboarding:CredentialsExisting");
+    expect(existing.requiredVariables).toEqual(["daliEmail"]);
+    expect(existing.whenMissing).toBe("default");
+
+    expect(emailTemplateDef("hiring:onboarding:CredentialsPending").whenMissing).toBe("default");
   });
 });
 
@@ -160,7 +166,7 @@ describe("isEmailTemplateKey", () => {
 });
 
 describe("the collapse covered what the old stores held", () => {
-  it("counts the feature templates: 18 hiring slots, 1 onboarding block, 5 education", () => {
+  it("counts the feature templates: 19 hiring slots, 4 onboarding blocks, 5 education", () => {
     const hiringSlots = EMAIL_TEMPLATE_KEYS.filter(
       (k) => k.startsWith("hiring:decision:") || k.startsWith("hiring:notification:"),
     );
@@ -173,6 +179,8 @@ describe("the collapse covered what the old stores held", () => {
     // they went stale silently.
     expect(onboarding).toEqual([
       "hiring:onboarding:Credentials",
+      "hiring:onboarding:CredentialsExisting",
+      "hiring:onboarding:CredentialsPending",
       "hiring:onboarding:NextSteps",
     ]);
     // The 4 statuses plus decision:Promoted.
