@@ -50,6 +50,13 @@ describe("ResponseDrawer", () => {
     expect(container.textContent).toContain("Delete response");
   });
 
+  it("keeps the subtitle outside the scrolling fields so it isn't clipped", async () => {
+    await render({ subtitle: "Nov 11, 2026", fields: [{ key: "a", label: "Name", value: "Ada" }] });
+    const subtitle = [...container.querySelectorAll("p")].find((p) => p.textContent === "Nov 11, 2026")!;
+    expect(subtitle.closest(".overflow-y-auto")).toBeNull();
+    expect(subtitle.className).not.toMatch(/-mt-/);
+  });
+
   it("links uploaded files", async () => {
     await render({
       fields: [{ key: "f", label: "Resume", value: "cv.pdf", files: [{ name: "cv.pdf", key: "uploads/cv.pdf" }] }],
