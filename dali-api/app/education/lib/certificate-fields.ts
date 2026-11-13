@@ -48,6 +48,17 @@ export type BoxField = PlacedField & { w: number };
 
 export type PageBox = { x: number; y: number; w: number; h: number };
 
+export type BackgroundIssue = "pdf" | "unsupported";
+
+const RASTER_TYPES = ["image/png", "image/jpeg", "image/jpg"];
+
+export function backgroundIssue(contentType: string | null | undefined, key: string): BackgroundIssue | null {
+  const type = contentType?.split(";")[0].trim().toLowerCase() || null;
+  const ext = key.toLowerCase().split(".").pop() ?? "";
+  if (type ? RASTER_TYPES.includes(type) : ["png", "jpg", "jpeg"].includes(ext)) return null;
+  return type === "application/pdf" || (!type && ext === "pdf") ? "pdf" : "unsupported";
+}
+
 export function isCertificateFieldKey(v: unknown): v is CertificateFieldKey {
   return typeof v === "string" && (CERTIFICATE_FIELD_KEYS as readonly string[]).includes(v);
 }
