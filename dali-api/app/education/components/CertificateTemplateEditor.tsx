@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Bold, Trash2 } from "lucide-react";
 import { FreeformLayer } from "~/components/slides/collab/FreeformLayer";
-import { AlignRow } from "~/components/slides/collab/ElementInspector";
+import { AlignRow } from "~/components/slides/collab/AlignRow";
 import { inEditable } from "~/components/slides/collab/gesture";
 import { useSnapPrefs } from "~/components/slides/collab/snap-prefs";
 import type { PlacedLive } from "~/components/slides/deck/freeform";

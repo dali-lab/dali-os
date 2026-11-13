@@ -1,11 +1,5 @@
 import {
-  AlignCenterHorizontal,
-  AlignCenterVertical,
-  AlignEndHorizontal,
-  AlignEndVertical,
   AlignHorizontalSpaceBetween,
-  AlignStartHorizontal,
-  AlignStartVertical,
   AlignVerticalSpaceBetween,
   ArrowDownToLine,
   ArrowUpToLine,
@@ -16,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { IconButton } from "~/components/ui/IconButton";
+import { AlignRow } from "./AlignRow";
 import { NumberField } from "~/components/ui/NumberField";
 import { Segmented } from "~/components/ui/Segmented";
 import { Toggle } from "~/components/ui/Toggle";
@@ -62,25 +57,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h3 className="text-xs font-medium text-os-grey">{title}</h3>
       {children}
     </section>
-  );
-}
-
-const ALIGN: Array<{ mode: AlignMode; label: string; icon: typeof AlignStartVertical }> = [
-  { mode: "left", label: "Align left", icon: AlignStartVertical },
-  { mode: "center", label: "Align center", icon: AlignCenterVertical },
-  { mode: "right", label: "Align right", icon: AlignEndVertical },
-  { mode: "top", label: "Align top", icon: AlignStartHorizontal },
-  { mode: "middle", label: "Align middle", icon: AlignCenterHorizontal },
-  { mode: "bottom", label: "Align bottom", icon: AlignEndHorizontal },
-];
-
-export function AlignRow({ onAlign, disabled = false }: { onAlign: (mode: AlignMode) => void; disabled?: boolean }) {
-  return (
-    <div role="group" aria-label="Align" className="flex gap-0.5">
-      {ALIGN.map(({ mode, label, icon }) => (
-        <IconButton key={mode} label={label} icon={icon} disabled={disabled} onClick={() => onAlign(mode)} />
-      ))}
-    </div>
   );
 }
 

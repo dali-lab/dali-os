@@ -61,7 +61,11 @@ describe("upgradeLegacyField", () => {
     const f = upgradeLegacyField(legacy({ align: "center", x: 0.5 }));
     expect(f.w).toBeCloseTo(0.7);
     expect(f.x).toBeCloseTo(0.15);
-    expect(f.fit).toBe("wrap");
+    expect(f.fit).toBe("shrink");
+  });
+
+  it("gives an upgraded course title the wrap default", () => {
+    expect(upgradeLegacyField(legacy({ key: "offeringTitle" })).fit).toBe("wrap");
   });
 
   it("runs a left anchor rightward from the anchor", () => {

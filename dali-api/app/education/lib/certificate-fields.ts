@@ -99,7 +99,7 @@ export function upgradeLegacyField(f: PlacedField): BoxField {
   const w = Math.max(MIN_BOX_WIDTH, Math.min(LEGACY_BOX_WIDTH, limit));
   const left = f.align === "center" ? x - w / 2 : f.align === "left" ? x : x - w;
   const boxX = clamp(left, 0, 1 - w);
-  return { ...f, x: boxX, w, fit: "wrap" };
+  return { ...f, x: boxX, w, fit: defaultFit(f.key) };
 }
 
 /** A field's box in page units. Height is one line at the field's font size. */
