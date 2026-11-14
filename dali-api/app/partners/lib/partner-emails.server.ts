@@ -1,5 +1,5 @@
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { getFrontendUrl } from "~/lib/app-env";
+import { getFrontendUrl, PARTNERS_FROM_EMAIL } from "~/lib/app-env";
 import { escapeHtml, htmlToPlainText } from "~/lib/email";
 import { renderFramedEmail } from "~/email/lib/layout.server";
 
@@ -313,5 +313,47 @@ export async function sendPartnerSurveyEmail(
       dedupKey: `partner.survey.invite:${projectPartnerId}`,
       eventType: "partner.survey_invite",
     },
+  );
+}
+
+export type WebsiteMeetingRequest = {
+  name: string;
+  email: string;
+  org: string;
+  project: string;
+  need: string;
+  plan: string;
+  payer: string;
+  notes?: string | null;
+};
+
+// Sent to the lab's own partners@ inbox, not to the partner, when someone on the
+// website's support plan finder asks to meet. No dedup key: each request is its
+// own ask.
+export async function sendWebsiteMeetingRequestEmail(req: WebsiteMeetingRequest): Promise<void> {
+  const row = (label: string, value: string) =>
+    `<tr><td style="padding:4px 16px 4px 0;color:#52525b;vertical-align:top;white-space:nowrap;">${label}</td><td style="padding:4px 0;">${value}</td></tr>`;
+  const mailto = `mailto:${encodeURIComponent(req.email)}`;
+  await send(
+    PARTNERS_FROM_EMAIL,
+    {
+      subject: `Meeting request: ${req.name} (${req.org})`,
+      preheader: `${escapeHtml(req.name)} would like to talk about support for ${escapeHtml(req.project)}.`,
+      bodyHtml: [
+        `<p style="margin:0 0 16px;"><strong>${escapeHtml(req.name)}</strong> from ${escapeHtml(req.org)} asked to meet about support for <strong>${escapeHtml(req.project)}</strong> on the website's support plan finder.</p>`,
+        `<table role="presentation" style="border-collapse:collapse;margin:0 0 16px;font-size:14px;">`,
+        row("Email", `<a href="${escapeHtml(mailto)}">${escapeHtml(req.email)}</a>`),
+        row("Organization", escapeHtml(req.org)),
+        row("Project", escapeHtml(req.project)),
+        row("Needs", escapeHtml(req.need)),
+        row("Plan", escapeHtml(req.plan)),
+        row("Paying as", escapeHtml(req.payer)),
+        `</table>`,
+        req.notes ? typed(req.notes) : "",
+        aside("We told them we'd get back to them soon. Reply to set up a time."),
+      ].join("\n"),
+      cta: { href: mailto, label: `Reply to ${escapeHtml(req.name)}` },
+    },
+    { eventType: "partner.website_meeting_request" },
   );
 }
