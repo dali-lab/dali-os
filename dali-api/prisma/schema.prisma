@@ -380,6 +380,7 @@ model User {
   tetrisScore TetrisScore?
   dinoScore   DinoScore?
   tunnelScore TunnelScore?
+  tunnelRuns  TunnelRun[]
 
   // ─── Onboarding journeys ──────────────────────────────────────────────────
   journeysCreated       OnboardingJourney[]
@@ -2223,6 +2224,26 @@ model TunnelScore {
   achievedAt DateTime @default(now())
 
   @@index([score])
+}
+
+// Every finished or abandoned tunnel run, for Admin > Insights > Games. The
+// board reads TunnelScore; this is the log behind it. Browser-reported, like
+// the score. durationMs and obstacle are null for runs from clients that
+// predate the log.
+model TunnelRun {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  durationMs Int?
+  // "fall" or "quit"
+  endedBy    String   @default("fall")
+  // The course piece fallen through: "gap", "strip", "holes" or "spiral".
+  obstacle   String?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
 }
 
 // A browser- or desktop-captured recording for a collaborative document (any

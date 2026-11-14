@@ -22,7 +22,7 @@ const FALL_TIME = 1.1
 const TRAIL_LENGTH = 2.4
 
 const INTRO = ['gap', 'strip', 'holes', 'gap', 'spiral'] as const
-type Piece = (typeof INTRO)[number]
+export type Piece = (typeof INTRO)[number]
 
 export type RunPhase = 'play' | 'fall' | 'over'
 export type RunEvent = 'jump' | 'land' | 'fall' | 'over'
@@ -40,6 +40,13 @@ export type Run = {
   speed: number
   rows: boolean[][]
   pending: boolean[][]
+  /** The piece each row belongs to, null for plain floor. */
+  kinds: (Piece | null)[]
+  pendingKinds: (Piece | null)[]
+  /** Seconds of play so far. */
+  t: number
+  /** The piece the runner fell through, once they have. */
+  endedOn: Piece | null
   safeLane: number
   pieces: number
   left: boolean
@@ -75,6 +82,10 @@ export function createRun(random: () => number = Math.random): Run {
     speed: START_SPEED,
     rows: [],
     pending: [],
+    kinds: [],
+    pendingKinds: [],
+    t: 0,
+    endedOn: null,
     safeLane: 0,
     pieces: 0,
     left: false,
@@ -117,6 +128,7 @@ function planPiece(run: Run) {
   const rowsPerLane = Math.max(2, Math.round(rowsPerSecond / lerp(0.6, 1.4, diff)))
   run.pieces += 1
   const kind: Piece = INTRO[run.pieces - 1] ?? pickPiece(random())
+  const pieceStart = run.pending.length
 
   if (kind === 'holes') {
     const n = Math.round(lerp(2, 3.5, random()) * rowsPerSecond)
@@ -174,6 +186,7 @@ function planPiece(run: Run) {
       add(Array.from({ length: LANES }, (_, l) => lane(l - at) >= 3))
     }
   }
+  for (let k = run.pendingKinds.length; k < run.pending.length; k++) run.pendingKinds.push(k >= pieceStart ? kind : null)
 }
 
 function pickPiece(r: number): Piece {
@@ -189,9 +202,11 @@ export function rowAt(run: Run, i: number): boolean[] | null {
   while (run.rows.length <= i) {
     if (run.rows.length < LEAD_ROWS) {
       run.rows.push(Array<boolean>(LANES).fill(true))
+      run.kinds.push(null)
     } else {
       if (!run.pending.length) planPiece(run)
       run.rows.push(run.pending.shift() as boolean[])
+      run.kinds.push(run.pendingKinds.shift() ?? null)
     }
   }
   return run.rows[i]
@@ -210,6 +225,7 @@ export function isSupported(run: Run) {
 export function stepRun(run: Run, dt: number): RunEvent[] {
   const events: RunEvent[] = []
   if (run.phase === 'play') {
+    run.t += dt
     run.speed = speedAt(run.d)
     const steer = clamp((run.left ? 1 : 0) - (run.right ? 1 : 0) + run.steer, -1, 1)
     run.thv += (steer * STEER_RATE - run.thv) * Math.min(1, dt * 12)
@@ -233,6 +249,7 @@ export function stepRun(run: Run, dt: number): RunEvent[] {
     }
     if (run.y === 0 && !isSupported(run)) {
       run.phase = 'fall'
+      run.endedOn = run.kinds[Math.floor(run.d / ROW)] ?? null
       run.fallV = 0.4
       events.push('fall')
     }

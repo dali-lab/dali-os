@@ -81,6 +81,7 @@ export default [
     route("admin/insights", "admin/routes/admin.section.ts", { id: "admin-section-insights" }),
     route("admin/insights/analytics", "admin/routes/admin.analytics.tsx"),
     route("admin/insights/ai-usage", "admin/routes/admin.ai-usage.tsx"),
+    route("admin/insights/games", "admin/routes/admin.games.tsx"),
     route("admin/insights/audit-log", "admin/routes/admin.activity.tsx"),
     route("admin/platform", "admin/routes/admin.section.ts", { id: "admin-section-platform" }),
     route("admin/platform/jobs", "admin/routes/admin.jobs.tsx"),

@@ -111,6 +111,24 @@ describe('a run', () => {
     expect(runScore(run)).toBeGreaterThan(0)
   })
 
+  it('records what the runner fell through and how long they lasted', () => {
+    const run = createRun(seeded(3))
+    play(run, 20)
+    expect(run.endedOn).toBe('gap')
+    expect(run.t).toBeGreaterThan(1)
+    expect(run.t).toBeLessThan(10)
+  })
+
+  it('labels every row with its piece, and leaves the opening floor unlabelled', () => {
+    const run = createRun(seeded(4))
+    for (let i = 0; i < 400; i++) rowAt(run, i)
+    expect(run.kinds).toHaveLength(run.rows.length)
+    expect(run.kinds.slice(0, LEAD_ROWS).every((k) => k === null)).toBe(true)
+    run.rows.forEach((row, i) => {
+      if (row.includes(false)) expect(run.kinds[i]).not.toBeNull()
+    })
+  })
+
   it('clears the first gap with a jump', () => {
     const run = createRun(seeded(3))
     const firstHole = layOut(3, 80).findIndex((row) => row.includes(false))

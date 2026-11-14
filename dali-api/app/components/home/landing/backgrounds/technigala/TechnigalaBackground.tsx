@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useLeaderboard } from '~/hooks/useLeaderboard'
 import Leaderboard from '../week5/tetris/Leaderboard'
 import { createRunAudio } from './audio'
-import { createTunnelScene, type ScenePhase, type TunnelScene } from './scene'
+import { createTunnelScene, type RunReport, type ScenePhase, type TunnelScene } from './scene'
 import './technigala.css'
 
 // The Technigala 26F type: Saira for everything, Michroma for small caps labels. Loaded here
 // rather than in root.tsx so only the week that uses them pays for them.
 const FONTS_HREF = 'https://fonts.googleapis.com/css2?family=Michroma&family=Saira:wght@400;600;700&display=swap'
+
+const SCORES_URL = '/api/landing/tunnel-scores'
 
 function useTechnigalaFonts() {
   useEffect(() => {
@@ -34,7 +36,7 @@ export default function TechnigalaBackground() {
   const [result, setResult] = useState({ score: 0, firstRun: false })
   const [muted, setMuted] = useState(false)
   const [firstRun, setFirstRun] = useState(false)
-  const board = useLeaderboard('/api/landing/tunnel-scores')
+  const board = useLeaderboard(SCORES_URL)
   const { submit, clearPersonalBest } = board
   const hadScore = useRef(false)
   hadScore.current = board.you !== null
@@ -51,9 +53,13 @@ export default function TechnigalaBackground() {
       onScore: (score) => {
         if (scoreRef.current) scoreRef.current.textContent = score.toLocaleString()
       },
-      onOver: (score) => {
-        setResult({ score, firstRun: !hadScore.current })
-        void submit({ score })
+      onRunEnd: (report) => {
+        if (report.endedBy === 'quit') {
+          void logQuit(report)
+          return
+        }
+        setResult({ score: report.score, firstRun: !hadScore.current })
+        void submit(report)
       },
       onMute: setMuted,
     })
@@ -157,6 +163,17 @@ export default function TechnigalaBackground() {
       )}
     </div>
   )
+}
+
+/** A run left early still counts for the run log, but it never moves the board. */
+function logQuit(report: RunReport) {
+  return fetch(SCORES_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(report),
+    // The page may be on its way out when a run is abandoned.
+    keepalive: true,
+  }).catch(() => undefined)
 }
 
 function Key({ children }: { children: ReactNode }) {
