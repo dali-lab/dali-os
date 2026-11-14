@@ -12,7 +12,7 @@
  *
  * Preview any background before its date with `/?background=<id>`.
  */
-export const LANDING_BACKGROUND_IDS = ['deep-space', 'library', 'delta', 'demo-expo', 'build', 'bug-hunt'] as const
+export const LANDING_BACKGROUND_IDS = ['deep-space', 'library', 'delta', 'demo-expo', 'build', 'bug-hunt', 'technigala'] as const
 
 export type LandingBackgroundId = (typeof LANDING_BACKGROUND_IDS)[number]
 
@@ -25,6 +25,7 @@ export const LANDING_BACKGROUND_SCHEDULE: readonly LandingWeek[] = [
   { id: 'demo-expo', title: 'ProdTales', from: '2026-10-05' },
   { id: 'build', title: 'Build', from: '2026-10-12' },
   { id: 'bug-hunt', title: 'Bug Hunt', from: '2026-11-02' },
+  { id: 'technigala', title: 'Technigala', from: '2026-11-16' },
 ]
 
 export function isLandingBackgroundId(value: unknown): value is LandingBackgroundId {

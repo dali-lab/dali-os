@@ -379,6 +379,7 @@ model User {
   // ─── Easter-egg games ─────────────────────────────────────────────────────
   tetrisScore TetrisScore?
   dinoScore   DinoScore?
+  tunnelScore TunnelScore?
 
   // ─── Onboarding journeys ──────────────────────────────────────────────────
   journeysCreated       OnboardingJourney[]
@@ -2205,6 +2206,17 @@ model TetrisScore {
 // trust as TetrisScore: one personal best per player, browser-reported and
 // bounded but not verified.
 model DinoScore {
+  userId     String   @id
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  score      Int
+  achievedAt DateTime @default(now())
+
+  @@index([score])
+}
+
+// A member's best run down the tunnel on the week 10 (Technigala) home scene.
+// Same shape and trust as DinoScore.
+model TunnelScore {
   userId     String   @id
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   score      Int
