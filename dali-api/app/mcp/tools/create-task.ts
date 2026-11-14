@@ -2,7 +2,7 @@
 import { canEditProject } from "./access";
 import { getUserRoles, isCore } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { getCoreBoardProject } from "~/core/lib/taskboard.server";
+import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import { TASK_STATUSES } from "~/projects/lib/task-board";
 import { createTask, TaskCreateError } from "~/projects/lib/task-create.server";
 

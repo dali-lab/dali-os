@@ -6,7 +6,7 @@ vi.mock("~/lib/roles", async (orig) => {
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(true) }));
-vi.mock("~/core/lib/taskboard.server", () => ({
+vi.mock("~/projects/lib/core-board.server", () => ({
   getCoreBoardProject: vi.fn().mockResolvedValue({ id: "core1", name: "Core" }),
 }));
 vi.mock("~/projects/lib/task-notifications.server", () => ({
@@ -21,7 +21,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { createIssueForTask } from "~/projects/lib/github-task-sync";
-import { getCoreBoardProject } from "~/core/lib/taskboard.server";
+import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import {
   runCreateTask,
   CREATE_TASK_PROPERTIES,

@@ -41,7 +41,7 @@ import {
   type ProfileUpdate,
 } from "~/members/lib/profile-form-interpreter";
 import { clearOnboardingTask } from "~/members/lib/welcome.server";
-import { isOnboardingProfileForm } from "~/hiring/lib/onboarding-form.server";
+import { isOnboardingProfileForm } from "~/members/lib/onboarding-form.server";
 import { syncSlackUserId } from "~/slack/lib/slack-sync.server";
 import { notifyFormSubmission, sendFormReceipt } from "./submission-notify.server";
 import { resolvePrefill } from "./prefill.server";

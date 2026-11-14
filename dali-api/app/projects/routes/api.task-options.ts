@@ -7,7 +7,7 @@ import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { currentTerm, getUserRoles, isCore } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listActiveCoreMembers } from "~/lib/core-members.server";
-import { getCoreBoardProject } from "~/core/lib/taskboard.server";
+import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import { assignableAssignments } from "../lib/task-board";
 
 // GET /api/task-options — active projects the caller can add tasks to.

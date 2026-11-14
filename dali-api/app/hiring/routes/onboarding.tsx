@@ -38,7 +38,7 @@ import {
   clearOnboardingFormBinding,
   getOnboardingFormBinding,
   setOnboardingFormBinding,
-} from "~/hiring/lib/onboarding-form.server";
+} from "~/members/lib/onboarding-form.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Onboarding · Hiring · DALI OS" },

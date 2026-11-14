@@ -5,7 +5,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn(), getUserRoles: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/core-members.server", () => ({ listActiveCoreMembers: vi.fn() }));
-vi.mock("~/core/lib/taskboard.server", () => ({ getCoreBoardProject: vi.fn() }));
+vi.mock("~/projects/lib/core-board.server", () => ({ getCoreBoardProject: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -16,7 +16,7 @@ import { prisma } from "~/lib/db.server";
 import { currentTerm, isCore } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { listActiveCoreMembers } from "~/lib/core-members.server";
-import { getCoreBoardProject } from "~/core/lib/taskboard.server";
+import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import { loader } from "~/projects/routes/api.task-options";
 
 const mockPrisma = prisma as unknown as {

@@ -39,7 +39,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
   slackConfigured: vi.fn(() => true),
   sendDm: vi.fn().mockResolvedValue({ ts: "1.0" }),
 }));
-vi.mock("~/hiring/lib/onboarding-form.server", () => ({
+vi.mock("~/members/lib/onboarding-form.server", () => ({
   getOnboardingFormBinding: vi.fn(),
   setOnboardingFormBinding: vi.fn(),
   clearOnboardingFormBinding: vi.fn(),
@@ -69,7 +69,7 @@ import {
   clearOnboardingFormBinding,
   getOnboardingFormBinding,
   setOnboardingFormBinding,
-} from "~/hiring/lib/onboarding-form.server";
+} from "~/members/lib/onboarding-form.server";
 import { listSelectableForms } from "~/projects/lib/form-slots";
 import { setFormPublished } from "~/forms/lib/form-publish.server";
 import { logAuditEvent } from "~/lib/audit";

@@ -50,7 +50,7 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
-import { getOnboardingFormBinding } from "~/hiring/lib/onboarding-form.server";
+import { getOnboardingFormBinding } from "~/members/lib/onboarding-form.server";
 import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
 import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
 import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
