@@ -521,6 +521,11 @@ export default [
   route("api/public/media", "public-api/routes/api.public.media.ts"),
   route("api/public/blogs", "public-api/routes/api.public.blogs.ts"),
   route("api/public/blogs/:id", "public-api/routes/api.public.blogs.$id.ts"),
+  // The one write: the website's support plan finder asks to email partners@.
+  route(
+    "api/public/partner-meeting-requests",
+    "public-api/routes/api.public.partner-meeting-requests.ts",
+  ),
 
   route("api/attendance/feed", "routes/api.attendance.feed.ts"),
 

@@ -124,6 +124,14 @@ export const FEATURE_FLAGS = [
     defaultEveryone: true,
   },
   {
+    key: "website-meeting-requests",
+    label: "Website meeting requests",
+    description:
+      "When a partner asks to meet on the website's support plan finder (dali.dartmouth.edu/support-plans), dali.website calls api/public/partner-meeting-requests and DALI OS emails partners@dali.dartmouth.edu with their details. Turning this off makes that endpoint return 404; the website still files the request to its form. Only the whole-lab setting counts. Ships on.",
+    defaultEnabled: true,
+    defaultEveryone: true,
+  },
+  {
     key: "ask-dali",
     label: "Ask DALI",
     description:
