@@ -156,6 +156,11 @@ body:has(.landing[data-background='build']) {
   transition: opacity 420ms ease, filter 420ms ease, scale 520ms ease;
 }
 
+/* Home's birthday bouncers step out of the way of a game too. */
+.landing-frame:has(.w5-board-standby) ~ .home-birthday-bounce {
+  opacity: 0;
+}
+
 .w5-board-standby {
   opacity: 0.28;
   filter: saturate(0.5) blur(2px);

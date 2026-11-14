@@ -50,6 +50,11 @@ body:has(.landing[data-background='technigala']) {
   pointer-events: none;
 }
 
+/* So do Home's birthday bouncers, which otherwise drift across the runner. */
+.landing-frame:has(.landing-technigala:not([data-phase='attract'])) ~ .home-birthday-bounce {
+  opacity: 0;
+}
+
 .tg-canvas {
   position: absolute;
   inset: 0;

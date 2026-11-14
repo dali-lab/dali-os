@@ -59,7 +59,7 @@ export function BirthdayBounce({ people }: { people: BirthdayPerson[] }) {
   return (
     <div
       ref={containerRef}
-      className="pointer-events-none absolute inset-0 z-10 overflow-hidden"
+      className="home-birthday-bounce pointer-events-none absolute inset-0 z-10 overflow-hidden transition-opacity duration-300"
     >
       {people.map((person, i) => (
         <div
