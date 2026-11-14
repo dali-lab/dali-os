@@ -8,7 +8,7 @@ import {
   getOnboardingFormBinding,
   isOnboardingProfileForm,
   setOnboardingFormBinding,
-} from "~/hiring/lib/onboarding-form.server";
+} from "~/members/lib/onboarding-form.server";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 
