@@ -453,6 +453,8 @@ export default [
 
   // High scores for the tetris game on the week 5 home landing scene.
   route("api/landing/tetris-scores", "routes/api.landing.tetris-scores.ts"),
+  // High scores for the tunnel run on the week 10 home landing scene.
+  route("api/landing/tunnel-scores", "routes/api.landing.tunnel-scores.ts"),
   // High scores for the runner game on the error screens.
   route("api/dino-scores", "routes/api.dino-scores.ts"),
 
