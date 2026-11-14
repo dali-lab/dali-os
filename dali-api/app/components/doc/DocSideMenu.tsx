@@ -1,10 +1,10 @@
 // Custom drag-handle side menu for DocEditor (A8).
 //
-// Notion-ordered items:
-//   1. Duplicate     — deep-copies the block (new IDs) immediately after itself.
-//   1b. Keep/Revert change — only on a block carrying a reserved Enhance mark
+// Items, in order:
+//   1. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
+//   2. Duplicate     — deep-copies the block (new IDs) immediately after itself.
+//   2b. Keep/Revert change — only on a block carrying a reserved Enhance mark
 //       (specs/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
-//   2. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
 //   3. Delete        — BlockNote's RemoveBlockItem.
 //
 // Commenting starts from a text selection (the formatting toolbar), not here.
@@ -125,9 +125,9 @@ function EnhanceReviewMenuItems() {
 function DaliDragHandleMenu() {
   return (
     <DragHandleMenu>
+      <BlockColorsItem>Colors</BlockColorsItem>
       <DuplicateBlockItem>Duplicate</DuplicateBlockItem>
       <EnhanceReviewMenuItems />
-      <BlockColorsItem>Colors</BlockColorsItem>
       <DeleteBlockItem>Delete</DeleteBlockItem>
     </DragHandleMenu>
   );

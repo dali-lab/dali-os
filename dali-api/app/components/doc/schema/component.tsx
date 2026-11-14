@@ -4,13 +4,15 @@
 // opens one generic form built from the kind's field definitions.
 
 import { createReactBlockSpec } from "@blocknote/react";
-import { ArrowDown, ArrowUp, Check, Columns2, Flag, GripVertical, ImagePlus, Link2, Pencil, Rows2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Columns2, Flag, GripVertical, ImagePlus, Link2, Palette, Pencil, Rows2, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
+import { useToast } from "~/components/ui/toast";
 import {
   TONES,
   safeHref,
+  collectionCategories,
   kindDef,
   parseComponentData,
   type ComponentData,
@@ -18,6 +20,8 @@ import {
   type KindDef,
 } from "../components/kinds";
 import { ComponentView } from "../components/views";
+import { COLLECTION_ICONS, CollectionTileBody } from "../components/CollectionView";
+import { ChevronDown } from "lucide-react";
 import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../upload";
 import { componentConfig } from "./configs";
 
@@ -373,6 +377,7 @@ function ChipsEditor({
   onSave: (data: ComponentData) => void;
   onClose: () => void;
 }) {
+  const toast = useToast();
   const [urlOpen, setUrlOpen] = useState<number | null>(null);
   const [snapshot, setSnapshot] = useState<ComponentData["items"][number] | null>(null);
   const [popError, setPopError] = useState<string | null>(null);
@@ -613,7 +618,7 @@ function ChipsEditor({
         <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave(draft)}>
+        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave({ ...draft, items: draft.items.filter((it) => (it.label ?? "").trim()) })}>
           Done
         </button>
       </div>
@@ -621,7 +626,7 @@ function ChipsEditor({
   );
 }
 
-function CardsEditor({
+export function CardsEditor({
   draft,
   setDraft,
   onSave,
@@ -633,9 +638,11 @@ function CardsEditor({
   onClose: () => void;
 }) {
   const [sel, setSel] = useState<number | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
-  const [removed, setRemoved] = useState<{ item: ComponentData["items"][number]; index: number } | null>(null);
+  const toast = useToast();
   const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [focusTitle, setFocusTitle] = useState(false);
 
@@ -646,6 +653,11 @@ function CardsEditor({
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
+  }, [sel]);
+
+  useEffect(() => {
+    setPaletteOpen(false);
+    setLinkOpen(false);
   }, [sel]);
 
   useEffect(() => {
@@ -742,50 +754,106 @@ function CardsEditor({
               onChange={(e) => setItem(i, { meta: e.target.value })}
               className="dali-cmp-meta dali-cmp-card__field"
             />
-            {sel === i && (
-              <>
-                <input
-                  aria-label={`Card ${i + 1} link`}
-                  value={it.href ?? ""}
-                  placeholder="Add link"
-                  inputMode="url"
-                  onChange={(e) => setItem(i, { href: e.target.value })}
-                  className="dali-cmp-meta dali-cmp-card__field dali-cmp-card__link"
-                />
-                <div className="dali-cmp-card__colors" role="radiogroup" aria-label="Color">
-                  {TONES.map((tn) => {
-                    const on = (it.tone || "neutral") === tn;
-                    return (
-                      <button
-                        key={tn}
-                        type="button"
-                        role="radio"
-                        aria-checked={on}
-                        aria-label={tn}
-                        title={tn}
-                        onClick={() => setItem(i, { tone: tn })}
-                        className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
-                      >
-                        {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
-                      </button>
-                    );
-                  })}
-                </div>
+            <div className="dali-cmp-card__tools">
+              {sel === i && (
                 <button
                   type="button"
-                  className="dali-cmp-card__del"
-                  aria-label={`Delete card ${i + 1}`}
-                  title="Delete card"
+                  className={`dali-cmp-card__tool${it.href ? " dali-cmp-card__tool--on" : ""}`}
+                  aria-label={it.href ? `Edit link for card ${i + 1}` : `Add link to card ${i + 1}`}
+                  title={it.href ? linkLabel(it.href) : "Add link"}
                   onClick={() => {
-                    setRemoved({ item: it, index: i });
-                    setSel(null);
-                    setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                    setPaletteOpen(false);
+                    setLinkOpen((o) => !o);
                   }}
                 >
-                  <Trash2 size={12} strokeWidth={1.5} aria-hidden />
+                  <Link2 size={13} strokeWidth={1.5} aria-hidden />
                 </button>
-              </>
+              )}
+              {sel === i && (
+                <button
+                  type="button"
+                  className="dali-cmp-card__tool"
+                  aria-label={`Card ${i + 1} color`}
+                  aria-expanded={paletteOpen}
+                  title="Color"
+                  onClick={() => {
+                    setLinkOpen(false);
+                    setPaletteOpen((o) => !o);
+                  }}
+                >
+                  <Palette size={13} strokeWidth={1.5} aria-hidden />
+                </button>
+              )}
+              <button
+                type="button"
+                className="dali-cmp-card__tool dali-cmp-card__tool--del"
+                aria-label={`Delete card ${i + 1}`}
+                title="Delete card"
+                onClick={() => {
+                  setSel(null);
+                  setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                  toast.error(<span className="font-medium text-destructive">Card deleted</span>, {
+                    duration: 8000,
+                    actions: [
+                      {
+                        label: "Undo",
+                        onClick: () =>
+                          setDraft((d) => {
+                            const items = [...d.items];
+                            items.splice(Math.min(i, items.length), 0, it);
+                            return { ...d, items };
+                          }),
+                      },
+                    ],
+                  });
+                }}
+              >
+                <Trash2 size={13} strokeWidth={1.5} aria-hidden />
+              </button>
+            </div>
+            {sel === i && paletteOpen && (
+              <div className="dali-cmp-card__palette" role="radiogroup" aria-label="Color">
+                {TONES.map((tn) => {
+                  const on = (it.tone || "neutral") === tn;
+                  return (
+                    <button
+                      key={tn}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      aria-label={tn}
+                      title={tn}
+                      onClick={() => {
+                        setItem(i, { tone: tn });
+                        setPaletteOpen(false);
+                      }}
+                      className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
+                    >
+                      {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
+                    </button>
+                  );
+                })}
+              </div>
             )}
+            {sel === i && (linkOpen ? (
+              <input
+                autoFocus
+                aria-label={`Card ${i + 1} link`}
+                value={it.href ?? ""}
+                placeholder="https://..."
+                inputMode="url"
+                onChange={(e) => setItem(i, { href: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === "Escape") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setLinkOpen(false);
+                  }
+                }}
+                onBlur={() => setLinkOpen(false)}
+                className="dali-cmp-meta dali-cmp-card__field dali-cmp-card__link"
+              />
+            ) : null)}
           </div>
         ))}
         <button
@@ -793,7 +861,7 @@ function CardsEditor({
           className="dali-cmp-card dali-cmp-card--add"
           onClick={() => {
             setSel(draft.items.length);
-            setDraft((d) => ({ ...d, items: [...d.items, { tag: "", tone: "neutral", title: "", meta: "", href: "" }] }));
+            setDraft((d) => ({ ...d, items: [...d.items, { tag: "", tone: ["accent", "success", "warning", "danger", "neutral"][d.items.length % 5]!, title: "", meta: "", href: "" }] }));
             setFocusTitle(true);
           }}
         >
@@ -803,23 +871,6 @@ function CardsEditor({
       </div>
 
       <div className="dali-cmp-foot" aria-live="polite">
-        {removed && (
-          <button
-            type="button"
-            className="dali-cmp-mini"
-            onClick={() => {
-              setDraft((d) => {
-                const items = [...d.items];
-                items.splice(Math.min(removed.index, items.length), 0, removed.item);
-                return { ...d, items };
-              });
-              setSel(removed.index);
-              setRemoved(null);
-            }}
-          >
-            Card deleted · Undo
-          </button>
-        )}
         <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
           Cancel
         </button>
@@ -934,23 +985,23 @@ function StatsEditor({
               onChange={(e) => setItem(i, { label: e.target.value })}
               className="dali-cmp-sub dali-cmp-stat__field"
             />
+            <button
+              type="button"
+              className="dali-cmp-stat__tool dali-cmp-stat__grip"
+              aria-label={`Reorder stat ${i + 1}. Drag, or use Alt plus the arrow keys.`}
+              onMouseDown={() => setDragReady(i)}
+              onMouseUp={() => setDragReady(null)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  move(i, i + (e.key === "ArrowLeft" ? -1 : 1));
+                }
+              }}
+            >
+              <GripVertical size={11} strokeWidth={1.5} aria-hidden />
+            </button>
             <div className="dali-cmp-stat__tools">
-              <button
-                type="button"
-                className="dali-cmp-stat__tool dali-cmp-stat__grip"
-                aria-label={`Reorder stat ${i + 1}. Drag, or use Alt plus the arrow keys.`}
-                onMouseDown={() => setDragReady(i)}
-                onMouseUp={() => setDragReady(null)}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    move(i, i + (e.key === "ArrowLeft" ? -1 : 1));
-                  }
-                }}
-              >
-                <GripVertical size={11} strokeWidth={1.5} aria-hidden />
-              </button>
               <button
                 type="button"
                 className="dali-cmp-stat__tool dali-cmp-stat__del"
@@ -1023,8 +1074,17 @@ export function linkLabel(href: string): string {
   }
 }
 
-type ResourceFields = { title: string; description: string; meta: string; href: string };
-const EMPTY_RESOURCE: ResourceFields = { title: "", description: "", meta: "", href: "" };
+type ResourceFields = { title: string; description: string; meta: string; href: string; image: string; tone: string };
+const EMPTY_RESOURCE: ResourceFields = { title: "", description: "", meta: "", href: "", image: "", tone: "" };
+
+function ResourceThumb({ image, tone }: { image?: string; tone?: string }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className={`dali-cmp-row__thumb dali-cmp-tone--${tone || "accent"}`} aria-hidden>
+      {image && !broken && <img src={image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} />}
+    </span>
+  );
+}
 
 function ResourceForm({
   initial,
@@ -1038,18 +1098,46 @@ function ResourceForm({
   onCancel: () => void;
 }) {
   const [f, setF] = useState(initial);
-  const [detailOpen, setDetailOpen] = useState(!!initial.meta);
+  const detailOpen = !!initial.meta;
   const [error, setError] = useState<string | null>(null);
+  const [lookup, setLookup] = useState<"idle" | "loading" | "found" | "none">("idle");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const looked = useRef(initial.href.trim());
+  const imageTouched = useRef(!!initial.image);
   const set = (patch: Partial<ResourceFields>) => {
     setError(null);
     setF((c) => ({ ...c, ...patch }));
   };
-  const canSubmit = f.title.trim().length > 0;
+  const canSubmit = f.title.trim().length > 0 && f.href.trim().length > 0 && !uploading;
+
+  const findPreview = async () => {
+    const href = safeHref(f.href);
+    if (!href || href === looked.current || !/^https?:/i.test(href)) return;
+    looked.current = href;
+    setLookup("loading");
+    try {
+      const body = new FormData();
+      body.set("url", href);
+      const res = await fetch("/api/link-preview", { method: "POST", body });
+      const data = (await res.json()) as { image: string | null; title: string | null; description: string | null };
+      setF((c) => ({
+        ...c,
+        image: !imageTouched.current && data.image ? data.image : c.image,
+        title: c.title.trim() ? c.title : (data.title ?? "").slice(0, 120),
+        description: c.description.trim() ? c.description : (data.description ?? "").slice(0, 200),
+      }));
+      setLookup(data.image ? "found" : "none");
+    } catch {
+      setLookup("none");
+    }
+  };
+
   const submit = () => {
     if (!canSubmit) return;
     const href = f.href.trim();
-    if (href && !safeHref(href)) return setError("Enter a valid link, like https://… or mailto:…");
-    onSubmit({ title: f.title.trim(), description: f.description.trim(), meta: f.meta.trim(), href });
+    if (!safeHref(href)) return setError("Enter a valid link, like https://… or mailto:…");
+    onSubmit({ ...f, title: f.title.trim(), description: f.description.trim(), meta: f.meta.trim(), href });
   };
 
   return (
@@ -1068,34 +1156,103 @@ function ResourceForm({
         }
       }}
     >
+      <div className="dali-cmp-rowform__body">
+      <div className="dali-cmp-rowform__fields">
       <label className="dali-cmp-pop-field">
-        <span>Resource name</span>
-        <input autoFocus value={f.title} placeholder="e.g. Getting started guide" onChange={(e) => set({ title: e.target.value })} />
-      </label>
-      <label className="dali-cmp-pop-field">
-        <span>Description <em>Optional</em></span>
-        <input value={f.description} placeholder="What is this resource for?" onChange={(e) => set({ description: e.target.value })} />
-      </label>
-      <label className="dali-cmp-pop-field">
-        <span>URL <em>Optional</em></span>
+        <span>Link</span>
         <input
+          autoFocus
           value={f.href}
           placeholder="https://..."
           inputMode="url"
           aria-invalid={!!error}
           onChange={(e) => set({ href: e.target.value })}
+          onBlur={() => void findPreview()}
         />
       </label>
-      {detailOpen ? (
+      <label className="dali-cmp-pop-field">
+        <span>Resource name</span>
+        <input value={f.title} placeholder="e.g. Getting started guide" onChange={(e) => set({ title: e.target.value })} />
+      </label>
+      <label className="dali-cmp-pop-field">
+        <span>Description <em>Optional</em></span>
+        <input value={f.description} placeholder="What is this resource for?" onChange={(e) => set({ description: e.target.value })} />
+      </label>
+      {detailOpen && (
         <label className="dali-cmp-pop-field">
           <span>Detail <em>Optional</em></span>
           <input value={f.meta} placeholder="e.g. PDF, 12 pages" onChange={(e) => set({ meta: e.target.value })} />
         </label>
-      ) : (
-        <button type="button" className="dali-cmp-mini dali-cmp-mini--flush" onClick={() => setDetailOpen(true)}>
-          Add detail
-        </button>
       )}
+      </div>
+      <div className="dali-cmp-rowform__media">
+        <ResourceThumb image={f.image} tone={f.tone} />
+        <div className="dali-cmp-rowform__mediactl">
+          <div className="dali-cmp-rowform__mediabtns">
+            <button type="button" className="dali-cmp-mini" disabled={uploading} onClick={() => fileRef.current?.click()}>
+              <ImagePlus size={12} strokeWidth={1.5} aria-hidden />
+              {uploading ? "Uploading" : f.image ? "Change image" : "Upload image"}
+            </button>
+            {f.image && (
+              <button
+                type="button"
+                className="dali-cmp-mini"
+                onClick={() => {
+                  imageTouched.current = true;
+                  set({ image: "" });
+                }}
+              >
+                Remove
+              </button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept={IMAGE_UPLOAD_ACCEPT}
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                setUploading(true);
+                try {
+                  imageTouched.current = true;
+                  set({ image: await uploadEditorImage(file) });
+                } finally {
+                  setUploading(false);
+                }
+              }}
+            />
+          </div>
+          <div className="dali-cmp-chip-pop__colors" role="radiogroup" aria-label="Color">
+            {TONES.map((tn) => {
+              const on = (f.tone || "accent") === tn;
+              return (
+                <button
+                  key={tn}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  aria-label={tn}
+                  title={tn}
+                  onClick={() => set({ tone: tn })}
+                  className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
+                >
+                  {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
+                </button>
+              );
+            })}
+          </div>
+          <p className="dali-cmp-rowform__hint" aria-live="polite">
+            {lookup === "loading"
+              ? "Looking for an image…"
+              : lookup === "found"
+                ? "Image found from the link."
+                : ""}
+          </p>
+        </div>
+      </div>
+      </div>
       {error && (
         <p role="alert" className="dali-cmp-pop-error">
           {error}
@@ -1128,7 +1285,9 @@ function LinksEditor({
   const [form, setForm] = useState<number | "new" | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragReady, setDragReady] = useState<number | null>(null);
-  const [removed, setRemoved] = useState<{ item: ComponentData["items"][number]; index: number } | null>(null);
+  const toast = useToast();
+  const [needLink, setNeedLink] = useState(false);
+  const missingLink = draft.items.findIndex((it) => !(it.href ?? "").trim());
   const addRef = useRef<HTMLButtonElement | null>(null);
   const openRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -1179,7 +1338,7 @@ function LinksEditor({
         form === i ? (
           <ResourceForm
             key={i}
-            initial={{ title: it.title ?? "", description: it.description ?? "", meta: it.meta ?? "", href: it.href ?? "" }}
+            initial={{ title: it.title ?? "", description: it.description ?? "", meta: it.meta ?? "", href: it.href ?? "", image: it.image ?? "", tone: it.tone ?? "" }}
             submitLabel="Save"
             onCancel={() => closeForm(i)}
             onSubmit={(f) => {
@@ -1224,6 +1383,22 @@ function LinksEditor({
           >
             <button
               type="button"
+              className="dali-cmp-row__tool dali-cmp-row__grip"
+              aria-label={`Reorder ${it.title || "resource"}. Drag, or use Alt plus the up and down arrow keys.`}
+              onMouseDown={() => setDragReady(i)}
+              onMouseUp={() => setDragReady(null)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  move(i, i + (e.key === "ArrowUp" ? -1 : 1));
+                }
+              }}
+            >
+              <GripVertical size={16} strokeWidth={1.5} aria-hidden />
+            </button>
+            <button
+              type="button"
               ref={(el) => {
                 openRefs.current[i] = el;
               }}
@@ -1231,34 +1406,23 @@ function LinksEditor({
               aria-label={`Edit ${it.title || "resource"}`}
               onClick={() => setForm(i)}
             >
-              <span className="dali-cmp-row__title">{it.title || "Untitled resource"}</span>
-              {it.description && <span className="dali-cmp-sub">{it.description}</span>}
-              {it.href && (
-                <span className="dali-cmp-row__linkind">
-                  <Link2 size={12} strokeWidth={1.5} aria-hidden />
-                  {linkLabel(it.href)}
-                </span>
-              )}
+              <ResourceThumb image={it.image} tone={it.tone} />
+              <span className="dali-cmp-row__text">
+                <span className="dali-cmp-row__title">{it.title || "Untitled resource"}</span>
+                {it.description && <span className="dali-cmp-sub">{it.description}</span>}
+                {it.href ? (
+                  <span className="dali-cmp-row__linkind">
+                    <Link2 size={12} strokeWidth={1.5} aria-hidden />
+                    {linkLabel(it.href)}
+                  </span>
+                ) : (
+                  <span className="dali-cmp-row__linkind dali-cmp-row__linkind--missing">Link required</span>
+                )}
+              </span>
             </button>
             <div className="dali-cmp-row__tools">
-              <button
-                type="button"
-                className="dali-cmp-row__tool dali-cmp-row__grip"
-                aria-label={`Reorder ${it.title || "resource"}. Drag, or use Alt plus the up and down arrow keys.`}
-                onMouseDown={() => setDragReady(i)}
-                onMouseUp={() => setDragReady(null)}
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    move(i, i + (e.key === "ArrowUp" ? -1 : 1));
-                  }
-                }}
-              >
-                <GripVertical size={14} strokeWidth={1.5} aria-hidden />
-              </button>
               <button type="button" className="dali-cmp-row__tool" aria-label={`Edit ${it.title || "resource"}`} title="Edit" onClick={() => setForm(i)}>
-                <Pencil size={14} strokeWidth={1.5} aria-hidden />
+                <Pencil size={16} strokeWidth={1.5} aria-hidden />
               </button>
               <button
                 type="button"
@@ -1266,12 +1430,25 @@ function LinksEditor({
                 aria-label={`Delete ${it.title || "resource"}`}
                 title="Delete"
                 onClick={() => {
-                  setRemoved({ item: it, index: i });
                   setForm(null);
                   setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                  toast.error(<span className="font-medium text-destructive">Resource deleted</span>, {
+                    duration: 8000,
+                    actions: [
+                      {
+                        label: "Undo",
+                        onClick: () =>
+                          setDraft((d) => {
+                            const items = [...d.items];
+                            items.splice(Math.min(i, items.length), 0, it);
+                            return { ...d, items };
+                          }),
+                      },
+                    ],
+                  });
                 }}
               >
-                <Trash2 size={14} strokeWidth={1.5} aria-hidden />
+                <Trash2 size={16} strokeWidth={1.5} aria-hidden />
               </button>
             </div>
           </div>
@@ -1285,7 +1462,6 @@ function LinksEditor({
           onCancel={() => closeForm()}
           onSubmit={(f) => {
             setDraft((d) => ({ ...d, items: [...d.items, f] }));
-            setRemoved(null);
             closeForm();
           }}
         />
@@ -1299,22 +1475,200 @@ function LinksEditor({
       )}
 
       <div className="dali-cmp-foot" aria-live="polite">
-        {removed && (
-          <button
-            type="button"
-            className="dali-cmp-mini"
-            onClick={() => {
-              setDraft((d) => {
-                const items = [...d.items];
-                items.splice(Math.min(removed.index, items.length), 0, removed.item);
-                return { ...d, items };
-              });
-              setRemoved(null);
-            }}
-          >
-            Resource deleted · Undo
-          </button>
+        {needLink && missingLink >= 0 && (
+          <span role="alert" className="dali-cmp-pop-error">
+            Every resource needs a link.
+          </span>
         )}
+        <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="os-btn-primary os-btn-primary--sm dali-cmp-done"
+          onClick={() => {
+            if (missingLink >= 0) {
+              setNeedLink(true);
+              setForm(missingLink);
+              return;
+            }
+            onSave(draft);
+          }}
+        >
+          Done
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type CollectionFields = { title: string; description: string; category: string; icon: string; href: string };
+const EMPTY_TILE: CollectionFields = { title: "", description: "", category: "", icon: "link", href: "" };
+
+function CollectionForm({
+  initial,
+  categories,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  initial: CollectionFields;
+  categories: string[];
+  submitLabel: string;
+  onSubmit: (fields: CollectionFields) => void;
+  onCancel: () => void;
+}) {
+  const [f, setF] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+  const looked = useRef(initial.href.trim());
+  const set = (patch: Partial<CollectionFields>) => {
+    setError(null);
+    setF((c) => ({ ...c, ...patch }));
+  };
+  const canSubmit = f.title.trim().length > 0 && f.href.trim().length > 0;
+
+  const findPreview = async () => {
+    const href = safeHref(f.href);
+    if (!href || href === looked.current || !/^https?:/i.test(href)) return;
+    looked.current = href;
+    try {
+      const body = new FormData();
+      body.set("url", href);
+      const res = await fetch("/api/link-preview", { method: "POST", body });
+      const data = (await res.json()) as { title: string | null; description: string | null };
+      setF((c) => ({
+        ...c,
+        title: c.title.trim() ? c.title : (data.title ?? "").slice(0, 120),
+        description: c.description.trim() ? c.description : (data.description ?? "").slice(0, 140),
+      }));
+    } catch {
+      /* the link still works without a preview */
+    }
+  };
+  const submit = () => {
+    if (!canSubmit) return;
+    const href = f.href.trim();
+    if (!safeHref(href)) return setError("Enter a valid link, like https://… or a path starting with /");
+    onSubmit({ ...f, title: f.title.trim(), description: f.description.trim(), category: f.category.replace(/,/g, " ").trim(), href });
+  };
+
+  return (
+    <div
+      className="dali-cmp-rowform dali-cmp-coll__form"
+      role="group"
+      aria-label={submitLabel === "Add resource" ? "New resource" : "Edit resource"}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          onCancel();
+        } else if (e.key === "Enter" && e.target instanceof HTMLInputElement) {
+          e.preventDefault();
+          submit();
+        }
+      }}
+    >
+      <label className="dali-cmp-pop-field">
+        <span>Link</span>
+        <input autoFocus value={f.href} placeholder="https://..." inputMode="url" aria-invalid={!!error} onChange={(e) => set({ href: e.target.value })} onBlur={() => void findPreview()} />
+      </label>
+      <label className="dali-cmp-pop-field">
+        <span>Resource name</span>
+        <input value={f.title} placeholder="e.g. Figma" onChange={(e) => set({ title: e.target.value })} />
+      </label>
+      <label className="dali-cmp-pop-field">
+        <span>Description <em>Optional</em></span>
+        <input value={f.description} placeholder="What is this for?" onChange={(e) => set({ description: e.target.value })} />
+      </label>
+      <label className="dali-cmp-pop-field">
+        <span>Category <em>Optional</em></span>
+        <input value={f.category} list="dali-coll-cats" placeholder="Pick or type a new one" onChange={(e) => set({ category: e.target.value })} />
+        <datalist id="dali-coll-cats">
+          {categories.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+      </label>
+      <div className="dali-cmp-pop-field">
+        <span>Icon</span>
+        <div className="dali-cmp-coll__icons" role="radiogroup" aria-label="Icon">
+          {Object.entries(COLLECTION_ICONS).map(([id, { label, Icon }]) => (
+            <button key={id} type="button" role="radio" aria-checked={f.icon === id} aria-label={label} title={label} onClick={() => set({ icon: id })} className="dali-cmp-coll__iconbtn">
+              <Icon size={16} strokeWidth={1.75} aria-hidden />
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && (
+        <p role="alert" className="dali-cmp-pop-error">
+          {error}
+        </p>
+      )}
+      <div className="dali-cmp-rowform__actions">
+        <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="os-btn-primary os-btn-primary--sm" disabled={!canSubmit} onClick={submit}>
+          {submitLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CollectionEditor({
+  draft,
+  setDraft,
+  onSave,
+  onClose,
+}: {
+  draft: ComponentData;
+  setDraft: React.Dispatch<React.SetStateAction<ComponentData>>;
+  onSave: (data: ComponentData) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<number | "new" | null>(null);
+  const [expanded, setExpanded] = useState(true);
+  const [newCat, setNewCat] = useState("");
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragReady, setDragReady] = useState<number | null>(null);
+  const toast = useToast();
+  const categories = collectionCategories(draft.fields, draft.items);
+  const startsOpen = draft.fields.open !== "0";
+  const setField = (patch: Record<string, string>) => setDraft((d) => ({ ...d, fields: { ...d.fields, ...patch } }));
+  const setCategories = (list: string[]) => setField({ categories: list.join(", ") });
+  const addCategory = () => {
+    const v = newCat.replace(/,/g, " ").trim();
+    if (v && !categories.some((c) => c.toLowerCase() === v.toLowerCase())) setCategories([...categories, v]);
+    setNewCat("");
+  };
+  const removeCategory = (c: string) => {
+    setCategories(categories.filter((x) => x !== c));
+    setDraft((d) => ({ ...d, items: d.items.map((it) => ((it.category ?? "").toLowerCase() === c.toLowerCase() ? { ...it, category: "" } : it)) }));
+  };
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= draft.items.length || from === to) return;
+    setForm(null);
+    setDraft((d) => {
+      const items = [...d.items];
+      const [it] = items.splice(from, 1);
+      items.splice(to, 0, it!);
+      return { ...d, items };
+    });
+  };
+  const withCategory = (category: string) => {
+    if (category && !categories.some((c) => c.toLowerCase() === category.toLowerCase())) setCategories([...categories, category]);
+  };
+
+  return (
+    <div className="dali-cmp-coll dali-cmp-coll--edit dali-cmp-coll--open">
+      <div className="dali-cmp-coll__headedit">
+        <input aria-label="Section title" value={draft.fields.title ?? ""} placeholder="Title" onChange={(e) => setField({ title: e.target.value })} className="dali-cmp-title dali-cmp-bare" />
+        <button type="button" className="dali-cmp-coll__chevbtn" aria-expanded={expanded} aria-label={expanded ? "Preview collapsed" : "Preview expanded"} title={expanded ? "Preview collapsed" : "Preview expanded"} onClick={() => setExpanded((x) => !x)}>
+          <ChevronDown className="dali-cmp-coll__chev" size={18} strokeWidth={1.75} aria-hidden />
+        </button>
+      </div>
+      <div className="dali-cmp-foot">
         <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
           Cancel
         </button>
@@ -1322,6 +1676,430 @@ function LinksEditor({
           Done
         </button>
       </div>
+
+      <div className="dali-cmp-coll__meta">
+        <div className="dali-cmp-coll__filters" role="group" aria-label="Categories">
+          {categories.map((c) => (
+            <span key={c} className="dali-cmp-coll__chip dali-cmp-coll__chip--edit">
+              {c}
+              <button type="button" aria-label={`Remove category ${c}`} title="Remove category" onClick={() => removeCategory(c)}>
+                <X size={11} strokeWidth={2} aria-hidden />
+              </button>
+            </span>
+          ))}
+          <input
+            aria-label="New category"
+            value={newCat}
+            placeholder="+ Category"
+            onChange={(e) => setNewCat(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addCategory();
+              }
+            }}
+            onBlur={addCategory}
+            className="dali-cmp-coll__newcat"
+          />
+        </div>
+        <button type="button" role="switch" aria-checked={!startsOpen} className="dali-cmp-mini dali-cmp-coll__switch" onClick={() => setField({ open: startsOpen ? "0" : "1" })}>
+          {startsOpen ? "Starts open" : "Starts collapsed"}
+        </button>
+      </div>
+
+      <div className={`dali-cmp-coll__body${expanded ? "" : " dali-cmp-coll__body--shut"}`} inert={!expanded}>
+        <div className="dali-cmp-coll__inner">
+          <div className="dali-cmp-coll__grid">
+            {draft.items.map((it, i) =>
+              form === i ? (
+                <CollectionForm
+                  key={i}
+                  initial={{ title: it.title ?? "", description: it.description ?? "", category: it.category ?? "", icon: it.icon || "link", href: it.href ?? "" }}
+                  categories={categories}
+                  submitLabel="Save"
+                  onCancel={() => setForm(null)}
+                  onSubmit={(f) => {
+                    withCategory(f.category);
+                    setDraft((d) => ({ ...d, items: d.items.map((x, j) => (j === i ? { ...x, ...f } : x)) }));
+                    setForm(null);
+                  }}
+                />
+              ) : (
+                <div
+                  key={i}
+                  draggable={dragReady === i}
+                  className={`dali-cmp-coll__tile dali-cmp-coll__tile--edit${dragFrom === i ? " dali-cmp-coll__tile--dragging" : ""}`}
+                  onKeyDown={(e) => {
+                    if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+                      e.preventDefault();
+                      move(i, i + (e.key === "ArrowLeft" ? -1 : 1));
+                    }
+                  }}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/plain", String(i));
+                    setDragFrom(i);
+                  }}
+                  onDragOver={(e) => {
+                    if (dragFrom === null) return;
+                    e.preventDefault();
+                    if (dragFrom !== i) {
+                      move(dragFrom, i);
+                      setDragFrom(i);
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragFrom(null);
+                    setDragReady(null);
+                  }}
+                  onDragEnd={() => {
+                    setDragFrom(null);
+                    setDragReady(null);
+                  }}
+                >
+                  <button type="button" className="dali-cmp-row__tool dali-cmp-coll__grip" aria-label={`Reorder ${it.title || "resource"}. Drag, or use Alt plus the left and right arrow keys.`} onMouseDown={() => setDragReady(i)} onMouseUp={() => setDragReady(null)} onKeyDown={(e) => {
+                    if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      move(i, i + (e.key === "ArrowLeft" ? -1 : 1));
+                    }
+                  }}>
+                    <GripVertical size={14} strokeWidth={1.5} aria-hidden />
+                  </button>
+                  <button type="button" className="dali-cmp-coll__open" aria-label={`Edit ${it.title || "resource"}`} onClick={() => setForm(i)}>
+                    <CollectionTileBody item={it} categories={categories} />
+                  </button>
+                  <div className="dali-cmp-coll__tools">
+                    <button type="button" className="dali-cmp-row__tool dali-cmp-row__tool--del" aria-label={`Delete ${it.title || "resource"}`} title="Delete" onClick={() => {
+                      setForm(null);
+                      setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                      toast.error(<span className="font-medium text-destructive">Resource deleted</span>, {
+                        duration: 8000,
+                        actions: [{ label: "Undo", onClick: () => setDraft((d) => { const items = [...d.items]; items.splice(Math.min(i, items.length), 0, it); return { ...d, items }; }) }],
+                      });
+                    }}>
+                      <Trash2 size={14} strokeWidth={1.5} aria-hidden />
+                    </button>
+                  </div>
+                </div>
+              ),
+            )}
+            {form === "new" ? (
+              <CollectionForm
+                initial={EMPTY_TILE}
+                categories={categories}
+                submitLabel="Add resource"
+                onCancel={() => setForm(null)}
+                onSubmit={(f) => {
+                  withCategory(f.category);
+                  setDraft((d) => ({ ...d, items: [...d.items, f] }));
+                  setForm(null);
+                }}
+              />
+            ) : form === null ? (
+              <button type="button" className="dali-cmp-coll__tile dali-cmp-coll__tile--add" onClick={() => setForm("new")}>
+                <Plus size={14} strokeWidth={1.5} aria-hidden />
+                Add resource
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function GalleryEditor({
+  draft,
+  setDraft,
+  onSave,
+  onClose,
+}: {
+  draft: ComponentData;
+  setDraft: React.Dispatch<React.SetStateAction<ComponentData>>;
+  onSave: (data: ComponentData) => void;
+  onClose: () => void;
+}) {
+  const [sel, setSel] = useState<number | null>(null);
+  const [subOpen, setSubOpen] = useState(!!draft.fields.subtitle);
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dragReady, setDragReady] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [alignEnd, setAlignEnd] = useState(false);
+  const [tab, setTab] = useState<"upload" | "link">("upload");
+  const [focusNew, setFocusNew] = useState(false);
+  const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const popRef = useRef<HTMLDivElement | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const toast = useToast();
+
+  const setField = (key: string, value: string) => setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
+  const setItem = (i: number, patch: Record<string, string>) =>
+    setDraft((d) => ({ ...d, items: d.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
+  const select = (i: number | null) => {
+    setSel(i);
+    setLinkError(null);
+  };
+  const move = (from: number, to: number) => {
+    if (to < 0 || to >= draft.items.length || from === to) return;
+    setDraft((d) => {
+      const items = [...d.items];
+      const [it] = items.splice(from, 1);
+      items.splice(to, 0, it!);
+      return { ...d, items };
+    });
+    setSel((c) => (c === from ? to : c));
+  };
+  const tryDone = () => {
+    const bad = draft.items.findIndex((it) => (it.href ?? "").trim() && !safeHref(it.href));
+    if (bad >= 0) {
+      setSel(bad);
+      setLinkError("Enter a valid link, like https://… or mailto:…");
+      return;
+    }
+    onSave({ ...draft, items: draft.items.filter((it) => it.title?.trim() || it.image?.trim() || it.byline?.trim()) });
+  };
+
+  useEffect(() => {
+    if (!focusNew) return;
+    titleRefs.current[draft.items.length - 1]?.focus();
+    setFocusNew(false);
+  }, [focusNew, draft.items.length]);
+
+  useEffect(() => {
+    if (sel === null) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element).closest?.(".dali-cmp-piece--edit, [class*=\"devstudio\"]")) select(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [sel]);
+
+  useEffect(() => {
+    const pop = popRef.current;
+    if (!pop) return;
+    setAlignEnd(false);
+    requestAnimationFrame(() => {
+      if (pop.getBoundingClientRect().right > window.innerWidth - 12) setAlignEnd(true);
+    });
+  }, [sel]);
+
+  return (
+    <div className="dali-cmp-gal-edit">
+      <div className="dali-cmp-head">
+        <input aria-label="Gallery title" value={draft.fields.title ?? ""} placeholder="Title" onChange={(e) => setField("title", e.target.value)} className="dali-cmp-title dali-cmp-bare" />
+        {subOpen ? (
+          <input aria-label="Subtitle" value={draft.fields.subtitle ?? ""} placeholder="Subtitle" autoFocus={!draft.fields.subtitle} onChange={(e) => setField("subtitle", e.target.value)} className="dali-cmp-sub dali-cmp-bare" />
+        ) : (
+          <button type="button" className="dali-cmp-mini dali-cmp-mini--flush self-start" onClick={() => setSubOpen(true)}>
+            Add subtitle
+          </button>
+        )}
+      </div>
+      <div className="dali-cmp-foot">
+        <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={tryDone}>
+          Done
+        </button>
+      </div>
+
+      <div className="dali-cmp-grid dali-cmp-grid--edit">
+        {draft.items.map((it, i) => (
+          <div
+            key={i}
+            draggable={dragReady === i}
+            className={`dali-cmp-piece dali-cmp-piece--edit dali-cmp-tone--${it.tone || "neutral"}${sel === i ? " dali-cmp-piece--selected" : ""}${dragFrom === i ? " dali-cmp-piece--dragging" : ""}`}
+            onFocusCapture={() => sel !== i && select(i)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && sel === i) {
+                e.stopPropagation();
+                select(null);
+              } else if (e.altKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+                e.preventDefault();
+                const to = i + (e.key === "ArrowLeft" ? -1 : 1);
+                move(i, to);
+                requestAnimationFrame(() => titleRefs.current[to]?.focus());
+              }
+            }}
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", String(i));
+              setDragFrom(i);
+            }}
+            onDragOver={(e) => {
+              if (dragFrom === null) return;
+              e.preventDefault();
+              if (dragFrom !== i) {
+                move(dragFrom, i);
+                setDragFrom(i);
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragFrom(null);
+              setDragReady(null);
+            }}
+            onDragEnd={() => {
+              setDragFrom(null);
+              setDragReady(null);
+            }}
+          >
+            <button
+              type="button"
+              className="dali-cmp-piece__artbtn"
+              aria-label={it.image ? `Change image for ${it.title || "piece"}` : `Add image for ${it.title || "piece"}`}
+              disabled={uploading}
+              onClick={() => {
+                select(i);
+                fileRef.current?.click();
+              }}
+            >
+              {it.image ? <img className="dali-cmp-piece__art" src={it.image} alt="" /> : <span className="dali-cmp-piece__art" />}
+              <span className="dali-cmp-piece__edithint" aria-hidden>
+                <ImagePlus size={16} strokeWidth={1.5} />
+              </span>
+            </button>
+            <button
+              type="button"
+              className="dali-cmp-piece__grip"
+              aria-label={`Reorder ${it.title || "piece"}. Drag, or use the left and right arrow keys.`}
+              onMouseDown={() => setDragReady(i)}
+              onMouseUp={() => setDragReady(null)}
+              onKeyDown={(e) => {
+                if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  move(i, i + (e.key === "ArrowLeft" ? -1 : 1));
+                }
+              }}
+            >
+              <GripVertical size={14} strokeWidth={1.5} aria-hidden />
+            </button>
+            <input
+              ref={(el) => {
+                titleRefs.current[i] = el;
+              }}
+              aria-label={`Piece ${i + 1} title`}
+              value={it.title ?? ""}
+              placeholder="Title"
+              onChange={(e) => setItem(i, { title: e.target.value })}
+              className="dali-cmp-row__title dali-cmp-piece__titlefield"
+            />
+            <input
+              aria-label={`Piece ${i + 1} credit`}
+              value={it.byline ?? ""}
+              placeholder="Credit"
+              onChange={(e) => setItem(i, { byline: e.target.value })}
+              className="dali-cmp-sub dali-cmp-piece__titlefield"
+            />
+            {sel === i && (
+              <div ref={popRef} className={`dali-cmp-piece__pop${alignEnd ? " dali-cmp-piece__pop--end" : ""}`} role="dialog" aria-label={`Edit ${it.title || "piece"}`}>
+                <div className="dali-cmp-piece__tabs" role="tablist" aria-label="Image source">
+                  {(["upload", "link"] as const).map((t) => (
+                    <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
+                      {t === "upload" ? "Upload" : "Link"}
+                    </button>
+                  ))}
+                </div>
+                {tab === "upload" ? (
+                  <div className="dali-cmp-piece__upload">
+                    <button type="button" className="dali-cmp-piece__uploadbtn" disabled={uploading} onClick={() => fileRef.current?.click()}>
+                      <ImagePlus size={14} strokeWidth={1.5} aria-hidden />
+                      {uploading ? "Uploading" : it.image ? "Replace image" : "Upload image"}
+                    </button>
+                    {it.image && (
+                      <button type="button" className="dali-cmp-mini" onClick={() => setItem(i, { image: "" })}>
+                        Remove image
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <input aria-label="Image link" value={it.image ?? ""} placeholder="Paste an image link" inputMode="url" onChange={(e) => setItem(i, { image: e.target.value })} />
+                )}
+                <label className="dali-cmp-pop-field">
+                  <span>Opens</span>
+                  <input value={it.href ?? ""} placeholder="https://..." inputMode="url" aria-invalid={!!linkError} onChange={(e) => { setLinkError(null); setItem(i, { href: e.target.value }); }} />
+                </label>
+                {linkError && (
+                  <p role="alert" className="dali-cmp-pop-error">
+                    {linkError}
+                  </p>
+                )}
+                <div className="dali-cmp-pop-field">
+                  <span>Color</span>
+                  <div className="dali-cmp-chip-pop__colors" role="radiogroup" aria-label="Color">
+                    {TONES.map((tn) => {
+                      const on = (it.tone || "neutral") === tn;
+                      return (
+                        <button key={tn} type="button" role="radio" aria-checked={on} aria-label={tn} title={tn} onClick={() => setItem(i, { tone: tn })} className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}>
+                          {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="dali-cmp-pop-actions">
+                  <button
+                    type="button"
+                    className="dali-cmp-pop-delete"
+                    onClick={() => {
+                      select(null);
+                      setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                      toast.error(<span className="font-medium text-destructive">Piece deleted</span>, {
+                        duration: 8000,
+                        actions: [{ label: "Undo", onClick: () => setDraft((d) => { const items = [...d.items]; items.splice(Math.min(i, items.length), 0, it); return { ...d, items }; }) }],
+                      });
+                    }}
+                  >
+                    <Trash2 className="dali-cmp-ico" size={12} strokeWidth={1.5} aria-hidden />
+                    Delete
+                  </button>
+                  <button type="button" className="dali-cmp-pop-save" onClick={() => select(null)}>
+                    Done
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        <button
+          type="button"
+          className="dali-cmp-piece dali-cmp-piece--add"
+          onClick={() => {
+            const cycle = ["accent", "success", "warning", "danger", "neutral"];
+            setSel(draft.items.length);
+            setDraft((d) => ({ ...d, items: [...d.items, { image: "", title: "", byline: "", tone: cycle[d.items.length % cycle.length]!, href: "" }] }));
+            setFocusNew(true);
+          }}
+        >
+          <span className="dali-cmp-piece__art">
+            <Plus size={14} strokeWidth={1.5} aria-hidden />
+            Add piece
+          </span>
+        </button>
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept={IMAGE_UPLOAD_ACCEPT}
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (!file || sel === null) return;
+          const target = sel;
+          setUploading(true);
+          try {
+            setItem(target, { image: await uploadEditorImage(file) });
+          } catch {
+            toast.error("Upload failed.");
+          } finally {
+            setUploading(false);
+          }
+        }}
+      />
     </div>
   );
 }
@@ -1575,6 +2353,12 @@ function ComponentForm({
   if (def.kind === "cards") {
     return <CardsEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
   }
+  if (def.kind === "gallery") {
+    return <GalleryEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "collection") {
+    return <CollectionEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
   if (def.kind === "feature") {
     return <FeatureEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
   }
@@ -1662,15 +2446,18 @@ function ComponentBlock({
   data,
   editable,
   onSave,
+  onRemove,
 }: {
   kind: string;
   data: string;
   editable: boolean;
   onSave: (data: ComponentData) => void;
+  onRemove?: () => void;
 }) {
   const def = kindDef(kind);
   const saved = parseComponentData(kind, data);
-  const [editing, setEditing] = useState(false);
+  const isNew = saved.fields._new === "1";
+  const [editing, setEditing] = useState(isNew && editable);
   const [live, setLive] = useState<ComponentData["items"] | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const dragIdx = useRef<number | null>(null);
@@ -1740,9 +2527,13 @@ function ComponentBlock({
         <ComponentForm
           def={def}
           initial={parsed}
-          onClose={() => setEditing(false)}
+          onClose={() => {
+            if (isNew) onRemove?.();
+            else setEditing(false);
+          }}
           onSave={(next) => {
-            onSave(next);
+            const { _new: _flag, ...fields } = next.fields;
+            onSave({ ...next, fields });
             setEditing(false);
           }}
         />
@@ -1775,6 +2566,7 @@ const createComponentBlock = createReactBlockSpec(componentConfig, {
       onSave={(next) =>
         props.editor.updateBlock(props.block, { props: { data: JSON.stringify(next) } })
       }
+      onRemove={() => props.editor.removeBlocks([props.block])}
     />
   ),
 });

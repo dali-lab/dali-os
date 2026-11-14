@@ -1,16 +1,8 @@
-import {
-  COVER_DECOR,
-  COVER_PATTERNS,
-  CoverPattern,
-  buildCoverUrl,
-  coverGround,
-  isPatternCover,
-  parseCover,
-} from "~/components/resource-hub/CoverPattern";
-import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
+import { CoverTile, cardColorHex, coverGround, isPatternCover, parseCover } from "~/components/resource-hub/CoverPattern";
+import { CoverStudio } from "~/components/resource-hub/CoverStudio";
 import { useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
-import { Plus } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub";
 import { prisma } from "~/lib/db.server";
 import {
@@ -72,80 +64,6 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect(`/resource-hub/${page.id}`);
 }
 
-function CoverStudio({ open, busy, onClose, onCreate }: { open: boolean; busy: boolean; onClose: () => void; onCreate: (title: string, cover: string) => void }) {
-  const [title, setTitle] = useState("");
-  const [cover, setCover] = useState(buildCoverUrl(COVER_PATTERNS[0]!.id));
-  const parsed = parseCover(cover)!;
-  return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      labelledBy="cover-studio-title"
-      disableEscape={busy}
-      containerClassName="w-full max-w-2xl rounded-os-card bg-os-card p-6 shadow-xl"
-    >
-      <ModalHeader titleId="cover-studio-title" title="Design the banner" subtitle="Pick a style and name your hub. You can change both later." onClose={onClose} />
-      <div className="overflow-hidden rounded-os-item border border-os-container">
-        <CoverPattern url={cover} title={title || "Untitled hub"} />
-      </div>
-      <label className="mt-4 flex flex-col gap-1.5 text-sm text-os-grey">
-        Title
-        <input
-          autoFocus
-          value={title}
-          maxLength={120}
-          placeholder="e.g. Design"
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !busy && onCreate(title, cover)}
-          className="h-9 rounded-lg border border-os-container-hi bg-os-bg px-3 text-sm text-foreground outline-none focus:border-os-accent focus:ring-2 focus:ring-os-accent/25"
-        />
-      </label>
-      <p className="mb-2 mt-4 text-sm font-semibold text-foreground">Style</p>
-      <div className="grid grid-cols-3 gap-3">
-        {COVER_PATTERNS.map((pt) => {
-          const selected = parsed.id === pt.id;
-          return (
-            <button
-              key={pt.id}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => setCover(buildCoverUrl(pt.id, parsed.decor))}
-              className="group/thumb flex flex-col gap-1 text-left focus-visible:outline-none"
-            >
-              <span className={`block overflow-hidden rounded-lg border transition-shadow group-hover/thumb:shadow-md group-focus-visible/thumb:ring-2 group-focus-visible/thumb:ring-os-accent/60 ${selected ? "border-os-accent ring-1 ring-os-accent" : "border-os-container"}`}>
-                <CoverPattern url={buildCoverUrl(pt.id, parsed.decor)} title={title || "Untitled hub"} />
-              </span>
-              <span className="text-xs text-os-grey">{pt.name}</span>
-            </button>
-          );
-        })}
-      </div>
-      <p className="mb-2 mt-4 text-sm font-semibold text-foreground">Decor</p>
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Decor">
-        {COVER_DECOR.map((d) => {
-          const on = parsed.decor.includes(d.id);
-          return (
-            <button
-              key={d.id}
-              type="button"
-              aria-pressed={on}
-              onClick={() => setCover(buildCoverUrl(parsed.id, on ? parsed.decor.filter((x) => x !== d.id) : [...parsed.decor, d.id]))}
-              className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60 ${on ? "border-os-accent bg-os-accent/10 text-foreground" : "border-os-container text-os-grey hover:bg-os-hover hover:text-foreground"}`}
-            >
-              {d.name}
-            </button>
-          );
-        })}
-      </div>
-      <ModalFooter onCancel={onClose} cancelDisabled={busy}>
-        <button type="button" disabled={busy} onClick={() => onCreate(title, cover)} className="os-btn-primary os-btn-primary--sm !text-white">
-          Create and edit
-        </button>
-      </ModalFooter>
-    </Modal>
-  );
-}
-
 export default function ResourceHubIndex() {
   const { cards } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
@@ -159,57 +77,64 @@ export default function ResourceHubIndex() {
         </h1>
       </header>
 
-      <CoverStudio
-        open={studio}
-        busy={fetcher.state !== "idle"}
-        onClose={() => setStudio(false)}
-        onCreate={(title, cover) => fetcher.submit({ intent: "create", title, cover }, { method: "post" })}
-      />
+      {studio && (
+        <CoverStudio
+          busy={fetcher.state !== "idle"}
+          heading="Design the banner"
+          submitLabel="Create and edit"
+          initialTitle=""
+          initialCover={null}
+          onClose={() => setStudio(false)}
+          onSubmit={(title, cover) => fetcher.submit({ intent: "create", title, cover }, { method: "post" })}
+        />
+      )}
 
-      <ul className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <ul className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         <li>
           <button
             type="button"
             onClick={() => setStudio(true)}
             disabled={fetcher.state !== "idle"}
             aria-label="Add a hub"
-            className="group flex h-full min-h-[11rem] w-full flex-col items-center justify-center gap-2 rounded-os-card border border-dashed border-os-container-hi bg-os-hover text-os-grey outline-none transition-[border-color,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-os-accent/60 disabled:opacity-50"
+            className="group flex h-full min-h-[13rem] w-full flex-col items-center justify-center gap-2 rounded-os-card border border-dashed border-os-container-hi bg-os-hover text-os-grey outline-none transition-[border-color,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-os-accent/60 disabled:opacity-50"
           >
             <Plus className="h-5 w-5" />
             <span className="text-sm font-medium">Add</span>
           </button>
         </li>
         {cards.map((card) => (
-            <li key={card.id}>
-              <Link
-                to={`/resource-hub/${card.id}`}
-                aria-label={card.title}
-                className="group flex h-full flex-col overflow-hidden rounded-os-card border border-os-container bg-os-card outline-none transition-[border-color,transform] duration-150 ease-out hover:border-os-container-hi active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-os-accent/60"
-              >
+          <li key={card.id}>
+            <Link
+              to={`/resource-hub/${card.id}`}
+              style={{ backgroundColor: cardColorHex(parseCover(card.coverUrl)?.card) }}
+              className="group flex h-full min-h-[13rem] gap-4 overflow-hidden rounded-os-card p-4 text-white outline-none transition-[filter,transform] duration-150 ease-out hover:brightness-110 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-os-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-os-card"
+            >
+              <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="font-heading text-xl font-semibold leading-tight [overflow-wrap:anywhere]">{card.title}</h2>
+                  {!card.published && <p className="mt-1 text-xs text-white/60">Draft</p>}
+                </div>
+                <span
+                  aria-hidden
+                  className="grid h-9 w-9 place-items-center rounded-full border border-white/50 transition-colors duration-150 group-hover:bg-white/10"
+                >
+                  <ArrowRight className="h-4 w-4 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
+                </span>
+              </div>
+              <div className="w-[44%] shrink-0 self-stretch overflow-hidden rounded-xl" style={{ background: isPatternCover(card.coverUrl) ? coverGround(card.coverUrl) : (card.bgColor ?? undefined) }}>
                 {isPatternCover(card.coverUrl) ? (
-                  <div className="relative grid aspect-[16/10] place-items-center" style={{ background: coverGround(card.coverUrl) }}>
-                    <CoverPattern url={card.coverUrl} title={card.title} />
-                    {!card.published && (
-                      <span className="absolute right-2 top-2 rounded-full bg-os-bg/85 px-2 py-0.5 text-xs text-os-grey backdrop-blur">Draft</span>
-                    )}
-                  </div>
+                  <CoverTile url={card.coverUrl} />
                 ) : (
                   <div
-                    className="aspect-[16/10] bg-os-hover bg-cover bg-center"
-                    style={{
-                      backgroundColor: card.bgColor ?? undefined,
-                      backgroundImage: card.coverUrl ? `url(${card.coverUrl})` : undefined,
-                    }}
+                    className="h-full min-h-[8rem] w-full bg-os-hover bg-cover bg-center"
+                    style={{ backgroundImage: card.coverUrl ? `url(${card.coverUrl})` : undefined }}
                     aria-hidden
-                  >
-                    {!card.published && (
-                      <span className="m-2 ml-auto block w-fit rounded-full bg-os-bg/85 px-2 py-0.5 text-xs text-os-grey backdrop-blur">Draft</span>
-                    )}
-                  </div>
+                  />
                 )}
-              </Link>
-            </li>
-          ))}
+              </div>
+            </Link>
+          </li>
+        ))}
       </ul>
     </div>
   );

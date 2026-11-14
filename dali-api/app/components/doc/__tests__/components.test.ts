@@ -3,6 +3,9 @@ import {
   COMPONENT_KINDS,
   codeHeight,
   codeSrcDoc,
+  blankComponentData,
+  collectionCategories,
+  filterCollection,
   parseComponentData,
   safeHref,
   spacerHeight,
@@ -42,6 +45,29 @@ describe("component library", () => {
     expect(safeHref("data:text/html,x")).toBeUndefined();
     expect(safeHref("//evil.example")).toBeUndefined();
     expect(safeHref("")).toBeUndefined();
+  });
+
+  it("starts a new component empty but keeps its settings", () => {
+    const chips = COMPONENT_KINDS.find((d) => d.kind === "chips")!;
+    expect(blankComponentData(chips)).toEqual({ fields: { label: "", layout: "stacked" }, items: [] });
+    const feature = COMPONENT_KINDS.find((d) => d.kind === "feature")!;
+    const blank = blankComponentData(feature);
+    expect(blank.fields.tone).toBe("warning");
+    expect(blank.fields.title).toBe("");
+    expect(blank.items).toEqual([]);
+    for (const def of COMPONENT_KINDS) expect(blankComponentData(def).items).toEqual([]);
+  });
+
+  it("offers listed categories first, then any an item uses", () => {
+    expect(collectionCategories({ categories: "Design, Development , design" }, [{ category: "Resources" }, { category: "development" }, {}])).toEqual(["Design", "Development", "Resources"]);
+    expect(collectionCategories({}, [])).toEqual([]);
+  });
+
+  it("filters a collection by category, ignoring case", () => {
+    const items: Record<string, string>[] = [{ title: "a", category: "Design" }, { title: "b", category: "design " }, { title: "c", category: "Dev" }, { title: "d" }];
+    expect(filterCollection(items, null)).toHaveLength(4);
+    expect(filterCollection(items, "Design").map((i) => i.title)).toEqual(["a", "b"]);
+    expect(filterCollection(items, "Missing")).toEqual([]);
   });
 
   it("wraps custom code in a policy with no network access", () => {

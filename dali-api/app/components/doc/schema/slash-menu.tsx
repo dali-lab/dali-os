@@ -23,6 +23,8 @@ import {
   LayoutGrid,
   List,
   ListChecks,
+  ListFilter,
+  Scissors,
   Milestone,
   SeparatorHorizontal,
   Sparkles,
@@ -31,7 +33,7 @@ import {
 } from "lucide-react";
 import type { DefaultReactSuggestionItem } from "@blocknote/react";
 import { insertItemIntoGroup } from "../blocks-util";
-import { COMPONENT_KINDS } from "../components/kinds";
+import { COMPONENT_KINDS, blankComponentData } from "../components/kinds";
 import type { Features } from "../features";
 import type { DocEditorInstance } from "./build";
 
@@ -131,12 +133,19 @@ const COMPONENT_ICONS: Record<string, LucideIcon> = {
   timeline: Milestone,
   links: List,
   stats: Hash,
+  collection: ListFilter,
   bars: BarChart3,
   gallery: Images,
   feature: Sparkles,
   spacer: SeparatorHorizontal,
   code: Code2,
 };
+
+// A new component opens its editor empty (flagged `_new`) instead of dropping sample content into the page.
+function newComponentData(def: (typeof COMPONENT_KINDS)[number]) {
+  const blank = blankComponentData(def);
+  return { ...blank, fields: { ...blank.fields, _new: "1" } };
+}
 
 // One item per library entry, in a group of their own at the end of the menu.
 function componentItems(editor: DocEditorInstance): KeyedItem[] {
@@ -152,7 +161,7 @@ function componentItems(editor: DocEditorInstance): KeyedItem[] {
       onItemClick: () => {
         insertOrUpdateBlockForSlashMenu(editor, {
           type: "component",
-          props: { kind: def.kind, data: JSON.stringify(def.defaults) },
+          props: { kind: def.kind, data: JSON.stringify(newComponentData(def)) },
         });
       },
     };
@@ -184,7 +193,8 @@ export function getDocSlashMenuItems(
     // generic parameters don't overlap with DocEditorInstance's narrow schema.
     const pbItems = getPageBreakSlashMenuItems(editor as unknown as Parameters<typeof getPageBreakSlashMenuItems>[0]);
     for (const pb of pbItems) {
-      items = insertItemIntoGroup(items, pb as unknown as DefaultReactSuggestionItem);
+      const withIcon = { ...(pb as unknown as DefaultReactSuggestionItem), icon: <Scissors size={18} aria-hidden /> };
+      items = insertItemIntoGroup(items, withIcon);
     }
   }
   if (features.components) items = [...items, ...componentItems(editor)];

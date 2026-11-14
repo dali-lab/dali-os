@@ -4,6 +4,8 @@
 // Styling is plain `dali-cmp-*` CSS in ../theme.css, not utility classes, so
 // that markup stays stylable wherever it lands.
 
+import { ChevronRight } from "lucide-react";
+import { CollectionView } from "./CollectionView";
 import type { ReactNode } from "react";
 import {
   CODE_SANDBOX,
@@ -49,7 +51,7 @@ function Chips({ fields, items }: ComponentData) {
     <div className={`dali-cmp-chips${fields.layout === "inline" ? "" : " dali-cmp-chips--stacked"}`}>
       {fields.label && <span className="dali-cmp-eyebrow">{fields.label}</span>}
       <div className="dali-cmp-chips__row">
-        {items.map((it, i) => (
+        {items.filter((it) => (it.label ?? "").trim()).map((it, i) => (
           <LinkOrDiv key={i} href={it.href} className={`dali-cmp-chip${it.tone ? ` ${tone(it)}` : ""}`}>
             {it.label}
           </LinkOrDiv>
@@ -106,11 +108,15 @@ function Links({ fields, items }: ComponentData) {
     <div className="dali-cmp-panel dali-cmp-panel--flush">
       <Heading title={fields.title} subtitle={fields.subtitle} />
       {items.map((it, i) => (
-        <LinkOrDiv key={i} href={it.href} className="dali-cmp-row">
+        <LinkOrDiv key={i} href={it.href} className="dali-cmp-row dali-cmp-row--media">
+          <span className={`dali-cmp-row__thumb ${tone({ tone: it.tone || "accent" })}`}>
+            {it.image && <img src={it.image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.display = "none")} />}
+          </span>
           <span className="dali-cmp-row__main">
             <span className="dali-cmp-row__title">{it.title}</span>
             {it.description && <span className="dali-cmp-sub">{it.description}</span>}
           </span>
+          {safeHref(it.href) && <ChevronRight className="dali-cmp-row__arrow" size={22} strokeWidth={1.75} aria-hidden />}
         </LinkOrDiv>
       ))}
     </div>
@@ -185,7 +191,7 @@ function Feature({ fields }: ComponentData) {
         {fields.eyebrow && <span className="dali-cmp-eyebrow">{fields.eyebrow}</span>}
         <div className="dali-cmp-feature__title">{fields.title}</div>
         {fields.body && <p className="dali-cmp-sub">{fields.body}</p>}
-        {cta && fields.cta && (
+        {fields.cta && (
           <LinkOrDiv href={cta} className="dali-cmp-cta">
             {fields.cta}
           </LinkOrDiv>
@@ -217,6 +223,7 @@ const VIEWS: Record<string, (data: ComponentData) => ReactNode> = {
   cards: Cards,
   timeline: Timeline,
   links: Links,
+  collection: CollectionView,
   stats: Stats,
   bars: Bars,
   gallery: Gallery,

@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
-import { ArrowLeft, ImagePlus, Trash2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, ImagePlus, Trash2 } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId";
 import {
   DocEditor,
-  IMAGE_UPLOAD_ACCEPT,
   uploadEditorImage,
   type DocEditorInstance,
   type DocSyncState,
@@ -15,7 +14,10 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { canEditResourceHub, requireResourceHubViewer } from "~/lib/resource-hub.server";
 import { IconButton } from "~/components/ui/IconButton";
-import { COVER_DECOR, COVER_PATTERNS, CoverPattern, InlineTitle, buildCoverUrl, isPatternCover, parseCover } from "~/components/resource-hub/CoverPattern";
+import { InlineTitle, cardColorHex, isPatternCover, parseCover } from "~/components/resource-hub/CoverPattern";
+import { HubCard } from "~/components/resource-hub/HubCard";
+import { CoverStudio } from "~/components/resource-hub/CoverStudio";
+import { ResourceHubTabs } from "~/components/resource-hub/ResourceHubTabs";
 import { useDialog } from "~/components/ui/dialog";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
@@ -56,6 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       coverUrl: page.coverUrl,
       bgColor: page.bgColor,
       published: page.publishedAt !== null,
+      hasDomain: page.domainId !== null,
       contentJson: page.contentJson,
     },
     canEdit,
@@ -86,6 +89,16 @@ export async function action({ request, params }: Route.ActionArgs) {
         return Response.json({ error: "Invalid image" }, { status: 400 });
       }
       await prisma.resourceHubPage.update({ where, data: { coverUrl: url || null } });
+      return { ok: true };
+    }
+    case "banner": {
+      const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+      const url = String(form.get("url") ?? "");
+      if (!title) return Response.json({ error: "Title is required" }, { status: 400 });
+      if (url && !isPatternCover(url) && !url.startsWith("/api/upload/raw?key=uploads%2F")) {
+        return Response.json({ error: "Invalid image" }, { status: 400 });
+      }
+      await prisma.resourceHubPage.update({ where, data: { title, coverUrl: url || null } });
       return { ok: true };
     }
     case "color": {
@@ -127,32 +140,19 @@ export default function ResourceHubPage() {
   const [leave, setLeave] = useState<"closed" | "asking" | "publishing">("closed");
   const dialog = useDialog();
   const toast = useToast();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [sync, setSync] = useState<DocSyncState>("saved");
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (sync === "saving") setDirty(true);
+  }, [sync]);
   const [editor, setEditor] = useState<DocEditorInstance | null>(null);
   const [preview, setPreview] = useState(false);
   // Blocks as they stood when Preview was pressed, read before the live editor unmounts.
   const [snapshot, setSnapshot] = useState<unknown[] | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [coverMenu, setCoverMenu] = useState(false);
-  const coverMenuRef = useRef<HTMLDivElement>(null);
+  const [studio, setStudio] = useState(false);
   const [titleDraft, setTitleDraft] = useState(page.title);
-  const cover = parseCover(page.coverUrl);
 
   useEffect(() => setTitleDraft(page.title), [page.title]);
-  useEffect(() => {
-    if (!coverMenu) return;
-    const onDown = (e: MouseEvent) => {
-      if (!coverMenuRef.current?.contains(e.target as Node)) setCoverMenu(false);
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setCoverMenu(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [coverMenu]);
 
   const submit = (data: Record<string, string>) => fetcher.submit(data, { method: "post" });
   useEffect(() => {
@@ -167,22 +167,11 @@ export default function ResourceHubPage() {
     if (next && next !== page.title) submit({ intent: "title", title: next });
     else setTitleDraft(page.title);
   };
-  const hasCover = !!page.coverUrl || (canEdit && !!collabToken && !preview);
-  const pill = hasCover ? "rounded-full bg-os-bg/85 px-2.5 py-1 backdrop-blur" : "";
+  const patternCover = isPatternCover(page.coverUrl);
+  const hasCover = !patternCover && (!!page.coverUrl || (canEdit && !!collabToken && !preview));
+  const pill = patternCover ? "rounded-full bg-white/10 px-2.5 py-1 text-white [&_button:not(.os-btn-primary)]:text-white [&_button:not(.os-btn-primary)]:border-white/30 [&_button:not(.os-btn-primary):hover]:bg-white/10 [&_svg]:text-white" : hasCover ? "rounded-full bg-[#1b2a47]/75 px-2.5 py-1 text-white backdrop-blur [&_button:not(.os-btn-primary)]:text-white [&_button:not(.os-btn-primary)]:border-white/30 [&_button:not(.os-btn-primary):hover]:bg-white/10 [&_svg]:text-white" : "";
   const live = canEdit && !!collabToken;
   const editing = live && !preview;
-
-  async function pickCover(file: File | undefined) {
-    if (!file) return;
-    setUploading(true);
-    try {
-      submit({ intent: "cover", url: await uploadEditorImage(file) });
-    } catch {
-      toast.error("Upload failed.");
-    } finally {
-      setUploading(false);
-    }
-  }
 
   async function remove() {
     const ok = await dialog.confirm({
@@ -217,28 +206,35 @@ export default function ResourceHubPage() {
       className={`min-h-dvh bg-card px-6 sm:px-10 ${editing ? "pb-[55vh]" : "pb-16"}`}
       style={page.bgColor ? { backgroundColor: page.bgColor, color: "#1f1f1f" } : undefined}
     >
-      <div className="relative">
+      <div
+        className={patternCover ? "relative -mx-6 mb-6 text-white sm:-mx-10" : "relative"}
+        style={patternCover ? { backgroundColor: cardColorHex(parseCover(page.coverUrl)?.card) } : undefined}
+      >
       <div
         className={
-          hasCover
+          patternCover
+            ? "grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-4 pl-9 pr-6 sm:pl-[94px] sm:pr-10"
+            : hasCover
             ? "absolute -left-6 -right-6 top-0 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-6 py-4 sm:-left-10 sm:-right-10 sm:px-10"
             : "-mx-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3 bg-os-bg px-6 py-4 sm:-mx-10 sm:px-10"
         }
       >
-        <Link
-          to="/resource-hub"
-          onClick={(e) => {
-            if (live && !page.published) {
-              e.preventDefault();
-              setLeave("asking");
-            }
-          }}
-          className={`inline-flex items-center gap-1.5 justify-self-start text-sm text-os-grey hover:text-foreground ${pill}`}
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Resource Hub
-        </Link>
-        <span className={`text-sm text-os-grey ${live && !preview ? pill : ""}`}>{live && !preview ? SYNC_LABEL[sync] : ""}</span>
+        <div className="flex items-center gap-2 justify-self-start">
+          <Link
+            to="/resource-hub"
+            onClick={(e) => {
+              if (live && (!page.published || dirty)) {
+                e.preventDefault();
+                setLeave("asking");
+              }
+            }}
+            className={`inline-flex items-center gap-1.5 text-sm ${hasCover ? "text-white/85 hover:text-white" : "text-os-grey hover:text-foreground"} ${pill}`}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Resource Hub
+          </Link>
+        </div>
+        <span className={`text-sm ${hasCover ? "text-white/85" : "text-os-grey"} ${live && !preview ? pill : ""}`}>{live && !preview ? SYNC_LABEL[sync] : ""}</span>
         {live ? (
           <div className={`flex items-center gap-2 justify-self-end ${pill}`}>
             <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
@@ -249,17 +245,22 @@ export default function ResourceHubPage() {
                 setPreview((on) => !on);
               }}
               aria-pressed={preview}
-              className="inline-flex h-8 items-center rounded-lg border border-os-container-hi px-3 text-sm font-medium text-foreground transition-colors hover:bg-os-hover"
+              aria-label={preview ? "Back to editing" : "Preview"}
+              title={preview ? "Back to editing" : "Preview"}
+              className="grid h-8 w-8 place-items-center rounded-lg border border-os-container-hi text-foreground transition-colors hover:bg-os-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60"
             >
-              {preview ? "Edit" : "Preview"}
+              {preview ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
             </button>
             <button
               type="button"
               disabled={fetcher.state !== "idle"}
-              onClick={() => submit({ intent: "publish", published: page.published ? "0" : "1" })}
-              className="os-btn-primary os-btn-primary--sm !text-white"
+              onClick={() => {
+                submit({ intent: "publish", published: "1" });
+                if (page.published) toast.success("Hub updated.");
+              }}
+              className="os-btn-primary os-btn-primary--sm"
             >
-              {page.published ? "Unpublish" : "Publish"}
+              {page.published ? "Update" : "Publish"}
             </button>
           </div>
         ) : (
@@ -267,133 +268,54 @@ export default function ResourceHubPage() {
         )}
       </div>
 
-      {(page.coverUrl || editing) && (
+      {patternCover && (
+        <HubCard
+          inset
+          cover={page.coverUrl as string}
+          title={editing ? <InlineTitle value={titleDraft} onChange={(v) => setTitleDraft(v || page.title)} onCommit={commitTitle} /> : page.title}
+          draft={!page.published}
+          action={
+            editing ? (
+              <button
+                type="button"
+                aria-label="Change cover"
+                title="Change cover"
+                onClick={() => setStudio(true)}
+                className="grid h-9 w-9 place-items-center rounded-full border border-white/50 text-white outline-none transition-colors duration-150 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                <ImagePlus className="h-4 w-4" aria-hidden />
+              </button>
+            ) : undefined
+          }
+        />
+      )}
+
+      {!patternCover && (page.coverUrl || editing) && (
         <div className="relative mb-6 -mx-6 sm:-mx-10">
           <div className="overflow-hidden">
-            {isPatternCover(page.coverUrl) ? (
-              <CoverPattern
-                url={page.coverUrl}
-                title={titleDraft}
-                {...(editing ? { onTitleChange: (v: string) => setTitleDraft(v || page.title), onTitleCommit: commitTitle } : null)}
-              />
-            ) : page.coverUrl ? (
+            {page.coverUrl ? (
               <img src={page.coverUrl} alt="" className="aspect-[16/5] w-full object-cover" />
             ) : (
               <div className="flex aspect-[16/5] w-full items-center justify-center bg-black/[0.04]" />
             )}
           </div>
           {editing && (
-            <div ref={coverMenuRef} className="absolute bottom-3 right-3 flex items-center gap-1">
-              {coverMenu && (
-                <div
-                  role="dialog"
-                  aria-label="Cover style"
-                  className="absolute right-0 top-full z-30 mt-2 w-[380px] max-w-[calc(100vw-48px)] rounded-os-card border border-os-container bg-os-card p-4 shadow-lg"
-                >
-                  <p className="mb-2 text-sm font-semibold text-foreground">Cover style</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {COVER_PATTERNS.map((pt) => {
-                      const selected = cover?.id === pt.id;
-                      return (
-                        <button
-                          key={pt.id}
-                          type="button"
-                          aria-pressed={selected}
-                          onClick={() => submit({ intent: "cover", url: buildCoverUrl(pt.id, cover?.decor ?? []) })}
-                          className="group/thumb flex flex-col gap-1 text-left focus-visible:outline-none"
-                        >
-                          <span
-                            className={`block overflow-hidden rounded-lg border transition-shadow group-hover/thumb:shadow-md group-focus-visible/thumb:ring-2 group-focus-visible/thumb:ring-os-accent/60 ${selected ? "border-os-accent ring-1 ring-os-accent" : "border-os-container"}`}
-                          >
-                            <CoverPattern url={buildCoverUrl(pt.id, cover?.decor ?? [])} title={titleDraft} />
-                          </span>
-                          <span className="text-xs text-os-grey">{pt.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <p className="mb-2 mt-4 text-sm font-semibold text-foreground">Decor</p>
-                  <div className="flex flex-wrap gap-1.5" role="group" aria-label="Decor">
-                    {COVER_DECOR.map((d) => {
-                      const on = !!cover?.decor.includes(d.id);
-                      return (
-                        <button
-                          key={d.id}
-                          type="button"
-                          aria-pressed={on}
-                          disabled={!cover}
-                          title={cover ? undefined : "Pick a cover style first"}
-                          onClick={() =>
-                            cover &&
-                            submit({
-                              intent: "cover",
-                              url: buildCoverUrl(cover.id, on ? cover.decor.filter((x) => x !== d.id) : [...cover.decor, d.id]),
-                            })
-                          }
-                          className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60 disabled:cursor-not-allowed disabled:opacity-50 ${on ? "border-os-accent bg-os-accent/10 text-foreground" : "border-os-container text-os-grey hover:bg-os-hover hover:text-foreground"}`}
-                        >
-                          {d.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {page.coverUrl && !cover && (
-                    <p className="mt-2 text-xs text-os-grey">Decor and the title work with cover styles, not uploaded images.</p>
-                  )}
-
-                  <div className="mt-4 flex items-center justify-between border-t border-os-container pt-3">
-                    <button
-                      type="button"
-                      disabled={uploading}
-                      onClick={() => {
-                        setCoverMenu(false);
-                        fileRef.current?.click();
-                      }}
-                      className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-foreground hover:bg-os-hover"
-                    >
-                      <ImagePlus className="h-4 w-4 text-os-grey" aria-hidden />
-                      Upload an image
-                    </button>
-                    {page.coverUrl && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          submit({ intent: "cover", url: "" });
-                          setCoverMenu(false);
-                        }}
-                        className="rounded-lg border border-os-container px-3 py-1 text-sm text-foreground hover:bg-os-hover"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
+            <div className="absolute bottom-3 right-3 flex items-center gap-1">
               <IconButton
-                label={uploading ? "Uploading" : page.coverUrl ? "Change cover" : "Add cover"}
+                label={page.coverUrl ? "Change cover" : "Add cover"}
                 icon={ImagePlus}
-                disabled={uploading}
-                onClick={() => setCoverMenu((o) => !o)}
+                onClick={() => setStudio(true)}
               />
             </div>
           )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept={IMAGE_UPLOAD_ACCEPT}
-            className="hidden"
-            onChange={(e) => {
-              void pickCover(e.target.files?.[0]);
-              e.target.value = "";
-            }}
-          />
         </div>
       )}
       </div>
 
+      {page.hasDomain && <ResourceHubTabs pageId={page.id} className="-mb-[13px] -ml-[13px] px-3 sm:px-[54px]" />}
+
       <div className="flex items-start gap-2 px-3 sm:px-[54px]">
-        {editing && isPatternCover(page.coverUrl) ? (
+        {patternCover ? (
           <span className="w-full" />
         ) : editing ? (
           <h1 className="w-full font-heading text-5xl font-semibold">
@@ -438,8 +360,8 @@ export default function ResourceHubPage() {
       >
         <ModalHeader
           titleId="leave-hub-title"
-          title="Publish this hub?"
-          subtitle="Members can see it once it's published. Otherwise it stays a draft that only you and editors can open."
+          title={page.published ? "Update this hub?" : "Publish this hub?"}
+          subtitle={page.published ? "Your changes are already saved. Updating marks the hub as updated for members." : "Members can see it once it's published. Otherwise it stays a draft that only you and editors can open."}
           onClose={() => setLeave("closed")}
           hideClose={leave === "publishing"}
         />
@@ -450,7 +372,7 @@ export default function ResourceHubPage() {
             onClick={() => navigate("/resource-hub")}
             className="os-btn-ghost disabled:cursor-not-allowed disabled:opacity-60"
           >
-            No, save as draft
+            {page.published ? "No, leave as is" : "No, save as draft"}
           </button>
           <button
             type="button"
@@ -459,12 +381,28 @@ export default function ResourceHubPage() {
               setLeave("publishing");
               submit({ intent: "publish", published: "1" });
             }}
-            className="os-btn-primary os-btn-primary--sm !text-white"
+            className="os-btn-primary os-btn-primary--sm"
           >
-            Publish
+            {page.published ? "Update" : "Publish"}
           </button>
         </div>
       </Modal>
+      {studio && (
+        <CoverStudio
+          busy={fetcher.state !== "idle"}
+          heading={page.coverUrl ? "Change cover" : "Add cover"}
+          submitLabel="Save"
+          initialTitle={page.title}
+          initialCover={page.coverUrl}
+          uploadImage={uploadEditorImage}
+          onClose={() => setStudio(false)}
+          onSubmit={(title, url) => {
+            if (!title.trim()) return;
+            submit({ intent: "banner", title, url });
+            setStudio(false);
+          }}
+        />
+      )}
     </div>
   );
 }

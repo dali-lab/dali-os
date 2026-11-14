@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useId, type CSSProperties, type ReactNode } from "react";
 
 // Built-in hub covers: geometric tile compositions on a 10-unit cell grid
 // (16 x 5 cells, matching the 16:5 cover). A cover stored as `pattern:<id>`
@@ -142,6 +142,68 @@ export const COVER_PATTERNS: Pattern[] = [
   },
 ];
 
+
+// Tall-tile versions of the cover patterns (5 x 6 cells): same shapes and palette, composed to fill a card tile.
+const quietTileDots: ReactNode[] = [];
+for (let c = 1; c < 5; c++) for (let r = 1; r < 6; r++) quietTileDots.push(<circle key={`t${c}-${r}`} cx={c * U} cy={r * U} r={0.7} fill={C.mist} />);
+const TILE_SHAPES: Record<string, ReactNode[]> = {
+  "quiet-grid": [...quietTileDots, sq(3, 3, C.butter), sq(4, 4, C.mist), dot(3, 4, C.peach, 2.4), dot(4, 4, C.navy, 2.4), sq(0, 0, C.mist), dot(1, 0, C.peach, 2.4), sq(1, 5, C.aqua), dot(1, 5, C.navy, 2.4)],
+  "corner-tiles": [
+    sq(3, 0, C.apricot), dot(3, 0, C.orchid), sq(4, 0, C.butter), flower(4, 0, C.teal), star(3, 1, C.apricot), sq(4, 1, C.sage), dot(4, 1, C.peach), sq(3, 2, C.pink), dot(3, 2, C.navy), dot(4, 2, C.aqua),
+    sq(0, 3, C.pink), dot(0, 3, C.navy), dot(1, 4, C.aqua), sq(0, 4, C.navy), dot(0, 4, C.orchid), sq(1, 5, C.sage), flower(1, 5, C.butter), sq(0, 5, C.apricot), dot(0, 5, C.orchid),
+  ],
+  "petal-ledger": [
+    sq(0, 5, C.aqua), dot(0, 5, C.navy), quarter(1, 5, C.coral, "bl"), sq(2, 5, C.butter), dot(2, 5, C.peach), semi(3, 5, C.sage), sq(4, 5, C.apricot), flower(4, 5, C.teal),
+    dot(0, 4, C.pink), sq(1, 4, C.navy), dot(1, 4, C.orchid), quarter(2, 4, C.teal, "tr"), sq(3, 4, C.aqua), dot(3, 4, C.navy), quarter(4, 4, C.coral, "bl"),
+    sq(0, 3, C.butter), dot(0, 3, C.peach), semi(1, 3, C.sage), sq(3, 3, C.apricot), flower(3, 3, C.teal), dot(4, 3, C.pink), sq(2, 0, C.navy), dot(2, 0, C.orchid), quarter(3, 0, C.teal, "tr"),
+  ],
+  "block-party": [
+    sq(0, 0, C.apricot), dot(0, 0, C.orchid), sq(1, 0, C.butter), flower(1, 0, C.teal), dot(3, 0, C.aqua), sq(4, 0, C.pink), dot(4, 0, C.navy),
+    star(0, 1, C.apricot), sq(1, 1, C.sage), dot(1, 1, C.peach), sq(2, 1, C.navy), dot(2, 1, C.orchid), quarter(4, 1, C.coral, "bl"),
+    sq(1, 2, C.pink), dot(1, 2, C.navy), sq(3, 2, C.aqua), dot(3, 2, C.navy), semi(4, 2, C.sage), dot(0, 3, C.coral), sq(2, 3, C.butter), dot(2, 3, C.peach), quarter(3, 3, C.coral, "tl"), flower(0, 4, C.butter), sq(0, 4, C.sage),
+    sq(1, 4, C.apricot), dot(1, 4, C.teal), quarter(3, 4, C.teal, "tr"), sq(4, 4, C.butter), dot(4, 4, C.peach), dot(2, 5, C.pink), sq(3, 5, C.navy), dot(3, 5, C.orchid), semi(4, 5, C.sage),
+  ],
+  "orbit-field": [
+    dot(0, 0, C.pink, 4), dot(2, 1, C.navy, 2.6), quarter(0, 2, C.apricot, "tr"), dot(3, 0, C.orchid, 2.6), dot(4, 1, C.aqua, 3.6),
+    dot(1, 3, C.teal, 3.6), dot(3, 3, C.coral, 4), sq(4, 3, C.butter), dot(4, 3, C.orchid, 2.6), dot(2, 4, C.pink, 3), dot(0, 4, C.aqua, 3),
+    quarter(4, 5, C.sage, "tl"), dot(1, 5, C.peach, 2.6), dot(3, 5, C.mist, 2), dot(2, 2, C.mist, 2),
+  ],
+  poster: [
+    sq(0, 0, C.apricot), dot(0, 0, C.orchid), sq(1, 0, C.butter), flower(1, 0, C.teal), dot(3, 0, C.coral), sq(1, 1, C.sage), dot(1, 1, C.peach), sq(2, 1, C.navy), dot(2, 1, C.orchid), star(0, 1, C.apricot), sq(0, 2, C.pink), dot(0, 2, C.navy),
+    dot(1, 4, C.pink), sq(2, 3, C.aqua), dot(2, 3, C.navy), quarter(3, 3, C.coral, "tl"), dot(4, 3, C.peach), sq(3, 4, C.butter), dot(3, 4, C.peach), semi(4, 4, C.sage), sq(2, 5, C.apricot), dot(2, 5, C.teal), sq(4, 5, C.sage), flower(4, 5, C.butter),
+  ],
+};
+
+/** A pattern composed for a tall tile, for list cards. */
+export function CoverTile({ url, className }: { url: string; className?: string }) {
+  const parsed = parseCover(url);
+  const p = parsed && COVER_PATTERNS.find((x) => x.id === parsed.id);
+  const id = useId().replace(/:/g, "");
+  if (!p) return null;
+  const shapes = TILE_SHAPES[p.id];
+  // Zoomed out: the 5 x 6 composition repeats, mirrored so the seams match, and fills a tile of any proportion.
+  const mirrors = [
+    { x: 0, y: 0, sx: 1, sy: 1 },
+    { x: 100, y: 0, sx: -1, sy: 1 },
+    { x: 0, y: 120, sx: 1, sy: -1 },
+    { x: 100, y: 120, sx: -1, sy: -1 },
+  ];
+  return (
+    <svg viewBox="0 0 100 60" preserveAspectRatio="xMidYMid slice" aria-hidden className={className} style={{ display: "block", width: "100%", height: "100%", background: p.ground }}>
+      <defs>
+        <pattern id={`tile-${id}`} width="200" height="240" patternUnits="userSpaceOnUse">
+          {mirrors.map((m, i) => (
+            <g key={i} transform={`translate(${m.x} ${m.y}) scale(${m.sx} ${m.sy})`}>
+              {shapes}
+            </g>
+          ))}
+        </pattern>
+      </defs>
+      <rect x="-400" y="-400" width="1200" height="1200" fill={`url(#tile-${id})`} />
+    </svg>
+  );
+}
+
 const PREFIX = "pattern:";
 export const PATTERN_IDS = COVER_PATTERNS.map((p) => p.id);
 
@@ -154,7 +216,17 @@ export const COVER_DECOR = [
 ] as const;
 export type DecorId = (typeof COVER_DECOR)[number]["id"];
 
-export type ParsedCover = { id: string; decor: DecorId[] };
+export const CARD_COLORS = [
+  { id: "ink", name: "Ink", hex: "#1b2a47" },
+  { id: "charcoal", name: "Charcoal", hex: "#1c1f24" },
+  { id: "plum", name: "Plum", hex: "#3b2a4f" },
+  { id: "forest", name: "Forest", hex: "#1f3b34" },
+  { id: "wine", name: "Wine", hex: "#4a2430" },
+  { id: "slate", name: "Slate", hex: "#2d3948" },
+] as const;
+export const cardColorHex = (id: string | null | undefined) => (CARD_COLORS.find((c) => c.id === id) ?? CARD_COLORS[0]).hex;
+
+export type ParsedCover = { id: string; decor: DecorId[]; card: string };
 
 /** `pattern:<id>` or `pattern:<id>?d=frame,seal`. Null for anything else (an uploaded image URL). */
 export function parseCover(url: string | null | undefined): ParsedCover | null {
@@ -163,10 +235,13 @@ export function parseCover(url: string | null | undefined): ParsedCover | null {
   if (!id || !PATTERN_IDS.includes(id)) return null;
   const wanted = new URLSearchParams(query).get("d")?.split(",") ?? [];
   const decor = COVER_DECOR.map((d) => d.id).filter((d) => wanted.includes(d));
-  return { id, decor };
+  const card = new URLSearchParams(query).get("c") ?? "";
+  return { id, decor, card: CARD_COLORS.some((c) => c.id === card) ? card : CARD_COLORS[0].id };
 }
-export const buildCoverUrl = (id: string, decor: readonly DecorId[] = []) =>
-  `${PREFIX}${id}${decor.length ? `?d=${decor.join(",")}` : ""}`;
+export const buildCoverUrl = (id: string, decor: readonly DecorId[] = [], card?: string) => {
+  const q = [decor.length ? `d=${decor.join(",")}` : "", card && card !== CARD_COLORS[0].id ? `c=${card}` : ""].filter(Boolean);
+  return `${PREFIX}${id}${q.length ? `?${q.join("&")}` : ""}`;
+};
 export const patternCoverUrl = (id: string) => buildCoverUrl(id);
 export const isPatternCover = (url: string | null | undefined): url is `pattern:${string}` => parseCover(url) !== null;
 export const coverGround = (url: string) => COVER_PATTERNS.find((x) => x.id === parseCover(url)?.id)?.ground ?? "#fff";
@@ -218,7 +293,7 @@ export function InlineTitle({
           document.execCommand("insertText", false, e.clipboardData.getData("text/plain").replace(/\s+/g, " "));
         }}
         onBlur={(e) => onCommit((e.currentTarget.textContent ?? "").replace(/\s+/g, " ").trim())}
-        className={`cursor-text outline-none transition-shadow duration-150 hover:shadow-[0_2px_0_rgba(27,42,71,0.18)] focus:shadow-[0_2px_0_rgba(27,42,71,0.4)] ${className ?? ""}`}
+        className={`cursor-text outline-none transition-shadow duration-150 hover:shadow-[0_2px_0_rgba(128,128,128,0.35)] focus:shadow-[0_2px_0_rgba(128,128,128,0.7)] ${className ?? ""}`}
         style={{ display: "inline-block", minWidth: "2ch", maxWidth: "100%", ...style }}
       />
       {!value.trim() && (
@@ -238,12 +313,17 @@ export function CoverPattern({
   className,
   onTitleChange,
   onTitleCommit,
+  aspect = "16 / 5",
+  dark = false,
 }: {
   url: string;
   title?: string;
   className?: string;
+  aspect?: string;
   onTitleChange?: (v: string) => void;
   onTitleCommit?: (v: string) => void;
+  /** Navy ground (the hub's card color) with light type, for the top of a hub page. */
+  dark?: boolean;
 }) {
   const parsed = parseCover(url);
   const p = parsed && COVER_PATTERNS.find((x) => x.id === parsed.id);
@@ -256,7 +336,7 @@ export function CoverPattern({
       className={className}
       role="img"
       aria-label={`${p.name} cover${text ? `: ${text}` : ""}`}
-      style={{ position: "relative", width: "100%", aspectRatio: "16 / 5", overflow: "hidden", containerType: "inline-size", background: p.ground }}
+      style={{ position: "relative", width: "100%", aspectRatio: aspect, overflow: "hidden", containerType: "inline-size", background: dark ? cardColorHex(parsed.card) : p.ground }}
     >
       <svg viewBox="0 0 160 50" preserveAspectRatio="xMidYMid slice" aria-hidden style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
         {p.shapes}
@@ -276,7 +356,7 @@ export function CoverPattern({
               // overflow:hidden (for the line clamp) clips descenders at this
               // line height; pad them back in and cancel it so layout is unchanged.
               paddingBottom: "0.15em", marginBottom: "-0.15em",
-              fontSize: titleSize(text), color: INK, textWrap: "balance",
+              fontSize: titleSize(text), color: dark ? "#fff" : INK, textWrap: "balance",
               ...(has("underline")
                 ? { textDecoration: "underline wavy", textDecorationColor: C.coral, textDecorationThickness: "max(1px, 0.4cqw)", textUnderlineOffset: "0.9cqw" }
                 : null),
@@ -294,7 +374,7 @@ export function CoverPattern({
           })()}
         </div>
       )}
-      {has("frame") && <div aria-hidden style={{ position: "absolute", inset: "2.2cqw", border: "max(1px, 0.22cqw) solid rgba(27,42,71,0.3)", borderRadius: "2cqw", pointerEvents: "none" }} />}
+      {has("frame") && <div aria-hidden style={{ position: "absolute", inset: "2.2cqw", border: `max(1px, 0.22cqw) solid ${dark ? "rgba(255,255,255,0.35)" : "rgba(27,42,71,0.3)"}`, borderRadius: "2cqw", pointerEvents: "none" }} />}
       {has("stitch") && <div aria-hidden style={{ position: "absolute", inset: "3.6cqw", border: `max(1px, 0.28cqw) dashed ${C.coral}`, opacity: 0.7, borderRadius: "1.4cqw", pointerEvents: "none" }} />}
       {has("corner") && <div aria-hidden style={{ position: "absolute", left: 0, bottom: 0, width: "6.5cqw", height: "6.5cqw", background: C.coral, borderTopRightRadius: "100%", pointerEvents: "none" }} />}
       {has("seal") && (

@@ -208,7 +208,11 @@ export default [
     // with the editor's "/" blocks.
     route("resource-hub", "routes/resource-hub.tsx"),
     route("resource-hub/:pageId", "routes/resource-hub.$pageId.tsx"),
+    route("resource-hub/:pageId/crit", "routes/resource-hub.$pageId.crit.tsx"),
+    route("resource-hub/:pageId/crit/:submissionId", "routes/resource-hub.$pageId.crit.$submissionId.ts"),
+    route("resource-hub/:pageId/references", "routes/resource-hub.$pageId.references.tsx"),
     route("api/resources/blog-posts", "routes/api.resources.blog-posts.ts"),
+    route("api/link-preview", "routes/api.link-preview.ts"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
 

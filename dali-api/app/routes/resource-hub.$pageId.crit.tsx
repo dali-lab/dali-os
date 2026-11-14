@@ -1,0 +1,207 @@
+import { useEffect, useState } from "react";
+import { useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
+import { FileText, Link2, MessageSquare, Plus } from "lucide-react";
+import type { Route } from "./+types/resource-hub.$pageId.crit";
+import { prisma } from "~/lib/db.server";
+import { loadCritContext, parseSubmissionForm, resolveSubmission, serializeSubmission } from "~/lib/crit.server";
+import { HubBand } from "~/components/resource-hub/HubCard";
+import { ResourceHubTabs } from "~/components/resource-hub/ResourceHubTabs";
+import { ShareWorkModal, type ShareValues } from "~/components/resource-hub/crit/ShareWorkModal";
+import { SubmissionOverlay, type CritSubmissionView } from "~/components/resource-hub/crit/SubmissionOverlay";
+
+export const meta: Route.MetaFunction = () => [{ title: "Crit Wall · DALI OS" }];
+export const handle = { bleedPane: true };
+
+const person = { select: { firstName: true, lastName: true } };
+
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const ctx = await loadCritContext(request, params.pageId!);
+  const rows = await prisma.critSubmission.findMany({
+    where: { domainId: ctx.domainId },
+    include: { author: person, _count: { select: { comments: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  return {
+    pageId: ctx.pageId,
+    userName: ctx.userName,
+    domainName: ctx.domainName,
+    hub: ctx.hub,
+    items: rows.map((r) => serializeSubmission(r, ctx.userId, ctx.canModerate)),
+  };
+}
+
+export async function action({ request, params }: Route.ActionArgs) {
+  const ctx = await loadCritContext(request, params.pageId!);
+  const form = await request.formData();
+  const intent = form.get("intent");
+
+  if (intent === "create") {
+    const parsed = parseSubmissionForm(form);
+    if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+    const { title, previewUrl } = await resolveSubmission(parsed.value);
+    const { kind, url, fileName, question, anonymous } = parsed.value;
+    await prisma.critSubmission.create({
+      data: { domainId: ctx.domainId, authorId: ctx.userId, anonymous, kind, url, fileName, previewUrl, title, question },
+    });
+    return { ok: true };
+  }
+
+  const id = String(form.get("id") ?? "");
+  const existing = await prisma.critSubmission.findFirst({ where: { id, domainId: ctx.domainId }, select: { id: true, authorId: true } });
+  if (!existing) return Response.json({ error: "Not found" }, { status: 404 });
+  const owner = existing.authorId === ctx.userId;
+
+  if (intent === "edit") {
+    if (!owner) return Response.json({ error: "Forbidden" }, { status: 403 });
+    const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+    if (!title) return Response.json({ error: "Add a title." }, { status: 400 });
+    const question = String(form.get("question") ?? "").replace(/\s+/g, " ").trim().slice(0, 400) || null;
+    await prisma.critSubmission.update({ where: { id }, data: { title, question } });
+    return { ok: true };
+  }
+
+  if (intent === "delete") {
+    if (!owner && !ctx.canModerate) return Response.json({ error: "Forbidden" }, { status: 403 });
+    await prisma.critSubmission.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  return Response.json({ error: "Bad request" }, { status: 400 });
+}
+
+function hostOf(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function Thumb({ item }: { item: CritSubmissionView }) {
+  const [broken, setBroken] = useState(false);
+  const src = item.kind === "image" ? item.url : item.previewUrl;
+  if (src && !broken) {
+    return <img src={src} alt="" loading="lazy" referrerPolicy="no-referrer" onError={() => setBroken(true)} className="h-full w-full object-cover" />;
+  }
+  const Icon = item.kind === "link" ? Link2 : FileText;
+  const label = item.kind === "link" ? hostOf(item.url) : (item.fileName?.split(".").pop()?.toUpperCase() ?? "FILE");
+  return (
+    <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-os-grey">
+      <Icon className="h-6 w-6" aria-hidden />
+      <span className="max-w-[80%] truncate text-xs">{label}</span>
+    </div>
+  );
+}
+
+export default function CritWall() {
+  const { pageId, userName, domainName, items, hub } = useLoaderData<typeof loader>();
+  const [params, setParams] = useSearchParams();
+  const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
+  const revalidator = useRevalidator();
+  const [sharing, setSharing] = useState(false);
+  const openId = params.get("s");
+  const open = items.find((i) => i.id === openId) ?? null;
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.ok) setSharing(false);
+  }, [fetcher.state, fetcher.data]);
+
+  const openItem = (id: string) => setParams({ s: id }, { preventScrollReset: true });
+  const closeItem = () =>
+    setParams(
+      (p) => {
+        p.delete("s");
+        return p;
+      },
+      { replace: true, preventScrollReset: true },
+    );
+
+  const share = (v: ShareValues) => {
+    const data: Record<string, string> = { intent: "create", kind: v.kind, url: v.url, fileName: v.fileName, title: v.title, question: v.question };
+    if (v.anonymous) data.anonymous = "1";
+    fetcher.submit(data, { method: "post" });
+  };
+
+  return (
+    <div className="min-h-dvh bg-card px-6 pb-[40vh] sm:px-10">
+      <HubBand cover={hub.coverUrl} title={hub.title} published={hub.published} />
+      <ResourceHubTabs pageId={pageId} className="mt-5" />
+
+      <header className="flex flex-wrap items-end justify-between gap-4 pb-8 pt-8">
+        <div>
+          <h1 className="font-heading text-4xl font-semibold tracking-tight text-foreground">Crit Wall</h1>
+          <p className="mt-2 text-sm text-os-grey">Share what you're working on and get feedback from your domain{domainName ? ` (${domainName})` : ""}.</p>
+        </div>
+        <button type="button" onClick={() => setSharing(true)} className="os-btn-primary inline-flex items-center gap-1.5">
+          <Plus className="h-4 w-4" aria-hidden />
+          Share work
+        </button>
+      </header>
+
+      {items.length === 0 ? (
+        <p className="rounded-os-card border border-dashed border-os-container-hi px-6 py-16 text-center text-sm text-os-grey">Nothing here yet. Be the first to share something you're working on.</p>
+      ) : (
+        <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {items.map((item) => {
+            const external = item.kind === "link";
+            const body = (
+              <>
+                <span className="block aspect-[4/3] overflow-hidden rounded-xl border border-os-container bg-os-bg transition-[border-color,transform] duration-150 group-hover:border-os-container-hi motion-reduce:transition-none">
+                  <Thumb item={item} />
+                </span>
+                <span className="mt-3 block truncate text-sm font-medium text-foreground">{item.title}</span>
+                <span className="block truncate text-xs text-os-grey">{item.anonymous ? "Anonymous" : item.authorName}</span>
+                {item.question && <span className="mt-1 line-clamp-2 block text-xs text-muted-foreground">{item.question}</span>}
+              </>
+            );
+            return (
+              <li key={item.id} className="group relative">
+                {external ? (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="block rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60">
+                    {body}
+                  </a>
+                ) : (
+                  <button type="button" onClick={() => openItem(item.id)} className="block w-full rounded-xl text-left outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60">
+                    {body}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openItem(item.id)}
+                  aria-label={`${item.commentCount} comments on ${item.title}`}
+                  className="mt-1.5 inline-flex items-center gap-1 rounded-md py-0.5 text-xs text-os-grey transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+                  {item.commentCount}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {sharing && (
+        <ShareWorkModal
+          userName={userName}
+          busy={fetcher.state !== "idle"}
+          serverError={fetcher.data?.error ?? null}
+          onClose={() => setSharing(false)}
+          onSubmit={share}
+        />
+      )}
+      {open && (
+        <SubmissionOverlay
+          pageId={pageId}
+          submission={open}
+          onClose={closeItem}
+          onChanged={() => revalidator.revalidate()}
+          onEdit={(title, question) => fetcher.submit({ intent: "edit", id: open.id, title, question }, { method: "post" })}
+          onDelete={() => {
+            fetcher.submit({ intent: "delete", id: open.id }, { method: "post" });
+            closeItem();
+          }}
+        />
+      )}
+    </div>
+  );
+}

@@ -701,7 +701,7 @@ function DocView(
           getItems={getMentionItems}
         />
       )}
-      {/* Custom drag-handle side menu (Notion-ordered: Duplicate / Colors /
+      {/* Custom drag-handle side menu (Colors / Duplicate /
           Delete). Compact surfaces suppress the side menu entirely
           via sideMenu={false} on BlockNoteView — this controller is a no-op
           there since the SideMenuExtension never shows without the gutter. */}
