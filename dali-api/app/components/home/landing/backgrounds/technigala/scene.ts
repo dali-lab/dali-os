@@ -10,6 +10,7 @@ import {
   runBoost,
   runScore,
   stepRun,
+  type Piece,
   type Run,
 } from './course'
 import { catmull, clamp, lerp, mix, seededRandom, smooth, sparkle, TAU, type Point } from './paint'
@@ -23,12 +24,21 @@ import { drawRunner } from './runner'
 
 export type ScenePhase = 'attract' | 'play' | 'paused' | 'over'
 
+export type RunReport = {
+  score: number
+  durationMs: number
+  endedBy: 'fall' | 'quit'
+  /** The piece of course the runner fell through. */
+  obstacle: Piece | null
+}
+
 type Options = {
   audio: RunAudio
   reducedMotion: boolean
   onPhase: (phase: ScenePhase) => void
   onScore: (score: number) => void
-  onOver: (score: number) => void
+  /** Every run that ends, by a fall or by leaving it. */
+  onRunEnd: (report: RunReport) => void
   onMute: (muted: boolean) => void
 }
 
@@ -115,7 +125,18 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     setPhase('play')
   }
 
+  function report(r: Run): RunReport {
+    const fell = r.phase !== 'play'
+    return {
+      score: runScore(r),
+      durationMs: Math.round(r.t * 1000),
+      endedBy: fell ? 'fall' : 'quit',
+      obstacle: fell ? r.endedOn : null,
+    }
+  }
+
   function exit() {
+    if (run && phase !== 'over') options.onRunEnd(report(run))
     audio.stop()
     run = null
     drag = null
@@ -404,7 +425,7 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
         else if (event === 'over') {
           audio.stop()
           setPhase('over')
-          options.onOver(runScore(r))
+          options.onRunEnd(report(r))
         }
       }
     }
@@ -755,6 +776,7 @@ export function createTunnelScene(canvas: HTMLCanvasElement, options: Options) {
     togglePause: () => setPaused(phase !== 'paused'),
     toggleMute: () => options.onMute(audio.toggleMute()),
     destroy() {
+      if (run && phase !== 'over') options.onRunEnd(report(run))
       cancelAnimationFrame(raf)
       raf = 0
       audio.close()
