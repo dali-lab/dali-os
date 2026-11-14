@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, redirect, useFetcher, useLoaderData } from "react-router";
-import { ArrowLeft, ImagePlus, Palette, Trash2 } from "lucide-react";
+import { Link, redirect, useFetcher, useLoaderData, useNavigate } from "react-router";
+import { ArrowLeft, ImagePlus, Trash2 } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId";
 import {
   DocEditor,
@@ -15,8 +15,9 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { canEditResourceHub, requireResourceHubViewer } from "~/lib/resource-hub.server";
 import { IconButton } from "~/components/ui/IconButton";
-import { COVER_DECOR, COVER_PATTERNS, CoverPattern, buildCoverUrl, isPatternCover, parseCover } from "~/components/resource-hub/CoverPattern";
+import { COVER_DECOR, COVER_PATTERNS, CoverPattern, InlineTitle, buildCoverUrl, isPatternCover, parseCover } from "~/components/resource-hub/CoverPattern";
 import { useDialog } from "~/components/ui/dialog";
+import { Modal, ModalHeader } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
 
 export const meta: Route.MetaFunction = ({ data }) => [
@@ -121,7 +122,9 @@ const SYNC_LABEL: Record<DocSyncState, string> = {
 export default function ResourceHubPage() {
   const { page, canEdit, aiEnabled, collabToken, currentUserId, userName } =
     useLoaderData<typeof loader>();
-  const fetcher = useFetcher<{ error?: string }>();
+  const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
+  const navigate = useNavigate();
+  const [leave, setLeave] = useState<"closed" | "asking" | "publishing">("closed");
   const dialog = useDialog();
   const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -130,7 +133,6 @@ export default function ResourceHubPage() {
   const [preview, setPreview] = useState(false);
   // Blocks as they stood when Preview was pressed, read before the live editor unmounts.
   const [snapshot, setSnapshot] = useState<unknown[] | null>(null);
-  const [colorsOpen, setColorsOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [coverMenu, setCoverMenu] = useState(false);
   const coverMenuRef = useRef<HTMLDivElement>(null);
@@ -153,6 +155,20 @@ export default function ResourceHubPage() {
   }, [coverMenu]);
 
   const submit = (data: Record<string, string>) => fetcher.submit(data, { method: "post" });
+  useEffect(() => {
+    if (leave !== "publishing" || fetcher.state !== "idle") return;
+    if (fetcher.data?.ok) navigate("/resource-hub");
+    else {
+      setLeave("asking");
+      toast.error("Couldn't publish. Try again.");
+    }
+  }, [leave, fetcher.state, fetcher.data, navigate, toast]);
+  const commitTitle = (next: string) => {
+    if (next && next !== page.title) submit({ intent: "title", title: next });
+    else setTitleDraft(page.title);
+  };
+  const hasCover = !!page.coverUrl || (canEdit && !!collabToken && !preview);
+  const pill = hasCover ? "rounded-full bg-os-bg/85 px-2.5 py-1 backdrop-blur" : "";
   const live = canEdit && !!collabToken;
   const editing = live && !preview;
 
@@ -201,17 +217,30 @@ export default function ResourceHubPage() {
       className={`min-h-dvh bg-card px-6 sm:px-10 ${editing ? "pb-[55vh]" : "pb-16"}`}
       style={page.bgColor ? { backgroundColor: page.bgColor, color: "#1f1f1f" } : undefined}
     >
-      <div className="-mx-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3 bg-os-bg px-6 py-4 sm:-mx-10 sm:px-10">
+      <div className="relative">
+      <div
+        className={
+          hasCover
+            ? "absolute -left-6 -right-6 top-0 z-20 grid grid-cols-[1fr_auto_1fr] items-center gap-3 px-6 py-4 sm:-left-10 sm:-right-10 sm:px-10"
+            : "-mx-6 grid grid-cols-[1fr_auto_1fr] items-center gap-3 bg-os-bg px-6 py-4 sm:-mx-10 sm:px-10"
+        }
+      >
         <Link
           to="/resource-hub"
-          className="inline-flex items-center gap-1.5 justify-self-start text-sm text-os-grey hover:text-foreground"
+          onClick={(e) => {
+            if (live && !page.published) {
+              e.preventDefault();
+              setLeave("asking");
+            }
+          }}
+          className={`inline-flex items-center gap-1.5 justify-self-start text-sm text-os-grey hover:text-foreground ${pill}`}
         >
           <ArrowLeft className="h-4 w-4" />
           Resource Hub
         </Link>
-        <span className="text-sm text-os-grey">{live && !preview ? SYNC_LABEL[sync] : ""}</span>
+        <span className={`text-sm text-os-grey ${live && !preview ? pill : ""}`}>{live && !preview ? SYNC_LABEL[sync] : ""}</span>
         {live ? (
-          <div className="flex items-center gap-2 justify-self-end">
+          <div className={`flex items-center gap-2 justify-self-end ${pill}`}>
             <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
             <button
               type="button"
@@ -228,7 +257,7 @@ export default function ResourceHubPage() {
               type="button"
               disabled={fetcher.state !== "idle"}
               onClick={() => submit({ intent: "publish", published: page.published ? "0" : "1" })}
-              className="os-btn-primary os-btn-primary--sm"
+              className="os-btn-primary os-btn-primary--sm !text-white"
             >
               {page.published ? "Unpublish" : "Publish"}
             </button>
@@ -242,7 +271,11 @@ export default function ResourceHubPage() {
         <div className="relative mb-6 -mx-6 sm:-mx-10">
           <div className="overflow-hidden">
             {isPatternCover(page.coverUrl) ? (
-              <CoverPattern url={page.coverUrl} title={titleDraft} />
+              <CoverPattern
+                url={page.coverUrl}
+                title={titleDraft}
+                {...(editing ? { onTitleChange: (v: string) => setTitleDraft(v || page.title), onTitleCommit: commitTitle } : null)}
+              />
             ) : page.coverUrl ? (
               <img src={page.coverUrl} alt="" className="aspect-[16/5] w-full object-cover" />
             ) : (
@@ -357,58 +390,17 @@ export default function ResourceHubPage() {
           />
         </div>
       )}
+      </div>
 
       <div className="flex items-start gap-2 px-3 sm:px-[54px]">
-        {editing ? (
-          <input
-            aria-label="Title"
-            defaultValue={page.title}
-            placeholder="Title"
-            onChange={(e) => setTitleDraft(e.target.value || page.title)}
-            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-            onBlur={(e) => {
-              const next = e.target.value.replace(/\s+/g, " ").trim();
-              if (next && next !== page.title) submit({ intent: "title", title: next });
-            }}
-            className="w-full !border-0 !bg-transparent !p-0 !shadow-none !ring-0 font-heading text-5xl font-semibold text-inherit outline-none placeholder:text-os-muted"
-          />
+        {editing && isPatternCover(page.coverUrl) ? (
+          <span className="w-full" />
+        ) : editing ? (
+          <h1 className="w-full font-heading text-5xl font-semibold">
+            <InlineTitle value={titleDraft} onChange={(v) => setTitleDraft(v || page.title)} onCommit={commitTitle} />
+          </h1>
         ) : (
           <h1 className="w-full font-heading text-5xl font-semibold">{page.title}</h1>
-        )}
-        {editing && (
-          <div className="relative shrink-0">
-            <IconButton
-              label="Background color"
-              icon={Palette}
-              onClick={() => setColorsOpen((o) => !o)}
-            />
-            {colorsOpen && (
-              <div className="absolute right-0 top-full z-10 mt-1 flex gap-1.5 rounded-os-card border border-os-container bg-os-card p-2 shadow-lg">
-                <button
-                  type="button"
-                  aria-label="No color"
-                  onClick={() => {
-                    submit({ intent: "color", color: "" });
-                    setColorsOpen(false);
-                  }}
-                  className="h-6 w-6 rounded-full border border-os-container bg-card"
-                />
-                {BG_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    aria-label={`Background ${c}`}
-                    onClick={() => {
-                      submit({ intent: "color", color: c });
-                      setColorsOpen(false);
-                    }}
-                    style={{ backgroundColor: c }}
-                    className="h-6 w-6 rounded-full border border-black/10"
-                  />
-                ))}
-              </div>
-            )}
-          </div>
         )}
       </div>
 
@@ -437,6 +429,42 @@ export default function ResourceHubPage() {
           initialContent={((preview && snapshot) || page.contentJson || []) as never}
         />
       )}
+      <Modal
+        open={leave !== "closed"}
+        onClose={() => leave === "asking" && setLeave("closed")}
+        labelledBy="leave-hub-title"
+        disableEscape={leave === "publishing"}
+        containerClassName="w-full max-w-sm rounded-os-card bg-os-card p-6 shadow-xl"
+      >
+        <ModalHeader
+          titleId="leave-hub-title"
+          title="Publish this hub?"
+          subtitle="Members can see it once it's published. Otherwise it stays a draft that only you and editors can open."
+          onClose={() => setLeave("closed")}
+          hideClose={leave === "publishing"}
+        />
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            disabled={leave === "publishing"}
+            onClick={() => navigate("/resource-hub")}
+            className="os-btn-ghost disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            No, save as draft
+          </button>
+          <button
+            type="button"
+            disabled={leave === "publishing"}
+            onClick={() => {
+              setLeave("publishing");
+              submit({ intent: "publish", published: "1" });
+            }}
+            className="os-btn-primary os-btn-primary--sm !text-white"
+          >
+            Publish
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

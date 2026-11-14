@@ -20,7 +20,7 @@ type Item = Record<string, string>;
 function LinkOrDiv({ href, className, children }: { href?: string; className: string; children: ReactNode }) {
   const safe = safeHref(href);
   if (!safe) return <div className={className}>{children}</div>;
-  const external = !safe.startsWith("/");
+  const external = /^https?:/i.test(safe);
   return (
     <a
       className={className}
@@ -50,7 +50,7 @@ function Chips({ fields, items }: ComponentData) {
       {fields.label && <span className="dali-cmp-eyebrow">{fields.label}</span>}
       <div className="dali-cmp-chips__row">
         {items.map((it, i) => (
-          <LinkOrDiv key={i} href={it.href} className="dali-cmp-chip">
+          <LinkOrDiv key={i} href={it.href} className={`dali-cmp-chip${it.tone ? ` ${tone(it)}` : ""}`}>
             {it.label}
           </LinkOrDiv>
         ))}

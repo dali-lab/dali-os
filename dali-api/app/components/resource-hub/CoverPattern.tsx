@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 // Built-in hub covers: geometric tile compositions on a 10-unit cell grid
 // (16 x 5 cells, matching the 16:5 cover). A cover stored as `pattern:<id>`
@@ -181,9 +181,70 @@ function titleSize(title: string) {
   return "4.2cqw";
 }
 
+/** Text edited where it is displayed: no input box, just the text with an underline cue. */
+export function InlineTitle({
+  value,
+  onChange,
+  onCommit,
+  style,
+  className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onCommit: (v: string) => void;
+  style?: CSSProperties;
+  className?: string;
+}) {
+  return (
+    <span style={{ position: "relative", display: "inline-block", maxWidth: "100%" }}>
+      <span
+        role="textbox"
+        aria-label="Title"
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck={false}
+        ref={(el) => {
+          if (el && document.activeElement !== el && el.textContent !== value) el.textContent = value;
+        }}
+        onInput={(e) => onChange(e.currentTarget.textContent ?? "")}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+        }}
+        onPaste={(e) => {
+          e.preventDefault();
+          document.execCommand("insertText", false, e.clipboardData.getData("text/plain").replace(/\s+/g, " "));
+        }}
+        onBlur={(e) => onCommit((e.currentTarget.textContent ?? "").replace(/\s+/g, " ").trim())}
+        className={`cursor-text outline-none transition-shadow duration-150 hover:shadow-[0_2px_0_rgba(27,42,71,0.18)] focus:shadow-[0_2px_0_rgba(27,42,71,0.4)] ${className ?? ""}`}
+        style={{ display: "inline-block", minWidth: "2ch", maxWidth: "100%", ...style }}
+      />
+      {!value.trim() && (
+        <span aria-hidden style={{ position: "absolute", left: 0, top: 0, opacity: 0.35, pointerEvents: "none", ...style }}>
+          Add a title
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** A composed cover: tile pattern, the page title in its reserved area, and optional decor. Sizes are
  *  container-relative, so the same markup works as a thumbnail and as the full-width cover. */
-export function CoverPattern({ url, title, className }: { url: string; title?: string; className?: string }) {
+export function CoverPattern({
+  url,
+  title,
+  className,
+  onTitleChange,
+  onTitleCommit,
+}: {
+  url: string;
+  title?: string;
+  className?: string;
+  onTitleChange?: (v: string) => void;
+  onTitleCommit?: (v: string) => void;
+}) {
   const parsed = parseCover(url);
   const p = parsed && COVER_PATTERNS.find((x) => x.id === parsed.id);
   if (!parsed || !p) return null;
@@ -200,7 +261,7 @@ export function CoverPattern({ url, title, className }: { url: string; title?: s
       <svg viewBox="0 0 160 50" preserveAspectRatio="xMidYMid slice" aria-hidden style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
         {p.shapes}
       </svg>
-      {text && (
+      {(text || onTitleChange) && (
         <div
           style={{
             position: "absolute", left: `${t.left}%`, top: `${t.top}%`, width: `${t.width}%`, height: `${t.height}%`,
@@ -208,18 +269,29 @@ export function CoverPattern({ url, title, className }: { url: string; title?: s
             textAlign: t.align === "center" ? "center" : "left",
           }}
         >
-          <span
-            style={{
+          {(() => {
+            const titleStyle: CSSProperties = {
               display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden", overflowWrap: "anywhere",
               fontFamily: "var(--font-heading, inherit)", fontWeight: 700, lineHeight: 1.08, letterSpacing: "-0.01em",
+              // overflow:hidden (for the line clamp) clips descenders at this
+              // line height; pad them back in and cancel it so layout is unchanged.
+              paddingBottom: "0.15em", marginBottom: "-0.15em",
               fontSize: titleSize(text), color: INK, textWrap: "balance",
               ...(has("underline")
                 ? { textDecoration: "underline wavy", textDecorationColor: C.coral, textDecorationThickness: "max(1px, 0.4cqw)", textUnderlineOffset: "0.9cqw" }
                 : null),
-            }}
-          >
-            {text}
-          </span>
+            };
+            return onTitleChange ? (
+              <InlineTitle
+                value={title ?? ""}
+                onChange={onTitleChange}
+                onCommit={onTitleCommit ?? (() => undefined)}
+                style={{ ...titleStyle, display: "inline-block", WebkitLineClamp: undefined, overflow: "visible" }}
+              />
+            ) : (
+              <span style={titleStyle}>{text}</span>
+            );
+          })()}
         </div>
       )}
       {has("frame") && <div aria-hidden style={{ position: "absolute", inset: "2.2cqw", border: "max(1px, 0.22cqw) solid rgba(27,42,71,0.3)", borderRadius: "2cqw", pointerEvents: "none" }} />}

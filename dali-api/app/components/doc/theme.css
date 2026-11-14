@@ -1869,3 +1869,168 @@ svg.lucide-plus.dali-cmp-ico { width: 11px !important; height: 11px !important; 
     box-shadow: none;
   }
 }
+
+/* Resource list editor, round 20: compact rows, discoverable fields, URL as a tertiary control. */
+.dali-cmp-links-edit .dali-cmp-row--edit { padding-top: 8px; padding-bottom: 8px; align-items: flex-start; transition: background-color 0.15s ease-out, opacity 0.15s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row--edit:hover { transition-duration: 0.14s; }
+.dali-cmp-links-edit .dali-cmp-row__main { gap: 1px; padding-right: 56px; }
+.dali-cmp-links-edit .dali-cmp-row__field { cursor: text; margin: 0 -4px; padding: 1px 4px; width: calc(100% + 8px); transition: background-color 0.14s ease-out, box-shadow 0.14s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row__field:focus-visible { box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-os-accent, #5b7be0) 60%, transparent); }
+.dali-cmp-links-edit .dali-cmp-row--dragging { opacity: 1; background: color-mix(in srgb, currentColor 6%, transparent); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); }
+.dali-cmp-row__urlbtn, .dali-cmp-row__urledit { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; max-width: 100%; min-width: 0; margin-left: -4px; padding: 1px 4px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; font-size: 0.78em; opacity: 0.55; cursor: pointer; transition: background-color 0.14s ease-out, opacity 0.14s ease-out; }
+.dali-cmp-row__urlbtn > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dali-cmp-row__urlbtn svg, .dali-cmp-row__urledit > svg { flex: none; }
+.dali-cmp-row__urlbtn:hover { background: color-mix(in srgb, currentColor 6%, transparent); opacity: 0.9; }
+.dali-cmp-row__urlbtn:focus-visible { outline: none; opacity: 1; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-os-accent, #5b7be0) 60%, transparent); }
+.dali-cmp-row__urledit { width: calc(100% + 4px); opacity: 1; cursor: default; background: color-mix(in srgb, currentColor 5%, transparent); }
+.dali-cmp-row__urledit .dali-cmp-row__field { flex: 1; margin: 0; padding: 0; width: auto; font-size: 1em; opacity: 1; }
+.dali-cmp-row__urledit .dali-cmp-row__field:hover, .dali-cmp-row__urledit .dali-cmp-row__field:focus { background: transparent; }
+.dali-cmp-row__urledit .dali-cmp-row__tool { width: 20px; height: 20px; }
+.dali-cmp-links-edit .dali-cmp-row__tools { flex-direction: row; top: 8px; transform: none; gap: 0; }
+.dali-cmp-links-edit .dali-cmp-row__tool { width: 24px; height: 24px; }
+.dali-cmp-links-edit .dali-cmp-row__grip { opacity: 0.35; }
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__grip, .dali-cmp-links-edit .dali-cmp-row--selected .dali-cmp-row__grip, .dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__grip { opacity: 0.9; }
+.dali-cmp-links-edit .dali-cmp-row__tool--del:focus-visible, .dali-cmp-links-edit .dali-cmp-row__grip:focus-visible { opacity: 1; outline: none; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-os-accent, #5b7be0) 60%, transparent); }
+.dali-cmp-links-edit .dali-cmp-row--edit.dali-cmp-row--selected { transition-duration: 0.18s; }
+.dali-cmp-links-edit .dali-cmp-row--add { padding-top: 8px; padding-bottom: 4px; border-top: 0; opacity: 0.6; transition: opacity 0.14s ease-out, background-color 0.14s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row--add:hover { opacity: 1; background: transparent; }
+.dali-cmp-links-edit .dali-cmp-row--add:focus-visible { outline: none; opacity: 1; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-os-accent, #5b7be0) 60%, transparent); }
+@media (hover: none) {
+  .dali-cmp-links-edit .dali-cmp-row__tool--del, .dali-cmp-links-edit .dali-cmp-row__grip { opacity: 1; }
+  .dali-cmp-links-edit .dali-cmp-row__tool { width: 32px; height: 32px; }
+  .dali-cmp-links-edit .dali-cmp-row__main { padding-right: 72px; }
+}
+@media (max-width: 560px) { .dali-cmp-links-edit .dali-cmp-row--edit { flex-wrap: nowrap; } }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-links-edit * { transition: none !important; } }
+
+/* Resource list editor, round 21: reads like the published list; only the field being edited shows anything. */
+.dali-cmp-links-edit .dali-cmp-row--edit,
+.dali-cmp-links-edit .dali-cmp-row--edit:hover,
+.dali-cmp-links-edit .dali-cmp-row--edit.dali-cmp-row--selected,
+.dali-cmp-links-edit .dali-cmp-row--dragging { background: transparent; border-radius: 0; }
+.dali-cmp-links-edit .dali-cmp-row--dragging { box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); }
+.dali-cmp-links-edit .dali-cmp-row__main { gap: 0; }
+.dali-cmp-links-edit .dali-cmp-row__field { border-radius: 0; background: transparent; box-shadow: none; line-height: 1.4; }
+.dali-cmp-links-edit .dali-cmp-row__field:hover { background: transparent; box-shadow: inset 0 -1px 0 color-mix(in srgb, currentColor 18%, transparent); }
+.dali-cmp-links-edit .dali-cmp-row__field:focus,
+.dali-cmp-links-edit .dali-cmp-row__field:focus-visible { background: transparent; box-shadow: inset 0 -1px 0 var(--color-os-accent, #5b7be0); }
+.dali-cmp-links-edit .dali-cmp-row__urlbtn { margin-top: 2px; }
+.dali-cmp-links-edit .dali-cmp-row__urledit { background: transparent; border-radius: 0; box-shadow: inset 0 -1px 0 var(--color-os-accent, #5b7be0); }
+.dali-cmp-links-edit .dali-cmp-row__tools,
+.dali-cmp-links-edit .dali-cmp-row__grip,
+.dali-cmp-links-edit .dali-cmp-row__tool--del { opacity: 0; pointer-events: none; transition: opacity 0.14s ease-out, color 0.14s ease-out; }
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__tools,
+.dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__tools,
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__grip,
+.dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__grip,
+.dali-cmp-links-edit .dali-cmp-row--edit:hover .dali-cmp-row__tool--del,
+.dali-cmp-links-edit .dali-cmp-row--edit:focus-within .dali-cmp-row__tool--del { opacity: 0.7; pointer-events: auto; }
+.dali-cmp-links-edit .dali-cmp-row__tool:hover { opacity: 1; background: transparent; }
+@media (hover: none) {
+  .dali-cmp-links-edit .dali-cmp-row__tools, .dali-cmp-links-edit .dali-cmp-row__grip, .dali-cmp-links-edit .dali-cmp-row__tool--del { opacity: 0.7; pointer-events: auto; }
+}
+
+/* Timeline editor, round 22: Add step is one more equal cell in the row (never wraps); every cell is the same width so the margins match on both ends. */
+.dali-cmp-steps--edit { flex-wrap: nowrap; row-gap: 0; }
+.dali-cmp-steps--edit .dali-cmp-step,
+.dali-cmp-steps--edit .dali-cmp-step:first-child,
+.dali-cmp-steps--edit .dali-cmp-step--add { flex: 1 1 0; min-width: 0; padding: 4px 6px 0; align-items: stretch; }
+.dali-cmp-steps--edit .dali-cmp-step--add { align-items: center; }
+.dali-cmp-steps--edit .dali-cmp-step--add:last-child::before { display: none; }
+.dali-cmp-steps--edit .dali-cmp-step--add::after { display: block; }
+.dali-cmp-step__addbtn { gap: 2px; }
+.dali-cmp-step--add .dali-cmp-step__label { padding: 3px 0; }
+@media (max-width: 640px) {
+  .dali-cmp-steps--edit { flex-wrap: wrap; row-gap: 14px; }
+  .dali-cmp-steps--edit .dali-cmp-step, .dali-cmp-steps--edit .dali-cmp-step:first-child, .dali-cmp-steps--edit .dali-cmp-step--add { flex: 1 1 120px; min-width: 120px; }
+}
+
+/* Round 23: one inline-edit look for every component (underline, not a box); hover shade matches the dotted frame. */
+.dali-cmp-bare, .dali-cmp-row__field, .dali-cmp-card__field, .dali-cmp-step__input, .dali-cmp-step__details, .dali-cmp-stat__field, .dali-cmp-chips-edit__label {
+  background: transparent !important; border-radius: 0 !important; border: 0; outline: none; cursor: text;
+  box-shadow: inset 0 -1px 0 transparent; padding-bottom: 4px;
+  transition: box-shadow 0.14s ease-out;
+}
+.dali-cmp-bare:hover, .dali-cmp-row__field:hover, .dali-cmp-card__field:hover, .dali-cmp-step__input:hover, .dali-cmp-step__details:hover, .dali-cmp-stat__field:hover, .dali-cmp-chips-edit__label:hover {
+  background: transparent !important; box-shadow: inset 0 -1px 0 color-mix(in srgb, currentColor 12%, transparent);
+}
+.dali-cmp-bare:focus, .dali-cmp-bare:focus-visible, .dali-cmp-row__field:focus, .dali-cmp-row__field:focus-visible, .dali-cmp-card__field:focus, .dali-cmp-card__field:focus-visible,
+.dali-cmp-step__input:focus, .dali-cmp-step__input:focus-visible, .dali-cmp-step__details:focus, .dali-cmp-step__details:focus-visible,
+.dali-cmp-stat__field:focus, .dali-cmp-stat__field:focus-visible, .dali-cmp-chips-edit__label:focus, .dali-cmp-chips-edit__label:focus-visible {
+  background: transparent !important; box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-os-accent, #5b7be0) 45%, transparent);
+}
+.dali-cmp-bare { margin: 0; padding: 2px 0 4px; width: 100%; }
+.dali-cmp-links-edit .dali-cmp-row__field { margin: 0; padding: 1px 0 4px; width: 100%; }
+.dali-cmp-links-edit .dali-cmp-row__field:hover, .dali-cmp-links-edit .dali-cmp-row__field:focus { box-shadow: inset 0 -1px 0 color-mix(in srgb, currentColor 12%, transparent); }
+.dali-cmp-links-edit .dali-cmp-row__field:focus, .dali-cmp-links-edit .dali-cmp-row__field:focus-visible { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-os-accent, #5b7be0) 45%, transparent); }
+.dali-cmp-links-edit .dali-cmp-head > .dali-cmp-title.dali-cmp-bare, .dali-cmp-head--edit > .dali-cmp-title.dali-cmp-bare { width: calc(100% - 170px); }
+.dali-cmp-row__urlbtn, .dali-cmp-row__urledit { font-size: 0.9em; padding: 2px 0; margin-left: 0; opacity: 0.6; }
+.dali-cmp-row__urlbtn svg, .dali-cmp-row__urledit > svg { width: 14px; height: 14px; }
+.dali-cmp-row__urlbtn:hover { background: transparent; opacity: 1; }
+.dali-cmp-links-edit .dali-cmp-row__urledit { width: 100%; }
+
+/* Frame and shade share one shape: every editor frame is a 1px-radius box, so the 12px outline and the 12px shade round the same. */
+.dali-cmp-timeline-edit, .dali-cmp-links-edit, .dali-cmp-chips-edit, .dali-cmp-cards-edit, .dali-cmp-stats-edit, .dali-cmp-panel { border-radius: 1px; }
+.bn-editor[contenteditable="true"] .dali-cmp[data-component]:hover::before { inset: -12px; border-radius: 13px; }
+.dali-cmp[data-component="timeline"]:hover::before, .dali-cmp[data-component="links"]:hover::before, .dali-cmp[data-component="bars"]:hover::before { border-radius: 13px; }
+
+.dali-cmp-chips-edit__foot { margin-top: 12px; }
+.dali-cmp-chip-pop__colors { display: flex; gap: 6px; }
+.dali-cmp-steps--edit { justify-content: center; }
+.dali-cmp-steps--edit .dali-cmp-step__input, .dali-cmp-steps--edit .dali-cmp-step__details { text-align: center; }
+
+/* Round 24: resources list is static rows; create and edit share one compact form. */
+.dali-cmp-row__open { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0 84px 0 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dali-cmp-row__open:focus-visible { outline: none; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-os-accent, #5b7be0) 60%, transparent); border-radius: 4px; }
+.dali-cmp-row__linkind { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; margin-top: 2px; font-size: 0.78em; opacity: 0.55; outline: none; box-shadow: none; }
+.dali-cmp-links-edit .dali-cmp-row--edit { align-items: flex-start; }
+.dali-cmp-links-edit .dali-cmp-row__tools { top: 8px; }
+.dali-cmp-rowform { display: flex; flex-direction: column; gap: 8px; margin-inline: -8px; padding: 12px; border-radius: 10px; background: color-mix(in srgb, currentColor 4%, transparent); }
+.dali-cmp-rowform .dali-cmp-pop-field > span { display: flex; gap: 6px; align-items: baseline; font-size: 11px; font-weight: 500; line-height: 1; color: var(--color-os-grey, #6b7280); }
+.dali-cmp-rowform .dali-cmp-pop-field > span em { font-style: normal; opacity: 0.6; }
+.dali-cmp-rowform input { width: 100%; height: 30px; padding: 0 10px; border: 1px solid rgba(120, 120, 120, 0.25); border-radius: 8px; outline: none; background: var(--color-os-bg, #fff); font: inherit; font-size: 13px; color: var(--color-foreground, #111); transition: border-color 0.14s ease-out, box-shadow 0.14s ease-out; }
+.dali-cmp-rowform input::placeholder { font-style: normal; color: var(--color-os-grey, #6b7280); opacity: 0.5; }
+.dali-cmp-rowform input:focus { border-color: var(--color-os-accent, #5b7be0); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-os-accent, #5b7be0) 22%, transparent); }
+.dali-cmp-rowform input[aria-invalid="true"] { border-color: #d6455d; }
+.dali-cmp-rowform__actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 4px; }
+.dali-cmp-rowform__actions button[disabled] { opacity: 0.45; cursor: not-allowed; }
+.dali-cmp-mini--flush:hover { background: transparent; opacity: 0.7; }
+.dali-cmp-row__urlbtn, .dali-cmp-row__urlbtn:focus, .dali-cmp-row__urlbtn:focus-visible { outline: none !important; box-shadow: none !important; }
+
+/* Spotlight editor: the real card stays put and is edited in place; the button opens a small pop-up. */
+.dali-cmp-feature-edit { display: flex; flex-direction: column; outline: var(--cmp-dash-w, 1px) dotted var(--cmp-dash-c); outline-offset: 12px; border-radius: 1px; }
+.dali-cmp-feature-edit__bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.dali-cmp-feature-edit__actions { display: flex; align-items: center; gap: 8px; }
+.dali-cmp-feature-edit .dali-cmp-chip-pop__colors { display: flex; gap: 6px; align-items: center; }
+.dali-cmp-feature-edit__artwrap { position: relative; min-height: 160px; }
+.dali-cmp-feature-edit__artwrap > .dali-cmp-feature__art { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dali-cmp-feature-edit__artbtns { position: absolute; right: 10px; bottom: 10px; display: flex; gap: 4px; }
+.dali-cmp-feature-edit__artbtns button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; border-radius: 999px; background: rgba(20, 24, 34, 0.55); color: #fff; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: background-color 0.14s ease-out; }
+.dali-cmp-feature-edit__artbtns button:hover { background: rgba(20, 24, 34, 0.72); }
+.dali-cmp-feature-edit__artbtns button:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-os-accent, #5b7be0) 70%, transparent); }
+.dali-cmp-feature-edit__artbtns button[aria-label="Remove image"] { width: 26px; padding: 0; justify-content: center; }
+.dali-cmp-feature-edit__field { display: block; width: 100%; min-width: 0; margin: 0; padding: 0 0 4px; border: 0; border-radius: 0; outline: none; background: transparent; color: inherit; font: inherit; cursor: text; resize: none; field-sizing: content; box-shadow: inset 0 -1px 0 transparent; transition: box-shadow 0.14s ease-out; }
+.dali-cmp-feature-edit__field:hover { box-shadow: inset 0 -1px 0 color-mix(in srgb, currentColor 12%, transparent); }
+.dali-cmp-feature-edit__field:focus, .dali-cmp-feature-edit__field:focus-visible { box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--color-os-accent, #5b7be0) 45%, transparent); }
+.dali-cmp-feature-edit__field::placeholder { font-style: normal; color: inherit; opacity: 0.4; }
+.dali-cmp-feature-edit__cta { position: relative; }
+.dali-cmp-feature-edit__add { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border: 1px dashed color-mix(in srgb, currentColor 40%, transparent); border-radius: 999px; background: transparent; color: inherit; font: inherit; font-size: 0.9em; font-weight: 600; opacity: 0.7; cursor: pointer; transition: opacity 0.14s ease-out, background-color 0.14s ease-out; }
+.dali-cmp-feature-edit__add:hover { opacity: 1; background: color-mix(in srgb, currentColor 8%, transparent); }
+.dali-cmp-feature-edit__add:focus-visible { outline: none; opacity: 1; box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-os-accent, #5b7be0) 60%, transparent); }
+.dali-cmp-feature-edit__pop { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: min(260px, calc(100vw - 48px)); display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 10px; background: var(--color-os-bg, #fff); color: var(--color-foreground, #111); box-shadow: 0 0 0 1px rgba(120, 120, 120, 0.2), 0 6px 20px rgba(0, 0, 0, 0.08); animation: dali-cards-panel-in 0.16s ease-out; }
+.dali-cmp-feature-edit__pop .dali-cmp-pop-field > span { font-size: 11px; font-weight: 500; line-height: 1; color: var(--color-os-grey, #6b7280); }
+.dali-cmp-feature-edit__pop input { width: 100%; height: 30px; padding: 0 10px; border: 1px solid rgba(120, 120, 120, 0.25); border-radius: 8px; outline: none; background: var(--color-os-bg, #fff); font: inherit; font-size: 13px; color: var(--color-foreground, #111); }
+.dali-cmp-feature-edit__pop input:focus { border-color: var(--color-os-accent, #5b7be0); box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-os-accent, #5b7be0) 22%, transparent); }
+.dali-cmp-feature-edit__pop input[aria-invalid="true"] { border-color: #d6455d; }
+.dali-cmp-feature-edit__pop .dali-cmp-pop-actions { display: flex; justify-content: space-between; align-items: center; margin: 2px -12px -12px; padding: 8px 12px; border-top: 1px solid rgba(120, 120, 120, 0.15); }
+.dali-cmp:has(.dali-cmp-feature-edit__pop) { z-index: 40; }
+@media (prefers-reduced-motion: reduce) { .dali-cmp-feature-edit__pop { animation: none; } .dali-cmp-feature-edit * { transition: none !important; } }
+.dali-cmp-feature-edit__bar { justify-content: flex-end; }
+.dali-cmp-feature-edit .dali-cmp-feature-edit__colors { position: absolute; left: 10px; bottom: 10px; height: 26px; padding: 0 8px; border-radius: 999px; background: rgba(20, 24, 34, 0.55); }
+.dali-cmp-feature-edit .dali-cmp-feature-edit__colors .dali-cmp-swatch { width: 14px; height: 14px; }
+.dali-cmp-feature-edit .dali-cmp-feature-edit__colors .dali-cmp-swatch[aria-checked="true"] { box-shadow: 0 0 0 1.5px #fff; }
+
+/* Round 25: nothing in the Resources editor is clipped; links keep the text color; blue buttons keep white text. */
+.dali-cmp-links-edit.dali-cmp-panel--flush { overflow: visible; }
+.dali-cmp a.dali-cmp-row, .dali-cmp a.dali-cmp-row .dali-cmp-sub, .dali-cmp a.dali-cmp-row .dali-cmp-row__title { color: inherit; text-decoration: none; }
+html .dali-cmp .os-btn-primary, html .dali-cmp-rowform .os-btn-primary { color: #fff; }

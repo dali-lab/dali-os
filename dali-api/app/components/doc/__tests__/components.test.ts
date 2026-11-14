@@ -30,11 +30,15 @@ describe("component library", () => {
     });
   });
 
-  it("only links to web, mail and in-app targets", () => {
+  it("links to any scheme except script-capable ones", () => {
     expect(safeHref("https://dali.dartmouth.edu")).toBe("https://dali.dartmouth.edu");
     expect(safeHref("/resources")).toBe("/resources");
     expect(safeHref("mailto:a@b.co")).toBe("mailto:a@b.co");
-    expect(safeHref("javascript:alert(1)")).toBeUndefined();
+    expect(safeHref("tel:+16035550100")).toBe("tel:+16035550100");
+    expect(safeHref("slack://channel?id=1")).toBe("slack://channel?id=1");
+    expect(safeHref("#section")).toBe("#section");
+    expect(safeHref("dali.dev/docs")).toBe("https://dali.dev/docs");
+    expect(safeHref("JavaScript:alert(1)")).toBeUndefined();
     expect(safeHref("data:text/html,x")).toBeUndefined();
     expect(safeHref("//evil.example")).toBeUndefined();
     expect(safeHref("")).toBeUndefined();

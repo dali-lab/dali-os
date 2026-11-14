@@ -54,7 +54,7 @@ export const COMPONENT_KINDS: KindDef[] = [
     itemLabel: "Chip",
     itemFields: [{ key: "label", label: "Text", type: "text" }, href],
     defaults: {
-      fields: { label: "Quick start", layout: "stacked" },
+      fields: { label: "Title", layout: "stacked" },
       items: [{ label: "New here", href: "" }, { label: "Templates", href: "" }],
     },
   },
@@ -262,11 +262,16 @@ export function parseComponentData(kind: string, json: string): ComponentData {
 
 /** Only web links, mail links and in-app paths. Anything else (javascript:,
  * data:) is dropped — component data is member-authored. */
+const BLOCKED_SCHEMES = new Set(["javascript", "data", "vbscript", "file", "blob", "about"]);
+
 export function safeHref(value: string | undefined): string | undefined {
   const v = value?.trim();
   if (!v) return undefined;
-  if (/^(https?:\/\/|mailto:)/i.test(v)) return v;
   if (v.startsWith("/") && !v.startsWith("//")) return v;
+  if (v.startsWith("#")) return v;
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(v)?.[1]?.toLowerCase();
+  if (scheme) return BLOCKED_SCHEMES.has(scheme) || /\s/.test(v) ? undefined : v;
+  if (/^[\w-]+(\.[\w-]+)+([/?#]\S*)?$/.test(v)) return `https://${v}`;
   return undefined;
 }
 

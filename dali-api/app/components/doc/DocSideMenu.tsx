@@ -16,13 +16,13 @@ import { SideMenuExtension } from "@blocknote/core/extensions";
 import {
   BlockColorsItem,
   DragHandleMenu,
-  RemoveBlockItem,
   SideMenu,
   SideMenuController,
   useBlockNoteEditor,
   useComponentsContext,
   useExtensionState,
 } from "@blocknote/react";
+import { Copy, Trash2 } from "lucide-react";
 import { useCallback, useContext } from "react";
 import type { FC } from "react";
 import type { SideMenuProps } from "@blocknote/react";
@@ -63,7 +63,23 @@ function DuplicateBlockItem({ children }: { children: React.ReactNode }) {
   if (!block) return null;
 
   return (
-    <Components.Generic.Menu.Item className={"bn-menu-item"} onClick={onClick}>
+    <Components.Generic.Menu.Item className={"bn-menu-item"} icon={<Copy size={16} strokeWidth={1.5} />} onClick={onClick}>
+      {children}
+    </Components.Generic.Menu.Item>
+  );
+}
+
+function DeleteBlockItem({ children }: { children: React.ReactNode }) {
+  const Components = useComponentsContext()!;
+  const editor = useBlockNoteEditor<any, any, any>();
+  const block = useExtensionState(SideMenuExtension, { editor, selector: (state) => state?.block });
+  if (!block) return null;
+  return (
+    <Components.Generic.Menu.Item
+      className="bn-menu-item"
+      icon={<Trash2 size={16} strokeWidth={1.5} />}
+      onClick={() => editor.removeBlocks([block])}
+    >
       {children}
     </Components.Generic.Menu.Item>
   );
@@ -112,7 +128,7 @@ function DaliDragHandleMenu() {
       <DuplicateBlockItem>Duplicate</DuplicateBlockItem>
       <EnhanceReviewMenuItems />
       <BlockColorsItem>Colors</BlockColorsItem>
-      <RemoveBlockItem>Delete</RemoveBlockItem>
+      <DeleteBlockItem>Delete</DeleteBlockItem>
     </DragHandleMenu>
   );
 }

@@ -4,12 +4,13 @@
 // opens one generic form built from the kind's field definitions.
 
 import { createReactBlockSpec } from "@blocknote/react";
-import { ArrowDown, ArrowUp, Check, Columns2, Flag, GripVertical, ImagePlus, Link2, Rows2, Plus, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Columns2, Flag, GripVertical, ImagePlus, Link2, Pencil, Rows2, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import {
   TONES,
+  safeHref,
   kindDef,
   parseComponentData,
   type ComponentData,
@@ -133,8 +134,18 @@ function TimelineEditor({
         setFanOpen(null);
       }
     };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setFanPin(null);
+        setFanOpen(null);
+      }
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
   }, [fanPin]);
 
   const closeFan = () => {
@@ -225,8 +236,10 @@ function TimelineEditor({
             >
               <div
                 className="dali-cmp-step__numwrap"
-                onMouseEnter={() => setFanOpen(i)}
-                onMouseLeave={() => setFanOpen((o) => (o === i && fanPin !== i ? null : o))}
+                onMouseEnter={() => {
+                  setFanPin(i);
+                  setFanOpen(i);
+                }}
               >
                 <button
                   type="button"
@@ -300,6 +313,7 @@ function TimelineEditor({
                       tone: "destructive",
                     });
                     if (ok) setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                    requestAnimationFrame(() => nameRefs.current[ok ? Math.min(i, draft.items.length - 2) : i]?.focus());
                   }}
                 >
                   <Trash2 className="dali-cmp-ico" size={12} strokeWidth={1.5} aria-hidden />
@@ -386,7 +400,7 @@ function ChipsEditor({
   const validate = (it: ComponentData["items"][number]) => {
     if (!(it.label ?? "").trim()) return "Add a name.";
     const href = (it.href ?? "").trim();
-    if (href && !/^(https?:\/\/|mailto:|\/|#)\S*$/i.test(href)) return "Enter a valid link, like https://…";
+    if (href && !safeHref(href)) return "Enter a valid link, like https://… or mailto:…";
     return null;
   };
   const savePop = (i: number) => {
@@ -422,7 +436,7 @@ function ChipsEditor({
         <input
           aria-label="Section label"
           value={draft.fields.label ?? ""}
-          placeholder="Section label"
+          placeholder="Title"
           onChange={(e) => setDraft((d) => ({ ...d, fields: { ...d.fields, label: e.target.value } }))}
           className="dali-cmp-eyebrow dali-cmp-chips-edit__label"
         />
@@ -430,7 +444,7 @@ function ChipsEditor({
           {draft.items.map((it, i) => (
             <li
               key={i}
-              className={`dali-cmp-chip dali-cmp-chip--edit${dragOver === i && dragFrom !== i ? " dali-cmp-chip--over" : ""}${dragFrom === i ? " dali-cmp-chip--dragging" : ""}`}
+              className={`dali-cmp-chip dali-cmp-chip--edit${it.tone ? ` dali-cmp-tone--${it.tone}` : ""}${dragOver === i && dragFrom !== i ? " dali-cmp-chip--over" : ""}${dragFrom === i ? " dali-cmp-chip--dragging" : ""}`}
               draggable={urlOpen !== i}
               onDragStart={(e) => {
                 e.dataTransfer.setData("text/plain", String(i));
@@ -508,6 +522,28 @@ function ChipsEditor({
                       }}
                     />
                   </label>
+                  <div className="dali-cmp-pop-field">
+                    <span>Color</span>
+                    <div className="dali-cmp-chip-pop__colors" role="radiogroup" aria-label="Link color">
+                      {TONES.map((tn) => {
+                        const on = (it.tone || "neutral") === tn;
+                        return (
+                          <button
+                            key={tn}
+                            type="button"
+                            role="radio"
+                            aria-checked={on}
+                            aria-label={tn}
+                            title={tn}
+                            onClick={() => setItem(i, { tone: tn })}
+                            className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
+                          >
+                            {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   {popError && (
                     <p role="alert" className="dali-cmp-pop-error">
                       {popError}
@@ -533,7 +569,7 @@ function ChipsEditor({
               )}
             </li>
           ))}
-          <li>
+          {urlOpen === null && <li>
             <button
               type="button"
               className="dali-cmp-chip dali-cmp-chip--add"
@@ -545,7 +581,7 @@ function ChipsEditor({
               <Plus className="dali-cmp-ico" size={9} strokeWidth={1.5} aria-hidden />
               Add link
             </button>
-          </li>
+          </li>}
         </ul>
       </div>
 
@@ -977,6 +1013,106 @@ function StatsEditor({
   );
 }
 
+export function linkLabel(href: string): string {
+  const raw = href.trim();
+  if (!raw) return "";
+  try {
+    return new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`).hostname.replace(/^www\./, "") || raw;
+  } catch {
+    return raw;
+  }
+}
+
+type ResourceFields = { title: string; description: string; meta: string; href: string };
+const EMPTY_RESOURCE: ResourceFields = { title: "", description: "", meta: "", href: "" };
+
+function ResourceForm({
+  initial,
+  submitLabel,
+  onSubmit,
+  onCancel,
+}: {
+  initial: ResourceFields;
+  submitLabel: string;
+  onSubmit: (fields: ResourceFields) => void;
+  onCancel: () => void;
+}) {
+  const [f, setF] = useState(initial);
+  const [detailOpen, setDetailOpen] = useState(!!initial.meta);
+  const [error, setError] = useState<string | null>(null);
+  const set = (patch: Partial<ResourceFields>) => {
+    setError(null);
+    setF((c) => ({ ...c, ...patch }));
+  };
+  const canSubmit = f.title.trim().length > 0;
+  const submit = () => {
+    if (!canSubmit) return;
+    const href = f.href.trim();
+    if (href && !safeHref(href)) return setError("Enter a valid link, like https://… or mailto:…");
+    onSubmit({ title: f.title.trim(), description: f.description.trim(), meta: f.meta.trim(), href });
+  };
+
+  return (
+    <div
+      className="dali-cmp-rowform"
+      role="group"
+      aria-label={submitLabel === "Add resource" ? "New resource" : "Edit resource"}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          onCancel();
+        } else if (e.key === "Enter" && e.target instanceof HTMLInputElement) {
+          e.preventDefault();
+          submit();
+        }
+      }}
+    >
+      <label className="dali-cmp-pop-field">
+        <span>Resource name</span>
+        <input autoFocus value={f.title} placeholder="e.g. Getting started guide" onChange={(e) => set({ title: e.target.value })} />
+      </label>
+      <label className="dali-cmp-pop-field">
+        <span>Description <em>Optional</em></span>
+        <input value={f.description} placeholder="What is this resource for?" onChange={(e) => set({ description: e.target.value })} />
+      </label>
+      <label className="dali-cmp-pop-field">
+        <span>URL <em>Optional</em></span>
+        <input
+          value={f.href}
+          placeholder="https://..."
+          inputMode="url"
+          aria-invalid={!!error}
+          onChange={(e) => set({ href: e.target.value })}
+        />
+      </label>
+      {detailOpen ? (
+        <label className="dali-cmp-pop-field">
+          <span>Detail <em>Optional</em></span>
+          <input value={f.meta} placeholder="e.g. PDF, 12 pages" onChange={(e) => set({ meta: e.target.value })} />
+        </label>
+      ) : (
+        <button type="button" className="dali-cmp-mini dali-cmp-mini--flush" onClick={() => setDetailOpen(true)}>
+          Add detail
+        </button>
+      )}
+      {error && (
+        <p role="alert" className="dali-cmp-pop-error">
+          {error}
+        </p>
+      )}
+      <div className="dali-cmp-rowform__actions">
+        <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="os-btn-primary os-btn-primary--sm" disabled={!canSubmit} onClick={submit}>
+          {submitLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function LinksEditor({
   draft,
   setDraft,
@@ -988,33 +1124,29 @@ function LinksEditor({
   onSave: (data: ComponentData) => void;
   onClose: () => void;
 }) {
-  const [sel, setSel] = useState<number | null>(null);
   const [subOpen, setSubOpen] = useState(!!draft.fields.subtitle);
+  const [form, setForm] = useState<number | "new" | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
   const [dragReady, setDragReady] = useState<number | null>(null);
   const [removed, setRemoved] = useState<{ item: ComponentData["items"][number]; index: number } | null>(null);
-  const [focusNew, setFocusNew] = useState(false);
-  const titleRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  useEffect(() => {
-    if (!focusNew) return;
-    titleRefs.current[draft.items.length - 1]?.focus();
-    setFocusNew(false);
-  }, [focusNew, draft.items.length]);
+  const addRef = useRef<HTMLButtonElement | null>(null);
+  const openRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const setField = (key: string, value: string) =>
     setDraft((d) => ({ ...d, fields: { ...d.fields, [key]: value } }));
-  const setItem = (i: number, patch: Record<string, string>) =>
-    setDraft((d) => ({ ...d, items: d.items.map((it, j) => (j === i ? { ...it, ...patch } : it)) }));
+  const closeForm = (focusIndex?: number) => {
+    setForm(null);
+    requestAnimationFrame(() => (focusIndex === undefined ? addRef.current : openRefs.current[focusIndex])?.focus());
+  };
   const move = (from: number, to: number) => {
     if (to < 0 || to >= draft.items.length || from === to) return;
+    setForm(null);
     setDraft((d) => {
       const items = [...d.items];
       const [it] = items.splice(from, 1);
       items.splice(to, 0, it!);
       return { ...d, items };
     });
-    setSel((c) => (c === from ? to : c));
   };
 
   return (
@@ -1037,122 +1169,134 @@ function LinksEditor({
             className="dali-cmp-sub dali-cmp-bare"
           />
         ) : (
-          <button type="button" className="dali-cmp-mini self-start" onClick={() => setSubOpen(true)}>
+          <button type="button" className="dali-cmp-mini dali-cmp-mini--flush self-start" onClick={() => setSubOpen(true)}>
             Add subtitle
           </button>
         )}
       </div>
 
-      {draft.items.map((it, i) => (
-        <div
-          key={i}
-          draggable={dragReady === i}
-          className={`dali-cmp-row dali-cmp-row--edit${sel === i ? " dali-cmp-row--selected" : ""}${dragFrom === i ? " dali-cmp-row--dragging" : ""}`}
-          onFocusCapture={() => setSel(i)}
-          onClick={() => setSel(i)}
-          onKeyDown={(e) => {
-            if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-              e.preventDefault();
-              const to = i + (e.key === "ArrowUp" ? -1 : 1);
-              move(i, to);
-              requestAnimationFrame(() => titleRefs.current[to]?.focus());
-            }
-          }}
-          onDragStart={(e) => {
-            e.dataTransfer.setData("text/plain", String(i));
-            setDragFrom(i);
-          }}
-          onDragOver={(e) => {
-            if (dragFrom === null) return;
-            e.preventDefault();
-            if (dragFrom !== i) {
-              move(dragFrom, i);
+      {draft.items.map((it, i) =>
+        form === i ? (
+          <ResourceForm
+            key={i}
+            initial={{ title: it.title ?? "", description: it.description ?? "", meta: it.meta ?? "", href: it.href ?? "" }}
+            submitLabel="Save"
+            onCancel={() => closeForm(i)}
+            onSubmit={(f) => {
+              setDraft((d) => ({ ...d, items: d.items.map((x, j) => (j === i ? { ...x, ...f } : x)) }));
+              closeForm(i);
+            }}
+          />
+        ) : (
+          <div
+            key={i}
+            draggable={dragReady === i}
+            className={`dali-cmp-row dali-cmp-row--edit${dragFrom === i ? " dali-cmp-row--dragging" : ""}`}
+            onKeyDown={(e) => {
+              if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                e.preventDefault();
+                const to = i + (e.key === "ArrowUp" ? -1 : 1);
+                move(i, to);
+                requestAnimationFrame(() => openRefs.current[to]?.focus());
+              }
+            }}
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/plain", String(i));
               setDragFrom(i);
-            }
-          }}
-          onDrop={(e) => {
-            e.preventDefault();
-            setDragFrom(null);
-            setDragReady(null);
-          }}
-          onDragEnd={() => {
-            setDragFrom(null);
-            setDragReady(null);
-          }}
-        >
-          <span className="dali-cmp-row__main">
-            <input
+            }}
+            onDragOver={(e) => {
+              if (dragFrom === null) return;
+              e.preventDefault();
+              if (dragFrom !== i) {
+                move(dragFrom, i);
+                setDragFrom(i);
+              }
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragFrom(null);
+              setDragReady(null);
+            }}
+            onDragEnd={() => {
+              setDragFrom(null);
+              setDragReady(null);
+            }}
+          >
+            <button
+              type="button"
               ref={(el) => {
-                titleRefs.current[i] = el;
+                openRefs.current[i] = el;
               }}
-              aria-label={`Resource ${i + 1} title`}
-              value={it.title ?? ""}
-              placeholder="Title"
-              onChange={(e) => setItem(i, { title: e.target.value })}
-              className="dali-cmp-row__title dali-cmp-row__field"
-            />
-            <input
-              aria-label={`Resource ${i + 1} description`}
-              value={it.description ?? ""}
-              placeholder="Description"
-              onChange={(e) => setItem(i, { description: e.target.value })}
-              className="dali-cmp-sub dali-cmp-row__field"
-            />
-            <input
-              aria-label={`Resource ${i + 1} link`}
-              value={it.href ?? ""}
-              placeholder="Add link"
-              inputMode="url"
-              onChange={(e) => setItem(i, { href: e.target.value })}
-              className="dali-cmp-row__field dali-cmp-row__link"
-            />
-          </span>
-          <div className="dali-cmp-row__tools">
-            <button
-              type="button"
-              className="dali-cmp-row__tool dali-cmp-row__grip"
-              aria-label={`Reorder resource ${i + 1}. Drag, or use Alt plus the up and down arrow keys.`}
-              onMouseDown={() => setDragReady(i)}
-              onMouseUp={() => setDragReady(null)}
-              onKeyDown={(e) => {
-                if (e.key === "ArrowUp" || e.key === "ArrowDown") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  move(i, i + (e.key === "ArrowUp" ? -1 : 1));
-                }
-              }}
+              className="dali-cmp-row__main dali-cmp-row__open"
+              aria-label={`Edit ${it.title || "resource"}`}
+              onClick={() => setForm(i)}
             >
-              <GripVertical size={12} strokeWidth={1.5} aria-hidden />
+              <span className="dali-cmp-row__title">{it.title || "Untitled resource"}</span>
+              {it.description && <span className="dali-cmp-sub">{it.description}</span>}
+              {it.href && (
+                <span className="dali-cmp-row__linkind">
+                  <Link2 size={12} strokeWidth={1.5} aria-hidden />
+                  {linkLabel(it.href)}
+                </span>
+              )}
             </button>
-            <button
-              type="button"
-              className="dali-cmp-row__tool dali-cmp-row__tool--del"
-              aria-label={`Delete resource ${i + 1}`}
-              title="Delete"
-              onClick={() => {
-                setRemoved({ item: it, index: i });
-                setSel(null);
-                setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
-              }}
-            >
-              <Trash2 size={12} strokeWidth={1.5} aria-hidden />
-            </button>
+            <div className="dali-cmp-row__tools">
+              <button
+                type="button"
+                className="dali-cmp-row__tool dali-cmp-row__grip"
+                aria-label={`Reorder ${it.title || "resource"}. Drag, or use Alt plus the up and down arrow keys.`}
+                onMouseDown={() => setDragReady(i)}
+                onMouseUp={() => setDragReady(null)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    move(i, i + (e.key === "ArrowUp" ? -1 : 1));
+                  }
+                }}
+              >
+                <GripVertical size={14} strokeWidth={1.5} aria-hidden />
+              </button>
+              <button type="button" className="dali-cmp-row__tool" aria-label={`Edit ${it.title || "resource"}`} title="Edit" onClick={() => setForm(i)}>
+                <Pencil size={14} strokeWidth={1.5} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className="dali-cmp-row__tool dali-cmp-row__tool--del"
+                aria-label={`Delete ${it.title || "resource"}`}
+                title="Delete"
+                onClick={() => {
+                  setRemoved({ item: it, index: i });
+                  setForm(null);
+                  setDraft((d) => ({ ...d, items: d.items.filter((_, j) => j !== i) }));
+                }}
+              >
+                <Trash2 size={14} strokeWidth={1.5} aria-hidden />
+              </button>
+            </div>
           </div>
-        </div>
-      ))}
+        ),
+      )}
 
-      <button
-        type="button"
-        className="dali-cmp-row dali-cmp-row--add"
-        onClick={() => {
-          setSel(draft.items.length);
-          setDraft((d) => ({ ...d, items: [...d.items, { title: "", description: "", meta: "", href: "" }] }));
-          setFocusNew(true);
-        }}
-      >
-        <Plus size={11} strokeWidth={1.5} aria-hidden />
-        Add resource
-      </button>
+      {form === "new" && (
+        <ResourceForm
+          initial={EMPTY_RESOURCE}
+          submitLabel="Add resource"
+          onCancel={() => closeForm()}
+          onSubmit={(f) => {
+            setDraft((d) => ({ ...d, items: [...d.items, f] }));
+            setRemoved(null);
+            closeForm();
+          }}
+        />
+      )}
+
+      {form === null && (
+        <button ref={addRef} type="button" className="dali-cmp-row dali-cmp-row--add" onClick={() => setForm("new")}>
+          <Plus size={12} strokeWidth={1.5} aria-hidden />
+          Add resource
+        </button>
+      )}
 
       <div className="dali-cmp-foot" aria-live="polite">
         {removed && (
@@ -1165,7 +1309,6 @@ function LinksEditor({
                 items.splice(Math.min(removed.index, items.length), 0, removed.item);
                 return { ...d, items };
               });
-              setSel(removed.index);
               setRemoved(null);
             }}
           >
@@ -1178,6 +1321,221 @@ function LinksEditor({
         <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={() => onSave(draft)}>
           Done
         </button>
+      </div>
+    </div>
+  );
+}
+
+function FeatureEditor({
+  draft,
+  setDraft,
+  onSave,
+  onClose,
+}: {
+  draft: ComponentData;
+  setDraft: React.Dispatch<React.SetStateAction<ComponentData>>;
+  onSave: (data: ComponentData) => void;
+  onClose: () => void;
+}) {
+  const f = draft.fields;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const ctaRef = useRef<HTMLDivElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [popOpen, setPopOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const hasButton = !!(f.cta || f.href);
+  const set = (patch: Record<string, string>) => {
+    if ("href" in patch) setError(null);
+    setDraft((d) => ({ ...d, fields: { ...d.fields, ...patch } }));
+  };
+  const validHref = () => {
+    const href = (f.href ?? "").trim();
+    if (href && !safeHref(href)) {
+      setError("Enter a valid link, like https://… or mailto:…");
+      return false;
+    }
+    return true;
+  };
+  const closePop = () => {
+    if (validHref()) setPopOpen(false);
+  };
+  const done = () => {
+    if (!validHref()) return setPopOpen(true);
+    onSave(draft);
+  };
+  const pickImage = async (file?: File) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      set({ image: await uploadEditorImage(file) });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!popOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!(e.target as Element).closest?.(".dali-cmp-feature-edit__cta, [class*=\"devstudio\"]")) closePop();
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  });
+
+  return (
+    <div
+      className="dali-cmp-feature-edit"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (popOpen) {
+          setPopOpen(false);
+          setError(null);
+        } else onClose();
+      }}
+    >
+      <div className="dali-cmp-foot">
+        <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="button" className="os-btn-primary os-btn-primary--sm dali-cmp-done" onClick={done}>
+          Done
+        </button>
+      </div>
+
+      <div className={`dali-cmp-feature dali-cmp-tone--${f.tone || "warning"}`}>
+        <div className="dali-cmp-feature-edit__artwrap">
+          {f.image ? <img className="dali-cmp-feature__art" src={f.image} alt="" /> : <span className="dali-cmp-feature__art" />}
+        <div className="dali-cmp-chip-pop__colors dali-cmp-feature-edit__colors" role="radiogroup" aria-label="Color">
+          {TONES.map((tn) => {
+            const on = f.tone === tn;
+            return (
+              <button
+                key={tn}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                aria-label={tn}
+                title={tn}
+                onClick={() => set({ tone: tn })}
+                className={`dali-cmp-swatch dali-cmp-swatch--pick dali-cmp-tone--${tn}`}
+              >
+                {on && <Check className="dali-cmp-ico dali-cmp-ico--check" size={9} strokeWidth={2.25} aria-hidden />}
+              </button>
+            );
+          })}
+        </div>
+          <div className="dali-cmp-feature-edit__artbtns">
+            <button type="button" disabled={uploading} aria-label={f.image ? "Change image" : "Add image"} onClick={() => fileRef.current?.click()}>
+              <ImagePlus size={14} strokeWidth={1.5} aria-hidden />
+              {uploading ? "Uploading" : f.image ? "Change image" : "Add image"}
+            </button>
+            {f.image && (
+              <button type="button" aria-label="Remove image" title="Remove image" onClick={() => set({ image: "" })}>
+                <X size={14} strokeWidth={1.5} aria-hidden />
+              </button>
+            )}
+          </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={IMAGE_UPLOAD_ACCEPT}
+            className="hidden"
+            onChange={(e) => {
+              void pickImage(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        <div className="dali-cmp-feature__body">
+          <input
+            aria-label="Eyebrow"
+            value={f.eyebrow ?? ""}
+            placeholder="Eyebrow"
+            onChange={(e) => set({ eyebrow: e.target.value })}
+            className="dali-cmp-eyebrow dali-cmp-feature-edit__field"
+          />
+          <input
+            aria-label="Title"
+            value={f.title ?? ""}
+            placeholder="Title"
+            onChange={(e) => set({ title: e.target.value })}
+            className="dali-cmp-feature__title dali-cmp-feature-edit__field"
+          />
+          <textarea
+            aria-label="Text"
+            rows={1}
+            value={f.body ?? ""}
+            placeholder="Add text"
+            onChange={(e) => set({ body: e.target.value })}
+            className="dali-cmp-sub dali-cmp-feature-edit__field"
+          />
+          <div className="dali-cmp-feature-edit__cta" onMouseEnter={() => hasButton && setPopOpen(true)}>
+            {hasButton ? (
+              <button type="button" className="dali-cmp-cta" aria-expanded={popOpen} onClick={() => (popOpen ? closePop() : setPopOpen(true))}>
+                {f.cta || "Button"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="dali-cmp-feature-edit__add"
+                onClick={() => {
+                  set({ cta: "Open" });
+                  setPopOpen(true);
+                }}
+              >
+                <Plus size={12} strokeWidth={1.5} aria-hidden />
+                Add button
+              </button>
+            )}
+            {popOpen && hasButton && (
+              <div className="dali-cmp-feature-edit__pop" role="dialog" aria-label="Button">
+                <label className="dali-cmp-pop-field">
+                  <span>Button text</span>
+                  <input autoFocus value={f.cta ?? ""} placeholder="Open" onChange={(e) => set({ cta: e.target.value })} />
+                </label>
+                <label className="dali-cmp-pop-field">
+                  <span>URL</span>
+                  <input
+                    value={f.href ?? ""}
+                    placeholder="https://..."
+                    inputMode="url"
+                    aria-invalid={!!error}
+                    onChange={(e) => set({ href: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        closePop();
+                      }
+                    }}
+                  />
+                </label>
+                {error && (
+                  <p role="alert" className="dali-cmp-pop-error">
+                    {error}
+                  </p>
+                )}
+                <div className="dali-cmp-pop-actions">
+                  <button
+                    type="button"
+                    className="dali-cmp-pop-delete"
+                    onClick={() => {
+                      set({ cta: "", href: "" });
+                      setPopOpen(false);
+                    }}
+                  >
+                    <Trash2 className="dali-cmp-ico" size={12} strokeWidth={1.5} aria-hidden />
+                    Remove
+                  </button>
+                  <button type="button" className="dali-cmp-pop-save" onClick={closePop}>
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1216,6 +1574,9 @@ function ComponentForm({
   }
   if (def.kind === "cards") {
     return <CardsEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "feature") {
+    return <FeatureEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
   }
   if (def.kind === "chips") {
     return <ChipsEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
