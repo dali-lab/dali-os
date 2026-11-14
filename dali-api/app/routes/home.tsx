@@ -15,7 +15,7 @@ import BakerHero from "~/components/home/baker/BakerHero";
 import { buttonClasses } from "~/components/ui/Button";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { BirthdayBounce, type BirthdayPerson } from "~/components/home/BirthdayBounce";
+import { BirthdayLine, type BirthdayPerson } from "~/components/home/BirthdayLine";
 import SearchIcon from "~/components/home/landing/SearchIcon";
 import {
   isLandingBackgroundId,
@@ -198,6 +198,7 @@ export default function Home() {
         milestoneTitle={milestoneTitle}
         greeting={greeting}
         userName={firstName}
+        belowGreeting={<BirthdayLine people={birthdays} />}
         search={<HomeSearch />}
         background={background}
         recentsHeading="My Tasks"
@@ -209,7 +210,6 @@ export default function Home() {
           media: <TaskCardMedia task={task} />,
         }))}
       />
-      <BirthdayBounce people={birthdays} />
     </div>
   );
 }
