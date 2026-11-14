@@ -23,10 +23,14 @@ body:has(.landing[data-background='technigala']) {
   overflow: hidden;
   pointer-events: none;
   --scrim-rgb: 2 10 9;
-  --volt: #f2f53d;
+  --volt: #f2f23a;
   --mint: #c9f7e2;
-  font-family: var(--font-display);
-  color: #eef7f1;
+  --ink: #050b0c;
+  --muted: #b9c7c2;
+  --tg-font: 'Saira', var(--font-display);
+  --tg-label: 'Michroma', var(--font-display);
+  font-family: var(--tg-font);
+  color: #ffffff;
 }
 
 .landing[data-background='technigala'] .landing-content {
@@ -85,7 +89,43 @@ body:has(.landing[data-background='technigala']) {
   opacity: 0;
 }
 
-/* ---------- The run ---------- */
+/* ---------- The run ----------
+ * Dressed like the Technigala voting app (Paper "Technigala 26F", direction E): Saira throughout,
+ * Michroma eyebrows in volt, a volt pill for the main action, plain text for the way out, and
+ * dark cards lit from inside by the core's glow.
+ */
+
+.tg-eyebrow {
+  margin: 0;
+  font-family: var(--tg-label);
+  font-size: 11px;
+  line-height: 14px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--volt);
+}
+
+.tg-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.7em;
+  height: 1.7em;
+  padding: 0 0.4em;
+  border-radius: 6px;
+  font-family: var(--tg-font);
+  font-size: 0.72em;
+  font-weight: 600;
+  line-height: 1;
+  background: rgb(255 255 255 / 0.1);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.22);
+  color: inherit;
+}
+
+.tg-button-primary .tg-key {
+  background: rgb(5 11 12 / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(5 11 12 / 0.3);
+}
 
 .tg-hud {
   position: absolute;
@@ -94,60 +134,59 @@ body:has(.landing[data-background='technigala']) {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 6px;
+  gap: 4px;
   font-variant-numeric: tabular-nums;
 }
 
-.tg-label {
-  margin: 0;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: var(--mint);
-}
-
 .tg-score {
-  font-size: clamp(28px, 3.2cqw, 48px);
+  font-size: clamp(34px, 3.6cqw, 52px);
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
   color: var(--volt);
-  text-shadow: 0 0 16px rgb(242 245 61 / 0.4);
+  text-shadow: 0 0 18px rgb(242 245 61 / 0.35);
 }
 
-.tg-sub {
+.tg-hud-best {
   margin: 0;
-  font-size: 13px;
-  color: rgb(238 247 241 / 0.75);
+  font-size: 14px;
+  color: var(--muted);
 }
 
 .tg-hud-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
+/* The volt-ringed secondary from the voting app, at HUD size. */
 .tg-hud-button {
   pointer-events: auto;
   appearance: none;
   cursor: pointer;
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 8px 0 14px;
+  border: 0;
   border-radius: 999px;
-  border: 1px solid rgb(201 247 226 / 0.2);
-  background: rgb(3 12 11 / 0.55);
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
+  background: rgb(242 245 61 / 0.1);
+  box-shadow: inset 0 0 0 1.5px rgb(242 245 61 / 0.5);
+  color: #ffffff;
+  font: 600 14px/1 var(--tg-font);
+  transition: background 150ms ease;
 }
 
 .tg-hud-button:hover {
-  background: rgb(201 247 226 / 0.1);
+  background: rgb(242 245 61 / 0.2);
 }
 
 .tg-hud-button:focus-visible,
 .tg-button:focus-visible {
   outline: 2px solid #ffffff;
-  outline-offset: 2px;
+  outline-offset: 3px;
 }
 
 .tg-help {
@@ -156,13 +195,38 @@ body:has(.landing[data-background='technigala']) {
   bottom: 7%;
   translate: -50% 0;
   margin: 0;
-  padding: 10px 16px;
+  padding: 10px 18px;
   border-radius: 999px;
   white-space: nowrap;
-  background: rgb(3 12 11 / 0.7);
-  border: 1px solid rgb(242 245 61 / 0.35);
+  background: rgb(5 11 12 / 0.75);
+  box-shadow: inset 0 0 0 1px rgb(242 245 61 / 0.35);
   font-size: 15px;
+  font-weight: 600;
   animation: tg-help-out 4.5s ease forwards;
+}
+
+.tg-help .tg-key {
+  margin-inline: 2px;
+}
+
+.tg-for-touch {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .tg-for-keys,
+  .tg-hud-button .tg-key,
+  .tg-button .tg-key {
+    display: none;
+  }
+
+  .tg-for-touch {
+    display: inline;
+  }
+
+  .tg-hud-button {
+    padding-right: 14px;
+  }
 }
 
 @keyframes tg-help-out {
@@ -171,6 +235,7 @@ body:has(.landing[data-background='technigala']) {
 }
 
 .tg-card {
+  pointer-events: auto;
   position: absolute;
   left: 30%;
   top: 48%;
@@ -178,113 +243,105 @@ body:has(.landing[data-background='technigala']) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  min-width: min(340px, 86cqw);
-  max-width: min(420px, 92cqw);
-  padding: 26px 30px 22px;
-  border-radius: 18px;
+  width: min(380px, 90cqw);
+  padding: 26px 22px 14px;
+  border-radius: 28px;
   text-align: center;
-  background: rgb(3 12 11 / 0.8);
-  border: 1px solid rgb(242 245 61 / 0.35);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
-}
-
-.tg-paused {
-  pointer-events: none;
-}
-
-.tg-over {
-  pointer-events: auto;
-}
-
-.tg-over .tg-label {
-  color: var(--volt);
+  background:
+    radial-gradient(circle farthest-corner at 50% 50%, rgb(242 245 61 / 0.18) 0%, rgb(242 245 61 / 0) 60%),
+    #0a1514;
+  box-shadow: 0 0 0 1px rgb(242 245 61 / 0.25), 0 30px 60px rgb(0 0 0 / 0.5);
 }
 
 .tg-card-title {
-  margin: 0;
-  font-size: 34px;
+  margin: 0 0 6px;
+  font-size: 30px;
   font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.tg-card-note {
-  margin: 0;
-  font-size: 14px;
-  color: rgb(238 247 241 / 0.7);
+  line-height: 34px;
+  letter-spacing: -0.02em;
 }
 
 .tg-final {
-  margin: 0;
-  font-size: clamp(36px, 4.4cqw, 60px);
+  margin: 10px 0 0;
+  font-size: clamp(44px, 4.6cqw, 64px);
   font-weight: 700;
   line-height: 1;
+  letter-spacing: -0.02em;
   color: var(--volt);
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 22px rgb(242 245 61 / 0.3);
+}
+
+.tg-card-note {
+  min-height: 22px;
+  margin: 6px 0 0;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--muted);
 }
 
 .tg-actions {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  align-self: stretch;
+  gap: 2px;
+  margin-top: 18px;
 }
 
 .tg-button {
   appearance: none;
   cursor: pointer;
-  padding: 10px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 22px;
+  border: 0;
   border-radius: 999px;
-  border: 1px solid rgb(201 247 226 / 0.2);
   background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.tg-button:hover {
-  background: rgb(201 247 226 / 0.08);
+  color: #c9d6d1;
+  font: 600 16px/1 var(--tg-font);
 }
 
 .tg-button-primary {
-  border-color: transparent;
+  height: 52px;
   background: var(--volt);
-  color: #06140f;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  transition: background 150ms ease;
 }
 
 .tg-button-primary:hover {
   background: #fbfd8a;
 }
 
-.tg-keys {
-  margin: 0;
-  font-size: 12px;
-  color: rgb(238 247 241 / 0.5);
+.tg-button-text:hover {
+  color: #ffffff;
 }
 
-/* The shared high-score board, in this scene's colours. */
-.tg-over .t-scores {
+/* The shared high-score board, in the voting app's type. */
+.tg-card .t-scores {
   display: flex;
   flex-direction: column;
   gap: 6px;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 18px;
   text-align: left;
 }
 
-.tg-over .t-scores-title {
-  margin: 0;
-  font-size: 11px;
+.tg-card .t-scores-title {
+  margin: 0 0 2px;
+  font-family: var(--tg-label);
+  font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--mint);
+  color: var(--muted);
 }
 
-.tg-over .t-scores-list {
+.tg-card .t-scores-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -293,43 +350,44 @@ body:has(.landing[data-background='technigala']) {
   gap: 2px;
 }
 
-.tg-over .t-scores-row {
+.tg-card .t-scores-row {
   display: grid;
   grid-template-columns: 1.8em minmax(0, 1fr) auto;
   gap: 8px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 14px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.tg-over .t-scores-rank {
-  color: var(--mint);
+.tg-card .t-scores-rank {
+  color: var(--muted);
 }
 
-.tg-over .t-scores-name {
+.tg-card .t-scores-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.tg-over .t-scores-score {
+.tg-card .t-scores-score {
   color: var(--volt);
 }
 
-.tg-over .t-scores-row-you {
+.tg-card .t-scores-row-you {
   background: rgb(242 245 61 / 0.12);
   box-shadow: inset 0 0 0 1px rgb(242 245 61 / 0.4);
 }
 
-.tg-over .t-scores-row-adrift {
+.tg-card .t-scores-row-adrift {
   margin-top: 6px;
 }
 
-.tg-over .t-scores-empty {
+.tg-card .t-scores-empty {
   margin: 0;
-  font-size: 13px;
-  color: rgb(238 247 241 / 0.65);
+  font-size: 14px;
+  color: var(--muted);
 }
 
 /* Stacked: the run is centred under the copy rather than beside it. */
@@ -340,7 +398,7 @@ body:has(.landing[data-background='technigala']) {
   }
 
   .tg-card {
-    top: 60%;
+    top: 58%;
   }
 
   .tg-help {

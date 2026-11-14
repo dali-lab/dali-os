@@ -32,7 +32,7 @@ export default function Leaderboard({
     <div className="t-scores">
       <p className="t-scores-title">{title}</p>
       {shown.length === 0 ? (
-        <p className="t-scores-empty">No scores yet — be the first.</p>
+        <p className="t-scores-empty">No scores yet. Be the first.</p>
       ) : (
         <ol className="t-scores-list">
           {shown.map((entry) => (
