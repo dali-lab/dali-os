@@ -495,6 +495,7 @@ export function PageTabRow({
   controls = [],
   onSettings,
   settingsActive = false,
+  settingsLabel = "Settings",
   className,
 }: {
   label: string;
@@ -504,6 +505,7 @@ export function PageTabRow({
   /** Shows the gear, pinned far right on every tab, outside the tablist. */
   onSettings?: () => void;
   settingsActive?: boolean;
+  settingsLabel?: string;
   className?: string;
 }) {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
@@ -579,7 +581,7 @@ export function PageTabRow({
         >
           {DIVIDER}
           <IconButton
-            label="Settings"
+            label={settingsLabel}
             icon={Settings}
             onClick={onSettings}
             aria-pressed={settingsActive}

@@ -111,7 +111,7 @@ describe("Partner CRM layout", () => {
     const board = mount("/core/partners");
     await settle();
     expect(board.container.querySelector('[data-testid="settings"]')).toBeNull();
-    click(board.container.querySelector('button[aria-label="Settings"]')!);
+    click(board.container.querySelector('button[aria-label="Partner settings"]')!);
     expect(board.container.querySelector('[data-testid="settings"]')!.getAttribute("data-board")).toBe("yes");
     expect(board.router.state.location.search).toBe("?settings=1");
     board.unmount();

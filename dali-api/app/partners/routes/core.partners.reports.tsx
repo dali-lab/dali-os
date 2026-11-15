@@ -253,6 +253,7 @@ export default function PartnerReports() {
 
   return (
     <div className="flex flex-col gap-4">
+      <h2 className="sr-only">Reports</h2>
       <PageRowControls
         controls={[
           {

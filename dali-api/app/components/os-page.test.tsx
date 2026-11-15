@@ -93,6 +93,14 @@ describe("PageTabRow", () => {
     expect(container.querySelector('button[aria-label="Settings"]')).toBeNull();
   });
 
+  it("names the gear with settingsLabel", () => {
+    const { container } = renderDom(
+      <PageTabRow label="Sections" tabs={TABS} onSettings={() => {}} settingsLabel="Partner settings" />,
+    );
+    expect(container.querySelector('button[aria-label="Partner settings"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Settings"]')).toBeNull();
+  });
+
   it("marks the gear pressed when settings are open", () => {
     const { container } = renderDom(
       <PageTabRow label="Sections" tabs={TABS} onSettings={() => {}} settingsActive />,

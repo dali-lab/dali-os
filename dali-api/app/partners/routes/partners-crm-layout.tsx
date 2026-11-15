@@ -45,6 +45,7 @@ export default function PartnersCrmLayout() {
           label="Partners"
           tabs={partnerCrmTabs(pathname)}
           onSettings={() => setSettings(true)}
+          settingsLabel="Partner settings"
           settingsActive={settingsOpen}
         />
         {settingsOpen && <PartnerSettingsModal onClose={() => setSettings(false)} board={board} />}
