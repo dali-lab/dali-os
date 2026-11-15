@@ -264,6 +264,43 @@ describe("PageTabRow", () => {
   });
 });
 
+describe("custom controls", () => {
+  const custom = (): PageRowControl[] => [
+    { kind: "custom", key: "filters", label: "Filters", icon: Search, render: () => <span data-testid="filters-pill">pill</span> },
+    { key: "backlog", label: "Include backlog", icon: Download, pressed: true, onClick: () => {} },
+  ];
+
+  it("renders its own element in the row while the controls fit", () => {
+    mockWidths();
+    const { container } = renderDom(<PageTabRow label="Sections" tabs={TABS} controls={custom()} />);
+    resize!(1000);
+    expect(container.querySelector('[data-slot="controls"] [data-testid="filters-pill"]')).not.toBeNull();
+    expect(container.querySelector('button[aria-label="Filters"]')).toBeNull();
+  });
+
+  it("keeps its element in the icons step and collapses it to a labeled icon when folded", () => {
+    mockWidths();
+    const { container } = renderDom(<PageTabRow label="Sections" tabs={TABS} controls={custom()} />);
+    resize!(550);
+    expect(densityOf(container)).toBe("icons");
+    expect(container.querySelector('[data-testid="filters-pill"]')).not.toBeNull();
+    resize!(400);
+    expect(densityOf(container)).toBe("menu");
+    expect(container.querySelector('[data-testid="filters-pill"]')).toBeNull();
+    click(container.querySelector('button[aria-label="Filters"]')!);
+    expect(document.querySelector('[data-testid="filters-pill"]')).not.toBeNull();
+  });
+
+  it("shows a pressed button as a checked item in the folded menu", () => {
+    mockWidths();
+    const { container } = renderDom(<PageTabRow label="Sections" tabs={TABS} controls={custom()} />);
+    resize!(400);
+    click(container.querySelector('button[aria-label="More actions"]')!);
+    const item = [...document.querySelectorAll('[role="menuitemcheckbox"]')].find((e) => e.textContent?.includes("Include backlog"));
+    expect(item?.getAttribute("aria-checked")).toBe("true");
+  });
+});
+
 describe("PageRowControls", () => {
   it("renders into the row, outside the page content", () => {
     const { container } = renderDom(

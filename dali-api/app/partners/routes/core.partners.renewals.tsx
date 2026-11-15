@@ -8,8 +8,8 @@ import { isCore, currentTerm } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { TermFilter } from "~/components/TermFilter";
-import { SearchInput } from "~/components/ui/SearchInput";
-import { PartnerRowControls } from "../components/PartnerRowControls";
+import { PageRowControls } from "~/components/os-page";
+import { CalendarRange } from "lucide-react";
 import { RenewalsBoard } from "../components/RenewalsBoard";
 import {
   isMaintenancePlan,
@@ -184,24 +184,30 @@ export default function PartnersRenewals() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PartnerRowControls>
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search projects or partners"
-          aria-label="Search renewals"
-          containerClassName="w-[220px]"
-        />
-        {picked && (
-          <TermFilter
-            terms={termOptions}
-            selected={picked.id}
-            includeAll={false}
-            replace
-            formatLabel={(label) => `Active in ${label}`}
-          />
-        )}
-      </PartnerRowControls>
+      <PageRowControls
+        controls={[
+          { kind: "search", key: "search", label: "Search renewals", value: query, onChange: setQuery },
+          ...(picked
+            ? [
+                {
+                  kind: "custom" as const,
+                  key: "term",
+                  label: "Term",
+                  icon: CalendarRange,
+                  render: () => (
+                    <TermFilter
+                      terms={termOptions}
+                      selected={picked.id}
+                      includeAll={false}
+                      replace
+                      formatLabel={(label) => `Active in ${label}`}
+                    />
+                  ),
+                },
+              ]
+            : []),
+        ]}
+      />
       {!picked || !decisionTerm ? (
         <p className="text-sm text-muted-foreground">
           {picked ? `There is no term after ${picked.code} yet, so renewals cannot be decided.` : "No terms yet."}

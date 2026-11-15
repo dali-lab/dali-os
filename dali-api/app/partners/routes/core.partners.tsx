@@ -8,7 +8,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { isCore, currentTerm } from "~/lib/roles";
-import { PartnerRowControls, RowPrimaryButton } from "../components/PartnerRowControls";
+import { PageRowControls } from "~/components/os-page";
 import { PartnerBoard } from "../components/PartnerBoard";
 import { PartnerApplicationModal } from "../components/PartnerApplicationModal";
 import {
@@ -21,14 +21,13 @@ import {
   SOURCE_OPTIONS,
   type PartnerCardModel,
 } from "../lib/partner-board";
-import { SearchInput } from "~/components/ui/SearchInput";
 import { useRememberedSearch } from "~/hooks/useRememberedSearch";
 import {
   ColumnFilters,
   useColumnFilters,
   type FilterColumn,
 } from "~/projects/components/ColumnFilters";
-import { Activity, CalendarRange, Inbox, Plus, Shapes } from "lucide-react";
+import { Activity, CalendarRange, Inbox, ListFilter, Plus, Shapes } from "lucide-react";
 
 // fitViewport: the board's columns scroll internally, so the page must never grow the document.
 export const handle = { hideBreadcrumbs: true, areaSubnav: true, fitViewport: true };
@@ -200,24 +199,28 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <PartnerRowControls>
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search applications…"
-          aria-label="Search applications"
-          containerClassName="w-[220px]"
-        />
-        <ColumnFilters
-          columns={columns}
-          rows={filterRows}
-          filters={columnFilters.filters}
-          onChange={columnFilters.setFilters}
-          shownCount={shownCount}
-          noun={["application", "applications"]}
-        />
-        <RowPrimaryButton label="New application" icon={Plus} onClick={() => setCreating(true)} />
-      </PartnerRowControls>
+      <PageRowControls
+        controls={[
+          { kind: "search", key: "search", label: "Search applications", value: query, onChange: setQuery },
+          {
+            kind: "custom",
+            key: "filters",
+            label: "Filters",
+            icon: ListFilter,
+            render: () => (
+              <ColumnFilters
+                columns={columns}
+                rows={filterRows}
+                filters={columnFilters.filters}
+                onChange={columnFilters.setFilters}
+                shownCount={shownCount}
+                noun={["application", "applications"]}
+              />
+            ),
+          },
+          { key: "new", label: "New application", icon: Plus, primary: true, onClick: () => setCreating(true) },
+        ]}
+      />
 
       <PartnerBoard
           cards={cards}

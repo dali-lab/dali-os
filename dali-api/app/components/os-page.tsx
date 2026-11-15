@@ -147,11 +147,20 @@ export type PageMenuControl = {
   primary?: boolean;
 };
 
+export type PageCustomControl = {
+  kind: "custom";
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  render: () => ReactNode;
+};
+
 export type PageRowControl =
   | PageTabControl
   | PageToggleControl
   | PageSearchControl
-  | PageMenuControl;
+  | PageMenuControl
+  | PageCustomControl;
 
 export type PageRowDensity = "full" | "icons" | "menu" | "stacked";
 
@@ -316,6 +325,24 @@ function RowSearch({ control, collapsed }: { control: PageSearchControl; collaps
   );
 }
 
+function RowCustom({ control, collapsed }: { control: PageCustomControl; collapsed: boolean }) {
+  if (!collapsed) return <>{control.render()}</>;
+  const Icon = control.icon;
+  return (
+    <Popover
+      align="right"
+      ariaLabel={control.label}
+      trigger={
+        <button type="button" aria-label={control.label} className={GLYPH_CLASS}>
+          <Icon className="h-[15px] w-[15px]" aria-hidden />
+        </button>
+      }
+    >
+      {control.render()}
+    </Popover>
+  );
+}
+
 function MenuEntries({ items }: { items: PageMenuItem[] }) {
   return (
     <>
@@ -377,7 +404,9 @@ function ControlsCluster({ controls, density }: { controls: PageRowControl[]; de
 
   controls.forEach((c, i) => {
     if (isPrimary(c)) return;
-    if (c.kind === "search") {
+    if (c.kind === "custom") {
+      out.push(<RowCustom key={c.key} control={c} collapsed={folded} />);
+    } else if (c.kind === "search") {
       out.push(<RowSearch key={c.key} control={c} collapsed={folded} />);
     } else if (folded && c.kind === "toggle") {
       foldedEntries.push(
@@ -409,6 +438,7 @@ function ControlsCluster({ controls, density }: { controls: PageRowControl[]; de
           key={c.key}
           icon={<c.icon className="h-3.5 w-3.5" />}
           disabled={c.disabled}
+          checked={c.pressed}
           onSelect={c.onClick}
         >
           {c.label}

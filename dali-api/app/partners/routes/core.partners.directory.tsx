@@ -18,10 +18,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";
-import { Building2, CircleDot, Download, Plus, Shapes, Tag, User } from "lucide-react";
-import { SearchInput } from "~/components/ui/SearchInput";
-import { IconButton } from "~/components/ui/IconButton";
-import { Menu, MenuItem } from "~/components/ui/floating";
+import { Building2, CircleDot, Download, ListFilter, Plus, Shapes, Tag, User } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import {
@@ -30,7 +27,7 @@ import {
   type FilterColumn,
 } from "~/projects/components/ColumnFilters";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import { PartnerRowControls, ROW_PRIMARY_CLASS } from "../components/PartnerRowControls";
+import { PageRowControls } from "~/components/os-page";
 import { DirectoryTable } from "../components/PartnerDirectoryTables";
 import {
   DIRECTORY_KIND_OPTIONS,
@@ -379,49 +376,45 @@ export default function PartnersDirectory() {
       />
       <NewContactModal open={creating === "contact"} onClose={() => setCreating(null)} />
 
-      <PartnerRowControls>
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search partners and people…"
-          aria-label="Search the directory"
-          containerClassName="w-[220px]"
-        />
-        <ColumnFilters
-          columns={FILTER_COLUMNS}
-          rows={filterRows}
-          filters={columnFilters.filters}
-          onChange={columnFilters.setFilters}
-          shownCount={filtered.length}
-          noun={["record", "records"]}
-        />
-        <IconButton
-          label="Export CSV"
-          icon={Download}
-          className="os-icon-btn"
-          onClick={() => window.location.assign(directoryExportHref(query, columnFilters.active))}
-        />
-        <Menu
-          align="right"
-          ariaLabel="Add to the directory"
-          trigger={
-            <button type="button" className={ROW_PRIMARY_CLASS}>
-              <Plus className="h-[13px] w-[13px]" aria-hidden />
-              New
-            </button>
-          }
-        >
-          <MenuItem icon={<Building2 className="h-4 w-4" />} onSelect={() => setCreating("org")}>
-            Organization
-          </MenuItem>
-          <MenuItem icon={<User className="h-4 w-4" />} onSelect={() => setCreating("individual")}>
-            Individual partner
-          </MenuItem>
-          <MenuItem icon={<User className="h-4 w-4" />} onSelect={() => setCreating("contact")}>
-            Contact
-          </MenuItem>
-        </Menu>
-      </PartnerRowControls>
+      <PageRowControls
+        controls={[
+          { kind: "search", key: "search", label: "Search the directory", value: query, onChange: setQuery },
+          {
+            kind: "custom",
+            key: "filters",
+            label: "Filters",
+            icon: ListFilter,
+            render: () => (
+              <ColumnFilters
+                columns={FILTER_COLUMNS}
+                rows={filterRows}
+                filters={columnFilters.filters}
+                onChange={columnFilters.setFilters}
+                shownCount={filtered.length}
+                noun={["record", "records"]}
+              />
+            ),
+          },
+          {
+            key: "export",
+            label: "Export CSV",
+            icon: Download,
+            onClick: () => window.location.assign(directoryExportHref(query, columnFilters.active)),
+          },
+          {
+            kind: "menu",
+            key: "new",
+            label: "New",
+            icon: Plus,
+            primary: true,
+            items: [
+              { key: "org", label: "Organization", icon: Building2, onSelect: () => setCreating("org") },
+              { key: "individual", label: "Individual partner", icon: User, onSelect: () => setCreating("individual") },
+              { key: "contact", label: "Contact", icon: User, onSelect: () => setCreating("contact") },
+            ],
+          },
+        ]}
+      />
 
       <div className={cn(os.panel, "overflow-hidden pt-2")}>
         {filtered.length === 0 ? (

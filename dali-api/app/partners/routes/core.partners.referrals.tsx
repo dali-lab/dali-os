@@ -11,8 +11,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { useSearchParamState } from "~/hooks/useSearchParamState";
-import { SearchInput } from "~/components/ui/SearchInput";
-import { PartnerRowControls } from "../components/PartnerRowControls";
+import { PageRowControls } from "~/components/os-page";
 import {
   REFERRAL_TIER_LABEL,
   REFERRAL_TIER_PAYOUT_USD,
@@ -61,15 +60,9 @@ export default function PartnerReferralsList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PartnerRowControls>
-        <SearchInput
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by partner, email, or referrer"
-          aria-label="Search referrals"
-          containerClassName="w-[280px]"
-        />
-      </PartnerRowControls>
+      <PageRowControls
+        controls={[{ kind: "search", key: "search", label: "Search referrals", value: search, onChange: setSearch }]}
+      />
 
       {filtered.length === 0 ? (
         <EmptyState anyExist={referrals.length > 0} />

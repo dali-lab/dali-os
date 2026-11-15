@@ -13,7 +13,7 @@ vi.mock("../../components/PartnerSettingsModal", () => ({
 
 import Layout from "../partners-crm-layout";
 import Referrals from "../core.partners.referrals";
-import { PartnerRowControls, RowPrimaryButton } from "../../components/PartnerRowControls";
+import { PageRowControls } from "~/components/os-page";
 import { Plus } from "lucide-react";
 
 const referrals = [
@@ -26,10 +26,12 @@ const onNew = vi.fn();
 function Page({ name }: { name: string }) {
   return (
     <>
-      <PartnerRowControls>
-        <input aria-label={`${name} search`} />
-        <RowPrimaryButton label={`New ${name}`} icon={Plus} onClick={onNew} />
-      </PartnerRowControls>
+      <PageRowControls
+        controls={[
+          { kind: "search", key: "search", label: `${name} search`, value: "", onChange: () => {} },
+          { key: "new", label: `New ${name}`, icon: Plus, primary: true, onClick: onNew },
+        ]}
+      />
       <p>{name} content</p>
     </>
   );
