@@ -133,7 +133,7 @@ function TimelineEditor({
   useEffect(() => {
     if (fanPin === null) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-step__numwrap, [class*=\"devstudio\"]")) {
+      if (!(e.target as Element).closest?.(".dali-cmp-step__numwrap")) {
         setFanPin(null);
         setFanOpen(null);
       }
@@ -388,7 +388,7 @@ function ChipsEditor({
   useEffect(() => {
     if (urlOpen === null) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-chip--edit, [class*=\"devstudio\"]")) openPop(null);
+      if (!(e.target as Element).closest?.(".dali-cmp-chip--edit")) openPop(null);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -649,7 +649,7 @@ export function CardsEditor({
   useEffect(() => {
     if (sel === null) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-card--edit, [class*=\"devstudio\"]")) setSel(null);
+      if (!(e.target as Element).closest?.(".dali-cmp-card--edit")) setSel(null);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -908,7 +908,7 @@ function StatsEditor({
   useEffect(() => {
     if (sel === null) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-stat--edit, [class*=\"devstudio\"]")) setSel(null);
+      if (!(e.target as Element).closest?.(".dali-cmp-stat--edit")) setSel(null);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -1870,7 +1870,7 @@ export function GalleryEditor({
   useEffect(() => {
     if (sel === null) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-piece--edit, [class*=\"devstudio\"]")) select(null);
+      if (!(e.target as Element).closest?.(".dali-cmp-piece--edit")) select(null);
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
@@ -2154,7 +2154,7 @@ function FeatureEditor({
   useEffect(() => {
     if (!popOpen) return;
     const close = (e: MouseEvent) => {
-      if (!(e.target as Element).closest?.(".dali-cmp-feature-edit__cta, [class*=\"devstudio\"]")) closePop();
+      if (!(e.target as Element).closest?.(".dali-cmp-feature-edit__cta")) closePop();
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);

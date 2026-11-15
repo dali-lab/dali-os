@@ -238,19 +238,16 @@ export default function ResourceHubPage() {
         {live ? (
           <div className={`flex items-center gap-2 justify-self-end ${pill}`}>
             <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
-            <button
-              type="button"
+            <IconButton
+              label={preview ? "Back to editing" : "Preview"}
+              icon={preview ? EyeOff : Eye}
+              aria-pressed={preview}
+              className="h-8 w-8 border border-os-container-hi"
               onClick={() => {
                 if (!preview && editor) setSnapshot(editor.document as unknown[]);
                 setPreview((on) => !on);
               }}
-              aria-pressed={preview}
-              aria-label={preview ? "Back to editing" : "Preview"}
-              title={preview ? "Back to editing" : "Preview"}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-os-container-hi text-foreground transition-colors hover:bg-os-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60"
-            >
-              {preview ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
-            </button>
+            />
             <button
               type="button"
               disabled={fetcher.state !== "idle"}

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
 import { FileText, Link2, MessageSquare, Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.crit";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
 import { loadCritContext, parseSubmissionForm, resolveSubmission, serializeSubmission } from "~/lib/crit.server";
 import { HubBand } from "~/components/resource-hub/HubCard";
@@ -139,7 +140,7 @@ export default function CritWall() {
       </header>
 
       {items.length === 0 ? (
-        <p className="rounded-os-card border border-dashed border-os-container-hi px-6 py-16 text-center text-sm text-os-grey">Nothing here yet. Be the first to share something you're working on.</p>
+        <EmptyState title="Nothing here yet">Be the first to share something you're working on.</EmptyState>
       ) : (
         <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((item) => {

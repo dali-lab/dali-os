@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { CARD_COLORS, COVER_PATTERNS, CoverTile, buildCoverUrl, cardColorHex, isPatternCover, parseCover } from "./CoverPattern";
+import { FormField } from "~/components/ui/FormField";
 import { HubCard } from "./HubCard";
 import { Z } from "~/components/ui/z";
 
@@ -56,18 +57,17 @@ export function CoverStudio({
           <div className="aspect-[16/5] w-full bg-black/[0.04]" />
         )}
       </div>
-      <label className="mt-4 flex flex-col gap-1.5 text-sm text-os-grey">
-        Title
-        <input
+      <div className="os-form mt-4">
+        <FormField
+          label="Title"
           autoFocus
           value={title}
           maxLength={120}
           placeholder="e.g. Design"
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={setTitle}
           onKeyDown={(e) => e.key === "Enter" && !working && onSubmit(title, cover)}
-          className="h-9 rounded-lg border border-os-container-hi bg-os-bg px-3 text-sm text-foreground outline-none focus:border-os-accent focus:ring-2 focus:ring-os-accent/25"
         />
-      </label>
+      </div>
         </div>
         <div>
       <p className="mb-2 text-sm font-semibold text-foreground">Style</p>

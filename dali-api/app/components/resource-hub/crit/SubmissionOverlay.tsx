@@ -3,6 +3,8 @@ import { Link2, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Drawer } from "~/components/ui/Drawer";
 import { FilePreview } from "~/components/FilePreview";
+import { FormField } from "~/components/ui/FormField";
+import { IconButton } from "~/components/ui/IconButton";
 import { useDialog } from "~/components/ui/dialog";
 import { isCommentShortcut, pointToFraction } from "./pins";
 import { Z } from "~/components/ui/z";
@@ -36,9 +38,6 @@ export interface CritCommentView {
   createdAt: string;
 }
 
-const FIELD =
-  "w-full resize-none rounded-lg border border-os-container-hi bg-os-bg px-3 py-2 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-os-muted focus:border-os-accent focus:ring-2 focus:ring-os-accent/25";
-
 function Composer({
   placeholder,
   submitLabel,
@@ -63,21 +62,24 @@ function Composer({
   };
   return (
     <div className="flex flex-col gap-2">
-      <textarea
-        autoFocus={autoFocus}
-        rows={rows}
-        value={text}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-            e.preventDefault();
-            void send();
-          }
-        }}
-        className={FIELD}
-      />
+      <div className="os-form">
+        <FormField
+          label={placeholder}
+          labelHidden
+          multiline
+          autoFocus={autoFocus}
+          rows={rows}
+          value={text}
+          placeholder={placeholder}
+          onChange={setText}
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              void send();
+            }
+          }}
+        />
+      </div>
       <div className="flex items-center justify-end gap-2">
         {onCancel && (
           <button type="button" onClick={onCancel} className="os-btn-ghost text-sm">
@@ -155,30 +157,23 @@ function useCritComments(endpoint: string, onChanged: () => void) {
   return { comments, error, busy, post };
 }
 
-const HEADER_BTN =
-  "grid h-8 w-8 place-items-center rounded-lg text-os-grey transition-colors duration-150 hover:bg-os-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60";
-
 function PostActions({ submission, onStartEdit, onDelete }: { submission: CritSubmissionView; onStartEdit?: () => void; onDelete?: () => void }) {
   const dialog = useDialog();
   return (
     <>
       {submission.mine && onStartEdit && (
-        <button type="button" aria-label="Edit post" title="Edit post" onClick={onStartEdit} className={HEADER_BTN}>
-          <Pencil className="h-4 w-4" aria-hidden />
-        </button>
+        <IconButton label="Edit post" icon={Pencil} onClick={onStartEdit} className="h-8 w-8" />
       )}
       {submission.canDelete && onDelete && (
-        <button
-          type="button"
-          aria-label="Delete post"
-          title="Delete post"
-          className={`${HEADER_BTN} hover:!text-destructive`}
+        <IconButton
+          label="Delete post"
+          icon={Trash2}
+          tone="destructive"
+          className="h-8 w-8"
           onClick={async () => {
             if (await dialog.confirm({ title: "Delete this post?", description: "Its comments will be deleted too.", confirmLabel: "Delete", tone: "destructive" })) onDelete();
           }}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden />
-        </button>
+        />
       )}
     </>
   );
@@ -188,9 +183,9 @@ function EditPostForm({ submission, onSave, onCancel }: { submission: CritSubmis
   const [title, setTitle] = useState(submission.title);
   const [question, setQuestion] = useState(submission.question ?? "");
   return (
-    <div className="flex flex-col gap-2 rounded-lg bg-os-bg p-3">
-      <input aria-label="Title" value={title} maxLength={120} onChange={(e) => setTitle(e.target.value)} className={`${FIELD} h-9`} />
-      <textarea aria-label="Question" rows={2} value={question} maxLength={400} placeholder="What would you like feedback on?" onChange={(e) => setQuestion(e.target.value)} className={FIELD} />
+    <div className="os-form flex flex-col gap-2 rounded-lg bg-os-bg p-3">
+      <FormField label="Title" labelHidden value={title} maxLength={120} onChange={setTitle} />
+      <FormField label="Question" labelHidden multiline rows={2} value={question} maxLength={400} placeholder="What would you like feedback on?" onChange={setQuestion} />
       <div className="flex justify-end gap-2">
         <button type="button" className="os-btn-ghost text-sm" onClick={onCancel}>
           Cancel
