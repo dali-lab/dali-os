@@ -4,6 +4,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { DomainChips } from "~/components/DomainChips";
 import { HeroClusterLabel } from "~/components/os-page";
 import { cn } from "~/lib/cn";
+import { PANE_BLEED_TOP_CLASS } from "~/components/shell/pane-gutter";
 import { ImagePlus } from "lucide-react";
 import { CoverTile, cardColorHex, coverGround, parseCover } from "~/components/cover/CoverPattern";
 import { GeneratedArt } from "~/components/cover/GeneratedArt";
@@ -264,7 +265,7 @@ export function ProjectHeader({
       <header
         data-testid="project-band"
         style={parsed ? { backgroundColor: cardColorHex(parsed.card) } : undefined}
-        className="flex min-h-[176px] gap-6 rounded-os-card bg-os-band p-6 text-os-on-band"
+        className={cn("flex min-h-[176px] gap-6 bg-os-band p-6 text-os-on-band", PANE_BLEED_TOP_CLASS)}
       >
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
           <div className="flex flex-col gap-1.5">
