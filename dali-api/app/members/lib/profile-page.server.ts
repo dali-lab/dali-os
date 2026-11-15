@@ -50,7 +50,7 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
-import { getOnboardingFormBinding } from "~/hiring/lib/onboarding-form.server";
+import { getOnboardingFormBinding } from "~/members/lib/onboarding-form.server";
 import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
 import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
 import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
@@ -87,6 +87,11 @@ export type ProfileMember = {
   hometown: string | null;
   /** Where they live now ("Based in"); pins them on the Community map. */
   currentLocation: string | null;
+  currentLocationCity: string | null;
+  currentLocationRegion: string | null;
+  currentLocationCountry: string | null;
+  currentLocationGeonameId: number | null;
+  currentLocationLat: number | null;
   workExperiences: WorkExperienceItem[];
   linkedinUrl: string | null;
   githubUsername: string | null;
@@ -498,6 +503,11 @@ export async function loadProfilePage({
       major: true,
       hometown: true,
       currentLocation: true,
+      currentLocationCity: true,
+      currentLocationRegion: true,
+      currentLocationCountry: true,
+      currentLocationGeonameId: true,
+      currentLocationLat: true,
       openToCoffeeChats: true,
       openToResumeReviews: true,
       workExperiences: {
@@ -883,6 +893,7 @@ export async function runProfileAction({
         ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, text(f)])),
         classYear: text("classYear"),
         birthday: text("birthday"),
+        currentLocationGeonameId: text("currentLocationGeonameId"),
       },
       { allowNetId: true },
     );

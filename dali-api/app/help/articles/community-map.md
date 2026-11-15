@@ -11,37 +11,60 @@ Community shows where DALI alumni and current students are, and the events they 
 
 [Community](/community) is under **Lab** in the sidebar. If your workspace has the Community area, it is the first page there instead. Alumni find it under **Lab** too. See [Alumni](/help/articles/alumni).
 
+## Set where you are based
+
+On your profile, edit the About card and find **Based in**. Start typing a city and pick it from the list. Cities where other DALI people live show first. Each row shows the city, then its region and country.
+
+If your place is not on the list, choose the last row, **Use "your text"**. We then look the text up on the map. Under the field, **On the map as** shows the place we found. If you see **Not found on the map. Try a city and country.**, change the text to a city and country and save again. A city you picked from the list always lands in the right place, so no line shows.
+
+Click **Clear** to remove it. You then leave the map unless you are a student, who shows in Hanover, NH.
+
+City list from GeoNames (geonames.org), CC BY 4.0.
+
 ## Find people
 
 The page has a list on the left and the map filling the rest. On a small screen the map is on top and the list is below it. The map opens on the area around where you are based. If you haven't set **Based in** on your profile, it shows everyone.
 
-- Switch between **People** and **Events** at the top of the list. Each shows how many match.
-- Search people by name, company or city.
-- Each row shows the person's photo, class year, job, city and, when you share something, a line such as **Also on** a project, **Your class** or **On your old project**. A coffee cup means they are open to coffee chats. Students have a **Student** tag. Click a row to open the profile.
+- Switch between **People** and **Events** at the top of the list. Each shows how many match. You are not in your own list or counts.
+- The **People** tab shows only people. Events live in the **Events** tab.
+- Search people by name or company. Each row shows the person's photo, class year, job, city and, when you share something, a line such as **Also on** a project, **Your class** or **On your old project**. A coffee cup means they are open to coffee chats. Students have a **Student** tag. Click a row to open the profile.
 - Students who have not set a location appear in Hanover, NH.
 - Sort with **Best match**, which puts people you share a project, class or city with first, or by **Name**.
 - A line under the list says how many alumni have no location yet. If your own profile has no location, an **Add where you're based** link takes you to your profile to set it.
 
 ### Filters
 
-Under the search box:
+Click **Filters** next to the search box. Each tab has its own panel, and a number on the button says how many filters are on. **Reset** in the panel turns them all off.
 
-- **Alumni and students**, **Alumni** or **Students**.
+On the **People** tab:
+
+- **Who**: **Everyone**, **Alumni** or **Students**.
 - **Class**: one or more class years.
-- **Role at DALI**: Design, Development, Product management and Core team, taken from their DALI terms. Each shows how many people have it.
+- **Role at DALI**: Design, Development, Product management and Core team, taken from their DALI terms.
 - **Project**: people who were on a project.
 - **Open to**: coffee chats, resume reviews, or both.
 - **Active this week**: people who signed in during the last 7 days.
 
-**Clear** appears when any filter is on.
+### The list follows the map
 
-### Follow the map
+The list always shows the people and events in the part of the map you are looking at, and it changes as you pan and zoom. The count above it reads, for example, **12 in this view**.
 
-**List what's on the map** is on by default. The list then shows only the people and events in the part of the map you are looking at, and it changes as you pan and zoom. Turn it off to list everyone.
-
-Places with no one matching your filters fade on the map. Click a place to see just the people and events there. The top of the list names the place and says how many people are there and how many are from your class. Click **All places** to go back.
+Places with no one matching your filters fade on the map. Click a place to see just the people and events there. The top of the list names the place, and the place shows as a chip in the search box. On the **People** tab it says how many people are there and how many are from your class. On the **Events** tab it says how many upcoming events there are and how many people are based there. Both tab counts follow the place. Click the **x** on the chip to go back to everything and zoom the map out to everyone.
 
 Places close together share one marker that says how many people are there, such as **12 people**. Zoom in and it splits into its places. Click it to see everyone in all of those places and zoom to them.
+
+### Pick a place from search
+
+Type two or more letters in the search box and a list drops down.
+
+- **Places** lists the places that match. Each shows how many people are there. If other places are within 40 km, the first row is an area, such as **Boston area**, with the nearby places underneath. Pick it to see everyone in all of them.
+- **People** (on the People tab) shows up to three people whose name or job matches. Pick one to open their profile.
+
+Use the arrow keys and **Enter**, or click. **Esc** closes the list. Press **Enter** with nothing highlighted to filter by name, job or city as you type. While a place is picked, the search box only searches within it.
+
+### Pins at the edge of the map
+
+People outside the part of the map you are looking at show as a small numbered bubble on the map's edge, on the side where they are, with the place name beside it. Places that would overlap share one bubble with the total. Click one to zoom to that place.
 
 ### Who was active lately
 
@@ -49,7 +72,7 @@ A person who signed in within the last day shows **Active today** with a filled 
 
 ## Events
 
-The **Events** tab lists upcoming events, grouped into those on the map and those that are **Online**. Times show in your time zone. Narrow the list by date (the next 7 days, 30 days or 3 months), by alumni or DALI events, and by in person or online.
+The **Events** tab lists upcoming events in the map view, plus those that are **Online**. Times show in your time zone. In **Filters**, narrow the list by date (the next 7 days, 30 days or 3 months), by alumni or DALI events, and by in person or online. While you are on this tab, people on the map are dimmed.
 
 - Each row shows the date, title, day, time and place, who is going, and an **RSVP** button. After you RSVP it reads **Going**.
 - Click an event, or its date marker on the map, to open it. You see the full date and time, the place, the host, the description, and who is going, with the people you know first.
@@ -59,7 +82,7 @@ The **Events** tab lists upcoming events, grouped into those on the map and thos
 
 ### Host an event
 
-Alumni can host events. Click **Host an event** and fill in:
+Alumni can host events. In the **Events** tab, click **Host an event**, the first row in the list, and fill in:
 
 1. **Name**.
 2. **When**: the date and start and end times.
@@ -78,7 +101,7 @@ When you turn on **Tell people nearby** for an event, people who live within 50 
 
 ## Coffee chats and resume reviews
 
-Alumni set what they are open to from the **I'm open to** button at the top of Community. Both switches, **Coffee chats** and **Resume reviews**, are off until you turn them on. When a switch is on, other members and alumni see the matching **Coffee chat** or **Resume review** button on your profile.
+Alumni set what they are open to from the **I'm open to** button at the top right of the map. It shows what is on now, such as **Coffee chats**, or **Nothing yet**. Click it to open the switches **Coffee chats** and **Resume reviews**. Both are off until you turn them on. When a switch is on, other members and alumni see the matching **Coffee chat** or **Resume review** button on your profile.
 
 Resume review requests and coffee chat invites are anonymous until the other person says yes. Members can send both.
 

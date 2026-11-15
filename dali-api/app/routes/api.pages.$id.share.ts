@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.pages.$id.share";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { errorResponse } from "~/lib/http-error.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { loadShareOptions, parsePermission, parseLinkAccess } from "~/lib/share-params.server";
 import {
@@ -83,7 +83,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
       }
       case "share-options": {
-        if (!(await isLabMember(me))) {
+        if (!(await isLabMemberOrAlum(me))) {
           return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
         }
         const q = (str("q") ?? "").trim();

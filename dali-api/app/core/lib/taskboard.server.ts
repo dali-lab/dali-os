@@ -3,23 +3,10 @@ import { fullName } from "~/lib/display";
 import { USER_NAME_SELECT } from "~/lib/prisma-shapes";
 import { activeDomainOptions } from "~/lib/reference-cache.server";
 import { listActiveCoreMembers } from "~/lib/core-members.server";
+import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import type { Priority, TaskBoardOptions, TaskCardModel, TaskStatus } from "~/projects/lib/task-board";
 
-const CORE_BOARD_SELECT = { id: true, name: true } as const;
 const TASK_LIMIT = 1000;
-
-export async function getCoreBoardProject(): Promise<{ id: string; name: string }> {
-  const existing = await prisma.project.findFirst({ where: { kind: "CoreBoard" }, select: CORE_BOARD_SELECT });
-  if (existing) return existing;
-  try {
-    return await prisma.project.create({ data: { name: "Core", kind: "CoreBoard" }, select: CORE_BOARD_SELECT });
-  } catch (err) {
-    if ((err as { code?: string } | null)?.code !== "P2002") throw err;
-    const raced = await prisma.project.findFirst({ where: { kind: "CoreBoard" }, select: CORE_BOARD_SELECT });
-    if (!raced) throw err;
-    return raced;
-  }
-}
 
 export async function loadCoreTaskboard(userId: string, request: Request) {
   const [project, members, domains] = await Promise.all([

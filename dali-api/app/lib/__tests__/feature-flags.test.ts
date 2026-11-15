@@ -8,6 +8,7 @@ import {
 import type { UserRoles } from "../roles";
 
 const noRoles: UserRoles = {
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isCore: false,
   isAdmin: false,

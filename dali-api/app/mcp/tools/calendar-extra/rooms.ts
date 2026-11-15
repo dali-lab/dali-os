@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { buildRule } from "~/calendar/lib/meeting-occurrences";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import {
   cancelRoomBookingAsMember,
   createRoomBooking,
@@ -39,7 +39,7 @@ function parseScheduleWindow(start: string, end: string) {
 }
 
 async function requireLabMember(userId: string) {
-  if (!(await isLabMember(userId))) throw new McpForbiddenError();
+  if (!(await isLabMemberOrAlum(userId))) throw new McpForbiddenError();
 }
 
 function unwrap<T>(result: RoomWriteResult<T>): T {

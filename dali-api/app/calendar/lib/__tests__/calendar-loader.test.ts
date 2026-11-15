@@ -17,7 +17,7 @@ vi.mock("~/lib/auth", () => ({
   isImpersonating: vi.fn(() => false),
 }));
 vi.mock("~/lib/roles", () => ({
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   currentTerm: vi.fn(),
   getUserRoleInstances: vi.fn(),
   canViewForms: vi.fn(),
@@ -33,7 +33,7 @@ vi.mock("~/calendar/lib/google-calendar.server", () => ({
 }));
 
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
-import { isLabMember, currentTerm, getUserRoleInstances, canViewForms, isCore, getUserRoles } from "~/lib/roles";
+import { isLabMemberOrAlum, currentTerm, getUserRoleInstances, canViewForms, isCore, getUserRoles } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { fetchCalendarEvents, getValidAccessTokenForLink, listCalendarsForLink } from "~/calendar/lib/google-calendar.server";
 import { invalidateExternalCache } from "~/calendar/lib/external-cache.server";
@@ -70,7 +70,7 @@ beforeEach(() => {
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: USER } } as never);
   vi.mocked(redirectNonMemberToPortal).mockResolvedValue(null as never);
   vi.mocked(isImpersonating).mockReturnValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(currentTerm).mockResolvedValue({ id: "t1", code: "26F" } as never);
   vi.mocked(getUserRoleInstances).mockResolvedValue([] as never);
   vi.mocked(canViewForms).mockResolvedValue(false);
@@ -104,7 +104,7 @@ describe("loadCalendarData", () => {
   });
 
   it("serves a non-member on the portal mount without the directory", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     const data = await run({ portal: true });
     expect(data.hasDirectory).toBe(false);
   });

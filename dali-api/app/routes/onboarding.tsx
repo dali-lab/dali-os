@@ -16,7 +16,7 @@ import {
   MemberFormFillView,
   MemberFormShell,
 } from "~/forms/components/MemberFormFillView";
-import { getOnboardingFormBinding } from "~/hiring/lib/onboarding-form.server";
+import { getOnboardingFormBinding } from "~/members/lib/onboarding-form.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Welcome · DALI OS" }];
 

@@ -18,7 +18,7 @@ vi.mock("~/help/library.server", () => ({
 import { loader as listLoader } from "../help.articles._index";
 import { loader as articleLoader } from "../help.articles.$slug";
 
-const ROLES = { isLabMember: true };
+const ROLES = { isLabMemberOrAlum: true };
 const article = (slug: string, url = `/help/articles/${slug}`) => ({
   slug,
   title: `Title ${slug}`,

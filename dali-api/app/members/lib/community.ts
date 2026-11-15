@@ -68,16 +68,27 @@ export function haversineKm(
   return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+function placeLabel(u: {
+  currentLocation: string | null;
+  currentLocationCity?: string | null;
+  currentLocationRegion?: string | null;
+}): string | null {
+  const parts = [u.currentLocationCity, u.currentLocationRegion].filter(Boolean);
+  return parts.length ? parts.join(", ") : u.currentLocation;
+}
+
 /** Where a person pins: their own spot, or Hanover for a student who hasn't set one. */
 export function locatePerson(u: {
   isStudent: boolean;
   currentLocation: string | null;
+  currentLocationCity?: string | null;
+  currentLocationRegion?: string | null;
   currentLocationLat: number | null;
   currentLocationLng: number | null;
 }): { location: string; lat: number; lng: number } | null {
   if (u.currentLocationLat != null && u.currentLocationLng != null) {
     return {
-      location: u.currentLocation || HANOVER.label,
+      location: placeLabel(u) || HANOVER.label,
       lat: u.currentLocationLat,
       lng: u.currentLocationLng,
     };
@@ -333,4 +344,135 @@ export function placesLabel(places: readonly { label: string; people: readonly u
   const [first, ...rest] = [...places].sort((a, b) => b.people.length - a.people.length);
   if (rest.length === 0) return first.label;
   return `${first.label} and ${rest.length} more ${rest.length === 1 ? "place" : "places"}`;
+}
+
+export function countPeopleFilters(f: PeopleFilters): number {
+  return [
+    f.who !== "all",
+    f.classYears.length > 0,
+    f.roles.length > 0,
+    f.projectIds.length > 0,
+    f.openTo.length > 0,
+    f.activeThisWeek,
+  ].filter(Boolean).length;
+}
+
+export const DEFAULT_EVENT_WINDOW_DAYS = 90;
+
+export function countEventFilters(f: Pick<EventFilters, "host" | "mode" | "withinDays">): number {
+  return [f.withinDays !== DEFAULT_EVENT_WINDOW_DAYS, f.host !== "all", f.mode !== "all"].filter(Boolean).length;
+}
+
+export const AREA_KM = 40;
+export const SUGGEST_MIN_CHARS = 2;
+export const SUGGEST_MAX_PEOPLE = 3;
+
+type PlaceLike = { key: string; label: string; lat: number; lng: number; people: readonly unknown[] };
+
+export type PlaceSuggestions<P extends PlaceLike = PlaceLike> = {
+  area: { name: string; keys: string[]; subline: string; count: number } | null;
+  places: { key: string; label: string; count: number; place: P }[];
+};
+
+const byBiggest = (a: PlaceLike, b: PlaceLike) => b.people.length - a.people.length || a.label.localeCompare(b.label);
+
+/** The places within `km` of an anchor, biggest first, anchor included. */
+export function placesWithin<P extends PlaceLike>(places: readonly P[], anchor: P, km: number = AREA_KM): P[] {
+  return places.filter((p) => p.key === anchor.key || haversineKm(p, anchor) <= km).sort(byBiggest);
+}
+
+/**
+ * Places whose label matches what was typed, plus an area row when the best
+ * match has other places within 40 km: picking it selects all of them.
+ */
+export function suggestPlaces<P extends PlaceLike>(places: readonly P[], query: string): PlaceSuggestions<P> {
+  const q = query.trim().toLowerCase();
+  if (q.length < SUGGEST_MIN_CHARS) return { area: null, places: [] };
+  const matches = places
+    .filter((p) => p.label.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const starts = Number(b.label.toLowerCase().startsWith(q)) - Number(a.label.toLowerCase().startsWith(q));
+      return starts || byBiggest(a, b);
+    });
+  if (matches.length === 0) return { area: null, places: [] };
+  const best = matches[0];
+  const members = placesWithin(places, best);
+  const others = members.filter((p) => p.key !== best.key);
+  const area =
+    others.length === 0
+      ? null
+      : {
+          name: best.label,
+          keys: members.map((p) => p.key),
+          subline:
+            others.length > 3
+              ? `${others.slice(0, 3).map((p) => p.label).join(", ")} and ${others.length - 3} more`
+              : others.map((p) => p.label).join(", "),
+          count: members.reduce((n, p) => n + p.people.length, 0),
+        };
+  return {
+    area,
+    places: matches.map((p) => ({ key: p.key, label: p.label, count: p.people.length, place: p })),
+  };
+}
+
+export function suggestPeople<T extends Pick<CommunityPerson, "name" | "currentJob">>(
+  people: readonly T[],
+  query: string,
+  limit: number = SUGGEST_MAX_PEOPLE,
+): T[] {
+  const q = query.trim().toLowerCase();
+  if (q.length < SUGGEST_MIN_CHARS) return [];
+  return people.filter((p) => `${p.name} ${p.currentJob ?? ""}`.toLowerCase().includes(q)).slice(0, limit);
+}
+
+export type EdgeSide = "left" | "right" | "top" | "bottom";
+export type EdgeView = {
+  center: { lat: number; lng: number };
+  bounds: MapBounds;
+  width: number;
+  height: number;
+};
+export type EdgePosition = { x: number; y: number; side: EdgeSide };
+
+const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (Math.max(-85, Math.min(85, lat)) * Math.PI) / 360));
+const wrapLng = (d: number) => ((((d + 180) % 360) + 360) % 360) - 180;
+
+/**
+ * Where a place outside the view sits on the map's edge: on the line from the
+ * map's centre toward it, inset from the border. Null when it is in view.
+ */
+export function edgePosition(view: EdgeView, place: { lat: number; lng: number }, inset = 20): EdgePosition | null {
+  const { center, bounds, width, height } = view;
+  const spanLng = bounds.east - bounds.west + (bounds.west <= bounds.east ? 0 : 360);
+  const spanY = mercY(bounds.north) - mercY(bounds.south);
+  if (width <= 0 || height <= 0 || spanLng <= 0 || spanY <= 0) return null;
+  const dx = (wrapLng(place.lng - center.lng) / spanLng) * width;
+  const dy = ((mercY(center.lat) - mercY(place.lat)) / spanY) * height;
+  const limitX = width / 2 - inset;
+  const limitY = height / 2 - inset;
+  if (Math.abs(dx) <= limitX && Math.abs(dy) <= limitY) return null;
+  const t = Math.min(dx === 0 ? Infinity : limitX / Math.abs(dx), dy === 0 ? Infinity : limitY / Math.abs(dy));
+  const side: EdgeSide =
+    Math.abs(dx) / limitX >= Math.abs(dy) / limitY ? (dx < 0 ? "left" : "right") : dy < 0 ? "top" : "bottom";
+  return { x: width / 2 + dx * t, y: height / 2 + dy * t, side };
+}
+
+export type EdgePin = EdgePosition & { key: string; label: string; count: number };
+export type MergedEdgePin = EdgePin & { keys: string[] };
+
+/** Pins whose bubbles would overlap become one: counts add up, the biggest place names it. */
+export function mergeEdgePins(pins: readonly EdgePin[], minGapPx: number = 26): MergedEdgePin[] {
+  const ranked = [...pins].sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+  const merged: MergedEdgePin[] = [];
+  for (const pin of ranked) {
+    const home = merged.find((m) => Math.hypot(m.x - pin.x, m.y - pin.y) < minGapPx);
+    if (home) {
+      home.count += pin.count;
+      home.keys.push(pin.key);
+    } else {
+      merged.push({ ...pin, keys: [pin.key] });
+    }
+  }
+  return merged;
 }

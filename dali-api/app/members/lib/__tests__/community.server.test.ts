@@ -108,6 +108,12 @@ describe("loadCommunityPeople", () => {
     expect(JSON.stringify(people)).not.toContain("lastActiveAt");
   });
 
+  it("leaves the viewer out of the people query", async () => {
+    db.user.findMany.mockResolvedValue([]);
+    await loadCommunityPeople("viewer", NOW);
+    expect(db.user.findMany.mock.calls[0][0].where).toMatchObject({ id: { not: "viewer" } });
+  });
+
   it("hides activity for someone who turned it off", async () => {
     db.user.findMany.mockResolvedValue([row("ada", { lastActiveAt: hoursAgo(1), hideActivity: true })]);
     expect((await loadCommunityPeople("viewer", NOW)).people[0].activity).toBeNull();

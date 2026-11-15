@@ -11,7 +11,7 @@ import { findRegistryTool } from "~/mcp/registry";
 
 const request = new Request("http://x/mcp");
 const ctx = { user: { id: "u1" }, request } as Parameters<typeof runReadHelp>[0];
-const ROLES = { isLabMember: true };
+const ROLES = { isLabMemberOrAlum: true };
 const ARTICLE = {
   slug: "rooms",
   title: "Booking rooms",

@@ -21,7 +21,7 @@ vi.mock("~/lib/pageAccess.server", () => {
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn().mockResolvedValue(false),
   isProjectMember: vi.fn().mockResolvedValue(false),
-  isLabMember: vi.fn().mockResolvedValue(true),
+  isLabMemberOrAlum: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("~/drive/lib/page-audience.server", () => ({
   summarizeAudience: vi.fn(async (_viewer: string, rows: Array<{ id: string }>) =>

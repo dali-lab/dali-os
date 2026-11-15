@@ -81,6 +81,7 @@ export default [
     route("admin/insights", "admin/routes/admin.section.ts", { id: "admin-section-insights" }),
     route("admin/insights/analytics", "admin/routes/admin.analytics.tsx"),
     route("admin/insights/ai-usage", "admin/routes/admin.ai-usage.tsx"),
+    route("admin/insights/games", "admin/routes/admin.games.tsx"),
     route("admin/insights/audit-log", "admin/routes/admin.activity.tsx"),
     route("admin/platform", "admin/routes/admin.section.ts", { id: "admin-section-platform" }),
     route("admin/platform/jobs", "admin/routes/admin.jobs.tsx"),
@@ -453,6 +454,8 @@ export default [
 
   // High scores for the tetris game on the week 5 home landing scene.
   route("api/landing/tetris-scores", "routes/api.landing.tetris-scores.ts"),
+  // High scores for the tunnel run on the week 10 home landing scene.
+  route("api/landing/tunnel-scores", "routes/api.landing.tunnel-scores.ts"),
   // High scores for the runner game on the error screens.
   route("api/dino-scores", "routes/api.dino-scores.ts"),
 
@@ -904,6 +907,7 @@ export default [
   route("api/email/attachment", "routes/api.email.attachment.ts"),
   // Core/Admin member search — manual applicant-email link in the Email tab.
   route("api/users/search", "routes/api.users.search.ts"),
+  route("api/places/search", "routes/api.places.search.ts"),
 
   // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
   // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding

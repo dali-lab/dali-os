@@ -29,6 +29,7 @@ import {
 
 const NOW = new Date("2026-10-24T16:00:00Z");
 const roles = (over: Partial<UserRoles> = {}): UserRoles => ({
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isCore: false,
   isAdmin: false,
@@ -91,6 +92,12 @@ describe("audienceIncludes", () => {
     vi.mocked(isUserInAnyGroup).mockResolvedValue(true);
     expect(await audienceIncludes({ everyone: false, roles: [], groupIds: ["g1"] }, "u", roles())).toBe(true);
     expect(isUserInAnyGroup).toHaveBeenCalledWith("u", ["g1"]);
+  });
+
+  it("keeps alumni out of a Lab members banner", async () => {
+    const labMembers = { everyone: false, roles: ["isLabMember"], groupIds: [] };
+    expect(await audienceIncludes(labMembers, "u", roles())).toBe(true);
+    expect(await audienceIncludes(labMembers, "u", roles({ isLabMember: false, isAlumni: true }))).toBe(false);
   });
 
   it("ignores a stored role name that isn't a role", async () => {

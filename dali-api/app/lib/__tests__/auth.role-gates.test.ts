@@ -6,7 +6,7 @@ vi.mock("~/lib/betterauth-compat.server", () => ({ resolveBetterAuthAuth: vi.fn(
 vi.mock("~/lib/roles", () => ({
   getUserRoles: vi.fn(),
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   isProjectMember: vi.fn(),
 }));
 

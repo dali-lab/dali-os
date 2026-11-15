@@ -14,6 +14,7 @@ const fake = vi.hoisted(() => {
     markers: [] as FakeMarker[],
     workerUrl: null as string | null,
     bounds: { south: 10, west: 170, north: 50, east: 200 },
+    center: { lat: 30, lng: -175 },
   };
 
   class FakeMap {
@@ -51,6 +52,9 @@ const fake = vi.hoisted(() => {
     }
     getContainer() {
       return this.container;
+    }
+    getCenter() {
+      return state.center;
     }
     getBounds() {
       const b = state.bounds;
@@ -207,6 +211,7 @@ beforeEach(() => {
   fake.state.workerUrl = null;
   height = 600;
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(() => height);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(() => 800);
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -436,6 +441,81 @@ describe("CommunityMap", () => {
       (pinFor("Ada c1").element.firstElementChild as HTMLElement).click();
       expect(props.onSelect).toHaveBeenLastCalledWith(null);
     });
+  });
+
+  describe("edge pins", () => {
+    const NEW_ENGLAND = { south: 40, west: -76, north: 47, east: -68 };
+    const edgePin = (side?: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>("[data-edge-pin]")].find((b) => !side || b.dataset.edgePin === side);
+
+    beforeEach(() => {
+      vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+        cb(0);
+        return 1;
+      });
+      fake.state.bounds = NEW_ENGLAND;
+      fake.state.center = { lat: 43.7, lng: -72.29 };
+    });
+    afterEach(() => {
+      fake.state.bounds = { south: 10, west: 170, north: 50, east: 200 };
+      fake.state.center = { lat: 30, lng: -175 };
+    });
+
+    it("shows a count bubble and name on the edge for a place out of view, none for one in view", async () => {
+      await mount();
+      expect(host.querySelectorAll("[data-edge-pin]")).toHaveLength(1);
+      const pin = edgePin("right")!;
+      expect(pin.textContent).toContain("1");
+      expect(pin.textContent).toContain("Place london");
+      expect(pin.getAttribute("aria-label")).toBe("Place london, 1 person, outside the view");
+      expect(pin.style.opacity).toBe("1");
+    });
+
+    it("moves with the map and disappears when the place comes into view", async () => {
+      await mount();
+      fake.state.bounds = { south: 40, west: -80, north: 60, east: 10 };
+      fake.state.center = { lat: 50, lng: -35 };
+      await act(async () => theMap().fire("move"));
+      expect(host.querySelectorAll("[data-edge-pin]")).toHaveLength(0);
+    });
+
+    it("skips places with no one matching the filters", async () => {
+      await mount({ places: [HANOVER, { ...LONDON, faded: true }] });
+      expect(host.querySelectorAll("[data-edge-pin]")).toHaveLength(0);
+    });
+
+    it("renders at half opacity while people are dimmed", async () => {
+      await mount({ dimPeople: true });
+      expect(edgePin()!.style.opacity).toBe("0.5");
+    });
+
+    it("merges places that would overlap into one bubble with the total", async () => {
+      const PARIS = place("paris", 2.35, 48.85, [person("p1"), person("p2")]);
+      await mount({ places: [HANOVER, LONDON, PARIS] });
+      const pins = host.querySelectorAll("[data-edge-pin]");
+      expect(pins).toHaveLength(1);
+      expect(pins[0].textContent).toContain("3");
+      expect(pins[0].textContent).toContain("Place paris");
+    });
+
+    it("clicking selects the place and fits the map to it", async () => {
+      await mount();
+      await act(async () => edgePin()!.click());
+      expect(props.onSelect).toHaveBeenLastCalledWith(["london"]);
+      expect(theMap().fits.at(-1)!.bounds.points).toEqual([[-0.13, 51.5]]);
+    });
+  });
+
+  it("fits the map to the places named by a fit request", async () => {
+    await mount({ home: { lat: 43.7, lng: -72.29 } });
+    await render({ fitRequest: { keys: ["london"], id: 1 } });
+    expect(theMap().fits.at(-1)!.bounds.points).toEqual([[-0.13, 51.5]]);
+    expect(theMap().fits.at(-1)!.options).toMatchObject({ maxZoom: 10 });
+  });
+
+  it("fades place pins to half while people are dimmed", async () => {
+    await mount({ dimPeople: true });
+    expect((pinFor("Ada hanover").element.firstElementChild as HTMLElement).style.opacity).toBe("0.5");
   });
 
   it("removes the map on unmount", async () => {

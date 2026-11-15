@@ -21,7 +21,7 @@ import {
   isReservedUploadKey,
   uploadCapForKey,
 } from '~/lib/file-validation'
-import { isLabMember } from '~/lib/roles'
+import { isLabMemberOrAlum } from '~/lib/roles'
 import { checkRateLimit } from '~/lib/rate-limit'
 
 // A full gallery batch is 10 photos × 3 uploads (original, display copy, tile).
@@ -68,7 +68,7 @@ export async function action({ request }: { request: Request }) {
     // Portal applicants, partners and other Dartmouth sign-ins reach this route
     // too. None of them upload to the project-file / Drive store, so they keep
     // the general cap there rather than 100 MB of storage per request.
-    if (cap === FILE_STORE_UPLOAD_CAP && !(await isLabMember(auth.user.sub, request))) {
+    if (cap === FILE_STORE_UPLOAD_CAP && !(await isLabMemberOrAlum(auth.user.sub, request))) {
       cap = DEFAULT_UPLOAD_CAP
     }
 

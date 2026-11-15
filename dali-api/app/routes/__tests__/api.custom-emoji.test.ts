@@ -17,7 +17,7 @@ vi.mock("~/lib/s3.server", () => ({ isS3Configured: () => false, getDownloadUrl:
 import { action, loader } from "../api.custom-emoji";
 
 const KEY = "uploads/custom-emoji/0b8f4a52-6a51-4c3e-9d5b-2f1a7c9e8d10-emoji.png";
-const member = { isLabMember: true, isCore: false };
+const member = { isLabMemberOrAlum: true, isCore: false };
 
 const post = (body: unknown) =>
   action({
@@ -40,7 +40,7 @@ describe("gates", () => {
   });
 
   it("refuses someone outside the lab, reading or writing", async () => {
-    getUserRoles.mockResolvedValue({ isLabMember: false, isCore: false });
+    getUserRoles.mockResolvedValue({ isLabMemberOrAlum: false, isCore: false });
     const read = (await loader({ request: new Request("http://x") } as never)) as Response;
     expect(read.status).toBe(403);
     expect(((await post({ intent: "add", name: "ok", imageKey: KEY })) as Response).status).toBe(403);
@@ -107,7 +107,7 @@ describe("delete", () => {
   });
 
   it("lets Core delete anyone's", async () => {
-    getUserRoles.mockResolvedValue({ isLabMember: true, isCore: true });
+    getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isCore: true });
     await post({ intent: "delete", id: "e1" });
     expect(db.customEmoji.updateMany.mock.calls[0][0].where).toEqual({ id: "e1", deletedAt: null });
   });

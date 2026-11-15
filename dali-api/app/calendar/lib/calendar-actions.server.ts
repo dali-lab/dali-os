@@ -1,6 +1,6 @@
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { forbidden, requireAuth } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { CalendarActionSchema, type CalendarAction } from "~/calendar/lib/calendar-schemas";
 import { handleCalendarAction } from "~/calendar/lib/calendar-actions/calendars.server";
 import { handleClassAction } from "~/calendar/lib/calendar-actions/classes.server";
@@ -293,7 +293,7 @@ async function dispatchCalendarAction(
 ) {
   if (
     MEMBER_ONLY_CALENDAR_INTENTS.has(rawIntent) &&
-    !(await isLabMember(userId, request))
+    !(await isLabMemberOrAlum(userId, request))
   ) {
     return forbidden(request);
   }

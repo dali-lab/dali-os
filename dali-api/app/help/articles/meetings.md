@@ -44,7 +44,7 @@ Click a meeting on the calendar and open it to get its page. The header has the 
 
 Below that you see when, who organized it, where, and the **Notebook** its notes go into. For a repeating meeting, the arrows next to the time move between occurrences. Each occurrence has its own notes and its own attendance.
 
-Only invited people, the organizer, Core and members of the meeting's project can open a meeting page. Lab-wide meetings can be opened by any lab member.
+Only invited people, the organizer, Core and members of the meeting's project can open a meeting page. Lab-wide meetings can be opened by any current lab member, not alumni.
 
 ## Edit or cancel
 

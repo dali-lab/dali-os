@@ -31,7 +31,7 @@ export async function runWhoami(user: WhoamiUser) {
   if (roles.isAdmin) tier = "admin";
   else if (roles.isCore) tier = "core";
   else if (roles.isDomainLead) tier = "domain-lead";
-  else if (roles.isLabMember) tier = "member";
+  else if (roles.isLabMemberOrAlum) tier = "member";
   else tier = "non-member";
 
   return {

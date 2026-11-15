@@ -14,6 +14,7 @@ import {
   isLabMentor,
   isCore,
   isLabMember,
+  isLabMemberOrAlum,
   isProjectMember,
   currentTermMemberWhere,
   getUserRoles,
@@ -404,10 +405,10 @@ describe("request-scoped memoization", () => {
     expect(mockPrisma.coreAssignment.findFirst).toHaveBeenCalledTimes(1);
   });
 
-  it("isLabMember runs its query once across many calls sharing a request", async () => {
+  it("isLabMemberOrAlum runs its query once across many calls sharing a request", async () => {
     setRoleFlags({ member: true });
     const r = req();
-    await Promise.all(Array.from({ length: 20 }, () => isLabMember("u", r)));
+    await Promise.all(Array.from({ length: 20 }, () => isLabMemberOrAlum("u", r)));
     expect(mockPrisma.dALIMember.findUnique).toHaveBeenCalledTimes(1);
   });
 
@@ -424,9 +425,52 @@ describe("request-scoped memoization", () => {
 
   it("without a request each call queries independently", async () => {
     setRoleFlags({ member: true });
-    await isLabMember("u");
-    await isLabMember("u");
+    await isLabMemberOrAlum("u");
+    await isLabMemberOrAlum("u");
     expect(mockPrisma.dALIMember.findUnique).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("isLabMember vs isLabMemberOrAlum", () => {
+  function setStatus(membershipStatus: "Active" | "Alumni") {
+    mockPrisma.cycleInterviewer.findFirst.mockResolvedValue(null);
+    mockPrisma.user.findUnique.mockResolvedValue({ membershipStatus });
+  }
+
+  it("a current member is both", async () => {
+    setRoleFlags();
+    setStatus("Active");
+    expect(await getUserRoles("u1")).toMatchObject({ isLabMember: true, isLabMemberOrAlum: true });
+  });
+
+  it("an alum keeps the member row but isn't a current member", async () => {
+    setRoleFlags();
+    setStatus("Alumni");
+    expect(await getUserRoles("u1")).toMatchObject({ isLabMember: false, isLabMemberOrAlum: true });
+  });
+
+  it("an account with no member row is neither", async () => {
+    setRoleFlags({ member: false });
+    setStatus("Active");
+    expect(await getUserRoles("u1")).toMatchObject({ isLabMember: false, isLabMemberOrAlum: false });
+  });
+
+  it("isLabMember asks for an active user with a member row", async () => {
+    mockPrisma.user.findFirst.mockResolvedValue({ id: "u1" });
+    expect(await isLabMember("u1")).toBe(true);
+    expect(mockPrisma.user.findFirst).toHaveBeenCalledWith({
+      where: { id: "u1", daliMember: { isNot: null }, membershipStatus: "Active" },
+      select: { id: true },
+    });
+    mockPrisma.user.findFirst.mockResolvedValue(null);
+    expect(await isLabMember("u1")).toBe(false);
+  });
+
+  it("isLabMember memoizes per request", async () => {
+    mockPrisma.user.findFirst.mockResolvedValue({ id: "u1" });
+    const r = new Request("http://localhost/x");
+    await Promise.all(Array.from({ length: 5 }, () => isLabMember("u1", r)));
+    expect(mockPrisma.user.findFirst).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -3,7 +3,7 @@
 // delete_lab_document (mcp:write).
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { createLabPage } from "~/lib/pages.server";
 import { duplicatePage } from "~/drive/lib/page-copy.server";
 import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
@@ -41,7 +41,7 @@ export class LabDocumentError extends Error {
 }
 
 export async function runListLabDocuments(callerId: string, input: ListInput) {
-  if (!(await isLabMember(callerId))) {
+  if (!(await isLabMemberOrAlum(callerId))) {
     throw new LabDocumentError("Forbidden", 403);
   }
 
@@ -130,7 +130,7 @@ type CreateInput = {
 };
 
 export async function runCreateLabDocument(callerId: string, input: CreateInput) {
-  if (!(await isLabMember(callerId))) {
+  if (!(await isLabMemberOrAlum(callerId))) {
     throw new LabDocumentError("Forbidden", 403);
   }
 

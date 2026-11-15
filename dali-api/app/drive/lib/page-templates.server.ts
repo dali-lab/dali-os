@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import type { WorkspaceType } from "~/generated/prisma/client";
 
 export type PageTemplateRow = { id: string; title: string; iconEmoji: string | null };
@@ -13,7 +13,7 @@ export async function canListWorkspace(
 ): Promise<boolean> {
   if (workspaceType === "Member") return workspaceId === userId;
   if (await isCore(userId)) return true;
-  if (workspaceType === "Lab") return isLabMember(userId);
+  if (workspaceType === "Lab") return isLabMemberOrAlum(userId);
   if (workspaceType === "Project" && workspaceId) return isProjectMember(userId, workspaceId);
   return false;
 }
