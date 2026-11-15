@@ -28,9 +28,6 @@ export const meta: Route.MetaFunction = ({ data }) => [
 
 export const handle = { bleedPane: true };
 
-// Soft tints only: the page text stays dark on all of them.
-const BG_COLORS = ["#fdf2f2", "#fff6e8", "#fffbe6", "#eefaf0", "#eaf4ff", "#f3eefc", "#f1f1ef"];
-
 async function loadPage(request: Request, pageId: string) {
   const viewer = await requireResourceHubViewer(request);
   const page = await prisma.resourceHubPage.findUnique({ where: { id: pageId } });
@@ -56,7 +53,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       id: page.id,
       title: page.title,
       coverUrl: page.coverUrl,
-      bgColor: page.bgColor,
       published: page.publishedAt !== null,
       hasDomain: page.domainId !== null,
       contentJson: page.contentJson,
@@ -99,14 +95,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         return Response.json({ error: "Invalid image" }, { status: 400 });
       }
       await prisma.resourceHubPage.update({ where, data: { title, coverUrl: url || null } });
-      return { ok: true };
-    }
-    case "color": {
-      const color = String(form.get("color") ?? "");
-      if (color && !BG_COLORS.includes(color)) {
-        return Response.json({ error: "Invalid color" }, { status: 400 });
-      }
-      await prisma.resourceHubPage.update({ where, data: { bgColor: color || null } });
       return { ok: true };
     }
     case "publish":
@@ -169,7 +157,7 @@ export default function ResourceHubPage() {
   };
   const patternCover = isPatternCover(page.coverUrl);
   const hasCover = !patternCover && (!!page.coverUrl || (canEdit && !!collabToken && !preview));
-  const pill = patternCover ? "rounded-full bg-white/10 px-2.5 py-1 text-white [&_button:not(.os-btn-primary)]:text-white [&_button:not(.os-btn-primary)]:border-white/30 [&_button:not(.os-btn-primary):hover]:bg-white/10 [&_svg]:text-white" : hasCover ? "rounded-full bg-[#1b2a47]/75 px-2.5 py-1 text-white backdrop-blur [&_button:not(.os-btn-primary)]:text-white [&_button:not(.os-btn-primary)]:border-white/30 [&_button:not(.os-btn-primary):hover]:bg-white/10 [&_svg]:text-white" : "";
+  const pill = patternCover ? "rounded-full bg-[var(--os-on-art-chip)] px-2.5 py-1 text-[var(--os-on-art-ink)] [&_button:not(.os-btn-primary)]:text-[var(--os-on-art-ink)] [&_button:not(.os-btn-primary)]:border-[var(--os-on-art-line)] [&_button:not(.os-btn-primary):hover]:bg-[var(--os-on-art-chip-hover)] [&_svg]:text-[var(--os-on-art-ink)]" : hasCover ? "rounded-full bg-[var(--os-on-art-chip)] px-2.5 py-1 text-[var(--os-on-art-ink)] backdrop-blur [&_button:not(.os-btn-primary)]:text-[var(--os-on-art-ink)] [&_button:not(.os-btn-primary)]:border-[var(--os-on-art-line)] [&_button:not(.os-btn-primary):hover]:bg-[var(--os-on-art-chip-hover)] [&_svg]:text-[var(--os-on-art-ink)]" : "";
   const live = canEdit && !!collabToken;
   const editing = live && !preview;
 
@@ -204,10 +192,9 @@ export default function ResourceHubPage() {
     <div
       onClick={focusEnd}
       className={`min-h-dvh bg-card px-6 sm:px-10 ${editing ? "pb-[55vh]" : "pb-16"}`}
-      style={page.bgColor ? { backgroundColor: page.bgColor, color: "#1f1f1f" } : undefined}
     >
       <div
-        className={patternCover ? "relative -mx-6 mb-6 text-white sm:-mx-10" : "relative"}
+        className={patternCover ? "relative -mx-6 mb-6 text-[var(--os-on-art-ink)] sm:-mx-10" : "relative"}
         style={patternCover ? { backgroundColor: cardColorHex(parseCover(page.coverUrl)?.card) } : undefined}
       >
       <div
@@ -228,29 +215,26 @@ export default function ResourceHubPage() {
                 setLeave("asking");
               }
             }}
-            className={`inline-flex items-center gap-1.5 text-sm ${hasCover ? "text-white/85 hover:text-white" : "text-os-grey hover:text-foreground"} ${pill}`}
+            className={`inline-flex items-center gap-1.5 text-sm ${hasCover ? "text-[var(--os-on-art-ink)] opacity-85 hover:opacity-100" : "text-os-grey hover:text-foreground"} ${pill}`}
           >
             <ArrowLeft className="h-4 w-4" />
             Resource Hub
           </Link>
         </div>
-        <span className={`text-sm ${hasCover ? "text-white/85" : "text-os-grey"} ${live && !preview ? pill : ""}`}>{live && !preview ? SYNC_LABEL[sync] : ""}</span>
+        <span className={`text-sm ${hasCover ? "text-[var(--os-on-art-ink)] opacity-85" : "text-os-grey"} ${live && !preview ? pill : ""}`}>{live && !preview ? SYNC_LABEL[sync] : ""}</span>
         {live ? (
           <div className={`flex items-center gap-2 justify-self-end ${pill}`}>
             <IconButton label="Delete" icon={Trash2} tone="destructive" onClick={remove} />
-            <button
-              type="button"
+            <IconButton
+              label={preview ? "Back to editing" : "Preview"}
+              icon={preview ? EyeOff : Eye}
+              aria-pressed={preview}
+              className="h-8 w-8 border border-os-container-hi"
               onClick={() => {
                 if (!preview && editor) setSnapshot(editor.document as unknown[]);
                 setPreview((on) => !on);
               }}
-              aria-pressed={preview}
-              aria-label={preview ? "Back to editing" : "Preview"}
-              title={preview ? "Back to editing" : "Preview"}
-              className="grid h-8 w-8 place-items-center rounded-lg border border-os-container-hi text-foreground transition-colors hover:bg-os-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60"
-            >
-              {preview ? <EyeOff className="h-4 w-4" aria-hidden /> : <Eye className="h-4 w-4" aria-hidden />}
-            </button>
+            />
             <button
               type="button"
               disabled={fetcher.state !== "idle"}
@@ -281,7 +265,7 @@ export default function ResourceHubPage() {
                 aria-label="Change cover"
                 title="Change cover"
                 onClick={() => setStudio(true)}
-                className="grid h-9 w-9 place-items-center rounded-full border border-white/50 text-white outline-none transition-colors duration-150 hover:bg-white/10 focus-visible:ring-2 focus-visible:ring-white/70"
+                className="grid h-9 w-9 place-items-center rounded-full border border-[var(--os-on-art-line)] text-[var(--os-on-art-ink)] outline-none transition-colors duration-150 hover:bg-[var(--os-on-art-chip-hover)] focus-visible:ring-2 focus-visible:ring-[var(--os-on-art-ink)]"
               >
                 <ImagePlus className="h-4 w-4" aria-hidden />
               </button>
@@ -296,7 +280,7 @@ export default function ResourceHubPage() {
             {page.coverUrl ? (
               <img src={page.coverUrl} alt="" className="aspect-[16/5] w-full object-cover" />
             ) : (
-              <div className="flex aspect-[16/5] w-full items-center justify-center bg-black/[0.04]" />
+              <div className="flex aspect-[16/5] w-full items-center justify-center bg-os-well" />
             )}
           </div>
           {editing && (

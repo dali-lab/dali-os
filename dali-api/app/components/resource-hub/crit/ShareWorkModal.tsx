@@ -5,10 +5,10 @@ import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { rawUploadUrl } from "~/components/doc";
 import { safeHref } from "~/components/doc/components/kinds";
+import { FormField } from "~/components/ui/FormField";
+import { Radio } from "~/components/ui/Radio";
 
 const ACCEPT = "image/*,.pdf,.doc,.docx,.ppt,.pptx,.key,.xls,.xlsx,.txt";
-const FIELD =
-  "w-full rounded-lg border border-os-container-hi bg-os-bg px-3 text-sm text-foreground outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-os-muted focus:border-os-accent focus:ring-2 focus:ring-os-accent/25 disabled:opacity-50";
 
 export interface ShareValues {
   kind: "image" | "file" | "link";
@@ -73,7 +73,7 @@ export function ShareWorkModal({
     >
       <ModalHeader titleId="share-work-title" title="Share work" subtitle="Post something you're working on and ask for thoughts." onClose={onClose} className="!mb-4" />
       <form
-        className="flex flex-col gap-4"
+        className="os-form flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
           void submit();
@@ -113,36 +113,31 @@ export function ShareWorkModal({
               }
             }}
           />
-          <input
-            aria-label="Link"
+          <FormField
+            label="Link"
+            labelHidden
             value={link}
             disabled={!!file}
             inputMode="url"
             placeholder="Or paste a link to Figma, Google Docs, a website…"
-            onChange={(e) => setLink(e.target.value)}
-            className={`${FIELD} h-9`}
+            onChange={setLink}
           />
         </div>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
-          Title <span className="sr-only">(optional)</span>
-          <input value={title} maxLength={120} placeholder={file ? file.name : "Optional, we'll use the file or page name"} onChange={(e) => setTitle(e.target.value)} className={`${FIELD} h-9 font-normal`} />
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium text-foreground">
-          <span>
-            Question <span className="font-normal text-os-grey">Optional</span>
-          </span>
-          <textarea rows={2} value={question} maxLength={400} placeholder="What would you like feedback on?" onChange={(e) => setQuestion(e.target.value)} className={`${FIELD} resize-none py-2 font-normal`} />
-        </label>
+        <FormField
+          label="Title (optional)"
+          value={title}
+          maxLength={120}
+          placeholder={file ? file.name : "Optional, we'll use the file or page name"}
+          onChange={setTitle}
+        />
+        <FormField label="Question (optional)" multiline rows={2} value={question} maxLength={400} placeholder="What would you like feedback on?" onChange={setQuestion} />
         <fieldset className="flex flex-col gap-1.5">
           <legend className="mb-1 text-sm font-medium text-foreground">Post as</legend>
           {[
             { value: false, label: userName },
             { value: true, label: "Anonymous" },
           ].map((o) => (
-            <label key={String(o.value)} className="flex items-center gap-2 text-sm text-foreground">
-              <input type="radio" name="post-as" checked={anonymous === o.value} onChange={() => setAnonymous(o.value)} className="accent-[var(--color-os-accent)]" />
-              {o.label}
-            </label>
+            <Radio key={String(o.value)} name="post-as" label={o.label} checked={anonymous === o.value} onChange={() => setAnonymous(o.value)} />
           ))}
         </fieldset>
         {(error || serverError) && (

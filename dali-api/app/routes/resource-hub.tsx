@@ -29,7 +29,7 @@ export async function loader({ request }: Route.LoaderArgs) {
           ],
         },
     orderBy: { createdAt: "asc" },
-    select: { id: true, title: true, coverUrl: true, bgColor: true, publishedAt: true },
+    select: { id: true, title: true, coverUrl: true, publishedAt: true },
   });
   return {
     domains: await hubDomainOptions(user.sub, core),
@@ -37,7 +37,6 @@ export async function loader({ request }: Route.LoaderArgs) {
       id: r.id,
       title: r.title,
       coverUrl: r.coverUrl,
-      bgColor: r.bgColor,
       published: r.publishedAt !== null,
     })),
   };
@@ -133,7 +132,7 @@ export default function ResourceHubIndex() {
                   <ArrowRight className="h-4 w-4 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
                 </span>
               </div>
-              <div className="w-[44%] shrink-0 self-stretch overflow-hidden rounded-xl" style={{ background: isPatternCover(card.coverUrl) ? coverGround(card.coverUrl) : (card.bgColor ?? undefined) }}>
+              <div className="w-[44%] shrink-0 self-stretch overflow-hidden rounded-xl" style={{ background: isPatternCover(card.coverUrl) ? coverGround(card.coverUrl) : undefined }}>
                 {isPatternCover(card.coverUrl) ? (
                   <CoverTile url={card.coverUrl} />
                 ) : (

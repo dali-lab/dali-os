@@ -945,6 +945,35 @@ select:not(:disabled) {
  * dark palette instead of this one, while the shell div — where `.os-shell` is
  * the nearest ancestor — rendered correctly. Matching the arms ties the
  * specificity, and later wins. */
+/* Resource Hub cover art. Illustration, not chrome: the same value in light and
+   dark. Hues the brand palette already has (--color-accent-pink, -coral-light,
+   --color-navy, -teal-light) are used from there, not repeated here. */
+:root {
+  --art-coral:    #d45f6a;
+  --art-apricot:  #f1c885;
+  --art-butter:   #fcf3c2;
+  --art-sage:     #7ab39a;
+  --art-teal:     #5fb8b4;
+  --art-orchid:   #bd64a8;
+  --art-mist:     #d3dae0;
+  --art-ground-lilac: #f3effa;
+  --art-ground-mint:  #e8f4f1;
+  --art-ground-blush: #fbeef2;
+  --art-ground-sky:   #e9f2fb;
+  --art-ground-peach: #fff1e6;
+  --art-ground-sage:  #eef6ea;
+  --art-ink:      #1b2a47;
+  --art-charcoal: #1c1f24;
+  --art-plum:     #3b2a4f;
+  --art-forest:   #1f3b34;
+  --art-wine:     #4a2430;
+  --art-slate:    #2d3948;
+  --os-on-art-ink:        #ffffff;
+  --os-on-art-line:       rgba(255, 255, 255, 0.4);
+  --os-on-art-chip:       rgba(20, 24, 34, 0.5);
+  --os-on-art-chip-hover: rgba(20, 24, 34, 0.72);
+}
+
 /* The three record levels, as one set of variables rather than three sets of
    literals. Epic / story / task are named in CSS (the badge, the timeline bar)
    *and* in JS (the level filter chips, the inline row borders in

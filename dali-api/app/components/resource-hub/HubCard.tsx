@@ -27,12 +27,12 @@ export function HubCard({
   return (
     <div
       style={band ? undefined : { backgroundColor: cardColorHex(parsed.card) }}
-      className={`flex gap-4 text-white ${band ? (inset ? "pb-8 pl-9 pr-6 pt-2 sm:pl-[94px] sm:pr-10" : "px-6 pb-8 pt-2 sm:px-10") : "overflow-hidden rounded-os-card p-3"}`}
+      className={`flex gap-4 text-[var(--os-on-art-ink)] ${band ? (inset ? "pb-8 pl-9 pr-6 pt-2 sm:pl-[94px] sm:pr-10" : "px-6 pb-8 pt-2 sm:px-10") : "overflow-hidden rounded-os-card p-3"}`}
     >
       <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
         <div className="min-w-0">
           <Title className={`font-heading font-semibold leading-tight [overflow-wrap:anywhere] ${band ? "text-4xl md:text-5xl" : "text-xl"}`}>{title}</Title>
-          {draft && <p className="mt-1 text-xs text-white/60">Draft</p>}
+          {draft && <p className="mt-1 text-xs text-[var(--os-on-art-ink)] opacity-60">Draft</p>}
         </div>
         {action}
       </div>
@@ -49,7 +49,7 @@ export function HubBand({ cover, title, published }: { cover: string | null; tit
   const back = (dark: boolean) => (
     <Link
       to="/resource-hub"
-      className={`inline-flex items-center gap-1.5 text-sm ${dark ? "rounded-full bg-white/10 px-2.5 py-1 text-white hover:bg-white/15" : "text-os-grey hover:text-foreground"}`}
+      className={`inline-flex items-center gap-1.5 text-sm ${dark ? "rounded-full bg-[var(--os-on-art-chip)] px-2.5 py-1 text-[var(--os-on-art-ink)] hover:bg-[var(--os-on-art-chip-hover)]" : "text-os-grey hover:text-foreground"}`}
     >
       <ArrowLeft className="h-4 w-4" aria-hidden />
       Resource Hub
@@ -57,7 +57,7 @@ export function HubBand({ cover, title, published }: { cover: string | null; tit
   );
   if (parsed) {
     return (
-      <div className="-mx-6 text-white sm:-mx-10" style={{ backgroundColor: cardColorHex(parsed.card) }}>
+      <div className="-mx-6 text-[var(--os-on-art-ink)] sm:-mx-10" style={{ backgroundColor: cardColorHex(parsed.card) }}>
         <div className="flex min-h-[68px] items-center gap-3 px-6 sm:px-10">{back(true)}</div>
         <HubCard cover={cover as string} title={title} draft={!published} />
       </div>

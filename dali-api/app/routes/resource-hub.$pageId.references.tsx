@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useFetcher, useLoaderData, useSearchParams } from "react-router";
 import { Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.references";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
 import { loadReferencesContext, parseReferenceEdit, parseReferenceForm, resolveReference, serializeReference } from "~/lib/references.server";
 import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
@@ -133,7 +134,7 @@ export default function References() {
       </header>
 
       {items.length === 0 ? (
-        <p className="rounded-os-card border border-dashed border-os-container-hi px-6 py-16 text-center text-sm text-os-grey">Nothing here yet. Add the first reference.</p>
+        <EmptyState title="Nothing here yet">Add the first reference.</EmptyState>
       ) : (
         <ul className="grid grid-cols-1 gap-x-6 gap-y-9 min-[480px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((item) => (
