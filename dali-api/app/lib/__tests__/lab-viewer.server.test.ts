@@ -25,7 +25,7 @@ import { requireLabViewer, labMemberOrCore } from "../lab-viewer.server";
 const user = { sub: "u1", email: "ada@example.edu", firstName: "Ada", lastName: "L" };
 const req = new Request("http://localhost/community/gallery?x=1");
 const roles = (over: Record<string, boolean> = {}) => ({
-  isLabMember: true,
+  isLabMemberOrAlum: true,
   isCore: false,
   isAlumni: false,
   ...over,
@@ -78,7 +78,7 @@ describe("requireLabViewer", () => {
     const out = await requireLabViewer(req, { flag: "community" });
     expect(out.userId).toBe("u1");
     expect(out.user).toBe(user);
-    expect(out.roles.isLabMember).toBe(true);
+    expect(out.roles.isLabMemberOrAlum).toBe(true);
     expect(mocks.getUserRoles).toHaveBeenCalledWith("u1", req);
     expect(mocks.isFeatureEnabled).toHaveBeenCalledWith("community", "u1", out.roles, req);
   });
@@ -101,7 +101,7 @@ describe("requireLabViewer", () => {
   });
 
   it("404s when allow rejects, before checking the flag", async () => {
-    mocks.getUserRoles.mockResolvedValue(roles({ isLabMember: false }));
+    mocks.getUserRoles.mockResolvedValue(roles({ isLabMemberOrAlum: false }));
     const res = await thrown(requireLabViewer(req, { flag: "community", allow: labMemberOrCore }));
     expect(res.status).toBe(404);
     expect(mocks.isFeatureEnabled).not.toHaveBeenCalled();

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.timetable.courses";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { refreshSubjectOfferings } from "~/lib/timetable-cache.server";
 
 // Shared gate: a logged-in lab member. Returns the userId on success, or a
@@ -10,7 +10,7 @@ async function gate(request: Request): Promise<string | Response> {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
-  if (!(await isLabMember(userId))) return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!(await isLabMemberOrAlum(userId))) return Response.json({ error: "Forbidden" }, { status: 403 });
   return userId;
 }
 

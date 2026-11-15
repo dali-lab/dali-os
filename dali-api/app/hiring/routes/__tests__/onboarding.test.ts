@@ -123,7 +123,7 @@ function call(url = "http://localhost/hiring/onboarding") {
 }
 
 const CORE_ROLES = {
-  isLabMember: true,
+  isLabMemberOrAlum: true,
   isCore: true,
   isAdmin: false,
   isDomainLead: false,

@@ -17,7 +17,7 @@ vi.mock("~/mcp/registry", () => {
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() };
+  return { ...real, isCore: vi.fn(), isLabMemberOrAlum: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),

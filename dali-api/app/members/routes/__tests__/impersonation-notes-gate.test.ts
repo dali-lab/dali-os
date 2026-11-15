@@ -16,7 +16,7 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn() }));
 vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: vi.fn() }));
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/members/lib/personal-notes.server", () => ({

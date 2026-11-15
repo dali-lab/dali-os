@@ -119,6 +119,7 @@ export async function action({ request }: Route.ActionArgs) {
   if (roomIds.length && body.startTime) {
     const free = await assertMeetingRoomsFree({
       roomIds,
+      bookerId: auth.user.sub,
       selectedAt: new Date(body.startTime),
       durationMinutes: body.durationMinutes,
       recurrenceRule: body.recurrenceRule ?? null,

@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { isCore, isDomainLead, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isDomainLead, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolvePhotoUrl } from "~/lib/photo";
@@ -151,7 +151,7 @@ export async function authorizeCollabDoc(
     });
     if (!bookmark) return deny;
     if (await isCore(userSub)) return allow;
-    return (await isLabMember(userSub))
+    return (await isLabMemberOrAlum(userSub))
       ? { allowed: true, readOnly: true }
       : deny;
   }

@@ -12,10 +12,10 @@ vi.mock("~/lib/db.server", () => {
   prisma.$transaction.mockImplementation((fn: (tx: typeof prisma) => unknown) => fn(prisma));
   return { prisma };
 });
-vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ currentTerm: vi.fn(), isCore: vi.fn(), isLabMember: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { currentTerm, isCore } from "~/lib/roles";
+import { currentTerm, isCore, isLabMember } from "~/lib/roles";
 import { APPLICATION_TZ, getZonedParts, zonedWallTimeUtc } from "~/lib/timezone";
 import {
   assertMeetingRoomsFree,
@@ -104,6 +104,7 @@ function booking(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(isLabMember).mockResolvedValue(true);
   m.roomBooking.findMany.mockResolvedValue([]);
   m.scheduledMeeting.findMany.mockResolvedValue([]);
   m.room.findUnique.mockResolvedValue({ archivedAt: null });
@@ -241,6 +242,21 @@ describe("createRoomBooking", () => {
     const res = await createRoomBooking(base());
     expect(res.ok).toBe(true);
     expect(m.roomBooking.create).toHaveBeenCalled();
+  });
+
+  it("refuses an alum", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    const res = await createRoomBooking(base());
+    expect(res).toEqual({ ok: false, error: "Only current lab members can book rooms", status: 403 });
+    expect(isLabMember).toHaveBeenCalledWith("u1");
+    expect(m.roomBooking.create).not.toHaveBeenCalled();
+  });
+
+  it("doesn't check membership for an interview booking", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    const res = await createRoomBooking({ ...base(), source: "Interview" });
+    expect(res.ok).toBe(true);
+    expect(isLabMember).not.toHaveBeenCalled();
   });
 
   it("rejects end at or before start", async () => {
@@ -812,6 +828,30 @@ describe("extendRoomBooking", () => {
 });
 
 describe("assertMeetingRoomsFree", () => {
+  const meetingInput = () => ({
+    roomIds: ["r1"],
+    bookerId: "u1",
+    selectedAt: new Date(Date.now() + 24 * H),
+    durationMinutes: 60,
+    recurrenceRule: null,
+  });
+
+  it("refuses an alum adding a room", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    expect(await assertMeetingRoomsFree(meetingInput())).toEqual({
+      ok: false,
+      error: "Only current lab members can book rooms",
+      status: 403,
+    });
+    expect(isLabMember).toHaveBeenCalledWith("u1");
+  });
+
+  it("lets an alum retime a meeting without adding rooms", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    expect(await assertMeetingRoomsFree({ ...meetingInput(), meetingId: "m1", newRoomIds: [] })).toEqual({ ok: true, value: null });
+    expect(isLabMember).not.toHaveBeenCalled();
+  });
+
   it("409s when a meeting occurrence collides with a booking, naming the room", async () => {
     const start = new Date(Date.now() + 24 * H);
     m.roomBooking.findMany.mockImplementation(({ where }: { where: { roomId: string } }) =>

@@ -16,7 +16,7 @@ import { getUserRoles } from "~/lib/roles";
 import { runCategorySearch, runSearchWithOverflow } from "~/lib/search.server";
 import { SEARCH_TOOL, runMcpSearch } from "~/mcp/tools/docs/search";
 
-const MEMBER = { isLabMember: true, isCore: false, isDomainLead: false, canViewForms: false, canViewStaffing: false };
+const MEMBER = { isLabMemberOrAlum: true, isCore: false, isDomainLead: false, canViewForms: false, canViewStaffing: false };
 const result = (id: string) => ({ type: "person", id, title: id, url: `/members/${id}` }) as never;
 
 beforeEach(() => {
@@ -35,7 +35,7 @@ describe("search", () => {
   });
 
   it("returns empty results for non-lab-member (runSearch gates internally)", async () => {
-    vi.mocked(getUserRoles).mockResolvedValue({ ...MEMBER, isLabMember: false } as never);
+    vi.mocked(getUserRoles).mockResolvedValue({ ...MEMBER, isLabMemberOrAlum: false } as never);
     vi.mocked(runSearchWithOverflow).mockResolvedValue({ results: [], categoriesWithMore: [] });
 
     const out = await runMcpSearch("u1", { q: "test" });

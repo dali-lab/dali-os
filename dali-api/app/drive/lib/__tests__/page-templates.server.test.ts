@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { page: { findMany: vi.fn() } } }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn(), isProjectMember: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { listPageTemplates } from "../page-templates.server";
 
 const findMany = (prisma as unknown as { page: { findMany: ReturnType<typeof vi.fn> } }).page.findMany;
@@ -12,7 +12,7 @@ const findMany = (prisma as unknown as { page: { findMany: ReturnType<typeof vi.
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(isCore).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(isProjectMember).mockResolvedValue(false);
   findMany.mockResolvedValue([{ id: "t1", title: "Weekly 1:1", iconEmoji: null }]);
 });
@@ -59,7 +59,7 @@ describe("listPageTemplates — shared scopes", () => {
   });
 
   it("returns nothing in the Lab for a non-member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect(await listPageTemplates("u1", "Lab", null)).toEqual([]);
     expect(findMany).not.toHaveBeenCalled();
   });

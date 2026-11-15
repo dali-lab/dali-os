@@ -34,7 +34,7 @@ vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: v
 
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   isProjectMember: vi.fn(),
 }));
 
@@ -132,8 +132,8 @@ describe("manage_page move: receiver lifecycle", () => {
     (prisma as any).page.findMany.mockImplementation(({ where }: any) =>
       Promise.resolve(where.parentPageId === "f1" ? [{ id: "c1" }] : []),
     );
-    const { isLabMember, isCore } = await import("~/lib/roles");
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    const { isLabMemberOrAlum, isCore } = await import("~/lib/roles");
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(isCore).mockResolvedValue(true);
 
     await runManagePage("u1", { action: "move", pageId: "f1", parentPageId: null, workspaceType: "Project", workspaceId: "p1" });

@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.notes";
 import { userTextWhere } from "~/lib/person-search";
 import { requireAuth, isImpersonating, forbiddenWhileImpersonating } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import { nameConflictResponse } from "~/drive/lib/page-names.server";
@@ -85,7 +85,7 @@ export async function action({ request }: Route.ActionArgs) {
       // groups they belong to. Scoped to lab members and capped, so the share
       // picker can't be used as a directory dump.
       case "share-options": {
-        if (!(await isLabMember(me))) {
+        if (!(await isLabMemberOrAlum(me))) {
           return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
         }
         const q = (str("q") ?? "").trim();

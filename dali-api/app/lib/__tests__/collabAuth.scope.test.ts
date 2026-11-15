@@ -14,7 +14,7 @@ vi.mock("~/lib/roles", () => ({
   isDomainLead: vi.fn().mockResolvedValue(false),
   isCore: vi.fn().mockResolvedValue(false),
   isProjectMember: vi.fn().mockResolvedValue(false),
-  isLabMember: vi.fn().mockResolvedValue(true),
+  isLabMemberOrAlum: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("~/partners/lib/partner-access", () => ({
@@ -32,7 +32,7 @@ vi.mock("~/lib/groups.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import { authorizeCollabDoc } from "../collabAuth.server";
 
@@ -87,7 +87,7 @@ function childPage(id: string, kind: "doc" | "whiteboard"): Row {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(isCore).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
   vi.mocked(resolveGroupMembers).mockResolvedValue(["design-member"]);
   mockPrisma.pageShare.findMany.mockResolvedValue([]);
@@ -121,7 +121,7 @@ describe.each([
   });
 
   it("denies a non-member without a lab role", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     seedPages([scopedFolder("Edit"), childPage("child", kind)]);
     expect(await authorizeCollabDoc("outsider", name)).toMatchObject({ allowed: false });
   });

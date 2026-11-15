@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.scheduling-data";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { loadSchedulingData } from "~/calendar/lib/scheduling-data.server";
 
 // GET /api/scheduling-data
@@ -12,7 +12,7 @@ import { loadSchedulingData } from "~/calendar/lib/scheduling-data.server";
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isLabMember(auth.user.sub, request))) return forbidden(request);
+  if (!(await isLabMemberOrAlum(auth.user.sub, request))) return forbidden(request);
 
   const result = await loadSchedulingData(request);
   if (!result.ok) return result.response;

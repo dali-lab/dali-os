@@ -5,7 +5,7 @@ const db = vi.hoisted(() => ({
   galleryComment: { findFirst: vi.fn() },
 }));
 const roles = vi.hoisted(() => ({
-  isLabMember: vi.fn(async () => true),
+  isLabMemberOrAlum: vi.fn(async () => true),
   getUserRoles: vi.fn(async () => ({ isCore: false })),
 }));
 const flags = vi.hoisted(() => ({ isFeatureEnabled: vi.fn(async () => true) }));
@@ -88,7 +88,7 @@ const tile = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  roles.isLabMember.mockResolvedValue(true);
+  roles.isLabMemberOrAlum.mockResolvedValue(true);
   roles.getUserRoles.mockResolvedValue({ isCore: false });
   flags.isFeatureEnabled.mockResolvedValue(true);
   s3.isS3Configured.mockReturnValue(true);
@@ -114,7 +114,7 @@ describe("registration", () => {
 
 describe("access", () => {
   it("refuses people who aren't members or alumni", async () => {
-    roles.isLabMember.mockResolvedValue(false);
+    roles.isLabMemberOrAlum.mockResolvedValue(false);
     await expect(runListGalleryPosts(ctx, {})).rejects.toMatchObject({ status: 403 });
     expect(gallery.loadGalleryPage).not.toHaveBeenCalled();
   });

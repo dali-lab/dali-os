@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.custom-hires";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { z } from "zod";
 import { readForm } from "~/lib/validate";
@@ -48,7 +48,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   // Lab members only — these hang off the timesheet, which applicants and
   // partner users don't have.
-  if (!(await isLabMember(userId))) {
+  if (!(await isLabMemberOrAlum(userId))) {
     return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
   }
 

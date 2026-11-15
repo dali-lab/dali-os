@@ -32,7 +32,7 @@ import { requireJourneyViewer } from "~/journeys/lib/journeys.server";
 const user = { sub: "u1", email: "ada@example.edu", firstName: "Ada", lastName: "L" };
 const req = new Request("http://localhost/x");
 const roles = (over: Record<string, boolean> = {}) => ({
-  isLabMember: true,
+  isLabMemberOrAlum: true,
   isCore: false,
   isDomainLead: false,
   isAlumni: false,

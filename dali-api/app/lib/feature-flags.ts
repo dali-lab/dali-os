@@ -11,7 +11,7 @@
 import type { UserRoles } from "~/lib/roles";
 
 // Role flags that a flag may target. A subset of UserRoles keys — the boolean
-// authority flags that make sense as an audience (excludes isLabMember, which
+// authority flags that make sense as an audience (excludes isLabMemberOrAlum, which
 // is "everyone signed in"). Must be keys of UserRoles, since evaluateFlag reads
 // them off the resolved roles object. The admin action constrains writes here.
 export const ROLE_TARGETS = [

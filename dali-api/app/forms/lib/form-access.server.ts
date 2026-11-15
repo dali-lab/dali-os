@@ -4,7 +4,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccess, PAGE_ACCESS_SELECT } from "~/lib/pageAccess.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMember, isLabMemberOrAlum } from "~/lib/roles";
 
 async function loadFormPage(formId: string) {
   return prisma.page.findUnique({ where: { id: formId, kind: "Form" }, select: PAGE_ACCESS_SELECT });
@@ -34,7 +34,7 @@ export async function canManageFormPlacement(userId: string, formId: string, req
  * page or, with no folder, any lab member (the same rule as creating a document).
  */
 export async function canCreateForm(userId: string, folderPageId: string | null | undefined, request?: Request): Promise<boolean> {
-  if (!folderPageId) return isLabMember(userId, request);
+  if (!folderPageId) return isLabMemberOrAlum(userId, request);
   const folder = await prisma.page.findUnique({ where: { id: folderPageId, kind: "Folder" }, select: PAGE_ACCESS_SELECT });
   if (!folder) return false;
   return (await getPageAccess(userId, folder, request)).canEdit;

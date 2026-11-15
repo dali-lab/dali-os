@@ -114,7 +114,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.dispatchTool.mockResolvedValue({ ok: true, payload: { id: "p1", title: "Launch plan", kind: "Document" } });
   h.visibleHelpArticles.mockResolvedValue([]);
-  h.getUserRoles.mockResolvedValue({ isLabMember: true });
+  h.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true });
 });
 
 describe("askToolDefs", () => {
@@ -160,13 +160,13 @@ describe("askSystemPrompt", () => {
 
 describe("runAsk help", () => {
   it("builds the prompt from the articles the caller can see", async () => {
-    h.getUserRoles.mockResolvedValue({ isLabMember: true, isCore: true });
+    h.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isCore: true });
     h.visibleHelpArticles.mockResolvedValue([{ slug: "running-staffing", title: "Running staffing", summary: "For Core." }]);
     const { calls } = await ask([{ blocks: [text("Hi.")], stop: "end_turn" }]);
     expect(h.getUserRoles).toHaveBeenCalledWith("u1", CALLER.request);
     expect(h.visibleHelpArticles).toHaveBeenCalledWith({
       userId: "u1",
-      roles: { isLabMember: true, isCore: true },
+      roles: { isLabMemberOrAlum: true, isCore: true },
       request: CALLER.request,
     });
     expect(calls[0].system).toContain("- running-staffing: Running staffing. For Core.");

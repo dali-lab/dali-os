@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
 }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/cors", () => ({ withCors: (_req: Request, res: Response) => res, handlePreflight: () => null }));
 vi.mock("~/lib/collabAuth.server", () => ({ hydrateAuthors: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));

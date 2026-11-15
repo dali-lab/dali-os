@@ -19,7 +19,7 @@
 // workspaceType-derived logic.
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { partnerHasProjectAccess, partnerOrgIdsForUser } from "~/partners/lib/partner-access";
 import { groupIdsForUser, permissionAtLeast, PERMISSION_RANK } from "~/lib/page-sharing.server";
 import { resolveGroupMembers } from "~/lib/groups.server";
@@ -195,7 +195,7 @@ async function shareAndLinkGrant(
   let level = sharePermissionFromRows(sharesForPage, userSub, groupIds);
   const linkAccess = (page.linkAccess as LinkAccess | null | undefined) ?? "Restricted";
   if (linkAccess === "LabMembers") {
-    if (await isLabMember(userSub, request)) {
+    if (await isLabMemberOrAlum(userSub, request)) {
       level = higher(level, (page.linkPermission as SharePermission | null | undefined) ?? "View");
     }
   } else if (linkAccess === "SignedIn") {
@@ -341,7 +341,7 @@ async function scopeBase(
         : DENIED;
     }
     case "Lab": {
-      return (await isLabMember(userSub, request)) ? permToAccess(basePerm) : DENIED;
+      return (await isLabMemberOrAlum(userSub, request)) ? permToAccess(basePerm) : DENIED;
     }
     case "Group": {
       if (!governing.scopeGroupId) return DENIED;
@@ -375,7 +375,7 @@ export async function getPageAccess(
   options?: PageAccessOptions,
 ): Promise<PageAccessResult>;
 
-// `request` (optional) scopes the per-user role checks (isCore/isLabMember/
+// `request` (optional) scopes the per-user role checks (isCore/isLabMemberOrAlum/
 // isProjectMember) to one navigation via cachedForRequest. Callers that fan
 // this out over many pages in a single request — the sidebar Favorites/Recents
 // read — pass it so those identical per-user queries run once, not once per page.
@@ -533,7 +533,7 @@ async function computePageAccessCore(
     } else if (page.partnerVisible && (await partnerHasProjectAccess(userSub, page.workspaceId))) {
       // Partner users may view (and comment) on partner-visible pages.
       base = VIEW_COMMENT;
-    } else if (await isLabMember(userSub, request)) {
+    } else if (await isLabMemberOrAlum(userSub, request)) {
       // Lab members can view (and comment) any project page.
       base = VIEW_COMMENT;
     }
@@ -552,7 +552,7 @@ async function computePageAccessCore(
         select: { id: true },
       });
       if (instructor) base = FULL;
-      else if (await isLabMember(userSub, request)) base = VIEW_COMMENT;
+      else if (await isLabMemberOrAlum(userSub, request)) base = VIEW_COMMENT;
     }
     return merge(base, extra);
   }

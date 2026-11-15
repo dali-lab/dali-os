@@ -39,7 +39,7 @@ export function helpArticles(): HelpArticleDoc[] {
 export type HelpViewer = { userId: string; roles: UserRoles; request?: Request };
 
 const ROLE_AUDIENCES: Record<Exclude<HelpAudience, "mentor">, keyof UserRoles> = {
-  member: "isLabMember",
+  member: "isLabMemberOrAlum",
   core: "isCore",
   admin: "isAdmin",
   staff: "isStaff",
@@ -54,7 +54,7 @@ export async function visibleHelpArticles(
   viewer: HelpViewer,
   articles: HelpArticleDoc[] = helpArticles(),
 ): Promise<HelpArticleDoc[]> {
-  if (!viewer.roles.isLabMember && !viewer.roles.isCore) return [];
+  if (!viewer.roles.isLabMemberOrAlum && !viewer.roles.isCore) return [];
   let mentor: Promise<boolean> | null = null;
   const flags = new Map<string, Promise<boolean>>();
   const inAudience = async (a: HelpArticleDoc) => {
