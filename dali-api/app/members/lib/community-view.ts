@@ -97,3 +97,23 @@ export function eventInputFromForm(form: FormData, tz: string): EventFormResult 
     },
   };
 }
+
+export function placeSummary(
+  tab: "people" | "events",
+  counts: { people: number; events: number; classmates: number },
+): string {
+  if (tab === "people") return `${plural(counts.people, "person", "people")}, ${counts.classmates} from your class`;
+  const events = counts.events === 0 ? "No upcoming events" : `${plural(counts.events, "upcoming event")}`;
+  const people = `${counts.people} ${counts.people === 1 ? "person is" : "people are"} based here`;
+  return `${events}. ${people}.`;
+}
+
+export function peopleCountLabel(count: number, place: string | null): string {
+  return `${count} in ${place ?? "this view"}`;
+}
+
+export function openToSummary(openTo: { coffeeChats: boolean; resumeReviews: boolean }): string {
+  const on = [openTo.coffeeChats && "Coffee chats", openTo.resumeReviews && "Resume reviews"].filter(Boolean) as string[];
+  if (on.length === 0) return "Nothing yet";
+  return on.map((s, i) => (i === 0 ? s : s.toLowerCase())).join(", ");
+}

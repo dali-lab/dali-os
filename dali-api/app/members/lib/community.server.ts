@@ -116,7 +116,7 @@ export async function loadCommunityPeople(
 }> {
   const [users, me, roles] = await Promise.all([
     prisma.user.findMany({
-      where: LAB_MEMBER_WHERE,
+      where: { ...LAB_MEMBER_WHERE, id: { not: viewerId } },
       orderBy: MEMBER_LIST_ORDER_BY,
       select: {
         id: true,
