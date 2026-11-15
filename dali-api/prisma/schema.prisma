@@ -7937,7 +7937,6 @@ model ResourceHubPage {
   id          String    @id @default(cuid())
   title       String    @default("Untitled hub")
   coverUrl    String?
-  bgColor     String?
   publishedAt DateTime?
   contentJson Json?
   domainId    String?   @unique
