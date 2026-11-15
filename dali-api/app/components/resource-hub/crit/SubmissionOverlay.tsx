@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link2, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
+import { modalCardClass } from "~/components/os-chrome";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Drawer } from "~/components/ui/Drawer";
 import { FilePreview } from "~/components/FilePreview";
 import { useDialog } from "~/components/ui/dialog";
 import { isCommentShortcut, pointToFraction } from "./pins";
-import { Z } from "~/components/ui/z";
 
 export interface CritSubmissionView {
   id: string;
@@ -458,8 +458,7 @@ export function SubmissionOverlay({
       onClose={onClose}
       labelledBy="crit-overlay-title"
       disableEscape={placing || !!draft}
-      className={`fixed inset-0 ${Z.top} flex overflow-y-auto bg-black/40 p-3 sm:p-6`}
-      containerClassName="m-auto w-full max-w-6xl rounded-os-card bg-os-card p-4 shadow-xl sm:p-6"
+      containerClassName={modalCardClass("max-w-6xl")}
     >
       <ModalHeader titleId="crit-overlay-title" title={submission.title} subtitle={byline || undefined} onClose={onClose} className="!mb-4" actions={actions} />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">

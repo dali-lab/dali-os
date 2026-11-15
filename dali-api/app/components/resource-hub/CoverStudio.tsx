@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
+import { modalCardClass } from "~/components/os-chrome";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { CARD_COLORS, COVER_PATTERNS, CoverTile, buildCoverUrl, cardColorHex, isPatternCover, parseCover } from "./CoverPattern";
 import { HubCard } from "./HubCard";
-import { Z } from "~/components/ui/z";
 
 const DEFAULT_COVER = buildCoverUrl(COVER_PATTERNS[0]!.id);
 
@@ -41,8 +41,7 @@ export function CoverStudio({
       onClose={onClose}
       labelledBy="cover-studio-title"
       disableEscape={working}
-      className={`fixed inset-0 ${Z.top} flex overflow-y-auto bg-black/40 p-4 sm:p-6`}
-      containerClassName="m-auto w-full max-w-4xl rounded-os-card bg-os-card p-6 shadow-xl"
+      containerClassName={modalCardClass("max-w-4xl")}
     >
       <ModalHeader titleId="cover-studio-title" title={heading} subtitle="Pick a style and name your hub." onClose={onClose} className="!mb-4" />
       <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
