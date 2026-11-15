@@ -87,11 +87,11 @@ function get(url: URL): Promise<{ status: number; location: string | null; conte
 
 function decode(s: string): string {
   return s
-    .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
     .replace(/&#0?39;|&apos;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
     .trim();
 }
 

@@ -36,6 +36,10 @@ describe("parseLinkPreview", () => {
     const html = `<title>Plain</title><meta content="/img/card.jpg" name="twitter:image">`;
     expect(parseLinkPreview(html, page)).toEqual({ image: "https://example.com/img/card.jpg", title: "Plain", description: null });
   });
+  it("decodes &amp; last so escaped entities stay literal", () => {
+    const html = `<meta property="og:title" content="Use &amp;lt;b&amp;gt; for bold">`;
+    expect(parseLinkPreview(html, page).title).toBe("Use &lt;b&gt; for bold");
+  });
   it("drops non-https images", () => {
     expect(parseLinkPreview(`<meta property="og:image" content="http://example.com/a.png">`, page).image).toBeNull();
     expect(parseLinkPreview(`<meta property="og:image" content="javascript:alert(1)">`, page).image).toBeNull();

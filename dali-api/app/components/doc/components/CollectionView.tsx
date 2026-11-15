@@ -17,6 +17,7 @@ import {
 import { Modal, ModalHeader } from "~/components/Modal";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { collectionCategories, filterCollection, safeHref, type ComponentData } from "./kinds";
+import { Z } from "~/components/ui/z";
 
 export const COLLECTION_ICONS: Record<string, { label: string; Icon: LucideIcon }> = {
   link: { label: "Link", Icon: Link2 },
@@ -118,7 +119,7 @@ function ResourceOverlay({ item, onClose }: { item: Record<string, string>; onCl
       open
       onClose={onClose}
       labelledBy="coll-overlay-title"
-      className="fixed inset-0 z-[100] flex overflow-y-auto bg-black/40 p-3 sm:p-6"
+      className={`fixed inset-0 ${Z.top} flex overflow-y-auto bg-black/40 p-3 sm:p-6`}
       containerClassName="m-auto w-full max-w-4xl rounded-os-card bg-os-card p-4 shadow-xl sm:p-6"
     >
       <ModalHeader

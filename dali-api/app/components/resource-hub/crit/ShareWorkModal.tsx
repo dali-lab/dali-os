@@ -4,6 +4,7 @@ import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { uploadFileToS3 } from "~/lib/upload-client";
 import { rawUploadUrl } from "~/components/doc";
 import { safeHref } from "~/components/doc/components/kinds";
+import { Z } from "~/components/ui/z";
 
 const ACCEPT = "image/*,.pdf,.doc,.docx,.ppt,.pptx,.key,.xls,.xlsx,.txt";
 const FIELD =
@@ -68,7 +69,7 @@ export function ShareWorkModal({
       onClose={onClose}
       labelledBy="share-work-title"
       disableEscape={working}
-      className="fixed inset-0 z-[100] flex overflow-y-auto bg-black/40 p-3 sm:p-6"
+      className={`fixed inset-0 ${Z.top} flex overflow-y-auto bg-black/40 p-3 sm:p-6`}
       containerClassName="m-auto w-full max-w-lg rounded-os-card bg-os-card p-5 shadow-xl sm:p-6"
     >
       <ModalHeader titleId="share-work-title" title="Share work" subtitle="Post something you're working on and ask for thoughts." onClose={onClose} className="!mb-4" />
