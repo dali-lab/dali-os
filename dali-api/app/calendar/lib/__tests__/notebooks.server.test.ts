@@ -15,7 +15,7 @@ vi.mock("~/lib/db.server", () => ({
     $transaction: vi.fn(),
   },
 }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
   getPageAccessBulk: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock("~/calendar/lib/meeting-roster.server", () => ({ resolveMeetingOccurrenc
 vi.mock("~/calendar/lib/meeting-shares.server", () => ({ syncMeetingShares: vi.fn(), removeMeetingShares: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess, getPageAccessBulk, isUnderGoverningScope } from "~/lib/pageAccess.server";
 import {
   collectSubtree,
@@ -144,7 +144,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   access({});
   vi.mocked(isCore).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isUnderGoverningScope).mockResolvedValue(false);
   vi.mocked(pageDepth).mockResolvedValue(0);
@@ -216,7 +216,7 @@ describe("createNotebook", () => {
   });
 
   it("403s a non-member for a lab notebook", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect((await rejection(createNotebook(lab))).status).toBe(403);
     expect(createLabPage).not.toHaveBeenCalled();
   });

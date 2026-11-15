@@ -14,7 +14,7 @@ vi.mock("~/lib/db.server", () => ({
 }));
 
 vi.mock("~/lib/roles", () => ({
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
 }));
 
 vi.mock("~/lib/pageAccess.server", () => ({
@@ -26,7 +26,7 @@ vi.mock("~/lib/audit", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import {
   UPLOAD_DRIVE_FILE_TOOL,
@@ -76,7 +76,7 @@ describe("upload_drive_file", () => {
   });
 
   it("rejects Lab scope when caller is not a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
     await expect(
       runUploadDriveFile("u1", { ...BASE_INPUT, scope: "Lab" }),
@@ -84,20 +84,20 @@ describe("upload_drive_file", () => {
   });
 
   it("creates a Lab-scope file for a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const out = await runUploadDriveFile("u1", { ...BASE_INPUT, scope: "Lab" });
     expect(out).toEqual({ id: "file1" });
   });
 
   it("creates a Member-scope file for any authenticated caller", async () => {
-    // No isLabMember call needed for Member scope
+    // No isLabMemberOrAlum call needed for Member scope
     const out = await runUploadDriveFile("u1", { ...BASE_INPUT, scope: "Member" });
     expect(out).toEqual({ id: "file1" });
-    expect(isLabMember).not.toHaveBeenCalled();
+    expect(isLabMemberOrAlum).not.toHaveBeenCalled();
   });
 
   it("rejects folder placement when caller lacks edit access to folder", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: false, canEdit: false } as never);
     await expect(
       runUploadDriveFile("u1", { ...BASE_INPUT, scope: "Lab", folderPageId: "folder1" }),
@@ -105,7 +105,7 @@ describe("upload_drive_file", () => {
   });
 
   it("allows Lab file with valid folder placement", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canComment: true, canEdit: true } as never);
     const out = await runUploadDriveFile("u1", { ...BASE_INPUT, scope: "Lab", folderPageId: "folder1" });
     expect(out).toEqual({ id: "file1" });

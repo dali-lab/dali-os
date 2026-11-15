@@ -31,6 +31,7 @@ function makeCtx(userId = "u-core"): McpCtx {
 const CORE_ROLES = {
   isCore: true,
   isAdmin: false,
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isDomainLead: false,
   isInstructor: false,

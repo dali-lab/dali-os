@@ -10,7 +10,7 @@
 //
 // Core is never locked out: the hub is the lab's own shelf and Core curates it.
 
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
 import type { Prisma, LinkAccess } from "~/generated/prisma/client";
 
@@ -28,7 +28,7 @@ export async function labDocAccess(
   page: { id: string; createdById?: string | null },
   userId: string,
 ): Promise<LabDocAccess> {
-  const [member, core] = await Promise.all([isLabMember(userId), isCore(userId)]);
+  const [member, core] = await Promise.all([isLabMemberOrAlum(userId), isCore(userId)]);
   return { canManageAccess: core || (member && page.createdById === userId) };
 }
 

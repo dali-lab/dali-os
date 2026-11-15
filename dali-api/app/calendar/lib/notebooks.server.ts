@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import type { WorkspaceType } from "~/generated/prisma/client";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import {
   getPageAccess,
   getPageAccessBulk,
@@ -105,7 +105,7 @@ export async function createNotebook(input: {
     ]);
     if (!core && !member) throw new NotebookError("You can't add to that project", 403);
     if (!project) throw new NotebookError("Project not found", 404);
-  } else if (!(await isLabMember(input.actorId))) {
+  } else if (!(await isLabMemberOrAlum(input.actorId))) {
     throw new NotebookError("Only lab members can add notebooks", 403);
   }
 

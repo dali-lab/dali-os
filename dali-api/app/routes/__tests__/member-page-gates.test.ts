@@ -52,7 +52,7 @@ beforeEach(() => {
   mocks.requireAuth.mockResolvedValue({ ok: true, user: { sub: "u1" } });
   mocks.isNonMember.mockResolvedValue(false);
   mocks.isPartnerAccount.mockResolvedValue(false);
-  mocks.getUserRoles.mockResolvedValue({ isLabMember: true });
+  mocks.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true });
 });
 
 describe.each(gates)("%s page gate", (_name, run) => {

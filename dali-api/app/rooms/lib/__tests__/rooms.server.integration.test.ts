@@ -23,7 +23,7 @@ let roomId: string;
 let otherRoomId: string;
 
 async function makeUser(firstName = "Ada", lastName = "Lovelace", email = "ada@example.edu") {
-  return (await prisma.user.create({ data: { firstName, lastName, daliEmail: email } })).id;
+  return (await prisma.user.create({ data: { firstName, lastName, daliEmail: email, daliMember: { create: {} } } })).id;
 }
 
 beforeEach(async () => {
@@ -39,6 +39,12 @@ function book(over: Partial<Parameters<typeof createRoomBooking>[0]> & { start: 
 const live = (rid = roomId) => prisma.roomBooking.findMany({ where: { roomId: rid, cancelledAt: null }, orderBy: { start: "asc" } });
 
 describe("createRoomBooking conflicts", () => {
+  it("refuses a Web booking from an alum", async () => {
+    await prisma.user.update({ where: { id: userId }, data: { membershipStatus: "Alumni" } });
+    expect(await book({ start: at(1, 10), end: at(1, 11) })).toMatchObject({ ok: false, status: 403 });
+    expect(await live()).toEqual([]);
+  });
+
   it("rejects every kind of overlap with a 409 naming the existing booking", async () => {
     await book({ start: at(0, 10), end: at(0, 12), title: "Standup" });
     const overlaps: [Date, Date][] = [

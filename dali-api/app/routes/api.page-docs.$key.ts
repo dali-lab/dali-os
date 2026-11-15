@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { Prisma } from "~/generated/prisma/client";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
@@ -58,7 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
-  if (!(await isLabMember(userId))) {
+  if (!(await isLabMemberOrAlum(userId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -111,7 +111,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (request.method !== "POST") {
     return Response.json({ error: "Method not allowed" }, { status: 405 });
   }
-  if (!(await isLabMember(userId))) {
+  if (!(await isLabMemberOrAlum(userId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -151,7 +151,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // A named maintainer must be a real lab member.
   if (changingMaintainer && payload.maintainerId) {
-    if (!(await isLabMember(payload.maintainerId))) {
+    if (!(await isLabMemberOrAlum(payload.maintainerId))) {
       return Response.json({ error: "That member can't be a maintainer." }, { status: 400 });
     }
   }

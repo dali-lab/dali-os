@@ -1093,7 +1093,7 @@ export interface LoadDriveScopeOptions {
    */
   canManageAgreements?: boolean;
   /**
-   * Optional request for per-request role-check caching (isCore/isLabMember).
+   * Optional request for per-request role-check caching (isCore/isLabMemberOrAlum).
    * Callers from route loaders should pass their `request` object.
    */
   request?: Request;

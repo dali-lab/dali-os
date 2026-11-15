@@ -5,7 +5,7 @@ paths: [/rooms, /admin/rooms]
 keywords: [room, book, booking, reserve, door display, ipad, hold, location, conference room, schedule]
 ---
 
-[Rooms](/rooms) shows every bookable DALI room side by side for one day, so you can see what is free and book it. Any lab member can book. You can also reach it from the door icon (**Room booking**) at the top of [Calendar](/calendar).
+[Rooms](/rooms) shows every bookable DALI room side by side for one day, so you can see what is free and book it. Any current lab member can book; alumni can see the schedule but not book. You can also reach it from the door icon (**Room booking**) at the top of [Calendar](/calendar).
 
 ## Book a room
 
