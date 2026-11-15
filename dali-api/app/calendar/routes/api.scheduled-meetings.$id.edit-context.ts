@@ -3,10 +3,10 @@ import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { meetingIsUpcoming } from "~/lib/scheduled-meeting";
+import { meetingIsUpcoming } from "~/calendar/lib/meeting-occurrences";
 import { resolveUserTimeZone } from "~/lib/timezone";
 import { assembleWorkingHours } from "~/calendar/lib/calendar-defaults";
-import { loadParticipantOptions } from "./calendar.server";
+import { loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 
 // Everything the Edit-meeting and Invite-people modals need, fetched on demand
 // when one opens — the meeting's current fields plus the member/group directory

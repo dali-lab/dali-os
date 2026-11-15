@@ -19,43 +19,42 @@ import { isAdmin } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
+import { IMPERSONATE_ERROR_PARAM, type ImpersonateError } from "~/admin/lib/impersonate-error";
+
+// A native form post renders whatever comes back as the whole page, and the
+// desktop app has no back button, so failures return to the list with a toast.
+function backToSiteUsers(request: Request, error: ImpersonateError): Response {
+  const origin = new URL(request.url).origin;
+  let back = new URL("/admin/site-users", origin);
+  const referer = request.headers.get("Referer");
+  if (referer) {
+    try {
+      const ref = new URL(referer);
+      if (ref.origin === origin && ref.pathname === "/admin/site-users") back = ref;
+    } catch {
+      // Malformed Referer: fall back to the plain list.
+    }
+  }
+  back.searchParams.set(IMPERSONATE_ERROR_PARAM, error);
+  return redirect(back.pathname + back.search);
+}
 
 export async function action({ request }: { request: Request }): Promise<Response> {
   // 1. Require a valid BetterAuth session.
   const actor = await getBetterAuthUser(request);
-  if (!actor) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  if (!actor) return redirect("/login");
 
   // 2. Admin gate.
   const adminOk = await isAdmin(actor.sub);
-  if (!adminOk) {
-    return new Response(JSON.stringify({ error: "Forbidden" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  if (!adminOk) return redirect("/");
 
   // 3. Read target userId from formData.
   const formData = await request.formData();
   const userId = String(formData.get("userId") ?? "").trim();
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "Missing userId" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  if (!userId) return backToSiteUsers(request, "missing");
 
   // 4. Reject self-impersonation.
-  if (userId === actor.sub) {
-    return new Response(JSON.stringify({ error: "Cannot impersonate self" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  if (userId === actor.sub) return backToSiteUsers(request, "self");
 
   // 5b. Any real user may be impersonated — member or not. Every shell an
   //     impersonated user can land in (member, portal/applicant, partner,
@@ -66,12 +65,7 @@ export async function action({ request }: { request: Request }): Promise<Respons
     where: { id: userId },
     select: { id: true },
   });
-  if (!target) {
-    return new Response(
-      JSON.stringify({ error: "No such user" }),
-      { status: 404, headers: { "Content-Type": "application/json" } },
-    );
-  }
+  if (!target) return backToSiteUsers(request, "missing");
 
   // 5. JIT role sync: if the actor's user.role is not already "admin", set it
   //    so the BetterAuth admin plugin's gate passes. The plugin reads the row
@@ -100,14 +94,8 @@ export async function action({ request }: { request: Request }): Promise<Respons
       returnHeaders: true,
     });
     baHeaders = result.headers;
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: "Impersonation failed" }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+  } catch {
+    return backToSiteUsers(request, "failed");
   }
 
   // 7. Audit.

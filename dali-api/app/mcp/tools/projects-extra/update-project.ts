@@ -1,19 +1,8 @@
-// MCP `update_project` — edit writable project settings.
-//
-// Mirrors the intent handlers in projects.$id.tsx (header, description,
-// details, visibility) but collapsed into a single flat tool. Chart strings
-// aren't here: they live in their own Core-only tools (list/set_project_chart_
-// string). Scope/domain/term assignment is intentionally excluded — those
-// are full-replacement writes with complex validation that belong on the UI.
-//
-// Gate: canEditProject (Core or current project member).
-
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { canEditProject } from "../access";
-
-const STATUSES = ["Active", "Paused", "Archived"] as const;
-type ProjectStatus = (typeof STATUSES)[number];
+import { HttpError } from "~/lib/http-error";
+import { updateProjectSettings } from "~/projects/lib/project-settings.server";
+import { PROJECT_STATUSES as STATUSES } from "~/projects/lib/project-lifecycle";
 
 export class UpdateProjectError extends Error {
   status: number;
@@ -27,7 +16,7 @@ export class UpdateProjectError extends Error {
 export const UPDATE_PROJECT_TOOL = {
   name: "update_project",
   description:
-    "Edit a project's settings. Writable fields: name, status (Active/Paused/Archived), iconEmoji, description, imageUrl, isPrivate, calendarEmail, repoUrls, deploymentUrl, termCount, githubTeamSlug, slackChannelName. Requires Core or project-member access. Pairs with `get_project_settings` which reads these same fields.",
+    "Edit a project's settings. Writable fields: name, status (Active/Paused/Archived), iconEmoji, description, imageUrl, isPrivate, calendarEmail, repoUrls, deploymentUrl, termCount, githubTeamSlug, slackChannelName. Requires Core or project-member access; status and isPrivate are Core only. Pairs with `get_project_settings` which reads these same fields.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -123,48 +112,13 @@ export async function runUpdateProject(
     throw new UpdateProjectError("Project not found.", 404);
   }
 
-  // Validate status if provided.
-  if (input.status !== undefined && !STATUSES.includes(input.status as ProjectStatus)) {
-    throw new UpdateProjectError(`Invalid status. Must be one of: ${STATUSES.join(", ")}.`);
+  const { projectId, ...patch } = input;
+  try {
+    await updateProjectSettings({ projectId, isCore: core, patch });
+  } catch (err) {
+    if (err instanceof HttpError) throw new UpdateProjectError(err.message, err.status);
+    throw err;
   }
 
-  // Build the update payload incrementally — only include keys the caller passed.
-  const data: Record<string, unknown> = {};
-
-  if (input.name !== undefined) data.name = input.name.trim();
-  if (input.status !== undefined) data.status = input.status as ProjectStatus;
-  if (input.iconEmoji !== undefined) data.iconEmoji = input.iconEmoji.trim() || null;
-  if (input.description !== undefined) data.description = input.description.trim() || null;
-  if (input.imageUrl !== undefined) data.imageUrl = input.imageUrl.trim() || null;
-  if (input.isPrivate !== undefined) data.isPrivate = input.isPrivate;
-  if (input.calendarEmail !== undefined) data.calendarEmail = input.calendarEmail.trim() || null;
-  if (input.repoUrls !== undefined) {
-    data.repoUrls = input.repoUrls.map((u) => u.trim()).filter(Boolean);
-  }
-  if (input.deploymentUrl !== undefined) data.deploymentUrl = input.deploymentUrl.trim() || null;
-  if (input.termCount !== undefined) {
-    data.termCount = Math.max(1, Math.floor(input.termCount));
-  }
-  if (input.githubTeamSlug !== undefined) {
-    const raw = input.githubTeamSlug.trim();
-    data.githubTeamSlug =
-      raw === ""
-        ? null
-        : raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  }
-  if (input.slackChannelName !== undefined) {
-    const raw = input.slackChannelName.trim();
-    data.slackChannelName =
-      raw === ""
-        ? null
-        : raw.toLowerCase().replace(/[^a-z0-9-_\s]/g, "").trim().replace(/\s+/g, "-").slice(0, 80);
-  }
-
-  if (Object.keys(data).length === 0) {
-    throw new UpdateProjectError("No fields to update were provided.");
-  }
-
-  await prisma.project.update({ where: { id: input.projectId }, data });
-
-  return { ok: true, projectId: input.projectId };
+  return { ok: true, projectId };
 }

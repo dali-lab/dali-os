@@ -90,6 +90,8 @@ export const AUDIT_ACTIONS = [
   // one row marks a reviewing session; metadata says whether identity was blinded.
   "application.view",
   // Application events (help hours, socials, info sessions) on a cycle.
+  "hiring.onboarding-form.set",
+  "hiring.onboarding-form.clear",
   "hiring.event.create",
   "hiring.event.update",
   "hiring.event.delete",
@@ -159,6 +161,7 @@ export const AUDIT_ACTIONS = [
   "account.linked",
   "document.delete",
   "document.export",
+  "document.import",
   "projectFile.create",
   "projectFile.version",
   "projectFile.delete",
@@ -219,6 +222,7 @@ export const AUDIT_ACTIONS = [
   "partner.invite.revoked",
   "partner.application.submitted",
   "partner.application.stage",
+  "partner.application.delete",
   "partner.settings.save",
   "partner.form-binding.set",
   "partner.form-binding.clear",
@@ -275,6 +279,7 @@ export const AUDIT_ACTIONS = [
   "drive.item.move",
   // Trash actions; metadata carries the item kind and title (purge is permanent).
   "drive.trash.archive-form",
+  "form.response.add",
   "form.response.delete",
   "form.response.edit",
   "form.reminder.send",

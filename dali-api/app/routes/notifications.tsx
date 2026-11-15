@@ -1,27 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { redirect, useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
+import { useLoaderData, useSearchParams, type ShouldRevalidateFunctionArgs } from "react-router";
 import { useSearchParamChoice, useSearchParamState } from "~/hooks/useSearchParamState";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { ExternalLink, RotateCcw } from "lucide-react";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { getUserRoles } from "~/lib/roles";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import {
   listOpenTasksPage,
   listMyProjectTasksPage,
   openTasksTotal,
+  generalTasksTotal,
   projectTasksTotal,
   listNotificationHistory,
   type Task,
   type NotificationHistoryItem,
   type NotificationHistoryResult,
   type NotificationState,
-} from "~/lib/tasks";
-import { listMyNotifications } from "~/lib/notifications";
+} from "~/lib/tasks.server";
+import { listMyNotifications } from "~/lib/notifications.server";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone, getZonedYMD, zonedDayLabel } from "~/lib/timezone";
 import { RsvpButtons } from "~/components/RsvpButtons";
@@ -34,9 +34,10 @@ import {
   TaskFeed,
   ctaClass,
   ctaIcon,
-  attentionCount,
+  feedTabCounts,
   mergedFeed,
   splitFeed,
+  unloadedCounts,
   type AttentionNotification,
   type ClearedKind,
   type FeedTab,
@@ -52,8 +53,8 @@ export const handle = {
   breadcrumb: () => "My Tasks",
 };
 
-// Tab is driven by ?tab=work|open|history. `open` is the notification feed
-// (Meetings & events); `work` is the default. The History tab
+// Tab is driven by ?tab=work|open|history. `open` is the General feed; `work`
+// is the default. The History tab
 // fetches incrementally from /api/notifications with the additive history
 // params. The open tabs render the same cards as the bell's drawer.
 type PageTab = "work" | "open" | "history";
@@ -64,11 +65,7 @@ export function shouldRevalidate(args: ShouldRevalidateFunctionArgs) {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
 
   const userId = auth.user.sub;
   const url = new URL(request.url);
@@ -79,8 +76,9 @@ export async function loader({ request }: Route.LoaderArgs) {
     listMyProjectTasksPage(userId),
     getUserRoles(userId, request),
   ]);
-  const [taskTotal, projectTotal] = await Promise.all([
+  const [taskTotal, generalTaskTotal, projectTotal] = await Promise.all([
     openTasksTotal(userId, taskPage),
+    generalTasksTotal(userId, taskPage),
     projectTasksTotal(userId, projectPage),
   ]);
   const notifications: AttentionNotification[] = items.map((n) => ({
@@ -108,6 +106,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     tasks: taskPage.items,
     tasksCursor: taskPage.nextCursor,
     taskTotal,
+    generalTaskTotal,
     notifications,
     projectTasks: projectPage.items,
     projectCursor: projectPage.nextCursor,
@@ -415,21 +414,26 @@ export default function NotificationsRoute() {
 
   const taskTotal = Math.max(0, data.taskTotal - pending.task);
   const projectTotal = Math.max(0, data.projectTotal - pending.project);
-  const unloadedTasks = Math.max(0, taskTotal - tasks.length);
-  const unloadedProjects = Math.max(0, projectTotal - projectTasks.length);
   const openPager = { ...openMore.pager, shown: tasks.length, total: taskTotal };
   const projectPager = { ...projectMore.pager, shown: projectTasks.length, total: projectTotal };
 
   const feed = splitFeed(tasks, notifications, projectTasks);
-  const count = attentionCount(tasks, notifications, projectTasks) + unloadedTasks + unloadedProjects;
+  const counts = feedTabCounts(
+    feed,
+    unloadedCounts(openMore.items, projectMore.items, {
+      generalTasks: data.generalTaskTotal,
+      projectTasks: data.projectTotal,
+    }),
+  );
+  const count = counts.work + counts.admin;
   const feedTab: FeedTab = tab === "work" ? "work" : "admin";
 
   const initialStatus =
     (searchParams.get("status") as "open" | "cleared" | "all") || "all";
 
   const tabs: { key: PageTab; label: string; count?: number }[] = [
-    { key: "work", label: FEED_TAB_LABELS.work, count: feed.work.length + unloadedProjects },
-    { key: "open", label: FEED_TAB_LABELS.admin, count: feed.admin.length + unloadedTasks },
+    { key: "work", label: FEED_TAB_LABELS.work, count: counts.work },
+    { key: "open", label: FEED_TAB_LABELS.admin, count: counts.admin },
     { key: "history", label: "History" },
   ];
 

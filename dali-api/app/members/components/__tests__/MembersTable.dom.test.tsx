@@ -94,4 +94,28 @@ describe("MembersTable", () => {
     expect(bodyRows()).toHaveLength(50);
     expect(container.textContent).toContain("Showing 50 of 80");
   });
+
+  it("links each member's name to their profile and keeps the actions menu from navigating", async () => {
+    const Stub = createRoutesStub([
+      { path: "/", Component: table({ rows: many(2), resetKey: "a" }) },
+      { path: "/members/:id", Component: () => createElement("p", { id: "profile" }, "profile") },
+    ]);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    await act(async () => {
+      root.render(createElement(Stub, { initialEntries: ["/"] }));
+    });
+    const links = [...container.querySelectorAll("tbody a")];
+    expect(links.map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["Ada0 Tester", "/members/m0"],
+      ["Ada1 Tester", "/members/m1"],
+    ]);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Actions for Ada0 Tester"]')!.click(),
+    );
+    expect(container.querySelector("#profile")).toBeNull();
+    await act(async () => (links[1] as HTMLAnchorElement).click());
+    expect(container.querySelector("#profile")).not.toBeNull();
+  });
 });

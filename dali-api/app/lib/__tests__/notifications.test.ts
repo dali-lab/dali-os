@@ -10,7 +10,7 @@ import {
   NOT_CANCELLED_MEETING,
   annotateRecordPromptFeed,
   STALE_AFTER_EVENTS,
-} from "~/lib/notifications";
+} from "~/lib/notifications.server";
 
 const mockPrisma = prisma as unknown as {
   notification: {

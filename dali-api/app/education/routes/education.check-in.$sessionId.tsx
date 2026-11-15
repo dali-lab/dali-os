@@ -1,5 +1,4 @@
 import { useLoaderData } from "react-router";
-import { useState } from "react";
 import type { Route } from "./+types/education.check-in.$sessionId";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -7,8 +6,7 @@ import { prisma } from "~/lib/db.server";
 import { isSessionCheckInOpen } from "~/education/lib/session-checkin.server";
 import { formatSessionWhen } from "~/lib/display";
 import { resolveUserTimeZone } from "~/lib/timezone";
-import { CheckCircle2 } from "lucide-react";
-import { Button } from "~/components/ui/Button";
+import { SelfCheckInCard } from "~/components/SelfCheckInCard";
 import { useOsShellRoot } from "~/lib/os-shell";
 
 export const meta: Route.MetaFunction = () => [{ title: "Session check-in · DALI OS" }];
@@ -80,67 +78,16 @@ export async function loader({ request, params }: Route.LoaderArgs) {
 export default function EducationSessionCheckIn() {
   useOsShellRoot(true);
   const data = useLoaderData<typeof loader>();
-  const [present, setPresent] = useState(data.alreadyPresent);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function checkIn() {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/education/sessions/${data.sessionId}/check-in`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => null);
-        setError(j?.error ?? "Check-in failed");
-        return;
-      }
-      setPresent(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
-    <div className="os-shell min-h-screen flex items-center justify-center bg-os-bg text-foreground p-4">
-      <div className="w-full max-w-sm rounded-os-card bg-os-card p-5 text-center">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {data.courseTitle}
-        </p>
-        <h1 className="mt-1 font-heading text-xl font-bold text-foreground">{data.sessionLabel}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {formatSessionWhen(data.datetime, data.endsAt, data.timeZone)}
-          {data.location ? ` · ${data.location}` : ""}
-        </p>
-
-        <div className="mt-6">
-          {!data.enrolled ? (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-              You're not enrolled in this course, so you can't check in.
-            </p>
-          ) : present ? (
-            <div className="flex flex-col items-center gap-2 text-os-green">
-              <CheckCircle2 className="w-12 h-12" aria-hidden />
-              <p className="text-base font-semibold text-foreground">You're checked in.</p>
-            </div>
-          ) : !data.open ? (
-            <p className="text-sm text-muted-foreground bg-muted rounded-md px-3 py-2">
-              Check-in isn't open for this session right now. Ask your instructor to open it.
-            </p>
-          ) : (
-            <>
-              <Button type="button" onClick={checkIn} disabled={submitting} className="w-full">
-                {submitting ? "Checking in…" : "Check in"}
-              </Button>
-              {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+    <SelfCheckInCard
+      eyebrow={data.courseTitle}
+      title={data.sessionLabel}
+      when={`${formatSessionWhen(data.datetime, data.endsAt, data.timeZone)}${data.location ? ` · ${data.location}` : ""}`}
+      blocked={data.enrolled ? null : "You're not enrolled in this course, so you can't check in."}
+      open={data.open}
+      alreadyPresent={data.alreadyPresent}
+      closedText="Check-in isn't open for this session right now. Ask your instructor to open it."
+      postUrl={`/api/education/sessions/${data.sessionId}/check-in`}
+    />
   );
 }

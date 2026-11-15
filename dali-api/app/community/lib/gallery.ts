@@ -109,11 +109,25 @@ export type NewGalleryPost = {
   height: number;
   color: string;
   caption: string | null;
+  /** When the photo was taken, as ISO, from its EXIF or what the poster set. */
+  takenAt: string | null;
 };
 
 const MAX_SIDE = 20_000;
 const isSide = (n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n > 0 && n <= MAX_SIDE;
+
+const EARLIEST_TAKEN = Date.UTC(1900, 0, 1);
+const CLOCK_SKEW_MS = 24 * 60 * 60 * 1000;
+
+/** The ISO time, or undefined when it isn't a plausible date a photo was taken. */
+export function parseTakenAt(raw: unknown, now = Date.now()): string | null | undefined {
+  if (raw == null || raw === "") return null;
+  if (typeof raw !== "string") return undefined;
+  const time = new Date(raw).getTime();
+  if (Number.isNaN(time) || time < EARLIEST_TAKEN || time > now + CLOCK_SKEW_MS) return undefined;
+  return new Date(time).toISOString();
+}
 
 /** Parses the composer's payload; null when any row is malformed. */
 export function parseNewPosts(raw: string, userId: string): NewGalleryPost[] | null {
@@ -127,7 +141,7 @@ export function parseNewPosts(raw: string, userId: string): NewGalleryPost[] | n
   const posts: NewGalleryPost[] = [];
   for (const row of rows) {
     if (!row || typeof row !== "object") return null;
-    const { imageKey, displayKey, thumbKey, width, height, color, caption } =
+    const { imageKey, displayKey, thumbKey, width, height, color, caption, takenAt } =
       row as Record<string, unknown>;
     if (typeof imageKey !== "string" || !isGalleryOriginalKey(imageKey, userId)) return null;
     for (const copy of [displayKey, thumbKey]) {
@@ -138,6 +152,8 @@ export function parseNewPosts(raw: string, userId: string): NewGalleryPost[] | n
     if (caption != null && typeof caption !== "string") return null;
     const text = typeof caption === "string" ? caption.trim() : "";
     if (text.length > GALLERY_CAPTION_MAX) return null;
+    const taken = parseTakenAt(takenAt);
+    if (taken === undefined) return null;
     posts.push({
       imageKey,
       displayKey: typeof displayKey === "string" ? displayKey : null,
@@ -146,9 +162,26 @@ export function parseNewPosts(raw: string, userId: string): NewGalleryPost[] | n
       height,
       color: color.toLowerCase(),
       caption: text || null,
+      takenAt: taken,
     });
   }
   return posts;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** A date picker's YYYY-MM-DD for the poster's own day. */
+export function takenDateValue(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+/** The poster picked a day: keep the photo's own time on that day, else noon UTC so it reads the same day everywhere. */
+export function takenAtFromDate(value: string, current: string | null): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  if (current && takenDateValue(current) === value) return current;
+  return `${value}T12:00:00.000Z`;
 }
 
 /** "Maya Chen '26"; staff with no class year show the name alone. */

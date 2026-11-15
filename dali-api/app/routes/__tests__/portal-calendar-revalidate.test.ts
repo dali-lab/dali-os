@@ -1,9 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("~/calendar/routes/calendar.server", () => ({
-  loadCalendarData: vi.fn(),
-  submitCalendarAction: vi.fn(),
-}));
+vi.mock("~/calendar/lib/calendar-loader.server", () => ({ loadCalendarData: vi.fn() }));
+vi.mock("~/calendar/lib/calendar-actions.server", () => ({ submitCalendarAction: vi.fn() }));
 
 import * as portalCalendar from "~/routes/portal.calendar";
 import { shouldRevalidate } from "~/calendar/routes/calendar";

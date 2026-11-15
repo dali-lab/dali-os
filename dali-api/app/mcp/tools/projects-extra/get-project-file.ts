@@ -3,9 +3,9 @@
 
 import { prisma } from "~/lib/db.server";
 import { canViewFile } from "~/lib/fileAccess.server";
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 import { downloadFileName } from "~/lib/file-download-name";
-import { hydrateAuthors } from "~/lib/collabAuth";
+import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { UNKNOWN_LABEL } from "~/lib/display";
 import { McpNotFoundError } from "./errors";
 

@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/lib/roles");
-vi.mock("~/lib/core-cycle", () => ({
+vi.mock("~/lib/core-cycle.server", () => ({
   // Tests only care that the action runs and validates the request body —
   // not the cycle math — so stub to "current term only".
   coreCycleTermIds: vi.fn().mockResolvedValue(["term-1"]),

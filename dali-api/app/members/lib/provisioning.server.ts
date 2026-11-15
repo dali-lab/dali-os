@@ -2,7 +2,7 @@ import { prisma } from "~/lib/db.server";
 import { ensureTeam, addTeamMember, isNo2fa } from "~/lib/github";
 import { inviteToWorkspace } from "~/slack/lib/slack-client";
 import { provisionWorkspaceAccount, type WorkspaceResult } from "~/lib/google-workspace";
-import { syncSlackUserId } from "~/members/lib/slack-sync.server";
+import { syncSlackUserId } from "~/slack/lib/slack-sync.server";
 
 // Best-effort external provisioning for a newly-accepted member. Each step is
 // isolated and idempotent; a failure in one never blocks the others or the

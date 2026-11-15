@@ -485,11 +485,11 @@ describe("latestRecording pickup (Fix 1B: a finished recording reaches any viewe
     expect(box.current!.phase).toBe("done");
     expect(box.current!.recordingId).toBe("rDone");
     expect(box.current!.remote).toBeNull();
-    // Never auto-opens on its own (specs/meeting-recording-rail.md).
+    // Never auto-opens on its own (specs/archive/meeting-recording-rail.md).
     expect(box.current!.open).toBe(false);
   });
 
-  it("never auto-runs Enhance in the background, for the owner or anyone else (specs/meeting-recording-rail.md Step 2: cut)", async () => {
+  it("never auto-runs Enhance in the background, for the owner or anyone else (specs/archive/meeting-recording-rail.md Step 2: cut)", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).includes("/api/ai/meeting-notes/enhance")) return jsonRes({ error: "unexpected" }, 500);
       return jsonRes({
@@ -861,7 +861,7 @@ describe("setSpeaker: onSpeakersChanged + speakersChangedAt (Fix 4: stale names 
   });
 });
 
-// ─── Inline review (specs/meeting-recording-rail.md Step 2) ────────────────
+// ─── Inline review (specs/archive/meeting-recording-rail.md Step 2) ────────────────
 // A docChangeCb ref stands in for the route's editor.onChange wiring: the
 // hook's subscribeDocumentChanges prop just hands back an unsubscribe, and
 // the route is the one that actually calls back with a mark scan + change
@@ -1127,7 +1127,7 @@ describe("useMeetingRecording inline review: pendingMarks subscription + Keep/Re
   });
 });
 
-describe("useMeetingRecording.enhanceNow (specs/meeting-recording-rail.md Step 2: preview is a write)", () => {
+describe("useMeetingRecording.enhanceNow (specs/archive/meeting-recording-rail.md Step 2: preview is a write)", () => {
   function stubEnhanceFlow(posted: { url: string; body: Record<string, unknown> }[]) {
     return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

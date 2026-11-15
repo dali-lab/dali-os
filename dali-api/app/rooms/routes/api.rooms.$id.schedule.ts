@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.rooms.$id.schedule";
 import { prisma } from "~/lib/db.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { requireRoomBookingUser } from "~/rooms/lib/access.server";
-import { getRoomSchedule, parseWindow, serializeScheduleItem } from "~/lib/rooms.server";
+import { getRoomSchedule, parseWindow, serializeScheduleItem } from "~/rooms/lib/rooms.server";
 
 // GET /api/rooms/:id/schedule?start=<iso>&end=<iso> — the room's bookings and
 // meetings in the window (the caller's local day, computed client-side).

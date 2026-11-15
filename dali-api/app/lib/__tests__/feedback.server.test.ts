@@ -11,6 +11,7 @@ vi.mock("~/lib/auth", () => ({
   redirectPartnerToPortal: (...a: unknown[]) => redirectPartnerToPortal(...a),
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: (...a: unknown[]) => getUserRoles(...a) }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 
 import { requireFeedbackViewer } from "../feedback.server";
 

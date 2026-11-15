@@ -18,8 +18,8 @@ vi.mock("~/lib/pageAccess.server", () => ({
 vi.mock("~/lib/audit", () => ({
   logAuditEvent: vi.fn(),
 }));
-vi.mock("~/lib/page-names.server", async (importActual) => ({
-  ...(await importActual<typeof import("~/lib/page-names.server")>()),
+vi.mock("~/drive/lib/page-names.server", async (importActual) => ({
+  ...(await importActual<typeof import("~/drive/lib/page-names.server")>()),
   findNameConflict: vi.fn(),
   assertUniqueName: vi.fn(),
 }));
@@ -30,7 +30,7 @@ import { requireAuth } from "~/lib/auth";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { isOfferingManager } from "~/education/lib/access.server";
-import { assertUniqueName, PageNameConflictError } from "~/lib/page-names.server";
+import { assertUniqueName, PageNameConflictError } from "~/drive/lib/page-names.server";
 import { action } from "~/routes/api.drive.files";
 
 const mockPrisma = prisma as unknown as {

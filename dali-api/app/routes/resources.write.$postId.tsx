@@ -13,7 +13,7 @@ import {
 import { blogPostRoomName } from "~/collab/roomName";
 import { prisma } from "~/lib/db.server";
 import { isAiEnabled } from "~/lib/ai.server";
-import { DEFAULT_BLOG_COVER, blogListing } from "~/lib/blog-preview";
+import { DEFAULT_BLOG_COVER, blogListing } from "~/blog/lib/blog-preview";
 import {
   blogStatus,
   canChangeBlogAudience,
@@ -22,7 +22,7 @@ import {
   publishBlogPost,
   unpinBlogPost,
   unpublishBlogPost,
-} from "~/lib/blog-post.server";
+} from "~/blog/lib/blog-post.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { useOsChrome } from "~/components/os-chrome";
 import { Modal, ModalHeader } from "~/components/Modal";

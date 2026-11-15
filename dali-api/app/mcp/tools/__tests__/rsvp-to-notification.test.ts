@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   updateGoogleAttendeeRsvp: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { updateGoogleAttendeeRsvp } from "~/calendar/lib/google-calendar.server";
 import {
   runRsvpToNotification,
   RSVP_TO_NOTIFICATION_TOOL,

@@ -5,11 +5,11 @@ vi.mock("~/lib/db.server", () => {
   prisma.$transaction = vi.fn((fn: (tx: unknown) => unknown) => fn(prisma));
   return { prisma };
 });
-vi.mock("~/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
+vi.mock("~/drive/lib/page-names.server", () => ({ assertUniqueName: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { assertUniqueName } from "~/lib/page-names.server";
-import { createLabPage, createProjectPage } from "~/lib/pages";
+import { assertUniqueName } from "~/drive/lib/page-names.server";
+import { createLabPage, createProjectPage } from "~/lib/pages.server";
 
 const m = prisma as any;
 

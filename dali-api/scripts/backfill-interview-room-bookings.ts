@@ -14,7 +14,7 @@
  */
 
 import { prisma } from "../app/lib/db.server.js";
-import { createRoomBooking } from "../app/lib/rooms.server.js";
+import { createRoomBooking } from "../app/rooms/lib/rooms.server.js";
 
 async function main() {
   const interviews = await prisma.interview.findMany({

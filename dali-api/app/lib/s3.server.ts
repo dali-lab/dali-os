@@ -1,0 +1,306 @@
+import {
+  S3Client,
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
+  CopyObjectCommand,
+  CreateMultipartUploadCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
+  NoSuchKey,
+  NotFound,
+  UploadPartCommand,
+} from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { createPresignedPost, type PresignedPost } from '@aws-sdk/s3-presigned-post'
+import { MAX_UPLOAD_BYTES } from './file-validation'
+import { getEnv } from "~/lib/env.server";
+
+const REGION = getEnv().AWS_REGION
+const BUCKET = getEnv().AWS_S3_BUCKET
+
+export function isS3Configured(): boolean {
+  return Boolean(
+    REGION &&
+      BUCKET &&
+      getEnv().AWS_ACCESS_KEY_ID &&
+      getEnv().AWS_SECRET_ACCESS_KEY,
+  )
+}
+
+// `responseChecksumValidation: "WHEN_REQUIRED"` opts out of the SDK's default
+// behavior of adding `x-amz-checksum-mode=ENABLED` to presigned GetObject URLs.
+// That extra query param breaks SigV4 (signed headers don't account for it),
+// producing "signature does not match" on the browser-side fetch. We don't
+// rely on response checksum validation — S3 already integrity-checks via TLS.
+const s3 = new S3Client({
+  region: REGION,
+  credentials: {
+    accessKeyId: getEnv().AWS_ACCESS_KEY_ID!,
+    secretAccessKey: getEnv().AWS_SECRET_ACCESS_KEY!,
+  },
+  responseChecksumValidation: "WHEN_REQUIRED",
+  requestChecksumCalculation: "WHEN_REQUIRED",
+})
+
+// Generate a presigned POST policy for uploading a file directly from the
+// client to S3. Unlike presigned PUT, the policy includes server-bound
+// conditions that S3 enforces — the client cannot exceed the size cap or
+// upload a different content type, even if it ignores its own pre-checks.
+// Callers pass the cap for the key (`uploadCapForKey`: 100 MB file store,
+// 50 MB form uploads); the default is the general 10 MB limit.
+export async function getUploadPost(
+  key: string,
+  contentType: string,
+  { maxBytes = MAX_UPLOAD_BYTES, expiresIn = 300 }: { maxBytes?: number; expiresIn?: number } = {},
+): Promise<PresignedPost> {
+  return createPresignedPost(s3, {
+    Bucket: BUCKET!,
+    Key: key,
+    Conditions: [
+      ['content-length-range', 0, maxBytes],
+      ['eq', '$Content-Type', contentType],
+      ['starts-with', '$key', 'uploads/'],
+    ],
+    Fields: { 'Content-Type': contentType },
+    Expires: expiresIn,
+  })
+}
+
+// Server-side direct upload (MCP tool path — no browser to hand a presigned
+// POST to). Same uploads/ scoping contract as the presign route; callers
+// enforce size/type limits before invoking.
+export async function putObject(
+  key: string,
+  body: Uint8Array,
+  contentType: string,
+  metadata?: Record<string, string>,
+): Promise<void> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  await s3.send(
+    new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType, ...(metadata ? { Metadata: metadata } : {}) }),
+  )
+}
+
+// Size and stored Content-Type of an object, without reading it. Null when the
+// key doesn't exist — how a caller tells "the client never finished the POST"
+// from a real storage error. Used to record what actually landed rather than
+// what a client said it would upload.
+export async function headObject(
+  key: string,
+): Promise<{ sizeBytes: number; contentType: string | null } | null> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  try {
+    const res = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }))
+    return { sizeBytes: res.ContentLength ?? 0, contentType: res.ContentType ?? null }
+  } catch (err) {
+    if (err instanceof NotFound) return null
+    throw err
+  }
+}
+
+// Generate a presigned URL for reading a private file.
+//
+// `options` may be a number (legacy `expiresIn`) or an options object. Setting
+// `contentType` / `inline` overrides the response headers on the presigned URL
+// (`response-content-type` / `response-content-disposition`). This matters for
+// inline previews: the browser renders a file by these headers, so an object
+// stored with a wrong or missing Content-Type (common for server-generated
+// PDFs) would otherwise fail to load in an <iframe> even though we know its
+// real type. Forcing the type we have on record — and `inline` disposition —
+// makes the preview render regardless of how the bytes were stored.
+type DownloadUrlOptions = {
+  expiresIn?: number
+  contentType?: string
+  fileName?: string
+  inline?: boolean
+  // For objects that never change once written (a new upload gets a new key).
+  // Signs with the time rounded down to a `cacheFor`-second window, so every
+  // request in that window gets the identical URL and the browser serves it
+  // from cache, and has S3 send a matching immutable Cache-Control. The URL
+  // stays valid for two windows so one minted at the end of a window still
+  // loads. Overrides `expiresIn`.
+  cacheFor?: number
+}
+
+/**
+ * filename= is the ASCII fallback; filename* carries the real name, since names
+ * like macOS screenshots hold characters a plain header value can't.
+ */
+export function attachmentDisposition(fileName: string): string {
+  const clean = fileName.replace(/[\p{Cc}\p{Cs}"\\]/gu, "");
+  const ascii = clean.replace(/[^\x20-\x7e]/g, "_");
+  const encoded = encodeURIComponent(clean).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
+export async function getDownloadUrl(
+  key: string,
+  options: number | DownloadUrlOptions = {},
+) {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  const opts: DownloadUrlOptions = typeof options === "number" ? { expiresIn: options } : options
+  const { contentType, fileName, inline, cacheFor } = opts
+  const expiresIn = cacheFor ? cacheFor * 2 : (opts.expiresIn ?? 3600)
+
+  const disposition = inline
+    ? "inline"
+    : fileName
+      ? attachmentDisposition(fileName)
+      : undefined
+
+  const command = new GetObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ...(contentType ? { ResponseContentType: contentType } : {}),
+    ...(disposition ? { ResponseContentDisposition: disposition } : {}),
+    ...(cacheFor ? { ResponseCacheControl: `private, max-age=${expiresIn}, immutable` } : {}),
+  })
+  const signingDate = cacheFor
+    ? new Date(Math.floor(Date.now() / (cacheFor * 1000)) * cacheFor * 1000)
+    : undefined
+  return getSignedUrl(s3, command, { expiresIn, ...(signingDate ? { signingDate } : {}) })
+}
+
+// Best-effort delete of a private object (e.g. removing a mail attachment).
+// A miss is not an error — the row is already gone, so the object can too.
+export async function deleteObject(key: string): Promise<void> {
+  if (!isS3Configured()) return
+  await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }))
+}
+
+// Every key under a prefix (paginated). Used to find a recording's chunks
+// before processing or deleting them. Not configured → no keys, matching
+// deleteObject's best-effort stance rather than throwing.
+export async function listObjectKeys(prefix: string): Promise<string[]> {
+  if (!isS3Configured()) return []
+  const keys: string[] = []
+  let continuationToken: string | undefined
+  do {
+    const res = await s3.send(
+      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix, ContinuationToken: continuationToken }),
+    )
+    for (const obj of res.Contents ?? []) {
+      if (obj.Key) keys.push(obj.Key)
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (continuationToken)
+  return keys
+}
+
+// Best-effort batch delete (S3 DeleteObjects caps at 1000 keys per call).
+export async function deleteObjects(keys: string[]): Promise<void> {
+  if (!isS3Configured() || keys.length === 0) return
+  for (let i = 0; i < keys.length; i += 1000) {
+    const batch = keys.slice(i, i + 1000)
+    await s3.send(
+      new DeleteObjectsCommand({ Bucket: BUCKET, Delete: { Objects: batch.map((Key) => ({ Key })) } }),
+    )
+  }
+}
+
+// Read a private object's bytes + stored Content-Type directly (server-side).
+// Used to inline doc images as data URIs for headless-Chromium PDF rendering,
+// where a relative, session-authed <img src> can't be fetched from about:blank.
+export async function getObjectBytes(
+  key: string,
+): Promise<{ body: Buffer; contentType?: string }> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+  const bytes = await res.Body!.transformToByteArray()
+  return { body: Buffer.from(bytes), contentType: res.ContentType ?? undefined }
+}
+
+export async function getObjectWithMetadata(
+  key: string,
+): Promise<{ body: Buffer; metadata: Record<string, string> } | null> {
+  try {
+    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+    const bytes = await res.Body!.transformToByteArray()
+    return { body: Buffer.from(bytes), metadata: res.Metadata ?? {} }
+  } catch (err) {
+    if (err instanceof NoSuchKey) return null
+    throw err
+  }
+}
+
+// An object's bytes as they arrive, for files too large to hold in memory.
+// Null when the key doesn't exist.
+export async function getObjectStream(key: string): Promise<AsyncIterable<Uint8Array> | null> {
+  try {
+    const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
+    return res.Body as unknown as AsyncIterable<Uint8Array>
+  } catch (err) {
+    if (err instanceof NoSuchKey) return null
+    throw err
+  }
+}
+
+const MULTIPART_PART_BYTES = 8 * 1024 * 1024
+
+// Multipart upload of a stream of unknown length. At most one part is buffered.
+export async function putObjectStream(
+  key: string,
+  chunks: AsyncIterable<Uint8Array>,
+  contentType: string,
+): Promise<void> {
+  const target = { Bucket: BUCKET, Key: key }
+  const { UploadId } = await s3.send(
+    new CreateMultipartUploadCommand({ ...target, ContentType: contentType }),
+  )
+  const parts: { ETag?: string; PartNumber: number }[] = []
+  const uploadPart = async (pieces: Uint8Array[]) => {
+    const PartNumber = parts.length + 1
+    const { ETag } = await s3.send(
+      new UploadPartCommand({ ...target, UploadId, PartNumber, Body: Buffer.concat(pieces) }),
+    )
+    parts.push({ ETag, PartNumber })
+  }
+  try {
+    let pending: Uint8Array[] = []
+    let pendingBytes = 0
+    for await (const chunk of chunks) {
+      pending.push(chunk)
+      pendingBytes += chunk.length
+      if (pendingBytes >= MULTIPART_PART_BYTES) {
+        await uploadPart(pending)
+        pending = []
+        pendingBytes = 0
+      }
+    }
+    if (pendingBytes > 0 || parts.length === 0) await uploadPart(pending)
+    await s3.send(
+      new CompleteMultipartUploadCommand({ ...target, UploadId, MultipartUpload: { Parts: parts } }),
+    )
+  } catch (err) {
+    await s3.send(new AbortMultipartUploadCommand({ ...target, UploadId })).catch(() => {})
+    throw err
+  }
+}
+
+export async function copyObject(sourceKey: string, destKey: string): Promise<void> {
+  if (!isS3Configured()) {
+    throw new Error("AWS S3 is not configured")
+  }
+  await s3.send(
+    new CopyObjectCommand({
+      Bucket: BUCKET,
+      CopySource: `${BUCKET}/${sourceKey.split('/').map(encodeURIComponent).join('/')}`,
+      Key: destKey,
+    }),
+  )
+}

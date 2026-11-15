@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("~/lib/db.server");
 
 import { prisma } from "~/lib/db.server";
-import { baseHandle, normalizeHandle, ensureUniqueHandle } from "~/lib/handle";
+import { baseHandle, normalizeHandle, ensureUniqueHandle } from "~/lib/handle.server";
 
 const mockPrisma = prisma as unknown as {
   user: { findUnique: ReturnType<typeof vi.fn> };

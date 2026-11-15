@@ -1,5 +1,5 @@
 import type { Question } from "~/types";
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 
 // Replace raw S3 keys for `file`-type answers with short-lived presigned
 // download URLs so reviewer-side viewers can render real download links.

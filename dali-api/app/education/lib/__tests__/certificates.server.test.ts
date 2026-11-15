@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
-vi.mock("~/lib/gmail-integration", () => ({
+vi.mock("~/lib/gmail-integration.server", () => ({
   getSender: vi.fn().mockResolvedValue(null),
   noteSenderHealth: vi.fn(),
 }));

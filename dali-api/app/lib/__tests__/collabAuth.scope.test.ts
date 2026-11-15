@@ -26,15 +26,15 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
   getCycleConfidentialityState: vi.fn(),
 }));
 
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn(),
   listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember } from "~/lib/roles";
-import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
-import { authorizeCollabDoc } from "../collabAuth";
+import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups.server";
+import { authorizeCollabDoc } from "../collabAuth.server";
 
 const mockPrisma = prisma as any;
 

@@ -5,10 +5,10 @@ vi.mock("~/lib/cors", () => ({
   withCors: (_req: unknown, res: unknown) => res,
   handlePreflight: () => null,
 }));
-vi.mock("~/lib/notebook-default.server", () => ({ resolveDefaultNotebook: vi.fn() }));
+vi.mock("~/calendar/lib/notebook-default.server", () => ({ resolveDefaultNotebook: vi.fn() }));
 
 import { requireMemberSession } from "~/lib/auth";
-import { resolveDefaultNotebook } from "~/lib/notebook-default.server";
+import { resolveDefaultNotebook } from "~/calendar/lib/notebook-default.server";
 import { loader } from "~/routes/api.notebooks.default";
 
 const get = (query: string) =>

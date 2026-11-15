@@ -5,6 +5,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { initialWork } from "~/journeys/lib/studio";
 import type { StudioLab, StudioWork, SubmissionStatus } from "~/journeys/lib/studio-types";
 import { StudioLabView } from "~/journeys/components/studio/StudioLabView";
+import { Z } from "~/components/ui/z";
 
 /** The learner experience with throwaway state, plus a button that plays the mentor's part. */
 function TestSession({ studio, onClose }: { studio: StudioLab; onClose: () => void }) {
@@ -68,7 +69,7 @@ export function StudioTestDialog({ open, studio, onClose }: { open: boolean; stu
 
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <div ref={ref} role="dialog" aria-modal="true" aria-label={`Testing ${studio.title}`} className="fixed inset-0 z-[46] bg-os-bg font-os text-foreground">
+    <div ref={ref} role="dialog" aria-modal="true" aria-label={`Testing ${studio.title}`} className={`fixed inset-0 ${Z.takeoverTop} bg-os-bg font-os text-foreground`}>
       <TestSession studio={studio} onClose={onClose} />
     </div>,
     document.body,

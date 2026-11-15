@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { ChevronLeft, UserPlus, X } from "lucide-react";
-import { useOsChrome } from "~/components/os-chrome";
-import { SearchInput } from "~/components/ui/SearchInput";
+import { PersonPicker } from "~/components/ui/PersonPicker";
 import { OS_SURFACE_CLASS, filterPillClass } from "~/components/ui/floating/styles";
 import { Select } from "~/components/ui/floating";
 import { ProjectIcon } from "~/components/ProjectIcon";
@@ -40,7 +39,6 @@ export function AddMemberFlow({
   /** Refetch external mentors after one is added. */
   onExternalMentorAdded: () => void;
 }) {
-  const { os } = useOsChrome();
   const revalidator = useRevalidator();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -220,12 +218,7 @@ export function AddMemberFlow({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "focus:outline-none focus:ring-2",
-          os
-            ? cn(filterPillClass(true), "focus:ring-os-accent/40")
-            : "inline-flex items-center gap-1.5 text-sm px-2.5 py-1 border border-border rounded-md bg-background text-foreground hover:bg-muted focus:ring-os-accent/30",
-        )}
+        className={cn(filterPillClass(), "focus:outline-none focus:ring-2 focus:ring-os-accent/40")}
       >
         <UserPlus className="w-4 h-4" />
         Add member
@@ -233,47 +226,29 @@ export function AddMemberFlow({
 
       {open && (
         <div
-          className={cn(
-            "absolute right-0 mt-1 w-80 max-w-[calc(100vw-1rem)] z-50 p-2",
-            os ? OS_SURFACE_CLASS : "bg-card border border-border rounded-md shadow-lg",
-          )}
+          className={cn("absolute right-0 mt-1 w-80 max-w-[calc(100vw-1rem)] z-50 p-2", OS_SURFACE_CLASS)}
         >
           {!selected ? (
             // ── Step 1: pick a person ──────────────────────────────────────
             <>
-              <SearchInput
+              <PersonPicker
+                people={results.map((p) => ({
+                  id: p.userId,
+                  name: p.name,
+                  secondary: [p.email, p.onBoard ? "On board" : "Not on board"].filter(Boolean).join(" · "),
+                }))}
+                value={null}
+                onChange={(id) => setSelected(results.find((p) => p.userId === id) ?? null)}
+                onQueryChange={setQ}
+                filterLocally={false}
                 autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
+                ariaLabel="Search members"
                 placeholder="Search members by name or email…"
-                size="sm"
-                containerClassName="w-full"
+                noMatchesLabel={
+                  q.trim().length < 2 ? "Type two letters to search." : loading ? "Searching…" : "No members found."
+                }
               />
               {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
-              <div className="mt-2 max-h-64 overflow-y-auto flex flex-col gap-0.5">
-                {loading && localResults.length === 0 && (
-                  <p className="text-xs text-muted-foreground px-1 py-1">Searching…</p>
-                )}
-                {!loading && q.trim().length >= 2 && results.length === 0 && !error && (
-                  <p className="text-xs text-muted-foreground px-1 py-1">No members found.</p>
-                )}
-                {results.map((person) => (
-                  <button
-                    key={person.userId}
-                    type="button"
-                    onClick={() => setSelected(person)}
-                    className="text-left px-2 py-1.5 rounded hover:bg-muted flex flex-col gap-0.5"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span className="text-sm text-foreground">{person.name}</span>
-                      <BoardBadge onBoard={person.onBoard} os={os} />
-                    </span>
-                    {person.email && (
-                      <span className="text-[11px] text-muted-foreground">{person.email}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
             </>
           ) : (
             // ── Step 2: pick a destination ─────────────────────────────────
@@ -289,7 +264,7 @@ export function AddMemberFlow({
               >
                 <ChevronLeft className="w-3.5 h-3.5" aria-hidden />
                 <span className="text-sm text-foreground font-medium">{selected.name}</span>
-                <BoardBadge onBoard={selected.onBoard} os={os} />
+                <BoardBadge onBoard={selected.onBoard} />
               </button>
 
               {!mentorMode ? (
@@ -310,10 +285,7 @@ export function AddMemberFlow({
                               key={p.id}
                               type="button"
                               onClick={() => staffOn(p.id)}
-                              className={cn(
-                                "inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-border hover:bg-muted transition-colors",
-                                os ? "bg-os-well" : "bg-background",
-                              )}
+                              className="inline-flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-border bg-os-well hover:bg-muted transition-colors"
                             >
                               <ProjectIcon iconEmoji={p.iconEmoji} />
                               <span className="truncate max-w-[10rem]">{p.name}</span>
@@ -332,12 +304,7 @@ export function AddMemberFlow({
                         type="button"
                         disabled={busy}
                         onClick={addToBoard}
-                        className={cn(
-                          "self-start disabled:opacity-50",
-                          os
-                            ? "os-btn-primary"
-                            : "px-3 py-1.5 text-sm rounded-lg bg-os-accent text-os-bg hover:opacity-90",
-                        )}
+                        className="os-btn-primary self-start disabled:opacity-50"
                       >
                         {busy ? "Adding…" : "Add to board"}
                       </button>
@@ -396,12 +363,7 @@ export function AddMemberFlow({
                     type="button"
                     disabled={!mentorProjectId || !mentorDomainId || busy}
                     onClick={addExternalMentor}
-                    className={cn(
-                      "self-end disabled:opacity-50",
-                      os
-                        ? "os-btn-primary"
-                        : "px-3 py-1.5 text-sm rounded-lg bg-os-accent text-os-bg hover:opacity-90",
-                    )}
+                    className="os-btn-primary self-end disabled:opacity-50"
                   >
                     {busy ? "Adding…" : "Add mentor"}
                   </button>
@@ -417,16 +379,12 @@ export function AddMemberFlow({
   );
 }
 
-function BoardBadge({ onBoard, os }: { onBoard: boolean; os: boolean }) {
+function BoardBadge({ onBoard }: { onBoard: boolean }) {
   return (
     <span
       className={cn(
         "inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded",
-        onBoard
-          ? os
-            ? "bg-os-accent/15 text-os-accent"
-            : "bg-os-accent/15 text-os-accent"
-          : "bg-muted text-muted-foreground",
+        onBoard ? "bg-os-accent/15 text-os-accent" : "bg-muted text-muted-foreground",
       )}
     >
       {onBoard ? "On board" : "Not on board"}

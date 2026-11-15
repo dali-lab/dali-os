@@ -8,17 +8,23 @@ vi.mock("~/projects/lib/task-notifications.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "~/mcp/tools/access";
+import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
 import {
   runAddTaskComment,
   ADD_TASK_COMMENT_TOOL,
 } from "~/mcp/tools/add-task-comment";
 
 const mockPrisma = prisma as unknown as {
-  task: { findUnique: ReturnType<typeof vi.fn> };
+  $transaction: ReturnType<typeof vi.fn>;
+  task: { findUnique: ReturnType<typeof vi.fn>; update: ReturnType<typeof vi.fn> };
   taskComment: { create: ReturnType<typeof vi.fn> };
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockPrisma.$transaction.mockImplementation((ops: Promise<unknown>[]) => Promise.all(ops));
+  mockPrisma.task.update.mockResolvedValue({});
+});
 
 describe("add_task_comment", () => {
   it("requires mcp:write", () => {
@@ -67,5 +73,20 @@ describe("add_task_comment", () => {
     await expect(
       runAddTaskComment("u1", { taskId: "t1", body: "hi" }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("bumps activityAt and notifies, like the web comment box", async () => {
+    mockPrisma.task.findUnique.mockResolvedValue({
+      id: "t1",
+      projectId: "p1",
+      assignees: [{ userId: "u1" }],
+    });
+    mockPrisma.taskComment.create.mockResolvedValue({ id: "c1", createdAt: new Date() });
+    await runAddTaskComment("u1", { taskId: "t1", body: " hi " });
+    expect(mockPrisma.task.update).toHaveBeenCalledWith({
+      where: { id: "t1" },
+      data: { activityAt: expect.any(Date) },
+    });
+    expect(notifyTaskComment).toHaveBeenCalledWith({ taskId: "t1", authorId: "u1", body: "hi" });
   });
 });

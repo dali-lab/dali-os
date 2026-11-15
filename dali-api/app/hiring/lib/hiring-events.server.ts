@@ -9,11 +9,8 @@
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { isCycleAdmin } from "~/lib/roles";
+import { isManualCheckInOpen } from "~/lib/check-in-window";
 import type { HiringEvent, HiringEventKind } from "~/generated/prisma/client";
-
-// Check-in stays reachable this long past the event's end, so a late QR scan
-// still counts, then auto-closes even if Core forgets to close it by hand.
-const CHECKIN_GRACE_MS = 30 * 60 * 1000;
 
 export type HiringEventWithCount = HiringEvent & {
   _count: { attendances: number };
@@ -143,13 +140,8 @@ export async function deleteHiringEvent(args: {
 
 export type HiringEventWindow = { endsAt: Date; checkInOpenAt: Date | null };
 
-/**
- * Whether an applicant can self-check-in right now: Core has opened it AND
- * we're still inside the event's grace window. Same shape as
- * isSessionCheckInOpen (app/education/lib/session-checkin.server.ts).
- */
 export function isEventCheckInOpen(event: HiringEventWindow, now: Date = new Date()): boolean {
-  return event.checkInOpenAt != null && now.getTime() <= event.endsAt.getTime() + CHECKIN_GRACE_MS;
+  return isManualCheckInOpen(event, now);
 }
 
 export async function setEventCheckInOpen(args: {
@@ -205,32 +197,6 @@ export async function setEventBroadcast(args: {
     metadata: { cycleId: event.applicationCycleId },
   });
   return { ok: true };
-}
-
-export type BroadcastEvent = {
-  id: string;
-  title: string;
-  kind: HiringEventKind;
-  startsAt: Date;
-  endsAt: Date;
-  location: string | null;
-};
-
-/**
- * The event every paired door display should show a check-in QR for right
- * now: broadcast switched on and check-in still open. With several on at
- * once, the one starting soonest wins.
- */
-export async function getBroadcastEvent(now: Date = new Date()): Promise<BroadcastEvent | null> {
-  const candidates = await prisma.hiringEvent.findMany({
-    where: { broadcastAt: { not: null }, checkInOpenAt: { not: null } },
-    orderBy: { startsAt: "asc" },
-    select: { id: true, title: true, kind: true, startsAt: true, endsAt: true, location: true, checkInOpenAt: true },
-  });
-  const live = candidates.find((e) => isEventCheckInOpen(e, now));
-  if (!live) return null;
-  const { checkInOpenAt: _open, ...event } = live;
-  return event;
 }
 
 export type SelfCheckInResult =

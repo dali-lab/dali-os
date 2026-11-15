@@ -46,6 +46,19 @@ export const TEMPLATE_VARIABLES_REGISTRY = {
     description: "Link to the DALI Slack workspace.",
     contexts: ["email"],
   },
+  loginUrl: {
+    description: "Link to the DALI OS login page.",
+    contexts: ["email"],
+  },
+  daliEmail: {
+    description: "The new member's @dali.dartmouth.edu login address.",
+    contexts: ["email"],
+  },
+  tempPassword: {
+    description:
+      "The account's one-time first password. A live credential: it renders only into the acceptance email and is never logged.",
+    contexts: ["email"],
+  },
   closeDate: {
     description: "A domain or cycle close date, formatted in Eastern Time.",
     contexts: ["email"],

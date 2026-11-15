@@ -19,7 +19,7 @@ export function useSettingsData() {
 }
 
 export default function SettingsLayout() {
-  const data = useLoaderData<typeof loader>() as SettingsData;
+  const data = useLoaderData<typeof loader>();
   const location = useLocation();
   const navigate = useNavigate();
   const desktopVersion = useDesktopVersion();

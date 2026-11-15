@@ -29,3 +29,21 @@ describe("toFormFields", () => {
     expect(toFormFields({ ...base, intent: "not-continuing", reason: "No budget" }).reason).toBe("No budget");
   });
 });
+
+describe("toFormFields for maintenance", () => {
+  it("sends the plan and fee, and no spots or reason", () => {
+    const f = toFormFields({ ...base, intent: "maintain", plan: "Medium", feeCents: 300000, reason: "x", roles: [] });
+    expect(f).toEqual({
+      intent: "maintain",
+      projectId: "p",
+      nextStep: "Call",
+      nextStepDue: "2026-11-02",
+      plan: "Medium",
+      feeCents: "300000",
+    });
+  });
+
+  it("sends an empty fee when none is set", () => {
+    expect(toFormFields({ ...base, intent: "maintain", plan: "Hosting", feeCents: null }).feeCents).toBe("");
+  });
+});

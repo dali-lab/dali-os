@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({
 }));
 // Factory mock: the real roles module reaches ~/lib/db.
 vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getUploadPost: vi.fn(),
   getDownloadUrl: vi.fn(),
   // Configured by default; the "not configured" case sets it false per-test.
@@ -13,7 +13,7 @@ vi.mock("~/lib/s3", () => ({
 }));
 
 import { requireAuth } from "~/lib/auth";
-import { getUploadPost, isS3Configured } from "~/lib/s3";
+import { getUploadPost, isS3Configured } from "~/lib/s3.server";
 import { isLabMember } from "~/lib/roles";
 import { _resetForTests } from "~/lib/rate-limit";
 import { MAX_FILE_STORE_BYTES, MAX_FORM_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";

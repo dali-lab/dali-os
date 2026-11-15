@@ -1,4 +1,4 @@
-import type { PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import type { PillTone } from "~/components/ui/Pill";
 import { DECISION_TONES, STAGE_LABELS } from "./labels";
 
 // One applicant's stage changes as a single ordered list: what the applicant

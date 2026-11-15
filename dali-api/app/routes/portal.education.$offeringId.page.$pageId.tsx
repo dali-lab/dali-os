@@ -1,66 +1,15 @@
-import { useLoaderData, Link } from "react-router";
+import { useLoaderData } from "react-router";
 import type { Route } from "./+types/portal.education.$offeringId.page.$pageId";
-import { requireEnrollment } from "~/education/lib/access.server";
-import { readMaterialPage } from "~/education/lib/lms.server";
-import { prisma } from "~/lib/db.server";
-import { getCollabToken } from "~/lib/collab-token.server";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { MaterialPageBody } from "~/education/components/MaterialPageBody";
+import { OfferingPageView } from "~/education/components/OfferingPageView";
+import { loadMaterialPage } from "~/education/lib/offering-surface.server";
+import { PORTAL_SURFACE, surfaceTitle } from "~/education/lib/offering-surface";
 
 export const meta: Route.MetaFunction = ({ data }) => [
-  { title: `${data?.page.title ?? "Page"} · DALI` },
+  { title: surfaceTitle(PORTAL_SURFACE, data?.page.title ?? "Page") },
 ];
 
-export async function loader({ request, params }: Route.LoaderArgs) {
-  const { auth } = await requireEnrollment(request, params.offeringId!, "portal");
-  const page = await readMaterialPage(params.offeringId!, params.pageId!);
-  if (!page) throw new Response("Not found", { status: 404 });
-  const me = page.studentEditable
-    ? await prisma.user.findUnique({
-        where: { id: auth.user.sub },
-        select: { firstName: true, lastName: true },
-      })
-    : null;
-  return {
-    offeringId: params.offeringId!,
-    page: {
-      id: page.id,
-      title: page.title,
-      studentEditable: page.studentEditable,
-      // readMaterialPage returns compat ProseMirror JSON for read-only pages; the
-      // read-only DocEditor wants block JSON. Shared docs render live (no content).
-      content: page.studentEditable ? null : ensureBlocks(page.content),
-    },
-    collabToken: page.studentEditable ? await getCollabToken(request) : null,
-    userName: me ? `${me.firstName} ${me.lastName}`.trim() : "Student",
-  };
-}
+export const loader = (args: Route.LoaderArgs) => loadMaterialPage(args, PORTAL_SURFACE);
 
 export default function PortalMaterialPage() {
-  const { offeringId, page, collabToken, userName } = useLoaderData<typeof loader>();
-
-  return (
-    <div className="w-full px-4 sm:px-6 py-8 flex flex-col gap-4">
-      <header>
-        <p className="text-xs text-muted-foreground">
-          <Link
-            to={`/portal/education/${offeringId}/hub?tab=sessions`}
-            className="hover:underline"
-          >
-            ← Timeline
-          </Link>
-        </p>
-        <h1 className="mt-1 font-heading text-4xl font-medium text-foreground">
-          {page.title}
-        </h1>
-      </header>
-      <MaterialPageBody
-        pageId={page.id}
-        studentEditable={page.studentEditable}
-        content={page.content}
-        collabToken={collabToken}
-        userName={userName}
-      />
-    </div>
-  );
+  return <OfferingPageView surface={PORTAL_SURFACE} {...useLoaderData<typeof loader>()} />;
 }

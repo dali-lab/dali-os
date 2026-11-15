@@ -6,7 +6,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
-import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups";
+import { isUserActiveInTerm, resolveGroupMembers } from "~/lib/groups.server";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";
 import { bakeSigningBody } from "~/lib/signing-fields";
 import { isStaffedInTerm, isStaffedMentorInTerm } from "./staffing-audience.server";

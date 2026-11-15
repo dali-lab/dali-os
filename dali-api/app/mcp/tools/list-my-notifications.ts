@@ -11,8 +11,8 @@
 //
 // Requires the `mcp:read` scope.
 
-import { listMyNotifications, type ListNotificationsOptions } from "~/lib/notifications";
-import { listNotificationHistory } from "~/lib/tasks";
+import { listMyNotifications, type ListNotificationsOptions } from "~/lib/notifications.server";
+import { listNotificationHistory } from "~/lib/tasks.server";
 import { keysetPage, keysetWindow, pageProps, type PageArgs, type PageInfo } from "../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 30, maxLimit: 50 };

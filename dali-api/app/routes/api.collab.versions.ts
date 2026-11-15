@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.collab.versions";
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
+import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth.server";
 import { getCollabServer } from "~/collab/server";
 import { forceSnapshot } from "~/collab/persistence";
 import { parseJson } from "~/lib/validate";

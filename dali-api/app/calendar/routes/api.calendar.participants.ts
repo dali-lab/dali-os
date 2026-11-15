@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.calendar.participants";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isLabMember } from "~/lib/roles";
-import { loadParticipantOptions } from "~/calendar/routes/calendar.server";
+import { loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 
 // GET /api/calendar/participants: the lab directory for the calendar's
 // participant pickers. Kept out of the calendar loader, which reruns on every

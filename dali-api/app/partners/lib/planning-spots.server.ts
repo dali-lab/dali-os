@@ -49,3 +49,35 @@ export async function setTermSpots(
     return "ok";
   });
 }
+
+// An application's expected members per domain. Domains left out drop to 0
+// rather than being removed, so their expected-challenges notes survive.
+export async function setApplicationSpots(
+  db: Db,
+  input: { applicationId: string; roles: { domainId: string; slots: number }[] },
+): Promise<"ok" | "not-found" | "unknown-domain"> {
+  const roles = normalizeRoles(input.roles);
+  const app = await db.partnerApplication.findUnique({ where: { id: input.applicationId }, select: { id: true } });
+  if (!app) return "not-found";
+  if (roles.length) {
+    const valid = await db.domain.findMany({
+      where: { id: { in: roles.map((r) => r.domainId) }, active: true, isSystem: false },
+      select: { id: true },
+    });
+    if (valid.length !== roles.length) return "unknown-domain";
+  }
+  await db.$transaction(async (tx) => {
+    await tx.partnerApplicationDomain.updateMany({
+      where: { applicationId: input.applicationId, domainId: { notIn: roles.map((r) => r.domainId) } },
+      data: { expectedMembers: 0 },
+    });
+    for (const r of roles) {
+      await tx.partnerApplicationDomain.upsert({
+        where: { applicationId_domainId: { applicationId: input.applicationId, domainId: r.domainId } },
+        create: { applicationId: input.applicationId, domainId: r.domainId, expectedMembers: r.slots },
+        update: { expectedMembers: r.slots },
+      });
+    }
+  });
+  return "ok";
+}

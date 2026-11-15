@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(),
 }));
 
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 import { presignAnswers } from "~/hiring/lib/presign";
 import type { Question } from "~/types";
 

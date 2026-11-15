@@ -11,7 +11,7 @@ vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/transcription/chunks.server", () => ({ deletePrefix: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canReadRecording: vi.fn(),
   canRecordInto: vi.fn(),
   claimRecording: vi.fn(),
@@ -37,7 +37,7 @@ import {
   finalizeEmpty,
   requestStop,
   startProcessing,
-} from "~/lib/meeting-recording.server";
+} from "~/calendar/lib/meeting-recording.server";
 import { action, loader } from "~/routes/api.meeting-recordings.$id";
 
 function post(body: unknown): Request {

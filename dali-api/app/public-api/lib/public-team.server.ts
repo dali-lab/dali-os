@@ -1,4 +1,5 @@
 import { prisma } from "~/lib/db.server";
+import { LEGACY_DOMAIN_ID } from "~/lib/prisma-shapes";
 import { publicMediaUrl } from "./public-media";
 
 // The public team directory on dali.website.
@@ -33,10 +34,6 @@ export type PublicTeamMember = {
   profileImage: string;
   linkedinUrl: string;
 };
-
-// Imported payroll history. These members never opted into being listed, and
-// "Legacy" is a storage bucket, not a role anyone holds.
-const LEGACY_DOMAIN_ID = "domain_legacy";
 
 const USER_PUBLIC_SELECT = {
   id: true,

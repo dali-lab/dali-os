@@ -4,20 +4,11 @@
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
-export const DELETE_EPIC_TOOL = {
-  name: "delete_epic",
-  description:
-    "Delete an epic. Tasks pointing at it have their epicId nulled (no cascade). Requires Core or project-member access.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      epicId: { type: "string", minLength: 1 },
-    },
-    required: ["epicId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
+export const DELETE_EPIC_PROPERTIES = {
+  epicId: { type: "string", minLength: 1 },
 };
+
+export const DELETE_EPIC_REQUIRED = ["epicId"];
 
 type Input = { epicId: string };
 

@@ -1,5 +1,5 @@
 import { requireAuth } from "~/lib/auth";
-import { getObjectBytes } from "~/lib/s3";
+import { getObjectBytes } from "~/lib/s3.server";
 
 const WHITEBOARD_KEY_PREFIX = "uploads/whiteboard-images/";
 

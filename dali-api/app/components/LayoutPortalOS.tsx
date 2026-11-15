@@ -17,6 +17,7 @@ import {
 import { PORTAL_NAV, isPortalNavActive, type PortalNavItem } from '~/lib/portal-nav'
 import { ImpersonationBanner } from '~/components/ImpersonationBanner'
 import { cn } from '~/lib/cn'
+import { readStorage, writeStorage } from '~/lib/safe-storage'
 
 /* ------------------------------------------------------------------ */
 /* The dali.os shell for non-members. Same rail, same material and the  */
@@ -78,8 +79,7 @@ export function LayoutPortalOS({
   const userMenuStyle = useAccountMenuStyle(userMenuRef, userMenuOpen)
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-    setCollapsed(window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1')
+    setCollapsed(readStorage(SIDEBAR_COLLAPSED_KEY) === '1')
   }, [])
 
   useEffect(() => {
@@ -109,20 +109,14 @@ export function LayoutPortalOS({
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       const next = !prev
-      if (typeof window !== 'undefined') {
-        if (next) window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, '1')
-        else window.localStorage.removeItem(SIDEBAR_COLLAPSED_KEY)
-      }
+      writeStorage(SIDEBAR_COLLAPSED_KEY, next ? '1' : null)
       return next
     })
   }
 
   const initials = userInitials(user)
-  const { tasks: openTasks, items: feedItems, projectTasks, taskTotal, projectTaskTotal } = useAttentionFeed()
-  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, {
-    tasks: taskTotal,
-    projectTasks: projectTaskTotal,
-  })
+  const { tasks: openTasks, items: feedItems, projectTasks, totals: feedTotals } = useAttentionFeed()
+  const taskCount = attentionTotal(openTasks, feedItems, projectTasks, feedTotals)
 
   /* ---------------- Tasks drawer (bell, top bar) ---------------- */
   const [bellOpen, setBellOpen] = useState(false)
@@ -305,7 +299,7 @@ export function LayoutPortalOS({
         tasks={openTasks}
         notifications={feedItems}
         projectTasks={projectTasks}
-        total={taskCount}
+        totals={feedTotals}
         allTasksLink={false}
         singleFeed
         title="Notifications"

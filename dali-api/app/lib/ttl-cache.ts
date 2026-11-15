@@ -16,6 +16,7 @@ import { recordCacheRead } from "~/lib/perf-stats";
 
 type Entry = { value: unknown; expiresAt: number };
 
+const SWEEP_AT = 1000;
 const entries = new Map<string, Entry>();
 const inflight = new Map<string, Promise<unknown>>();
 
@@ -54,7 +55,13 @@ export function cachedForTtl<T>(
   const promise = compute().then(
     (value) => {
       if (inflight.get(key) === promise) {
-        if (shouldCache(value)) entries.set(key, { value, expiresAt: Date.now() + ttlMs });
+        if (shouldCache(value)) {
+          const at = Date.now();
+          if (entries.size >= SWEEP_AT) {
+            for (const [k, e] of entries) if (e.expiresAt <= at) entries.delete(k);
+          }
+          entries.set(key, { value, expiresAt: at + ttlMs });
+        }
         inflight.delete(key);
       }
       return value;
@@ -77,6 +84,10 @@ export function clearTtlCache(prefix?: string): void {
   }
   for (const key of entries.keys()) if (key.startsWith(prefix)) entries.delete(key);
   for (const key of inflight.keys()) if (key.startsWith(prefix)) inflight.delete(key);
+}
+
+export function ttlCacheSizeForTests(): number {
+  return entries.size;
 }
 
 export function setTtlCacheEnabledForTests(value: boolean | null): void {

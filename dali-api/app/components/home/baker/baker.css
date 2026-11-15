@@ -1,0 +1,83 @@
+/* Copy sits on the art's sky, so its colors follow the art (day or night), not the app theme. */
+.baker-hero {
+  container: baker / inline-size;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-os-card);
+  width: 100%;
+  background: #8fb8e2;
+  color: #12263a;
+}
+
+/* The top of each art's sky, so the stacked phone layout reads as one picture. */
+.baker-hero[data-season='spring'] { background: #86c0f0; }
+.baker-hero[data-season='summer'] { background: #6aa6ea; }
+
+.baker-hero[data-night] {
+  background: #0e1a33;
+  color: #f4f2ed;
+}
+
+.baker-art {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  aspect-ratio: 1144 / 520;
+  min-height: 360px;
+}
+
+.baker-hands line {
+  stroke: #2b2f35;
+  stroke-linecap: round;
+}
+
+.baker-copy {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(560px, 60%);
+  padding: 28px 32px;
+}
+
+.baker-overline {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.baker-heading {
+  font-family: var(--font-os-logo);
+  font-size: clamp(28px, 4.2cqi, 44px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.baker-detail {
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+/* Too narrow for copy beside the tower: the copy sits on the sky above the art. */
+@container baker (max-width: 640px) {
+  .baker-copy {
+    position: static;
+    order: -1;
+    max-width: none;
+    padding: 20px 20px 4px;
+  }
+
+  .baker-art {
+    aspect-ratio: auto;
+    min-height: 0;
+    height: 280px;
+  }
+}

@@ -5,13 +5,13 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   putObject: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { putObject } from "~/lib/s3";
+import { putObject } from "~/lib/s3.server";
 import {
   runUploadProjectFile,
   UploadProjectFileError,

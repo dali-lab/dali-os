@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "~/lib/db.server";
-import { getCoreBoardProject } from "~/core/lib/taskboard.server";
+import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 
 describe("Core board project", () => {
   it("allows only one CoreBoard project", async () => {

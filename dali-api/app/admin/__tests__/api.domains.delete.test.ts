@@ -19,7 +19,7 @@ vi.mock("~/lib/roles");
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
-import { action, describeDomainUsage } from "~/admin/routes/api.domains.$domainId";
+import { action } from "~/admin/routes/api.domains.$domainId";
 
 const mockPrisma = prisma as unknown as {
   $transaction: ReturnType<typeof vi.fn>;
@@ -64,35 +64,6 @@ beforeEach(() => {
 function makeRequest(method = "DELETE") {
   return new Request(`http://localhost/api/domains/${DOMAIN_ID}`, { method });
 }
-
-describe("describeDomainUsage", () => {
-  it("returns empty list when nothing references the domain", () => {
-    expect(describeDomainUsage(ZERO_COUNTS)).toEqual([]);
-  });
-
-  it("describes only non-zero relations", () => {
-    const out = describeDomainUsage({
-      ...ZERO_COUNTS,
-      applicationCycles: 2,
-      cycleReviewers: 3,
-    });
-    expect(out).toEqual(["2 application cycles", "3 cycle reviewers"]);
-  });
-
-  it("flags post-Phase-2 relations (eligibilities, projects, etc.)", () => {
-    const out = describeDomainUsage({
-      ...ZERO_COUNTS,
-      eligibilities: 4,
-      projectAssignments: 2,
-      partnerApplicationDomains: 1,
-    });
-    expect(out).toEqual([
-      "4 member eligibilities",
-      "2 project assignments",
-      "1 partner applications",
-    ]);
-  });
-});
 
 describe("DELETE /api/domains/:domainId", () => {
   it("returns 403 when caller is not an admin", async () => {

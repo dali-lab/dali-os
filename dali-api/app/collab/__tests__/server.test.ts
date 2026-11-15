@@ -45,7 +45,7 @@ vi.mock("../persistence", () => ({
   storeDocument: m.storeDocument,
   maybeSnapshot: m.maybeSnapshot,
 }));
-vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: m.authorizeCollabDoc }));
+vi.mock("~/lib/collabAuth.server", () => ({ authorizeCollabDoc: m.authorizeCollabDoc }));
 vi.mock("../mentions.server", () => ({ notifyCollabDocMentions: m.notifyCollabDocMentions }));
 vi.mock("../page-links.server", () => ({ reconcilePageLinks: m.reconcilePageLinks }));
 vi.mock("../agent-presence.server", () => ({

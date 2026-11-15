@@ -1,4 +1,4 @@
-import { forwardRef, type InputHTMLAttributes, type ChangeEvent } from "react";
+import { forwardRef, type InputHTMLAttributes, type ChangeEvent, type ReactNode } from "react";
 import { Search } from "lucide-react";
 import { cn } from "~/lib/cn";
 
@@ -14,6 +14,9 @@ export interface SearchInputProps
    *  (task boards, dropdown filters, dense table toolbars). Same pill either
    *  way — one control read at two scales. */
   size?: "sm" | "md";
+  /** Sits at the start of the field in place of the search glyph (a chip for
+   *  the scope the search runs inside). */
+  leading?: ReactNode;
 }
 
 // The one dali.os search field: a card surface with the design's 8px corner, a
@@ -31,10 +34,33 @@ const SIZES = {
 
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
   function SearchInput(
-    { value, onChange, placeholder, className, containerClassName, size = "md", ...props },
+    { value, onChange, placeholder, className, containerClassName, size = "md", leading, ...props },
     ref,
   ) {
     const s = SIZES[size];
+    if (leading) {
+      return (
+        <div
+          className={cn(
+            BASE,
+            "flex items-center gap-1.5 pl-1.5 pr-3 focus-within:ring-2 focus-within:ring-os-accent/30",
+            size === "md" ? "h-9" : "h-8",
+            containerClassName,
+          )}
+        >
+          {leading}
+          <input
+            ref={ref}
+            type="search"
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            className={cn("h-full min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none", className)}
+            {...props}
+          />
+        </div>
+      );
+    }
     return (
       <div className={cn("relative", containerClassName)}>
         <Search

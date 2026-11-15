@@ -7,13 +7,13 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/drive-roots.server", () => ({ editableFolderInRoot: vi.fn(), ensureRoot: vi.fn() }));
+vi.mock("~/drive/lib/drive-roots.server", () => ({ editableFolderInRoot: vi.fn(), ensureRoot: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
-import { editableFolderInRoot, ensureRoot } from "~/lib/drive-roots.server";
+import { editableFolderInRoot, ensureRoot } from "~/drive/lib/drive-roots.server";
 import { action } from "~/routes/api.rubrics";
 
 const m = prisma as any;

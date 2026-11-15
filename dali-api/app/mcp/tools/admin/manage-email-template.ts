@@ -17,6 +17,7 @@ import {
   type EmailTemplateKey,
 } from "~/email/lib/registry";
 import {
+  EmailTemplateRequiredVarsError,
   getEmailTemplate,
   rollbackEmailTemplate,
   saveEmailTemplate,
@@ -93,11 +94,16 @@ export async function runManageEmailTemplate(ctx: McpCtx, args: Input) {
   const def = emailTemplateDef(key);
 
   if (action === "save") {
-    await saveEmailTemplate(
-      key,
-      { subject: args.subject ?? "", body: args.body ?? "" },
-      callerId,
-    );
+    try {
+      await saveEmailTemplate(
+        key,
+        { subject: args.subject ?? "", body: args.body ?? "" },
+        callerId,
+      );
+    } catch (err) {
+      if (err instanceof EmailTemplateRequiredVarsError) throw new McpInvalidError(err.message);
+      throw err;
+    }
     return { key, saved: true as const };
   }
 

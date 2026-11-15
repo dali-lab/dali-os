@@ -1,7 +1,7 @@
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { resolvePhotoUrl } from "~/lib/photo";
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 import { downloadFileName } from "~/lib/file-download-name";
 import { fullName } from "~/lib/display";
 import { buildTimelineEpics } from "~/projects/lib/timeline-epics";

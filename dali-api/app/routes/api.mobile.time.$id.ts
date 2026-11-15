@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.mobile.time.$id";
 import { parseJson } from "~/lib/validate";
-import { UpdateTimeEntrySchema } from "~/lib/calendar-schemas";
-import { deleteTimeEntry, updateTimeEntry } from "~/lib/time-entries.server";
+import { UpdateTimeEntrySchema } from "~/calendar/lib/calendar-schemas";
+import { deleteTimeEntry, updateTimeEntry } from "~/calendar/lib/time-entries.server";
 import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 
 const UpdateBodySchema = UpdateTimeEntrySchema.omit({ intent: true, id: true });

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prisma = vi.hoisted(() => ({
   dALIMember: { findUnique: vi.fn() },
-  form: { findFirst: vi.fn() },
+  onboardingProfileFormBinding: { findFirst: vi.fn() },
   formSubmission: { count: vi.fn() },
   user: { findUnique: vi.fn() },
   domain: { findMany: vi.fn() },
@@ -26,7 +26,7 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(n
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => u) }));
 vi.mock("~/lib/dartmouth-people", () => ({ graduateProgramLabel: vi.fn(() => null) }));
 vi.mock("~/lib/collab-token.server", () => ({ getCollabToken: vi.fn(async () => "tok") }));
-vi.mock("~/lib/presence-user", () => ({ getPresenceUser: vi.fn(async () => null) }));
+vi.mock("~/lib/presence-user.server", () => ({ getPresenceUser: vi.fn(async () => null) }));
 vi.mock("~/members/lib/personal-notes.server", () => ({
   listProfileNotes: vi.fn(async () => []),
   listSharedWithMe: vi.fn(async () => []),
@@ -44,18 +44,18 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(async () => false),
   isLabMentor: vi.fn(async () => false),
 }));
-vi.mock("~/lib/groups", () => ({ listActiveGroupsForUser: vi.fn(async () => []) }));
+vi.mock("~/lib/groups.server", () => ({ listActiveGroupsForUser: vi.fn(async () => []) }));
 vi.mock("~/lib/group-kind", () => ({
   groupKind: vi.fn(() => "custom"),
   orderGroupsForPicker: vi.fn(() => []),
 }));
 vi.mock("~/admin/lib/eligibility", () => ({ ALLOWED_LEVELS: [], parseLevel: vi.fn() }));
 vi.mock("~/admin/lib/eligibility.server", () => ({}));
-vi.mock("~/lib/handle", () => ({ normalizeHandle: vi.fn() }));
-vi.mock("~/lib/wallet-token", () => ({ rotateWalletSecret: vi.fn() }));
-vi.mock("~/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
-vi.mock("~/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn(() => false) }));
-vi.mock("~/lib/wallet-google.server", () => ({ walletGoogleConfigured: vi.fn(() => false) }));
+vi.mock("~/lib/handle.server", () => ({ normalizeHandle: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-token.server", () => ({ rotateWalletSecret: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apple.server", () => ({ walletAppleConfigured: vi.fn(() => false) }));
+vi.mock("~/wallet/lib/wallet-google.server", () => ({ walletGoogleConfigured: vi.fn(() => false) }));
 vi.mock("~/lib/timezone", () => ({ isValidTimezone: vi.fn() }));
 vi.mock("~/lib/geocode.server", () => ({ geocodePlace: vi.fn() }));
 vi.mock("~/members/lib/coffee-chat.server", () => ({
@@ -73,7 +73,7 @@ vi.mock("~/mentorship/lib/visibility", () => ({
 
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { listProfileNotes, listSharedWithMe } from "~/members/lib/personal-notes.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
 import { isAdmin, isCore, isLabMentor } from "~/lib/roles";
 import { getEducationProfile } from "~/education/lib/engagement.server";
 import { mentorshipPairWhere } from "~/mentorship/lib/visibility";
@@ -115,7 +115,9 @@ beforeEach(() => {
   prisma.mentorshipPair.findMany.mockResolvedValue([]);
   prisma.mentorNote.count.mockResolvedValue(0);
   prisma.dALIMember.findUnique.mockResolvedValue({ onboardedAt: null });
-  prisma.form.findFirst.mockResolvedValue({ publicToken: "form-token" });
+  prisma.onboardingProfileFormBinding.findFirst.mockResolvedValue({
+    form: { id: "f-profile", name: "Welcome", published: true, publicToken: "form-token", _count: { versions: 1 } },
+  });
   prisma.formSubmission.count.mockResolvedValue(0);
 });
 
@@ -138,6 +140,23 @@ describe("loadProfilePage", () => {
   it("does not redirect when the onboarding form was already submitted", async () => {
     prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
     prisma.formSubmission.count.mockResolvedValue(1);
+    await expect(run("u1")).resolves.toMatchObject({ isSelf: true });
+    expect(prisma.formSubmission.count).toHaveBeenCalledWith({
+      where: { userId: "u1", formId: "f-profile" },
+    });
+  });
+
+  it("does not redirect when no profile form is bound", async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.onboardingProfileFormBinding.findFirst.mockResolvedValue(null);
+    await expect(run("u1")).resolves.toMatchObject({ isSelf: true });
+  });
+
+  it("does not redirect when the bound profile form is closed", async () => {
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.onboardingProfileFormBinding.findFirst.mockResolvedValue({
+      form: { id: "f-profile", name: "Welcome", published: false, publicToken: "form-token", _count: { versions: 1 } },
+    });
     await expect(run("u1")).resolves.toMatchObject({ isSelf: true });
   });
 

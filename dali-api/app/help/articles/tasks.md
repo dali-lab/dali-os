@@ -67,4 +67,4 @@ Done and Cancelled tasks leave the board when archived. Open **Board actions** (
 
 ## My Tasks
 
-[My Tasks](/notifications) is in the sidebar. The **Project work** tab lists open tasks assigned to you (To do, In progress or In review) across all projects, soonest deadline first. Each card says whether it is overdue, is In progress with no updates for two weeks, is in review, or has no due date. Click one to open it on its project board, or use **Mark done** on the card. The **Meetings & events** tab holds meeting RSVPs and other things that need you, and **History** shows what you have already handled.
+[My Tasks](/notifications) is in the sidebar. The **Project work** tab lists open tasks assigned to you (To do, In progress or In review) across all projects, soonest deadline first. Each card says whether it is overdue, is In progress with no updates for two weeks, is in review, or has no due date. Click one to open it on its project board, or use **Mark done** on the card. The **General** tab holds meeting RSVPs, mentions and other things that need you, and **History** shows what you have already handled.

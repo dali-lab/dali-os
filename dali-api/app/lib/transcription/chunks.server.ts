@@ -2,7 +2,7 @@
 // a private prefix Modal reads via short-lived presigned URLs and dali-api
 // deletes a day after the recording finalizes. See specs/meeting-transcription.md.
 
-import { putObject, listObjectKeys, deleteObjects, getDownloadUrl } from "~/lib/s3";
+import { putObject, listObjectKeys, deleteObjects, getDownloadUrl } from "~/lib/s3.server";
 
 // Modal's presigned GET URLs: generated at dispatch, never stored or logged,
 // dead within 30 minutes.

@@ -19,8 +19,7 @@ type ThreadMessage = {
 // server-side with the shared inbox's own connection — the viewer never
 // needs their own inbox hooked up to read it. `url` is the caller's own
 // thread-access resource route (hiring and the Partner CRM each gate theirs
-// differently); this component only renders whatever it returns. Generalized
-// from app/hiring/components/ApplicantEmailThreadModal.tsx.
+// differently); this component only renders whatever it returns.
 export function SharedInboxThreadModal({ url, onClose }: { url: string; onClose: () => void }) {
   const [state, setState] = useState<
     { status: "loading" } | { status: "error"; message: string } | { status: "ready"; messages: ThreadMessage[] }

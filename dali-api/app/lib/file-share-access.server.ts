@@ -1,3 +1,4 @@
+import { BadRequestError, ForbiddenError, NotFoundError } from "~/lib/http-error";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { canManageFileSharing, canViewFile } from "~/lib/fileAccess.server";
@@ -5,21 +6,21 @@ import { addFileShare, removeFileShare } from "~/lib/file-sharing.server";
 import type { SharePrincipalType } from "~/generated/prisma/client";
 import type { LinkAccess, SharePermission } from "~/generated/prisma/client";
 
-export class FileShareNotFoundError extends Error {
+export class FileShareNotFoundError extends NotFoundError {
   constructor() {
     super("File not found");
     this.name = "FileShareNotFoundError";
   }
 }
 
-export class FileShareForbiddenError extends Error {
+export class FileShareForbiddenError extends ForbiddenError {
   constructor() {
     super("You can't manage this file's sharing");
     this.name = "FileShareForbiddenError";
   }
 }
 
-export class FileGeneralAccessError extends Error {
+export class FileGeneralAccessError extends BadRequestError {
   constructor(message: string) {
     super(message);
     this.name = "FileGeneralAccessError";

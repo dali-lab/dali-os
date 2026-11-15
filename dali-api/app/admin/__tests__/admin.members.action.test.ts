@@ -16,7 +16,7 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/roles");
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
-vi.mock("~/lib/core-cycle", () => ({
+vi.mock("~/lib/core-cycle.server", () => ({
   // Tests treat the cycle as a single term ("term-1"); fan-out behavior is
   // exercised through the count of writes, not the cycle math.
   coreCycleTermIds: vi.fn().mockResolvedValue(["term-1"]),

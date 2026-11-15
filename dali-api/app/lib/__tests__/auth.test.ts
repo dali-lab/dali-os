@@ -20,7 +20,7 @@ import {
   ROLLING_TTL_MS,
   ABSOLUTE_TTL_MS,
   ROLL_MIN_INTERVAL_MS,
-} from "~/lib/session";
+} from "~/lib/session.server";
 
 const mockResolveBetterAuthAuth =
   resolveBetterAuthAuth as unknown as ReturnType<typeof vi.fn>;

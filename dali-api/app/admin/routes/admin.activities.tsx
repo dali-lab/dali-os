@@ -1,4 +1,4 @@
-// Admin → Onboarding (specs/activities.md §7.8). Lists all activities and
+// Admin → Onboarding (specs/archive/activities.md §7.8). Lists all activities and
 // creates a new one (name + mechanic + term; the window defaults and is refined
 // on the detail page). Distinct from the audit log.
 
@@ -7,7 +7,8 @@ import { Form, Link, redirect, useActionData, useLoaderData, useNavigation } fro
 import { Copy, Pencil, Plus } from "lucide-react";
 import type { Route } from "./+types/admin.activities";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { EmptyState, Pill, type Tone } from "~/admin/components/console-ui";
+import { Pill, type Tone } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { useOsChrome } from "~/components/os-chrome";
 import { Modal } from "~/components/Modal";
 import { Select, Tooltip } from "~/components/ui/floating";

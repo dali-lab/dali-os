@@ -21,16 +21,16 @@ import {
 } from "lucide-react";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { Segmented } from "~/components/ui/Segmented";
+import { ResultsSwitch, resultsViewParams, type ResultsView } from "~/forms/components/ResultsControls";
 import { PageBarTitle, PageBarMenuItems, PageBarPortal, pageBarTextButton } from "~/components/shell/page-bar-slot";
 import { PageBarShareButton } from "~/components/shell/PageBarShareButton";
 import { PageTitleHeader } from "~/components/doc-chrome/PageTitleHeader";
 import { FormQrDialog } from "~/forms/components/FormQrDialog";
-import type { HiringFormLink } from "~/hiring/lib/form-links.server";
+import type { HiringFormLink } from "~/forms/lib/form-links.server";
 import { BADGE, FormBuilderTab } from "~/components/form-builder/FormBuilder";
 import { InfoBody } from "~/components/form-builder/info-body";
-import { isLayoutOnly } from "~/lib/form-answers";
-import { questionNumbers, ruleDepths, showIfSentence } from "~/lib/form-logic";
+import { isLayoutOnly } from "~/forms/lib/form-answers";
+import { questionNumbers, ruleDepths, showIfSentence } from "~/forms/lib/form-logic";
 import { FormPreviewModal } from "~/forms/components/FormPreviewModal";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
 import { FormSettingsDialog } from "~/forms/components/FormSettings";
@@ -47,6 +47,7 @@ import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { formatInTimeZone } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { useOsChrome } from "~/components/os-chrome";
+import { Z } from "~/components/ui/z";
 
 function formatDateTime(iso: string, tz: string) {
   return (
@@ -350,6 +351,26 @@ export function FormDetail() {
         }`
       : "Versions";
 
+  const resultsView: ResultsView = view === "results" ? (showSummary ? "summary" : "responses") : "questions";
+  const lead = selectedVersion ? (
+    <ResultsSwitch
+      view={resultsView}
+      responseCount={selectedVersion.submissionCount}
+      byline={`v${selectedVersion.versionNumber} · published by ${selectedVersion.createdByName}, ${formatInTimeZone(
+        selectedVersion.createdAt,
+        tz,
+        { month: "short", day: "numeric", year: "numeric" },
+      )}`}
+      onChange={(next) => {
+        setIsEditing(false);
+        setSearchParams(resultsViewParams(searchParams, next, selectedVersion.versionNumber), {
+          replace: true,
+          preventScrollReset: true,
+        });
+      }}
+    />
+  ) : null;
+
   const fillUrl =
     form.published && form.publicToken
       ? `${typeof window !== "undefined" ? window.location.origin : ""}/forms/fill/${form.publicToken}`
@@ -555,20 +576,7 @@ export function FormDetail() {
         />
       ) : selectedVersion ? (
         <div className="space-y-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <Segmented
-              ariaLabel="Form view"
-              value={view}
-              onChange={(v) => showVersion(selectedVersion.id, v)}
-              options={[
-                { value: "questions", label: "Questions" },
-                { value: "results", label: "Results", count: selectedVersion.submissionCount },
-              ]}
-            />
-            <span className="text-sm text-os-grey">
-              {selectedVersion.createdByName} · {formatDateTime(selectedVersion.createdAt, tz)}
-            </span>
-          </div>
+          {view !== "results" && lead}
 
           {view === "results" && showSummary ? (
             summary && summary.versionId === selectedVersion.id ? (
@@ -578,11 +586,16 @@ export function FormDetail() {
                 versionNumber={selectedVersion.versionNumber}
                 data={summary}
                 tracker={tracker}
+                lead={lead}
+                totalCount={selectedVersion.submissionCount}
               />
             ) : (
-              <div className="py-12 flex justify-center">
-                <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
-              </div>
+              <>
+                {lead}
+                <div className="py-12 flex justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
+                </div>
+              </>
             )
           ) : view === "results" ? (
             results && results.versionId === selectedVersion.id ? (
@@ -592,11 +605,15 @@ export function FormDetail() {
                 versionNumber={selectedVersion.versionNumber}
                 results={results}
                 tracker={tracker}
+                lead={lead}
               />
             ) : (
-              <div className="py-12 flex justify-center">
-                <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
-              </div>
+              <>
+                {lead}
+                <div className="py-12 flex justify-center">
+                  <Loader2 className="w-5 h-5 animate-spin text-os-grey" />
+                </div>
+              </>
             )
           ) : (
             <div className="rounded-os-card bg-os-card p-5 space-y-4">
@@ -663,7 +680,7 @@ export function FormDetail() {
                     )}
                     {q.data.showIf && (
                       <p className="text-sm text-os-accent mb-2">
-                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions))}
+                        Shown when {showIfSentence(q.data.showIf, questionNumbers(selectedVersion.questions), selectedVersion.questions)}
                       </p>
                     )}
                     <QuestionSourceNote question={q} />
@@ -798,7 +815,7 @@ function FormVersionMenu({
       align="right"
       ariaLabel="Versions"
       panelClassName={cn(
-        "z-[60] w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden p-2 focus:outline-none",
+        `${Z.popover} w-80 max-w-[calc(100vw-2rem)] overflow-y-auto overflow-x-hidden p-2 focus:outline-none`,
         popover,
       )}
       trigger={

@@ -1,37 +1,26 @@
 // MCP `set_task_checklist` — replace the entire checklist (subtasks) on a
 // task. Stored as JSON `[{text, done}]`. Allowed for the task's assignees and
 // for project editors (Core or project members), matching the web task PATCH
-// route plus the assignee self-service path shared with `update_task_status`.
+// route plus the assignee self-service path shared with manage_task `set_status`.
 
 import { prisma, Prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
 
-export const SET_TASK_CHECKLIST_TOOL = {
-  name: "set_task_checklist",
-  description:
-    "Replace the entire checklist on a project task. Allowed for the task's assignees and for project editors (Core or project members). Pass an empty array to clear.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: { type: "string", minLength: 1 },
-      items: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            text: { type: "string", minLength: 1, maxLength: 500 },
-            done: { type: "boolean" },
-          },
-          required: ["text"],
-          additionalProperties: false,
-        },
-        maxItems: 100,
+export const SET_TASK_CHECKLIST_PROPERTIES = {
+  taskId: { type: "string", minLength: 1 },
+  items: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: {
+        text: { type: "string", minLength: 1, maxLength: 500 },
+        done: { type: "boolean" },
       },
+      required: ["text"],
+      additionalProperties: false,
     },
-    required: ["taskId", "items"],
-    additionalProperties: false,
+    maxItems: 100,
   },
-  requiredScope: "mcp:write" as const,
 };
 
 type ChecklistItem = { text: string; done?: boolean };

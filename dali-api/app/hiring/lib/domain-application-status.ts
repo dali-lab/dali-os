@@ -50,6 +50,12 @@ type DomainApplicationWithStatusRelations = DomainApplicationGetPayload<{
   include: typeof domainApplicationStatusInclude;
 }>;
 
+type StatusInput = Pick<DomainApplicationWithStatusRelations, "closureReason" | "submittedAt"> & {
+  application: { statusUpdates: { newStatus: string }[] };
+  decisions: Pick<DomainApplicationWithStatusRelations["decisions"][number], "stage" | "type" | "interviewRoundId">[];
+  interviews: { status: string; interviewRoundId: string }[];
+};
+
 // ─── applicantCancelledInterview ─────────────────────────────────────────────
 
 /** The applicant's own cancellation with nothing rebooked: a withdrawal from this round. */
@@ -96,7 +102,7 @@ export function applicantCancelledInterview(
  *  10. Latest Released decision type == Waitlisted              → Waitlisted
  */
 export function inferDomainApplicationStatus(
-  domainApplication: DomainApplicationWithStatusRelations,
+  domainApplication: StatusInput,
   cycleStatus: ApplicationCycleStatus,
 ): DomainApplicationStatus {
   const { application, decisions, interviews } = domainApplication;

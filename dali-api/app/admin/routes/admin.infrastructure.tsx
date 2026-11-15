@@ -30,7 +30,8 @@ import {
 } from "lucide-react";
 import type { Route } from "./+types/admin.infrastructure";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { EmptyState, Figure, Pill, adminTable, type Tone } from "~/admin/components/console-ui";
+import { Figure, Pill, adminTable, type Tone } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { useOsChrome } from "~/components/os-chrome";
 import { Segmented } from "~/components/ui/Segmented";
 import { Tooltip } from "~/components/ui/floating";

@@ -141,7 +141,16 @@ describe("registry/call-site drift guard", () => {
     "decision:InvitedToInterview": ["firstName", "domain"],
     "decision:InvitedToLaterInterview": ["firstName", "domain"],
     // Accepted + Waitlisted add decisionEmailVars; waitlist.server's acceptFromWaitlist matches.
-    "decision:Accepted": ["firstName", "domain", "startTerm", "respondBy"],
+    "decision:Accepted": [
+      "firstName",
+      "domain",
+      "startTerm",
+      "respondBy",
+      "loginUrl",
+      "slackUrl",
+      "daliEmail",
+      "tempPassword",
+    ],
     "decision:Waitlisted": ["firstName", "domain", "respondBy"],
     // api.my-application.ts
     "notification:ApplicationReceived": ["firstName"],
@@ -182,18 +191,17 @@ describe("admin editor registry offers what the decision sends fill", () => {
     expect([...emailTemplateDef(key).variables].sort()).toEqual([...TEMPLATE_VARIABLES[slot]].sort());
   });
 
-  it("offers {{startTerm}} and {{respondBy}} on the next-steps block, with samples for the preview", () => {
-    const def = emailTemplateDef("hiring:onboarding:NextSteps");
-    expect(def.variables).toEqual(expect.arrayContaining(["slackUrl", "startTerm", "respondBy"]));
-    expect(def.sample).toMatchObject({ startTerm: expect.any(String), respondBy: expect.any(String) });
-  });
-
-  it("no longer hardcodes the spring deadline or term in the next-steps fallback copy", () => {
-    const body = emailTemplateDef("hiring:onboarding:NextSteps").defaults?.body ?? "";
-    expect(body).toContain("{{respondBy}}");
-    expect(body).toContain("{{startTerm}}");
-    expect(body).not.toContain("June 8th");
-    expect(body).not.toContain("26F");
+  it("offers the credential and onboarding variables on the Accepted letter, with samples for the preview", () => {
+    const def = emailTemplateDef("hiring:decision:Accepted");
+    expect(def.variables).toEqual(
+      expect.arrayContaining(["loginUrl", "slackUrl", "daliEmail", "tempPassword", "startTerm", "respondBy"]),
+    );
+    expect(def.sample).toMatchObject({
+      daliEmail: expect.any(String),
+      tempPassword: expect.any(String),
+      startTerm: expect.any(String),
+      respondBy: expect.any(String),
+    });
   });
 });
 

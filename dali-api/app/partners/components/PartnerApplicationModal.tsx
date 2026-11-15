@@ -18,7 +18,7 @@ import { OsTabBar } from "~/components/os-page";
 import { useDialog } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { PARTNER_STAGE_LABELS } from "../lib/partner-application";
 import { postPartnerApplicationIntent } from "../lib/partner-detail-fetch";
 import type { PartnerCardModel } from "../lib/partner-board";

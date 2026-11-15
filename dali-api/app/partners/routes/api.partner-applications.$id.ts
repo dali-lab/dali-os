@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.partner-applications.$id";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
-import { listActiveCoreMembers, resolveApplicationIcon } from "../lib/core-members.server";
+import { listActiveCoreMembers, resolveApplicationIcon } from "~/lib/core-members.server";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { formAnswerRows } from "~/forms/lib/answer-rows.server";
 import type { Question } from "~/types";
@@ -43,6 +43,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       sowDocId: true,
       sowState: true,
       resultingProjectId: true,
+      continuesProject: { select: { id: true, name: true } },
       source: true,
       evalRubric: true,
       interviewRating: true,
@@ -166,6 +167,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
         sowDocId: application.sowDocId,
         sowState: application.sowState,
         resultingProjectId: application.resultingProjectId,
+        continuesProject: application.continuesProject,
         source: application.source,
         evalRubric: application.evalRubric,
         interviewRating: application.interviewRating,

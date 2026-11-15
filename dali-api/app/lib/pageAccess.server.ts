@@ -22,7 +22,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess, partnerOrgIdsForUser } from "~/partners/lib/partner-access";
 import { groupIdsForUser, permissionAtLeast, PERMISSION_RANK } from "~/lib/page-sharing.server";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import type { SharePermission, LinkAccess, ScopeKind } from "~/generated/prisma/client";
 
 export interface PageAccessResult {

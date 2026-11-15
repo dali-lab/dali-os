@@ -1,10 +1,10 @@
 // MCP `add_task_comment` — append a comment to a task. Permission: task
 // assignees can comment on their own tasks; Core can comment on anything.
-// Mirrors the spirit of update_task_status — self-service is allowed.
+// Self-service is allowed, as for manage_task `set_status`.
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-import { notifyTaskComment } from "~/projects/lib/task-notifications.server";
+import { addTaskComment } from "~/projects/lib/task-comments.server";
 
 export const ADD_TASK_COMMENT_TOOL = {
   name: "add_task_comment",
@@ -43,7 +43,7 @@ export async function runAddTaskComment(callerId: string, input: Input) {
 
   // Match the web comment gate (requireProjectEditAccess): Core or anyone
   // staffed on the project. Plus the task's own assignees for self-service
-  // (same extension as update_task_status). The tool used to be assignee-or-
+  // (same extension as manage_task `set_status`). The tool used to be assignee-or-
   // Core, which was narrower than the web — a project member could move/rename
   // a task but not comment on it.
   const isAssignee = task.assignees.some((a) => a.userId === callerId);
@@ -51,15 +51,7 @@ export async function runAddTaskComment(callerId: string, input: Input) {
     throw new AddTaskCommentError("Forbidden", 403);
   }
 
-  const comment = await prisma.taskComment.create({
-    data: { taskId: input.taskId, authorId: callerId, body },
-    select: { id: true, createdAt: true },
-  });
-
-  void notifyTaskComment({ taskId: input.taskId, authorId: callerId, body }).catch(
-    (err) =>
-      console.error(`mcp add_task_comment: notify failed for ${input.taskId}`, err),
-  );
+  const comment = await addTaskComment({ taskId: input.taskId, authorId: callerId, body });
 
   return {
     id: comment.id,

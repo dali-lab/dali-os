@@ -9,7 +9,7 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isLabMentor: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ listFavoritesAndRecents: vi.fn() }));
 vi.mock("~/lib/release-notes.server", () => ({ viewerHasUnseenReleaseNotes: vi.fn() }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupIdsForUser: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupIdsForUser: vi.fn() }));
 vi.mock("~/signing/lib/state.server", () => ({ getAppGateOutstanding: vi.fn() }));
 vi.mock("~/forms/lib/gate.server", () => ({ getBoundFormGateOutstanding: vi.fn() }));
 vi.mock("~/hiring/lib/new-member-cohort.server", () => ({ isNewMemberCohort: vi.fn() }));
@@ -19,7 +19,7 @@ import { prisma } from "~/lib/db.server";
 import { getUserRoles, isLabMentor } from "~/lib/roles";
 import { listFavoritesAndRecents } from "~/lib/user-pages.server";
 import { viewerHasUnseenReleaseNotes } from "~/lib/release-notes.server";
-import { listVisibleGroupIdsForUser } from "~/lib/groups";
+import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import { getAppGateOutstanding } from "~/signing/lib/state.server";
 import { getBoundFormGateOutstanding } from "~/forms/lib/gate.server";
 import { isNewMemberCohort } from "~/hiring/lib/new-member-cohort.server";

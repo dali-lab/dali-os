@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Lab } from "~/journeys/lib/types";
 import { LabIDE } from "~/journeys/components/lab/LabIDE";
+import { Z } from "~/components/ui/z";
 
 /** "Try as a learner": the lab exactly as learners get it. Nothing typed here is saved. */
 export function LabTestDialog({ open, lab, onClose }: { open: boolean; lab: Lab; onClose: () => void }) {
@@ -24,7 +25,7 @@ export function LabTestDialog({ open, lab, onClose }: { open: boolean; lab: Lab;
 
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <div ref={ref} role="dialog" aria-modal="true" aria-label={`Testing ${lab.title}`} className="fixed inset-0 z-[46] bg-os-bg font-os">
+    <div ref={ref} role="dialog" aria-modal="true" aria-label={`Testing ${lab.title}`} className={`fixed inset-0 ${Z.takeoverTop} bg-os-bg font-os`}>
       <LabIDE
         lab={lab}
         title={`Testing: ${lab.title || "Untitled lab"}`}

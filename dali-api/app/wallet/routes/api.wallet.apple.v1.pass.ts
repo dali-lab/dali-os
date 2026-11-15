@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.wallet.apple.v1.pass";
-import { walletAppleConfigured, buildAppleWalletPass } from "~/lib/wallet-apple.server";
-import { verifyWalletAuthToken } from "~/lib/wallet-token";
+import { walletAppleConfigured, buildAppleWalletPass } from "~/wallet/lib/wallet-apple.server";
+import { verifyWalletAuthToken } from "~/wallet/lib/wallet-token.server";
 import { prisma } from "~/lib/db.server";
 
 // PassKit web-service "get latest pass" endpoint.

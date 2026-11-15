@@ -7,7 +7,7 @@ import { passkey } from "@better-auth/passkey";
 import { prisma } from "~/lib/db.server";
 import { getApiBaseUrl, getFrontendUrl, getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { freshKey } from "~/lib/outbound-keys";
+import { freshKey } from "~/lib/outbound-keys.server";
 import { renderAuthEmail } from "~/email/lib/layout.server";
 import {
   signInLinkEmail,
@@ -29,6 +29,7 @@ import {
   recordProvenEmail,
 } from "~/lib/betterauth-email-alias.server";
 import { rejectBlockedIp, rejectDirectMagicLink, throttleOtpSend } from "~/lib/betterauth-otp-throttle.server";
+import { getEnv } from "~/lib/env.server";
 
 // Deduplicate the trusted origins list — in single-server deployments
 // (Fly staging/prod) getApiBaseUrl() === getFrontendUrl(), so a Set avoids a
@@ -50,7 +51,7 @@ export const auth = betterAuth({
   // placeholder — it only throws on that placeholder in NODE_ENV=production,
   // so the module is safe to import in dev without setting this var.
   // In staging/prod BETTER_AUTH_SECRET MUST be set via Fly secrets.
-  secret: process.env.BETTER_AUTH_SECRET,
+  secret: getEnv().BETTER_AUTH_SECRET,
 
   database: prismaAdapter(prisma, { provider: "postgresql" }),
 
@@ -344,7 +345,7 @@ export const auth = betterAuth({
               update: {},
               create: { userId: user.id },
             });
-            const { assignHandleIfMissing } = await import("~/lib/handle");
+            const { assignHandleIfMissing } = await import("~/lib/handle.server");
             await assignHandleIfMissing(user.id);
           } catch (err) {
             console.error(

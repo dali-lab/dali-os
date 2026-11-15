@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/gmail", () => ({ sendEmail: vi.fn() }));
-vi.mock("~/lib/gmail-integration", () => ({ getSender: vi.fn(), noteSenderHealth: vi.fn() }));
+vi.mock("~/lib/gmail-integration.server", () => ({ getSender: vi.fn(), noteSenderHealth: vi.fn() }));
 vi.mock("~/slack/lib/slack-client", () => ({
   sendDm: vi.fn(),
   postMessage: vi.fn(),
@@ -10,14 +10,14 @@ vi.mock("~/slack/lib/slack-client", () => ({
   uploadFileToThread: vi.fn(),
   slackConfigured: vi.fn(() => true),
 }));
-vi.mock("~/lib/s3", () => ({ getObjectBytes: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ getObjectBytes: vi.fn() }));
 vi.mock("~/lib/app-env", () => ({ getAppEnv: vi.fn(() => "prod") }));
 
 import { prisma } from "~/lib/db.server";
 import { sendEmail } from "~/lib/gmail";
-import { getSender, noteSenderHealth } from "~/lib/gmail-integration";
+import { getSender, noteSenderHealth } from "~/lib/gmail-integration.server";
 import { sendDm, postMessage, postBlocks, uploadFileToThread } from "~/slack/lib/slack-client";
-import { getObjectBytes } from "~/lib/s3";
+import { getObjectBytes } from "~/lib/s3.server";
 import { getAppEnv } from "~/lib/app-env";
 import { enqueueOutbound, runOutboundDrain } from "~/lib/outbound.server";
 

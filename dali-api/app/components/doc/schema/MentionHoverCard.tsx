@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "~/lib/cn";
+import { initialsFromName } from "~/lib/display";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 
 // Hover card for an @handle chip. A handle alone often doesn't identify anyone
@@ -105,7 +106,7 @@ export function MentionHoverCard({
             />
           ) : (
             <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-os-accent/15 text-xs font-semibold text-os-accent">
-              {initials(member?.name)}
+              {member?.name?.trim() ? initialsFromName(member.name) : "·"}
             </span>
           )}
           <span className="flex min-w-0 flex-col leading-tight">
@@ -120,10 +121,4 @@ export function MentionHoverCard({
       )}
     </span>
   );
-}
-
-function initials(name?: string): string {
-  if (!name) return "·";
-  const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "·";
 }

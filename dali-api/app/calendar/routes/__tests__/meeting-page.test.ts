@@ -11,7 +11,7 @@ vi.mock("~/lib/roles", async (importOriginal) => ({
   getUserRoles: vi.fn(),
   isProjectMember: vi.fn(),
 }));
-vi.mock("~/lib/wallet-token", () => ({ walletTokensConfigured: () => false }));
+vi.mock("~/wallet/lib/wallet-token.server", () => ({ walletTokensConfigured: () => false }));
 vi.mock("~/lib/display-scan.server", () => ({
   getActiveDisplayScan: vi.fn(),
   startDisplayScan: vi.fn(),

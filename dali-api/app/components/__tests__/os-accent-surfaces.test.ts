@@ -9,7 +9,7 @@ const FILES = [
   "hiring/components/RubricDetail.tsx",
   "signing/components/SigningDocumentDetail.tsx",
   "signing/components/AgreementsConsole.tsx",
-  "admin/routes/admin.announcements.tsx",
+  "core/routes/core.communications.announcements.tsx",
 ];
 
 describe("shell surfaces", () => {

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useFetcher } from "react-router";
 import { Check, Copy, MessageSquareWarning, Pencil, Plus, Settings2, Trash2, Undo2 } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { Drawer } from "~/components/ui/Drawer";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Checkbox } from "~/components/ui/Checkbox";
@@ -12,7 +12,7 @@ import { Combobox } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import {
   STATUS_DOT,

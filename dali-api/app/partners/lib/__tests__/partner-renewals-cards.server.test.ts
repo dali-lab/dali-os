@@ -27,6 +27,7 @@ function project(over: Record<string, unknown> = {}) {
     iconEmoji: null,
     projectTerms: [{ termId: "t1", pi: ada }],
     partners: [{ endedAt: null, partnerOrg: { id: "o1", name: "Example Org" } }],
+    maintenancePlans: [],
     ...over,
   };
 }
@@ -162,5 +163,33 @@ describe("loadRenewalCards", () => {
     expect(picked.cards[0].piUserId).toBe("u1");
     const later = await loadRenewalCards(T2, ALL);
     expect(later.cards[0].piUserId).toBe("u2");
+  });
+});
+
+describe("loadRenewalCards maintenance", () => {
+  it("loads projects active in the picked term and every project on an open maintenance plan", async () => {
+    await loadRenewalCards(T1, ALL);
+    expect(db.project.findMany.mock.calls[0][0].where).toEqual({
+      OR: [{ projectTerms: { some: { termId: "t1" } } }, { maintenancePlans: { some: { endedAt: null } } }],
+    });
+  });
+
+  it("puts a project on a plan in the maintaining column with its tier, fee and start term", async () => {
+    db.project.findMany.mockResolvedValue([
+      project({ maintenancePlans: [{ plan: "Mild", feeCents: 150000, startTerm: { code: "26S" } }] }),
+    ]);
+    db.projectTermStatus.findMany.mockResolvedValue([status({ isContinuing: false })]);
+    const { cards } = await loadRenewalCards(T1, ALL);
+    expect(cards[0]).toMatchObject({
+      column: "maintaining",
+      fromTermCode: null,
+      maintenance: { plan: "Mild", feeCents: 150000, startTermCode: "26S" },
+    });
+  });
+
+  it("leaves a project without a plan in its decision column", async () => {
+    db.projectTermStatus.findMany.mockResolvedValue([status({ isContinuing: false, reason: "No funding" })]);
+    const { cards } = await loadRenewalCards(T1, ALL);
+    expect(cards[0]).toMatchObject({ column: "not_continuing", maintenance: null });
   });
 });

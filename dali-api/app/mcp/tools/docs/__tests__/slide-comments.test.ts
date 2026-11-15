@@ -22,7 +22,7 @@ vi.mock("~/lib/roles", async (orig) => {
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
 }));
-vi.mock("~/lib/collabAuth", () => ({
+vi.mock("~/lib/collabAuth.server", () => ({
   hydrateAuthors: vi.fn().mockResolvedValue([]),
 }));
 vi.mock("~/lib/comment-events.server", () => ({
@@ -92,9 +92,14 @@ describe("manage_comment with slide anchors", () => {
     expect(db.docComment.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ anchor }) }));
   });
 
-  it("still takes a plain Yjs range", async () => {
-    await runManageComment("u1", { action: "create", targetType: "doc", targetId: "deck", body: "hi", anchor: { from: "a", to: "b" } });
-    expect(db.docComment.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ anchor: { from: "a", to: "b" } }) }));
+  it("still takes an inline blocknote marker", async () => {
+    const anchor = { kind: "blocknote" };
+    await runManageComment("u1", { action: "create", targetType: "doc", targetId: "deck", body: "hi", anchor });
+    expect(db.docComment.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ anchor }) }));
+  });
+
+  it("rejects a legacy {from, to} range", async () => {
+    await expect(runManageComment("u1", { action: "create", targetType: "doc", targetId: "deck", body: "hi", anchor: { from: "a", to: "b" } })).rejects.toMatchObject({ status: 400 });
   });
 
   it.each([

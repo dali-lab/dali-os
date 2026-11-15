@@ -201,6 +201,23 @@ Elevation: cards are flat. Popovers wear `OS_SURFACE_CLASS`
 (`shadow-[0_16px_40px_var(--color-os-shadow)]`); dialogs wear
 `0 24px 64px var(--color-os-shadow)`.
 
+### 4.1 Layers
+
+`Z` in `ui/z.ts` holds the stacking classes. Use it for anything that floats
+above the page instead of typing a `z-[NN]` value.
+
+| Key | Class | Use |
+|---|---|---|
+| `Z.sticky` | `z-10` | Sticky headers and in-flow lifts |
+| `Z.chrome` | `z-30` | Page chrome |
+| `Z.chromeTop` | `z-40` | Chrome that sits over other chrome |
+| `Z.takeover` | `z-[45]` | Full-screen editors that cover the shell |
+| `Z.takeoverTop` | `z-[46]` | A full-screen view opened over a takeover |
+| `Z.modal` | `z-50` | `Modal`, `Drawer`, toasts |
+| `Z.popover` | `z-[60]` | Floating panels (`OS_PANEL_CLASS`), date and time pickers, dialogs opened from a popover |
+| `Z.tooltip` | `z-[70]` | Tooltips and pickers that must clear a dialog |
+| `Z.top` | `z-[100]` | Navigation progress, the screenshot selector, lightboxes |
+
 ---
 
 ## 5. The shell
@@ -311,6 +328,12 @@ icon-only `IconButton`s in the card's top right. Choices the user must make
 - Furniture: `.os-modal-title`, `.os-modal-divider`, `.os-section-header`,
   `.os-modal-footer` (right-aligned, 12px gap), `.os-icon-btn` for close and
   edit.
+- Every dialog is `Modal` (`role="dialog"`, `aria-modal`, focus trap, Escape
+  closes the topmost). The scrim is `bg-os-overlay`; pass `placement="top"`
+  for tall cards and `layer={Z.popover}` to open over a popover. Don't
+  hand-roll a portal overlay.
+- A card anchored beside a clicked rect (calendar composer, booking detail)
+  is `AnchoredCard` (`ui/floating/AnchoredCard.tsx`), not a Modal.
 - Confirm, alert and prompt go through `useDialog()` / `useConfirmSubmit()`;
   feedback through `useToast()`. Never a hand-rolled `<Modal>` confirm, an
   inline "Delete → Confirm delete" button swap, or a two-click armed button.
@@ -350,11 +373,19 @@ in-progress work, and clearing a configured binding.
 `chrome.popover` (`OS_SURFACE_CLASS`). Page toolbar filters use
 `OS_FILTER_PILL_CLASS` plus a width.
 
+Picking a member is `PersonPicker` (`ui/PersonPicker.tsx`): `mode="multi"` is a searchable `MultiSelect` with removable chips, the default single mode is a `Combobox` that shows the chosen person and takes `onQueryChange` with `filterLocally={false}` when `people` comes from a search. Rows are an avatar, the name and a secondary line (email or handle). Don't hand-roll a member list; mixed pickers that add groups or typed addresses (the calendar `ParticipantPicker`) reuse `PersonLabel` for the member row.
+
+A row of per-column filters (Filter button with count badge, pills, Clear all,
+result count) is `FilterBar` in `app/components/FilterBar.tsx`. Pass it columns
+with a `renderPicker`; `ColumnFilters` (value lists over rows) and the form
+results bar (`ResultsFilterBar`) are built on it.
+
 ### 6.5 Status badges and chips
 
 - Status is **one neutral pill with a colored dot**: `Pill` from
-  `app/hiring/components/cycle-setup/SetupCard.tsx` with `dot={tone}`. Don't
-  tint the whole chip.
+  `app/components/ui/Pill.tsx` with `dot={tone}` (`size="sm"` for dense rows
+  and tables). Don't tint the whole chip. Existing tinted chips use
+  `tone={tone}` on the same `Pill` until the look is decided.
 - Tones: `success` (accepted, submitted, completed, open), `accent` (invited,
   scheduled, in review), `warning` (waitlisted, in progress, awaiting),
   `danger` (rejected, cancelled), `neutral` (draft, unknown).
@@ -368,11 +399,14 @@ in-progress work, and clearing a configured binding.
 - Page tabs: `OsTabBar`. The open tab is a filled, top-rounded plate that
   meets the rule below it, not an underline.
 - View switches: `Segmented` (`ui/Segmented.tsx`), a 10px track with 8px
-  segments and the container fill on the active one.
+  segments and a raised `bg-background shadow-sm` thumb on the active one.
+  `SegmentedTabButtons` (`ui/SegmentedTabs.tsx`) is the tablist version for
+  page sections: the same track, with the container fill on the active segment.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
-- Empty states: `EmptyState` (`ui/EmptyState.tsx`), a small dashed card drawn
-  in CSS above one muted line, with optional actions below. Use it for an
+- Empty states: `EmptyState` (`ui/EmptyState.tsx`, the only one: admin and
+  mentorship use it too), a small dashed card drawn in CSS above an optional
+  bold `title` and one muted line, with optional actions below. Use it for an
   empty folder, board, list or filter result instead of a bare line of text.
 
 ### 6.7 Rail

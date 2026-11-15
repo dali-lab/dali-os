@@ -10,7 +10,7 @@ import {
   resolveMembershipStatus,
   commencementDate,
   type StatusInputs,
-} from "~/lib/membership-status";
+} from "~/lib/membership-status.server";
 
 // Fixed "now": just past Commencement 2026, before Commencement 2027.
 const NOW = new Date("2026-07-01T00:00:00Z");

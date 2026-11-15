@@ -12,6 +12,7 @@ import {
   matchesRenewalQuery,
   spotsHeader,
   totalSlots,
+  type MaintenancePrices,
   type RenewalCardModel,
   type RenewalColumn,
 } from "../lib/partner-renewals";
@@ -27,6 +28,7 @@ import {
 const ACCENTS = {
   undecided: osStatusAccent("review"),
   continuing: osStatusAccent("done"),
+  maintaining: osStatusAccent("progress"),
   not_continuing: osStatusAccent("cancelled"),
 };
 
@@ -41,6 +43,7 @@ export function RenewalsBoard({
   domains,
   coreMembers,
   pickedTermId,
+  maintenancePrices,
 }: {
   cards: RenewalCardModel[];
   query: string;
@@ -50,6 +53,7 @@ export function RenewalsBoard({
   domains: DomainOption[];
   coreMembers: { userId: string; name: string }[];
   pickedTermId: string;
+  maintenancePrices: MaintenancePrices;
 }) {
   const fetcher = useFetcher<{ error?: string }>();
   const piFetcher = useFetcher<{ error?: string }>();
@@ -166,6 +170,7 @@ export function RenewalsBoard({
                     decisionTerm={decisionTerm}
                     termOptions={termOptions}
                     domains={domains}
+                    maintenancePrices={maintenancePrices}
                     busy={fetcher.state !== "idle"}
                     onCancel={() => setEditing(null)}
                     onSave={save}

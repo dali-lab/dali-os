@@ -1,5 +1,6 @@
 import { WebClient, type KnownBlock } from "@slack/web-api";
 import { sanitizeChannelName } from "./channel-name";
+import { getEnv } from "~/lib/env.server";
 export { sanitizeChannelName };
 
 export type SlackThreadMessage = {
@@ -19,13 +20,13 @@ export type SlackFile = {
 export const SLACK_NOT_CONFIGURED_MESSAGE = "SLACK_BOT_TOKEN not set.";
 
 export function slackConfigured(): boolean {
-  return Boolean(process.env.SLACK_BOT_TOKEN);
+  return Boolean(getEnv().SLACK_BOT_TOKEN);
 }
 
 let cached: WebClient | null = null;
 function client(): WebClient {
   if (cached) return cached;
-  const token = process.env.SLACK_BOT_TOKEN;
+  const token = getEnv().SLACK_BOT_TOKEN;
   if (!token) throw new Error("SLACK_BOT_TOKEN is not set");
   cached = new WebClient(token);
   return cached;
@@ -131,8 +132,8 @@ export async function inviteToWorkspace(
   email: string,
   channelIds: string[],
 ): Promise<{ status: "ok" | "skipped" | "error"; message: string }> {
-  const token = process.env.SLACK_ADMIN_TOKEN;
-  const teamId = process.env.SLACK_TEAM_ID;
+  const token = getEnv().SLACK_ADMIN_TOKEN;
+  const teamId = getEnv().SLACK_TEAM_ID;
   if (!token || !teamId) {
     return { status: "skipped", message: "SLACK_ADMIN_TOKEN / SLACK_TEAM_ID not set." };
   }
@@ -170,7 +171,7 @@ export async function inviteToWorkspace(
 // user or the scope/token is missing — callers treat that as "no Slack account
 // yet" rather than an error. Used by the onboarding Slack-account sync.
 export async function lookupSlackUserByEmail(email: string): Promise<string | null> {
-  if (!process.env.SLACK_BOT_TOKEN) return null;
+  if (!getEnv().SLACK_BOT_TOKEN) return null;
   try {
     const res = await client().users.lookupByEmail({ email });
     return res.user?.id ?? null;

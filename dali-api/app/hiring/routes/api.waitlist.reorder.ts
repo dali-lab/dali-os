@@ -18,7 +18,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }

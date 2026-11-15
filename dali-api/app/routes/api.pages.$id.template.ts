@@ -5,7 +5,8 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
-import { isCore, isProjectMember } from "~/lib/roles";
+import { isCore } from "~/lib/roles";
+import { canEditProject } from "~/lib/project-access";
 
 // POST /api/pages/:id/template
 //
@@ -90,9 +91,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (page.workspaceType !== "Project" || !page.workspaceId) {
       return withCors(request, Response.json({ error: "Not a project document" }, { status: 400 }));
     }
-    const core = await isCore(auth.user.sub);
-    const canEditProject = core || (await isProjectMember(auth.user.sub, page.workspaceId));
-    if (!canEditProject) {
+    if (!(await canEditProject(auth.user.sub, page.workspaceId))) {
       return withCors(request, Response.json({ error: "Permission denied" }, { status: 403 }));
     }
     if (body.active) {

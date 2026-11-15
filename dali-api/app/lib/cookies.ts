@@ -1,4 +1,4 @@
-// Cookie helpers for the single session credential. See SESSION_AUTH_PLAN.md.
+// Cookie helpers for the single session credential. See specs/archive/SESSION_AUTH_PLAN.md.
 
 import { getAppEnv } from "./app-env";
 

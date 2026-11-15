@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(),
   isS3Configured: vi.fn(),
 }));
 
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 describe("resolvePhotoUrl", () => {

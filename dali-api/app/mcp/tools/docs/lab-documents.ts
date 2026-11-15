@@ -4,9 +4,9 @@
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember } from "~/lib/roles";
-import { createLabPage } from "~/lib/pages";
-import { duplicatePage } from "~/lib/page-copy.server";
-import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/lib/drive-roots";
+import { createLabPage } from "~/lib/pages.server";
+import { duplicatePage } from "~/drive/lib/page-copy.server";
+import { isRoot, ROOT_DELETE_ERROR, CLEARED_FOLDER_TYPE } from "~/drive/lib/drive-roots";
 import { offsetPage, offsetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

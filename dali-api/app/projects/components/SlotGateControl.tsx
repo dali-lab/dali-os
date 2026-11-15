@@ -10,7 +10,7 @@ import { Select } from "~/components/ui/floating";
 
 // Value "" = not locked. The rest are the GATE_AUDIENCES (form-slots.ts), a
 // subset of the signing SigningAudience enum the gate resolvers understand.
-const GATE_OPTIONS = [
+export const GATE_OPTIONS = [
   { value: "", label: "Don't lock the app" },
   { value: "Group", label: "Everyone active this term" },
   { value: "Members", label: "Returning members (staffed this term)" },

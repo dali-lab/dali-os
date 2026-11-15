@@ -12,7 +12,7 @@
 // closest faithful fallback when that anchor is gone), and — for an
 // untouched-template note only — drop headings the model never filled in.
 //
-// Also owns the pure half of inline review (specs/meeting-recording-rail.md
+// Also owns the pure half of inline review (specs/archive/meeting-recording-rail.md
 // Step 2): classifying a mark as Added/Changed/Removed, the change-list row
 // shape, and detecting a local edit on an already-marked block — all plain
 // data in, plain data out, so use-meeting-recording.ts and the in-note review
@@ -113,7 +113,7 @@ export type EnhanceVerified = {
 };
 
 /** The two reserved `backgroundColor` values Enhance writes to mark a block
- *  pending review (specs/meeting-recording-rail.md Step 2) — plain strings
+ *  pending review (specs/archive/meeting-recording-rail.md Step 2) — plain strings
  *  on BlockNote's existing per-block prop, never offered by the Colors
  *  sub-menu. "added" covers both a changed block (kept its id, new text) and
  *  a genuinely new block; "prior" marks a block Enhance would otherwise have
@@ -388,7 +388,7 @@ export function actionItemMatchesBlock(itemText: string, blockText: string): boo
   return shorter.length >= 12 && longer.includes(shorter);
 }
 
-// ─── Inline review: pure helpers (specs/meeting-recording-rail.md Step 2) ──
+// ─── Inline review: pure helpers (specs/archive/meeting-recording-rail.md Step 2) ──
 
 /** One block changed/inserted/deleted/moved by a single BlockNote transaction
  *  — the shape of an element in editor.onChange's getChanges() result

@@ -1,4 +1,4 @@
-// Server-side Activities resolution + authoring (specs/activities.md §7). The
+// Server-side Activities resolution + authoring (specs/archive/activities.md §7). The
 // layout loader calls resolveActiveActivitiesForUser once per navigation and
 // plumbs the result to the client; the surface
 // route uses getActivityForMember + the mechanic registry; the admin routes use
@@ -12,7 +12,7 @@ import type {
   ActivityStatus,
 } from "~/generated/prisma/client";
 import { getActiveCoreCycleTermIds, getAdminUserIdsFromEnv, type UserRoles } from "~/lib/roles";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { fullName } from "~/lib/display";
 import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { ROLE_TARGETS } from "~/lib/feature-flags";

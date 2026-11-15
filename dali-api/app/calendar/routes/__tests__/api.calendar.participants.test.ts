@@ -5,11 +5,11 @@ vi.mock("~/lib/auth", () => ({
   forbidden: () => new Response("forbidden", { status: 403 }),
 }));
 vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
-vi.mock("~/calendar/routes/calendar.server", () => ({ loadParticipantOptions: vi.fn() }));
+vi.mock("~/calendar/lib/calendar-participants.server", () => ({ loadParticipantOptions: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
 import { isLabMember } from "~/lib/roles";
-import { loadParticipantOptions } from "~/calendar/routes/calendar.server";
+import { loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 import { loader } from "../api.calendar.participants";
 
 const request = new Request("http://os.test/api/calendar/participants");

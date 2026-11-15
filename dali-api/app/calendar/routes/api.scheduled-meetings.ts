@@ -3,16 +3,16 @@ import { z } from "zod";
 import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { canViewForms, isCore } from "~/lib/roles";
-import { isCoreGroup } from "~/lib/groups";
+import { isCoreGroup } from "~/lib/groups.server";
 import { parseJson } from "~/lib/validate";
 import { MAX_GUEST_EMAILS } from "~/calendar/lib/guest-emails";
 import {
   createScheduledMeeting,
   type ScheduledMeetingScope,
-} from "~/lib/scheduled-meeting";
-import { assertMeetingRoomsFree } from "~/lib/rooms.server";
+} from "~/calendar/lib/scheduled-meeting.server";
+import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 import { meetingNotePath } from "~/lib/note-path.server";
-import { notebookChoiceSchema } from "~/lib/notebook-choice";
+import { notebookChoiceSchema } from "~/calendar/lib/notebook-choice";
 
 const Base = {
   title: z.string().trim().min(1).max(200),

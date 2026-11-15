@@ -4,6 +4,8 @@ import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isLabMember } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
+import { z } from "zod";
+import { readForm } from "~/lib/validate";
 
 // GET/POST /api/custom-hires — a member's own non-DALI paid roles.
 //
@@ -11,6 +13,14 @@ import { logAuditEvent } from "~/lib/audit";
 // could reach someone else's hire: every write filters on { id, userId }.
 
 const MAX_LABEL = 80;
+
+const CreateSchema = z.object({
+  label: z
+    .string({ error: "Give the role a name" })
+    .trim()
+    .min(1, "Give the role a name")
+    .max(MAX_LABEL, `Keep it under ${MAX_LABEL} characters`),
+});
 
 export async function loader({ request }: Route.LoaderArgs) {
   const preflight = handlePreflight(request);
@@ -49,15 +59,8 @@ export async function action({ request }: Route.ActionArgs) {
 
   switch (intent) {
     case "create": {
-      if (!label) {
-        return withCors(request, Response.json({ error: "Give the role a name" }, { status: 400 }));
-      }
-      if (label.length > MAX_LABEL) {
-        return withCors(
-          request,
-          Response.json({ error: `Keep it under ${MAX_LABEL} characters` }, { status: 400 }),
-        );
-      }
+      const parsed = readForm(form, CreateSchema);
+      if (!parsed.ok) return withCors(request, Response.json({ error: parsed.error }, { status: 400 }));
       // Re-adding a name the member archived revives that row rather than
       // colliding with the unique index — their old entries keep pointing at it.
       const existing = await prisma.customHire.findUnique({

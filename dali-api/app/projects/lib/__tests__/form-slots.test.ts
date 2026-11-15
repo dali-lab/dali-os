@@ -12,6 +12,7 @@ import {
   setSlotBinding,
   setSlotGate,
   setSlotPublished,
+  applySlotColumnOp,
 } from "~/projects/lib/form-slots";
 import { prisma } from "~/lib/db.server";
 
@@ -548,5 +549,81 @@ describe("setSlotPublished", () => {
       ok: false,
       error: "Add at least one question version before publishing.",
     });
+  });
+});
+
+describe("applySlotColumnOp", () => {
+  const QUESTIONS = [
+    { key: "back", type: "select", required: false, data: { label: "Coming back?", options: ["Returning"] } },
+  ];
+
+  it("refuses a board with no form connected", async () => {
+    mockPrisma.staffingCycleFormBinding.update.mockClear();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue(null);
+    expect(await applySlotColumnOp("c1", "project-bids", { op: "show", id: "builtin:termsInLab" }, "u1")).toEqual({
+      ok: false,
+      error: "Connect a form before changing columns.",
+    });
+    expect(mockPrisma.staffingCycleFormBinding.update).not.toHaveBeenCalled();
+  });
+
+  it("applies the op against the form's latest questions and saves it", async () => {
+    mockPrisma.staffingCycleFormBinding.update.mockClear();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ id: "b1", formId: "f1", columnMapping: null });
+    mockPrisma.formVersion.findFirst.mockResolvedValue({ questions: QUESTIONS });
+    expect(await applySlotColumnOp("c1", "intent-to-work", { op: "show", id: "q:back" }, "u1")).toMatchObject({
+      ok: true,
+      mapping: { version: 1 },
+    });
+    expect(mockPrisma.formVersion.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { formId: "f1" }, orderBy: { versionNumber: "desc" } }),
+    );
+    expect(mockPrisma.staffingCycleFormBinding.update).toHaveBeenCalledWith({
+      where: { id: "b1" },
+      data: {
+        columnMapping: {
+          version: 1,
+          entries: [{ role: "display", label: "Coming back?", source: "question", questionKey: "back", order: 0 }],
+        },
+        updatedById: "u1",
+      },
+    });
+  });
+
+  it("looks up the term a role names for its label", async () => {
+    mockPrisma.staffingCycleFormBinding.update.mockClear();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({
+      id: "b1",
+      formId: "f1",
+      columnMapping: {
+        version: 1,
+        entries: [{ role: "display", label: "Coming back?", source: "question", questionKey: "back", order: 0 }],
+      },
+    });
+    mockPrisma.formVersion.findFirst.mockResolvedValue({ questions: QUESTIONS });
+    mockPrisma.term.findUnique.mockResolvedValue({ id: "t27w", code: "27W" });
+    const r = await applySlotColumnOp(
+      "c1",
+      "intent-to-work",
+      { op: "role", id: "q:back", role: "intent-status", termId: "t27w" },
+      "u1",
+    );
+    expect(r).toMatchObject({ ok: true });
+    expect(mockPrisma.term.findUnique).toHaveBeenCalledWith({ where: { id: "t27w" }, select: { id: true, code: true } });
+    expect(mockPrisma.staffingCycleFormBinding.update.mock.calls[0][0].data.columnMapping.entries[0]).toMatchObject({
+      label: "Status — 27W",
+      termId: "t27w",
+    });
+  });
+
+  it("passes back why an op can't apply without saving", async () => {
+    mockPrisma.staffingCycleFormBinding.update.mockClear();
+    mockPrisma.staffingCycleFormBinding.findUnique.mockResolvedValue({ id: "b1", formId: "f1", columnMapping: null });
+    mockPrisma.formVersion.findFirst.mockResolvedValue({ questions: QUESTIONS });
+    expect(await applySlotColumnOp("c1", "project-bids", { op: "hide", id: "q:back" }, "u1")).toEqual({
+      ok: false,
+      error: "Unknown column.",
+    });
+    expect(mockPrisma.staffingCycleFormBinding.update).not.toHaveBeenCalled();
   });
 });

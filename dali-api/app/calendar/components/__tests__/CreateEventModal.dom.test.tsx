@@ -106,11 +106,11 @@ async function mount(props: {
 }
 
 const checkbox = (label: string) =>
-  Array.from(container.querySelectorAll("label"))
+  Array.from(document.body.querySelectorAll("label"))
     .find((l) => l.textContent?.startsWith(label))
     ?.querySelector("input") as HTMLInputElement;
 const submitButton = () =>
-  Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Create meeting") as HTMLButtonElement;
+  Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent === "Create meeting") as HTMLButtonElement;
 const click = (el: Element) => act(async () => (el as HTMLElement).click());
 const type = (el: HTMLInputElement, value: string) =>
   act(async () => {
@@ -178,18 +178,18 @@ describe("CreateEventModal meeting notes", () => {
     await mount({ groups: [], initialUserIds: ["u1"] });
     await click(checkbox("Meeting notes"));
     expect(submitButton().disabled).toBe(true);
-    expect(container.textContent).toContain("Pick where the notes go");
+    expect(document.body.textContent).toContain("Pick where the notes go");
   });
 
   it("sends a new notebook's name in the invited project", async () => {
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(checkbox("Meeting notes"));
-    const create = Array.from(container.querySelectorAll("button")).find((b) =>
+    const create = Array.from(document.body.querySelectorAll("button")).find((b) =>
       b.textContent?.includes("New notebook"),
     )!;
     await click(create);
     expect(submitButton().disabled).toBe(true);
-    await type(container.querySelector<HTMLInputElement>("#meeting-notebook-name")!, "Atlas sync");
+    await type(document.body.querySelector<HTMLInputElement>("#meeting-notebook-name")!, "Atlas sync");
     expect(submitButton().disabled).toBe(false);
     await click(submitButton());
     expect(createBody()).toMatchObject({
@@ -229,7 +229,7 @@ describe("CreateEventModal status line", () => {
   it("names the notebook and space with an Open link, then the participants", async () => {
     createResponse = filedResponse;
     await createWithNote();
-    const status = container.querySelector("p.text-os-green")!;
+    const status = document.body.querySelector("p.text-os-green")!;
     expect(status.textContent).toBe("Meeting created. Note in Weekly (Atlas). Open. Notified 3 participants.");
     expect(status.querySelector("a")!.getAttribute("href")).toBe("/documents/n1");
   });
@@ -243,14 +243,14 @@ describe("CreateEventModal status line", () => {
   it("keeps the plain line when no note was filed", async () => {
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
-    expect(container.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 3 participants.");
+    expect(document.body.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 3 participants.");
   });
 
   it("uses the singular for one participant", async () => {
     createResponse = { ok: true, meeting: { id: "m1" }, notifiedCount: 1 };
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
-    expect(container.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 1 participant.");
+    expect(document.body.querySelector("p.text-os-green")!.textContent).toBe("Meeting created. Notified 1 participant.");
   });
 });
 
@@ -260,7 +260,7 @@ describe("CreateEventModal after the create", () => {
   it("keeps Create meeting disabled once the meeting exists", async () => {
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
-    const submit = container.querySelector<HTMLButtonElement>("button[type='submit']")!;
+    const submit = document.body.querySelector<HTMLButtonElement>("button[type='submit']")!;
     expect(submit.textContent).toBe("Creating…");
     expect(submit.disabled).toBe(true);
   });
@@ -273,7 +273,7 @@ describe("CreateEventModal after the create", () => {
     );
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
-    expect(container.textContent).toContain("Nope");
+    expect(document.body.textContent).toContain("Nope");
     expect(submitButton().disabled).toBe(false);
   });
 
@@ -288,7 +288,7 @@ describe("CreateEventModal after the create", () => {
     createResponse = { ok: true, meeting: { id: "m1" }, notifiedCount: 2, gcalError: "Calendar is unreachable" };
     await mount({ groups: [atlas], initialGroupIds: ["g-atlas"] });
     await click(submitButton());
-    const warning = container.querySelector("[role='alert']")!;
+    const warning = document.body.querySelector("[role='alert']")!;
     expect(warning.textContent).toContain("The Google Calendar invite didn't go out: Calendar is unreachable");
     await sleep(1300);
     expect(onClose).not.toHaveBeenCalled();
@@ -302,7 +302,7 @@ describe("CreateEventModal after the create", () => {
 });
 
 describe("CreateEventModal plain event", () => {
-  const eventForm = () => container.querySelector("form")!;
+  const eventForm = () => document.body.querySelector("form")!;
   const submitEvent = () =>
     act(async () => {
       eventForm().dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));

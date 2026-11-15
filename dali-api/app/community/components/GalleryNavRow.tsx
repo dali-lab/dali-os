@@ -2,6 +2,8 @@ import { useNavigate } from "react-router";
 import { Plus, X } from "lucide-react";
 import { Segmented } from "~/components/ui/Segmented";
 import { Avatar } from "~/components/ui/Avatar";
+import { Button } from "~/components/ui/Button";
+import { IconButton } from "~/components/ui/IconButton";
 import type { GalleryPerson } from "~/community/lib/gallery.server";
 import { galleryFeedHref } from "~/community/lib/gallery";
 import { GallerySearch, type GallerySearchResults } from "./GallerySearch";
@@ -32,32 +34,43 @@ export function GalleryNavRow({
           }
           ariaLabel="Show"
           size="md"
-          pill
           options={[
             { value: "all", label: "All" },
             { value: "mine", label: "Mine" },
           ]}
         />
         {person && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-os-container py-1 pl-1 pr-1.5 text-sm font-medium text-foreground">
+          <span className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-border bg-card pl-1.5 pr-1 text-sm text-foreground">
             <Avatar size="compact" name={person.name} photoUrl={person.photoUrl} />
             {person.name}
-            <button
-              type="button"
-              aria-label={`Stop showing only ${person.name}'s posts`}
+            <IconButton
+              label={`Stop showing only ${person.name}'s posts`}
+              icon={X}
               onClick={() => navigate(galleryFeedHref({ q }))}
-              className="flex h-6 w-6 items-center justify-center rounded-full text-os-grey hover:bg-os-container-hi hover:text-foreground"
-            >
-              <X className="h-3.5 w-3.5" aria-hidden />
-            </button>
+              iconClassName="h-3.5 w-3.5"
+            />
           </span>
         )}
       </div>
       <GallerySearch mine={mine} results={results} />
-      <button type="button" onClick={onPost} className="os-btn-primary os-btn-tint ml-auto">
-        <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-        Post
-      </button>
+      <GalleryPostButton onClick={onPost} className="ml-auto" />
     </div>
+  );
+}
+
+export function GalleryPostButton({
+  onClick,
+  label = "Post",
+  className,
+}: {
+  onClick: () => void;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <Button onClick={onClick} className={className}>
+      <Plus className="h-4 w-4" aria-hidden />
+      {label}
+    </Button>
   );
 }

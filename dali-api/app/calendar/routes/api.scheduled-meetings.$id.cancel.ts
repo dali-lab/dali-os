@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.scheduled-meetings.$id.cancel";
 import { requireAuth, forbidden, isNonMember } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { cancelScheduledMeeting } from "~/lib/scheduled-meeting";
+import { cancelScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);

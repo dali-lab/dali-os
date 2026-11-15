@@ -4,10 +4,10 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { hasCycleAccess } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
-// import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+// import { provisionZoomMeeting, deprovisionZoomMeeting } from "~/lib/zoom.server"; // S2S Zoom not configured yet
 import { provisionInterviewMeet, deprovisionInterviewMeet, ensureInterviewMeetUrl } from "~/hiring/lib/interview-meet";
 import { sendLocationChangeEmails } from "~/hiring/lib/interview-emails";
-import { createRoomBooking } from "~/lib/rooms.server";
+import { createRoomBooking } from "~/rooms/lib/rooms.server";
 import { releaseInterviewRoom } from "~/hiring/lib/scheduling";
 
 const LocationSchema = z.object({ roomId: z.string().nullable() });

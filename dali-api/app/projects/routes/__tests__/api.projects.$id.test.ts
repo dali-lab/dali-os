@@ -40,7 +40,6 @@ const mockPrisma = prisma as unknown as {
   projectRoleRequest: { count: ReturnType<typeof vi.fn> };
   projectPartner: { count: ReturnType<typeof vi.fn> };
   staffingPreference: { count: ReturnType<typeof vi.fn> };
-  essentialityForm: { count: ReturnType<typeof vi.fn> };
   staffingAssignment: { count: ReturnType<typeof vi.fn> };
   mentorNote: { count: ReturnType<typeof vi.fn> };
   collabDocument: { deleteMany: ReturnType<typeof vi.fn> };
@@ -106,7 +105,6 @@ beforeEach(() => {
     "projectRoleRequest",
     "projectPartner",
     "staffingPreference",
-    "essentialityForm",
     "staffingAssignment",
     "mentorNote",
   ] as const) {
@@ -133,6 +131,12 @@ describe("DELETE /api/projects/:id", () => {
     expect(mockPrisma.page.deleteMany).toHaveBeenCalledWith({
       where: { id: { in: ["page-overview", "f-team", "f-receiver"] } },
     });
+  });
+
+  it("does not consult the retired essentiality tables", async () => {
+    livePages();
+    expect((mockPrisma as any).essentialityForm).toBeUndefined();
+    expect((await call()).status).toBe(200);
   });
 
   it("blocks on a genuine authored document", async () => {

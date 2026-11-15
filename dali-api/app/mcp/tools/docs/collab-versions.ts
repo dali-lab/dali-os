@@ -4,7 +4,7 @@
 //   restore_collab_version — mcp:write (restore via the collab pipeline — honors clone rule)
 
 import { prisma } from "~/lib/db.server";
-import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth";
+import { authorizeCollabDoc, hydrateAuthors } from "~/lib/collabAuth.server";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
 import {

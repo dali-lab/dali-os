@@ -16,6 +16,7 @@ export type ApplicationDetail = {
   sowDocId: string | null;
   sowState: "Draft" | "Shared" | "Accepted";
   resultingProjectId: string | null;
+  continuesProject?: { id: string; name: string } | null;
   source: string;
   evalRubric: unknown;
   interviewRating: number | null;

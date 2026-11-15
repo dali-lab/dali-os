@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { githubAppClient, parseRepo, isNotFound } from "~/lib/github";
-import { normalizeRepo, createIssueForTask } from "../lib/github-task-sync";
+import { normalizeRepo, createIssueForTask, unlinkTaskFromGithub } from "../lib/github-task-sync";
 
 // POST   /api/tasks/:id/github — attach a GitHub issue mirror to a task that
 //        isn't mirrored yet. `repo` must be one of the project's repoUrls
@@ -65,13 +65,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (!gate.ok) return gate.response;
 
   if (request.method === "DELETE") {
-    if (task.githubIssueNumber === null) {
-      return withCors(request, Response.json({ ok: true, noop: true }));
-    }
-    await prisma.task.update({
-      where: { id: params.id },
-      data: { githubRepo: null, githubIssueNumber: null, githubIssueUrl: null, activityAt: new Date() },
-    });
+    const result = await unlinkTaskFromGithub(task.id);
+    if (result.noop) return withCors(request, Response.json({ ok: true, noop: true }));
     return withCors(request, Response.json({ ok: true }));
   }
 

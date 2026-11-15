@@ -17,12 +17,12 @@ import {
 } from "~/forms/components/FormTileStrip";
 import { stripPattern } from "~/forms/lib/tile-strip";
 import { canAnimate, prefersReducedMotion } from "~/components/meeting-recorder/motion";
-import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/lib/form-logic";
+import { pruneHiddenAnswers, visiblePages, visibleQuestions } from "~/forms/lib/form-logic";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
 import { Button } from "~/components/ui/Button";
 import { useFormProgress } from "~/forms/components/useFormProgress";
-import { findMissingRequired, validateAnswerFormats } from "~/lib/form-answers";
+import { findMissingRequired, validateAnswerFormats } from "~/forms/lib/form-answers";
 import type { Question } from "~/types";
 
 // The shared authenticated form-fill UI. Rendered both by /forms/fill/:token
@@ -72,6 +72,9 @@ export function MemberFormFillView({
   // person's saved answers from showing to another on the same browser.
   saveProgress = false,
   progressUserId = null,
+  // Where a new response posts, when not the form's own fill endpoint (a
+  // staffing manager adding a response for a member).
+  submitUrl,
 }: {
   data: MemberFormData;
   doneContent?: React.ReactNode;
@@ -83,6 +86,7 @@ export function MemberFormFillView({
   editing?: { answers: Record<string, string> };
   saveProgress?: boolean;
   progressUserId?: string | null;
+  submitUrl?: string;
 }) {
   const navigate = useNavigate();
   const [answers, setAnswers] = useState<Record<string, string>>(
@@ -92,7 +96,7 @@ export function MemberFormFillView({
   const [error, setError] = useState<string | null>(null);
   const questions = data.questions;
   const pages = useMemo(() => visiblePages(questions, answers), [questions, answers]);
-  const pager = useFormPager(pages, { excludeFileType: true });
+  const pager = useFormPager(pages);
   const { goTo } = pager;
   const progress = useFormProgress({
     enabled: saveProgress && !preview && !editing,
@@ -174,9 +178,7 @@ export function MemberFormFillView({
     e.preventDefault();
     setError(null);
     const visible = visibleQuestions(questions, answers);
-    const missing = findMissingRequired(visible, (q) => answers[q.key], {
-      excludeFileType: true,
-    });
+    const missing = findMissingRequired(visible, (q) => answers[q.key]);
     if (missing.length > 0) {
       setError(`"${missing[0].data.label}" is required.`);
       return;
@@ -194,7 +196,7 @@ export function MemberFormFillView({
     }
     const submitted = pruneHiddenAnswers(questions, answers);
     try {
-      const res = await fetch(`/api/forms/fill/${data.token}`, {
+      const res = await fetch(editing || !submitUrl ? `/api/forms/fill/${data.token}` : submitUrl, {
         method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -221,12 +223,14 @@ export function MemberFormFillView({
     }
   }
 
-  const continueButton = next && (
+  const continueButton = next ? (
     <div className="mt-6">
       <Button variant="primary" size="sm" onClick={() => navigate(next)}>
         Continue
       </Button>
     </div>
+  ) : (
+    allowExit && <FormDoneButton />
   );
 
   const confirmation =
@@ -303,19 +307,15 @@ export function MemberFormFillView({
           questions={pager.page.questions}
           values={answers}
           onChange={set}
-          renderField={(q) =>
-            q.type === "file" ? (
-              <div className="text-xs text-muted-foreground italic border border-dashed border-border rounded-md px-3 py-2">
-                File uploads aren’t available here.
-              </div>
-            ) : (
-              <FormQuestionField
-                question={q}
-                value={answers[q.key] ?? ""}
-                onChange={(v) => set(q.key, v)}
-              />
-            )
-          }
+          renderField={(q) => (
+            <FormQuestionField
+              question={q}
+              value={answers[q.key] ?? ""}
+              onChange={(v) => set(q.key, v)}
+              uploadUrl={`/api/forms/fill/${data.token}/upload`}
+              disabled={preview && q.type === "file"}
+            />
+          )}
         />
 
         <FormPagerNav
@@ -382,14 +382,12 @@ export function MemberFormFillView({
 // This route renders outside the app layout, so on the desktop shell (a bare
 // WKWebView with no browser back button) the form would otherwise be a dead
 // end. Web keeps its own browser chrome.
-export function FormExitButton() {
+function useFormExit() {
   const navigate = useNavigate();
   const [isDesktop, setIsDesktop] = useState(false);
   useEffect(() => {
     setIsDesktop(desktopVersion() !== null);
   }, []);
-
-  if (!isDesktop) return null;
 
   const exit = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -398,6 +396,25 @@ export function FormExitButton() {
       navigate("/");
     }
   };
+
+  return isDesktop ? exit : null;
+}
+
+function FormDoneButton() {
+  const exit = useFormExit();
+  if (!exit) return null;
+  return (
+    <div className="mt-6">
+      <Button variant="primary" size="sm" onClick={exit}>
+        Done
+      </Button>
+    </div>
+  );
+}
+
+export function FormExitButton() {
+  const exit = useFormExit();
+  if (!exit) return null;
 
   return (
     <button

@@ -17,23 +17,23 @@ export function Section({
 }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+    <div className="border border-border rounded-lg overflow-hidden bg-card">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full px-5 py-3 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition text-left"
+        className="w-full px-5 py-3 flex items-center justify-between bg-os-well hover:bg-os-hover transition text-left"
       >
-        <span className="flex items-center gap-2 font-semibold text-gray-900 text-sm">
+        <span className="flex items-center gap-2 font-semibold text-foreground text-sm">
           {icon}
           {title}
         </span>
         <div className="flex items-center gap-3">
           {badge}
           <ChevronDown
-            className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+            className={`w-4 h-4 text-os-muted transition-transform ${open ? 'rotate-180' : ''}`}
           />
         </div>
       </button>
-      {open && <div className="p-5 border-t border-gray-200">{children}</div>}
+      {open && <div className="p-5 border-t border-border">{children}</div>}
     </div>
   )
 }

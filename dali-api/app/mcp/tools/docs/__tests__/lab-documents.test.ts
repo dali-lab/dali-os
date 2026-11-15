@@ -5,13 +5,13 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isLabMember: vi.fn() };
 });
-vi.mock("~/lib/pages", () => ({
+vi.mock("~/lib/pages.server", () => ({
   createLabPage: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember } from "~/lib/roles";
-import { createLabPage } from "~/lib/pages";
+import { createLabPage } from "~/lib/pages.server";
 import {
   LIST_LAB_DOCUMENTS_TOOL,
   runListLabDocuments,

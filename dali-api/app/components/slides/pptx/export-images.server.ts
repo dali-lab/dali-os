@@ -1,4 +1,4 @@
-import { getDownloadUrl } from "~/lib/s3";
+import { getDownloadUrl } from "~/lib/s3.server";
 import { isReservedUploadKey, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { imageSize, mimeOf } from "./image-size";
 import type { ExportImage } from "./export.server";

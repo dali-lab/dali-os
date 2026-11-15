@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
-vi.mock("~/lib/google-calendar", () => ({ isGoogleEventCancelled: vi.fn() }));
+vi.mock("~/calendar/lib/google-calendar.server", () => ({ isGoogleEventCancelled: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { notify } from "~/lib/notify.server";
-import { isGoogleEventCancelled } from "~/lib/google-calendar";
+import { isGoogleEventCancelled } from "~/calendar/lib/google-calendar.server";
 import { meetingOccurrenceHref } from "~/calendar/lib/meeting-href";
 import { runMeetingRecordPrompts } from "~/jobs/meeting-record-prompts.server";
 

@@ -4,7 +4,7 @@
 //   1. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
 //   2. Duplicate     — deep-copies the block (new IDs) immediately after itself.
 //   2b. Keep/Revert change — only on a block carrying a reserved Enhance mark
-//       (specs/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
+//       (specs/archive/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
 //   3. Delete        — BlockNote's RemoveBlockItem.
 //
 // Commenting starts from a text selection (the formatting toolbar), not here.
@@ -85,7 +85,7 @@ function DeleteBlockItem({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ── 1b. Keep change / Revert change (specs/meeting-recording-rail.md Step 2) ─
+// ── 1b. Keep change / Revert change (specs/archive/meeting-recording-rail.md Step 2) ─
 // Shown only when the hovered block carries a reserved Enhance mark, and
 // only when a recording hook up the tree provided handlers (documents.
 // $pageId.tsx wraps the page in EnhanceReviewContext when one is mounted).

@@ -89,7 +89,7 @@ describe("partner settings notifications", () => {
     const res = await partnerAction(
       args(post("/partner/settings", { intent: "notifications", "collab.comment_reply:present": "1" })),
     );
-    expect(res).toEqual({ ok: true, error: null });
+    expect(res).toEqual({ ok: true, intent: "notifications" });
     expect(saveNotificationSettings).toHaveBeenCalledWith("p1", expect.any(FormData), {
       audience: "partner",
       isAdmin: false,

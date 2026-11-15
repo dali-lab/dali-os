@@ -10,10 +10,13 @@ export type UploadedFileMeta = {
 // Client-side: presign → direct S3 POST. Returns the metadata callers persist
 // (e.g. POST /api/projects/:id/files). Mirrors PhotoUploadField's flow but
 // generic over file type. `keyPrefix` namespaces the object under uploads/.
+// `presignUrl` swaps in a scoped presign endpoint that takes the same body,
+// e.g. a form's own upload route, which works without a session.
 export async function uploadFileToS3(
   file: File,
   keyPrefix: string,
   accept?: string,
+  presignUrl = "/api/upload/presign",
 ): Promise<UploadedFileMeta> {
   const contentType = file.type || "application/octet-stream";
   const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
@@ -30,7 +33,7 @@ export async function uploadFileToS3(
     throw new Error(`File type not allowed. Accepted: ${accept}`);
   }
 
-  const presignRes = await fetch("/api/upload/presign", {
+  const presignRes = await fetch(presignUrl, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

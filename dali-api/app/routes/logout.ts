@@ -1,13 +1,10 @@
 import type { Route } from "./+types/logout";
 import { clearSessionCookie, parseSessionId } from "~/lib/cookies";
-import { hashSessionId, revokeSession } from "~/lib/session";
+import { hashSessionId, revokeSession } from "~/lib/session.server";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 
 export async function loader({ request }: Route.LoaderArgs) {
-  // Best-effort attribution: look up the current session (if any) so we
-  // can record which user logged out. A missing/invalid session still
-  // emits a logout event with userId=null.
   let userId: string | null = null;
   const raw = parseSessionId(request);
   if (raw) {
@@ -18,6 +15,14 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
     if (session) userId = session.userId;
     await revokeSession(id, { hashed: true });
+  }
+  if (!userId) {
+    try {
+      const { getBetterAuthUser } = await import("~/lib/betterauth-compat.server");
+      userId = (await getBetterAuthUser(request))?.sub ?? null;
+    } catch {
+      // Attribution is best effort; a BetterAuth fault must not block logout.
+    }
   }
   await logAuditEvent({
     action: "logout",
@@ -43,6 +48,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   } catch {
     // A failed BetterAuth sign-out must not block the legacy logout.
+  }
+  // Signing out mid-impersonation must not leave the admin's session for /login to restore.
+  try {
+    const { clearAdminSessionCookieHeader } = await import("~/lib/impersonation-restore.server");
+    headers.append("Set-Cookie", await clearAdminSessionCookieHeader());
+  } catch {
+    // Same fault isolation as the sign-out above.
   }
 
   headers.set("Location", "/login");

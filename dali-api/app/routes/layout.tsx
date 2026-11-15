@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { redirect, useLoaderData, useLocation, useMatches, useNavigationType, useSearchParams, type ShouldRevalidateFunctionArgs } from 'react-router'
 import { cn } from '~/lib/cn'
-import { isPageScroll, pageScrollY, scrollPageTo } from '~/lib/page-scroll'
+import { isPageScroll, pageScrollY, scrollPageTo } from '~/drive/lib/page-scroll'
 import { areaForPath, areaInk, areaTint } from '~/lib/nav-areas'
 import { LayoutOS } from '~/components/LayoutOS'
 import { useOsShellRoot } from '~/lib/os-shell'
@@ -14,6 +14,7 @@ import { TimeZonePrompt } from '~/components/TimeZonePrompt'
 import { requireAuth, redirectPartnerToPortal, impersonationAllowsWrites, isImpersonating, isNonMember } from "~/lib/auth"
 import { maybeUpgradeLegacyToBetterAuth } from "~/lib/betterauth-upgrade.server"
 import { redirectToLogin } from '~/lib/login-next';
+import { redirectRestoringAdmin } from '~/lib/impersonation-restore.server'
 import { getActiveCycles } from '~/hiring/lib/cycles'
 import { resolvePhotoUrl } from '~/lib/photo'
 import { PageViewReporter } from '~/components/PageViewReporter'
@@ -58,7 +59,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // bounce such a visitor (login, /portal, /partner) checks for one first.
   const pathname = new URL(request.url).pathname
   const publicDoc = () => publicDocRedirectForPath(pathname)
-  if (!auth.ok) return (await publicDoc()) ?? redirectToLogin(request)
+  if (!auth.ok) {
+    const url = new URL(request.url)
+    return (await publicDoc()) ?? (await redirectRestoringAdmin(request, url.pathname + url.search)) ?? redirectToLogin(request)
+  }
 
   // Onboarding is NOT a hard gate: a new member can use the whole app freely.
   // Their onboarding lives as a persistent task (the welcome notification) that
@@ -199,7 +203,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     resolvePhotoUrl(me?.photoUrl),
     // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
     timed(request, 'flags', () => resolveFeatureFlags(auth.user.sub, roles)),
-    // Activities (specs/activities.md): the time-boxed "mode" layer. Resolved
+    // Activities (specs/archive/activities.md): the time-boxed "mode" layer. Resolved
     // with the current path so the overlay payload only carries THIS route's
     // codes — the answers for other routes never reach the client.
     timed(request, 'activities', () =>
@@ -237,7 +241,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const isEmbedded = fetchDest === 'iframe' || fetchDest === 'frame'
 
   const tabStripHint = tabStripHintFromRequest(request)
-  const tabsSnapshot = tabStripHint ? tabsSnapshotFromRequest(request) : null
 
   // Focus mode: hide the sidebar (navigate via ⌘K + breadcrumbs). Cookie-backed
   // so there's no flash of the sidebar.
@@ -252,6 +255,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   const tzDismissedZone = readDismissedTimeZone(request)
 
   const impersonating = isImpersonating(auth)
+  // The snapshot cookie mirrors the admin's own tabs, not the impersonated session's.
+  const tabsSnapshot = tabStripHint && !impersonating ? tabsSnapshotFromRequest(request) : null
   const impersonationWrites = impersonationAllowsWrites()
 
   const __loaderTotal = performance.now() - __loaderStart
@@ -291,14 +296,8 @@ export function shouldRevalidate({ formAction, currentUrl, nextUrl, defaultShoul
 }
 
 export default function AppLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
+  const { user, flags, impersonating, impersonationWrites, instructorChrome } = useLoaderData<typeof loader>()
 
-  // Non-member (external instructor) shell: the lightweight, sidebar-free chrome
-  // for the education-management routes they're allowed into. Rendered before the
-  // member-shell hooks below since those assume the full member layout. Toast /
-  // Dialog / Presence providers live in root.tsx (global); FeatureFlagsProvider
-  // is re-supplied here for any management component that reads a flag, and
-  // useUserTimeZone() still resolves off this same layout loader's data.
   if (instructorChrome) {
     return (
       <FeatureFlagsProvider flags={flags}>
@@ -311,6 +310,12 @@ export default function AppLayoutRoute() {
       </FeatureFlagsProvider>
     )
   }
+
+  return <MemberLayoutRoute />
+}
+
+function MemberLayoutRoute() {
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
 
   const [searchParams] = useSearchParams()
   const location = useLocation()

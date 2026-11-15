@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/collabAuth", () => ({
+vi.mock("~/lib/collabAuth.server", () => ({
   authorizeCollabDoc: vi.fn(),
   hydrateAuthors: vi.fn().mockResolvedValue([]),
 }));
@@ -13,7 +13,7 @@ vi.mock("~/collab/persistence", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
 import {

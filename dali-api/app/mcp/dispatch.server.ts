@@ -1,6 +1,14 @@
 import { validateInput, type JsonSchema } from "~/lib/mcp-input";
 import { logMcpToolCall, type McpToolOrigin } from "./audit.server";
-import { findRegistryTool, mapToolError, type McpCtx } from "./registry";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
+import { getUserRoles } from "~/lib/roles";
+import {
+  findRegistryTool,
+  mapToolError,
+  registryToolDefs,
+  type McpCtx,
+  type McpToolDef,
+} from "./registry";
 
 export type ToolCaller = McpCtx & {
   origin: McpToolOrigin;
@@ -13,6 +21,27 @@ export type DispatchResult =
   | { ok: true; payload: unknown }
   | { ok: false; code: number; message: string };
 
+export async function visibleToolDefs(
+  caller: Pick<McpCtx, "user" | "scopes" | "request">,
+): Promise<McpToolDef[]> {
+  const inScope = registryToolDefs().filter((d) => caller.scopes.includes(d.requiredScope));
+  const flagFor = (d: McpToolDef) => findRegistryTool(d.name)?.featureFlag;
+  const flags = [...new Set(inScope.map(flagFor).filter((f) => f !== undefined))];
+  if (flags.length === 0) return inScope;
+  const roles = await getUserRoles(caller.user.id, caller.request);
+  const enabled = new Map(
+    await Promise.all(
+      flags.map(
+        async (f) => [f, await isFeatureEnabled(f, caller.user.id, roles, caller.request)] as const,
+      ),
+    ),
+  );
+  return inScope.filter((d) => {
+    const flag = flagFor(d);
+    return flag === undefined || enabled.get(flag) === true;
+  });
+}
+
 export async function dispatchTool(
   name: string | undefined,
   rawArgs: unknown,
@@ -22,6 +51,12 @@ export async function dispatchTool(
   if (!tool) return { ok: false, code: -32601, message: `Unknown tool: ${name}` };
 
   const { user, scopes, request, origin, clientId, clientName, grantId } = caller;
+  if (tool.featureFlag) {
+    const roles = await getUserRoles(user.id, request);
+    if (!(await isFeatureEnabled(tool.featureFlag, user.id, roles, request))) {
+      return { ok: false, code: -32601, message: `Unknown tool: ${name}` };
+    }
+  }
   const audit = {
     auth: { user, origin, clientId, clientName, grantId },
     toolName: tool.def.name,

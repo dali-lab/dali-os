@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub, Outlet } from "react-router";
 
-vi.mock("~/lib/blog-post.server", () => ({
+vi.mock("~/blog/lib/blog-post.server", () => ({
   loadBlogFrontPage: vi.fn(),
   moveBlogPostPin: vi.fn(),
   pinBlogPostToTop: vi.fn(),

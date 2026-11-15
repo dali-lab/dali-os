@@ -11,6 +11,7 @@ import {
 } from "~/lib/login-next";
 import { resolveLoginIdentifier } from "~/lib/user-email.server";
 import { auth } from "~/lib/betterauth.server";
+import { redirectRestoringAdmin } from "~/lib/impersonation-restore.server";
 import { AuthButton } from "~/components/auth/AuthButton";
 import { CodeInput } from "~/components/auth/CodeInput";
 import { AuthInput, AuthNotice, AuthShellV2 } from "~/components/auth/v2";
@@ -56,7 +57,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     return redirect("/portal");
   }
 
-  return null;
+  return redirectRestoringAdmin(request, pickSafeLoginNext(new URL(request.url).searchParams.get("next")) ?? "/");
 }
 
 export async function action({ request }: Route.ActionArgs) {

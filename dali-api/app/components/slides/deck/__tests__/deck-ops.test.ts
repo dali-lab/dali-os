@@ -210,7 +210,7 @@ describe("slot elements exist from the moment a slide exists", () => {
     const findText = (d: Y.Doc) => {
       const group = slideFragment(d, ids[0], "title")!.get(0) as Y.XmlElement;
       const container = group.get(0) as Y.XmlElement;
-      return container.get(0).get(0) as unknown as Y.XmlText;
+      return (container.get(0) as Y.XmlElement).get(0) as unknown as Y.XmlText;
     };
     findText(doc).insert(1, "A");
     findText(peer).insert(1, "B");

@@ -1,6 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { userTextWhere } from "~/lib/person-search";
-import { listVisibleGroupsForUser } from "~/lib/groups";
+import { listVisibleGroupsForUser } from "~/lib/groups.server";
 import type { SharePermission, LinkAccess } from "~/generated/prisma/client";
 
 const PERMISSIONS: readonly string[] = ["View", "Comment", "Edit", "FullAccess"];

@@ -1,10 +1,12 @@
 import {
+  Link,
   redirect,
   useFetcher,
   useLoaderData,
   useNavigate,
   useSearchParams,
 } from "react-router";
+import type { MouseEvent } from "react";
 import { Bell, Check } from "lucide-react";
 import type { Route } from "./+types/onboarding";
 import { requireAuth, unauthorized, forbidden } from "~/lib/auth";
@@ -28,6 +30,15 @@ import { Menu, Select } from "~/components/ui/floating";
 import { filterPillClass } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { Pill } from "~/components/ui/Pill";
+import { listSelectableForms } from "~/projects/lib/form-slots";
+import { setFormPublished } from "~/forms/lib/form-publish.server";
+import { FormBindingRow } from "~/forms/components/FormBindingRow";
+import {
+  clearOnboardingFormBinding,
+  getOnboardingFormBinding,
+  setOnboardingFormBinding,
+} from "~/members/lib/onboarding-form.server";
 
 export const meta: Route.MetaFunction = () => [
   { title: "Onboarding · Hiring · DALI OS" },
@@ -301,7 +312,7 @@ async function loadOnboardingRows(args: {
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) return redirect("/");
 
   const pillRoles = {
@@ -313,13 +324,17 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const requested = url.searchParams.get("cycle");
-  const data = await loadOnboardingRows({
-    cycleId: requested === "all" ? "all" : requested,
-    domainKey: url.searchParams.get("domain"),
-    termId: url.searchParams.get("term"),
-  });
+  const [data, profileForm, selectableForms] = await Promise.all([
+    loadOnboardingRows({
+      cycleId: requested === "all" ? "all" : requested,
+      domainKey: url.searchParams.get("domain"),
+      termId: url.searchParams.get("term"),
+    }),
+    getOnboardingFormBinding(),
+    listSelectableForms(),
+  ]);
 
-  return { ...data, pillRoles };
+  return { ...data, pillRoles, profileForm, selectableForms };
 }
 
 // Toggle Figma invite, or blast a reminder to members incomplete on a step.
@@ -446,20 +461,49 @@ export async function action({ request }: Route.ActionArgs) {
     }
   }
 
+  if (intent === "bind-profile-form") {
+    const formId = String(form.get("formId") ?? "");
+    if (!formId) return Response.json({ error: "Choose a form to use." }, { status: 400 });
+    const result = await setOnboardingFormBinding(formId, auth.user.sub);
+    if (!result.ok) return Response.json({ error: result.error }, { status: 400 });
+    await logAuditEvent({
+      action: "hiring.onboarding-form.set",
+      userId: auth.user.sub,
+      targetId: formId,
+      request,
+    });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "clear-profile-form") {
+    await clearOnboardingFormBinding();
+    await logAuditEvent({
+      action: "hiring.onboarding-form.clear",
+      userId: auth.user.sub,
+      targetId: "onboarding-profile",
+      request,
+    });
+    return Response.json({ ok: true });
+  }
+
+  if (intent === "set-form-published") {
+    const binding = await getOnboardingFormBinding();
+    if (!binding) return Response.json({ error: "Choose a form first." }, { status: 400 });
+    const result = await setFormPublished(binding.formId, form.get("published") === "1", {
+      clearWindow: true,
+    });
+    if ("error" in result) return Response.json({ error: result.error }, { status: 400 });
+    return Response.json({ ok: true });
+  }
+
   return Response.json({ error: "Unknown intent" }, { status: 400 });
 }
 
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold",
-        ok ? "bg-os-green/15 text-os-green" : "bg-os-container text-os-grey",
-      )}
-    >
-      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-os-green" : "bg-os-muted")} />
+    <Pill size="sm" tone={ok ? "success" : "neutral"}>
       {label}
-    </span>
+    </Pill>
   );
 }
 
@@ -469,7 +513,6 @@ function FigmaCheckbox({ userId, invited }: { userId: string; invited: boolean }
   const checked = pending != null ? pending === "true" : invited;
 
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
     <span onClick={(e) => e.stopPropagation()}>
       <Checkbox
         className="inline-flex cursor-pointer items-center gap-2 text-sm text-os-grey"
@@ -505,7 +548,6 @@ function StartTermCell({
   const options = eligibleStartTerms(candidates, row.cycleTermSortKey);
 
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
     <span onClick={(e) => e.stopPropagation()} className="inline-flex flex-col gap-0.5">
       <Select
         ariaLabel={`Start term for ${row.name}`}
@@ -708,6 +750,8 @@ export default function HiringOnboarding() {
     startTermCandidates,
     hasUntermed,
     selectedTermId,
+    profileForm,
+    selectableForms,
   } = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -738,6 +782,22 @@ export default function HiringOnboarding() {
       <div className="flex flex-col gap-2">
         <h1 className={pageTitle}>Onboarding</h1>
         <p className={bodyText}>Accepted applicants and their onboarding progress.</p>
+      </div>
+
+      <div className={cn(panel, "p-4")}>
+        <FormBindingRow
+          title="Profile form"
+          description="New members fill this in to finish onboarding. Their answers fill in their profile."
+          binding={profileForm}
+          forms={selectableForms}
+          action="/hiring/onboarding"
+          bindIntent="bind-profile-form"
+          clearIntent="clear-profile-form"
+          publishSlot="onboarding-profile"
+          removeDescription="New members won't have a profile form to fill in until another is chosen. Submitted responses are kept."
+          openNote="New members can fill this form now."
+          unpublishedNote="New members won't be asked to fill it in."
+        />
       </div>
 
       {cycles.length > 0 && (
@@ -838,9 +898,13 @@ export default function HiringOnboarding() {
                           size="sm"
                           className="flex-shrink-0"
                         />
-                        <span className="truncate text-base font-medium text-foreground">
+                        <Link
+                          to={`/members/${r.userId}`}
+                          onClick={(e: MouseEvent<HTMLAnchorElement>) => e.stopPropagation()}
+                          className="truncate text-base font-medium text-foreground hover:underline"
+                        >
                           {r.name}
-                        </span>
+                        </Link>
                       </div>
                     </td>
                     {allCycles && <td className="px-6 py-3.5 text-os-grey">{r.cycleName}</td>}

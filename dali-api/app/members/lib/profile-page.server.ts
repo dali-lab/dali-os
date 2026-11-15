@@ -3,6 +3,12 @@
 // two routes stay byte-for-byte equivalent except for which user id they
 // resolve.
 
+import {
+  updateProfileFields,
+  ProfileConflictError,
+  ProfileValidationError,
+  type ProfileField,
+} from "./profile-update.server";
 import { redirect } from "react-router";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
@@ -10,7 +16,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import {
   listProfileNotes,
   listSharedWithMe,
@@ -33,7 +39,7 @@ import {
   isCore,
   isLabMentor,
 } from "~/lib/roles";
-import { listActiveGroupsForUser } from "~/lib/groups";
+import { listActiveGroupsForUser } from "~/lib/groups.server";
 import { groupKind, orderGroupsForPicker, type GroupKind } from "~/lib/group-kind";
 import {
   ALLOWED_LEVELS,
@@ -44,14 +50,11 @@ import {
   applyEligibilityWithNotify,
   removeEligibility,
 } from "~/admin/lib/eligibility.server";
-import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
-import { normalizeHandle } from "~/lib/handle";
-import { rotateWalletSecret } from "~/lib/wallet-token";
-import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
-import { walletAppleConfigured } from "~/lib/wallet-apple.server";
-import { walletGoogleConfigured } from "~/lib/wallet-google.server";
-import { isValidTimezone } from "~/lib/timezone";
-import { geocodePlace } from "~/lib/geocode.server";
+import { getOnboardingFormBinding } from "~/members/lib/onboarding-form.server";
+import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
+import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
+import { walletAppleConfigured } from "~/wallet/lib/wallet-apple.server";
+import { walletGoogleConfigured } from "~/wallet/lib/wallet-google.server";
 import { hasOutgoingCoffeeChat, sendCoffeeChatInvite } from "~/members/lib/coffee-chat.server";
 import {
   dateToMonth,
@@ -84,6 +87,11 @@ export type ProfileMember = {
   hometown: string | null;
   /** Where they live now ("Based in"); pins them on the Community map. */
   currentLocation: string | null;
+  currentLocationCity: string | null;
+  currentLocationRegion: string | null;
+  currentLocationCountry: string | null;
+  currentLocationGeonameId: number | null;
+  currentLocationLat: number | null;
   workExperiences: WorkExperienceItem[];
   linkedinUrl: string | null;
   githubUsername: string | null;
@@ -237,6 +245,19 @@ export type ProfilePageData = {
   /** Whether the viewer may see the Groups card at all — mirrors the Groups
    *  page's own canViewForms gate (Core/Admin/Instructor). */
   canSeeGroups: boolean;
+};
+
+const PROFILE_ERRORS: Record<ProfileField, string> = {
+  name: "First and last name are required.",
+  personalEmail: "Personal email looks malformed.",
+  timeZone: "That timezone isn't a recognized IANA zone.",
+  classYear: "Class year must be a 4-digit year.",
+  birthday: "Birthday must be a valid date.",
+  handle: "That handle is already taken — pick another.",
+  netId:
+    "That NetID is already on another account — contact ops to merge or correct the duplicate.",
+  unique:
+    "That NetID is already on another account — contact ops to merge or correct the duplicate.",
 };
 
 const TEXT_FIELDS = [
@@ -441,13 +462,10 @@ async function redirectIfPendingOnboarding(userId: string): Promise<void> {
     select: { onboardedAt: true },
   });
   if (!membership || membership.onboardedAt !== null) return;
-  const profileForm = await prisma.form.findFirst({
-    where: { name: NEW_MEMBER_PROFILE_FORM_NAME, published: true },
-    select: { publicToken: true },
-  });
-  if (!profileForm?.publicToken) return;
+  const profileForm = await getOnboardingFormBinding();
+  if (!profileForm?.published || !profileForm.publicToken) return;
   const submitted = await prisma.formSubmission.count({
-    where: { userId, form: { name: NEW_MEMBER_PROFILE_FORM_NAME } },
+    where: { userId, formId: profileForm.formId },
   });
   if (submitted === 0) throw redirect(`/forms/fill/${profileForm.publicToken}`);
 }
@@ -485,6 +503,11 @@ export async function loadProfilePage({
       major: true,
       hometown: true,
       currentLocation: true,
+      currentLocationCity: true,
+      currentLocationRegion: true,
+      currentLocationCountry: true,
+      currentLocationGeonameId: true,
+      currentLocationLat: true,
       openToCoffeeChats: true,
       openToResumeReviews: true,
       workExperiences: {
@@ -862,94 +885,21 @@ export async function runProfileAction({
     return null;
   }
 
-  const firstName = (form.get("firstName") as string | null)?.trim() ?? "";
-  const lastName = (form.get("lastName") as string | null)?.trim() ?? "";
-  if (!firstName || !lastName) {
-    return { error: "First and last name are required." };
-  }
-
-  const data: Record<string, string | number | Date | null> = {};
-  for (const field of TEXT_FIELDS) {
-    const raw = (form.get(field) as string | null)?.trim() ?? "";
-    if (field === "firstName" || field === "lastName") {
-      data[field] = raw;
-    } else if (field === "netId") {
-      // NetID is case-normalized to lowercase — the CAS handler writes it the
-      // same way, and the column has a unique index. Storing mixed case would
-      // produce false "duplicates" against CAS-written rows.
-      data[field] = raw === "" ? null : raw.toLowerCase();
-    } else if (field === "handle") {
-      // Handle is lowercased and stripped to [a-z0-9_] (same normalization the
-      // seeder uses), unique-indexed. Empty clears it.
-      const normalized = normalizeHandle(raw);
-      data[field] = normalized === "" ? null : normalized;
-    } else {
-      data[field] = raw === "" ? null : raw;
-    }
-  }
-
-  const personalEmail = data.personalEmail;
-  if (typeof personalEmail === "string" && !personalEmail.includes("@")) {
-    return { error: "Personal email looks malformed." };
-  }
-
-  if (typeof data.timeZone === "string" && !isValidTimezone(data.timeZone)) {
-    return { error: "That timezone isn't a recognized IANA zone." };
-  }
-
-  const classYearRaw = (form.get("classYear") as string | null)?.trim() ?? "";
-  if (classYearRaw === "") {
-    data.classYear = null;
-  } else {
-    const n = Number(classYearRaw);
-    if (!Number.isInteger(n) || n < 1900 || n > 2100) {
-      return { error: "Class year must be a 4-digit year." };
-    }
-    data.classYear = n;
-  }
-
-  const birthdayRaw = (form.get("birthday") as string | null)?.trim() ?? "";
-  if (birthdayRaw === "") {
-    data.birthday = null;
-  } else {
-    // <input type="date"> sends YYYY-MM-DD. Anchor at UTC midnight so the
-    // stored Date renders to the same calendar day for every viewer.
-    const d = new Date(`${birthdayRaw}T00:00:00Z`);
-    if (Number.isNaN(d.getTime())) {
-      return { error: "Birthday must be a valid date." };
-    }
-    data.birthday = d;
-  }
-
-  // Re-place the Community map pin only when the location text actually changed,
-  // so an unrelated save never costs a geocoding lookup.
-  const before = await prisma.user.findUnique({
-    where: { id: targetId },
-    select: { currentLocation: true },
-  });
-  if ((before?.currentLocation ?? null) !== data.currentLocation) {
-    const point =
-      typeof data.currentLocation === "string" ? await geocodePlace(data.currentLocation) : null;
-    data.currentLocationLat = point?.lat ?? null;
-    data.currentLocationLng = point?.lng ?? null;
-  }
-
+  const text = (field: string) => (form.get(field) as string | null) ?? "";
   try {
-    await prisma.user.update({ where: { id: targetId }, data });
+    await updateProfileFields(
+      targetId,
+      {
+        ...Object.fromEntries(TEXT_FIELDS.map((f) => [f, text(f)])),
+        classYear: text("classYear"),
+        birthday: text("birthday"),
+        currentLocationGeonameId: text("currentLocationGeonameId"),
+      },
+      { allowNetId: true },
+    );
   } catch (e) {
-    // P2002 = Prisma unique-constraint violation. Two unique text fields are
-    // saved here (netId, handle); use meta.target to name the right one.
-    const err = e as { code?: string; meta?: { target?: string[] | string } } | null;
-    if (err?.code === "P2002") {
-      const target = err.meta?.target;
-      const fields = Array.isArray(target) ? target : target ? [target] : [];
-      if (fields.some((f) => f.includes("handle"))) {
-        return { error: "That handle is already taken — pick another." };
-      }
-      return {
-        error:
-          "That NetID is already on another account — contact ops to merge or correct the duplicate.",
-      };
+    if (e instanceof ProfileValidationError || e instanceof ProfileConflictError) {
+      return { error: PROFILE_ERRORS[e.field] };
     }
     throw e;
   }

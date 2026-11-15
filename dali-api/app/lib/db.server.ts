@@ -1,7 +1,7 @@
 import { Pool } from "pg";
 import { PrismaClient } from "../generated/prisma/client.js";
 import { PrismaPg } from "@prisma/adapter-pg";
-import { deferHooksInTransactions, runOrDeferDbOperationHooks } from "~/lib/db-transaction-hooks";
+import { deferHooksInTransactions, runOrDeferDbOperationHooks } from "~/lib/db-transaction-hooks.server";
 import { poolConfig, watchPoolWaits } from "~/lib/db-pool";
 import { isProjectListOperation, withStandardProjectsOnly } from "~/lib/project-kind-filter";
 

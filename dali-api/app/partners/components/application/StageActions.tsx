@@ -19,7 +19,7 @@ type Showing = "accept" | "reject" | "learn-more" | null;
 // so the full page (core.partners.applications.$id.tsx), whose loader shapes
 // the rest of the application differently, can pass its own loader data
 // directly instead of reshaping it to match the modal's type.
-export type StageActionsApplication = Pick<ApplicationDetail, "id" | "stage" | "resultingProjectId">;
+export type StageActionsApplication = Pick<ApplicationDetail, "id" | "stage" | "resultingProjectId" | "continuesProject">;
 
 export function StageActions({
   application,
@@ -92,12 +92,22 @@ export function StageActions({
   }
 
   async function promote() {
-    const ok = await dialog.confirm({
-      title: "Create a project from this application?",
-      description:
-        "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
-      confirmLabel: "Create project",
-    });
+    const reopening = application.continuesProject ?? null;
+    const ok = await dialog.confirm(
+      reopening
+        ? {
+            title: `Reopen ${reopening.name}?`,
+            description:
+              "This is a returning project. Its target terms are added back to the same project, with these spots where a term has none, and the two are linked.",
+            confirmLabel: "Reopen project",
+          }
+        : {
+            title: "Create a project from this application?",
+            description:
+              "It will carry over the partner, start term, and per-domain role requests, and the two will be linked.",
+            confirmLabel: "Create project",
+          },
+    );
     if (!ok) return;
     setPromoting(true);
     setPromoteError(null);
@@ -166,7 +176,13 @@ export function StageActions({
 
         {stage === "Accepted" && !application.resultingProjectId && (
           <Button variant="primary" size="sm" onClick={() => void promote()} disabled={promoting}>
-            {promoting ? "Creating…" : "Create project"}
+            {application.continuesProject
+              ? promoting
+                ? "Reopening…"
+                : "Reopen project"
+              : promoting
+                ? "Creating…"
+                : "Create project"}
           </Button>
         )}
       </div>

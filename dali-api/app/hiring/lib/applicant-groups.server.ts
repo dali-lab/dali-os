@@ -2,7 +2,7 @@ import type { ApplicationType, CycleApplicants } from "~/generated/prisma/client
 import type { EventType } from "~/lib/notification-events";
 import type { NotificationCopyKey } from "~/email/lib/notification-copy";
 import { eligibleInternUserIds, isFellowshipEligible } from "./intern-eligibility";
-import { resolveAllLabMembers } from "~/lib/groups";
+import { resolveAllLabMembers } from "~/lib/groups.server";
 import { promoteToMember } from "~/members/lib/membership.server";
 import { provisionNewMember, type ProvisionResult } from "~/members/lib/provisioning.server";
 import { sendWelcome } from "~/members/lib/welcome.server";

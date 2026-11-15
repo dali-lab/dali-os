@@ -4,7 +4,7 @@ import { cn } from "~/lib/cn";
 import { relativeTime } from "~/lib/relative-time";
 import { useConfirmSubmit } from "~/components/ui/dialog";
 import { useOsChrome } from "~/components/os-chrome";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import type { SessionRowDTO } from "~/lib/settings-page.server";
 import {
   SettingsEmptyRow,

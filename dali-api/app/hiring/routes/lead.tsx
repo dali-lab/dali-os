@@ -23,7 +23,7 @@ import {
 import { linkCoreDomain } from "~/hiring/lib/cycle-applicants.server";
 import { APPLICANT_GROUP_CONFIG } from "~/hiring/lib/applicant-groups.server";
 import { defaultApplicationWindow, termWeek } from "~/hiring/lib/cycle-phases";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { APPLICATION_TZ, zonedDayEndUtc, zonedDayStartUtc } from "~/lib/timezone";
 import type { CycleApplicants } from "~/generated/prisma/client";
 
@@ -32,7 +32,7 @@ export const meta: Route.MetaFunction = () => [{ title: "Cycles · Hiring · DAL
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   if (!roles.isCore) return redirect("/");
 
   const allCycles = await prisma.applicationCycle.findMany({
@@ -139,7 +139,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function HiringLeadDashboard() {
-  const data = useLoaderData<typeof loader>() as any;
+  const data = useLoaderData<typeof loader>();
   const cycles = data?.cycles ?? [];
   const [showModal, setShowModal] = useState(false);
   const { pageTitle, formClass, fieldLabel, formTrigger } = useOsChrome();

@@ -9,6 +9,8 @@ import { buttonClasses } from "~/components/ui/Button";
 import { PhotoUploadField } from "~/components/PhotoUploadField";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import { PasskeysSettingsBlock } from "~/components/settings/PasskeysSettingsBlock";
+import { TimeZoneField } from "~/components/settings/TimeZoneField";
+import { InfoTip } from "~/components/ui/floating";
 import { NotificationsSettingsBlock } from "~/components/settings/NotificationsSettingsBlock";
 import {
   loadOutsideNotificationSettings,
@@ -205,24 +207,11 @@ export default function PortalSettings({ actionData }: Route.ComponentProps) {
             </div>
           </div>
           <div>
-            <label htmlFor="timeZone" className={labelClass}>
+            <span className={`${labelClass} flex items-center gap-1.5`}>
               Time zone
-            </label>
-            <select
-              id="timeZone"
-              name="timeZone"
-              defaultValue={me.timeZone ?? "America/New_York"}
-              className={inputClass}
-            >
-              {Intl.supportedValuesOf("timeZone").map((tz) => (
-                <option key={tz} value={tz}>
-                  {tz.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Session times across the portal show in this zone.
-            </p>
+              <InfoTip content="Session times across the portal show in this zone." />
+            </span>
+            <TimeZoneField defaultValue={me.timeZone} />
           </div>
           <button type="submit" disabled={submitting} className={saveClass}>
             Save profile

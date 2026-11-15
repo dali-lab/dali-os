@@ -1,4 +1,4 @@
-// Server-side mechanic registry (specs/activities.md §5). Keyed by Activity.kind.
+// Server-side mechanic registry (specs/archive/activities.md §5). Keyed by Activity.kind.
 // Holds the behavior a mechanic needs server-side: config validation, an
 // optional on-page overlay payload, the member action handler, and the
 // progress/results computation. The mirrored CLIENT registry (registry.ts)

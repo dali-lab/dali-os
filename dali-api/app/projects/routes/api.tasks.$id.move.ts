@@ -3,9 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { requireProjectEditAccess } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { isTaskStatus } from "../lib/task-board";
-import { closeIssueForTask, syncIssueForTask } from "../lib/github-task-sync";
-import { nextColumnPosition } from "../lib/task-position.server";
-import { notifyTaskStatusChanged } from "../lib/task-notifications.server";
+import { moveTask, TaskMoveError } from "../lib/task-status.server";
 
 // POST /api/tasks/:id/move
 //
@@ -41,7 +39,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
   const task = await prisma.task.findUnique({
     where: { id: params.id },
-    select: { id: true, githubIssueNumber: true, projectId: true, status: true },
+    select: { projectId: true },
   });
   if (!task) {
     return withCors(request, Response.json({ error: "Task not found" }, { status: 404 }));
@@ -62,77 +60,19 @@ export async function action({ request, params }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid status" }, { status: 400 }));
   }
 
-  if (body.orderedIds !== undefined) {
-    if (!body.orderedIds.includes(params.id!)) {
-      return withCors(
-        request,
-        Response.json({ error: "orderedIds must include the moved task" }, { status: 400 }),
-      );
-    }
-    // Every listed task must belong to the same project — a foreign id would
-    // let a member of one project renumber another project's board.
-    const listed = await prisma.task.findMany({
-      where: { id: { in: body.orderedIds } },
-      select: { id: true, projectId: true },
+  try {
+    await moveTask({
+      taskId: params.id!,
+      actorId: gate.auth.user.sub,
+      status: body.status,
+      orderedIds: body.orderedIds,
+      position: body.position,
     });
-    if (
-      listed.length !== body.orderedIds.length ||
-      listed.some((t) => t.projectId !== task.projectId)
-    ) {
-      return withCors(
-        request,
-        Response.json({ error: "orderedIds must be tasks of this project" }, { status: 400 }),
-      );
+  } catch (err) {
+    if (err instanceof TaskMoveError) {
+      return withCors(request, Response.json({ error: err.message }, { status: err.status }));
     }
-    const status = body.status;
-    // Only the dragged task's own status change counts as "activity" — the
-    // other ids in the list are just being renumbered because it landed
-    // among them, not because anything about them changed.
-    const draggedData =
-      status === task.status ? { position: 0 } : { status, position: 0, activityAt: new Date() };
-    await prisma.$transaction(
-      body.orderedIds.map((id, index) =>
-        prisma.task.update({
-          where: { id },
-          data: id === params.id ? { ...draggedData, position: index } : { position: index },
-        }),
-      ),
-    );
-  } else {
-    await prisma.task.update({
-      where: { id: params.id },
-      data: {
-        status: body.status,
-        position: body.position ?? (await nextColumnPosition(task.projectId, body.status)),
-        ...(body.status !== task.status ? { activityAt: new Date() } : {}),
-      },
-    });
-  }
-
-  // Assignees (minus the actor) hear about status changes — the in-app
-  // counterpart of the task.github_update notification. Fire-and-forget.
-  if (body.status !== task.status) {
-    void notifyTaskStatusChanged(params.id!, gate.auth.user.sub, body.status).catch(
-      (err) => console.error(`task ${params.id}: status notify failed`, err),
-    );
-  }
-
-  // Mirror to GitHub: Done/Cancelled close the issue, anything else relabels
-  // (and reopens if it was previously closed). Fire-and-forget.
-  if (task.githubIssueNumber !== null) {
-    if (body.status === "Done") {
-      void closeIssueForTask(params.id, "completed").catch((err) =>
-        console.error(`task ${params.id}: github close failed`, err),
-      );
-    } else if (body.status === "Cancelled") {
-      void closeIssueForTask(params.id, "not_planned").catch((err) =>
-        console.error(`task ${params.id}: github close failed`, err),
-      );
-    } else {
-      void syncIssueForTask(params.id).catch((err) =>
-        console.error(`task ${params.id}: github sync failed`, err),
-      );
-    }
+    throw err;
   }
 
   return withCors(request, Response.json({ ok: true }));

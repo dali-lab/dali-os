@@ -9,8 +9,8 @@ import { Modal } from "~/components/Modal";
 import { MultiSelect, Select } from "~/components/ui/floating";
 import { Button } from "~/components/ui/Button";
 import { Toggle } from "~/components/ui/Toggle";
-import { useConfirmSubmit } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
+import { FormBindingRow, useOnSaved } from "~/forms/components/FormBindingRow";
 import { cn } from "~/lib/cn";
 import {
   CARD_SORTS,
@@ -19,6 +19,12 @@ import {
   type PartnerCardSort,
 } from "../lib/partner-board";
 import type { loader } from "../routes/core.partners.settings";
+import {
+  centsToDollars,
+  MAINTENANCE_PLANS,
+  maintenanceLabel,
+  type MaintenancePrices,
+} from "../lib/partner-renewals";
 
 const SETTINGS_PATH = "/core/partners/settings";
 
@@ -70,6 +76,11 @@ export function PartnerSettingsModal({
         <div className="flex flex-col divide-y divide-os-container">
           {board && <BoardDisplaySection board={board} />}
           <FollowUpSection key={JSON.stringify(d.settings)} data={d} onSaved={reload} />
+          <MaintenancePricesSection
+            key={`maintenance:${JSON.stringify(d.settings.maintenancePrices)}`}
+            prices={d.settings.maintenancePrices}
+            onSaved={reload}
+          />
           <section className="flex flex-col gap-5 py-6 last:pb-0">
             <h3 className="font-heading text-[15px] font-semibold text-foreground">Partner forms</h3>
             <FormBindingRow
@@ -79,7 +90,9 @@ export function PartnerSettingsModal({
               forms={d.selectableForms}
               bindIntent="bind-form"
               clearIntent="clear-form"
+              action={SETTINGS_PATH}
               publishSlot="application"
+              openNote="Partners can fill this form now."
               removeDescription="New applicants will have no form to fill in until another is chosen. Submitted responses are kept."
               unpublishedNote="Partners only see the built-in pitch fields."
               onSaved={reload}
@@ -91,7 +104,9 @@ export function PartnerSettingsModal({
               forms={d.selectableForms}
               bindIntent="bind-survey-form"
               clearIntent="clear-survey-form"
+              action={SETTINGS_PATH}
               publishSlot="survey"
+              openNote="Partners can fill this form now."
               removeDescription="Partners whose project ends will get no survey until another is chosen. Submitted responses are kept."
               unpublishedNote="Partners won't get a survey until it's open."
               onSaved={reload}
@@ -144,16 +159,6 @@ function BoardDisplaySection({ board }: { board: BoardDisplay }) {
 }
 
 /** Calls onSaved once a fetcher's submission comes back without an error. */
-function useOnSaved(fetcher: { state: string; data?: ActionResult }, onSaved: () => void) {
-  const [wasBusy, setWasBusy] = useState(false);
-  useEffect(() => {
-    if (fetcher.state !== "idle") setWasBusy(true);
-    else if (wasBusy) {
-      setWasBusy(false);
-      if (!fetcher.data?.error) onSaved();
-    }
-  }, [fetcher.state, fetcher.data, wasBusy, onSaved]);
-}
 
 function FollowUpSection({ data, onSaved }: { data: SettingsData; onSaved: () => void }) {
   const save = useFetcher<ActionResult>();
@@ -199,113 +204,44 @@ function FollowUpSection({ data, onSaved }: { data: SettingsData; onSaved: () =>
   );
 }
 
-function FormBindingRow({
-  title,
-  description,
-  binding,
-  forms,
-  bindIntent,
-  clearIntent,
-  publishSlot,
-  removeDescription,
-  unpublishedNote,
+function MaintenancePricesSection({
+  prices,
   onSaved,
 }: {
-  title: string;
-  description: string;
-  binding: SettingsData["applicationFormBinding"];
-  forms: SettingsData["selectableForms"];
-  bindIntent: string;
-  clearIntent: string;
-  publishSlot: "application" | "survey";
-  removeDescription: string;
-  unpublishedNote: string;
+  prices: MaintenancePrices;
   onSaved: () => void;
 }) {
-  const confirmSubmit = useConfirmSubmit();
-  const bind = useFetcher<ActionResult>();
-  const clear = useFetcher<ActionResult>();
-  const publish = useFetcher<ActionResult>();
-  useOnSaved(bind, onSaved);
-  useOnSaved(clear, onSaved);
-  useOnSaved(publish, onSaved);
-  const error = bind.data?.error ?? clear.data?.error ?? publish.data?.error;
-  const pendingPublished = publish.formData?.get("published");
-  const published =
-    pendingPublished != null ? pendingPublished === "1" : !!binding?.published;
-
+  const save = useFetcher<ActionResult>();
+  useOnSaved(save, onSaved);
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">{title}</p>
-          <p className="text-sm text-os-grey">{description}</p>
-        </div>
-        {binding && (
-          <Link to={`/forms/edit/${binding.formId}`} className="shrink-0 text-sm text-os-accent hover:underline">
-            Edit form
-          </Link>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <bind.Form method="post" action={SETTINGS_PATH} className="flex min-w-0 flex-1 items-center gap-2">
-          <input type="hidden" name="intent" value={bindIntent} />
-          <div className="min-w-0 flex-1">
-            <Select
-              name="formId"
-              defaultValue={binding?.formId ?? ""}
-              placeholder="Choose a form"
-              ariaLabel={title}
-              options={forms.map((f) => ({
-                value: f.id,
-                label: `${f.name}${f.published ? "" : " (unpublished)"}`,
-              }))}
-              buttonClassName="w-full"
-            />
-          </div>
-          <Button type="submit" variant="secondary" size="sm" disabled={bind.state !== "idle"}>
-            {binding ? "Change" : "Use form"}
-          </Button>
-        </bind.Form>
-        {binding && (
-          <clear.Form
-            method="post"
-            action={SETTINGS_PATH}
-            onSubmit={confirmSubmit({
-              title: `Remove the ${title.toLowerCase()}?`,
-              description: removeDescription,
-              confirmLabel: "Remove",
-              tone: "destructive",
-            })}
-          >
-            <input type="hidden" name="intent" value={clearIntent} />
-            <Button type="submit" variant="secondary" size="sm" disabled={clear.state !== "idle"}>
-              Remove
-            </Button>
-          </clear.Form>
-        )}
-      </div>
-      {binding?.hasVersion && (
-        <Toggle
-          tone="os"
-          checked={published}
-          disabled={publish.state !== "idle"}
-          onChange={(e) =>
-            publish.submit(
-              { intent: "set-form-published", slot: publishSlot, published: e.currentTarget.checked ? "1" : "0" },
-              { method: "post", action: SETTINGS_PATH },
-            )
-          }
-          label="Open for responses"
-          description={published ? "Partners can fill this form now." : `Closed. ${unpublishedNote}`}
-        />
-      )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      {binding && !binding.hasVersion && (
-        <p className="text-sm text-os-amber">
-          This form has no saved version yet. {unpublishedNote}
+    <save.Form method="post" action={SETTINGS_PATH} className="flex flex-col gap-4 py-6">
+      <div>
+        <h3 className="font-heading text-[15px] font-semibold text-foreground">Maintenance prices</h3>
+        <p className="text-sm text-os-grey">
+          Price per term for each maintenance plan. Choosing a plan on Renewals fills in this price, and you can change
+          it per project.
         </p>
-      )}
-    </div>
+      </div>
+      <input type="hidden" name="intent" value="maintenance-prices" />
+      <div className="grid gap-3 sm:grid-cols-3">
+        {MAINTENANCE_PLANS.map((plan) => (
+          <label key={plan} className="flex flex-col gap-1.5">
+            <span className="text-sm text-os-grey">{maintenanceLabel(plan)}</span>
+            <input
+              name={plan}
+              inputMode="decimal"
+              placeholder="Dollars"
+              defaultValue={centsToDollars(prices[plan])}
+              aria-label={`${maintenanceLabel(plan)} price`}
+            />
+          </label>
+        ))}
+      </div>
+      {save.data?.error && <p className="text-sm text-destructive">{save.data.error}</p>}
+      <Button type="submit" variant="primary" size="sm" disabled={save.state !== "idle"} className="self-end">
+        {save.state !== "idle" ? "Saving…" : "Save prices"}
+      </Button>
+    </save.Form>
   );
 }
+

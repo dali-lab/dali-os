@@ -13,7 +13,6 @@
 // Losses (dropped or approximated data) are collected as human-readable
 // strings for the caller to log — conversion never throws on shape surprises.
 
-import { randomUUID } from "node:crypto";
 import {
   SIGNING_FIELD_TYPES,
   type SigningFieldType,
@@ -37,7 +36,7 @@ interface MapContext {
 }
 
 function newId(): string {
-  return randomUUID();
+  return globalThis.crypto.randomUUID();
 }
 
 function isSigningField(type: string): type is SigningFieldType {

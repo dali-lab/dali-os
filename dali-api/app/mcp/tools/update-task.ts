@@ -1,66 +1,49 @@
-// MCP `update_task` — edit fields on a task (title/description/priority/
-// startsAt/dueAt/epicId/storyId/domainId/assignees). Mirrors api.tasks.$id
-// PATCH (Core or project member). Use `update_task_status` for status changes
-// (it has special column-rebalance semantics).
-//
-// description: plain-text Markdown stored on the Task.description column.
-// startsAt: timeline start (planning only — fires no reminders).
+// manage_task `update`: edit fields on a task. Mirrors api.tasks.$id PATCH
+// (Core or project member). Status changes go through `set_status`.
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-import { syncIssueForTask } from "~/projects/lib/github-task-sync";
-import { notifyTaskAssigned } from "~/projects/lib/task-notifications.server";
+import { TaskUpdateError, updateTask, type TaskPatch } from "~/projects/lib/task-update.server";
 
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"] as const;
 type Priority = (typeof PRIORITIES)[number];
 
-export const UPDATE_TASK_TOOL = {
-  name: "update_task",
-  description:
-    "Edit fields on a project task (title, description, priority, start/due dates, epic, user story, domain, assignees). Requires Core or project-member access. Status changes go through `update_task_status`. Empty string clears nullable fields; omit a field to leave it unchanged. A task's sprint is derived from its dates. A story pins its epic — setting storyId also sets epicId; changing epicId drops a story that no longer fits.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 500 },
-      description: {
-        type: "string",
-        description:
-          "Plain-text / Markdown description. Empty string clears.",
-      },
-      priority: { type: "string", enum: PRIORITIES as unknown as string[] },
-      startsAt: {
-        type: "string",
-        description:
-          "Timeline start (ISO timestamp, planning only). Empty string clears.",
-      },
-      dueAt: {
-        type: "string",
-        description: "ISO timestamp. Empty string clears.",
-      },
-      epicId: {
-        type: "string",
-        description: "Epic link. Empty string = unlinked.",
-      },
-      storyId: {
-        type: "string",
-        description:
-          "Parent user story. Pins the epic to the story's epic (overrides epicId). Empty string unlinks. A bare epicId change drops a now-orphaned story.",
-      },
-      domainId: {
-        type: "string",
-        description: "Domain chip. Empty string = no domain.",
-      },
-      assigneeUserIds: {
-        type: "array",
-        items: { type: "string" },
-        description: "Full replacement set. Empty array unassigns everyone.",
-      },
-    },
-    required: ["taskId"],
-    additionalProperties: false,
+export const UPDATE_TASK_PROPERTIES = {
+  taskId: { type: "string", minLength: 1 },
+  title: { type: "string", minLength: 1, maxLength: 500 },
+  description: {
+    type: "string",
+    description:
+      "Plain-text / Markdown description. Empty string clears.",
   },
-  requiredScope: "mcp:write" as const,
+  priority: { type: "string", enum: PRIORITIES as unknown as string[] },
+  startsAt: {
+    type: "string",
+    description:
+      "Timeline start (ISO timestamp, planning only). Empty string clears.",
+  },
+  dueAt: {
+    type: "string",
+    description: "ISO timestamp. Empty string clears.",
+  },
+  epicId: {
+    type: "string",
+    description: "Epic link. Empty string = unlinked.",
+  },
+  storyId: {
+    type: "string",
+    description:
+      "Parent user story. Pins the epic to the story's epic (overrides epicId). Empty string unlinks. A bare epicId change drops a now-orphaned story.",
+  },
+  domainId: {
+    type: "string",
+    description: "Domain chip. Empty string = no domain.",
+  },
+  assigneeUserIds: {
+    type: "array",
+    items: { type: "string" },
+    description: "Full replacement set. Empty array unassigns everyone.",
+  },
 };
 
 type Input = {
@@ -86,14 +69,7 @@ export class UpdateTaskError extends Error {
 export async function runUpdateTask(callerId: string, input: Input) {
   const task = await prisma.task.findUnique({
     where: { id: input.taskId },
-    select: {
-      id: true,
-      projectId: true,
-      githubIssueNumber: true,
-      epicId: true,
-      storyId: true,
-      assignees: { select: { userId: true } },
-    },
+    select: { id: true, projectId: true },
   });
   if (!task) throw new UpdateTaskError("Task not found", 404);
 
@@ -101,145 +77,36 @@ export async function runUpdateTask(callerId: string, input: Input) {
     throw new UpdateTaskError("Forbidden", 403);
   }
 
-  const data: {
-    title?: string;
-    description?: string | null;
-    priority?: Priority;
-    startsAt?: Date | null;
-    dueAt?: Date | null;
-    epicId?: string | null;
-    storyId?: string | null;
-    domainId?: string | null;
-  } = {};
-
+  const patch: TaskPatch = {};
   if (input.title !== undefined) {
     const trimmed = input.title.trim();
     if (!trimmed) throw new UpdateTaskError("Title is required", 400);
-    data.title = trimmed;
+    patch.title = trimmed;
   }
   if (input.description !== undefined) {
     const trimmed = input.description.trim();
-    data.description = trimmed === "" ? null : trimmed;
+    patch.description = trimmed === "" ? null : trimmed;
   }
-  if (input.priority !== undefined) data.priority = input.priority;
-  if (input.startsAt !== undefined) {
-    if (input.startsAt === "") data.startsAt = null;
-    else {
-      const d = new Date(input.startsAt);
-      if (!Number.isFinite(d.getTime())) {
-        throw new UpdateTaskError("Invalid startsAt", 400);
-      }
-      data.startsAt = d;
-    }
+  if (input.priority !== undefined) patch.priority = input.priority;
+  if (input.startsAt !== undefined) patch.startsAt = parseDate(input.startsAt, "startsAt");
+  if (input.dueAt !== undefined) patch.dueAt = parseDate(input.dueAt, "dueAt");
+  if (input.epicId !== undefined) patch.epicId = input.epicId === "" ? null : input.epicId;
+  if (input.storyId !== undefined) patch.storyId = input.storyId === "" ? null : input.storyId;
+  if (input.domainId !== undefined) patch.domainId = input.domainId === "" ? null : input.domainId;
+  if (Array.isArray(input.assigneeUserIds)) patch.assigneeUserIds = input.assigneeUserIds;
+
+  try {
+    const { noop } = await updateTask({ taskId: input.taskId, actorId: callerId, patch });
+    return noop ? { ok: true, taskId: input.taskId, noop: true } : { ok: true, taskId: input.taskId };
+  } catch (err) {
+    if (err instanceof TaskUpdateError) throw new UpdateTaskError(err.message, err.status);
+    throw err;
   }
-  if (input.dueAt !== undefined) {
-    if (input.dueAt === "") data.dueAt = null;
-    else {
-      const d = new Date(input.dueAt);
-      if (!Number.isFinite(d.getTime())) {
-        throw new UpdateTaskError("Invalid dueAt", 400);
-      }
-      data.dueAt = d;
-    }
-  }
-  // Epic/story reassignments are validated against the task's own project so
-  // one project's editor can't attach the task to another project's board
-  // (matches the web PATCH route's guard).
-  // Epic and story reconcile together, never independently: a story pins its
-  // epic (UserStory.epicId is required). An explicit story wins and sets the
-  // epic; a bare epic change drops a now-orphaned story so the two can't
-  // diverge (matches the web PATCH route). Empty string clears either.
-  const epicInBody = input.epicId !== undefined;
-  const storyInBody = input.storyId !== undefined;
-  if (epicInBody || storyInBody) {
-    const currentEpicId = task.epicId ?? null;
-    const currentStoryId = task.storyId ?? null;
-    let nextEpicId = epicInBody ? (input.epicId === "" ? null : input.epicId!) : currentEpicId;
-    let nextStoryId = storyInBody ? (input.storyId === "" ? null : input.storyId!) : currentStoryId;
+}
 
-    if (nextStoryId !== null) {
-      const story = await prisma.userStory.findUnique({
-        where: { id: nextStoryId },
-        select: { epicId: true, epic: { select: { projectId: true } } },
-      });
-      if (!story || story.epic.projectId !== task.projectId) {
-        throw new UpdateTaskError("Story is not part of this project", 400);
-      }
-      if (storyInBody) {
-        nextEpicId = story.epicId;
-      } else if (nextEpicId !== story.epicId) {
-        nextStoryId = null;
-      }
-    }
-
-    if (nextStoryId === null && nextEpicId !== null && nextEpicId !== currentEpicId) {
-      const epic = await prisma.epic.findUnique({
-        where: { id: nextEpicId },
-        select: { projectId: true },
-      });
-      if (!epic || epic.projectId !== task.projectId) {
-        throw new UpdateTaskError("Epic is not part of this project", 400);
-      }
-    }
-
-    if (nextEpicId !== currentEpicId) data.epicId = nextEpicId;
-    if (nextStoryId !== currentStoryId) data.storyId = nextStoryId;
-  }
-  if (input.domainId !== undefined) {
-    data.domainId = input.domainId === "" ? null : input.domainId;
-  }
-
-  const wantsAssignees = Array.isArray(input.assigneeUserIds);
-
-  if (Object.keys(data).length === 0 && !wantsAssignees) {
-    return { ok: true, taskId: input.taskId, noop: true };
-  }
-
-  await prisma.$transaction(async (tx) => {
-    if (Object.keys(data).length > 0) {
-      await tx.task.update({ where: { id: input.taskId }, data });
-    }
-    if (wantsAssignees) {
-      await tx.taskAssignee.deleteMany({ where: { taskId: input.taskId } });
-      const ids = input.assigneeUserIds ?? [];
-      if (ids.length > 0) {
-        await tx.taskAssignee.createMany({
-          data: ids.map((userId) => ({ taskId: input.taskId, userId })),
-          skipDuplicates: true,
-        });
-      }
-    }
-  });
-
-  // Re-sync when the title, description, assignees, or any body-rendered field
-  // changes (see buildIssueBody in github-task-sync).
-  const syncableChanged =
-    "title" in data ||
-    "description" in data ||
-    wantsAssignees ||
-    "priority" in data ||
-    "dueAt" in data ||
-    "epicId" in data ||
-    "domainId" in data;
-  if (task.githubIssueNumber !== null && syncableChanged) {
-    void syncIssueForTask(input.taskId).catch((err) =>
-      console.error(`mcp update_task: github sync failed for ${input.taskId}`, err),
-    );
-  }
-
-  if (wantsAssignees) {
-    const priorIds = new Set(task.assignees.map((a) => a.userId));
-    const added = (input.assigneeUserIds ?? []).filter((id) => !priorIds.has(id));
-    if (added.length > 0) {
-      void notifyTaskAssigned({
-        taskId: input.taskId,
-        addedUserIds: added,
-        actorUserId: callerId,
-      }).catch((err) =>
-        console.error(`mcp update_task: assignment notify failed for ${input.taskId}`, err),
-      );
-    }
-  }
-
-  return { ok: true, taskId: input.taskId };
+function parseDate(raw: string, field: string): Date | null {
+  if (raw === "") return null;
+  const d = new Date(raw);
+  if (!Number.isFinite(d.getTime())) throw new UpdateTaskError(`Invalid ${field}`, 400);
+  return d;
 }

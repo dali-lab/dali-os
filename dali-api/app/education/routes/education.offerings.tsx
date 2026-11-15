@@ -22,7 +22,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return redirectToLogin(request);
 
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   // Every lab member browses here. An external instructor (no DALIMember row)
   // reaches it too, for the offerings they teach — the layout keeps them in the
   // instructor chrome. Anyone else belongs on the portal mirror.

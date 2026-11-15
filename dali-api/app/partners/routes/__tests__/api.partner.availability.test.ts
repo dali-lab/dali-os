@@ -8,13 +8,13 @@ vi.mock("~/partners/lib/partner-access", () => ({ partnerHasProjectAccess: vi.fn
 vi.mock("~/partners/lib/partner-meetings.server", () => ({
   resolveMeetingParticipantIds: vi.fn().mockResolvedValue([]),
 }));
-vi.mock("~/lib/availability", async (orig) => {
-  const real = await orig<typeof import("~/lib/availability")>();
+vi.mock("~/calendar/lib/availability.server", async (orig) => {
+  const real = await orig<typeof import("~/calendar/lib/availability.server")>();
   return { ...real, computeUserFreeBusy: vi.fn().mockResolvedValue({ free: [], busy: [], working: [] }) };
 });
 
 import { prisma } from "~/lib/db.server";
-import { computeUserFreeBusy } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
 import { resolveMeetingParticipantIds } from "~/partners/lib/partner-meetings.server";

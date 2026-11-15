@@ -670,3 +670,11 @@ export const EVENT_TYPE_KEYS = Object.keys(EVENT_TYPES) as EventType[];
 export function isEventType(value: unknown): value is EventType {
   return typeof value === "string" && value in EVENT_TYPES;
 }
+
+export const PROJECT_WORK_EVENT_TYPES = EVENT_TYPE_KEYS.filter(
+  (key) => (EVENT_TYPES[key] as EventDef).area === "Tasks",
+);
+
+export function isProjectWorkEvent(eventType: string | null | undefined): boolean {
+  return isEventType(eventType) && (EVENT_TYPES[eventType] as EventDef).area === "Tasks";
+}

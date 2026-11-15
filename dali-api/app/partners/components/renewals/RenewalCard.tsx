@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 import { BoardCard } from "~/components/board/BoardCard";
+import { osStatusAccent } from "~/components/board/status-accent";
 import { Select } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
 import {
+  centsToDollars,
   isNextStepOverdue,
+  maintenanceLabel,
   type RenewalCardModel,
   type RenewalColumn,
 } from "../../lib/partner-renewals";
@@ -17,6 +20,8 @@ function Field({ label, warn, children }: { label: string; warn?: boolean; child
   );
 }
 
+const MAINTAIN_ACCENT = osStatusAccent("progress");
+
 const shortDate = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 
@@ -27,7 +32,7 @@ function DecisionButton({
   children,
 }: {
   active: boolean;
-  tone: "good" | "bad";
+  tone: "good" | "bad" | "neutral";
   onClick: () => void;
   children: ReactNode;
 }) {
@@ -35,6 +40,7 @@ function DecisionButton({
     <button
       type="button"
       aria-pressed={active}
+      style={tone === "neutral" ? { background: MAINTAIN_ACCENT.fill, color: MAINTAIN_ACCENT.ink } : undefined}
       onClick={(e) => {
         e.stopPropagation();
         onClick();
@@ -43,7 +49,9 @@ function DecisionButton({
         "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
         tone === "good"
           ? "bg-os-green/15 text-os-green hover:bg-os-green/25"
-          : "bg-destructive/10 text-destructive hover:bg-destructive/20",
+          : tone === "neutral"
+            ? "hover:brightness-95"
+            : "bg-destructive/10 text-destructive hover:bg-destructive/20",
         active && "ring-1 ring-current",
       )}
     >
@@ -122,8 +130,15 @@ export function RenewalCard({
           />
         </div>
       )}
-      {!expanded && (card.nextStep || (card.column === "not_continuing" && card.reason)) && (
+      {!expanded && (card.nextStep || card.maintenance || (card.column === "not_continuing" && card.reason)) && (
         <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+          {card.maintenance && (
+            <Field label="Plan">
+              {maintenanceLabel(card.maintenance.plan)}
+              {card.maintenance.feeCents != null && `, $${centsToDollars(card.maintenance.feeCents)} a term`}
+              {card.maintenance.startTermCode && ` since ${card.maintenance.startTermCode}`}
+            </Field>
+          )}
           {card.nextStep && (
             <Field label="Next step" warn={isNextStepOverdue(card.nextStepDueAt, now)}>
               {card.nextStep}
@@ -134,13 +149,20 @@ export function RenewalCard({
         </dl>
       )}
       {showButtons && (
-        <div className="mt-2.5 flex items-center gap-1.5">
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <DecisionButton
             tone="good"
             active={pendingDecision === "continuing"}
             onClick={() => onDecide("continuing")}
           >
             Continue
+          </DecisionButton>
+          <DecisionButton
+            tone="neutral"
+            active={pendingDecision === "maintaining"}
+            onClick={() => onDecide("maintaining")}
+          >
+            Maintain
           </DecisionButton>
           <DecisionButton
             tone="bad"

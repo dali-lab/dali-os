@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 vi.mock("~/hiring/lib/cycles");
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(),
 }));
 vi.mock("~/hiring/lib/interview-emails", () => ({

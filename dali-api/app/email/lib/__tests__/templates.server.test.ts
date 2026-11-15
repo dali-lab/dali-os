@@ -6,6 +6,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import {
+  EmailTemplateRequiredVarsError,
   MissingEmailTemplateError,
   getEmailTemplate,
   listEmailTemplates,
@@ -20,7 +21,7 @@ const mockPrisma = prisma as unknown as Record<
 > & { $transaction: ReturnType<typeof vi.fn> };
 
 // A key whose absence blocks a release, and one whose absence just skips.
-const BLOCKING = "hiring:decision:Accepted" as const;
+const BLOCKING = "hiring:decision:Rejected" as const;
 const SKIPPING = "hiring:notification:InterviewReminderApplicant" as const;
 
 beforeEach(() => {
@@ -93,6 +94,33 @@ describe("saveEmailTemplate", () => {
       where: { key: SKIPPING },
     });
     expect(mockPrisma.emailTemplate.upsert).not.toHaveBeenCalled();
+  });
+});
+
+describe("saveEmailTemplate required variables", () => {
+  const ACCEPTED = "hiring:decision:Accepted" as const;
+
+  it("refuses an Accepted body that drops a required credential placeholder", async () => {
+    await expect(
+      saveEmailTemplate(ACCEPTED, { subject: "s", body: "Log in with {{daliEmail}}" }, "u1"),
+    ).rejects.toBeInstanceOf(EmailTemplateRequiredVarsError);
+    expect(mockPrisma.emailTemplate.upsert).not.toHaveBeenCalled();
+  });
+
+  it("saves when both required placeholders are present", async () => {
+    await saveEmailTemplate(
+      ACCEPTED,
+      { subject: "s", body: "{{daliEmail}} / {{tempPassword}}" },
+      "u1",
+    );
+    expect(mockPrisma.emailTemplate.upsert).toHaveBeenCalled();
+  });
+
+  it("still allows blanking both fields, which turns the letter off", async () => {
+    await saveEmailTemplate(ACCEPTED, { subject: "", body: "" }, "u1");
+    expect(mockPrisma.emailTemplate.deleteMany).toHaveBeenCalledWith({
+      where: { key: ACCEPTED },
+    });
   });
 });
 
@@ -199,7 +227,7 @@ describe("renderEmailTemplate applies the registry's whenMissing rule", () => {
 
   it("names the email in the error so an operator knows what to write", async () => {
     await expect(renderEmailTemplate(BLOCKING, { firstName: "Ada" })).rejects.toThrow(
-      /Decision: accepted/,
+      /Decision: not accepted/,
     );
   });
 });

@@ -5,6 +5,7 @@ import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
 import type { Slide } from "~/components/slides/types";
 import { SlideCanvas } from "./SlideCanvas";
+import { Z } from "~/components/ui/z";
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
@@ -123,7 +124,7 @@ export function SlideViewer({
       {presenting &&
         typeof document !== "undefined" &&
         createPortal(
-          <div role="dialog" aria-modal="true" aria-label="Presenting slides" className="fixed inset-0 z-[46] flex flex-col bg-black">
+          <div role="dialog" aria-modal="true" aria-label="Presenting slides" className={`fixed inset-0 ${Z.takeoverTop} flex flex-col bg-black`}>
             <div className="flex min-h-0 flex-1 items-center justify-center p-4">
               <div className="w-full" style={{ maxWidth: "calc((100vh - 88px) * 16 / 9)" }}>
                 <SlideCanvas slide={slide} number={index + 1} />

@@ -17,7 +17,7 @@
 
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { getUploadPost, headObject, isS3Configured } from "~/lib/s3";
+import { getUploadPost, headObject, isS3Configured } from "~/lib/s3.server";
 import {
   MAX_FILE_STORE_BYTES,
   MAX_FILE_STORE_LABEL,
@@ -26,7 +26,8 @@ import {
 } from "~/lib/file-validation";
 import { McpForbiddenError, McpInvalidError, McpNotFoundError } from "./errors";
 import { canEditProject } from "../access";
-import { createProjectFileWithVersion, rawUploadSrc } from "../upload-project-file";
+import { createProjectFileWithVersion } from "../upload-project-file";
+import { rawUploadSrc } from "~/lib/upload-src";
 import { curlCommand } from "../presigned-upload";
 
 export const CREATE_PROJECT_FILE_UPLOAD_TOOL = {

@@ -663,3 +663,35 @@ describe("inline refs through markdown", () => {
     });
   });
 });
+
+describe("image markdown export", () => {
+  const image = (props: Record<string, unknown>): DocBlock =>
+    ({ id: crypto.randomUUID(), type: "image", props: { ...BASE, ...props }, children: [] }) as unknown as DocBlock;
+  const roundTrip = async (props: Record<string, unknown>) =>
+    (await markdownToBlocks(await blocksToMarkdown([image(props)])))[0]!;
+
+  it("writes a name with brackets so the image comes back as an image", async () => {
+    const block = await roundTrip({ url: "https://ex.com/a.png", name: "a] b [c" });
+    expect(block).toMatchObject({ type: "image", props: { url: "https://ex.com/a.png", name: "a) b (c" } });
+  });
+
+  it("writes a link with spaces and parentheses in angle brackets", async () => {
+    const markdown = await blocksToMarkdown([image({ url: "https://ex.com/a (1).png", name: "a" })]);
+    expect(markdown).toBe("![a](<https://ex.com/a (1).png>)\n");
+    const block = await roundTrip({ url: "https://ex.com/a (1).png", name: "a" });
+    expect(block).toMatchObject({ type: "image", props: { url: "https://ex.com/a%20(1).png", name: "a" } });
+  });
+
+  it("writes a resized image as an img tag with its width", async () => {
+    const markdown = await blocksToMarkdown([image({ url: "https://ex.com/a.png?x=1&y=2", name: "chart", previewWidth: 200 })]);
+    expect(markdown).toBe('<img src="https://ex.com/a.png?x=1&amp;y=2" alt="chart" width="200">\n');
+    const block = await roundTrip({ url: "https://ex.com/a.png?x=1&y=2", name: "chart", previewWidth: 200 });
+    expect(block).toMatchObject({ type: "image", props: { url: "https://ex.com/a.png?x=1&y=2", name: "chart", previewWidth: 200 } });
+  });
+
+  it("leaves an unresized image with a plain link as ordinary Markdown", async () => {
+    expect(await blocksToMarkdown([image({ url: "/api/upload/raw?key=uploads%2Fa.png", name: "chart.png" })])).toBe(
+      "![chart.png](/api/upload/raw?key=uploads%2Fa.png)\n",
+    );
+  });
+});

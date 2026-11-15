@@ -7,7 +7,7 @@ import { ShieldCheck, Download } from "lucide-react";
 import type { Route } from "./+types/sign.$bindingId";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { resolveGroupMembers } from "~/lib/groups";
+import { resolveGroupMembers } from "~/lib/groups.server";
 import { redirectToLogin } from "~/lib/login-next";
 import { DocEditor, looksLikeProseMirrorDoc } from "~/components/doc";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";

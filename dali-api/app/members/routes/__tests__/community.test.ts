@@ -70,6 +70,7 @@ describe("route handle", () => {
   it("fills the viewport for everyone", () => {
     expect(handle.fitViewport).toBe(true);
     expect(handle.bleedPane).toBe(true);
+    expect(handle.breadcrumb()).toBe("Community");
   });
 });
 
@@ -81,10 +82,9 @@ describe("loader", () => {
     expect(load).not.toHaveBeenCalled();
   });
 
-  it("shows alumni both kinds of event under the title Home", async () => {
+  it("shows alumni both kinds of event", async () => {
     load.mockResolvedValue(community(true) as never);
-    const res = (await runLoader()) as { title: string; events: { id: string }[]; tz: string; openTo: unknown };
-    expect(res.title).toBe("Home");
+    const res = (await runLoader()) as { events: { id: string }[]; tz: string; openTo: unknown };
     expect(res.events.map((e) => e.id)).toEqual(["a1", "dali:m1:1"]);
     expect(res.tz).toBe("America/New_York");
     expect(res.openTo).toEqual({ coffeeChats: true, resumeReviews: false });
@@ -92,8 +92,7 @@ describe("loader", () => {
 
   it("hides DALI events from members, who are invited to every meeting", async () => {
     load.mockResolvedValue(community(false) as never);
-    const res = (await runLoader()) as { title: string; events: { id: string }[] };
-    expect(res.title).toBe("Community");
+    const res = (await runLoader()) as { events: { id: string }[] };
     expect(res.events.map((e) => e.id)).toEqual(["a1"]);
   });
 });

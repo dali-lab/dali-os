@@ -1,4 +1,4 @@
-// Admin → Onboarding → editor: the Scoring & teams panel (specs/activities.md
+// Admin → Onboarding → editor: the Scoring & teams panel (specs/archive/activities.md
 // §4). Picks whether an activity scores per member or per team, and for a team
 // activity builds the teams: auto-assign the audience into teams of N, or pair
 // people up by hand with the member search.

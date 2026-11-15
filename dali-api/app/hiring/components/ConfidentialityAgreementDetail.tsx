@@ -47,7 +47,7 @@ export function ConfidentialityAgreementDetail() {
                 name="name"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
-                className="px-3 py-2 text-base text-foreground border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[16rem]"
+                className="px-3 py-2 text-base text-foreground border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-os-accent/60 min-w-[16rem]"
                 autoFocus
               />
               <button
@@ -62,7 +62,7 @@ export function ConfidentialityAgreementDetail() {
                   setDraftName(agreement.name);
                   setIsRenaming(false);
                 }}
-                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+                className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
               >
                 Cancel
               </button>
@@ -124,7 +124,7 @@ export function ConfidentialityAgreementDetail() {
                 }}
                 className={`w-full text-left rounded-lg border px-3 py-2 transition ${
                   active
-                    ? "border-blue-500 bg-blue-50 text-blue-900"
+                    ? "border-os-accent bg-os-accent/10 text-foreground"
                     : "border-border bg-card hover:bg-muted/40 text-foreground"
                 }`}
               >
@@ -176,7 +176,7 @@ export function ConfidentialityAgreementDetail() {
                 <button
                   type="button"
                   onClick={() => setIsCreatingVersion(false)}
-                  className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-gray-300 rounded-md hover:bg-muted/50"
+                  className="px-3 py-2 text-sm font-medium text-foreground/80 bg-card border border-border rounded-md hover:bg-muted/50"
                 >
                   Cancel
                 </button>

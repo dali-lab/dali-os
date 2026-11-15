@@ -6,6 +6,7 @@
 import type { ReactNode } from "react";
 import { ExternalLink } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
+import { Pill, type PillTone } from "~/components/ui/Pill";
 import type { NeonBranchUsage, NeonCostSummary, UsageSeries } from "~/lib/infra/infra-scope";
 
 export const consoleUrl = {
@@ -171,9 +172,9 @@ export function NeonBranchUsageTable({ rows }: { rows: NeonBranchUsage[] }) {
             <td className="truncate px-3 py-1.5 font-mono text-foreground">
               {b.name}
               {b.preview && (
-                <span className="ml-1.5 rounded-full bg-os-amber/15 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-os-amber">
+                <Pill tone="warning" size="xs" className="ml-1.5 font-sans">
                   preview
-                </span>
+                </Pill>
               )}
             </td>
             <td className="px-3 py-1.5 text-muted-foreground">{metricValue("compute_unit_seconds", b.computeSeconds)}</td>
@@ -207,21 +208,17 @@ export function Sparkline({ points }: { points: { at: string; value: number }[] 
   );
 }
 
+export function stateTone(state: string): PillTone {
+  if (state === "started" || state === "active") return "success";
+  if (state === "idle" || state === "stopped" || state === "suspended") return "neutral";
+  return "warning";
+}
+
 export function StateBadge({ state }: { state: string }) {
-  const good = state === "started" || state === "active";
-  const idle = state === "idle" || state === "stopped" || state === "suspended";
   return (
-    <span
-      className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
-        good
-          ? "bg-os-green/15 text-os-green"
-          : idle
-            ? "bg-muted text-muted-foreground"
-            : "bg-os-amber/15 text-os-amber"
-      }`}
-    >
+    <Pill tone={stateTone(state)} size="xs">
       {state}
-    </span>
+    </Pill>
   );
 }
 

@@ -66,3 +66,20 @@ export function decisionEmailVarsProblem(
   }
   return null;
 }
+
+/**
+ * Why a member-producing acceptance can't go out yet, or null. The save guard
+ * keeps {{daliEmail}} and {{tempPassword}} in new saves of the Accepted letter,
+ * but a letter saved before the credentials moved into it predates the guard —
+ * sending it would hand a new member no way to log in.
+ */
+export function credentialTokensProblem(templateTexts: string[]): string | null {
+  const used = new Set(templateTexts.flatMap((t) => extractPlaceholders(t)));
+  const missing = ["daliEmail", "tempPassword"].filter((v) => !used.has(v));
+  if (missing.length === 0) return null;
+  return `The Accepted email must include ${missing
+    .map((v) => `{{${v}}}`)
+    .join(" and ")} so a new member receives their login details. Add ${
+    missing.length > 1 ? "them" : "it"
+  } on the Setup tab first.`;
+}

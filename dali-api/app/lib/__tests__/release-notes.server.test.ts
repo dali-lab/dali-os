@@ -18,7 +18,7 @@ vi.mock("~/lib/auth", () => ({}));
 vi.mock("~/lib/login-next", () => ({}));
 vi.mock("~/lib/roles", () => ({}));
 vi.mock("~/lib/feature-flags.server", () => ({}));
-vi.mock("~/lib/s3", () => ({ copyObject: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ copyObject: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/outbound.server", () => ({
   enqueueOutbound: vi.fn(async () => ({ id: "ob1", deduped: false })),
@@ -26,7 +26,7 @@ vi.mock("~/lib/outbound.server", () => ({
 }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 vi.mock("~/lib/app-env", () => ({ getFrontendUrl: () => "https://os.example" }));
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   listVisibleGroupIdsForUser: vi.fn(),
   resolveAllLabMembers: vi.fn(async () => ["u1", "u2"]),
   resolveGroupMembers: vi.fn(async (g: string) => (g === "g1" ? ["u2", "u3"] : ["u4"])),
@@ -35,7 +35,7 @@ vi.mock("~/lib/groups", () => ({
 import { prisma } from "~/lib/db.server";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { notify } from "~/lib/notify.server";
-import { copyObject } from "~/lib/s3";
+import { copyObject } from "~/lib/s3.server";
 import { invalidateLayoutCache } from "~/lib/layout-cache.server";
 import { canViewReleaseNote } from "../release-notes";
 import {

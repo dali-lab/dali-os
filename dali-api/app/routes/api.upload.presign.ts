@@ -12,7 +12,7 @@
 // After upload, store the key in the DB and use GET /api/upload/url?key=... to read it.
 
 import { requireAuth } from "~/lib/auth";
-import { getUploadPost, isS3Configured } from '~/lib/s3'
+import { getUploadPost, isS3Configured } from '~/lib/s3.server'
 import {
   DEFAULT_UPLOAD_CAP,
   FILE_STORE_UPLOAD_CAP,

@@ -25,7 +25,6 @@ import {
   editOwnResponse,
   loadResponseForEditing,
 } from "~/forms/lib/form-response.server";
-import { NEW_MEMBER_PROFILE_FORM_NAME } from "~/members/lib/profile-form-interpreter";
 
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>;
 const audit = logAuditEvent as ReturnType<typeof vi.fn>;
@@ -42,6 +41,9 @@ const FREE = {
   educationApplication: null,
   partnerSurveyFor: null,
 };
+
+const CV_KEY = "uploads/applications/cv/0b6f8a52-1c1e-4d38-9a51-2f3c6d7e8f90-cv.pdf";
+const NEW_CV_KEY = "uploads/applications/cv/7d1e2f3a-4b5c-4d6e-8f70-112233445566-cv2.pdf";
 
 const V1_QUESTIONS = [
   { key: "name", type: "text", required: true, data: { label: "Name" } },
@@ -67,7 +69,7 @@ function formRow(over: Record<string, unknown> = {}) {
 function submissionRow(over: Record<string, unknown> = {}) {
   return {
     id: "s1",
-    answers: { name: "Ada", tags: ["a"], proj: "p1", cv: { key: "files/cv.pdf" } },
+    answers: { name: "Ada", tags: ["a"], proj: "p1", cv: CV_KEY },
     formVersion: {
       id: "v1",
       questions: V1_QUESTIONS,
@@ -89,6 +91,9 @@ beforeEach(() => {
   resolveRef.mockResolvedValue([{ value: "p1", label: "P1" }, { value: "p2", label: "P2" }]);
   db.form.findUnique.mockResolvedValue(formRow());
   db.formSubmission.findFirst.mockResolvedValue(submissionRow());
+  (prisma.$transaction as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+    (fn: (tx: typeof prisma) => unknown) => fn(prisma),
+  );
 });
 
 describe("deleteFormResponse", () => {
@@ -99,10 +104,16 @@ describe("deleteFormResponse", () => {
       id: "s1",
       userId: "u1",
       formVersionId: "v1",
-      form: { name: "Feedback" },
       ...FREE,
       ...over,
     });
+  const partnerApp = { id: "pa1", title: "River sensors", resultingProjectId: null };
+  const eduApp = (status: string) => ({
+    id: "ea1",
+    status,
+    offering: { title: "Intro to Figma" },
+    _count: { attendances: 0 },
+  });
 
   it("hard-deletes an ordinary response and audits it without answers", async () => {
     found();
@@ -112,7 +123,15 @@ describe("deleteFormResponse", () => {
       action: "form.response.delete",
       userId: "owner",
       targetId: "f1",
-      metadata: { submissionId: "s1", respondentId: "u1", formVersionId: "v1" },
+      metadata: {
+        submissionId: "s1",
+        respondentId: "u1",
+        formVersionId: "v1",
+        staffingCycleId: null,
+        slot: null,
+        partnerApplicationId: null,
+        educationApplicationId: null,
+      },
       request: undefined,
     });
   });
@@ -129,19 +148,65 @@ describe("deleteFormResponse", () => {
     expect(db.formSubmission.delete).not.toHaveBeenCalled();
   });
 
+  it("clears the member's bids for the cycle with a project-bids response", async () => {
+    found({ slot: "project-bids", staffingCycleId: "c1" });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.staffingPreference.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "u1", staffingCycleId: "c1" },
+    });
+    expect(db.intentToWork.deleteMany).not.toHaveBeenCalled();
+    expect(db.formSubmission.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
+  });
+
+  it("clears the member's intent for the cycle with an intent-to-work response", async () => {
+    found({ slot: "intent-to-work", staffingCycleId: "c1" });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.intentToWork.deleteMany).toHaveBeenCalledWith({
+      where: { userId: "u1", staffingCycleId: "c1" },
+    });
+    expect(db.staffingPreference.deleteMany).not.toHaveBeenCalled();
+  });
+
   it.each([
-    ["slot", { slot: "project-bids" }],
-    ["staffingCycleId", { staffingCycleId: "c1" }],
-    ["educationOfferingId", { educationOfferingId: "o1" }],
-    ["educationSessionId", { educationSessionId: "s9" }],
-    ["partnerApplication", { partnerApplication: { id: "a" } }],
-    ["educationApplication", { educationApplication: { id: "a" } }],
-    ["partnerSurveyFor", { partnerSurveyFor: { id: "a" } }],
-    ["the onboarding profile form", { form: { name: NEW_MEMBER_PROFILE_FORM_NAME } }],
-  ])("refuses when the response has %s", async (_n, over) => {
+    ["level-up", { slot: "level-up", staffingCycleId: "c1" }],
+    ["session feedback", { slot: "session-feedback", educationOfferingId: "o1", educationSessionId: "s9" }],
+    ["partner survey", { partnerSurveyFor: { id: "pp1" } }],
+  ])("deletes a %s response alone", async (_n, over) => {
+    found(over);
+    expect(await run()).toEqual({ ok: true });
+    expect(db.formSubmission.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
+    expect(db.staffingPreference.deleteMany).not.toHaveBeenCalled();
+    expect(db.intentToWork.deleteMany).not.toHaveBeenCalled();
+    expect(db.partnerApplication.delete).not.toHaveBeenCalled();
+    expect(db.educationApplication.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes the partner application with its response and audits it", async () => {
+    found({ partnerApplication: partnerApp });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.partnerApplication.delete).toHaveBeenCalledWith({ where: { id: "pa1" } });
+    expect(db.formSubmission.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
+    expect(audit.mock.calls[0][0].metadata).toMatchObject({ partnerApplicationId: "pa1" });
+  });
+
+  it("deletes a submitted education application and its answers with its response", async () => {
+    found({ educationApplication: eduApp("Submitted") });
+    expect(await run()).toEqual({ ok: true });
+    expect(db.educationApplicationAnswer.deleteMany).toHaveBeenCalledWith({
+      where: { applicationId: "ea1" },
+    });
+    expect(db.educationApplication.delete).toHaveBeenCalledWith({ where: { id: "ea1" } });
+    expect(audit.mock.calls[0][0].metadata).toMatchObject({ educationApplicationId: "ea1" });
+  });
+
+  it.each([
+    ["a partner application that became a project", { partnerApplication: { ...partnerApp, resultingProjectId: "p1" } }],
+    ["an approved education application", { educationApplication: eduApp("Approved") }],
+    ["a waitlisted education application", { educationApplication: eduApp("Waitlisted") }],
+  ])("refuses a response linked to %s", async (_n, over) => {
     found(over);
     expect(await run()).toMatchObject({ status: 409 });
-    expect(db.formSubmission.delete).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(audit).not.toHaveBeenCalled();
   });
 });
@@ -149,7 +214,7 @@ describe("deleteFormResponse", () => {
 describe("after a delete", () => {
   it("lets the member fill again even with one response per member on", async () => {
     db.formSubmission.findFirst.mockResolvedValueOnce({
-      id: "s1", userId: "u1", formVersionId: "v1", form: { name: "Feedback" }, ...FREE,
+      id: "s1", userId: "u1", formVersionId: "v1", ...FREE,
     });
     await deleteFormResponse({ formId: "f1", submissionId: "s1", actorId: "owner" });
 
@@ -207,8 +272,8 @@ describe("editOwnResponse gates", () => {
     ["staffingCycleId", { staffingCycleId: "c1" }],
     ["educationOfferingId", { educationOfferingId: "o1" }],
     ["educationSessionId", { educationSessionId: "s9" }],
-    ["partnerApplication", { partnerApplication: { id: "a" } }],
-    ["educationApplication", { educationApplication: { id: "a" } }],
+    ["partnerApplication", { partnerApplication: { id: "a", title: "T", resultingProjectId: null } }],
+    ["educationApplication", { educationApplication: { id: "a", status: "Submitted", offering: { title: "O" }, _count: { attendances: 0 } } }],
     ["partnerSurveyFor", { partnerSurveyFor: { id: "a" } }],
   ])("refuses a response with %s", async (_n, over) => {
     db.formSubmission.findFirst.mockResolvedValue(submissionRow(over));
@@ -216,10 +281,6 @@ describe("editOwnResponse gates", () => {
     expect(db.formSubmission.update).not.toHaveBeenCalled();
   });
 
-  it("refuses the onboarding profile form", async () => {
-    db.form.findUnique.mockResolvedValue(formRow({ name: NEW_MEMBER_PROFILE_FORM_NAME }));
-    expect(await edit({ name: "x" })).toMatchObject({ status: 409 });
-  });
 });
 
 describe("editOwnResponse", () => {
@@ -227,15 +288,31 @@ describe("editOwnResponse", () => {
     expect(await edit({ name: "Ada L", tags: JSON.stringify(["b"]), proj: "p2" })).toEqual({ ok: true });
     expect(db.formSubmission.update).toHaveBeenCalledWith({
       where: { id: "s1" },
-      data: { answers: { name: "Ada L", tags: ["b"], proj: "p2", cv: { key: "files/cv.pdf" } } },
+      data: { answers: { name: "Ada L", tags: ["b"], proj: "p2", cv: CV_KEY } },
     });
   });
 
-  it("ignores posted keys that aren't editable questions, files included", async () => {
-    await edit({ name: "Ada", cv: "evil", extra: "x" });
+  it("ignores posted keys that aren't questions", async () => {
+    await edit({ name: "Ada", extra: "x" });
     const saved = db.formSubmission.update.mock.calls[0][0].data.answers;
-    expect(saved.cv).toEqual({ key: "files/cv.pdf" });
     expect(saved).not.toHaveProperty("extra");
+  });
+
+  it("replaces a file with a new upload for that question", async () => {
+    expect(await edit({ name: "Ada", cv: NEW_CV_KEY })).toEqual({ ok: true });
+    expect(db.formSubmission.update.mock.calls[0][0].data.answers.cv).toBe(NEW_CV_KEY);
+  });
+
+  it("rejects a file key that wasn't uploaded for that question", async () => {
+    expect(await edit({ name: "Ada", cv: "uploads/avatars/someone-else.png" })).toMatchObject({ status: 400 });
+    expect(db.formSubmission.update).not.toHaveBeenCalled();
+  });
+
+  it("requires the file again once it's removed", async () => {
+    expect(await edit({ name: "Ada", cv: "" })).toMatchObject({
+      status: 400,
+      error: '"CV" is required.',
+    });
   });
 
   it("validates against the stored version, not the latest", async () => {
@@ -285,7 +362,7 @@ describe("loadResponseForEditing", () => {
     if ("error" in out) throw new Error(out.error);
     expect(out.form.versionId).toBe("v1");
     expect(out.form.questions.map((q) => q.key)).toEqual(["name", "tags", "proj", "cv"]);
-    expect(out.answers).toEqual({ name: "Ada", tags: '["a"]', proj: "p1" });
+    expect(out.answers).toEqual({ name: "Ada", tags: '["a"]', proj: "p1", cv: CV_KEY });
   });
 
   it("resolves reference options for the stored version", async () => {
@@ -302,10 +379,17 @@ describe("loadResponseForEditing", () => {
 });
 
 describe("answersToFillState", () => {
-  it("stringifies arrays and numbers and drops files and unknown shapes", () => {
+  it("stringifies arrays and numbers and drops unknown shapes", () => {
     expect(
       answersToFillState(V1_QUESTIONS as never, { name: "A", tags: ["a", "b"], proj: 3, cv: {} }),
     ).toEqual({ name: "A", tags: '["a","b"]', proj: "3" });
+  });
+
+  it("keeps file answers so the edit screen shows them", () => {
+    expect(answersToFillState(V1_QUESTIONS as never, { cv: CV_KEY })).toEqual({ cv: CV_KEY });
+    expect(answersToFillState(V1_QUESTIONS as never, { cv: [CV_KEY, NEW_CV_KEY] })).toEqual({
+      cv: JSON.stringify([CV_KEY, NEW_CV_KEY]),
+    });
   });
 });
 
@@ -335,20 +419,20 @@ describe("editOwnResponse with rules", () => {
   const saved = () => db.formSubmission.update.mock.calls[0][0].data.answers;
 
   it("removes stored answers an edit has hidden, files included", async () => {
-    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    stored({ returning: "No", why: "moving", cv: CV_KEY });
     expect(await edit({ returning: "Yes" })).toEqual({ ok: true });
     expect(saved()).toEqual({ returning: "Yes" });
   });
 
   it("does not require a question the edit has hidden", async () => {
-    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    stored({ returning: "No", why: "moving", cv: CV_KEY });
     expect(await edit({ returning: "Yes", why: "" })).toEqual({ ok: true });
   });
 
   it("keeps the stored upload satisfying a shown required file", async () => {
-    stored({ returning: "No", why: "moving", cv: { key: "files/cv.pdf" } });
+    stored({ returning: "No", why: "moving", cv: CV_KEY });
     expect(await edit({ returning: "No", why: "still moving" })).toEqual({ ok: true });
-    expect(saved()).toEqual({ returning: "No", why: "still moving", cv: { key: "files/cv.pdf" } });
+    expect(saved()).toEqual({ returning: "No", why: "still moving", cv: CV_KEY });
   });
 
   it("still requires a question the edit has shown", async () => {

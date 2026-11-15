@@ -65,10 +65,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
           },
         },
       },
-      noteVersions: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-      },
     },
     orderBy: { interview: { startTime: "asc" } },
   });

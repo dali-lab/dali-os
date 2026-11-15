@@ -4,7 +4,7 @@
 // the `mcp:write` scope.
 
 import { prisma } from "~/lib/db.server";
-import { updateGoogleAttendeeRsvp } from "~/lib/google-calendar";
+import { updateGoogleAttendeeRsvp } from "~/calendar/lib/google-calendar.server";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { primaryEmail } from "~/lib/display";
 

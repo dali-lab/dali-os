@@ -4,13 +4,13 @@ This guide covers how to contribute. For *what* to contribute, check the project
 
 ## Getting set up
 
-See the [README](README.md) for local dev setup, commands, and environments. Each PR gets an ephemeral Neon branch + Fly app, torn down on close or merge.
+See the [README](README.md) for local dev setup, commands, and environments. Add the `preview` label to a PR to get an ephemeral Neon branch + Fly app, torn down on close or merge.
 
 ## Branching & PRs
 
 - All PRs target `staging`, not `prod`.
 - Branch names: `feat/<short-description>` or `fix/<short-description>`. Claude's branches use `claude/issue-<N>`.
-- Write a clear PR description. Call out data-losing migrations, collab schema changes, and changes to the routes the desktop app depends on (`/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications*`).
+- Write a clear PR description. Call out data-losing migrations, collab schema changes, and changes to the routes the desktop app depends on (`/auth/pair/*`, `/auth/handoff`, `/link`, `/api/notifications*` including `/api/notifications/:id/read` and `/rsvp`, `/api/desktop/*`, `/calendar/meeting/:id`). The mobile, iOS and JobX contracts are listed under "External API consumers" in `CLAUDE.md`; changes to them must be additive.
 
 **Promotion to prod**
 
@@ -30,6 +30,7 @@ Never modify or delete an applied migration file. Add a new one instead. `migrat
 Run these from `dali-api/` before pushing:
 
 - `npm test`: unit tests (Vitest). `npm run test:coverage` adds a V8 report in `coverage/index.html`.
+- `npm run test:integration`: real-Postgres tests (`*.integration.test.ts`); set `DATABASE_URL` to a throwaway local database.
 - `npm run typecheck`: always run this; it also regenerates React Router type stubs.
 - `npm run test:e2e`: Playwright against a seeded Postgres and a production build (`npm run build` first). Run it when touching routes, auth, or data flows.
 
@@ -45,7 +46,7 @@ CI runs all of these. If `test.yml`, `build-check.yml`, `migration-check.yml`, o
 - Background jobs: write a handler and add an entry to `app/jobs/registry.ts`. Handlers must be idempotent and finish well under the 5-minute lease.
 - Notifications: add an entry to `app/lib/notification-events.ts` and dispatch through `notify()`. Never write `prisma.notification` directly.
 - Outbound email goes through `enqueueOutbound()` in `app/lib/outbound.server.ts`, not raw `sendEmail`.
-- Collab docs: never decode a live Y.Doc server-side without cloning it first. Don't use `@tiptap/*` for new editor work; it exists only to decode legacy content.
+- Collab docs: never decode a live Y.Doc server-side without cloning it first. Don't use `@tiptap/*` for new editor work, apart from `@tiptap/pm` (BlockNote's ProseMirror); the rest exists only to decode legacy content.
 
 ## Security ground rules
 

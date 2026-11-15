@@ -22,9 +22,11 @@ vi.mock("~/lib/db.server", () => ({
 
 vi.mock("~/partners/lib/partner-meetings.server", () => ({
   linkScheduledMeetingToApplication: vi.fn(),
+  logPartnerMeeting: vi.fn(),
+  debriefPartnerMeeting: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("~/lib/scheduled-meeting", () => ({
+vi.mock("~/calendar/lib/scheduled-meeting.server", () => ({
   createScheduledMeeting: vi.fn(),
 }));
 
@@ -66,9 +68,13 @@ vi.mock("~/mcp/registry", () => {
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
-import { logPartnerActivity } from "~/partners/lib/partner-activity.server";
-import { linkScheduledMeetingToApplication } from "~/partners/lib/partner-meetings.server";
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import {
+  debriefPartnerMeeting,
+  logPartnerMeeting,
+  linkScheduledMeetingToApplication,
+} from "~/partners/lib/partner-meetings.server";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
+import { NotFoundError } from "~/lib/http-error";
 import {
   runManagePartnerMeeting,
   MANAGE_PARTNER_MEETING_TOOL,
@@ -116,58 +122,45 @@ describe("manage_partner_meeting metadata", () => {
 // ─── create ────────────────────────────────────────────────────────────────────
 
 describe("create", () => {
-  it("creates a meeting and logs MeetingScheduled activity", async () => {
+  it("logs a legacy meeting through the shared service", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication.findUnique.mockResolvedValue({
-      applicantContactId: "contact-1",
+    vi.mocked(logPartnerMeeting).mockResolvedValue({
+      id: "meet-1",
+      scheduledAt: new Date("2026-10-15T14:00:00Z"),
     });
-    mockPrisma.partnerMeeting.create.mockResolvedValue({ id: "meet-1" });
-    vi.mocked(logPartnerActivity).mockResolvedValue(undefined);
 
     const out = await runManagePartnerMeeting("u1", {
       action: "create",
       applicationId: "a1",
       scheduledAt: "2026-10-15T14:00:00Z",
-      attendeeUserIds: ["user-a", "user-b"],
-      notes: "First discovery call",
+      attendeeUserIds: ["user-a", " user-b "],
+      notes: " First discovery call ",
     });
 
-    expect(out).toMatchObject({ id: "meet-1", scheduledAt: "2026-10-15T14:00:00.000Z" });
-    expect(mockPrisma.partnerMeeting.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          applicationId: "a1",
-          attendeeUserIds: ["user-a", "user-b"],
-          notes: "First discovery call",
-          contactId: "contact-1",
-        }),
-      }),
-    );
-    expect(logPartnerActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        applicationId: "a1",
-        type: "MeetingScheduled",
-        metadata: expect.objectContaining({ meetingId: "meet-1" }),
-      }),
-    );
+    expect(out).toEqual({ id: "meet-1", scheduledAt: "2026-10-15T14:00:00.000Z" });
+    expect(logPartnerMeeting).toHaveBeenCalledWith({
+      applicationId: "a1",
+      scheduledAt: new Date("2026-10-15T14:00:00Z"),
+      attendeeUserIds: ["user-a", "user-b"],
+      notes: "First discovery call",
+      actorUserId: "u1",
+    });
   });
 
-  it("throws McpNotFoundError when application is missing", async () => {
+  it("lets the service's not-found error through with its status", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication.findUnique.mockResolvedValue(null);
+    vi.mocked(logPartnerMeeting).mockRejectedValue(new NotFoundError("missing"));
     await expect(
       runManagePartnerMeeting("u1", {
         action: "create",
         applicationId: "missing",
         scheduledAt: "2026-10-15T14:00:00Z",
       }),
-    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+    ).rejects.toMatchObject({ status: 404 });
   });
 
   it("throws McpInvalidError for a bad date", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication.findUnique.mockResolvedValue({ applicantContactId: "c1" });
     await expect(
       runManagePartnerMeeting("u1", {
         action: "create",
@@ -175,6 +168,7 @@ describe("create", () => {
         scheduledAt: "not-a-date",
       }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(logPartnerMeeting).not.toHaveBeenCalled();
   });
 
   it("requires scheduledAt", async () => {
@@ -182,28 +176,6 @@ describe("create", () => {
     await expect(
       runManagePartnerMeeting("u1", { action: "create", applicationId: "a1" }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
-  });
-
-  it("does NOT email the partner (no email fn called)", async () => {
-    // Verify that no partner-email helper is invoked. The test implicitly
-    // passes as long as the mocked logPartnerActivity is the only side-effect —
-    // there is no sendMeetingInviteEmail in the tool module.
-    vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerApplication.findUnique.mockResolvedValue({ applicantContactId: null });
-    mockPrisma.partnerMeeting.create.mockResolvedValue({ id: "meet-2" });
-    vi.mocked(logPartnerActivity).mockResolvedValue(undefined);
-
-    await runManagePartnerMeeting("u1", {
-      action: "create",
-      applicationId: "a1",
-      scheduledAt: "2026-11-01T10:00:00Z",
-    });
-    // logPartnerActivity called once (MeetingScheduled), not EmailSent
-    expect(logPartnerActivity).toHaveBeenCalledTimes(1);
-    expect(logPartnerActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ type: "MeetingScheduled" }),
-    );
   });
 
   it("links an already-created ScheduledMeeting via scheduledMeetingId", async () => {
@@ -225,7 +197,7 @@ describe("create", () => {
       scheduledMeetingId: "meet-1",
       actorUserId: "u1",
     });
-    expect(mockPrisma.partnerMeeting.create).not.toHaveBeenCalled();
+    expect(logPartnerMeeting).not.toHaveBeenCalled();
   });
 
   it("throws McpNotFoundError when scheduledMeetingId links to nothing", async () => {
@@ -302,11 +274,8 @@ describe("create", () => {
 // ─── debrief ───────────────────────────────────────────────────────────────────
 
 describe("debrief", () => {
-  it("updates debrief and outcome, logs MeetingDebriefed", async () => {
+  it("passes debrief and outcome to the shared service", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerMeeting.update.mockResolvedValue({ id: "meet-1" });
-    vi.mocked(logPartnerActivity).mockResolvedValue(undefined);
-
     const out = await runManagePartnerMeeting("u1", {
       action: "debrief",
       applicationId: "a1",
@@ -314,38 +283,33 @@ describe("debrief", () => {
       debrief: "Great fit, strong technical requirements",
       outcome: "Advance",
     });
-
-    expect(out).toMatchObject({ ok: true });
-    expect(mockPrisma.partnerMeeting.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: "meet-1" },
-        data: expect.objectContaining({ debrief: "Great fit, strong technical requirements", outcome: "Advance" }),
-      }),
-    );
-    expect(logPartnerActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        type: "MeetingDebriefed",
-        metadata: expect.objectContaining({ meetingId: "meet-1", outcome: "Advance" }),
-      }),
-    );
+    expect(out).toEqual({ ok: true });
+    expect(debriefPartnerMeeting).toHaveBeenCalledWith({
+      applicationId: "a1",
+      meetingId: "meet-1",
+      debrief: "Great fit, strong technical requirements",
+      outcome: "Advance",
+      actorUserId: "u1",
+    });
   });
 
   it("requires at least debrief or outcome", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
     await expect(
-      runManagePartnerMeeting("u1", {
-        action: "debrief",
-        applicationId: "a1",
-        meetingId: "meet-1",
-      }),
+      runManagePartnerMeeting("u1", { action: "debrief", applicationId: "a1", meetingId: "meet-1" }),
     ).rejects.toMatchObject({ name: "McpInvalidError" });
+    expect(debriefPartnerMeeting).not.toHaveBeenCalled();
   });
 
-  it("ignores an invalid outcome value", async () => {
+  it("leaves the debrief alone when only an outcome is given, and drops an invalid outcome", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerMeeting.update.mockResolvedValue({ id: "meet-1" });
-    vi.mocked(logPartnerActivity).mockResolvedValue(undefined);
+    await runManagePartnerMeeting("u1", {
+      action: "debrief",
+      applicationId: "a1",
+      meetingId: "meet-1",
+      outcome: "Hold",
+    });
+    expect(vi.mocked(debriefPartnerMeeting).mock.calls[0][0]).not.toHaveProperty("debrief");
 
     await runManagePartnerMeeting("u1", {
       action: "debrief",
@@ -354,16 +318,12 @@ describe("debrief", () => {
       debrief: "Some notes",
       outcome: "InvalidOutcome",
     });
-    // outcome should not appear in update data
-    const updateCall = mockPrisma.partnerMeeting.update.mock.calls[0][0] as {
-      data: Record<string, unknown>;
-    };
-    expect(updateCall.data).not.toHaveProperty("outcome");
+    expect(vi.mocked(debriefPartnerMeeting).mock.calls[1][0].outcome).toBeNull();
   });
 
-  it("throws McpNotFoundError on P2025", async () => {
+  it("lets the service's not-found error through with its status", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    mockPrisma.partnerMeeting.update.mockRejectedValue({ code: "P2025" });
+    vi.mocked(debriefPartnerMeeting).mockRejectedValue(new NotFoundError("missing"));
     await expect(
       runManagePartnerMeeting("u1", {
         action: "debrief",
@@ -371,6 +331,6 @@ describe("debrief", () => {
         meetingId: "missing",
         debrief: "x",
       }),
-    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

@@ -5,11 +5,12 @@
 // node:crypto never reaches the client bundle.
 
 import crypto from "node:crypto";
+import { getEnv } from "~/lib/env.server";
 
 const PREFIX = "v1";
 
 function key(): Buffer {
-  const raw = process.env.INFRA_SECRET_KEY;
+  const raw = getEnv().INFRA_SECRET_KEY;
   if (!raw) throw new Error("INFRA_SECRET_KEY is not set");
   const buf = /^[0-9a-fA-F]{64}$/.test(raw)
     ? Buffer.from(raw, "hex")

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useFetcher, useRevalidator, useSearchParams } from "react-router";
 import { Plus, X } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { Drawer } from "~/components/ui/Drawer";
@@ -15,7 +15,7 @@ import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
 import { DocEditor } from "~/components/doc";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { cn } from "~/lib/cn";
 

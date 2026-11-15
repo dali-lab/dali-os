@@ -7,7 +7,7 @@ import { Tooltip } from "~/components/ui/floating";
 import { Avatar } from "~/components/ui/Avatar";
 import { buttonClasses } from "~/components/ui/Button";
 import { cn } from "~/lib/cn";
-import { AUDIENCE_PERMISSION_LABEL, type Audience } from "~/lib/page-audience";
+import { AUDIENCE_PERMISSION_LABEL, type Audience } from "~/drive/lib/page-audience";
 
 function namedShares(audience: Audience): string | null {
   if (!audience.count || audience.kind === "people") return null;

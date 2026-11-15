@@ -7,10 +7,14 @@ import { Select } from "~/components/ui/floating";
 import { DateField } from "~/components/ui/DateField";
 import { useOsChrome } from "~/components/os-chrome";
 import { SpotsStepper } from "../SpotsStepper";
+import type { MaintenancePlan } from "~/generated/prisma/enums";
 import {
   centsToDollars,
   dollarsToCents,
   dueToInput,
+  MAINTENANCE_PLANS,
+  maintenanceLabel,
+  type MaintenancePrices,
   type RenewalCardModel,
   type RenewalColumn,
   type RenewalRole,
@@ -20,7 +24,7 @@ export type TermOption = { id: string; code: string };
 export type DomainOption = { id: string; name: string };
 
 export type RenewalSubmission = {
-  intent: "continue" | "not-continuing" | "undecided";
+  intent: "continue" | "maintain" | "not-continuing" | "undecided";
   projectId: string;
   nextStep: string;
   nextStepDue: string;
@@ -28,11 +32,13 @@ export type RenewalSubmission = {
   feeCents?: number | null;
   roles?: RenewalRole[];
   reason?: string;
+  plan?: MaintenancePlan;
 };
 
 const INTENT: Record<RenewalColumn, RenewalSubmission["intent"]> = {
   undecided: "undecided",
   continuing: "continue",
+  maintaining: "maintain",
   not_continuing: "not-continuing",
 };
 
@@ -47,6 +53,10 @@ export function toFormFields(v: RenewalSubmission): Record<string, string> {
     fields.termId = v.termId ?? "";
     fields.feeCents = v.feeCents == null ? "" : String(v.feeCents);
     fields.roles = JSON.stringify((v.roles ?? []).map((r) => ({ domainId: r.domainId, slots: r.slots })));
+  }
+  if (v.intent === "maintain") {
+    fields.plan = v.plan ?? "";
+    fields.feeCents = v.feeCents == null ? "" : String(v.feeCents);
   }
   if (v.intent === "not-continuing") fields.reason = v.reason ?? "";
   return fields;
@@ -65,6 +75,7 @@ export function RenewalEditorFields({
   decisionTerm,
   termOptions,
   domains,
+  maintenancePrices,
   busy,
   onCancel,
   onSave,
@@ -74,6 +85,7 @@ export function RenewalEditorFields({
   decisionTerm: TermOption;
   termOptions: TermOption[];
   domains: DomainOption[];
+  maintenancePrices: MaintenancePrices;
   busy: boolean;
   onCancel: () => void;
   onSave: (v: RenewalSubmission) => void;
@@ -85,11 +97,22 @@ export function RenewalEditorFields({
   const [roles, setRoles] = useState<RenewalRole[]>(
     card.column === "continuing" && card.decidedRoles.length ? card.decidedRoles : card.lastRoles,
   );
-  const [fee, setFee] = useState(centsToDollars(card.feeCents));
+  const [fee, setFee] = useState(
+    centsToDollars(decision === "maintaining" && card.maintenance ? card.maintenance.feeCents : card.feeCents),
+  );
+  const [plan, setPlan] = useState<MaintenancePlan | "">(card.maintenance?.plan ?? "");
+  const choosePlan = (next: MaintenancePlan) => {
+    setPlan(next);
+    const price = maintenancePrices[next];
+    if (price != null) setFee(centsToDollars(price));
+  };
   const [reason, setReason] = useState(card.reason ?? "");
   const [nextStep, setNextStep] = useState(card.nextStep ?? "");
   const [due, setDue] = useState(dueToInput(card.nextStepDueAt));
-  const canSave = !busy && (decision !== "not_continuing" || reason.trim().length > 0);
+  const canSave =
+    !busy &&
+    (decision !== "not_continuing" || reason.trim().length > 0) &&
+    (decision !== "maintaining" || plan !== "");
 
   return (
     <div
@@ -117,6 +140,38 @@ export function RenewalEditorFields({
             <FieldLabel>Fee</FieldLabel>
             <input
               aria-label="Fee"
+              className={inputClass}
+              inputMode="decimal"
+              placeholder="Dollars"
+              value={fee}
+              onChange={(e) => setFee(e.target.value)}
+            />
+          </div>
+        </>
+      )}
+
+      {decision === "maintaining" && (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <FieldLabel>Maintenance plan</FieldLabel>
+            <Select
+              ariaLabel="Maintenance plan"
+              placeholder="Pick a plan"
+              value={plan || undefined}
+              onChange={(v) => choosePlan(v as MaintenancePlan)}
+              options={MAINTENANCE_PLANS.map((p) => ({
+                value: p,
+                label:
+                  maintenancePrices[p] != null
+                    ? `${maintenanceLabel(p)} ($${centsToDollars(maintenancePrices[p])} a term)`
+                    : maintenanceLabel(p),
+              }))}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <FieldLabel>Fee per term</FieldLabel>
+            <input
+              aria-label="Maintenance fee"
               className={inputClass}
               inputMode="decimal"
               placeholder="Dollars"
@@ -181,6 +236,7 @@ export function RenewalEditorFields({
               feeCents: dollarsToCents(fee),
               roles,
               reason: reason.trim(),
+              plan: plan || undefined,
             })
           }
         >

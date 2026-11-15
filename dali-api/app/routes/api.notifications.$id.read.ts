@@ -4,7 +4,7 @@ import { requireAuth, forbidden } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
-import { isSelfClearingFormTodo } from "~/lib/tasks";
+import { isSelfClearingFormTodo } from "~/lib/tasks.server";
 import { ANSWER_TO_CLEAR_EVENTS } from "~/members/lib/coffee-chat";
 
 export async function action({ request, params }: Route.ActionArgs) {

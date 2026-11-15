@@ -27,7 +27,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
 }));
 vi.mock("~/lib/cors", () => ({ withCors: (_r: Request, res: Response) => res, handlePreflight: () => null }));
 vi.mock("~/lib/roles", () => ({ isCore: h.isCore, isLabMember: h.isLabMember }));
-vi.mock("~/lib/groups", () => ({ listVisibleGroupsForUser: h.listVisibleGroupsForUser }));
+vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: h.listVisibleGroupsForUser }));
 vi.mock("~/lib/db.server", () => ({ prisma: { user: { findMany: h.userFindMany } } }));
 vi.mock("~/members/lib/personal-notes.server", () => {
   class NoteForbiddenError extends Error {}

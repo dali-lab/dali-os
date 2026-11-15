@@ -18,12 +18,7 @@ function parseDocRoom(documentName: string): string | null {
   return m ? m[1]! : null;
 }
 
-// Collect the user ids of every `mention` inline node in the doc body. Reads
-// the block JSON via ydocToBlocks on a *clone* of the doc — the server schema
-// does not know the `comment` mark, so reading the live doc through y-prosemirror
-// would delete Y.XmlText items that carry comment marks (a destructive side-effect
-// inside y-prosemirror's error handler). Using a clone means any such deletion
-// happens to a throwaway doc and never propagates to connected clients.
+// Collect the user ids of every `mention` inline node in the doc body.
 export function extractMentionUserIds(doc: Y.Doc): string[] {
   const ids = new Set<string>();
   type InlineNode = { type?: string; props?: Record<string, unknown>; content?: unknown };
@@ -57,13 +52,7 @@ export function extractMentionUserIds(doc: Y.Doc): string[] {
     }
     for (const child of block.children ?? []) walkBlock(child as typeof block);
   };
-  const clone = new Y.Doc();
-  try {
-    Y.applyUpdate(clone, Y.encodeStateAsUpdate(doc));
-    for (const block of ydocToBlocks(clone).blocks) walkBlock(block);
-  } finally {
-    clone.destroy();
-  }
+  for (const block of ydocToBlocks(doc).blocks) walkBlock(block);
   return [...ids];
 }
 

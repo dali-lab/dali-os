@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sendEmail, sendDm } = vi.hoisted(() => ({ sendEmail: vi.fn(async () => undefined), sendDm: vi.fn(async () => undefined) }));
 vi.mock("~/lib/gmail", () => ({ sendEmail }));
-vi.mock("~/lib/gmail-integration", () => ({
+vi.mock("~/lib/gmail-integration.server", () => ({
   getSender: vi.fn(async () => ({ id: "sender-1", refreshToken: "tok", sendAsEmail: "noreply@example.edu" })),
   noteSenderHealth: vi.fn(async () => undefined),
 }));
@@ -13,7 +13,7 @@ vi.mock("~/slack/lib/slack-client", () => ({
   uploadFileToThread: vi.fn(),
   slackConfigured: vi.fn(() => false),
 }));
-vi.mock("~/lib/s3", () => ({ getObjectBytes: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ getObjectBytes: vi.fn() }));
 vi.mock("~/lib/notify-stream.server", () => ({ publishNotificationChange: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";

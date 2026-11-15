@@ -8,8 +8,8 @@ import {
   tabBadge,
   type GlyphSource,
 } from "~/components/drive/glyphs";
-import { RECEIVER_LABELS } from "~/lib/drive-receivers";
-import type { AudienceKind } from "~/lib/page-audience";
+import { RECEIVER_LABELS } from "~/drive/lib/drive-receivers";
+import type { AudienceKind } from "~/drive/lib/page-audience";
 
 const FOLDER_TYPES = ["Root", ...Object.keys(RECEIVER_LABELS)];
 

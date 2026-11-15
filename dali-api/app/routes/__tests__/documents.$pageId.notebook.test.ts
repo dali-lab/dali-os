@@ -12,15 +12,15 @@ vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
   getPageAccessBulk: vi.fn(),
 }));
-vi.mock("~/lib/notebooks.server", () => ({ canManageNotebook: vi.fn() }));
-vi.mock("~/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn() }));
+vi.mock("~/calendar/lib/notebooks.server", () => ({ canManageNotebook: vi.fn() }));
+vi.mock("~/calendar/lib/notebook-series.server", () => ({ nextNoteTargets: vi.fn() }));
 vi.mock("~/lib/user-pages.server", () => ({ isFavorited: vi.fn(), recordPageVisit: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { canManageNotebook } from "~/lib/notebooks.server";
-import { nextNoteTargets } from "~/lib/notebook-series.server";
+import { canManageNotebook } from "~/calendar/lib/notebooks.server";
+import { nextNoteTargets } from "~/calendar/lib/notebook-series.server";
 import { loader } from "../documents.$pageId";
 
 const call = () =>

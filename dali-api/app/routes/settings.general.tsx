@@ -1,6 +1,6 @@
 import { requireAuth } from "~/lib/auth";
-import { rotateWalletSecret } from "~/lib/wallet-token";
-import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
+import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
+import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
 import { SettingsSection } from "~/components/settings/SettingsSection";
 import { AppearanceSettingsBlock } from "~/components/settings/AppearanceSettingsBlock";
 import {

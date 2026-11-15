@@ -1,11 +1,12 @@
 import type { Prisma } from "~/generated/prisma/client";
+import { logError } from "~/lib/log.server";
 import { prisma } from "~/lib/db.server";
 import { getAppEnv } from "~/lib/app-env";
 import { getFeatureFlagRows } from "~/lib/feature-flags.server";
 import { githubAppClient, parseRepo } from "~/lib/github";
 import { generateShortText } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
-import { listObjectKeys } from "~/lib/s3";
+import { listObjectKeys } from "~/lib/s3.server";
 import type { JobResult } from "~/jobs/registry";
 import {
   MAX_COMMITS,
@@ -22,8 +23,9 @@ import {
   selectPrsToDraft,
   type PullForPrompt,
   type PullSummary,
-} from "~/lib/release-notes-draft";
+} from "~/lib/release-notes-draft.server";
 import { RELEASE_NOTE_CAPTURE_KEY_PREFIX } from "~/lib/release-notes";
+import { getEnv } from "~/lib/env.server";
 
 const JOB_NAME = "release-notes-draft";
 const PROMOTION_BRANCH = "prod";
@@ -120,7 +122,10 @@ async function captureKeysByPr(prNumbers: number[]): Promise<Map<number, string[
   const map = new Map<number, string[]>();
   await Promise.all(
     prNumbers.map(async (n) => {
-      const keys = await listObjectKeys(`${RELEASE_NOTE_CAPTURE_KEY_PREFIX}${n}/`).catch(() => []);
+      const keys = await listObjectKeys(`${RELEASE_NOTE_CAPTURE_KEY_PREFIX}${n}/`).catch((err) => {
+        logError("jobs.release-notes-draft.capture-keys", err, { pr: n });
+        return [] as string[];
+      });
       map.set(n, keys);
     }),
   );
@@ -173,7 +178,7 @@ export async function runReleaseNotesDraft(): Promise<JobResult> {
   const flag = (await getFeatureFlagRows()).get("release-notes");
   if (!flag?.enabled) return { items: 0, note: "release-notes flag is off" };
 
-  const repo = parseRepo(process.env.RELEASE_NOTES_REPO || DEFAULT_REPO, "RELEASE_NOTES_REPO");
+  const repo = parseRepo(getEnv().RELEASE_NOTES_REPO || DEFAULT_REPO, "RELEASE_NOTES_REPO");
   const gh = githubAppClient();
   const { data: branch } = await gh.rest.repos.getBranch({ ...repo, branch: PROMOTION_BRANCH });
   const decision = decideCursor(await readLastSha(), branch.commit.sha);

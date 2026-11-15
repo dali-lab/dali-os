@@ -3,7 +3,7 @@ import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { SharedInboxThreadModal } from "~/email/components/SharedInboxThreadModal";
-import { ApplicantPanel, PANEL_ROW } from "~/hiring/components/ApplicantPanel";
+import { ApplicantPanel, PANEL_ROW } from "~/components/ApplicantPanel";
 
 // Generalized from app/hiring/components/ApplicantEmailPanel.tsx: a shared
 // inbox's mail history with one record, grouped into threads, in the same

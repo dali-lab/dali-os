@@ -4,7 +4,7 @@
 import { prisma } from "~/lib/db.server";
 import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { hydrateAuthors } from "~/lib/collabAuth";
+import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };

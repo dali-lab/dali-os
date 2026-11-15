@@ -7,7 +7,6 @@ import { prisma } from "~/lib/db.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getUserRoles } from "~/lib/roles";
 import { resolveFeatureFlags } from "~/lib/feature-flags.server";
-import type { FeatureFlagMap } from "~/lib/feature-flags";
 import { FeatureFlagsProvider } from "~/components/FeatureFlags";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
 import { LayoutPortalOS } from "~/components/LayoutPortalOS";
@@ -36,7 +35,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // Feature flags for the portal: the member shell resolves these in its own
   // layout, but the applicant portal is a separate layout — without this, every
   // /portal/* page reads flags as off (useFeatureFlag falls back to false).
-  const roles = await getUserRoles(auth.user.sub);
+  const roles = await getUserRoles(auth.user.sub, request);
   const [avatarUrl, flags] = await Promise.all([
     resolvePhotoUrl(me?.photoUrl),
     resolveFeatureFlags(auth.user.sub, roles),
@@ -52,13 +51,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function ApplicantLayout() {
-  const { user, avatarUrl, flags, impersonating, impersonationWrites } = useLoaderData<typeof loader>() as {
-    user: { sub: string; email: string; type: string; firstName?: string; lastName?: string };
-    avatarUrl: string | null;
-    flags: FeatureFlagMap;
-    impersonating: boolean;
-    impersonationWrites: boolean;
-  };
+  const { user, avatarUrl, flags, impersonating, impersonationWrites } = useLoaderData<typeof loader>();
 
   // A page that declares `fitViewport` (the calendar's hour grid) fills the
   // shell's main column instead of growing past it, so it scrolls inside its

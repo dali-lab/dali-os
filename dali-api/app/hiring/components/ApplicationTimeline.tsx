@@ -6,7 +6,8 @@ import { useDialog } from "~/components/ui/dialog";
 import { Select, type SelectOption } from "~/components/ui/floating";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
-import { Pill, rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
+import { rowTrigger } from "~/hiring/components/cycle-setup/SetupCard";
 import type { TimelineEntry } from "~/hiring/lib/application-timeline";
 
 // The applicant's stage changes as one list: application, delibs, interviews

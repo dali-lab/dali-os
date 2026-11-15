@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302, headers: { Location: "/login" } })) }));
-vi.mock("~/lib/drive-reveal.server", () => ({ driveRevealHref: vi.fn() }));
+vi.mock("~/drive/lib/drive-reveal.server", () => ({ driveRevealHref: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { driveRevealHref } from "~/lib/drive-reveal.server";
+import { driveRevealHref } from "~/drive/lib/drive-reveal.server";
 import { loader } from "~/routes/drive.reveal.$pageId";
 
 const request = new Request("http://localhost/drive/reveal/p1");

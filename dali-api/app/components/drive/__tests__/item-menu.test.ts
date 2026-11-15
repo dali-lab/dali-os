@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { menuEntries } from "~/components/drive/item-menu";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const at = new Date("2026-01-01T00:00:00Z");
 const base = { id: "i", title: "T", parentFolderId: null, updatedAt: at, href: "/x" };

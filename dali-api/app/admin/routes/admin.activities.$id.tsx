@@ -1,4 +1,4 @@
-// Admin → Onboarding → <activity> (specs/activities.md §7.8). The mechanic's
+// Admin → Onboarding → <activity> (specs/archive/activities.md §7.8). The mechanic's
 // own config editor comes from the client registry; the teams panel is
 // ActivityTeamsEditor.
 
@@ -17,7 +17,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAdmin, isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import { orderGroupsForPicker } from "~/lib/group-kind";
 import { logAuditEvent } from "~/lib/audit";
 import { useConfirmSubmit } from "~/components/ui/dialog";

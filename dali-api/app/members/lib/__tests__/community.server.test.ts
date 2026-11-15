@@ -7,12 +7,12 @@ vi.mock("~/lib/db.server", () => ({
   },
 }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
-vi.mock("~/lib/upcoming-meetings", () => ({ listUpcomingMeetings: vi.fn() }));
+vi.mock("~/calendar/lib/upcoming-meetings-list.server", () => ({ listUpcomingMeetings: vi.fn() }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (v: string | null) => (v ? `https://img/${v}` : null)) }));
 
 import { prisma } from "~/lib/db.server";
 import { getUserRoles } from "~/lib/roles";
-import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
+import { listUpcomingMeetings } from "~/calendar/lib/upcoming-meetings-list.server";
 import { loadCommunity, loadCommunityEvents, loadCommunityPeople, type CommunityViewerData } from "../community.server";
 
 const db = prisma as unknown as {
@@ -48,6 +48,7 @@ const row = (id: string, over: Record<string, unknown> = {}) => ({
 const assignment = (projectId: string, name: string, code: string, sortKey: number, domain: string) => ({
   project: { id: projectId, name },
   term: { code, sortKey },
+  domainId: domain === "Legacy" ? "domain_legacy" : `d-${domain}`,
   domain: { displayName: domain },
 });
 
@@ -107,6 +108,12 @@ describe("loadCommunityPeople", () => {
     expect(JSON.stringify(people)).not.toContain("lastActiveAt");
   });
 
+  it("leaves the viewer out of the people query", async () => {
+    db.user.findMany.mockResolvedValue([]);
+    await loadCommunityPeople("viewer", NOW);
+    expect(db.user.findMany.mock.calls[0][0].where).toMatchObject({ id: { not: "viewer" } });
+  });
+
   it("hides activity for someone who turned it off", async () => {
     db.user.findMany.mockResolvedValue([row("ada", { lastActiveAt: hoursAgo(1), hideActivity: true })]);
     expect((await loadCommunityPeople("viewer", NOW)).people[0].activity).toBeNull();
@@ -149,6 +156,22 @@ describe("loadCommunityPeople", () => {
       { value: "Core team", count: 1 },
     ]);
     expect(filterOptions.projects).toEqual([{ id: "p1", name: "Atlas", term: "20F", count: 2 }]);
+  });
+
+  it("leaves the Legacy history bucket out of roles but keeps its projects", async () => {
+    db.user.findMany.mockResolvedValue([
+      row("a", {
+        projectAssignments: [
+          assignment("p1", "Atlas", "15F", 100, "Legacy"),
+          assignment("p2", "Beacon", "20F", 200, "Design"),
+        ],
+      }),
+      row("b", { projectAssignments: [assignment("p1", "Atlas", "15F", 100, "Legacy")] }),
+    ]);
+    const { people, filterOptions } = await loadCommunityPeople("viewer", NOW);
+    expect(people.map((p) => p.roles)).toEqual([["Design"], []]);
+    expect(filterOptions.roles).toEqual([{ value: "Design", count: 1 }]);
+    expect(people[1].projects).toEqual([{ id: "p1", name: "Atlas", term: "15F" }]);
   });
 
   it("describes the viewer for matching", async () => {

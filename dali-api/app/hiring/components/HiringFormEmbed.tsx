@@ -53,7 +53,7 @@ export function HiringFormEmbed({
           aria-expanded={open}
           className="group flex flex-1 items-center gap-3 min-w-0 text-left"
         >
-          <div className="p-1.5 rounded-md bg-blue-100 text-blue-600 shrink-0">
+          <div className="p-1.5 rounded-md bg-os-accent/15 text-os-accent shrink-0">
             <FileText className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
@@ -70,7 +70,7 @@ export function HiringFormEmbed({
           <Link
             to={`/forms/edit/${formId}`}
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 hover:underline"
+            className="inline-flex items-center gap-1 text-xs font-medium text-os-accent hover:text-os-accent-hover hover:underline"
           >
             Open in Drive
             <ArrowUpRight className="w-3.5 h-3.5" />

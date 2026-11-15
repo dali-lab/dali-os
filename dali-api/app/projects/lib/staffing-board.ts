@@ -404,12 +404,3 @@ export function matchesBoardSearch(member: MemberInput, query: string): boolean 
 
   return tokens.every((t) => haystack.includes(t));
 }
-
-/** @deprecated Prefer resolveAssignmentDomains — kept for callers that want one. */
-export function resolveAssignmentInputs(
-  member: MemberInput,
-  targetProjectId: string,
-): { domainId: string; level: Level } | null {
-  const domains = resolveAssignmentDomains(member, targetProjectId);
-  return domains?.[0] ?? null;
-}

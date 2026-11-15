@@ -20,7 +20,7 @@ import {
 import { MentorGrid } from "../components/MentorGrid";
 import type { TermForms } from "../lib/term-forms";
 import { loadTermForms } from "../lib/term-forms.server";
-import { EmptyState } from "../components/EmptyState";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 

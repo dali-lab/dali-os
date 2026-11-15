@@ -102,7 +102,7 @@ export interface GuidePage {
 export const GUIDE_PAGES: GuidePage[] = [
   { pageKey: "calendar", path: "/calendar", title: "Calendar", keywords: ["schedule", "availability", "meetings", "events"] },
   { pageKey: "projects.hub", path: "/projects", title: "Projects", keywords: ["tasks", "board", "sprints"] },
-  { pageKey: "projects.staffing", path: "/projects/staffing", title: "Staffing", keywords: ["assign", "roster", "preferences"] },
+  { pageKey: "projects.staffing", path: "/core/staffing", title: "Staffing", keywords: ["assign", "roster", "preferences"] },
   { pageKey: "mentorship.hub", path: "/mentorship", title: "Mentorship", keywords: ["mentor", "mentee"] },
   { pageKey: "drive.root", path: "/drive", title: "Drive", keywords: ["files", "documents", "folders"] },
   { pageKey: "drive.mine", path: "/drive?scope=mine", title: "My Drive", keywords: ["files", "personal"] },

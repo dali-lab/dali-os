@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/core/components/AnnouncementsPage", () => ({ AnnouncementsPage: () => null }));
 
-import { estimateRecipients } from "~/admin/routes/admin.announcements";
+import { estimateRecipients } from "~/core/routes/core.communications.announcements";
 import { audienceLabel } from "~/core/lib/announcements-sent.server";
 
 const groups = new Map([

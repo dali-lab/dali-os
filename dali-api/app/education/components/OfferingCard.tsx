@@ -1,7 +1,7 @@
 import { Link } from "react-router";
 import { Avatar } from "~/components/ui/Avatar";
 import { cn } from "~/lib/cn";
-import { Pill, type PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill, type PillTone } from "~/components/ui/Pill";
 import { formatDateShort } from "~/lib/display";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 import { APPLICATION_TZ } from "~/lib/timezone";
@@ -55,22 +55,18 @@ const STATUS_TIPS: Record<OfferingCardData["status"], string> = {
   Archived: "Hidden from the hub and closed to new applications. Existing enrollments are preserved.",
 };
 
+const OFFERING_STATUS_TONE: Record<OfferingCardData["status"], PillTone> = {
+  Draft: "neutral",
+  Published: "success",
+  Archived: "warning",
+};
+
 export function StatusBadge({ status }: { status: OfferingCardData["status"] }) {
-  const styles: Record<OfferingCardData["status"], string> = {
-    Draft: "bg-muted text-muted-foreground",
-    Published: "bg-os-green/15 text-os-green",
-    Archived: "bg-accent-yellow/25 text-foreground",
-  };
   return (
     <Tooltip content={STATUS_TIPS[status]} variant="rich" placement="top">
-      <span
-        className={cn(
-          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-          styles[status],
-        )}
-      >
+      <Pill size="sm" tone={OFFERING_STATUS_TONE[status]}>
         {status}
-      </span>
+      </Pill>
     </Tooltip>
   );
 }
@@ -212,9 +208,9 @@ export function OfferingCard({
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               {pendingCount != null && pendingCount > 0 && (
-                <span className="inline-flex items-center rounded-full bg-os-accent/10 text-os-accent px-2 py-0.5 text-[11px] font-semibold">
+                <Pill size="sm" tone="accent">
                   {pendingCount} to review
-                </span>
+                </Pill>
               )}
               {showMenu && (
                 // Stop the click from navigating the card link.

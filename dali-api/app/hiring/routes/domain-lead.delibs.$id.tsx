@@ -18,7 +18,7 @@ import { delibsQualifier } from "~/hiring/lib/cycle-stages.server";
 import { inReviewPipelineFilter } from "~/hiring/lib/application-pipeline-filter";
 import { ApplicantContextModal } from "~/hiring/components/delibs/ApplicantContextModal";
 import { buttonClasses } from "~/components/ui/Button";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 import { useOsChrome } from "~/components/os-chrome";
 import { useDialog } from "~/components/ui/dialog";
@@ -182,7 +182,7 @@ const COLUMN_TOKENS: Record<string, string> = {
 
 export default function DelibsKanban() {
   const { session, domainApplications, collabToken, userName, round, columns } =
-    useLoaderData<typeof loader>() as any;
+    useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const os = useOsChrome();
   const dialog = useDialog();
@@ -343,6 +343,7 @@ export default function DelibsKanban() {
   }
 
   async function confirmClose() {
+    if (!round) return;
     if (
       await dialog.confirm({
         title: "Close delibs and create draft decisions?",

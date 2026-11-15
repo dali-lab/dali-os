@@ -22,7 +22,7 @@ vi.mock("~/partners/lib/partner-access", () => ({
   partnerOrgIdsForUser: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("~/lib/groups", () => ({
+vi.mock("~/lib/groups.server", () => ({
   resolveGroupMembers: vi.fn().mockResolvedValue([]),
   listVisibleGroupIdsForUser: vi.fn().mockResolvedValue([]),
 }));
@@ -30,7 +30,7 @@ vi.mock("~/lib/groups", () => ({
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
 import { partnerHasProjectAccess, partnerOrgIdsForUser } from "~/partners/lib/partner-access";
-import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups";
+import { resolveGroupMembers, listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import {
   getPageAccess,
   getPageAccessBulk,
