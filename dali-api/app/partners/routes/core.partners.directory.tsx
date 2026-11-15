@@ -30,7 +30,7 @@ import {
   type FilterColumn,
 } from "~/projects/components/ColumnFilters";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PartnerRowControls, ROW_PRIMARY_CLASS } from "../components/PartnerRowControls";
 import { DirectoryTable } from "../components/PartnerDirectoryTables";
 import {
   DIRECTORY_KIND_OPTIONS,
@@ -52,8 +52,6 @@ import {
   PARTNER_RELATIONSHIP_STATUS_LABELS,
 } from "../lib/partner-org";
 
-// areaSubnav: this page mounts PartnerCrmNav itself, so the shell must not add
-// its own sub-nav row above it.
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
@@ -350,7 +348,7 @@ export default function PartnersDirectory() {
   const columnFilters = useColumnFilters(FILTER_COLUMNS, [], { inUrl: true });
   const filterRows = useMemo(() => rows.map((r) => ({ cells: directoryRowCells(r) })), [rows]);
   // Opening the directory bare reopens its last search, filters and sort.
-  useRememberedSearch("dali:partners:directory:view");
+  useRememberedSearch("dali:partners:directory:view", { transient: ["settings"] });
   const [searchParams, setSearchParams] = useSearchParams();
   const sort = directorySortFromParams(searchParams);
 
@@ -373,8 +371,6 @@ export default function PartnersDirectory() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="sr-only">Partners</h1>
-
       <NewOrgModal
         open={creating === "org" || creating === "individual"}
         individual={creating === "individual"}
@@ -383,25 +379,22 @@ export default function PartnersDirectory() {
       />
       <NewContactModal open={creating === "contact"} onClose={() => setCreating(null)} />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav className="shrink-0" />
+      <PartnerRowControls>
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search partners and people…"
           aria-label="Search the directory"
-          containerClassName="flex-1 min-w-[180px] max-w-[320px]"
+          containerClassName="w-[220px]"
         />
-        <div className="min-w-[220px] flex-1">
-          <ColumnFilters
-            columns={FILTER_COLUMNS}
-            rows={filterRows}
-            filters={columnFilters.filters}
-            onChange={columnFilters.setFilters}
-            shownCount={filtered.length}
-            noun={["record", "records"]}
-          />
-        </div>
+        <ColumnFilters
+          columns={FILTER_COLUMNS}
+          rows={filterRows}
+          filters={columnFilters.filters}
+          onChange={columnFilters.setFilters}
+          shownCount={filtered.length}
+          noun={["record", "records"]}
+        />
         <IconButton
           label="Export CSV"
           icon={Download}
@@ -412,8 +405,8 @@ export default function PartnersDirectory() {
           align="right"
           ariaLabel="Add to the directory"
           trigger={
-            <button type="button" className="os-btn-primary shrink-0 whitespace-nowrap">
-              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
+            <button type="button" className={ROW_PRIMARY_CLASS}>
+              <Plus className="h-[13px] w-[13px]" aria-hidden />
               New
             </button>
           }
@@ -421,17 +414,14 @@ export default function PartnersDirectory() {
           <MenuItem icon={<Building2 className="h-4 w-4" />} onSelect={() => setCreating("org")}>
             Organization
           </MenuItem>
-          <MenuItem
-            icon={<User className="h-4 w-4" />}
-            onSelect={() => setCreating("individual")}
-          >
+          <MenuItem icon={<User className="h-4 w-4" />} onSelect={() => setCreating("individual")}>
             Individual partner
           </MenuItem>
           <MenuItem icon={<User className="h-4 w-4" />} onSelect={() => setCreating("contact")}>
             Contact
           </MenuItem>
         </Menu>
-      </div>
+      </PartnerRowControls>
 
       <div className={cn(os.panel, "overflow-hidden pt-2")}>
         {filtered.length === 0 ? (

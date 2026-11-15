@@ -12,7 +12,7 @@ import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { useSearchParamState } from "~/hooks/useSearchParamState";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PartnerRowControls } from "../components/PartnerRowControls";
 import {
   REFERRAL_TIER_LABEL,
   REFERRAL_TIER_PAYOUT_USD,
@@ -28,7 +28,6 @@ export const meta: Route.MetaFunction = () => [
   { title: "Referrals · DALI OS" },
 ];
 
-// Shell owns the subnav; this page draws its own PartnerCrmNav.
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -62,16 +61,15 @@ export default function PartnerReferralsList() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <PartnerCrmNav className="shrink-0" />
+      <PartnerRowControls>
         <SearchInput
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by partner, email, or referrer"
           aria-label="Search referrals"
-          containerClassName="flex-1 min-w-[180px] max-w-[360px]"
+          containerClassName="w-[280px]"
         />
-      </div>
+      </PartnerRowControls>
 
       {filtered.length === 0 ? (
         <EmptyState anyExist={referrals.length > 0} />
