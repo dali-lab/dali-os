@@ -15,7 +15,7 @@ import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { EmptyState } from "../components/EmptyState";
+import { EmptyState } from "~/components/ui/EmptyState";
 import {
   WARNING_REASONS,
   reasonLabel,
