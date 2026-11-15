@@ -80,8 +80,8 @@ describe("loader", () => {
 
   it("counts each post's comments from the shared comment table and names the viewer", async () => {
     db.resourceHubPage.findUnique.mockResolvedValue(page(new Date(0)));
-    db.critSubmission.findMany.mockResolvedValue([row("s1"), row("s2")]);
-    db.docComment.groupBy.mockResolvedValue([{ targetId: "s1", _count: { _all: 4 } }]);
+    db.critSubmission.findMany.mockResolvedValue([row("s1"), row("s2")] as never);
+    db.docComment.groupBy.mockResolvedValue([{ targetId: "s1", _count: { _all: 4 } }] as never);
     const out = await get();
     expect(db.docComment.groupBy.mock.calls[0][0].where).toEqual({ targetType: "crit", targetId: { in: ["s1", "s2"] } });
     expect(out.items.map((i: any) => [i.id, i.commentCount])).toEqual([["s1", 4], ["s2", 0]]);
@@ -93,14 +93,14 @@ describe("delete", () => {
   beforeEach(() => db.resourceHubPage.findUnique.mockResolvedValue(page(new Date(0))));
 
   it("removes the post's comments along with it", async () => {
-    db.critSubmission.findFirst.mockResolvedValue({ id: "s1", authorId: "u1" });
+    db.critSubmission.findFirst.mockResolvedValue({ id: "s1", authorId: "u1" } as never);
     expect((await post({ intent: "delete", id: "s1" })).ok).toBe(true);
     expect(db.docComment.deleteMany).toHaveBeenCalledWith({ where: { targetType: "crit", targetId: "s1" } });
     expect(db.critSubmission.delete).toHaveBeenCalledWith({ where: { id: "s1" } });
   });
 
   it("leaves someone else's post alone unless the viewer moderates", async () => {
-    db.critSubmission.findFirst.mockResolvedValue({ id: "s1", authorId: "u9" });
+    db.critSubmission.findFirst.mockResolvedValue({ id: "s1", authorId: "u9" } as never);
     expect((await post({ intent: "delete", id: "s1" })).status).toBe(403);
     expect(db.critSubmission.delete).not.toHaveBeenCalled();
     vi.mocked(requireResourceHubViewer).mockResolvedValue({ user: { sub: "u1" }, core: true, userName: "Ada Lovelace" } as any);
