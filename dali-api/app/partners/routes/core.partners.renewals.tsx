@@ -9,7 +9,7 @@ import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
 import { TermFilter } from "~/components/TermFilter";
 import { SearchInput } from "~/components/ui/SearchInput";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PartnerRowControls } from "../components/PartnerRowControls";
 import { RenewalsBoard } from "../components/RenewalsBoard";
 import {
   isMaintenancePlan,
@@ -184,16 +184,14 @@ export default function PartnersRenewals() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav className="shrink-0" />
+      <PartnerRowControls>
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search projects or partners"
           aria-label="Search renewals"
-          containerClassName="flex-1 min-w-[180px] max-w-[320px]"
+          containerClassName="w-[220px]"
         />
-        <div className="flex-1" />
         {picked && (
           <TermFilter
             terms={termOptions}
@@ -203,7 +201,7 @@ export default function PartnersRenewals() {
             formatLabel={(label) => `Active in ${label}`}
           />
         )}
-      </div>
+      </PartnerRowControls>
       {!picked || !decisionTerm ? (
         <p className="text-sm text-muted-foreground">
           {picked ? `There is no term after ${picked.code} yet, so renewals cannot be decided.` : "No terms yet."}

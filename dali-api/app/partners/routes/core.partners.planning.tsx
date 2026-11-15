@@ -13,12 +13,12 @@ import { isMaintenancePlan } from "../lib/partner-renewals";
 import { setApplicationSpots, setTermSpots } from "../lib/planning-spots.server";
 import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server";
 import { startProjectReturn } from "../lib/partner-returns.server";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PartnerRowControls, RowPrimaryButton } from "../components/PartnerRowControls";
 import { PlanningTable } from "../components/PlanningTable";
 import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
 import { PlanningApplicationModal } from "../components/planning/PlanningApplicationModal";
 import { StartReturnModal } from "../components/planning/StartReturnModal";
-import { Button } from "~/components/ui/Button";
+import { RefreshCcw } from "lucide-react";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
 import { buildPlanningGap, buildPlanningProjects, findPlanningProject, type IntentSetup } from "../lib/planning-gap";
@@ -257,61 +257,51 @@ export default function PartnersPlanning() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav className="shrink-0" />
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          {view === "domain" && data.hasIntentData && (
-            <Link
-              to={termHref}
-              className="shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground"
-            >
-              {data.replied} of {data.roster} replied
-            </Link>
-          )}
-          <SegmentedTabButtons
-            label="Group by"
-            size="toolbar"
-            className="shrink-0"
-            items={[
-              { label: "Domain", active: view === "domain", onClick: () => setView("domain") },
-              { label: "Project", active: view === "project", onClick: () => setView("project") },
-            ]}
-          />
-          <Tooltip content="Adds Backlog applications that target this term">
-            <span className="inline-flex h-9 shrink-0 items-center px-1">
-              <Toggle
-                tone="os"
-                label="Include backlog"
-                checked={includeBacklog}
-                onChange={(e) => setIncludeBacklog(e.target.checked)}
-              />
-            </span>
-          </Tooltip>
-          <Tooltip content="Adds New, Interview and Deciding applications and undecided renewals">
-            <span className="inline-flex h-9 shrink-0 items-center px-1">
-              <Toggle
-                tone="os"
-                label="Include potential"
-                checked={includePotential}
-                onChange={(e) => setIncludePotential(e.target.checked)}
-              />
-            </span>
-          </Tooltip>
-          {data.termId && (
-            <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setStartingReturn(true)}>
-              Start a return
-            </Button>
-          )}
-          {data.termId && (
-            <TermFilter
-              terms={data.terms}
-              selected={data.termId}
-              includeAll={false}
-              replace
+      <PartnerRowControls>
+        {view === "domain" && data.hasIntentData && (
+          <Link
+            to={termHref}
+            className="shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground"
+          >
+            {data.replied} of {data.roster} replied
+          </Link>
+        )}
+        <SegmentedTabButtons
+          label="Group by"
+          size="toolbar"
+          className="shrink-0"
+          items={[
+            { label: "Domain", active: view === "domain", onClick: () => setView("domain") },
+            { label: "Project", active: view === "project", onClick: () => setView("project") },
+          ]}
+        />
+        <Tooltip content="Adds Backlog applications that target this term">
+          <span className="inline-flex h-9 shrink-0 items-center px-1">
+            <Toggle
+              tone="os"
+              label="Include backlog"
+              checked={includeBacklog}
+              onChange={(e) => setIncludeBacklog(e.target.checked)}
             />
-          )}
-        </div>
-      </div>
+          </span>
+        </Tooltip>
+        <Tooltip content="Adds New, Interview and Deciding applications and undecided renewals">
+          <span className="inline-flex h-9 shrink-0 items-center px-1">
+            <Toggle
+              tone="os"
+              label="Include potential"
+              checked={includePotential}
+              onChange={(e) => setIncludePotential(e.target.checked)}
+            />
+          </span>
+        </Tooltip>
+        {data.termId && (
+          <TermFilter terms={data.terms} selected={data.termId} includeAll={false} replace />
+        )}
+        {data.termId && (
+          <RowPrimaryButton label="Start a return" icon={RefreshCcw} onClick={() => setStartingReturn(true)} />
+        )}
+      </PartnerRowControls>
 
       {!data.termId ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">No terms exist yet.</div>

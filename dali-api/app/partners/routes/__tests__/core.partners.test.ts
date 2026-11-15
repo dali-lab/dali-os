@@ -9,7 +9,7 @@ vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), currentTerm: vi.fn() }));
 vi.mock("../../components/PartnerBoard", () => ({ PartnerBoard: () => null }));
 vi.mock("../../components/PartnerApplicationModal", () => ({ PartnerApplicationModal: () => null }));
 vi.mock("../../components/PartnerSettingsModal", () => ({ PartnerSettingsModal: () => null }));
-vi.mock("../../components/PartnerCrmNav", () => ({ PartnerCrmNav: () => null }));
+vi.mock("../../components/PartnerRowControls", () => ({ PartnerRowControls: () => null, RowPrimaryButton: () => null }));
 import { prisma } from "~/lib/db.server";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { isCore, currentTerm } from "~/lib/roles";
