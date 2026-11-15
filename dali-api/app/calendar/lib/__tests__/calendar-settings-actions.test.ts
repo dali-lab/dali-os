@@ -8,6 +8,7 @@ vi.mock("~/lib/auth", () => ({
   isImpersonating: vi.fn(),
 }));
 vi.mock("~/lib/roles", () => ({
+  isLabMemberOrAlum: vi.fn(),
   isLabMember: vi.fn(),
   canViewForms: vi.fn(),
   isCore: vi.fn(),
@@ -100,7 +101,7 @@ vi.mock("~/calendar/lib/meeting-link.server", () => ({ meetingLinkRedirect: vi.f
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMember, isLabMemberOrAlum } from "~/lib/roles";
 import { markCalendarChanged } from "~/calendar/lib/external-cache.server";
 import { setSubCalendarEnabled } from "~/calendar/lib/sub-calendar.server";
 import { resolveTermFilter } from "~/lib/terms";
@@ -148,6 +149,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(markCalendarChanged).mockResolvedValue(undefined as never);
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1", type: "member" } } as never);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(isLabMember).mockResolvedValue(true);
   db.$transaction!.mockImplementation(async (fn: unknown) => (fn as (tx: unknown) => unknown)(prisma));
   db.workingHoursDay!.deleteMany!.mockResolvedValue({ count: 0 });
@@ -167,7 +169,7 @@ describe("submitCalendarAction gating", () => {
   it.each(["subscribe-general-calendar", "toggle-meeting-time-entry", "add-meeting-note", "track-event-as-meeting"])(
     "refuses %s for someone who is not a lab member",
     async (intent) => {
-      vi.mocked(isLabMember).mockResolvedValue(false);
+      vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
 
       const res = await post({ intent });
 
@@ -529,6 +531,14 @@ describe("toggle-meeting-time-entry", () => {
 
     expect(await post(on)).toBeNull();
     expect(db.timeEntry!.upsert).toHaveBeenCalled();
+  });
+
+  it("refuses an alum an open (None scope) meeting they were not invited to", async () => {
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    db.scheduledMeeting!.findUnique!.mockResolvedValue(meeting({ scopeType: "None", participantUserIds: [] }));
+
+    expect((await post(on))?.status).toBe(403);
+    expect(db.timeEntry!.upsert).not.toHaveBeenCalled();
   });
 
   it("upserts a Meeting-sourced row from the occurrence, keyed per user and occurrence, with hours from its length", async () => {

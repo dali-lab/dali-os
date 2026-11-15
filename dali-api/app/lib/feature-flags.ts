@@ -11,7 +11,7 @@
 import type { UserRoles } from "~/lib/roles";
 
 // Role flags that a flag may target. A subset of UserRoles keys — the boolean
-// authority flags that make sense as an audience (excludes isLabMember, which
+// authority flags that make sense as an audience (excludes isLabMemberOrAlum, which
 // is "everyone signed in"). Must be keys of UserRoles, since evaluateFlag reads
 // them off the resolved roles object. The admin action constrains writes here.
 export const ROLE_TARGETS = [
@@ -170,6 +170,12 @@ export const FEATURE_FLAGS = [
     label: "Alumni: Baker tower Home",
     description:
       "Alumni see Baker tower over the Green on Home, in Hanover's current season, by day or night, with the clock showing Hanover time. Ships off.",
+  },
+  {
+    key: "project-band-header",
+    label: "Project band header",
+    description:
+      "Project pages show a band header: the emoji, title, partner and terms, roles and team on the left and the cover image on the right. Off keeps the current header. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

@@ -3,7 +3,7 @@
 // open/resolved state, so there is nothing to mark done.
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { addReaction, commentReactionStore } from "~/lib/reactions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
@@ -88,7 +88,7 @@ type ManageCommentInput = {
 };
 
 async function canCommentOnTarget(callerId: string, targetType: CommentTarget, targetId: string): Promise<boolean> {
-  if (targetType === "pagedoc") return isLabMember(callerId);
+  if (targetType === "pagedoc") return isLabMemberOrAlum(callerId);
   if (targetType === "crit") return (await loadCritTarget(callerId, targetId)) !== null;
   if (targetType === "doc") {
     const access = await getPageAccess(callerId, targetId);

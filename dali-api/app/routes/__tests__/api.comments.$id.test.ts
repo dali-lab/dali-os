@@ -9,7 +9,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/comment-events.server", () => ({ publishCommentChange: vi.fn() }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
 }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,

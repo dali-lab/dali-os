@@ -27,10 +27,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // reaches it too, for the offerings they teach — the layout keeps them in the
   // instructor chrome. Anyone else belongs on the portal mirror.
   const canManage = roles.isCore || roles.isInstructor;
-  if (!roles.isLabMember && !canManage) return redirect("/portal/education");
+  if (!roles.isLabMemberOrAlum && !canManage) return redirect("/portal/education");
 
   const [catalog, manageable] = await Promise.all([
-    roles.isLabMember ? listCatalog(auth.user.sub) : Promise.resolve([]),
+    roles.isLabMemberOrAlum ? listCatalog(auth.user.sub) : Promise.resolve([]),
     canManage ? listManageable(auth.user.sub) : Promise.resolve([]),
   ]);
 

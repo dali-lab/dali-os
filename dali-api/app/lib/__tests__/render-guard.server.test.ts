@@ -16,9 +16,42 @@ describe("isPrivateAddress", () => {
   it.each(["8.8.8.8", "172.32.0.1", "1.1.1.1", "2606:4700:4700::1111"])("%s is public", (ip) => {
     expect(isPrivateAddress(ip)).toBe(false);
   });
+  it.each([
+    "::ffff:7f00:1",
+    "::ffff:a9fe:a9fe",
+    "::ffff:127.0.0.1",
+    "::7f00:1",
+    "64:ff9b::7f00:1",
+    "64:ff9b::127.0.0.1",
+    "64:ff9b:1::1",
+    "2002:7f00:1::",
+    "2002:a9fe:a9fe::1",
+    "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+    "2001:db8::1",
+    "[::1]",
+    "[::ffff:7f00:1]",
+    "0:0:0:0:0:ffff:7f00:1",
+    "0000:0000:0000:0000:0000:ffff:a9fe:a9fe",
+  ])("%s is not public", (ip) => {
+    expect(isPrivateAddress(ip)).toBe(true);
+  });
+  it.each(["::ffff:8.8.8.8", "::ffff:808:808", "64:ff9b::808:808", "2002:808:808::1", "2606:4700::1111", "[2606:4700::1111]", "0:0:0:0:0:ffff:808:808"])("%s is public", (ip) => {
+    expect(isPrivateAddress(ip)).toBe(false);
+  });
+  it("blocks the hostname Node derives from a mapped IPv6 URL", () => {
+    expect(isPrivateAddress(new URL("http://[::ffff:127.0.0.1]/").hostname.replace(/^\[|\]$/g, ""))).toBe(true);
+    expect(isPrivateAddress(new URL("http://[::ffff:169.254.169.254]/").hostname.replace(/^\[|\]$/g, ""))).toBe(true);
+  });
 });
 
 describe("request guard", () => {
+  it("refuses a mapped IPv6 literal that points at loopback", async () => {
+    const { g, resolve } = guard();
+    expect(await g.allow("https://[::ffff:127.0.0.1]/x.png", "image")).toBe(false);
+    expect(await g.allow("https://[::ffff:a9fe:a9fe]/x.png", "image")).toBe(false);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
   it("allows inline data and the script and font CDNs without a lookup", async () => {
     const { g, resolve } = guard();
     for (const url of [

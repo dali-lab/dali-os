@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: { id: true }, getPageAccess: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMemberOrAlum: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { canCreateForm, canManageFormPlacement } from "~/forms/lib/form-access.server";
 
 const access = (canEdit: boolean) => ({ canView: true, canEdit, canComment: canEdit }) as never;
@@ -17,9 +17,9 @@ beforeEach(() => {
 
 describe("canCreateForm", () => {
   it("with no folder, any lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     expect(await canCreateForm("u1", null)).toBe(true);
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect(await canCreateForm("u1", undefined)).toBe(false);
   });
 

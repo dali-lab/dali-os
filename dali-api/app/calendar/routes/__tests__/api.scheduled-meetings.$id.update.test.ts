@@ -148,6 +148,7 @@ describe("POST /api/scheduled-meetings/:id/update", () => {
       roomIds: ["r1"],
       newRoomIds: [],
       meetingId: "m1",
+      bookerId: "org-1",
       selectedAt: new Date(START),
       durationMinutes: 30,
       recurrenceRule: "RRULE:FREQ=WEEKLY",

@@ -174,6 +174,11 @@
   --color-os-nav:          #24242a;  /* sidebar + top bar */
   --color-os-card:         #2b2b36;  /* cards, wells, menus */
   --color-os-card-hover:   #323240;
+  --color-os-band:         #2f4d7d;  /* project band header: navy lifted so it reads against os-bg */
+  --color-os-on-band:      #ffffff;  /* band title and chip text */
+  --color-os-on-band-meta: rgba(255, 255, 255, 0.78);  /* band meta line */
+  --color-os-band-line:    rgba(255, 255, 255, 0.28);  /* chip borders */
+  --color-os-band-chip:    rgba(20, 24, 34, 0.5);  /* chip fill over the band */
   --color-os-well:         #26262f;  /* inputs, nested rows */
   --color-os-container:    #3f3f48;  /* borders, chips, active fill */
   --color-os-container-hi: #54545f;  /* hover border */
@@ -945,34 +950,6 @@ select:not(:disabled) {
  * dark palette instead of this one, while the shell div — where `.os-shell` is
  * the nearest ancestor — rendered correctly. Matching the arms ties the
  * specificity, and later wins. */
-/* Resource Hub cover art. Illustration, not chrome: the same value in light and
-   dark. Hues the brand palette already has (--color-accent-pink, -coral-light,
-   --color-navy, -teal-light) are used from there, not repeated here. */
-:root {
-  --art-coral:    #d45f6a;
-  --art-apricot:  #f1c885;
-  --art-butter:   #fcf3c2;
-  --art-sage:     #7ab39a;
-  --art-teal:     #5fb8b4;
-  --art-orchid:   #bd64a8;
-  --art-mist:     #d3dae0;
-  --art-ground-lilac: #f3effa;
-  --art-ground-mint:  #e8f4f1;
-  --art-ground-blush: #fbeef2;
-  --art-ground-sky:   #e9f2fb;
-  --art-ground-peach: #fff1e6;
-  --art-ground-sage:  #eef6ea;
-  --art-ink:      #1b2a47;
-  --art-charcoal: #1c1f24;
-  --art-plum:     #3b2a4f;
-  --art-forest:   #1f3b34;
-  --art-wine:     #4a2430;
-  --art-slate:    #2d3948;
-  --os-on-art-ink:        #ffffff;
-  --os-on-art-line:       rgba(255, 255, 255, 0.4);
-  --os-on-art-chip:       rgba(20, 24, 34, 0.5);
-  --os-on-art-chip-hover: rgba(20, 24, 34, 0.72);
-}
 
 /* The three record levels, as one set of variables rather than three sets of
    literals. Epic / story / task are named in CSS (the badge, the timeline bar)
@@ -1220,6 +1197,11 @@ html.light .os-shell,
   --color-os-nav:          #eef1f5;  /* sidebar + top bar — the recessed frame */
   --color-os-card:         #f3f6f9;  /* cards, menus — a cool step darker than the page */
   --color-os-card-hover:   #eaf3f8;  /* a wash toward the accent, not toward grey */
+  --color-os-band:         #1b2a47;  /* project band header: navy */
+  --color-os-on-band:      #ffffff;
+  --color-os-on-band-meta: rgba(255, 255, 255, 0.78);
+  --color-os-band-line:    rgba(255, 255, 255, 0.28);
+  --color-os-band-chip:    rgba(20, 24, 34, 0.5);
   --color-os-well:         #eaeff5;  /* inputs, nested rows */
   --color-os-container:    #ccd7e2;  /* borders, chips, active fill */
   --color-os-container-hi: #a9b9c9;  /* hover border */
@@ -2373,4 +2355,34 @@ html:root .font-heading.text-\[32px\] {
   font-size: 18px;
   font-weight: 700;
   line-height: 1;
+}
+
+/* Cover art (project and hub covers). Illustration, not chrome: the same value in light and
+   dark. Hues the brand palette already has (--color-accent-pink, -coral-light,
+   --color-navy, -teal-light) are used from there, not repeated here. */
+:root {
+  --art-coral:    #d45f6a;
+  --art-apricot:  #f1c885;
+  --art-butter:   #fcf3c2;
+  --art-sage:     #7ab39a;
+  --art-teal:     #5fb8b4;
+  --art-orchid:   #bd64a8;
+  --art-mist:     #d3dae0;
+  --art-ground-lilac: #f3effa;
+  --art-ground-mint:  #e8f4f1;
+  --art-ground-blush: #fbeef2;
+  --art-ground-sky:   #e9f2fb;
+  --art-ground-peach: #fff1e6;
+  --art-ground-sage:  #eef6ea;
+  --art-ink:      #1b2a47;
+  --art-charcoal: #1c1f24;
+  --art-plum:     #3b2a4f;
+  --art-forest:   #1f3b34;
+  --art-wine:     #4a2430;
+  --art-slate:    #2d3948;
+  --art-navy:     #214b76;
+  --os-on-art-ink:        #ffffff;
+  --os-on-art-line:       rgba(255, 255, 255, 0.4);
+  --os-on-art-chip:       rgba(20, 24, 34, 0.5);
+  --os-on-art-chip-hover: rgba(20, 24, 34, 0.72);
 }

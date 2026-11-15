@@ -27,7 +27,7 @@ export async function action({ request }: Route.ActionArgs) {
   const userId = auth.user.sub;
 
   const roles = await getUserRoles(userId, request);
-  if (!roles.isLabMember || !(await isFeatureEnabled("ask-dali", userId, roles, request))) {
+  if (!roles.isLabMemberOrAlum || !(await isFeatureEnabled("ask-dali", userId, roles, request))) {
     return Response.json({ error: "Not available" }, { status: 403 });
   }
 

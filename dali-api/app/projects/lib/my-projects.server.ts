@@ -1,3 +1,4 @@
+import { externalImageUrl } from "~/projects/lib/project-cover.server";
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { currentSprintBand } from "~/projects/lib/task-board";
@@ -100,7 +101,7 @@ export async function listMyProjects(callerId: string, input: ListMyProjectsInpu
       id: p.id,
       name: p.name,
       status: p.status,
-      imageUrl: p.imageUrl,
+      imageUrl: externalImageUrl(p.imageUrl),
       terms: termSpans.map((t) => t.code),
       currentTermAssignment: currentTermByProject.get(p.id) ?? null,
       activeSprint: band

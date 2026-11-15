@@ -67,7 +67,7 @@ function load(query = "") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockRoles.mockResolvedValue({ isCore: false, isLabMember: true });
+  mockRoles.mockResolvedValue({ isCore: false, isLabMemberOrAlum: true, isLabMember: true });
   mockIsProjectMember.mockResolvedValue(false);
   mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting());
   mockPrisma.meetingTimeProposal.findMany.mockResolvedValue([]);
@@ -185,7 +185,7 @@ describe("meeting page — adding a note after the fact", () => {
 
   it("offers it to Core", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "core-1", type: "member" } });
-    mockRoles.mockResolvedValue({ isCore: true, isLabMember: true });
+    mockRoles.mockResolvedValue({ isCore: true, isLabMemberOrAlum: true, isLabMember: true });
     expect((await load()).canAddNote).toBe(true);
   });
 
@@ -242,13 +242,13 @@ describe("meeting page — turning on self check-in later", () => {
 
   it("offers it to an organizer who may create self check-in events", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
-    mockRoles.mockResolvedValue({ isCore: false, isLabMember: true, canViewForms: true });
+    mockRoles.mockResolvedValue({ isCore: false, isLabMemberOrAlum: true, isLabMember: true, canViewForms: true });
     expect(((await load()) as unknown as { canEnableSelfCheckIn: boolean }).canEnableSelfCheckIn).toBe(true);
   });
 
   it("switches the mode and backfills the roster", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
-    mockRoles.mockResolvedValue({ isCore: false, isLabMember: true, canViewForms: true });
+    mockRoles.mockResolvedValue({ isCore: false, isLabMemberOrAlum: true, isLabMember: true, canViewForms: true });
     const res = await enable();
     expect(res.status).toBe(200);
     expect(mockPrisma.scheduledMeeting.update).toHaveBeenCalledWith({
@@ -267,14 +267,14 @@ describe("meeting page — turning on self check-in later", () => {
 
   it("refuses an organizer without the self check-in role", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "organizer-1", type: "member" } });
-    mockRoles.mockResolvedValue({ isCore: false, isLabMember: true, canViewForms: false });
+    mockRoles.mockResolvedValue({ isCore: false, isLabMemberOrAlum: true, isLabMember: true, canViewForms: false });
     expect((await enable()).status).toBe(403);
     expect(mockPrisma.scheduledMeeting.update).not.toHaveBeenCalled();
   });
 
   it("refuses a project member who isn't the organizer", async () => {
     mockAuth.mockResolvedValue({ ok: true, user: { sub: "member-1", type: "member" } });
-    mockRoles.mockResolvedValue({ isCore: false, isLabMember: true, canViewForms: true });
+    mockRoles.mockResolvedValue({ isCore: false, isLabMemberOrAlum: true, isLabMember: true, canViewForms: true });
     expect((await enable()).status).toBe(403);
   });
 });
@@ -403,6 +403,13 @@ describe("meeting page — access gate", () => {
     mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting({ scopeType: "None", projectId: null }));
     const d = (await load()) as unknown as { canManage: boolean };
     expect(d.canManage).toBe(false);
+  });
+
+  it("keeps an uninvited alum out of a lab-wide meeting", async () => {
+    mockAuth.mockResolvedValue({ ok: true, user: { sub: "stranger-1", type: "member" } });
+    mockRoles.mockResolvedValue({ isCore: false, isLabMemberOrAlum: true, isLabMember: false });
+    mockPrisma.scheduledMeeting.findUnique.mockResolvedValue(meeting({ scopeType: "None", projectId: null }));
+    await expect(load()).rejects.toMatchObject({ status: 404 });
   });
 
   it("lets a project member in and manage, checking membership with the request", async () => {

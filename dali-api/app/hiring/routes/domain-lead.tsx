@@ -9,7 +9,8 @@ import { loadDomainLeadDashboard } from "~/hiring/lib/domain-lead-dashboard.serv
 import { DOMAIN_LEAD_ACTIONS, resolveLeadDomain } from "~/hiring/lib/domain-lead-actions.server";
 import { useToast } from "~/components/ui/toast";
 import { useOsChrome } from "~/components/os-chrome";
-import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
+import { Users } from "lucide-react";
+import { PageTabRow } from "~/components/os-page";
 import { DomainPanel } from "~/hiring/components/domain-lead/DomainPanel";
 
 export const meta: Route.MetaFunction = () => [{ title: "Domain lead · DALI OS" }];
@@ -78,10 +79,11 @@ export default function DomainLeadDashboard() {
   return (
     <div className="flex flex-col gap-6">
       {domainData.length > 1 && (
-        <SegmentedTabButtons
+        <PageTabRow
           label="Domain"
-          items={domainData.map((d) => ({
+          tabs={domainData.map((d) => ({
             label: d.assignment.domain.name,
+            icon: Users,
             active: d === current,
             onClick: () => setDomain(d.assignment.domainId),
           }))}

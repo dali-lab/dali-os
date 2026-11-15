@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.comments";
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden, type AuthSuccess } from "~/lib/auth";
-import { isLabMember, isProjectMember } from "~/lib/roles";
+import { isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
 import { hydrateAuthors } from "~/lib/collabAuth.server";
@@ -71,7 +71,7 @@ async function canReadTarget(
   targetId: string,
   request?: Request,
 ): Promise<boolean> {
-  if (targetType === "pagedoc") return isLabMember(auth.user.sub, request);
+  if (targetType === "pagedoc") return isLabMemberOrAlum(auth.user.sub, request);
   if (targetType === "crit") return (await loadCritTarget(auth.user.sub, targetId, request)) !== null;
   if (targetType === "doc") {
     const access = await getPageAccess(auth.user.sub, targetId, request);

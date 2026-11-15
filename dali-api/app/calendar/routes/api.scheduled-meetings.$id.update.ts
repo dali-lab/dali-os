@@ -82,6 +82,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       roomIds: effectiveRoomIds,
       newRoomIds: effectiveRoomIds.filter((id) => !currentIds.includes(id)),
       meetingId: params.id!,
+      bookerId: auth.user.sub,
       selectedAt: new Date(body.startTime),
       durationMinutes: body.durationMinutes,
       recurrenceRule: body.recurrenceRule ?? null,

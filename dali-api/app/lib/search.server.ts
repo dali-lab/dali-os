@@ -92,7 +92,7 @@ function normalizedQuery(opts: SearchOpts): string | null {
   if (q.length < MIN_QUERY_LENGTH) return null;
   // Not a lab member (e.g. an applicant who reached the endpoint directly) —
   // nothing to surface. The palette itself only mounts in the member shell.
-  if (!opts.roles.isLabMember) return null;
+  if (!opts.roles.isLabMemberOrAlum) return null;
   return q;
 }
 

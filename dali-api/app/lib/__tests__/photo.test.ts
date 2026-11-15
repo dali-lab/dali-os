@@ -22,6 +22,11 @@ describe("resolvePhotoUrl", () => {
     expect(getDownloadUrl).not.toHaveBeenCalled();
   });
 
+  it("returns null for a pattern cover, which is not an image", async () => {
+    expect(await resolvePhotoUrl("pattern:poster?c=plum")).toBeNull();
+    expect(getDownloadUrl).not.toHaveBeenCalled();
+  });
+
   it("passes legacy full URLs through unchanged", async () => {
     const url = "https://example.com/me.jpg";
     expect(await resolvePhotoUrl(url)).toBe(url);

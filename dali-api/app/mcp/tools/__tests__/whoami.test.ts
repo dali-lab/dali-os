@@ -14,7 +14,7 @@ const USER = {
   lastName: "Lovelace",
 };
 
-const NO_ROLES = { isAdmin: false, isCore: false, isDomainLead: false, isLabMember: false };
+const NO_ROLES = { isAdmin: false, isCore: false, isDomainLead: false, isLabMemberOrAlum: false };
 
 beforeEach(() => vi.clearAllMocks());
 
@@ -24,7 +24,7 @@ describe("whoami", () => {
   });
 
   it("returns the caller's identity without the Dartmouth email", async () => {
-    getUserRoles.mockResolvedValue({ ...NO_ROLES, isLabMember: true });
+    getUserRoles.mockResolvedValue({ ...NO_ROLES, isLabMemberOrAlum: true });
     expect(await runWhoami(USER)).toEqual({
       id: "u1",
       daliEmail: "ada@dali.example.edu",
@@ -37,10 +37,10 @@ describe("whoami", () => {
   });
 
   it.each([
-    [{ isAdmin: true, isCore: true, isDomainLead: true, isLabMember: true }, "admin"],
-    [{ isCore: true, isDomainLead: true, isLabMember: true }, "core"],
-    [{ isDomainLead: true, isLabMember: true }, "domain-lead"],
-    [{ isLabMember: true }, "member"],
+    [{ isAdmin: true, isCore: true, isDomainLead: true, isLabMemberOrAlum: true }, "admin"],
+    [{ isCore: true, isDomainLead: true, isLabMemberOrAlum: true }, "core"],
+    [{ isDomainLead: true, isLabMemberOrAlum: true }, "domain-lead"],
+    [{ isLabMemberOrAlum: true }, "member"],
     [{}, "non-member"],
   ])("reports the highest tier for %o as %s", async (roles, tier) => {
     getUserRoles.mockResolvedValue({ ...NO_ROLES, ...roles });

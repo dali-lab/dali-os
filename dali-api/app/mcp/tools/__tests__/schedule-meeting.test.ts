@@ -132,7 +132,7 @@ describe("schedule_meeting roomIds", () => {
     expect(assertMeetingRoomsFree).not.toHaveBeenCalled();
   });
 
-  it("refuses a non-member", async () => {
+  it("refuses someone who isn't a current member, alumni included", async () => {
     vi.mocked(isLabMember).mockResolvedValue(false);
     await expect(runScheduleMeeting(user, { ...base, startTime, roomIds: ["r1"] })).rejects.toBeInstanceOf(
       ScheduleMeetingError,

@@ -2,7 +2,7 @@
 // Permission mirrors api.comments.ts GET.
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { loadCritTarget } from "~/lib/crit-comments.server";
@@ -68,7 +68,7 @@ async function canRead(
   targetType: CommentTarget,
   targetId: string,
 ): Promise<boolean> {
-  if (targetType === "pagedoc") return isLabMember(callerId);
+  if (targetType === "pagedoc") return isLabMemberOrAlum(callerId);
   if (targetType === "crit") return (await loadCritTarget(callerId, targetId)) !== null;
   if (targetType === "doc") {
     const access = await getPageAccess(callerId, targetId);

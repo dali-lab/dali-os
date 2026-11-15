@@ -38,7 +38,7 @@ beforeEach(() => {
 
 describe("requireReferralsEnabled", () => {
   const request = new Request("http://localhost/refer");
-  const roles = { isLabMember: true, isAlumni: false };
+  const roles = { isLabMemberOrAlum: true, isAlumni: false };
 
   beforeEach(() => {
     (getUserRoles as any).mockResolvedValue(roles);

@@ -4,7 +4,7 @@
 //   manage_personal_note  — mcp:write  (faceted: create/update/delete/set_visibility/share_add/share_remove)
 
 import { prisma } from "~/lib/db.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { requireForAction } from "~/mcp/registry";
 import {
   noteAccess,
@@ -73,7 +73,7 @@ export class PersonalNoteError extends Error {
 }
 
 export async function runListPersonalNotes(callerId: string, input: ListInput) {
-  if (!(await isLabMember(callerId))) {
+  if (!(await isLabMemberOrAlum(callerId))) {
     throw new PersonalNoteError("Forbidden", 403);
   }
 

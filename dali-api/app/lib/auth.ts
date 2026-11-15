@@ -7,7 +7,7 @@ import {
 import { logAuditEvent } from "~/lib/audit";
 import { lookupSession, rollSession, hashSessionId } from "~/lib/session.server";
 import { withCors } from "~/lib/cors";
-import { getUserRoles, isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { getUserRoles, isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { displayEmail } from "~/lib/display";
 import { cachedForRequest } from "~/lib/request-cache";
@@ -22,7 +22,7 @@ import { sampleDuration } from "~/lib/perf-stats";
 // Derived from the User row, never stored: a DALI Workspace address types
 // "member", a NetID without one "dartmouth", neither "partner". It is a hint
 // about how the person signed in, not a role — lab membership is the
-// DALIMember row (isLabMember), and a NetID-native member types "dartmouth".
+// DALIMember row (isLabMemberOrAlum), and a NetID-native member types "dartmouth".
 export type AuthType = "member" | "dartmouth" | "partner";
 
 export type AuthUser = {
@@ -366,7 +366,7 @@ export async function requireProjectEditAccess(
 // nothing extra. Actions and API routes call this themselves because the
 // layout loader does not run for them.
 export async function isNonMember(auth: AuthSuccess, request: Request): Promise<boolean> {
-  return !(await isLabMember(auth.user.sub, request));
+  return !(await isLabMemberOrAlum(auth.user.sub, request));
 }
 
 export async function redirectNonMemberToPortal(

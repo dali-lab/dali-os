@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useFetcher } from "react-router";
-import { Check, Copy, MessageSquareWarning, Pencil, Plus, Settings2, Trash2, Undo2 } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
+import { Check, Copy, Hourglass, MessageSquareWarning, Pencil, Plus, Send, Trash2, Undo2 } from "lucide-react";
+import { PageTabRow } from "~/components/os-page";
 import { Drawer } from "~/components/ui/Drawer";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { DateField } from "~/components/ui/DateField";
-import { IconButton } from "~/components/ui/IconButton";
 import { Combobox } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
@@ -110,21 +109,17 @@ export function ListservPage({ data }: { data: ListservData }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SegmentedTabButtons
-          label="Listserv view"
-          items={[
-            { label: "In progress", count: queue.length, active: view === "queue", onClick: () => setView("queue") },
-            { label: "Sent", count: sent.length, active: view === "sent", onClick: () => setView("sent") },
-          ]}
-        />
-        <div className="flex items-center gap-2">
-          {data.isAdmin && <IconButton label="Outreach lead and sending address" icon={Settings2} onClick={() => setConfigOpen(true)} />}
-          <button type="button" className="os-add-btn" onClick={() => setComposer({ open: true, editing: null })}>
-            <Plus className="h-4 w-4" strokeWidth={3} /> Submit an email
-          </button>
-        </div>
-      </div>
+      <PageTabRow
+        label="Listserv view"
+        tabs={[
+          { label: "In progress", icon: Hourglass, count: queue.length, active: view === "queue", onClick: () => setView("queue") },
+          { label: "Sent", icon: Send, count: sent.length, active: view === "sent", onClick: () => setView("sent") },
+        ]}
+        controls={[
+          { key: "submit", label: "Submit an email", icon: Plus, primary: true, onClick: () => setComposer({ open: true, editing: null }) },
+        ]}
+        onSettings={data.isAdmin ? () => setConfigOpen(true) : undefined}
+      />
 
       {view === "sent" ? (
         <SentHistory sent={sent} isLead={isLead} viewerId={viewerId} today={today} onOpen={setSelectedId} />

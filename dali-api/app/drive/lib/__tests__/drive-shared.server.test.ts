@@ -12,7 +12,7 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isProjectMember: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
 }));
 vi.mock("~/partners/lib/partner-access", () => ({
   partnerHasProjectAccess: vi.fn().mockResolvedValue(false),
@@ -23,7 +23,7 @@ vi.mock("~/lib/groups.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { listVisibleGroupIdsForUser } from "~/lib/groups.server";
 import { loadSharedWithMe } from "~/drive/lib/drive-shared.server";
 
@@ -92,7 +92,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(false);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
   vi.mocked(listVisibleGroupIdsForUser).mockResolvedValue([]);
   m.user.findMany.mockResolvedValue([{ id: "alice", firstName: "Alice", lastName: "Ng" }]);
   m.instructorAssignment.findFirst.mockResolvedValue(null);
@@ -142,7 +142,7 @@ describe("loadSharedWithMe", () => {
   });
 
   it("omits a page the viewer already sees through workspace membership", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const projectPage = page("proj-doc", { workspaceType: "Project", workspaceId: "p1", createdById: "alice" });
     seed({
       received: [
@@ -321,7 +321,7 @@ describe("loadSharedWithMe", () => {
     });
 
     it("skips a file the viewer already reaches through where it lives", async () => {
-      vi.mocked(isLabMember).mockResolvedValue(true);
+      vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
       fileShares([
         {
           fileId: "f1",
@@ -334,7 +334,7 @@ describe("loadSharedWithMe", () => {
     });
 
     it("lists a file the viewer shared out, flagged sharedByMe", async () => {
-      vi.mocked(isLabMember).mockResolvedValue(true);
+      vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
       fileShares(
         [],
         [{ fileId: "f2", createdAt: new Date("2026-03-01T00:00:00Z"), file: file("f2", { workspaceType: "Lab", workspaceId: null }) }],

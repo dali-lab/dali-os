@@ -1,6 +1,5 @@
-import { useLocation, useNavigate } from "react-router";
 import { BarChart3, Building2, CalendarRange, Kanban, RefreshCcw, UserPlus } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
+import type { SegmentedTab } from "~/components/ui/SegmentedTabs";
 
 const TABS = [
   { label: "Applications", href: "/core/partners", icon: Kanban },
@@ -11,25 +10,12 @@ const TABS = [
   { label: "Reports", href: "/core/partners/reports", icon: BarChart3 },
 ];
 
-/** The tab switcher shared by the Partner CRM pages. Each page puts it at the
- *  start of its one toolbar row. Applications is matched exactly; it would
- *  otherwise be a prefix of every other tab's path. */
-export function PartnerCrmNav({ className }: { className?: string }) {
-  const { pathname } = useLocation();
-  const navigate = useNavigate();
-  const items = TABS.map((tab) => ({
+// Applications is matched exactly; it is a prefix of every other tab's path.
+export function partnerCrmTabs(pathname: string): SegmentedTab[] {
+  return TABS.map((tab) => ({
     label: tab.label,
     icon: tab.icon,
-    active:
-      tab.href === "/core/partners" ? pathname === tab.href : pathname.startsWith(tab.href),
-    onClick: () => navigate(tab.href),
+    href: tab.href,
+    active: tab.href === "/core/partners" ? pathname === tab.href : pathname.startsWith(tab.href),
   }));
-  return (
-    <SegmentedTabButtons
-      label="Partners"
-      size="toolbar"
-      items={items}
-      className={className ?? "self-start"}
-    />
-  );
 }

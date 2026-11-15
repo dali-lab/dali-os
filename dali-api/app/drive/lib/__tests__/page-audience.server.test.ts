@@ -12,7 +12,7 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isProjectMember: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
 }));
 vi.mock("~/partners/lib/partner-access", () => ({ partnerHasProjectAccess: vi.fn() }));
 vi.mock("~/lib/groups.server", () => ({

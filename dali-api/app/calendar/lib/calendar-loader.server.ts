@@ -3,7 +3,7 @@ import { prisma } from "~/lib/db.server";
 import { cachedExternalRead } from "~/calendar/lib/external-cache.server";
 import { isImpersonating, redirectNonMemberToPortal, requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { canViewForms, currentTerm, getUserRoleInstances, isCore, isLabMember } from "~/lib/roles";
+import { canViewForms, currentTerm, getUserRoleInstances, isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { resolveTermFilter } from "~/lib/terms";
 import { buildClassDestinations, toMemberClassDTO } from "~/lib/member-class.server";
 import { type CalendarEvent, fetchCalendarEvents, getValidAccessTokenForLink } from "~/calendar/lib/google-calendar.server";
@@ -129,7 +129,7 @@ export async function loadCalendarData(
   // as a "member" account and still belongs on the portal copy. On the portal
   // mount nothing else starts until this answers, so a redirected member never
   // triggers the Google token reads below.
-  const labMemberP = isLabMember(userId, request);
+  const labMemberP = isLabMemberOrAlum(userId, request);
   if (opts.portal && (await labMemberP)) return redirect("/calendar");
 
   // Every read starts here, before any Google call, so the Postgres round-trips

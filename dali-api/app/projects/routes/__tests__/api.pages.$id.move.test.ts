@@ -13,7 +13,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isProjectMember: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
 }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
@@ -56,7 +56,7 @@ vi.mock("~/drive/lib/drive-receivers.server", () => ({ clearTypeIfLeavingRoot: v
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { loadAncestorChain } from "~/drive/lib/page-ancestry.server";
@@ -119,7 +119,7 @@ beforeEach(() => {
   vi.mocked(canManageSharing).mockResolvedValue(true);
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(false);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
   vi.mocked(isOfferingManager).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue({ canView: true, canEdit: true, canComment: true });
   childrenByParent = {};
@@ -247,7 +247,7 @@ describe("POST /api/pages/:id/move", () => {
 
   it("resets partner/public sharing when a doc leaves a project", async () => {
     m.page.findUnique.mockResolvedValue(projectPage({ partnerVisible: true, publicVisible: true }));
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
     expect(res.status).toBe(200);
     const data = movedUpdateData();
@@ -276,7 +276,7 @@ describe("POST /api/pages/:id/move", () => {
 
   it("400 when moving the Overview/PRD doc out of its project", async () => {
     m.page.findUnique.mockResolvedValue(projectPage({ projectAsOverview: { id: "projA" } }));
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
     expect(res.status).toBe(400);
   });
@@ -319,7 +319,7 @@ describe("POST /api/pages/:id/move", () => {
 
   it("moves a personal note onto the lab shelf", async () => {
     m.page.findUnique.mockResolvedValue(notePage());
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
     expect(res.status).toBe(200);
     const data = movedUpdateData();
@@ -331,7 +331,7 @@ describe("POST /api/pages/:id/move", () => {
   it("403 when the actor doesn't own the note being moved out of My Drive", async () => {
     m.page.findUnique.mockResolvedValue(notePage({ workspaceId: "u2" }));
     vi.mocked(canManageSharing).mockResolvedValue(false);
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
     expect(res.status).toBe(403);
   });
@@ -362,7 +362,7 @@ describe("POST /api/pages/:id/move", () => {
   it("carries grandchildren, not only direct children", async () => {
     m.page.findUnique.mockResolvedValue(projectPage({ kind: "Folder" }));
     vi.mocked(isProjectMember).mockResolvedValue(true);
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     childrenByParent = { p1: ["sub"], sub: ["deep"], deep: ["deeper"] };
     const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
     expect(res.status).toBe(200);
@@ -372,7 +372,7 @@ describe("POST /api/pages/:id/move", () => {
   it("carries files filed anywhere in the subtree and re-scopes them", async () => {
     m.page.findUnique.mockResolvedValue(projectPage({ kind: "Folder" }));
     vi.mocked(isProjectMember).mockResolvedValue(true);
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     childrenByParent = { p1: ["sub"] };
     m.projectFile.findMany.mockResolvedValue([{ id: "f1" }, { id: "f2" }]);
 
@@ -398,7 +398,7 @@ describe("POST /api/pages/:id/move", () => {
   it("carries a notebook's tabs by its kind, without needing a notebookKey", async () => {
     m.page.findUnique.mockResolvedValue(projectPage({ kind: "Notebook", notebookKey: null }));
     vi.mocked(isProjectMember).mockResolvedValue(true);
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     childrenByParent = { p1: ["tab1", "tab2"] };
     const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
     expect(res.status).toBe(200);
@@ -408,7 +408,7 @@ describe("POST /api/pages/:id/move", () => {
   it("does not collect a subtree for a plain document", async () => {
     m.page.findUnique.mockResolvedValue(projectPage({ kind: "FreeForm", notebookKey: null }));
     vi.mocked(isProjectMember).mockResolvedValue(true);
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     childrenByParent = { p1: ["stray"] };
     const res = await call({ parentPageId: null, workspaceType: "Lab", workspaceId: null });
     expect(res.status).toBe(200);

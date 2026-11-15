@@ -7,7 +7,7 @@ vi.mock("~/lib/auth", () => ({
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   isProjectMember: vi.fn(),
 }));
 vi.mock("~/lib/cors", () => ({
@@ -42,7 +42,7 @@ vi.mock("~/lib/pageAccess.server", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { notifyFileComment } from "~/projects/lib/file-notifications.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { hydrateAuthors } from "~/lib/collabAuth.server";
@@ -109,7 +109,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue(memberAuth() as any);
   vi.mocked(isCore).mockResolvedValue(true);
-  vi.mocked(isLabMember).mockResolvedValue(false);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
   // Serves both targetExists gate (archivedAt) and currentVersionId fallback.
   mockPrisma.projectFile.findUnique.mockResolvedValue({

@@ -4,7 +4,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
 }));
 // Factory mock: the real roles module reaches ~/lib/db.
-vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMemberOrAlum: vi.fn() }));
 vi.mock("~/lib/s3.server", () => ({
   getUploadPost: vi.fn(),
   getDownloadUrl: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("~/lib/s3.server", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { getUploadPost, isS3Configured } from "~/lib/s3.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { _resetForTests } from "~/lib/rate-limit";
 import { MAX_FILE_STORE_BYTES, MAX_FORM_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from "~/lib/file-validation";
 import { action } from "~/routes/api.upload.presign";
@@ -49,7 +49,7 @@ beforeEach(() => {
     user: { sub: USER_ID, email: "u@x.com", type: "user" },
   } as any);
   vi.mocked(getUploadPost).mockResolvedValue(PRESIGNED_POST as any);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
 });
 
 describe("POST /api/upload/presign response shape", () => {
@@ -256,7 +256,7 @@ describe("POST /api/upload/presign response shape", () => {
   });
 
   it("keeps a non-member (partner, applicant) at 10 MB even in the file store", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     const big = await action({
       request: makeRequest({
         key: "drive-files/uuid-deck.pdf",
@@ -278,7 +278,7 @@ describe("POST /api/upload/presign response shape", () => {
   });
 
   it("gives an applicant (not a lab member) the 50 MB form-upload policy", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     const res = await action({
       request: makeRequest({
         key: "applications/portfolio/uuid-portfolio.pdf",
@@ -292,7 +292,7 @@ describe("POST /api/upload/presign response shape", () => {
       "application/pdf",
       { maxBytes: MAX_FORM_UPLOAD_BYTES, expiresIn: 900 },
     );
-    expect(isLabMember).not.toHaveBeenCalled();
+    expect(isLabMemberOrAlum).not.toHaveBeenCalled();
   });
 
   it("returns 413 past 50 MB for a form upload", async () => {
@@ -310,7 +310,7 @@ describe("POST /api/upload/presign response shape", () => {
 
   it("doesn't look up membership for an ordinary upload", async () => {
     await action({ request: makeRequest({ key: "avatars/me.png", contentType: "image/png" }) } as any);
-    expect(isLabMember).not.toHaveBeenCalled();
+    expect(isLabMemberOrAlum).not.toHaveBeenCalled();
   });
 
   it.each(["payroll-imports/x.csv", "uploads/payroll-imports/uuid-timesheet.csv", "resumes/x", "uploads/resumes/x"])(

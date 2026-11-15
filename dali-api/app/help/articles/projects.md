@@ -23,7 +23,7 @@ Only Core can create projects. Click **New project** on the hub, then fill in a 
 
 ## The project page
 
-The top of the page shows the project's icon, name, terms and roles. Below it are tabs:
+The top of the page shows the project's icon, name, terms and roles. Below it is a row with the tabs on the left and the open tab's own buttons on the right, like **New** on Progress and **Upload** on Drive. On a narrow window those buttons shrink to icons, then fold into a **⋯** menu. The tabs are:
 
 - **Progress**: the planning timeline of epics, stories and sprints, with the task board underneath. See [Tasks and the project board](/help/articles/tasks).
 - **Drive**: the project's documents and files.
@@ -42,7 +42,7 @@ Core principal investigators are listed per term under **Principal Investigators
 
 ## Project settings
 
-Core and staffing leads see a gear next to the tabs. Click **Project settings** to open it. Staffing leads can read it, but only Core can change it, save a template or delete the project. It holds:
+Core and staffing leads see a gear at the right end of the tab row. Click it to open settings on the page, in place of the tab you were on. Staffing leads can read it, but only Core can change it, save a template or delete the project. It holds:
 
 - **Status**: Active, Paused or Archived.
 - **Visibility**: a private project is left out of project dropdowns on forms. It is still listed on the hub and in search, and its team still sees it.

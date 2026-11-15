@@ -12,7 +12,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
 }));
 vi.mock("~/lib/roles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/lib/roles")>()),
-  isLabMember: vi.fn().mockResolvedValue(true),
+  isLabMemberOrAlum: vi.fn().mockResolvedValue(true),
 }));
 vi.mock("~/calendar/lib/meeting-artifacts.server", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/calendar/lib/meeting-artifacts.server")>()),

@@ -18,7 +18,7 @@ vi.mock("~/lib/db.server", () => ({
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isProjectMember: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
 }));
 vi.mock("~/lib/offering-manager.server", () => ({ isOfferingManager: vi.fn() }));
 vi.mock("~/lib/page-share-access.server", () => ({ canManageSharing: vi.fn() }));
@@ -45,7 +45,7 @@ vi.mock("~/drive/lib/page-ancestry.server", async (importActual) => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
 import { collectSubtree, MAX_PAGE_DEPTH } from "~/lib/pages.server";
@@ -121,7 +121,7 @@ beforeEach(() => {
   m.rubric.count.mockResolvedValue(0);
   m.$transaction.mockResolvedValue([]);
   vi.mocked(isCore).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(canManageSharing).mockResolvedValue(true);
   vi.mocked(collectSubtree).mockResolvedValue({ ids: [], height: 0 });
   vi.mocked(clearTypeIfLeavingRoot).mockResolvedValue([]);
@@ -274,7 +274,7 @@ describe("movePage: refusals keep their precedence", () => {
 
   it("answers 403 for a destination workspace before a missing folder", async () => {
     m.page.findUnique.mockResolvedValue(sourcePage({ workspaceType: "Project", workspaceId: "proj" }));
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     vi.mocked(loadAncestorChain).mockResolvedValue([]);
     expect(await move({ workspaceType: "Lab", parentPageId: "dest" })).toEqual({
       ok: false,

@@ -215,7 +215,7 @@ export async function runScheduleMeeting(
     if (!input.startTime) throw new ScheduleMeetingError("roomIds requires startTime");
     const selectedAt = new Date(input.startTime);
     if (Number.isNaN(selectedAt.getTime())) throw new ScheduleMeetingError("startTime is not a valid time");
-    if (!(await isLabMember(user.id))) throw new ScheduleMeetingError("Booking a room requires lab membership");
+    if (!(await isLabMember(user.id))) throw new ScheduleMeetingError("Only current lab members can book rooms");
     const free = await assertMeetingRoomsFree({
       roomIds,
       selectedAt,

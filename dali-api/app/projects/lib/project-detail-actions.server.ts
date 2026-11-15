@@ -15,6 +15,7 @@ import {
 import { setTermPi } from "~/partners/lib/partner-renewals.server";
 import { replaceProjectTerms } from "./project-terms.server";
 import { PROJECT_STATUSES, type ProjectStatus } from "./project-lifecycle";
+import { isPatternCover } from "~/components/cover/CoverPattern";
 import { linesToList, updateProjectSettings } from "./project-settings.server";
 
 export type ProjectActionResult =
@@ -168,6 +169,7 @@ const description: ProjectActionHandler = async ({ projectId, core, form }) => {
 
 const updateImage: ProjectActionHandler = async ({ projectId, core, form }) => {
   const imageUrl = (form.get("imageUrl") as string | null) ?? "";
+  if (imageUrl.startsWith("pattern:") && !isPatternCover(imageUrl)) return { error: "That cover style doesn't exist." };
   await updateProjectSettings({ projectId, isCore: core, patch: { imageUrl } });
   return back(projectId);
 };

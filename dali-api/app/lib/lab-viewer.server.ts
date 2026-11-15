@@ -29,4 +29,4 @@ export async function requireLabViewer(request: Request, opts: LabViewerOptions 
   return { auth, user: auth.user, userId, roles };
 }
 
-export const labMemberOrCore = (roles: UserRoles) => roles.isLabMember || roles.isCore;
+export const labMemberOrCore = (roles: UserRoles) => roles.isLabMemberOrAlum || roles.isCore;

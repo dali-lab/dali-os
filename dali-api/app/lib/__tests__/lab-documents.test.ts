@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn() }));
 vi.mock("~/lib/page-sharing.server", () => ({ groupIdsForUser: vi.fn() }));
 
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
 import { labDocAccess, visibleLabDocFilter } from "~/lib/lab-documents.server";
 
@@ -14,7 +14,7 @@ const DOC = { id: "pg-1", createdById: CREATOR };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(isLabMember).mockImplementation(async (id: string) => id !== OUTSIDER);
+  vi.mocked(isLabMemberOrAlum).mockImplementation(async (id: string) => id !== OUTSIDER);
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(groupIdsForUser).mockResolvedValue([]);
 });

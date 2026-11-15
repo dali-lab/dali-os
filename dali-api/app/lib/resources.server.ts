@@ -1,5 +1,5 @@
 import { requireLabViewer, labMemberOrCore } from "~/lib/lab-viewer.server";
-import { getUserRoles, isCore, isLabMember } from "~/lib/roles";
+import { getUserRoles, isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 
 // Who Resources is for: behind the `community` flag, lab members and Core.
@@ -12,7 +12,7 @@ export async function resourcesAccess(
   if (!(await isFeatureEnabled("community", userId, roles, request))) return null;
   const [core, labMember] = await Promise.all([
     isCore(userId, request),
-    isLabMember(userId, request),
+    isLabMemberOrAlum(userId, request),
   ]);
   return core || labMember ? { core } : null;
 }

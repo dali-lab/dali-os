@@ -17,7 +17,7 @@ vi.mock("~/mcp/registry", () => {
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() };
+  return { ...real, isCore: vi.fn(), isLabMemberOrAlum: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
@@ -49,7 +49,7 @@ vi.mock("~/projects/lib/file-notifications.server", () => ({
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { notify } from "~/lib/notify.server";
@@ -162,7 +162,7 @@ describe("list_comments", () => {
   });
 
   it("returns comments for a pagedoc when caller is a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.docComment.findMany.mockResolvedValue([]);
     mockPrisma.docComment.count.mockResolvedValue(0);
 

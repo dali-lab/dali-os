@@ -4,11 +4,11 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: () => new Response("forbidden", { status: 403 }),
 }));
-vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMemberOrAlum: vi.fn() }));
 vi.mock("~/calendar/lib/calendar-participants.server", () => ({ loadParticipantOptions: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 import { loader } from "../api.calendar.participants";
 
@@ -24,7 +24,7 @@ const OPTIONS = {
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "ada" } } as never);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(loadParticipantOptions).mockResolvedValue(OPTIONS as never);
 });
 
@@ -37,7 +37,7 @@ describe("GET /api/calendar/participants", () => {
   });
 
   it("refuses a non-member without reading the directory", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect((await get()).status).toBe(403);
     expect(loadParticipantOptions).not.toHaveBeenCalled();
   });
