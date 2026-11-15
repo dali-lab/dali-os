@@ -6,7 +6,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { PageRowControls } from "~/components/os-page";
+import { usePageRowScoped, type PageRowControl } from "~/components/os-page";
+import type { DriveBrowserProps } from "~/components/drive/DriveBrowser";
 import { useOpenBeside } from "~/components/side-panel/use-side-panel";
 import { useNavigate, useRevalidator } from "react-router";
 import { Select, Menu } from "~/components/ui/floating";
@@ -498,6 +499,29 @@ export function ProjectDriveTab({
     </Menu>
   );
 
+  const scoped = usePageRowScoped();
+  const rowControls: NonNullable<DriveBrowserProps["rowControls"]> = ({ search, view }) => {
+    const controls: PageRowControl[] = [search];
+    if (canEdit) {
+      controls.push(
+        { key: "new-doc", label: "New document", icon: FileText, onClick: () => void createDoc() },
+        { key: "new-folder", label: "New folder", icon: FolderPlus, onClick: () => void createFolder() },
+      );
+    }
+    if (view) controls.push(view);
+    if (canEdit) {
+      controls.push({
+        key: "upload",
+        label: uploading ? "Uploading…" : "Upload",
+        icon: Upload,
+        primary: true,
+        disabled: uploading,
+        onClick: () => inputRef.current?.click(),
+      });
+    }
+    return controls;
+  };
+
   return (
     <DriveHistoryContext.Provider value={history}>
       {uploadError && (
@@ -527,7 +551,8 @@ export function ProjectDriveTab({
             : undefined
         }
         filterControl={filterControl}
-        newMenu={<PageRowControls>{newMenu}</PageRowControls>}
+        newMenu={scoped ? undefined : newMenu}
+        rowControls={rowControls}
         embeddedScopeId={scopeId}
         onTogglePartnerVisible={canEdit ? togglePagePartnerVisible : undefined}
         hasActivePartner={hasActivePartner}

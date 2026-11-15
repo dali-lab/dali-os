@@ -34,6 +34,13 @@ import { useDriveKeyboard } from "~/components/drive/use-drive-keyboard";
 import { useDriveDnd } from "~/components/drive/use-drive-dnd";
 import { FolderSettingsModal } from "~/components/drive/FolderSettingsModal";
 import { EmptyState } from "~/components/ui/EmptyState";
+import {
+  PageRowControls,
+  usePageRowScoped,
+  type PageRowControl,
+  type PageSearchControl,
+  type PageToggleControl,
+} from "~/components/os-page";
 import { meetingsOptionFor } from "~/components/drive/receiver-options";
 import { Breadcrumb } from "./Breadcrumb";
 import { columnLevels, openRowIdAt, ColumnScopeRow, ColumnItemRow, MillerColumn, type ColumnLevel } from "./ColumnView";
@@ -85,6 +92,8 @@ export type DriveBrowserProps = {
   onUploadFiles?: (files: File[], options?: FileDropOptions) => void;
   filterControl?: ReactNode;
   newMenu?: ReactNode;
+  /** With a page row above, the controls to hand it, built around the browser's own search and view toggle; those leave the listing header. Without one, the standalone toolbar stays. */
+  rowControls?: (own: { search: PageSearchControl; view: PageToggleControl | null }) => PageRowControl[];
   /** Overflow ("…") menu for the toolbar's occasional destinations. Owned by
    *  the hub; sits at the end of the row, right of the search field. */
   overflowMenu?: ReactNode;
@@ -151,6 +160,7 @@ export function DriveBrowser({
   onUploadFiles,
   filterControl,
   newMenu,
+  rowControls,
   overflowMenu,
   tagChips,
   tagFilter,
@@ -358,6 +368,7 @@ export function DriveBrowser({
   const searching = search.trim().length > 0 || !!tagFilter;
   const columnsActive = viewMode === "columns" && !searching;
   const searchExpanded = searchFocused || search.length > 0;
+  const inRow = usePageRowScoped() && !!rowControls;
   const allHits = useMemo(
     () => (searching ? searchAll(scopes, search, typeFilter, tagFilter) : []),
     [searching, scopes, search, typeFilter, tagFilter],
@@ -805,6 +816,29 @@ export function DriveBrowser({
   });
   const paneMarquee = useMarquee(marqueeFor(null));
 
+  const rowSearch: PageSearchControl = {
+    kind: "search",
+    key: "search",
+    label: "Search files",
+    value: search,
+    onChange: onSearchChange,
+    testId: "drive-search",
+  };
+  const rowView: PageToggleControl | null = searching
+    ? null
+    : {
+        kind: "toggle",
+        key: "view",
+        label: "View",
+        value: viewMode,
+        onChange: (v) => changeView(v as ViewMode),
+        options: [
+          { value: "columns", label: "Column view", icon: Columns, testId: "drive-view-columns" },
+          { value: "list", label: "List view", icon: ListIcon, testId: "drive-view-list" },
+          { value: "grid", label: "Grid view", icon: LayoutGrid, testId: "drive-view-grid" },
+        ],
+      };
+
   const draggedCount = activeDrag ? draggedItemsFor(activeDrag).length : 0;
 
   const sidePanel = useSidePanel().panel;
@@ -826,6 +860,7 @@ export function DriveBrowser({
     <FileDropContext.Provider value={fileOverFolder}>
     <DndContext sensors={sensors} collisionDetection={pointerWithin} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div ref={rootRef} className="flex flex-col gap-3" data-testid="drive-browser" onClick={handleBackgroundClick}>
+        {inRow && <PageRowControls controls={rowControls!({ search: rowSearch, view: rowView })} />}
         {/* ── Page toolbar: filters on the left, actions on the right ──
             Navigation, view and search live on the listing's own header
             instead — they act on the table, so they belong to it. ── */}
@@ -859,10 +894,12 @@ export function DriveBrowser({
                 dragging={!!activeDrag}
                 showRoot={!embeddedScopeId}
               />
-              <div className="ml-auto flex shrink-0 items-center gap-2">
-                {!searching && viewToggle}
-                {searchField}
-              </div>
+              {!inRow && (
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  {!searching && viewToggle}
+                  {searchField}
+                </div>
+              )}
             </div>
           {columnsActive ? (
             /* ── MILLER COLUMNS ─────────────────────────────────────────── */
