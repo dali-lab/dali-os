@@ -54,6 +54,7 @@ import {
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { PersonalNotesRail } from "./PersonalNotesRail";
+import { BasedInField, structuredPlace } from "./BasedInField";
 import { ProfileRequestButtons } from "./ProfileRequestButtons";
 import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
@@ -667,13 +668,7 @@ function AboutCard({
                 />
               </DetailEditRow>
               <DetailEditRow icon={<MapPinned className={ic} />} label="Based in">
-                <input
-                  name="currentLocation"
-                  type="text"
-                  placeholder="City, country"
-                  defaultValue={member.currentLocation ?? ""}
-                  className="w-full"
-                />
+                <BasedInField value={member} />
               </DetailEditRow>
               <DetailEditRow icon={<Cake className={ic} />} label="Birthday">
                 <DateField
@@ -720,7 +715,7 @@ function AboutCard({
                 {member.hometown ?? dash}
               </DetailRow>
               <DetailRow icon={<MapPinned className={ic} />} label="Based in">
-                {member.currentLocation ?? dash}
+                {structuredPlace(member) ?? dash}
               </DetailRow>
               <DetailRow icon={<Cake className={ic} />} label="Birthday">
                 {formatBirthday(member.birthday) ?? dash}

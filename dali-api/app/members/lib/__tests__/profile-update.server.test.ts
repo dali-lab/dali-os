@@ -2,9 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/geocode.server", () => ({ geocodePlace: vi.fn() }));
+vi.mock("~/lib/places/cities.server", () => ({ getCity: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { geocodePlace } from "~/lib/geocode.server";
+import { getCity } from "~/lib/places/cities.server";
 import { updateProfileFields } from "../profile-update.server";
 
 const db = prisma as any;
@@ -125,6 +127,99 @@ describe("location pin", () => {
       currentLocationLat: null,
       currentLocationLng: null,
     });
+  });
+});
+
+describe("structured location", () => {
+  const brooklyn = {
+    geonameId: 5110302,
+    name: "Brooklyn",
+    region: "New York",
+    country: "United States",
+    lat: 40.6501,
+    lng: -73.9496,
+    label: "Brooklyn, New York, United States",
+  };
+
+  it("takes everything from the picked city and skips the geocoder", async () => {
+    vi.mocked(getCity).mockReturnValue(brooklyn as never);
+    const out = await updateProfileFields(
+      "u1",
+      { currentLocation: "whatever was typed", currentLocationGeonameId: "5110302" },
+      opts,
+    );
+    expect(getCity).toHaveBeenCalledWith(5110302);
+    expect(geocodePlace).not.toHaveBeenCalled();
+    expect(written()).toEqual({
+      currentLocation: "Brooklyn, New York, United States",
+      currentLocationLat: 40.6501,
+      currentLocationLng: -73.9496,
+      currentLocationCity: "Brooklyn",
+      currentLocationRegion: "New York",
+      currentLocationCountry: "United States",
+      currentLocationGeonameId: 5110302,
+    });
+    expect(out.updated.currentLocation).toBe("Brooklyn, New York, United States");
+  });
+
+  it("stores no region for a city without one", async () => {
+    vi.mocked(getCity).mockReturnValue({ ...brooklyn, region: "" } as never);
+    await updateProfileFields("u1", { currentLocation: "x", currentLocationGeonameId: "5110302" }, opts);
+    expect(written().currentLocationRegion).toBeNull();
+  });
+
+  it("geocodes free text and fills the parts from the address", async () => {
+    vi.mocked(getCity).mockReturnValue(null);
+    vi.mocked(geocodePlace).mockResolvedValue({
+      lat: 1,
+      lng: 2,
+      city: "Hanover",
+      region: "New Hampshire",
+      country: "United States",
+    });
+    await updateProfileFields(
+      "u1",
+      { currentLocation: "Hanover NH", currentLocationGeonameId: "" },
+      opts,
+    );
+    expect(geocodePlace).toHaveBeenCalledWith("Hanover NH");
+    expect(written()).toEqual({
+      currentLocation: "Hanover NH",
+      currentLocationLat: 1,
+      currentLocationLng: 2,
+      currentLocationCity: "Hanover",
+      currentLocationRegion: "New Hampshire",
+      currentLocationCountry: "United States",
+      currentLocationGeonameId: null,
+    });
+  });
+
+  it("ignores a geoname id that is not in the city list", async () => {
+    vi.mocked(getCity).mockReturnValue(null);
+    vi.mocked(geocodePlace).mockResolvedValue(null);
+    await updateProfileFields("u1", { currentLocation: "Nowhere", currentLocationGeonameId: "999" }, opts);
+    expect(geocodePlace).toHaveBeenCalled();
+    expect(written()).toMatchObject({ currentLocationLat: null, currentLocationGeonameId: null });
+  });
+
+  it("clears every location column when the field is emptied", async () => {
+    await updateProfileFields("u1", { currentLocation: "", currentLocationGeonameId: "5110302" }, opts);
+    expect(getCity).not.toHaveBeenCalled();
+    expect(written()).toEqual({
+      currentLocation: null,
+      currentLocationLat: null,
+      currentLocationLng: null,
+      currentLocationCity: null,
+      currentLocationRegion: null,
+      currentLocationCountry: null,
+      currentLocationGeonameId: null,
+    });
+  });
+
+  it("leaves the structured columns alone when the saved text is posted back unchanged", async () => {
+    db.user.findUnique.mockResolvedValue({ currentLocation: "Hanover, NH" });
+    await updateProfileFields("u1", { currentLocation: "Hanover, NH" }, opts);
+    expect(written()).toEqual({ currentLocation: "Hanover, NH" });
   });
 });
 
