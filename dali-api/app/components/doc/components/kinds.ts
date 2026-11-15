@@ -318,7 +318,7 @@ export function filterCollection<T extends Record<string, string>>(items: T[], c
 export function safeHref(value: string | undefined): string | undefined {
   const v = value?.trim();
   if (!v) return undefined;
-  if (/^(https?:\/\/|mailto:)/i.test(v)) return v;
+  if (/^(https?:\/\/|mailto:|tel:|slack:)/i.test(v)) return v;
   if (v.startsWith("/") && !v.startsWith("//")) return v;
   if (v.startsWith("#")) return v;
   if (/^[\w-]+(\.[\w-]+)+([/?#]\S*)?$/.test(v)) return `https://${v}`;

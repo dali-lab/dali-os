@@ -37,11 +37,13 @@ describe("component library", () => {
     expect(safeHref("https://dali.dartmouth.edu")).toBe("https://dali.dartmouth.edu");
     expect(safeHref("/resources")).toBe("/resources");
     expect(safeHref("mailto:a@b.co")).toBe("mailto:a@b.co");
+    expect(safeHref("tel:+16035550100")).toBe("tel:+16035550100");
+    expect(safeHref("slack://channel?team=T1&id=C1")).toBe("slack://channel?team=T1&id=C1");
     expect(safeHref("#section")).toBe("#section");
     expect(safeHref("dali.dev/docs")).toBe("https://dali.dev/docs");
     expect(safeHref("JavaScript:alert(1)")).toBeUndefined();
     expect(safeHref("data:text/html,x")).toBeUndefined();
-    for (const bad of ["ms-msdt:/id PCWDiagnostic", "intent://scan#Intent;end", "slack://channel?id=1", "tel:+16035550100", "vbscript:x", "file:///etc/passwd", "myapp://open"]) {
+    for (const bad of ["ms-msdt:/id PCWDiagnostic", "intent://scan#Intent;end", "vbscript:x", "file:///etc/passwd", "myapp://open"]) {
       expect(safeHref(bad), bad).toBeUndefined();
     }
     expect(safeHref("//evil.example")).toBeUndefined();
