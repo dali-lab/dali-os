@@ -17,10 +17,7 @@ import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { BirthdayLine, type BirthdayPerson } from "~/components/home/BirthdayLine";
 import SearchIcon from "~/components/home/landing/SearchIcon";
-import {
-  isLandingBackgroundId,
-  scheduledLandingWeek,
-} from "~/components/home/landing/backgrounds/schedule";
+import { landingWeek } from "~/components/home/landing/backgrounds/schedule";
 import { currentTermStrict } from "~/lib/roles";
 import { termWeekNumber } from "~/lib/terms.shared";
 import { resultIcon } from "~/components/CommandPalette";
@@ -64,17 +61,17 @@ export async function loader({ request }: Route.LoaderArgs) {
         ? "Good afternoon"
         : "Good evening";
 
-  // This week's title and background; `?background=<id>` previews another background.
-  const landing = scheduledLandingWeek(
+  // This week's title and background; `?background=<id>` previews another week.
+  const landing = landingWeek(
     // en-CA formats as YYYY-MM-DD, the schedule's date format.
     new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date()),
+    new URL(request.url).searchParams.get("background"),
   );
-  const preview = new URL(request.url).searchParams.get("background");
 
   return {
     greeting,
     milestoneTitle: landing.title,
-    background: isLandingBackgroundId(preview) ? preview : landing.id,
+    background: landing.id,
     week,
     user: auth.user,
     tasks,

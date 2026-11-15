@@ -3,6 +3,7 @@ import {
   isLandingBackgroundId,
   LANDING_BACKGROUND_IDS,
   LANDING_BACKGROUND_SCHEDULE,
+  landingWeek,
   scheduledLandingWeek,
 } from '../schedule'
 
@@ -28,5 +29,21 @@ describe('landing background schedule', () => {
     expect(isLandingBackgroundId('library')).toBe(true)
     expect(isLandingBackgroundId('nope')).toBe(false)
     expect(isLandingBackgroundId(null)).toBe(false)
+  })
+
+  it('schedules every background, so each can be previewed with its title', () => {
+    expect(new Set(LANDING_BACKGROUND_SCHEDULE.map((entry) => entry.id))).toEqual(new Set(LANDING_BACKGROUND_IDS))
+  })
+
+  it('previews another week with its own title', () => {
+    const live = scheduledLandingWeek('2026-11-03')
+    expect(live.id).toBe('bug-hunt')
+    expect(landingWeek('2026-11-03', 'build')).toEqual({ id: 'build', title: 'Build', from: '2026-10-12' })
+  })
+
+  it('falls back to the live week for a missing or unknown preview', () => {
+    const live = scheduledLandingWeek('2026-11-03')
+    expect(landingWeek('2026-11-03', null)).toBe(live)
+    expect(landingWeek('2026-11-03', 'nope')).toBe(live)
   })
 })
