@@ -907,6 +907,7 @@ export default [
   route("api/email/attachment", "routes/api.email.attachment.ts"),
   // Core/Admin member search — manual applicant-email link in the Email tab.
   route("api/users/search", "routes/api.users.search.ts"),
+  route("api/places/search", "routes/api.places.search.ts"),
 
   // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
   // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding

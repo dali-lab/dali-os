@@ -126,6 +126,8 @@ export async function loadCommunityPeople(
         classYear: true,
         membershipStatus: true,
         currentLocation: true,
+        currentLocationCity: true,
+        currentLocationRegion: true,
         currentLocationLat: true,
         currentLocationLng: true,
         openToCoffeeChats: true,
