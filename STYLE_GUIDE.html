@@ -460,6 +460,32 @@
       <p class="note">A header is a wash of the stage hue over the card, with an 8px stage dot before the title. Not a solid band.</p>
       <div class="eyebrow">Categorical chips (14 hues)</div>
       <div class="pills" id="roles"></div>
+      <div class="eyebrow">Band header (same in both modes)</div>
+      <div class="pills">
+        <span class="pill" style="background:#1b2a47;color:#fff">os-band (dark mode #2f4d7d)</span>
+        <span class="pill" style="background:#1b2a47;color:#fff">os-on-band #fff</span>
+        <span class="pill" style="background:#1b2a47;color:rgba(255,255,255,.78)">os-on-band-meta white 78%</span>
+        <span class="pill" style="background:#141822;color:#fff;border:1px solid rgba(255,255,255,.28)">os-band-chip, os-band-line</span>
+      </div>
+      <p class="note">On-band text is 14.3:1 on the light band and 8.5:1 on the dark one; the meta line is 9.3:1 and 5.9:1; chip text is at least 12.8:1. Covers use the --art-* tokens below and live in app/components/cover/.</p>
+      <div class="eyebrow">Cover art (does not flip with the mode)</div>
+      <div class="pills">
+        <span class="pill" style="background:#d45f6a;color:#1b2a47">--art-coral</span>
+        <span class="pill" style="background:#f1c885;color:#1b2a47">--art-apricot</span>
+        <span class="pill" style="background:#fcf3c2;color:#1b2a47">--art-butter</span>
+        <span class="pill" style="background:#7ab39a;color:#1b2a47">--art-sage</span>
+        <span class="pill" style="background:#5fb8b4;color:#1b2a47">--art-teal</span>
+        <span class="pill" style="background:#bd64a8;color:#1b2a47">--art-orchid</span>
+        <span class="pill" style="background:#d3dae0;color:#1b2a47">--art-mist</span>
+        <span class="pill" style="background:#214b76;color:#1b2a47">--art-navy</span>
+        <span class="pill" style="background:#1b2a47;color:#fff">--art-ink</span>
+        <span class="pill" style="background:#1c1f24;color:#fff">--art-charcoal</span>
+        <span class="pill" style="background:#3b2a4f;color:#fff">--art-plum</span>
+        <span class="pill" style="background:#1f3b34;color:#fff">--art-forest</span>
+        <span class="pill" style="background:#4a2430;color:#fff">--art-wine</span>
+        <span class="pill" style="background:#2d3948;color:#fff">--art-slate</span>
+      </div>
+      <p class="note">Grounds: --art-ground-lilac, -mint, -blush, -sky, -peach, -sage. Over art, use the fixed dark chip --os-on-art-chip (hover --os-on-art-chip-hover) with --os-on-art-ink text and --os-on-art-line borders.</p>
     </section>
 
     <section class="c6 l4">
@@ -506,7 +532,7 @@
           </div>
           <div class="controls"><span>Edit</span><span>Fullscreen</span><span class="primary">New</span><i class="sep"></i><svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg></div>
         </div>
-        <p class="note">The island is the one page switcher: a recessed well with a raised thumb on the open tab, an icon and a label on every tab. The page row holds the island, the open tab's controls and a settings gear after a divider. Below 921px of row width the controls drop to icons, below 786px into a "⋯" menu (the primary keeps its label), and below 588px onto their own row. Projects wear a band header above the row (emoji, title, partner and terms, chips and people left, cover right) behind the project-band-header flag.</p>
+        <p class="note">The island is the one page switcher: a recessed well with a raised thumb on the open tab, an icon and a label on every tab. The page row holds the island, the open tab's controls and a settings gear after a divider. Below 921px of row width the controls drop to icons, below 786px into a "⋯" menu (the primary keeps its label), and below 588px onto their own row. Projects wear a navy band header above the row (emoji, title, partner and terms, chips and people left, pattern, image or generated cover right) behind the project-band-header flag.</p>
         <div class="os-card" style="padding:16px">
           <div class="ey"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>This term</div>
           <div class="item-list">
@@ -770,6 +796,7 @@
     ['os-bg', '#ffffff', '#282830', 'Page ground'],
     ['os-card', '#f3f6f9', '#2b2b36', 'Cards, menus, dialogs'],
     ['os-card-hover', '#eaf3f8', '#323240', 'Hovered card'],
+    ['os-band', '#1b2a47', '#2f4d7d', 'Project band header ground'],
     ['os-well', '#eaeff5', '#26262f', 'Inputs, nested rows'],
     ['os-container', '#ccd7e2', '#3f3f48', 'Hairlines, chips, active fill'],
     ['os-container-hi', '#a9b9c9', '#54545f', 'Hover border']

@@ -63,6 +63,7 @@ and a card is a quiet cool step **darker** than it.
 | `os-bg` | `#ffffff` | `#282830` | Page ground, page bar |
 | `os-card` | `#f3f6f9` | `#2b2b36` | Cards, menus, dialogs |
 | `os-card-hover` | `#eaf3f8` | `#323240` | Hovered card |
+| `os-band` | `#1b2a47` | `#2f4d7d` | Project band header ground (a pattern cover swaps in its card color) |
 | `os-well` | `#eaeff5` | `#26262f` | Inputs, nested rows |
 | `os-container` | `#ccd7e2` | `#3f3f48` | Hairlines, chips, active fill |
 | `os-container-hi` | `#a9b9c9` | `#54545f` | Hover border |
@@ -116,6 +117,25 @@ the variables, not new hues:
   over the card, with an 8px stage dot before the title via
   `.os-board-title`). Hiring views that read the raw set keep solid bands.
 - Categorical chips (see `DomainChips`): `--os-role-{amber,teal,violet,pink,blue,green,orange,magenta,slate,cyan,red,lime,indigo,sand}-{fill,ink}`
+
+- Band header: `os-band` is the ground. Everything on it uses the on-band
+  tokens, the same in both modes: `os-on-band` (`#ffffff`, title and chip text,
+  14.3:1 on light, 8.5:1 on dark), `os-on-band-meta` (white at 78%, the
+  partner and terms line, 9.3:1 / 5.9:1), `os-band-line` (white at 28%, chip
+  borders) and `os-band-chip` (`#141822` at 50%, chip fill, 16:1 / 12.8:1
+  under chip text). Avatars on the band ring with `ring-os-band`.
+- Cover art (project and hub covers): `--art-*` hues (`--art-coral`, `-apricot`,
+  `-butter`, `-sage`, `-teal`, `-orchid`, `-mist`, `-navy`), `--art-ground-{lilac,mint,blush,sky,peach,sage}`
+  backgrounds, and `--art-{ink,charcoal,plum,forest,wine,slate}` card colors.
+  Art does not flip with the mode. Hues the brand palette already has
+  (`--color-accent-pink`, `--color-accent-coral-light`, `--color-navy`,
+  `--color-accent-teal-light`) are used directly, not repeated. Over art, use the
+  fixed dark chip `--os-on-art-chip` (hover `--os-on-art-chip-hover`) with
+  `--os-on-art-ink` text and `--os-on-art-line` borders, never `bg-white/*` or
+  `text-white`. Covers live in `app/components/cover/` (`CoverTile`,
+  `buildCoverUrl`, `parseCover`, `CoverStudio`); a pattern cover is the string
+  `pattern:<id>` or `pattern:<id>?c=<card color>`, stored wherever the surface
+  keeps its image.
 
 ### 2.5 Light and dark
 
@@ -418,10 +438,14 @@ results bar (`ResultsFilterBar`) are built on it.
   full labels from 921px, icons from 786px, a "⋯" `Menu` from 588px, and below
   that the controls take their own row under the island. The island never folds
   and the gear never moves.
-- **Band header** (projects, behind `project-band-header`): an `os-card` band
-  with the emoji, title, partner and terms, role chips and team avatars on the
-  left, and the cover image (128px tall, 12px corners) on the right at 342px,
-  hidden below `md`. The compact header stays on Partners and Admin pages.
+- **Band header** (projects, behind `project-band-header`): an `os-band` band
+  (navy) with the emoji, title, partner and terms, outlined role chips and team
+  avatars on the left, and the cover on the right at 342px by 128px with 12px
+  corners, hidden below `md`. A pattern cover paints the band in its card color
+  and draws `CoverTile`; an uploaded image fills the box; no cover shows the
+  generated art. Editors get a "Change cover" button on hover that opens
+  `CoverStudio` (style, card color, upload, remove). The compact header stays on
+  Partners and Admin pages.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
 - Empty states: `EmptyState` (`ui/EmptyState.tsx`, the only one: admin and
