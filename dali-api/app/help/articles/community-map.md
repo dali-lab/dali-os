@@ -11,6 +11,16 @@ Community shows where DALI alumni and current students are, and the events they 
 
 [Community](/community) is under **Lab** in the sidebar. If your workspace has the Community area, it is the first page there instead. Alumni find it under **Lab** too. See [Alumni](/help/articles/alumni).
 
+## Set where you are based
+
+On your profile, edit the About card and find **Based in**. Start typing a city and pick it from the list. Cities where other DALI people live show first. Each row shows the city, then its region and country.
+
+If your place is not on the list, choose the last row, **Use "your text"**. We then look the text up on the map. Under the field, **On the map as** shows the place we found. If you see **Not found on the map. Try a city and country.**, change the text to a city and country and save again. A city you picked from the list always lands in the right place, so no line shows.
+
+Click **Clear** to remove it. You then leave the map unless you are a student, who shows in Hanover, NH.
+
+City list from GeoNames (geonames.org), CC BY 4.0.
+
 ## Find people
 
 The page has a list on the left and the map filling the rest. On a small screen the map is on top and the list is below it. The map opens on the area around where you are based. If you haven't set **Based in** on your profile, it shows everyone.

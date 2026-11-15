@@ -125,6 +125,19 @@ describe("locatePerson", () => {
     ).toEqual({ location: "Austin, TX", lat: 30.2, lng: -97.7 });
   });
 
+  it("labels the pin City, Region when the structured parts exist", () => {
+    expect(
+      locatePerson({
+        isStudent: false,
+        currentLocation: "Brooklyn, New York, United States",
+        currentLocationCity: "Brooklyn",
+        currentLocationRegion: "New York",
+        currentLocationLat: 40.6,
+        currentLocationLng: -73.9,
+      })?.location,
+    ).toBe("Brooklyn, New York");
+  });
+
   it("puts a student with no location in Hanover", () => {
     expect(locatePerson({ isStudent: true, ...blank })).toEqual({
       location: "Hanover, NH",

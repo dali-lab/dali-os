@@ -68,16 +68,27 @@ export function haversineKm(
   return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+function placeLabel(u: {
+  currentLocation: string | null;
+  currentLocationCity?: string | null;
+  currentLocationRegion?: string | null;
+}): string | null {
+  const parts = [u.currentLocationCity, u.currentLocationRegion].filter(Boolean);
+  return parts.length ? parts.join(", ") : u.currentLocation;
+}
+
 /** Where a person pins: their own spot, or Hanover for a student who hasn't set one. */
 export function locatePerson(u: {
   isStudent: boolean;
   currentLocation: string | null;
+  currentLocationCity?: string | null;
+  currentLocationRegion?: string | null;
   currentLocationLat: number | null;
   currentLocationLng: number | null;
 }): { location: string; lat: number; lng: number } | null {
   if (u.currentLocationLat != null && u.currentLocationLng != null) {
     return {
-      location: u.currentLocation || HANOVER.label,
+      location: placeLabel(u) || HANOVER.label,
       lat: u.currentLocationLat,
       lng: u.currentLocationLng,
     };

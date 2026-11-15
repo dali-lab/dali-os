@@ -140,6 +140,10 @@ model User {
   currentLocation     String?
   currentLocationLat  Float?
   currentLocationLng  Float?
+  currentLocationCity String?
+  currentLocationRegion String?
+  currentLocationCountry String?
+  currentLocationGeonameId Int?
   // "I'm open to" on the alumni Home. Off hides the matching request button
   // on this person's profile and refuses new requests.
   openToCoffeeChats   Boolean   @default(true)
