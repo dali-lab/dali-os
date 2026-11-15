@@ -873,7 +873,7 @@ model Domain {
 
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
-  resourceHubPages      ResourceHubPage[]
+  resourceHubPage       ResourceHubPage?
   critSubmissions       CritSubmission[]
   domainReferences      DomainReference[]
   cycleReviewers        CycleReviewer[]
@@ -7939,14 +7939,13 @@ model ResourceHubPage {
   bgColor     String?
   publishedAt DateTime?
   contentJson Json?
-  domainId    String?
+  domainId    String?   @unique
   domain      Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
   createdById String?
   createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  @@index([domainId])
   @@index([createdById])
 }
 

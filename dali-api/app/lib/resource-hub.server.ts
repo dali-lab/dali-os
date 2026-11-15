@@ -32,6 +32,24 @@ export async function ledDomainIds(userId: string): Promise<string[]> {
   return rows.map((r) => r.domainId);
 }
 
+export interface HubDomainOption {
+  id: string;
+  name: string;
+  taken: boolean;
+}
+
+/** The domains this user may start a hub for: every domain for Core, the ones they lead this term otherwise. */
+export async function hubDomainOptions(userId: string, core: boolean): Promise<HubDomainOption[]> {
+  const led = core ? null : await ledDomainIds(userId);
+  if (led && led.length === 0) return [];
+  const rows = await prisma.domain.findMany({
+    where: { active: true, isSystem: false, ...(led ? { id: { in: led } } : {}) },
+    select: { id: true, displayName: true, resourceHubPage: { select: { id: true } } },
+    orderBy: { displayName: "asc" },
+  });
+  return rows.map((d) => ({ id: d.id, name: d.displayName, taken: d.resourceHubPage !== null }));
+}
+
 // Behind the `resource-hub` flag, open to every lab member. 404 (not a
 // redirect) when off so the feature's existence isn't leaked.
 export async function requireResourceHubViewer(request: Request) {

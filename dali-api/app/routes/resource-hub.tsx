@@ -5,14 +5,13 @@ import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { ArrowRight, Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub";
 import { prisma } from "~/lib/db.server";
-import {
-  ledDomainIds,
-  requireResourceHubViewer,
-} from "~/lib/resource-hub.server";
+import { hubDomainOptions, ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Resource Hub · DALI OS" }];
 
 export const handle = { bleedPane: true };
+
+const HUB_EXISTS = "That domain already has a hub.";
 
 // Everyone sees published hubs. Drafts show only to who can edit them: their
 // creator, the leads of their domain, and Core.
@@ -33,6 +32,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     select: { id: true, title: true, coverUrl: true, bgColor: true, publishedAt: true },
   });
   return {
+    domains: await hubDomainOptions(user.sub, core),
     cards: rows.map((r) => ({
       id: r.id,
       title: r.title,
@@ -44,29 +44,39 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export async function action({ request }: Route.ActionArgs) {
-  const { user } = await requireResourceHubViewer(request);
+  const { user, core } = await requireResourceHubViewer(request);
   const form = await request.formData();
   if (form.get("intent") !== "create") throw new Response("Bad request", { status: 400 });
 
-  const [domainId] = await ledDomainIds(user.sub);
+  const domainId = String(form.get("domainId") ?? "");
+  if (!domainId) return Response.json({ error: "Pick a domain." }, { status: 400 });
+  const option = (await hubDomainOptions(user.sub, core)).find((d) => d.id === domainId);
+  if (!option) return Response.json({ error: "You can't create a hub for that domain." }, { status: 403 });
+  if (option.taken) return Response.json({ error: HUB_EXISTS }, { status: 409 });
   const title = String(form.get("title") ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
   const cover = String(form.get("cover") ?? "");
   if (cover && !isPatternCover(cover)) throw new Response("Bad request", { status: 400 });
-  const page = await prisma.resourceHubPage.create({
-    data: {
-      createdById: user.sub,
-      domainId: domainId ?? null,
-      ...(title ? { title } : null),
-      ...(cover ? { coverUrl: cover } : null),
-    },
-    select: { id: true },
-  });
+  let page;
+  try {
+    page = await prisma.resourceHubPage.create({
+      data: {
+        createdById: user.sub,
+        domainId,
+        ...(title ? { title } : null),
+        ...(cover ? { coverUrl: cover } : null),
+      },
+      select: { id: true },
+    });
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") return Response.json({ error: HUB_EXISTS }, { status: 409 });
+    throw e;
+  }
   return redirect(`/resource-hub/${page.id}`);
 }
 
 export default function ResourceHubIndex() {
-  const { cards } = useLoaderData<typeof loader>();
-  const fetcher = useFetcher();
+  const { cards, domains } = useLoaderData<typeof loader>();
+  const fetcher = useFetcher<{ error?: string }>();
   const [studio, setStudio] = useState(false);
 
   return (
@@ -85,7 +95,9 @@ export default function ResourceHubIndex() {
           initialTitle=""
           initialCover={null}
           onClose={() => setStudio(false)}
-          onSubmit={(title, cover) => fetcher.submit({ intent: "create", title, cover }, { method: "post" })}
+          domainOptions={domains.map((d) => ({ value: d.id, label: d.name, disabled: d.taken, description: d.taken ? "Has a hub" : undefined }))}
+          serverError={fetcher.data?.error ?? null}
+          onSubmit={(title, cover, domainId) => fetcher.submit({ intent: "create", title, cover, domainId: domainId ?? "" }, { method: "post" })}
         />
       )}
 

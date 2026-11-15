@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ImagePlus } from "lucide-react";
 import { modalCardClass } from "~/components/os-chrome";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
+import { Select, type SelectOption } from "~/components/ui/floating";
 import { CARD_COLORS, COVER_PATTERNS, CoverTile, buildCoverUrl, cardColorHex, isPatternCover, parseCover } from "./CoverPattern";
 import { HubCard } from "./HubCard";
 
@@ -16,6 +17,8 @@ export function CoverStudio({
   onClose,
   onSubmit,
   uploadImage,
+  domainOptions,
+  serverError,
 }: {
   busy: boolean;
   heading: string;
@@ -23,9 +26,15 @@ export function CoverStudio({
   initialTitle: string;
   initialCover: string | null;
   onClose: () => void;
-  onSubmit: (title: string, cover: string) => void;
+  onSubmit: (title: string, cover: string, domainId?: string) => void;
   uploadImage?: (file: File) => Promise<string>;
+  domainOptions?: SelectOption[];
+  serverError?: string | null;
 }) {
+  const firstFree = domainOptions?.find((o) => !o.disabled)?.value ?? "";
+  const [domainId, setDomainId] = useState(firstFree);
+  const needsDomain = !!domainOptions && !domainId;
+  const submit = () => !working && !needsDomain && onSubmit(title, cover, domainOptions ? domainId : undefined);
   const [title, setTitle] = useState(initialTitle);
   const [cover, setCover] = useState(initialCover ?? DEFAULT_COVER);
   const [uploading, setUploading] = useState(false);
@@ -63,10 +72,21 @@ export function CoverStudio({
           maxLength={120}
           placeholder="e.g. Design"
           onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !working && onSubmit(title, cover)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
           className="h-9 rounded-lg border border-os-container-hi bg-os-bg px-3 text-sm text-foreground outline-none focus:border-os-accent focus:ring-2 focus:ring-os-accent/25"
         />
       </label>
+      {domainOptions && (
+        <div className="mt-4 flex flex-col gap-1.5 text-sm text-os-grey">
+          Domain
+          {firstFree ? (
+            <Select value={domainId} options={domainOptions} onChange={setDomainId} ariaLabel="Domain" placeholder="Pick a domain" />
+          ) : (
+            <p className="text-foreground">No domain is available. Each domain has one hub, and you can only add one for a domain you lead.</p>
+          )}
+        </div>
+      )}
+      {serverError && <p role="alert" className="mt-3 text-sm text-destructive">{serverError}</p>}
         </div>
         <div>
       <p className="mb-2 text-sm font-semibold text-foreground">Style</p>
@@ -160,7 +180,7 @@ export function CoverStudio({
         </div>
       )}
       <ModalFooter onCancel={onClose} cancelDisabled={working} className="!mt-4">
-        <button type="button" disabled={working} onClick={() => onSubmit(title, cover)} className="os-btn-primary os-btn-primary--sm">
+        <button type="button" disabled={working || needsDomain} onClick={submit} className="os-btn-primary os-btn-primary--sm">
           {submitLabel}
         </button>
       </ModalFooter>

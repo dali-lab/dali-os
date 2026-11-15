@@ -72,3 +72,34 @@ describe("hub overlays use the default modal layer", () => {
     expectDefaultLayer("coll-overlay-title");
   });
 });
+
+describe("cover studio domain picker", () => {
+  const props = { busy: false, heading: "New hub", submitLabel: "Create", initialTitle: "", initialCover: null, onClose: vi.fn() };
+  const submitButton = () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Create") as HTMLButtonElement;
+
+  it("submits the first free domain and skips ones that already have a hub", () => {
+    const onSubmit = vi.fn();
+    mount(createElement(CoverStudio, { ...props, onSubmit, domainOptions: [{ value: "d1", label: "Design", disabled: true, description: "Has a hub" }, { value: "d2", label: "Fullstack" }] }));
+    act(() => submitButton().click());
+    expect(onSubmit).toHaveBeenCalledWith("", expect.any(String), "d2");
+  });
+
+  it("says so and blocks creating when no domain is available", () => {
+    const onSubmit = vi.fn();
+    mount(createElement(CoverStudio, { ...props, onSubmit, domainOptions: [{ value: "d1", label: "Design", disabled: true }] }));
+    expect(container.textContent).toContain("No domain is available");
+    expect(submitButton().disabled).toBe(true);
+    act(() => submitButton().click());
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("shows a server error", () => {
+    mount(createElement(CoverStudio, { ...props, onSubmit: vi.fn(), domainOptions: [{ value: "d2", label: "Fullstack" }], serverError: "That domain already has a hub." }));
+    expect(container.querySelector("[role='alert']")?.textContent).toBe("That domain already has a hub.");
+  });
+
+  it("leaves the picker out when editing an existing hub", () => {
+    mount(createElement(CoverStudio, { ...props, onSubmit: vi.fn() }));
+    expect(container.textContent).not.toContain("Domain");
+  });
+});
