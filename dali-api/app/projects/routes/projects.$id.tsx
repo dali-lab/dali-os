@@ -5,8 +5,7 @@ import {
   useSearchParams,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Plus } from "lucide-react";
-import { PageRowControlsScope, PageTabRow, type PageTabControl } from "~/components/os-page";
+import { PageRowControlsScope, PageTabRow } from "~/components/os-page";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
@@ -302,19 +301,6 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
     />
   );
 
-  const tabControls: PageTabControl[] =
-    !settingsOpen && tab === "progress" && canEdit
-      ? [
-          {
-            key: "new-task",
-            label: "New task",
-            icon: Plus,
-            primary: true,
-            onClick: () => setTaskCreateSeed({ epicId: null, storyId: null, reopenEpicId: null }),
-          },
-        ]
-      : [];
-
   const headerPeople = useMemo(() => {
     const seen = new Set<string>();
     return (teams[0]?.members ?? [])
@@ -348,7 +334,6 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
           active: !settingsOpen && tab === t,
           onClick: () => setTab(t),
         }))}
-        controls={tabControls}
         onSettings={canViewScope ? () => setTab("settings") : undefined}
         settingsActive={settingsOpen}
       />

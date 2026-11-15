@@ -32,12 +32,28 @@ vi.mock("~/projects/components/detail/ProjectSettings", () => ({
 vi.mock("~/projects/components/detail/OverviewTab", () => ({
   OverviewTab: () => <div data-testid="details" />,
 }));
-vi.mock("~/projects/components/detail/ProjectDriveTab", () => ({
-  ProjectDriveTab: () => <div data-testid="drive" />,
-}));
-vi.mock("~/projects/components/detail/PlanningTab", () => ({
-  PlanningTab: () => <div data-testid="planning" />,
-}));
+vi.mock("~/projects/components/detail/ProjectDriveTab", async () => {
+  const { PageRowControls } = await import("~/components/os-page");
+  const { Upload } = await import("lucide-react");
+  return {
+    ProjectDriveTab: () => (
+      <div data-testid="drive">
+        <PageRowControls controls={[{ key: "up", label: "Upload", icon: Upload, primary: true, onClick: () => {} }]} />
+      </div>
+    ),
+  };
+});
+vi.mock("~/projects/components/detail/PlanningTab", async () => {
+  const { PageRowControls } = await import("~/components/os-page");
+  const { Plus } = await import("lucide-react");
+  return {
+    PlanningTab: () => (
+      <div data-testid="planning">
+        <PageRowControls controls={[{ key: "new", label: "New", icon: Plus, primary: true, onClick: () => {} }]} />
+      </div>
+    ),
+  };
+});
 
 import { renderDom, click } from "~/test-utils/render";
 import ProjectDetail from "../projects.$id";
@@ -136,13 +152,16 @@ describe("project page tabs", () => {
     expect(selected(container)).toEqual(["Progress"]);
   });
 
-  it("offers New task on Progress only, and only to editors", () => {
+  it("shows each tab's own controls in the page row and swaps them with the tab", () => {
     const { container } = mount("");
-    const has = () => [...container.querySelectorAll("button")].some((b) => b.textContent === "New task");
-    expect(has()).toBe(true);
+    const rowLabels = () =>
+      [...container.querySelectorAll("[data-density] button:not([role=tab])")].map((b) => b.textContent?.trim());
+    expect(rowLabels()).toContain("New");
     click(tabs(container).find((t) => t.textContent === "Drive")!);
-    expect(has()).toBe(false);
-    const readOnly = mount("", { canEdit: false });
-    expect([...readOnly.container.querySelectorAll("button")].some((b) => b.textContent === "New task")).toBe(false);
+    expect(rowLabels()).toContain("Upload");
+    expect(rowLabels()).not.toContain("New");
+    click(tabs(container).find((t) => t.textContent === "Project details")!);
+    expect(rowLabels()).not.toContain("Upload");
+    expect(rowLabels()).not.toContain("New");
   });
 });
