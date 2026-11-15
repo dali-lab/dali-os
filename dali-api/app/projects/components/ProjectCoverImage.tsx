@@ -1,6 +1,8 @@
 // Shared project cover / card image. When `imageUrl` is missing, render the
 // same coral→green gradient + initial used by ProjectImageBanner so list and
 // partner cards don't collapse to a title-only block.
+import { CoverThumb } from "~/components/cover/CoverThumb";
+import { parseCover } from "~/components/cover/CoverPattern";
 
 export function ProjectCoverImage({
   name,
@@ -13,6 +15,8 @@ export function ProjectCoverImage({
   className?: string;
   placeholderClassName?: string;
 }) {
+  if (parseCover(imageUrl)) return <CoverThumb url={imageUrl!} className={placeholderClassName} />;
+
   const initial = name.trim().charAt(0).toUpperCase() || "?";
 
   if (imageUrl) {

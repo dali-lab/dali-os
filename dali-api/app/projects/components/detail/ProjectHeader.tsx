@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { useSubmit } from "react-router";
+import { Avatar } from "~/components/ui/Avatar";
 import { DomainChips } from "~/components/DomainChips";
 import { HeroClusterLabel } from "~/components/os-page";
 import { cn } from "~/lib/cn";
+import { PANE_BLEED_TOP_CLASS } from "~/components/shell/pane-gutter";
+import { ImagePlus } from "lucide-react";
+import { CoverTile, cardColorHex, coverGround, parseCover } from "~/components/cover/CoverPattern";
+import { GeneratedArt } from "~/components/cover/GeneratedArt";
+import { ProjectCoverModal } from "~/projects/components/ProjectCoverModal";
 import { ProjectImageBanner } from "~/projects/components/ProjectImageBanner";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
@@ -73,10 +79,14 @@ export function ProjectHeader({
   project,
   partnerNames,
   canEdit,
+  band = false,
+  people = [],
 }: {
   project: LoaderData["project"];
   partnerNames: string[];
   canEdit: boolean;
+  band?: boolean;
+  people?: { userId: string; name: string; photoUrl: string | null }[];
 }) {
   const submit = useSubmit();
   // Name and icon each save the moment you change them — the hero has no edit
@@ -86,6 +96,7 @@ export function ProjectHeader({
   // loader. Status, terms and roles are read-only here now — they live in
   // Project settings (the gear), the one place that edits project scope.
   const [editingName, setEditingName] = useState(false);
+  const [coverOpen, setCoverOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(project.name);
 
   function startRename() {
@@ -170,8 +181,8 @@ export function ProjectHeader({
   // so the hero never swaps into a differently-shaped editor. A viewer who
   // can't edit gets the same three elements, read-only.
   const nameClasses = cn(
-    "font-heading text-foreground",
-    "text-[32px] font-medium",
+    "font-heading",
+    band ? "text-os-on-band text-[32px] font-semibold tracking-[-0.02em]" : "text-foreground text-[32px] font-medium",
   );
   const titleCluster = (
     <>
@@ -210,7 +221,7 @@ export function ProjectHeader({
           className={cn(
             nameClasses,
             "bg-transparent max-w-full focus:outline-none",
-            "border-b border-os-container-hi focus:border-os-accent",
+            band ? "border-b border-os-band-line focus:border-os-on-band" : "border-b border-os-container-hi focus:border-os-accent",
           )}
         />
       ) : (
@@ -220,7 +231,8 @@ export function ProjectHeader({
           className={cn(
             nameClasses,
             canEdit &&
-              "cursor-text rounded-md -mx-1 px-1 transition-colors hover:bg-muted/40",
+              "cursor-text rounded-md -mx-1 px-1 transition-colors",
+            canEdit && (band ? "hover:bg-os-band-chip" : "hover:bg-muted/40"),
           )}
           role={canEdit ? "button" : undefined}
           tabIndex={canEdit ? 0 : undefined}
@@ -242,6 +254,80 @@ export function ProjectHeader({
       )}
     </>
   );
+
+  if (band) {
+    const subtitle = [partnerNames.join(", "), project.terms.map((t) => t.code).join(", ")]
+      .filter(Boolean)
+      .join(" · ");
+    const roles = project.domains.length > 0 ? project.domains : project.derivedDomains;
+    const parsed = parseCover(project.imageUrl);
+    return (
+      <header
+        data-testid="project-band"
+        style={parsed ? { backgroundColor: cardColorHex(parsed.card) } : undefined}
+        className={cn("flex min-h-[176px] gap-6 bg-os-band p-6 text-os-on-band", PANE_BLEED_TOP_CLASS)}
+      >
+        <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2.5">{titleCluster}</div>
+            {subtitle && <p className="text-sm text-os-on-band-meta">{subtitle}</p>}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {roles.map((d) => (
+              <span
+                key={d.id}
+                className="inline-flex h-[26px] items-center rounded-full border border-os-band-line bg-os-band-chip px-2.5 text-xs font-semibold text-os-on-band"
+              >
+                {d.name}
+              </span>
+            ))}
+            {people.length > 0 && (
+              <div className="ml-2 flex items-center -space-x-1.5">
+                {people.map((p) => (
+                  <Avatar
+                    key={p.userId}
+                    name={p.name}
+                    photoUrl={p.photoUrl}
+                    size="compact"
+                    className="ring-2 ring-os-band"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="group relative hidden h-[128px] w-[342px] shrink-0 overflow-hidden rounded-xl md:block">
+          {parsed ? (
+            <div className="h-full w-full" style={{ backgroundColor: coverGround(project.imageUrl!) }}>
+              <CoverTile url={project.imageUrl!} />
+            </div>
+          ) : project.imageUrlResolved ? (
+            <img src={project.imageUrlResolved} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <GeneratedArt />
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setCoverOpen(true)}
+              className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-md border border-os-band-line bg-os-band-chip px-2.5 py-1.5 text-xs font-medium text-os-on-band opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+            >
+              <ImagePlus className="h-4 w-4" aria-hidden />
+              Change cover
+            </button>
+          )}
+        </div>
+        {coverOpen && (
+          <ProjectCoverModal
+            projectId={project.id}
+            initialCover={project.imageUrl}
+            initialImageUrl={project.imageUrlResolved}
+            onClose={() => setCoverOpen(false)}
+          />
+        )}
+      </header>
+    );
+  }
 
   return (
     <header className={cn("flex flex-col", "gap-6")}>

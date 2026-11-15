@@ -205,6 +205,27 @@ describe("single-field intents", () => {
     expect(updateData()).toEqual({ imageUrl: null });
   });
 
+  it("update-image saves a pattern cover string as is", async () => {
+    await run({ intent: "update-image", imageUrl: "pattern:poster?c=plum" }, false);
+    expect(updateData()).toEqual({ imageUrl: "pattern:poster?c=plum" });
+    expect(prisma.project.update.mock.calls[0][0].where).toEqual({ id: "p1" });
+  });
+
+  it("update-image rejects an unknown pattern without writing", async () => {
+    expect(await run({ intent: "update-image", imageUrl: "pattern:nope" }, true)).toEqual({
+      error: "That cover style doesn't exist.",
+    });
+    expect(prisma.project.update).not.toHaveBeenCalled();
+  });
+
+  it("update-image still takes an uploaded key and clears back to none", async () => {
+    await run({ intent: "update-image", imageUrl: "uploads/a.webp" }, false);
+    expect(updateData()).toEqual({ imageUrl: "uploads/a.webp" });
+    prisma.project.update.mockClear();
+    await run({ intent: "update-image", imageUrl: "" }, true);
+    expect(updateData()).toEqual({ imageUrl: null });
+  });
+
   it("status rejects values outside the list and saves valid ones for Core", async () => {
     expect(await run({ intent: "status", status: "Deleted" }, true)).toEqual({ error: "Invalid status." });
     await run({ intent: "status", status: "Archived" }, true);

@@ -165,6 +165,12 @@ export const FEATURE_FLAGS = [
     description:
       "Alumni see Baker tower over the Green on Home, in Hanover's current season, by day or night, with the clock showing Hanover time. Ships off.",
   },
+  {
+    key: "project-band-header",
+    label: "Project band header",
+    description:
+      "Project pages show a band header: the emoji, title, partner and terms, roles and team on the left and the cover image on the right. Off keeps the current header. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

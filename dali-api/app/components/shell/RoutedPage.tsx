@@ -2,6 +2,7 @@ import { Outlet, useMatches } from 'react-router'
 import { cn } from '~/lib/cn'
 import { PageDocOutlet } from '~/components/page-docs/PageDocButton'
 import { ActivityOverlay } from '~/components/activities/ActivityChrome'
+import { PANE_GUTTER_CLASS } from '~/components/shell/pane-gutter'
 import { paneFlag } from '~/lib/pane-flags'
 
 type Matches = ReturnType<typeof useMatches>
@@ -39,7 +40,7 @@ export function RoutedPage() {
           ? ''
           : flushPane
             ? 'px-4 pb-3 pt-3 sm:px-5 lg:px-5 lg:pb-3 lg:pt-4'
-            : 'px-5 pb-12 pt-6 sm:px-10 lg:px-16 lg:pt-8',
+            : PANE_GUTTER_CLASS,
       )}
     >
       <div className={cn(fitViewport && 'flex min-h-0 min-w-0 flex-1 flex-col')}>

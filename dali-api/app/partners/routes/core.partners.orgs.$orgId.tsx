@@ -10,10 +10,19 @@ import {
 } from "../components/org/org-tabs";
 import { runPartnerOrgAction } from "../lib/org-actions.server";
 import { Link, useActionData, useLoaderData, useSearchParams } from "react-router";
-import { Pencil } from "lucide-react";
+import { FolderKanban, History, Kanban, Pencil, Settings, Users, Wallet } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
-import { OsTabBar } from "~/components/os-page";
+import { PageTabRow } from "~/components/os-page";
 import type { Route } from "./+types/core.partners.orgs.$orgId";
+
+const ORG_TAB_ICONS = {
+  timeline: History,
+  contacts: Users,
+  applications: Kanban,
+  projects: FolderKanban,
+  finance: Wallet,
+  settings: Settings,
+} as const;
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
@@ -157,11 +166,14 @@ export default function PartnerOrgDetail() {
         </div>
       </header>
 
-      <OsTabBar
-        ariaLabel="Organization sections"
-        tabs={ORG_TAB_VALUES.map((t) => ({ key: t, label: ORG_TAB_LABELS[t] }))}
-        active={tab}
-        onSelect={setTab}
+      <PageTabRow
+        label="Organization sections"
+        tabs={ORG_TAB_VALUES.map((t) => ({
+          label: ORG_TAB_LABELS[t],
+          icon: ORG_TAB_ICONS[t],
+          active: tab === t,
+          onClick: () => setTab(t),
+        }))}
       />
 
       {error && (

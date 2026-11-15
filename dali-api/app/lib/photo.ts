@@ -12,7 +12,7 @@ const PHOTO_URL_WINDOW_S = 3600;
 export async function resolvePhotoUrl(
   value: string | null | undefined,
 ): Promise<string | null> {
-  if (!value) return null;
+  if (!value || value.startsWith("pattern:")) return null;
   // Local development can legitimately run without S3. Stored upload keys
   // then have no usable browser URL, so omit the image rather than failing
   // the entire route loader while trying to presign it.
