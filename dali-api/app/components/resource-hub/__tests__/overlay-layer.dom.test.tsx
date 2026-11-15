@@ -60,8 +60,9 @@ describe("hub overlays use the default modal layer", () => {
   });
   it("crit submission", () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ comments: [] }) })));
-    const submission = { id: "s1", title: "Logo", question: null, kind: "image", url: "/a.png", previewUrl: null, fileName: "a.png", anonymous: false, authorName: "Ada", mine: true, canDelete: true, commentCount: 0, createdAt: new Date(0).toISOString() };
-    mount(createElement(SubmissionOverlay, { pageId: "p1", submission, onClose: vi.fn(), onChanged: vi.fn() }));
+    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    const submission = { id: "s1", title: "Logo", question: null, kind: "image", url: "/a.png", previewUrl: null, fileName: "a.png", anonymous: false, authorName: "Ada", mine: true, canDelete: true, canModerate: false, commentCount: 0, createdAt: new Date(0).toISOString() };
+    mount(createElement(SubmissionOverlay, { viewer: { id: "u1", name: "Ada", photoUrl: null }, submission, onClose: vi.fn(), onChanged: vi.fn() }));
     expectDefaultLayer("crit-overlay-title");
   });
   it("resource component", () => {
