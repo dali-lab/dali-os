@@ -11,6 +11,7 @@ import { publishCommentChange } from "~/lib/comment-events.server";
 import { notifyMentions } from "~/lib/mentions.server";
 import { commentAnchorSchema, anchorSlideId } from "~/lib/slide-comments";
 import { docCommentContext } from "~/lib/comment-links.server";
+import { critThreadLink, loadCritTarget } from "~/lib/crit-comments.server";
 import type { BodySegment } from "~/lib/comment-body";
 
 // POST   /api/comments/:id  { intent: "edit" | "set-anchor" | "react" | "unreact" }
@@ -34,6 +35,7 @@ import type { BodySegment } from "~/lib/comment-body";
 //     doc     → Core, or comment author (members + partners may delete own)
 //     file    → Core only
 //     pagedoc → Core, or comment author
+//     crit    → comment author, Core, or a lead of the hub's domain
 
 export async function action({ request, params }: Route.ActionArgs) {
   const preflight = handlePreflight(request);
@@ -58,7 +60,9 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (request.method === "DELETE") {
     let canDelete: boolean;
-    if (comment.targetType === "file") {
+    if (comment.targetType === "crit") {
+      canDelete = isAuthor || !!(await loadCritTarget(auth.user.sub, comment.targetId, request))?.canModerate;
+    } else if (comment.targetType === "file") {
       // File artifact feedback is a Core-managed surface.
       canDelete = core;
     } else {
@@ -145,7 +149,9 @@ export async function action({ request, params }: Route.ActionArgs) {
         const link =
           comment.targetType === "doc"
             ? (await docCommentContext(comment.targetId, comment.parentId ?? comment.id, comment.id)).link
-            : `/documents/file/${comment.targetId}?comment=${comment.id}`;
+            : comment.targetType === "crit"
+              ? await critThreadLink(comment.targetId, comment.parentId ?? comment.id)
+              : `/documents/file/${comment.targetId}?comment=${comment.id}`;
         void notifyMentions({
           recipientUserIds: freshMentionIds,
           actorId: auth.user.sub,
@@ -176,6 +182,9 @@ export async function action({ request, params }: Route.ActionArgs) {
       return withCors(request, Response.json({ error: "Invalid anchor" }, { status: 400 }));
     }
     const anchor = parsed.data ?? null;
+    if ((anchor as { kind?: string } | null)?.kind === "image") {
+      return withCors(request, Response.json({ error: "Image pins only apply to Crit Wall posts" }, { status: 400 }));
+    }
     if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
       const page = await prisma.page.findUnique({ where: { id: comment.targetId }, select: { kind: true } });
       if (page?.kind !== "Slides") {
@@ -207,6 +216,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (comment.targetType === "doc") {
       const access = await getPageAccess(auth.user.sub, comment.targetId);
       if (!access.canComment) return forbidden(request);
+    }
+    if (comment.targetType === "crit" && !(await loadCritTarget(auth.user.sub, comment.targetId, request))) {
+      return forbidden(request);
     }
     // file + pagedoc: being authenticated and having an existing comment row
     // already implies access; no additional check needed.

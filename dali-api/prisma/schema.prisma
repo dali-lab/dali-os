@@ -373,7 +373,6 @@ model User {
   pageDocsLastEdited     PageDoc[]           @relation("PageDocLastEditedBy")
   resourceHubPages       ResourceHubPage[]
   critSubmissions        CritSubmission[]    @relation("CritSubmissionAuthor")
-  critComments           CritComment[]       @relation("CritCommentAuthor")
   domainReferences       DomainReference[]   @relation("DomainReferenceAuthor")
   mentorshipWarnings     MentorshipWarning[] @relation("WarningMember")
   mentorshipWarningsMade MentorshipWarning[] @relation("WarningCreator")
@@ -1779,6 +1778,8 @@ enum DocCommentTarget {
   // modal are DocComments with this target — reuses the doc-comment pipeline
   // rather than a second comment table.
   pagedoc
+  // A Crit Wall post (CritSubmission.id). Pinned comments carry an image anchor.
+  crit
 }
 
 // Per-page documentation / guide surfaced in a "Docs" modal on hard-to-navigate
@@ -7968,29 +7969,8 @@ model CritSubmission {
   question   String?
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
-  comments   CritComment[]
 
   @@index([domainId, createdAt])
-}
-
-// A comment on a submission. Top-level comments may be pinned (`x`/`y` are
-// fractions 0..1 of the image's width and height, so they survive resizing);
-// replies carry a parentId and no position.
-model CritComment {
-  id           String         @id @default(cuid())
-  submissionId String
-  submission   CritSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  authorId     String?
-  author       User?          @relation("CritCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
-  parentId     String?
-  parent       CritComment?   @relation("CritReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  replies      CritComment[]  @relation("CritReplies")
-  body         String
-  x            Float?
-  y            Float?
-  createdAt    DateTime       @default(now())
-
-  @@index([submissionId, createdAt])
 }
 
 // A domain's References gallery: work and inspiration members share. One gallery per domain.

@@ -4,7 +4,7 @@ vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/resource-hub.server", () => ({ ledDomainIds: vi.fn(), requireResourceHubViewer: vi.fn() }));
 vi.mock("~/lib/link-preview.server", () => ({ fetchLinkPreview: vi.fn() }));
 
-import { parseCommentForm, parseSubmissionForm, serializeComments, serializeSubmission, UPLOAD_URL_PREFIX } from "../crit.server";
+import { parseSubmissionForm, serializeSubmission, UPLOAD_URL_PREFIX } from "../crit.server";
 
 const form = (o: Record<string, string>) => {
   const f = new FormData();
@@ -14,12 +14,12 @@ const form = (o: Record<string, string>) => {
 const person = { firstName: "Ada", lastName: "Lovelace" };
 const row = (o: Partial<Parameters<typeof serializeSubmission>[0]> = {}) => ({
   id: "s1", title: "Logo", question: null, kind: "image", url: `${UPLOAD_URL_PREFIX}a.png`, previewUrl: null, fileName: "a.png",
-  anonymous: false, authorId: "u1", author: person, createdAt: new Date("2026-11-14T00:00:00Z"), _count: { comments: 3 }, ...o,
+  anonymous: false, authorId: "u1", author: person, createdAt: new Date("2026-11-14T00:00:00Z"), ...o,
 });
 
 describe("serializeSubmission", () => {
   it("names the author on a normal post", () => {
-    const s = serializeSubmission(row(), "u2", false);
+    const s = serializeSubmission(row(), "u2", false, 3);
     expect(s.authorName).toBe("Ada Lovelace");
     expect(s.mine).toBe(false);
     expect(s.commentCount).toBe(3);
@@ -36,12 +36,10 @@ describe("serializeSubmission", () => {
   });
 });
 
-describe("serializeComments", () => {
-  const c = (id: string, t: number, o: object = {}) => ({ id, parentId: null, body: id, x: null, y: null, authorId: "u1", author: person, createdAt: new Date(t), ...o });
-  it("numbers pins in the order they were placed, skipping general comments and replies", () => {
-    const out = serializeComments([c("b", 2, { x: 0.5, y: 0.5 }), c("a", 1, { x: 0.1, y: 0.2 }), c("g", 3), c("r", 4, { parentId: "a", x: 0.9, y: 0.9 })], "u9", false);
-    expect(out.map((x) => [x.id, x.pin])).toEqual([["a", 1], ["b", 2], ["g", null], ["r", null]]);
-    expect(out.find((x) => x.id === "r")).toMatchObject({ x: null, y: null });
+describe("serializeSubmission moderation", () => {
+  it("tells the client whether the viewer moderates, apart from owning the post", () => {
+    expect(serializeSubmission(row(), "u2", true)).toMatchObject({ canModerate: true, canDelete: true });
+    expect(serializeSubmission(row(), "u1", false)).toMatchObject({ canModerate: false, canDelete: true });
   });
 });
 
@@ -61,19 +59,5 @@ describe("parseSubmissionForm", () => {
   it("reads the anonymous flag and trims the question", () => {
     const r = parseSubmissionForm(form({ kind: "link", url: "https://a.example", anonymous: "1", question: "  What   do you think? " }));
     expect(r).toMatchObject({ ok: true, value: { anonymous: true, question: "What do you think?" } });
-  });
-});
-
-describe("parseCommentForm", () => {
-  it("needs text", () => expect(parseCommentForm(form({ body: "  " })).ok).toBe(false));
-  it("keeps a pin position as fractions of the image", () => {
-    expect(parseCommentForm(form({ body: "nice", x: "0.25", y: "0.75" }))).toMatchObject({ ok: true, value: { x: 0.25, y: 0.75 } });
-  });
-  it("rejects out-of-range or half-given positions", () => {
-    expect(parseCommentForm(form({ body: "a", x: "1.2", y: "0.5" })).ok).toBe(false);
-    expect(parseCommentForm(form({ body: "a", x: "0.5" })).ok).toBe(false);
-  });
-  it("drops the position on a reply", () => {
-    expect(parseCommentForm(form({ body: "a", x: "0.5", y: "0.5", parentId: "p" }))).toMatchObject({ ok: true, value: { x: null, y: null, parentId: "p" } });
   });
 });

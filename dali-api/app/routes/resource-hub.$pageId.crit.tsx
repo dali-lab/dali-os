@@ -4,7 +4,9 @@ import { FileText, Link2, MessageSquare, Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.crit";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
-import { loadCritContext, parseSubmissionForm, resolveSubmission, serializeSubmission } from "~/lib/crit.server";
+import { critCommentCounts, loadCritContext, parseSubmissionForm, resolveSubmission, serializeSubmission } from "~/lib/crit.server";
+import { parseCritLink } from "~/lib/crit-comments";
+import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
 import { HubBand } from "~/components/resource-hub/HubCard";
 import { ResourceHubTabs } from "~/components/resource-hub/ResourceHubTabs";
@@ -20,15 +22,17 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const ctx = await loadCritContext(request, params.pageId!);
   const rows = await prisma.critSubmission.findMany({
     where: { domainId: ctx.domainId },
-    include: { author: person, _count: { select: { comments: true } } },
+    include: { author: person },
     orderBy: { createdAt: "desc" },
   });
+  const [counts, [me]] = await Promise.all([critCommentCounts(rows.map((r) => r.id)), hydrateAuthors([ctx.userId])]);
   return {
     pageId: ctx.pageId,
+    viewer: { id: ctx.userId, name: ctx.userName, photoUrl: me?.photoUrl ?? null },
     userName: ctx.userName,
     domainName: ctx.domainName,
     hub: ctx.hub,
-    items: rows.map((r) => serializeSubmission(r, ctx.userId, ctx.canModerate)),
+    items: rows.map((r) => serializeSubmission(r, ctx.userId, ctx.canModerate, counts.get(r.id) ?? 0)),
   };
 }
 
@@ -68,7 +72,10 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   if (intent === "delete") {
     if (!owner && !ctx.canModerate) return Response.json({ error: "Forbidden" }, { status: 403 });
-    await prisma.critSubmission.delete({ where: { id } });
+    await prisma.$transaction([
+      prisma.docComment.deleteMany({ where: { targetType: "crit", targetId: id } }),
+      prisma.critSubmission.delete({ where: { id } }),
+    ]);
     return { ok: true };
   }
 
@@ -100,23 +107,24 @@ function Thumb({ item }: { item: CritSubmissionView }) {
 }
 
 export default function CritWall() {
-  const { pageId, userName, domainName, items, hub } = useLoaderData<typeof loader>();
+  const { pageId, viewer, userName, domainName, items, hub } = useLoaderData<typeof loader>();
   const [params, setParams] = useSearchParams();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const revalidator = useRevalidator();
   const [sharing, setSharing] = useState(false);
-  const openId = params.get("s");
+  const { submissionId: openId, threadId } = parseCritLink(params);
   const open = items.find((i) => i.id === openId) ?? null;
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.ok) setSharing(false);
   }, [fetcher.state, fetcher.data]);
 
-  const openItem = (id: string) => setParams({ s: id }, { preventScrollReset: true });
+  const openItem = (id: string) => setParams({ post: id }, { preventScrollReset: true });
   const closeItem = () =>
     setParams(
       (p) => {
-        p.delete("s");
+        p.delete("post");
+        p.delete("thread");
         return p;
       },
       { replace: true, preventScrollReset: true },
@@ -197,7 +205,8 @@ export default function CritWall() {
       )}
       {open && (
         <SubmissionOverlay
-          pageId={pageId}
+          viewer={viewer}
+          initialThreadId={threadId}
           submission={open}
           onClose={closeItem}
           onChanged={() => revalidator.revalidate()}

@@ -9,13 +9,14 @@ import { addReaction, commentReactionStore } from "~/lib/reactions.server";
 import { publishCommentChange } from "~/lib/comment-events.server";
 import { requireForAction } from "~/mcp/registry";
 import { commentAnchorSchema } from "~/lib/slide-comments";
+import { loadCritTarget } from "~/lib/crit-comments.server";
 import { createDocComment, CommentCreateError } from "~/lib/doc-comments.server";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
 export const MANAGE_COMMENT_TOOL_DEF = {
   name: "manage_comment",
   description:
-    "Create, edit, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core.",
+    "Create, edit, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core; deleting a Crit Wall comment requires being its author, Core, or a lead of the hub's domain.",
   inputSchema: {
     type: "object" as const,
     properties: {
@@ -26,7 +27,7 @@ export const MANAGE_COMMENT_TOOL_DEF = {
       // For create
       targetType: {
         type: "string",
-        enum: ["doc", "file", "pagedoc"],
+        enum: ["doc", "file", "pagedoc", "crit"],
         description: "Required for 'create'.",
       },
       targetId: { type: "string", description: "Required for 'create'." },
@@ -37,14 +38,14 @@ export const MANAGE_COMMENT_TOOL_DEF = {
         properties: {
           from: { type: "string" },
           to: { type: "string" },
-          kind: { type: "string", enum: ["slide", "blocknote"] },
+          kind: { type: "string", enum: ["slide", "blocknote", "image"] },
           slideId: { type: "string" },
           elementId: { type: "string" },
           x: { type: "number", minimum: 0, maximum: 1 },
           y: { type: "number", minimum: 0, maximum: 1 },
         },
         description:
-          "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide).",
+          "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide). On crit targets: an image pin ({kind: 'image', x, y} as 0-1 fractions of the image) on a top-level comment on an image post.",
       },
       versionId: { type: "string", description: "For 'create' on file targets: pin to a file version." },
       // For edit/react/unreact/delete
@@ -57,7 +58,7 @@ export const MANAGE_COMMENT_TOOL_DEF = {
   requiredScope: "mcp:write" as const,
 };
 
-type CommentTarget = "doc" | "file" | "pagedoc";
+type CommentTarget = "doc" | "file" | "pagedoc" | "crit";
 
 export class ManageCommentError extends Error {
   constructor(message: string, public status: number) {
@@ -88,6 +89,7 @@ type ManageCommentInput = {
 
 async function canCommentOnTarget(callerId: string, targetType: CommentTarget, targetId: string): Promise<boolean> {
   if (targetType === "pagedoc") return isLabMember(callerId);
+  if (targetType === "crit") return (await loadCritTarget(callerId, targetId)) !== null;
   if (targetType === "doc") {
     const access = await getPageAccess(callerId, targetId);
     return access.canComment;
@@ -122,7 +124,7 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
       throw new ManageCommentError("Forbidden", 403);
     }
 
-    const parsedAnchor = commentAnchorSchema.safeParse(targetType === "doc" ? (input.anchor ?? null) : null);
+    const parsedAnchor = commentAnchorSchema.safeParse(targetType === "doc" || targetType === "crit" ? (input.anchor ?? null) : null);
     if (!parsedAnchor.success) throw new ManageCommentError("Invalid anchor", 400);
 
     try {
@@ -155,7 +157,12 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
   }
 
   if (input.action === "delete") {
-    const canDelete = comment.targetType === "file" ? core : core || isAuthor;
+    const canDelete =
+      comment.targetType === "crit"
+        ? isAuthor || !!(await loadCritTarget(callerId, comment.targetId))?.canModerate
+        : comment.targetType === "file"
+          ? core
+          : core || isAuthor;
     if (!canDelete) throw new ManageCommentError("Forbidden", 403);
     await prisma.docComment.delete({ where: { id: comment.id } });
     if (comment.targetType === "doc") publishCommentChange(comment.targetId);
@@ -165,6 +172,9 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
   if (input.action === "react" || input.action === "unreact") {
     const emoji = input.emoji!.trim();
     if (!emoji) throw new ManageCommentError("Emoji is required", 400);
+    if (comment.targetType === "crit" && !(await loadCritTarget(callerId, comment.targetId))) {
+      throw new ManageCommentError("Forbidden", 403);
+    }
     // doc targets require canComment; file/pagedoc just require being an authenticated caller
     if (comment.targetType === "doc") {
       const access = await getPageAccess(callerId, comment.targetId);

@@ -13,10 +13,13 @@ export const textAnchorSchema = z
   .strict()
   .refine((a) => a.elementId === undefined || a.slideId !== undefined, { message: "elementId needs slideId" });
 
-export const commentAnchorSchema = z.union([slideAnchorSchema, textAnchorSchema]).nullable().optional();
+export const imageAnchorSchema = z.object({ kind: z.literal("image"), x: unit, y: unit }).strict();
+
+export const commentAnchorSchema = z.union([slideAnchorSchema, textAnchorSchema, imageAnchorSchema]).nullable().optional();
 
 export type SlideAnchor = z.infer<typeof slideAnchorSchema>;
 export type TextAnchor = z.infer<typeof textAnchorSchema>;
+export type ImageAnchor = z.infer<typeof imageAnchorSchema>;
 export type SlideScope = { slideId: string; elementId: string };
 
 export function anchorSlideId(anchor: unknown): string | null {
@@ -51,6 +54,8 @@ export interface SlideComment {
   bodyJson?: import("~/lib/comment-body").BodySegment[] | null;
   anchor: unknown;
   createdAt: string;
+  updatedAt?: string;
+  reactions?: { userId: string; emoji: string; createdAt: string; name?: string; imageUrl?: string | null }[];
 }
 
 export interface SlideThread {

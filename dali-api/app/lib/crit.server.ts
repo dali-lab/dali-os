@@ -6,7 +6,6 @@ import { safeHref } from "~/components/doc/components/kinds";
 export const UPLOAD_URL_PREFIX = "/api/upload/raw?key=uploads%2F";
 const MAX_TITLE = 120;
 const MAX_QUESTION = 400;
-const MAX_COMMENT = 2000;
 
 export interface CritContext {
   userId: string;
@@ -44,6 +43,16 @@ export const displayName = (u: { firstName: string | null; lastName: string | nu
 
 type Person = { firstName: string | null; lastName: string | null } | null;
 
+export async function critCommentCounts(submissionIds: string[]): Promise<Map<string, number>> {
+  if (submissionIds.length === 0) return new Map();
+  const rows = await prisma.docComment.groupBy({
+    by: ["targetId"],
+    where: { targetType: "crit", targetId: { in: submissionIds } },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((r) => [r.targetId, r._count._all]));
+}
+
 export interface SubmissionRow {
   id: string;
   title: string;
@@ -56,11 +65,10 @@ export interface SubmissionRow {
   authorId: string | null;
   author: Person;
   createdAt: Date;
-  _count?: { comments: number };
 }
 
 /** What the client sees of a submission. An anonymous post carries no author name or id at all. */
-export function serializeSubmission(row: SubmissionRow, viewerId: string, canModerate: boolean) {
+export function serializeSubmission(row: SubmissionRow, viewerId: string, canModerate: boolean, commentCount = 0) {
   return {
     id: row.id,
     title: row.title,
@@ -73,38 +81,10 @@ export function serializeSubmission(row: SubmissionRow, viewerId: string, canMod
     authorName: row.anonymous ? null : displayName(row.author),
     mine: row.authorId === viewerId,
     canDelete: row.authorId === viewerId || canModerate,
-    commentCount: row._count?.comments ?? 0,
+    canModerate,
+    commentCount,
     createdAt: row.createdAt.toISOString(),
   };
-}
-
-export interface CommentRow {
-  id: string;
-  parentId: string | null;
-  body: string;
-  x: number | null;
-  y: number | null;
-  authorId: string | null;
-  author: Person;
-  createdAt: Date;
-}
-
-/** Pinned top-level comments are numbered 1..n in the order they were placed. */
-export function serializeComments(rows: CommentRow[], viewerId: string, canModerate: boolean) {
-  const ordered = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-  let pin = 0;
-  return ordered.map((c) => ({
-    id: c.id,
-    parentId: c.parentId,
-    body: c.body,
-    x: c.parentId ? null : c.x,
-    y: c.parentId ? null : c.y,
-    pin: !c.parentId && c.x !== null && c.y !== null ? ++pin : null,
-    authorName: displayName(c.author),
-    mine: c.authorId === viewerId,
-    canDelete: c.authorId === viewerId || canModerate,
-    createdAt: c.createdAt.toISOString(),
-  }));
 }
 
 export type SubmissionInput = {
@@ -138,22 +118,6 @@ export function parseSubmissionForm(form: FormData): { ok: true; value: Submissi
     return { ok: true, value: { kind, url: href, fileName: null, title, question, anonymous } };
   }
   return { ok: false, error: "Upload a file or paste a link." };
-}
-
-export function parseCommentForm(form: FormData): { ok: true; value: { body: string; x: number | null; y: number | null; parentId: string | null } } | { ok: false; error: string } {
-  const body = String(form.get("body") ?? "").trim().slice(0, MAX_COMMENT);
-  if (!body) return { ok: false, error: "Write a comment." };
-  const num = (k: string) => {
-    const raw = form.get(k);
-    if (raw === null || raw === "") return null;
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= 0 && n <= 1 ? n : NaN;
-  };
-  const x = num("x");
-  const y = num("y");
-  if (Number.isNaN(x) || Number.isNaN(y) || (x === null) !== (y === null)) return { ok: false, error: "Invalid position." };
-  const parentId = String(form.get("parentId") ?? "") || null;
-  return { ok: true, value: { body, x: parentId ? null : x, y: parentId ? null : y, parentId } };
 }
 
 /** The title to store: what the poster typed, else the file name, else the page's own title or its host. */

@@ -416,6 +416,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "project.sprint_closed",
           "collab.comment_reply",
           "file.comment",
+          "crit.comment",
           "file.new_version",
           "pagedoc.mention",
           "pagedoc.maintainer_assigned",
@@ -3318,7 +3319,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_comments",
-  "description": "List comment threads on a document (Page), project file, or page-doc FAQ. Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership.",
+  "description": "List comment threads on a document (Page), project file, or page-doc FAQ. Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership; Crit Wall posts require the Resource Hub to be on for you and visible.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3327,9 +3328,10 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "enum": [
           "doc",
           "file",
-          "pagedoc"
+          "pagedoc",
+          "crit"
         ],
-        "description": "The kind of target: 'doc' (Page), 'file' (ProjectFile), or 'pagedoc' (page-doc FAQ)."
+        "description": "The kind of target: 'doc' (Page), 'file' (ProjectFile), 'pagedoc' (page-doc FAQ), or 'crit' (Crit Wall post). Crit pins carry anchor {kind: 'image', x, y}."
       },
       "targetId": {
         "type": "string",
@@ -3743,7 +3745,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_comment",
-  "description": "Create, edit, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core.",
+  "description": "Create, edit, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core; deleting a Crit Wall comment requires being its author, Core, or a lead of the hub's domain.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3762,7 +3764,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "enum": [
           "doc",
           "file",
-          "pagedoc"
+          "pagedoc",
+          "crit"
         ],
         "description": "Required for 'create'."
       },
@@ -3792,7 +3795,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
             "type": "string",
             "enum": [
               "slide",
-              "blocknote"
+              "blocknote",
+              "image"
             ]
           },
           "slideId": {
@@ -3812,7 +3816,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
             "maximum": 1
           }
         },
-        "description": "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide)."
+        "description": "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide). On crit targets: an image pin ({kind: 'image', x, y} as 0-1 fractions of the image) on a top-level comment on an image post."
       },
       "versionId": {
         "type": "string",
