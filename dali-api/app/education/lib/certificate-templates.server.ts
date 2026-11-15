@@ -7,28 +7,27 @@
 import { prisma } from "~/lib/db.server";
 import { getObjectBytes, getDownloadUrl } from "~/lib/s3.server";
 import { resolveFilingFolder, singletonSlot } from "~/drive/lib/drive-receivers.server";
-import { parsePlacedFields, type PlacedField } from "./certificate-fields";
+import { backgroundIssue, parsePlacedFields, type BackgroundIssue, type PlacedField } from "./certificate-fields";
 
-/** The S3 key + content type of a background ProjectFile's current version. */
 async function backgroundVersion(
   fileId: string,
-): Promise<{ s3Key: string; contentType: string } | null> {
+): Promise<{ s3Key: string; contentType: string; issue: BackgroundIssue | null } | null> {
   const f = await prisma.projectFile.findFirst({
     where: { id: fileId, archivedAt: null },
     select: { currentVersion: { select: { s3Key: true, contentType: true } } },
   });
   if (!f?.currentVersion) return null;
-  return {
-    s3Key: f.currentVersion.s3Key,
-    contentType: f.currentVersion.contentType ?? "image/png",
-  };
+  const { s3Key, contentType } = f.currentVersion;
+  return { s3Key, contentType: contentType ?? "image/png", issue: backgroundIssue(contentType, s3Key) };
 }
 
-/** Presigned inline URL for a template's background (editor preview). */
-export async function getCertificateTemplateBgUrl(fileId: string): Promise<string | null> {
+export async function getCertificateTemplateBackground(
+  fileId: string,
+): Promise<{ bgUrl: string; bgIssue: null } | { bgUrl: null; bgIssue: BackgroundIssue } | null> {
   const v = await backgroundVersion(fileId);
   if (!v) return null;
-  return getDownloadUrl(v.s3Key, { contentType: v.contentType, inline: true });
+  if (v.issue) return { bgUrl: null, bgIssue: v.issue };
+  return { bgUrl: await getDownloadUrl(v.s3Key, { contentType: v.contentType, inline: true }), bgIssue: null };
 }
 
 export type CertificateTemplateSummary = {
@@ -89,6 +88,8 @@ export async function createCertificateTemplate(args: {
   if (!name) return { error: "Name is required", status: 400 };
   if (!args.s3Key.startsWith("uploads/"))
     return { error: "Invalid background image", status: 400 };
+  if (backgroundIssue(args.contentType, args.s3Key))
+    return { error: "The background must be a PNG or JPG image", status: 400 };
   if (!(args.bgWidth > 0 && args.bgHeight > 0))
     return { error: "Background dimensions are required", status: 400 };
 
@@ -300,7 +301,7 @@ export async function getCertificateRenderTemplate(
   });
   if (!t) return null;
   const version = await backgroundVersion(t.backgroundFileId);
-  if (!version) return null;
+  if (!version || version.issue) return null;
   try {
     const { body, contentType } = await getObjectBytes(version.s3Key);
     return {
@@ -337,7 +338,7 @@ export async function getCertificateWebTemplate(
   });
   if (!t) return null;
   const version = await backgroundVersion(t.backgroundFileId);
-  if (!version) return null;
+  if (!version || version.issue) return null;
   const bgUrl = await getDownloadUrl(version.s3Key, {
     contentType: version.contentType,
     inline: true,
