@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { isFetchableUrl, parseLinkPreview } from "../link-preview.server";
+import { EventEmitter } from "node:events";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const hoisted = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock("node:https", () => ({ default: { get: hoisted.get } }));
+
+import { fetchLinkPreview, isFetchableUrl, parseLinkPreview } from "../link-preview.server";
 
 describe("isFetchableUrl", () => {
   it("accepts public http(s) URLs", () => {
@@ -46,5 +51,28 @@ describe("parseLinkPreview", () => {
   });
   it("is empty when nothing is advertised", () => {
     expect(parseLinkPreview("<p>hi</p>", page)).toEqual({ image: null, title: null, description: null });
+  });
+});
+
+describe("fetchLinkPreview deadline", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("gives up on a server that never answers, across redirect hops", async () => {
+    vi.useFakeTimers();
+    const destroyed: boolean[] = [];
+    hoisted.get.mockImplementation((_url: URL, _opts: unknown, cb: (res: unknown) => void) => {
+      const req = Object.assign(new EventEmitter(), { destroy: () => destroyed.push(true) });
+      if (hoisted.get.mock.calls.length === 1) {
+        const res = Object.assign(new EventEmitter(), { statusCode: 302, headers: { location: "https://example.org/b" }, resume: () => {} });
+        setTimeout(() => cb(res), 5000);
+      }
+      return req;
+    });
+    const result = fetchLinkPreview("https://example.com/a");
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(hoisted.get).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(await result).toBeNull();
+    expect(destroyed.length).toBeGreaterThan(0);
   });
 });

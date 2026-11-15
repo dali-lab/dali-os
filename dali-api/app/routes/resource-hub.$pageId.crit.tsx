@@ -4,6 +4,7 @@ import { FileText, Link2, MessageSquare, Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.crit";
 import { prisma } from "~/lib/db.server";
 import { loadCritContext, parseSubmissionForm, resolveSubmission, serializeSubmission } from "~/lib/crit.server";
+import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
 import { HubBand } from "~/components/resource-hub/HubCard";
 import { ResourceHubTabs } from "~/components/resource-hub/ResourceHubTabs";
 import { ShareWorkModal, type ShareValues } from "~/components/resource-hub/crit/ShareWorkModal";
@@ -38,6 +39,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create") {
     const parsed = parseSubmissionForm(form);
     if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+    if (parsed.value.kind === "link") {
+      const limited = limitLinkPreviews(request, ctx.userId);
+      if (limited) return limited;
+    }
     const { title, previewUrl } = await resolveSubmission(parsed.value);
     const { kind, url, fileName, question, anonymous } = parsed.value;
     await prisma.critSubmission.create({

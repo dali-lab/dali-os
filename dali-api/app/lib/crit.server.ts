@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
+import { canEditResourceHub, ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
 import { fetchLinkPreview } from "~/lib/link-preview.server";
 import { safeHref } from "~/components/doc/components/kinds";
 
@@ -23,9 +23,10 @@ export async function loadCritContext(request: Request, pageId: string): Promise
   const { user, core, userName } = await requireResourceHubViewer(request);
   const page = await prisma.resourceHubPage.findUnique({
     where: { id: pageId },
-    select: { id: true, domainId: true, title: true, coverUrl: true, publishedAt: true, domain: { select: { displayName: true } } },
+    select: { id: true, domainId: true, createdById: true, title: true, coverUrl: true, publishedAt: true, domain: { select: { displayName: true } } },
   });
   if (!page?.domainId) throw new Response("Not found", { status: 404 });
+  if (!page.publishedAt && !(await canEditResourceHub(user.sub, page))) throw new Response("Not found", { status: 404 });
   const led = core ? [] : await ledDomainIds(user.sub);
   return {
     userId: user.sub,

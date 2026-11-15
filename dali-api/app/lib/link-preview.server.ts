@@ -12,6 +12,7 @@ export interface LinkPreview {
 
 const MAX_BYTES = 512 * 1024;
 const TIMEOUT_MS = 4000;
+const TOTAL_TIMEOUT_MS = 8000;
 const MAX_REDIRECTS = 3;
 const BLOCKED_SUFFIXES = [".internal", ".flycast", ".local", ".localhost", ".localdomain", ".lan", ".home.arpa"];
 
@@ -44,7 +45,7 @@ const publicOnlyLookup: typeof dnsLookup = ((host: string, options: unknown, cb:
   });
 }) as typeof dnsLookup;
 
-function get(url: URL): Promise<{ status: number; location: string | null; contentType: string; body: string }> {
+function get(url: URL, signal: AbortSignal): Promise<{ status: number; location: string | null; contentType: string; body: string }> {
   return new Promise((resolve, reject) => {
     const client = url.protocol === "https:" ? https : http;
     const req = client.get(
@@ -82,6 +83,12 @@ function get(url: URL): Promise<{ status: number; location: string | null; conte
     );
     req.on("timeout", () => req.destroy(new Error("Timed out")));
     req.on("error", reject);
+    const abort = () => {
+      req.destroy();
+      reject(new Error("Timed out"));
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
   });
 }
 
@@ -126,21 +133,27 @@ export function parseLinkPreview(html: string, pageUrl: string): LinkPreview {
 export async function fetchLinkPreview(raw: string): Promise<LinkPreview | null> {
   let url = isFetchableUrl(raw);
   if (!url) return null;
-  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    let res;
-    try {
-      res = await get(url);
-    } catch {
-      return null;
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), TOTAL_TIMEOUT_MS);
+  try {
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      let res;
+      try {
+        res = await get(url, deadline.signal);
+      } catch {
+        return null;
+      }
+      if (res.status >= 300 && res.status < 400 && res.location) {
+        const next = isFetchableUrl(new URL(res.location, url).toString());
+        if (!next) return null;
+        url = next;
+        continue;
+      }
+      if (res.status < 200 || res.status >= 300 || !res.body) return null;
+      return parseLinkPreview(res.body, url.toString());
     }
-    if (res.status >= 300 && res.status < 400 && res.location) {
-      const next = isFetchableUrl(new URL(res.location, url).toString());
-      if (!next) return null;
-      url = next;
-      continue;
-    }
-    if (res.status < 200 || res.status >= 300 || !res.body) return null;
-    return parseLinkPreview(res.body, url.toString());
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
-  return null;
 }

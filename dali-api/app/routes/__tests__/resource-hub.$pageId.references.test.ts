@@ -6,12 +6,13 @@ vi.mock("~/lib/db.server", () => ({
     domainReference: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
   },
 }));
-vi.mock("~/lib/resource-hub.server", () => ({ ledDomainIds: vi.fn(), requireResourceHubViewer: vi.fn() }));
+vi.mock("~/lib/resource-hub.server", () => ({ canEditResourceHub: vi.fn(), ledDomainIds: vi.fn(), requireResourceHubViewer: vi.fn() }));
 vi.mock("~/lib/link-preview.server", () => ({ fetchLinkPreview: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
+import { canEditResourceHub, ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
 import { fetchLinkPreview } from "~/lib/link-preview.server";
+import { _resetForTests } from "~/lib/rate-limit";
 import { action, loader } from "~/routes/resource-hub.$pageId.references";
 
 const db = vi.mocked(prisma, true);
@@ -28,6 +29,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(requireResourceHubViewer).mockResolvedValue({ user: { sub: "u1" }, core: false, userName: "Ada Lovelace" } as any);
   vi.mocked(ledDomainIds).mockResolvedValue([]);
+  vi.mocked(canEditResourceHub).mockResolvedValue(false);
+  _resetForTests();
   db.resourceHubPage.findUnique.mockResolvedValue({ id: "p1", domainId: "d1", title: "Design", coverUrl: "pattern:grid", publishedAt: new Date(0), domain: { displayName: "Design" } } as any);
   vi.mocked(fetchLinkPreview).mockResolvedValue({ title: "Page title", image: "https://img.example/a.png", description: null });
 });
@@ -45,6 +48,7 @@ describe("loader", () => {
     db.domainReference.findMany.mockResolvedValue([]);
     expect((await get()).hub).toEqual({ title: "Design", coverUrl: "pattern:grid", published: true });
     db.resourceHubPage.findUnique.mockResolvedValue({ id: "p1", domainId: "d1", title: "Design", coverUrl: null, publishedAt: null, domain: { displayName: "Design" } } as any);
+    vi.mocked(canEditResourceHub).mockResolvedValue(true);
     expect((await get()).hub).toEqual({ title: "Design", coverUrl: null, published: false });
   });
   it("404s for a hub with no domain, so it has no gallery", async () => {
@@ -53,7 +57,37 @@ describe("loader", () => {
   });
 });
 
+describe("draft hub", () => {
+  const draft = { id: "p1", domainId: "d1", createdById: "u9", title: "Design", coverUrl: null, publishedAt: null, domain: { displayName: "Design" } } as any;
+  it("404s the loader and the action for someone who can't edit the hub", async () => {
+    db.resourceHubPage.findUnique.mockResolvedValue(draft);
+    await expect(get()).rejects.toMatchObject({ status: 404 });
+    await expect(post({ intent: "create", kind: "link", url: "https://example.com" })).rejects.toMatchObject({ status: 404 });
+    expect(db.domainReference.create).not.toHaveBeenCalled();
+    expect(canEditResourceHub).toHaveBeenCalledWith("u1", expect.objectContaining({ createdById: "u9", domainId: "d1" }));
+  });
+  it("lets an editor through", async () => {
+    db.resourceHubPage.findUnique.mockResolvedValue(draft);
+    vi.mocked(canEditResourceHub).mockResolvedValue(true);
+    db.domainReference.findMany.mockResolvedValue([]);
+    expect((await get()).hub.published).toBe(false);
+  });
+  it("does not check editing for a published hub", async () => {
+    db.domainReference.findMany.mockResolvedValue([]);
+    await get();
+    expect(canEditResourceHub).not.toHaveBeenCalled();
+  });
+});
+
 describe("create", () => {
+  it("rate limits link previews per user and skips the fetch", async () => {
+    for (let i = 0; i < 20; i++) await post({ intent: "create", kind: "link", url: "https://example.com" });
+    vi.mocked(fetchLinkPreview).mockClear();
+    const res = await post({ intent: "create", kind: "link", url: "https://example.com" });
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({ error: "Too many requests" });
+    expect(fetchLinkPreview).not.toHaveBeenCalled();
+  });
   it("saves a link under the domain, the poster, and the title and image the page advertises", async () => {
     const res = await post({ intent: "create", kind: "link", url: "https://example.com/work", creator: "other", creatorName: "Studio X", note: "Love the type" });
     expect(res).toEqual({ ok: true });

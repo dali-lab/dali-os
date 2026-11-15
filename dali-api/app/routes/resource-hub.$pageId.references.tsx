@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.references";
 import { prisma } from "~/lib/db.server";
 import { loadReferencesContext, parseReferenceEdit, parseReferenceForm, resolveReference, serializeReference } from "~/lib/references.server";
+import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
 import { HubBand } from "~/components/resource-hub/HubCard";
 import { ResourceHubTabs } from "~/components/resource-hub/ResourceHubTabs";
 import { useDialog } from "~/components/ui/dialog";
@@ -32,6 +33,10 @@ export async function action({ request, params }: Route.ActionArgs) {
   if (intent === "create") {
     const parsed = parseReferenceForm(form);
     if (!parsed.ok) return Response.json({ error: parsed.error }, { status: 400 });
+    if (parsed.value.kind === "link") {
+      const limited = limitLinkPreviews(request, ctx.userId);
+      if (limited) return limited;
+    }
     const { title, previewUrl } = await resolveReference(parsed.value);
     const { kind, url, fileName, creatorName, daliMade, note } = parsed.value;
     await prisma.domainReference.create({
