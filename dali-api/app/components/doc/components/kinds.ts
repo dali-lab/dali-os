@@ -315,15 +315,12 @@ export function filterCollection<T extends Record<string, string>>(items: T[], c
   return items.filter((it) => (it.category ?? "").trim().toLowerCase() === category.toLowerCase());
 }
 
-const BLOCKED_SCHEMES = new Set(["javascript", "data", "vbscript", "file", "blob", "about"]);
-
 export function safeHref(value: string | undefined): string | undefined {
   const v = value?.trim();
   if (!v) return undefined;
+  if (/^(https?:\/\/|mailto:)/i.test(v)) return v;
   if (v.startsWith("/") && !v.startsWith("//")) return v;
   if (v.startsWith("#")) return v;
-  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(v)?.[1]?.toLowerCase();
-  if (scheme) return BLOCKED_SCHEMES.has(scheme) || /\s/.test(v) ? undefined : v;
   if (/^[\w-]+(\.[\w-]+)+([/?#]\S*)?$/.test(v)) return `https://${v}`;
   return undefined;
 }
