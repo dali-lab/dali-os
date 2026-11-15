@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { PageRowControls } from "~/components/os-page";
 import { useOpenBeside } from "~/components/side-panel/use-side-panel";
 import { useNavigate, useRevalidator } from "react-router";
 import { Select, Menu } from "~/components/ui/floating";
@@ -526,7 +527,7 @@ export function ProjectDriveTab({
             : undefined
         }
         filterControl={filterControl}
-        newMenu={newMenu}
+        newMenu={<PageRowControls>{newMenu}</PageRowControls>}
         embeddedScopeId={scopeId}
         onTogglePartnerVisible={canEdit ? togglePagePartnerVisible : undefined}
         hasActivePartner={hasActivePartner}

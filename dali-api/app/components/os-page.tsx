@@ -1,8 +1,13 @@
-import type { ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { MoreHorizontal, Settings, type LucideIcon } from "lucide-react";
+import { IconButton } from "~/components/ui/IconButton";
+import { Menu } from "~/components/ui/floating";
+import { SegmentedTabButtons, type SegmentedTab } from "~/components/ui/SegmentedTabs";
 import { cn } from "~/lib/cn";
 
 // The parts a dali.os hub page is built from — the hero's labelled clusters,
-// the tab strip under it, and the hairlined facts card its sections state their
+// the page row (the island, the open tab's controls and the settings gear) under it, and the hairlined facts card its sections state their
 // details in. Shared by the project detail page and the member profile so the
 // two read as one page shape rather than two that drift.
 
@@ -82,52 +87,206 @@ export function HeroClusterLabel({
   );
 }
 
-// The hub page's tab strip is a header: a hairline rule spanning the page with
-// the open tab as a filled, top-rounded plate that meets the rule — a clear
-// seam between the page's head and the section below, unlike the floating
-// segmented pill (SegmentedTabButtons), which stays the switcher for sections
-// that aren't a page header (calendar views, settings).
+export type PageTabControl = {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  primary?: boolean;
+  disabled?: boolean;
+};
 
-export function OsTabBar<T extends string>({
-  tabs,
-  active,
-  onSelect,
-  trailing,
-  ariaLabel,
-}: {
-  tabs: { key: T; label: string }[];
-  active: T;
-  onSelect: (key: T) => void;
-  /** Pinned to the far right of the row — a settings gear, an action. */
-  trailing?: ReactNode;
-  ariaLabel?: string;
-}) {
+export type PageRowDensity = "full" | "icons" | "menu" | "stacked";
+
+// The design's steps are written in screen widths; the row sits inside the rail
+// and page gutters, so they are measured against the row at this offset.
+const PAGE_ROW_CHROME = 312;
+const FULL_MIN = 1233 - PAGE_ROW_CHROME;
+const ICONS_MIN = 1098 - PAGE_ROW_CHROME;
+const INLINE_MIN = 900 - PAGE_ROW_CHROME;
+
+export function pageRowDensity(width: number): PageRowDensity {
+  if (width >= FULL_MIN) return "full";
+  if (width >= ICONS_MIN) return "icons";
+  if (width >= INLINE_MIN) return "menu";
+  return "stacked";
+}
+
+const PageRowControlsTarget = createContext<{
+  scoped: boolean;
+  target: HTMLElement | null;
+  setTarget: (el: HTMLElement | null) => void;
+}>({ scoped: false, target: null, setTarget: () => {} });
+
+/** Wraps a page whose tab content hands controls to the row (PageRowControls). */
+export function PageRowControlsScope({ children }: { children: ReactNode }) {
+  const [target, setTarget] = useState<HTMLElement | null>(null);
   return (
-    <div className="flex items-end gap-3 border-b border-os-container">
-      <div
-        role="tablist"
-        aria-label={ariaLabel}
-        className="no-scrollbar flex min-w-0 items-end gap-1 overflow-x-auto"
+    <PageRowControlsTarget.Provider value={{ scoped: true, target, setTarget }}>
+      {children}
+    </PageRowControlsTarget.Provider>
+  );
+}
+
+/** Renders its children into the page row's controls slot, or in place when there is no row. */
+export function PageRowControls({ children }: { children: ReactNode }) {
+  const { scoped, target } = useContext(PageRowControlsTarget);
+  if (!scoped) return <>{children}</>;
+  return target ? createPortal(children, target) : null;
+}
+
+const CONTROL_BASE =
+  "inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap text-[13px] font-medium transition-colors disabled:pointer-events-none disabled:opacity-50";
+
+function ControlButton({
+  control,
+  iconOnly,
+}: {
+  control: PageTabControl;
+  iconOnly: boolean;
+}) {
+  const Icon = control.icon;
+  if (control.primary) {
+    return (
+      <button
+        type="button"
+        onClick={control.onClick}
+        disabled={control.disabled}
+        className={cn(
+          CONTROL_BASE,
+          "ml-1.5 gap-[5px] rounded-full bg-os-accent-fill px-2.5 font-semibold text-os-accent-label hover:opacity-90",
+        )}
       >
-        {tabs.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={active === t.key}
-            onClick={() => onSelect(t.key)}
-            className={cn(
-              "shrink-0 whitespace-nowrap rounded-t-[10px] px-4 py-2 text-sm font-medium transition-colors",
-              active === t.key
-                ? "bg-os-container text-foreground"
-                : "text-muted-foreground hover:bg-os-hover hover:text-foreground",
-            )}
+        <Icon className="h-[13px] w-[13px]" aria-hidden />
+        {control.label}
+      </button>
+    );
+  }
+  if (iconOnly) {
+    return (
+      <IconButton
+        label={control.label}
+        icon={control.icon}
+        onClick={control.onClick}
+        disabled={control.disabled}
+        className="h-7 w-7 p-0 text-os-grey hover:bg-os-hover"
+        iconClassName="h-[15px] w-[15px]"
+      />
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={control.onClick}
+      disabled={control.disabled}
+      className={cn(CONTROL_BASE, "rounded-md px-2 text-os-grey hover:bg-os-hover hover:text-foreground")}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {control.label}
+    </button>
+  );
+}
+
+export function PageTabRow({
+  label,
+  tabs,
+  controls = [],
+  onSettings,
+  settingsActive = false,
+  className,
+}: {
+  label: string;
+  tabs: SegmentedTab[];
+  /** The open tab's own actions; they swap when the tab does. */
+  controls?: PageTabControl[];
+  /** Shows the gear, pinned far right on every tab, outside the tablist. */
+  onSettings?: () => void;
+  settingsActive?: boolean;
+  className?: string;
+}) {
+  const [row, setRow] = useState<HTMLDivElement | null>(null);
+  const { setTarget } = useContext(PageRowControlsTarget);
+  const [density, setDensity] = useState<PageRowDensity>("full");
+
+  useEffect(() => {
+    if (!row || typeof ResizeObserver === "undefined") return;
+    const apply = (width: number) => {
+      if (width > 0) setDensity(pageRowDensity(width));
+    };
+    apply(row.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => apply(entries[0].contentRect.width));
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [row]);
+
+  const secondary = controls.filter((c) => !c.primary);
+  const primary = controls.filter((c) => c.primary);
+  const folded = density === "menu";
+
+  return (
+    <div
+      ref={setRow}
+      data-density={density}
+      className={cn("flex flex-wrap items-center gap-x-3 gap-y-2", className)}
+    >
+      <SegmentedTabButtons items={tabs} label={label} />
+      <div
+        className={cn(
+          "flex min-w-0 items-center gap-1",
+          density === "stacked" ? "order-last w-full justify-start" : "ml-auto",
+        )}
+      >
+        {folded && secondary.length > 0 ? (
+          <Menu
+            align="right"
+            ariaLabel="More actions"
+            trigger={
+              <button
+                type="button"
+                aria-label="More actions"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-os-grey transition-colors hover:bg-os-hover hover:text-foreground"
+              >
+                <MoreHorizontal className="h-[15px] w-[15px]" aria-hidden />
+              </button>
+            }
           >
-            {t.label}
-          </button>
+            {secondary.map((c) => (
+              <Menu.Item
+                key={c.key}
+                icon={<c.icon className="h-3.5 w-3.5" />}
+                disabled={c.disabled}
+                onSelect={c.onClick}
+              >
+                {c.label}
+              </Menu.Item>
+            ))}
+          </Menu>
+        ) : (
+          secondary.map((c) => (
+            <ControlButton key={c.key} control={c} iconOnly={density === "icons"} />
+          ))
+        )}
+        {primary.map((c) => (
+          <ControlButton key={c.key} control={c} iconOnly={false} />
         ))}
+        <div ref={setTarget} className="flex items-center gap-1 empty:hidden" />
       </div>
-      {trailing && <div className="ml-auto mb-1">{trailing}</div>}
+      {onSettings && (
+        <div className={cn("flex items-center gap-1", density === "stacked" && "ml-auto")}>
+          <span aria-hidden className="mx-1 h-[18px] w-px shrink-0 bg-os-container" />
+          <IconButton
+            label="Settings"
+            icon={Settings}
+            onClick={onSettings}
+            aria-pressed={settingsActive}
+            className={cn(
+              "h-7 w-7 p-0 text-os-grey hover:bg-os-hover",
+              settingsActive && "bg-os-hover-strong text-foreground",
+            )}
+            iconClassName="h-[15px] w-[15px]"
+          />
+        </div>
+      )}
     </div>
   );
 }

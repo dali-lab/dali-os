@@ -5,11 +5,10 @@ import {
   useSearchParams,
   type ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { Settings } from "lucide-react";
-import { OsTabBar } from "~/components/os-page";
+import { Plus } from "lucide-react";
+import { PageRowControlsScope, PageTabRow, type PageTabControl } from "~/components/os-page";
+import { useFeatureFlag } from "~/components/FeatureFlags";
 import { cn } from "~/lib/cn";
-import { Modal, ModalHeader } from "~/components/Modal";
-import { Tooltip } from "~/components/ui/floating";
 import { PresenceProvider } from "~/components/collab/PresenceProvider";
 import { PresenceBar } from "~/components/collab/PresenceBar";
 import type { Route } from "./+types/projects.$id";
@@ -26,6 +25,7 @@ import { loadProjectDetail } from "../lib/project-detail.server";
 import { runProjectDetailAction } from "../lib/project-detail-actions.server";
 import {
   OS_TABS,
+  OS_TAB_ICONS,
   OS_TAB_LABELS,
   isOsTab,
   isTab,
@@ -155,7 +155,7 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
   // The action's success returns vary by intent (some redirect, infra-config
   // returns { ok }), so narrow to the error-bearing shape for the page banner.
   const actionError = actionData && "error" in actionData ? actionData.error : undefined;
-  const [scopeSettingsOpen, setScopeSettingsOpen] = useState(false);
+  const bandHeader = useFeatureFlag("project-band-header");
   const [searchParams, setSearchParams] = useSearchParams();
   const partnerNames = project.partners.map((p) => p.org.name);
   // Add ▸ Task on the timeline toolbar, and a story row's own Add task, open the
@@ -215,6 +215,7 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
     return want;
   };
   const tab = resolveTab();
+  const settingsOpen = tabParam === "settings" && canViewScope;
   // A task bar on the planning timeline opens the task modal, which lives with
   // the board — its own tab classically, folded into Progress under os. Either
   // way this hops to it and sets ?task= in one go.
@@ -234,8 +235,8 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
   // page every time you looked at another tab. The tab strip stays put, so the
   // view should too; the other hubs (education, the board's own filters) pass
   // this for the same reason.
-  const setTab = (next: Tab | OsTab) => {
-    if (next === tab) return;
+  const setTab = (next: Tab | OsTab | "settings") => {
+    if (next === tab && !settingsOpen) return;
     setSearchParams(
       (prev) => {
         prev.set("tab", next);
@@ -301,11 +302,32 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
     />
   );
 
+  const tabControls: PageTabControl[] =
+    !settingsOpen && tab === "progress" && canEdit
+      ? [
+          {
+            key: "new-task",
+            label: "New task",
+            icon: Plus,
+            primary: true,
+            onClick: () => setTaskCreateSeed({ epicId: null, storyId: null, reopenEpicId: null }),
+          },
+        ]
+      : [];
+
+  const headerPeople = useMemo(() => {
+    const seen = new Set<string>();
+    return (teams[0]?.members ?? [])
+      .filter((m) => !seen.has(m.userId) && seen.add(m.userId))
+      .slice(0, 5);
+  }, [teams]);
+
   const page = (
     // No column cap: this page fills the width its layout gutters give it, the
     // same as the task board and the partner/public views. The design's 1020px
     // figure was measured on a narrower shell than this one, and capping here
     // left every uncapped block on the page hanging past the right edge.
+    <PageRowControlsScope>
     <div className={cn("flex flex-col", "gap-6")}>
       <PresenceBar className="self-end" />
 
@@ -314,34 +336,21 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
         project={project}
         partnerNames={partnerNames}
         canEdit={canEdit}
+        band={bandHeader}
+        people={headerPeople}
       />
 
-      {/* Tab bar. Each section now owns its own edit button — there's no
-          page-level edit mode left to clear when switching tabs. */}
-      <OsTabBar
-        ariaLabel="Project sections"
-        tabs={OS_TABS.filter(
-          (t) => t !== "mentorship" || canViewMentorshipTab,
-        ).map((t) => ({ key: t, label: OS_TAB_LABELS[t] }))}
-        active={tab as OsTab}
-        onSelect={setTab}
-        trailing={
-          // Scope/challenge config lives behind this gear, visible only to
-          // Core/Admin/Staff.
-          canViewScope ? (
-            <Tooltip content="Project settings" className="ml-auto -mb-px">
-              <button
-                type="button"
-                onClick={() => setScopeSettingsOpen(true)}
-                aria-label="Project settings"
-                className="inline-flex items-center justify-center p-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                title="Project settings & challenges"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          ) : null
-        }
+      <PageTabRow
+        label="Project sections"
+        tabs={OS_TABS.filter((t) => t !== "mentorship" || canViewMentorshipTab).map((t) => ({
+          label: OS_TAB_LABELS[t],
+          icon: OS_TAB_ICONS[t],
+          active: !settingsOpen && tab === t,
+          onClick: () => setTab(t),
+        }))}
+        controls={tabControls}
+        onSettings={canViewScope ? () => setTab("settings") : undefined}
+        settingsActive={settingsOpen}
       />
 
       {/* Page-level action errors — above the tab content so a failed save
@@ -353,7 +362,7 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
         </div>
       )}
 
-      {(tab === "overview" || tab === "details") && (
+      {!settingsOpen && (tab === "overview" || tab === "details") && (
         <OverviewTab
           // Under the os tabs the timeline is the Progress tab's own content,
           // so Project details renders without it.
@@ -380,21 +389,9 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
         />
       )}
 
-      {/* Scope & challenges, now a settings popup gated to Core/Admin/Staff. */}
-      {canViewScope && (
-        <Modal
-          open={scopeSettingsOpen}
-          onClose={() => setScopeSettingsOpen(false)}
-          labelledBy="scope-settings-title"
-          containerClassName="bg-card rounded-os-card shadow-xl w-full max-w-4xl p-5 sm:p-5 my-auto max-h-[85vh] overflow-y-auto"
-        >
-          <ModalHeader
-            titleId="scope-settings-title"
-            title="Project settings"
-            subtitle="Visibility, declared domains, planned terms, and the per-domain challenge for each term."
-            onClose={() => setScopeSettingsOpen(false)}
-            closeLabel="Close scope settings"
-          />
+      {settingsOpen && (
+        <div className="flex flex-col gap-6">
+          <h2 className="font-heading text-base font-semibold text-foreground">Project settings</h2>
           <ScopeTab
             project={project}
             allDomainOptions={allDomainOptions}
@@ -402,7 +399,6 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
             allTermOptions={allTermOptions}
             domainScopeGrid={domainScopeGrid}
             canEdit={canEditScope}
-            actionError={actionError}
           />
           {canEditScope && (
             <SaveAsTemplateSection projectId={project.id} projectName={project.name} />
@@ -410,7 +406,7 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
           {canEditScope && (
             <DeleteProjectSection projectId={project.id} projectName={project.name} />
           )}
-        </Modal>
+        </div>
       )}
 
       {/* One panel well for every tab, with a floor under it. Switching tabs
@@ -425,6 +421,7 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
           space every tab pays for whether or not it needs it. A quarter of the
           viewport is enough to keep the scroll range alive without the page
           ending in a void. */}
+      {!settingsOpen && (
       <div className={cn("flex flex-col", "gap-6 min-h-[25vh]")}>
         {/* Progress (os): the timeline and the board are one surface — the plan
             above, the work under it — rather than two tabs you flip between to
@@ -463,7 +460,9 @@ export default function ProjectDetail({ loaderData }: Route.ComponentProps) {
           />
         )}
       </div>
+      )}
     </div>
+    </PageRowControlsScope>
   );
 
   return collabToken ? (

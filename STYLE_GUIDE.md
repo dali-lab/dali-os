@@ -14,7 +14,7 @@ Where it lives:
 |---|---|
 | `dali-api/app/app.css` | The tokens (`--color-os-*`, `--radius-os-*`, `--font-os`), the light-mode palette, the accent, and the `.os-*` component rules |
 | `dali-api/app/components/os-chrome.ts` | `useOsChrome()`, the page dress as class strings, and `modalCardClass(size)` |
-| `dali-api/app/components/os-page.tsx` | Hub-page parts: `OsTabBar`, `DetailRow`, `DetailEditRow`, `OS_DETAIL_CARD`, `HeroClusterLabel` |
+| `dali-api/app/components/os-page.tsx` | Hub-page parts: `PageTabRow`, `PageRowControls`, `DetailRow`, `DetailEditRow`, `OS_DETAIL_CARD`, `HeroClusterLabel` |
 | `dali-api/app/components/ui/floating/styles.ts` | Popover, menu, select and filter-pill dress (`OS_SURFACE_CLASS`, `OS_PANEL_CLASS`, `OS_FILTER_PILL_CLASS`) |
 | `dali-api/app/components/LayoutOS.tsx` | The member shell: rail, page bar, mobile top bar and drawer, and the per-page accent |
 | `dali-api/app/components/shell/` | `Rail`, `PageBar` (+ `page-bar-slot.tsx`), `AreaTile`, `RailEdgeHandle`, `rail-model.ts` |
@@ -189,7 +189,7 @@ section title above; use the `chrome` strings in new code.
 | `rounded-os-card` | 12px | Cards, panels, dialogs, popovers and menus (`OS_SURFACE_CLASS`) |
 | `rounded-os-item` | 8px | Nested wells, icon buttons |
 | `rounded-lg` / 8px | 8px | Buttons, fields, item rows, filter pills, rail rows, page-bar buttons |
-| 10px | 10px | The segmented control's track, the open `OsTabBar` tab |
+| 10px | 10px | The island's track |
 | 6px | 6px | Type badges, label chips |
 | `rounded-full` | pill | Status pills, avatars, toggles, count badges |
 
@@ -250,7 +250,7 @@ scrim.
 ### 5.3 Page layout
 
 - Open with the content. Hub pages (project detail, member profile) put
-  `chrome.pageTitle` on the ground under the bar, then `OsTabBar`,
+  `chrome.pageTitle` on the ground under the bar, then `PageTabRow`,
   `HeroClusterLabel` for labelled clusters, and `OS_DETAIL_CARD` with
   `DetailRow` / `DetailEditRow` for facts.
 - Use **a few deliberate cards**, not one per section and not none. Things
@@ -396,12 +396,32 @@ results bar (`ResultsFilterBar`) are built on it.
 ### 6.6 Lists, tabs and switches
 
 - Linked item rows: `.os-item-list` of `.os-item-row`.
-- Page tabs: `OsTabBar`. The open tab is a filled, top-rounded plate that
-  meets the rule below it, not an underline.
 - View switches: `Segmented` (`ui/Segmented.tsx`), a 10px track with 8px
   segments and a raised `bg-background shadow-sm` thumb on the active one.
-  `SegmentedTabButtons` (`ui/SegmentedTabs.tsx`) is the tablist version for
-  page sections: the same track, with the container fill on the active segment.
+- **The island** is the one page switcher: `SegmentedTabButtons`
+  (`ui/SegmentedTabs.tsx`). A recessed `os-well` track (10px, 2px padding) with a
+  raised thumb on the open tab (`os-bg`, a 1px `os-container` ring and a soft
+  `os-shadow` drop, 8px corners). Every tab is 30px tall with a 16px lucide icon
+  and a 14px medium label; the open tab is `foreground`, the rest `os-grey`.
+  Tabs that are routes (Partner CRM) pass `href` and render real links with
+  `aria-current`, so cmd-click opens a browser tab. Tabs that are a `?tab=`
+  param are ARIA tabs with roving focus and arrow, Home and End keys. In-section
+  switchers (calendar views, a settings modal) wear the same island.
+- **Page row** (`PageTabRow` in `os-page.tsx`): one row under the header. The
+  island sits on the left, the open tab's own controls on the right, and a
+  settings gear (`IconButton`, label "Settings") pinned far right after a 1px
+  divider, outside the tablist, on every tab. Controls are secondary (ghost, 28px)
+  and at most one primary (an accent pill that keeps its label at every width).
+  Tab content can hand its own toolbar to the row with `PageRowControls` inside a
+  `PageRowControlsScope`. Nothing above the row changes when the tab changes.
+  The row measures its own width (not the viewport, so a side panel counts):
+  full labels from 921px, icons from 786px, a "⋯" `Menu` from 588px, and below
+  that the controls take their own row under the island. The island never folds
+  and the gear never moves.
+- **Band header** (projects, behind `project-band-header`): an `os-card` band
+  with the emoji, title, partner and terms, role chips and team avatars on the
+  left, and the cover image (128px tall, 12px corners) on the right at 342px,
+  hidden below `md`. The compact header stays on Partners and Admin pages.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
 - Empty states: `EmptyState` (`ui/EmptyState.tsx`, the only one: admin and

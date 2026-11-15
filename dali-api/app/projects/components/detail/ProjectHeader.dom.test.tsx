@@ -43,4 +43,25 @@ describe("ProjectHeader", () => {
     const count = (el: HTMLElement) => el.querySelectorAll("button, input, [role=button]").length;
     expect(count(editable.container)).toBeGreaterThan(count(readOnly.container));
   });
+
+  it("keeps the current header until the band is asked for", () => {
+    const { container } = renderDom(<ProjectHeader project={project} partnerNames={["Outing Club"]} canEdit={false} />);
+    expect(container.querySelector('[data-testid="project-band"]')).toBeNull();
+  });
+
+  it("renders the band with title, partner, terms and the team", () => {
+    const { container } = renderDom(
+      <ProjectHeader
+        project={project}
+        partnerNames={["Outing Club"]}
+        canEdit={false}
+        band
+        people={[{ userId: "u1", name: "Ada Lovelace", photoUrl: null }]}
+      />,
+    );
+    const band = container.querySelector('[data-testid="project-band"]')!;
+    expect(band.querySelector("h1")!.textContent).toBe("Atlas");
+    expect(band.textContent).toContain("Outing Club · 26F");
+    expect(band.textContent).toContain("AL");
+  });
 });

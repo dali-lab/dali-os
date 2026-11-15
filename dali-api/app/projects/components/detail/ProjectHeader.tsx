@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSubmit } from "react-router";
+import { Avatar } from "~/components/ui/Avatar";
 import { DomainChips } from "~/components/DomainChips";
 import { HeroClusterLabel } from "~/components/os-page";
 import { cn } from "~/lib/cn";
@@ -73,10 +74,14 @@ export function ProjectHeader({
   project,
   partnerNames,
   canEdit,
+  band = false,
+  people = [],
 }: {
   project: LoaderData["project"];
   partnerNames: string[];
   canEdit: boolean;
+  band?: boolean;
+  people?: { userId: string; name: string; photoUrl: string | null }[];
 }) {
   const submit = useSubmit();
   // Name and icon each save the moment you change them — the hero has no edit
@@ -242,6 +247,51 @@ export function ProjectHeader({
       )}
     </>
   );
+
+  if (band) {
+    const subtitle = [partnerNames.join(", "), project.terms.map((t) => t.code).join(", ")]
+      .filter(Boolean)
+      .join(" · ");
+    const roles = project.domains.length > 0 ? project.domains : project.derivedDomains;
+    return (
+      <header
+        data-testid="project-band"
+        className="flex min-h-[176px] gap-6 rounded-os-card bg-os-card p-6"
+      >
+        <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap items-center gap-2.5">{titleCluster}</div>
+            {subtitle && <p className="text-sm text-os-grey">{subtitle}</p>}
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {roles.length > 0 && <DomainChips items={roles} />}
+            {people.length > 0 && (
+              <div className="flex items-center -space-x-1.5">
+                {people.map((p) => (
+                  <Avatar
+                    key={p.userId}
+                    name={p.name}
+                    photoUrl={p.photoUrl}
+                    size="compact"
+                    className="ring-2 ring-os-card"
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="hidden w-[342px] shrink-0 md:block">
+          <ProjectImageBanner
+            projectId={project.id}
+            projectName={project.name}
+            initialPreviewUrl={project.imageUrlResolved}
+            canEdit={canEdit}
+            frameClassName="h-[128px] rounded-xl"
+          />
+        </div>
+      </header>
+    );
+  }
 
   return (
     <header className={cn("flex flex-col", "gap-6")}>

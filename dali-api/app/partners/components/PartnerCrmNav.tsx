@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from "react-router";
+import { useLocation } from "react-router";
 import { BarChart3, Building2, CalendarRange, Kanban, RefreshCcw, UserPlus } from "lucide-react";
 import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 
@@ -16,18 +16,16 @@ const TABS = [
  *  otherwise be a prefix of every other tab's path. */
 export function PartnerCrmNav({ className }: { className?: string }) {
   const { pathname } = useLocation();
-  const navigate = useNavigate();
   const items = TABS.map((tab) => ({
     label: tab.label,
     icon: tab.icon,
     active:
       tab.href === "/core/partners" ? pathname === tab.href : pathname.startsWith(tab.href),
-    onClick: () => navigate(tab.href),
+    href: tab.href,
   }));
   return (
     <SegmentedTabButtons
       label="Partners"
-      size="toolbar"
       items={items}
       className={className ?? "self-start"}
     />

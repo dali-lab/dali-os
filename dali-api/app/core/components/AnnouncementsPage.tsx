@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
 import { useFetcher, useRevalidator, useSearchParams } from "react-router";
-import { Plus, X } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
+import { Clock, Plus, Send, X } from "lucide-react";
+import { PageTabRow } from "~/components/os-page";
 import { LoadMore } from "~/components/ui/Pager";
 import { fetchCursorPage, useLoadMore } from "~/hooks/useLoadMore";
 import { Drawer } from "~/components/ui/Drawer";
@@ -74,18 +74,16 @@ export function AnnouncementsPage({ data }: { data: AnnouncementsData }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SegmentedTabButtons
-          label="Announcement status"
-          items={[
-            { label: "Scheduled", count: data.scheduled.length, active: view === "scheduled", onClick: () => setView("scheduled") },
-            { label: "Sent", count: data.sentTotal, active: view === "sent", onClick: () => setView("sent") },
-          ]}
-        />
-        <button type="button" className="os-add-btn" onClick={() => setComposing(true)}>
-          <Plus className="h-4 w-4" strokeWidth={3} /> New announcement
-        </button>
-      </div>
+      <PageTabRow
+        label="Announcement status"
+        tabs={[
+          { label: "Scheduled", icon: Clock, count: data.scheduled.length, active: view === "scheduled", onClick: () => setView("scheduled") },
+          { label: "Sent", icon: Send, count: data.sentTotal, active: view === "sent", onClick: () => setView("sent") },
+        ]}
+        controls={[
+          { key: "new", label: "New announcement", icon: Plus, primary: true, onClick: () => setComposing(true) },
+        ]}
+      />
 
       <p className={os.bodyText}>
         Announcements reach lab members in the app, by email and Slack DM, and land in their Tasks.
