@@ -116,6 +116,8 @@ the variables, not new hues:
   over the card, with an 8px stage dot before the title via
   `.os-board-title`). Hiring views that read the raw set keep solid bands.
 - Categorical chips (see `DomainChips`): `--os-role-{amber,teal,violet,pink,blue,green,orange,magenta,slate,cyan,red,lime,indigo,sand}-{fill,ink}`
+- Illustration and cover art (Resource Hub covers and cards): `--art-*` hues (`--art-coral`, `-apricot`, `-butter`, `-sage`, `-teal`, `-orchid`, `-mist`), `--art-ground-{lilac,mint,blush,sky,peach,sage}` backgrounds, and `--art-{ink,charcoal,plum,forest,wine,slate}` card colors. Art does not flip with the mode. Hues the brand palette already has (`--color-accent-pink`, `--color-accent-coral-light`, `--color-navy`, `--color-accent-teal-light`) are used directly, not repeated.
+- Over art: a fixed dark chip `--os-on-art-chip` / `--os-on-art-chip-hover` with `--os-on-art-ink` text and `--os-on-art-line` borders. Use these for anything that sits on a cover or image, never `bg-white/*` or `text-white`.
 
 ### 2.5 Light and dark
 

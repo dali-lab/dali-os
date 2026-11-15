@@ -321,11 +321,11 @@ function WarningModal({
             <dt className="text-muted-foreground">Notes</dt>
             <dd className="whitespace-pre-wrap">{warning.notes || <span className="text-muted-foreground">None</span>}</dd>
           </dl>
-          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="os-btn-ghost mr-auto text-red-600"
+              className="os-btn-ghost mr-auto text-destructive"
               disabled={busy}
               onClick={async () => {
                 const ok = await dialog.confirm({
@@ -396,7 +396,7 @@ function WarningModal({
               Status: <span className="font-medium text-foreground">Open</span>
             </p>
           )}
-          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <ModalFooter onCancel={mode === "edit" ? onClose : onClose} cancelDisabled={busy}>
             <button type="submit" className="os-btn-primary os-btn-primary--sm" disabled={busy}>
               {busy ? "Saving…" : "Save warning"}

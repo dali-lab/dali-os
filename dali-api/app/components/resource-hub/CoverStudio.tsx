@@ -54,7 +54,7 @@ export function CoverStudio({
         ) : cover ? (
           <img src={cover} alt="" className="aspect-[16/5] w-full object-cover" />
         ) : (
-          <div className="aspect-[16/5] w-full bg-black/[0.04]" />
+          <div className="aspect-[16/5] w-full bg-os-well" />
         )}
       </div>
       <div className="os-form mt-4">

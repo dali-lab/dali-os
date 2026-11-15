@@ -106,7 +106,7 @@ function Pin({ n, selected, style, onClick }: { n: number | string; selected?: b
         onClick?.();
       }}
       style={style}
-      className={`absolute z-10 grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-os-accent text-xs font-semibold text-foreground shadow-sm ring-2 ring-white transition-transform duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-os-accent/60 ${selected ? "scale-110 ring-os-accent/40" : "hover:scale-105"}`}
+      className={`absolute z-10 grid h-6 w-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-os-accent text-xs font-semibold text-foreground shadow-sm ring-2 ring-[var(--os-on-art-ink)] transition-transform duration-150 motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-os-accent/60 ${selected ? "scale-110 ring-os-accent/40" : "hover:scale-105"}`}
     >
       {n}
     </button>

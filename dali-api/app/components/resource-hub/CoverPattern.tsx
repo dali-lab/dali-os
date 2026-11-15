@@ -5,17 +5,17 @@ import { useId, type CSSProperties, type ReactNode } from "react";
 // renders one of these; anything else is an uploaded image URL.
 
 const C = {
-  coral: "#D45F6A",
-  peach: "#F4AB9F",
-  apricot: "#F1C885",
-  butter: "#FCF3C2",
-  sage: "#7AB39A",
-  teal: "#5FB8B4",
-  aqua: "#9FDDD6",
-  navy: "#214B76",
-  orchid: "#BD64A8",
-  pink: "#DA93C0",
-  mist: "#D3DAE0",
+  coral: "var(--art-coral)",
+  peach: "var(--color-accent-coral-light)",
+  apricot: "var(--art-apricot)",
+  butter: "var(--art-butter)",
+  sage: "var(--art-sage)",
+  teal: "var(--art-teal)",
+  aqua: "var(--color-accent-teal-light)",
+  navy: "var(--color-navy)",
+  orchid: "var(--art-orchid)",
+  pink: "var(--color-accent-pink)",
+  mist: "var(--art-mist)",
 };
 
 const U = 10;
@@ -50,7 +50,7 @@ const flower = (c: number, r: number, fill: string) => {
       {[0, 90, 180, 270].map((a) => (
         <ellipse key={a} cx={cx} cy={cy - 2.6} rx={1.7} ry={3} transform={`rotate(${a + 45} ${cx} ${cy})`} />
       ))}
-      <circle cx={cx} cy={cy} r={1} fill="#fff" />
+      <circle cx={cx} cy={cy} r={1} fill="var(--os-on-art-ink)" />
     </g>
   );
 };
@@ -76,14 +76,14 @@ export const COVER_PATTERNS: Pattern[] = [
   {
     id: "quiet-grid",
     name: "Quiet grid",
-    ground: "#F3EFFA",
+    ground: "var(--art-ground-lilac)",
     title: { left: 6, top: 14, width: 58, height: 72 },
     shapes: [...quietDots, sq(14, 0, C.butter), sq(15, 1, C.mist), dot(14, 1, C.peach, 2.4), dot(15, 1, C.navy, 2.4)],
   },
   {
     id: "corner-tiles",
     name: "Corner tiles",
-    ground: "#E8F4F1",
+    ground: "var(--art-ground-mint)",
     title: { left: 6, top: 14, width: 62, height: 72 },
     shapes: [
       sq(12, 0, C.apricot), dot(12, 0, C.orchid), sq(13, 0, C.butter), flower(13, 0, C.teal), dot(15, 0, C.aqua),
@@ -94,7 +94,7 @@ export const COVER_PATTERNS: Pattern[] = [
   {
     id: "petal-ledger",
     name: "Petal ledger",
-    ground: "#FBEEF2",
+    ground: "var(--art-ground-blush)",
     title: { left: 6, top: 6, width: 88, height: 54 },
     shapes: [
       sq(0, 4, C.aqua), dot(0, 4, C.navy), quarter(1, 4, C.coral, "bl"), sq(2, 4, C.butter), dot(2, 4, C.peach),
@@ -107,7 +107,7 @@ export const COVER_PATTERNS: Pattern[] = [
   {
     id: "block-party",
     name: "Block party",
-    ground: "#E9F2FB",
+    ground: "var(--art-ground-sky)",
     title: { left: 6, top: 14, width: 40, height: 72 },
     shapes: [
       sq(8, 0, C.apricot), dot(8, 0, C.orchid), sq(9, 0, C.butter), flower(9, 0, C.teal), dot(11, 0, C.aqua), sq(12, 0, C.pink), dot(12, 0, C.navy),
@@ -119,7 +119,7 @@ export const COVER_PATTERNS: Pattern[] = [
   {
     id: "orbit-field",
     name: "Orbit field",
-    ground: "#FFF1E6",
+    ground: "var(--art-ground-peach)",
     title: { left: 17, top: 14, width: 66, height: 72, align: "center" },
     shapes: [
       dot(0, 1, C.pink, 4), dot(1, 3, C.navy, 2.6), quarter(0, 4, C.apricot, "tr"), dot(2, 0, C.orchid, 2.6), dot(3, 4, C.aqua, 3.6),
@@ -130,7 +130,7 @@ export const COVER_PATTERNS: Pattern[] = [
   {
     id: "poster",
     name: "Poster",
-    ground: "#EEF6EA",
+    ground: "var(--art-ground-sage)",
     title: { left: 29, top: 10, width: 62, height: 48 },
     shapes: [
       sq(0, 0, C.apricot), dot(0, 0, C.orchid), sq(1, 0, C.butter), flower(1, 0, C.teal), dot(3, 0, C.coral),
@@ -216,13 +216,14 @@ export const COVER_DECOR = [
 ] as const;
 export type DecorId = (typeof COVER_DECOR)[number]["id"];
 
+const INK = "var(--art-ink)";
 export const CARD_COLORS = [
-  { id: "ink", name: "Ink", hex: "#1b2a47" },
-  { id: "charcoal", name: "Charcoal", hex: "#1c1f24" },
-  { id: "plum", name: "Plum", hex: "#3b2a4f" },
-  { id: "forest", name: "Forest", hex: "#1f3b34" },
-  { id: "wine", name: "Wine", hex: "#4a2430" },
-  { id: "slate", name: "Slate", hex: "#2d3948" },
+  { id: "ink", name: "Ink", hex: INK },
+  { id: "charcoal", name: "Charcoal", hex: "var(--art-charcoal)" },
+  { id: "plum", name: "Plum", hex: "var(--art-plum)" },
+  { id: "forest", name: "Forest", hex: "var(--art-forest)" },
+  { id: "wine", name: "Wine", hex: "var(--art-wine)" },
+  { id: "slate", name: "Slate", hex: "var(--art-slate)" },
 ] as const;
 export const cardColorHex = (id: string | null | undefined) => (CARD_COLORS.find((c) => c.id === id) ?? CARD_COLORS[0]).hex;
 
@@ -244,9 +245,7 @@ export const buildCoverUrl = (id: string, decor: readonly DecorId[] = [], card?:
 };
 export const patternCoverUrl = (id: string) => buildCoverUrl(id);
 export const isPatternCover = (url: string | null | undefined): url is `pattern:${string}` => parseCover(url) !== null;
-export const coverGround = (url: string) => COVER_PATTERNS.find((x) => x.id === parseCover(url)?.id)?.ground ?? "#fff";
-
-const INK = "#1b2a47";
+export const coverGround = (url: string) => COVER_PATTERNS.find((x) => x.id === parseCover(url)?.id)?.ground ?? "var(--os-on-art-ink)";
 
 function titleSize(title: string) {
   const n = title.length;
@@ -293,7 +292,7 @@ export function InlineTitle({
           document.execCommand("insertText", false, e.clipboardData.getData("text/plain").replace(/\s+/g, " "));
         }}
         onBlur={(e) => onCommit((e.currentTarget.textContent ?? "").replace(/\s+/g, " ").trim())}
-        className={`cursor-text outline-none transition-shadow duration-150 hover:shadow-[0_2px_0_rgba(128,128,128,0.35)] focus:shadow-[0_2px_0_rgba(128,128,128,0.7)] ${className ?? ""}`}
+        className={`cursor-text outline-none transition-shadow duration-150 hover:shadow-[0_2px_0_var(--color-os-container-hi)] focus:shadow-[0_2px_0_var(--color-os-muted)] ${className ?? ""}`}
         style={{ display: "inline-block", minWidth: "2ch", maxWidth: "100%", ...style }}
       />
       {!value.trim() && (
@@ -356,7 +355,7 @@ export function CoverPattern({
               // overflow:hidden (for the line clamp) clips descenders at this
               // line height; pad them back in and cancel it so layout is unchanged.
               paddingBottom: "0.15em", marginBottom: "-0.15em",
-              fontSize: titleSize(text), color: dark ? "#fff" : INK, textWrap: "balance",
+              fontSize: titleSize(text), color: dark ? "var(--os-on-art-ink)" : INK, textWrap: "balance",
               ...(has("underline")
                 ? { textDecoration: "underline wavy", textDecorationColor: C.coral, textDecorationThickness: "max(1px, 0.4cqw)", textUnderlineOffset: "0.9cqw" }
                 : null),
@@ -374,13 +373,13 @@ export function CoverPattern({
           })()}
         </div>
       )}
-      {has("frame") && <div aria-hidden style={{ position: "absolute", inset: "2.2cqw", border: `max(1px, 0.22cqw) solid ${dark ? "rgba(255,255,255,0.35)" : "rgba(27,42,71,0.3)"}`, borderRadius: "2cqw", pointerEvents: "none" }} />}
+      {has("frame") && <div aria-hidden style={{ position: "absolute", inset: "2.2cqw", border: `max(1px, 0.22cqw) solid ${dark ? "color-mix(in srgb, var(--os-on-art-ink) 35%, transparent)" : "color-mix(in srgb, var(--art-ink) 30%, transparent)"}`, borderRadius: "2cqw", pointerEvents: "none" }} />}
       {has("stitch") && <div aria-hidden style={{ position: "absolute", inset: "3.6cqw", border: `max(1px, 0.28cqw) dashed ${C.coral}`, opacity: 0.7, borderRadius: "1.4cqw", pointerEvents: "none" }} />}
       {has("corner") && <div aria-hidden style={{ position: "absolute", left: 0, bottom: 0, width: "6.5cqw", height: "6.5cqw", background: C.coral, borderTopRightRadius: "100%", pointerEvents: "none" }} />}
       {has("seal") && (
         <svg aria-hidden viewBox="0 0 20 20" style={{ position: "absolute", right: "1.6cqw", bottom: "1.6cqw", width: "6.6cqw", height: "6.6cqw", pointerEvents: "none" }}>
           <circle cx="10" cy="10" r="10" fill={C.apricot} />
-          <circle cx="10" cy="10" r="8" fill="none" stroke="#fff" strokeWidth="0.8" strokeDasharray="1.4 1.4" />
+          <circle cx="10" cy="10" r="8" fill="none" stroke="var(--os-on-art-ink)" strokeWidth="0.8" strokeDasharray="1.4 1.4" />
           <g stroke={C.navy} strokeWidth="1.3">{[0, 45, 90, 135].map((a) => <line key={a} x1="10" y1="5" x2="10" y2="15" transform={`rotate(${a} 10 10)`} />)}</g>
         </svg>
       )}
