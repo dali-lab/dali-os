@@ -171,6 +171,12 @@ export const FEATURE_FLAGS = [
     description:
       "Project pages show a band header: the emoji, title, partner and terms, roles and team on the left and the cover image on the right. Off keeps the current header. Ships off.",
   },
+  {
+    key: "mentorship-warnings",
+    label: "Mentorship warnings",
+    description:
+      "Core sees a Warnings tab in Mentorship to record and resolve participation concerns about members, and open warnings show on the notes page. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];

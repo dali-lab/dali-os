@@ -371,6 +371,8 @@ model User {
   blogComments       BlogComment[]
   pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
+  mentorshipWarnings     MentorshipWarning[] @relation("WarningMember")
+  mentorshipWarningsMade MentorshipWarning[] @relation("WarningCreator")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -8269,6 +8271,26 @@ model BannerImpression {
   createdAt  DateTime  @default(now())
 
   @@unique([bannerId, userId])
+}
+
+// Core-entered participation concern about a member. Read and written only
+// through the Core-gated /mentorship/warnings route.
+model MentorshipWarning {
+  id          String   @id @default(cuid())
+  memberId    String
+  reason      String
+  notes       String   @default("")
+  occurredOn  DateTime @db.Date
+  status      String   @default("open")
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  member    User  @relation("WarningMember", fields: [memberId], references: [id], onDelete: Cascade)
+  createdBy User? @relation("WarningCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([memberId])
+  @@index([status, occurredOn])
 }
 
 // Core's free-text status note for a project or partner application, shown

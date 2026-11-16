@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Link,
   redirect,
   useLoaderData,
+  useLocation,
   useSearchParams,
 } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
@@ -36,6 +38,10 @@ import { Tooltip } from "~/components/ui/floating";
 import { TermFilter } from "~/components/TermFilter";
 import { browseTermId } from "../lib/browse-term";
 import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
+import { Avatar } from "~/components/ui/Avatar";
+import { reasonLabel } from "../lib/warnings";
+import { warningsEnabledFor } from "../lib/warnings.server";
+import { MentorshipTabRow } from "../components/MentorshipTabs";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useOsChrome } from "~/components/os-chrome";
 import { useToast } from "~/components/ui/toast";
@@ -98,6 +104,8 @@ type LoaderData = {
   termForms: TermForms | null;
   formOptions: { id: string; name: string }[];
   isCore: boolean;
+  warningsEnabled: boolean;
+  warned: { id: string; name: string; photoUrl: string | null; count: number; latestReason: string }[];
   viewerId: string;
   collabToken: string | null;
   userName: string;
@@ -270,7 +278,33 @@ export async function loader({ request }: Route.LoaderArgs) {
     : [null, []];
   const termForms = mock ? { ...(realTermForms ?? {}), ...mock.termForms } : realTermForms;
 
+  const warningsEnabled = await warningsEnabledFor(auth.user.sub, request);
+  const warned: LoaderData["warned"] = [];
+  if (warningsEnabled) {
+    const open = await prisma.mentorshipWarning.findMany({
+      where: { status: "open" },
+      orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
+      include: { member: { select: { id: true, name: true, firstName: true, lastName: true, photoUrl: true } } },
+    });
+    const byMember = new Map<string, LoaderData["warned"][number]>();
+    for (const w of open) {
+      const cur = byMember.get(w.memberId);
+      if (cur) cur.count += 1;
+      else
+        byMember.set(w.memberId, {
+          id: w.memberId,
+          name: w.member.name?.trim() || `${w.member.firstName} ${w.member.lastName}`.trim(),
+          photoUrl: w.member.photoUrl,
+          count: 1,
+          latestReason: w.reason,
+        });
+    }
+    warned.push(...byMember.values());
+  }
+
   const data: LoaderData = {
+    warned,
+    warningsEnabled,
     filters,
     initialFilters,
     options,
@@ -339,6 +373,7 @@ function searchGrid(
 export default function MentorshipBrowse() {
   const data = useLoaderData() as LoaderData;
   const { pageTitle } = useOsChrome();
+  const { pathname } = useLocation();
   const [params] = useSearchParams();
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [nudgeOpen, setNudgeOpen] = useState(false);
@@ -496,6 +531,36 @@ export default function MentorshipBrowse() {
           />
         </div>
       </header>
+
+      {data.warningsEnabled && <MentorshipTabRow pathname={pathname} />}
+
+      {data.warningsEnabled && data.warned.length > 0 && (
+        <section aria-label="Members with open warnings" className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-foreground">Open warnings</h2>
+            <Link to="/mentorship/warnings" className="text-sm text-os-grey hover:text-foreground">
+              Manage warnings
+            </Link>
+          </div>
+          <ul className="flex flex-wrap gap-2">
+            {data.warned.map((w) => (
+              <li key={w.id}>
+                <Link
+                  to="/mentorship/warnings"
+                  className="flex items-center gap-2 rounded-lg border border-os-container bg-os-card py-1.5 pl-1.5 pr-3 text-sm hover:bg-os-card-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/40"
+                >
+                  <Avatar name={w.name} photoUrl={w.photoUrl} size="xs" />
+                  <span className="font-medium">{w.name}</span>
+                  <span className="text-os-grey">
+                    {reasonLabel(w.latestReason)}
+                    {w.count > 1 ? ` · ${w.count}` : ""}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {data.isCore && (
         <TemplatesModal
