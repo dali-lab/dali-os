@@ -30,7 +30,8 @@ export type AiTask =
   | "email"
   | "resumeExtract"
   | "releaseNotes"
-  | "projectTldr";
+  | "projectTldr"
+  | "alumniChat";
 
 type ModelTier = "sonnet" | "haiku";
 type Effort = NonNullable<Anthropic.OutputConfig["effort"]>;
@@ -44,6 +45,8 @@ export const AI_TASKS: Record<AiTask, { tier: ModelTier; effort?: Effort; prefer
   email: { tier: "sonnet", effort: "low", prefer: "dartmouth" },
   releaseNotes: { tier: "sonnet", effort: "low", prefer: "dartmouth" },
   projectTldr: { tier: "haiku", effort: "low", prefer: "dartmouth" },
+  // In-character chat replies for the alumni lab game; cheap and chatty.
+  alumniChat: { tier: "haiku", effort: "low", prefer: "dartmouth" },
 };
 
 export const AI_MODELS: Record<AiProviderName, Record<ModelTier, string>> = {

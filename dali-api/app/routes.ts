@@ -388,6 +388,11 @@ export default [
   // anywhere yet — reachable by direct URL.
   route("download", "routes/download.tsx"),
 
+  // Alumni onboarding game (no layout — full-screen pixel lab). Flag-gated
+  // in each loader; see specs via app/components/alumni-game/.
+  route("alumni/welcome", "routes/alumni.welcome.tsx"),
+  route("alumni/lab", "routes/alumni.lab.tsx"),
+
   // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
   route("signup", "routes/signup.tsx"),
@@ -460,6 +465,10 @@ export default [
   route("api/landing/tunnel-scores", "routes/api.landing.tunnel-scores.ts"),
   // High scores for the runner game on the error screens.
   route("api/dino-scores", "routes/api.dino-scores.ts"),
+  // Alumni onboarding game: pixel avatar save + Tim's profile quest chat.
+  route("api/alumni-game/avatar", "routes/api.alumni-game.avatar.ts"),
+  route("api/alumni-game/quest", "routes/api.alumni-game.quest.ts"),
+  route("api/alumni-game/presence", "routes/api.alumni-game.presence.ts"),
 
   // Activities (specs/archive/activities.md): the time-boxed "mode" layer — the
   // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
