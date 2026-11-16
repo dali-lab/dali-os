@@ -3837,7 +3837,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_page",
-  "description": "Manage a page: update (rename, set icon, archive or restore a project page), set_visibility (share a project page with the partner portal, or make it the public write-up), pin/unpin, move/reorder, duplicate, favorite/unfavorite, toggle template status, or update typography display settings. Permissions mirror the web (update and set_visibility require Core or being staffed on the project; pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access; typography requires edit access on a FreeForm page).",
+  "description": "Manage a page: update (rename or set the icon of any doc, note, notebook or folder you can edit; archive or restore a project page), set_visibility (share a project page with the partner portal, or make it the public write-up), pin/unpin, move/reorder, duplicate, favorite/unfavorite, toggle template status, or update typography display settings. Permissions mirror the web (rename and icon follow the page's own edit access, the same as the web; archive, restore and set_visibility require Core or being staffed on the project; pin requires project-edit or lab-member; move requires manage access; duplicate/set_template requires edit access; favorite requires view access; typography requires edit access on a FreeForm page).",
   "inputSchema": {
     "type": "object",
     "properties": {
