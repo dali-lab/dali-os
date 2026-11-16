@@ -45,6 +45,8 @@ const NULLABLE_TEXT = [
   "githubUsername",
   "personalSite",
   "dietaryRestrictions",
+  "minors",
+  "funFact",
   "phoneNumber",
   "photoUrl",
 ] as const;

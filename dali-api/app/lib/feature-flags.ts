@@ -165,6 +165,12 @@ export const FEATURE_FLAGS = [
     description:
       "Alumni see Baker tower over the Green on Home, in Hanover's current season, by day or night, with the clock showing Hanover time. Ships off.",
   },
+  {
+    key: "alumni-game",
+    label: "Alumni: onboarding game",
+    description:
+      "New alumni are invited to build a pixel avatar, then finish their profile either on the profile page or by exploring a pixel DALI lab and chatting with Tim on an in-game phone. Ships off.",
+  },
 ] as const satisfies readonly FeatureFlagDef[];
 
 export type FeatureFlagKey = (typeof FEATURE_FLAGS)[number]["key"];
