@@ -229,10 +229,11 @@ describe("list_crit_posts", () => {
     expect(posts[0]).toMatchObject({ anonymous: true, mine: true, canDelete: true, author: { id: "poster", name: "Ada Poster" } });
   });
 
-  it("shows a moderator (Core or domain lead) the author of an anonymous post", async () => {
+  it("hides an anonymous post's author from moderators too, as the web does", async () => {
     hub.loadHubAccess.mockResolvedValue(access({ viewerId: "lead", canModerate: true }));
     const { posts } = await runListCritPosts(ctx("lead"), { hubId: "hub1" });
-    expect(posts[0]).toMatchObject({ anonymous: true, mine: false, canDelete: true, author: { id: "poster", name: "Ada Poster" } });
+    expect(posts[0]).toMatchObject({ anonymous: true, mine: false, canDelete: true, author: null });
+    expect(JSON.stringify(posts[0])).not.toContain("poster");
   });
 
   it("gives each post a link, and pages with limit and cursor", async () => {

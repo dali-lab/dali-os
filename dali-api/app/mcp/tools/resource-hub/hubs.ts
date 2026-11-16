@@ -119,7 +119,7 @@ export async function runGetResourceHub(ctx: McpCtx, input: HubRef & PageArgs) {
 export const LIST_CRIT_POSTS_TOOL = {
   name: "list_crit_posts",
   description:
-    "List the Crit Wall posts for a hub or domain, newest first, with comment counts. Pass hubId or domainId. An anonymous post shows no author unless you posted it or you are Core or a lead of the domain. Read or write a post's comments with list_comments and manage_comment (targetType 'crit', targetId the post id).",
+    "List the Crit Wall posts for a hub or domain, newest first, with comment counts. Pass hubId or domainId. An anonymous post shows no author unless you posted it. Read or write a post's comments with list_comments and manage_comment (targetType 'crit', targetId the post id).",
   inputSchema: {
     type: "object" as const,
     properties: { ...hubRef, ...pageProps(LIST_LIMITS) },
@@ -143,7 +143,7 @@ export async function runListCritPosts(ctx: McpCtx, input: HubRef & PageArgs) {
   return {
     posts: rows.map((r) => {
       const { authorName, ...post } = serializeSubmission(r, viewerId, canModerate, counts.get(r.id) ?? 0);
-      const reveal = !r.anonymous || r.authorId === viewerId || canModerate;
+      const reveal = !r.anonymous || r.authorId === viewerId;
       return {
         ...post,
         author: reveal && r.authorId ? { id: r.authorId, name: r.anonymous ? displayName(r.author) : authorName } : null,

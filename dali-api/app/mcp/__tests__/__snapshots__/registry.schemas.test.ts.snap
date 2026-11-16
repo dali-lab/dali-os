@@ -10569,7 +10569,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_crit_posts",
-  "description": "List the Crit Wall posts for a hub or domain, newest first, with comment counts. Pass hubId or domainId. An anonymous post shows no author unless you posted it or you are Core or a lead of the domain. Read or write a post's comments with list_comments and manage_comment (targetType 'crit', targetId the post id).",
+  "description": "List the Crit Wall posts for a hub or domain, newest first, with comment counts. Pass hubId or domainId. An anonymous post shows no author unless you posted it. Read or write a post's comments with list_comments and manage_comment (targetType 'crit', targetId the post id).",
   "inputSchema": {
     "type": "object",
     "properties": {
