@@ -1380,8 +1380,8 @@ html.light .dali-cmp-pop-save { color: color-mix(in srgb, var(--os-accent-ink) 7
 .dali-cmp-pop-delete:focus-visible, .dali-cmp-pop-save:focus-visible { outline: 2px solid color-mix(in srgb, var(--os-accent-ink) 55%, transparent); outline-offset: 1px; }
 
 /* Round 5 */
-.dali-doc .ProseMirror-selectednode, .dali-doc .ProseMirror-selectednode > .bn-block-content,
-.dali-doc .bn-block-content.ProseMirror-selectednode, .dali-doc .bn-block-content:has(> .ProseMirror-selectednode) { outline: none !important; box-shadow: none; }
+.dali-doc .ProseMirror-selectednode:has(.dali-cmp), .dali-doc .ProseMirror-selectednode:has(.dali-cmp) > .bn-block-content,
+.dali-doc .bn-block-content.ProseMirror-selectednode:has(> .dali-cmp), .dali-doc .bn-block-content:has(> .ProseMirror-selectednode .dali-cmp) { outline: none !important; box-shadow: none; }
 .dali-cmp-layout { display: inline-flex; gap: 14px; padding: 0; background: none; border-radius: 0; box-shadow: none; }
 .dali-cmp-layout button { width: 24px; height: 24px; background: none !important; box-shadow: none !important; opacity: 0.35; }
 .dali-cmp-layout button:hover { opacity: 0.7; }
@@ -1432,7 +1432,7 @@ html.light .dali-cmp-pop-save { color: color-mix(in srgb, var(--os-accent-ink) 7
 .dali-cmp-pop-delete { font-size: 12px; gap: 4px; }
 
 /* Selecting a component block: a soft shade instead of BlockNote's blue outline. */
-.dali-doc .bn-block-content.ProseMirror-selectednode > *, .dali-doc .ProseMirror-selectednode > .bn-block-content > * { outline: none; }
+.dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp, .dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp { outline: none; }
 .dali-doc .bn-block-content.ProseMirror-selectednode > .dali-cmp, .dali-doc .ProseMirror-selectednode > .bn-block-content > .dali-cmp {
   background: var(--color-os-hover); border-radius: 14px;
 }
@@ -1685,13 +1685,6 @@ svg.lucide-plus.dali-cmp-ico { width: 11px !important; height: 11px !important; 
 
 /* Bars/links without a heading keep their top row clear of the Edit button. */
 .dali-cmp-panel:not(.dali-cmp-panel--flush):not(:has(.dali-cmp-head)) { padding-top: 48px; }
-
-/* Callouts: no heavy edge on the left, just the soft tinted box. */
-.dali-doc .bn-block:has(> .bn-block-content[data-content-type="callout"]),
-.dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-content-type="callout"]) { border-left: 1px solid color-mix(in srgb, var(--os-status-review-edge) 30%, transparent); }
-.dali-doc .bn-block:has(> .bn-block-content[data-emoji="🚨"]), .dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="🚨"]) { border-left-color: color-mix(in srgb, var(--os-danger-ink) 30%, transparent); }
-.dali-doc .bn-block:has(> .bn-block-content[data-emoji="✅"]), .dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="✅"]) { border-left-color: color-mix(in srgb, var(--os-status-done-edge) 30%, transparent); }
-.dali-doc .bn-block:has(> .bn-block-content[data-emoji="📌"]), .dali-doc .bn-block:has(> .react-renderer > .bn-block-content[data-emoji="📌"]) { border-left-color: color-mix(in srgb, var(--color-accent-teal) 30%, transparent); }
 
 /* Checklists: simple, one line, vertically centered, quiet checkbox. */
 .dali-doc .bn-block-content[data-content-type="checkListItem"] > div:has(> input) { display: flex; align-items: center; height: auto; align-self: center; }

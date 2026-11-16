@@ -225,7 +225,7 @@ function ToastItem({
                   action.onClick();
                   onDismiss(toast.id);
                 }}
-                className="rounded-md border border-os-container-hi px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-os-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-os-accent/60"
+                className="font-medium text-os-accent underline-offset-2 hover:underline"
               >
                 {action.label}
               </button>

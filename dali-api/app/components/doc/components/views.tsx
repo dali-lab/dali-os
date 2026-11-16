@@ -116,6 +116,7 @@ function Links({ fields, items }: ComponentData) {
             <span className="dali-cmp-row__title">{it.title}</span>
             {it.description && <span className="dali-cmp-sub">{it.description}</span>}
           </span>
+          {it.meta && <span className="dali-cmp-meta">{it.meta}</span>}
           {safeHref(it.href) && <ChevronRight className="dali-cmp-row__arrow" size={22} strokeWidth={1.75} aria-hidden />}
         </LinkOrDiv>
       ))}
