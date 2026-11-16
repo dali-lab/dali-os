@@ -11,6 +11,7 @@ vi.mock("~/hiring/lib/confidentiality", () => ({
 // can't stand in for — its own behavior is covered in doc-search.test.ts.
 vi.mock("~/lib/doc-search.server", () => ({ searchPageContent: vi.fn() }));
 vi.mock("~/help/library.server", () => ({ visibleHelpArticles: vi.fn().mockResolvedValue([]) }));
+vi.mock("~/lib/resource-hub-search.server", () => ({ searchResourceHubs: vi.fn().mockResolvedValue([]), searchDomainReferences: vi.fn().mockResolvedValue([]) }));
 vi.mock("~/lib/fileAccess.server", () => ({ filterViewableFiles: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({
   PAGE_ACCESS_SELECT: { id: true, accessMarker: true },
@@ -23,6 +24,7 @@ import { getPageAccessBulk } from "~/lib/pageAccess.server";
 import { filterViewableFiles } from "~/lib/fileAccess.server";
 import { visibleHelpArticles } from "~/help/library.server";
 import { parseHelpArticle } from "~/help/article-format";
+import { searchDomainReferences, searchResourceHubs } from "~/lib/resource-hub-search.server";
 import { CATEGORY_RAW_TAKE, runCategorySearch, runSearch, runSearchWithOverflow } from "~/lib/search.server";
 import type { UserRoles } from "~/lib/roles";
 
@@ -761,5 +763,35 @@ describe("runSearch — forms", () => {
         where: { archivedAt: null, kind: { not: "Form" }, title: like("query") },
       }),
     );
+  });
+});
+
+describe("Resource Hub categories", () => {
+  const hubResult = { type: "resourceHub" as const, id: "h1", title: "Design", url: "/resource-hub/h1" };
+  const refResult = { type: "reference" as const, id: "r1", title: "Moodboard", url: "/resource-hub/h1/references?r=r1" };
+
+  beforeEach(() => {
+    vi.mocked(searchResourceHubs).mockResolvedValue([hubResult]);
+    vi.mocked(searchDomainReferences).mockResolvedValue([refResult]);
+  });
+
+  it("joins the default search with the caller and query handed through", async () => {
+    const results = await runSearch({ userId: "u1", roles: MEMBER, q: " design " });
+    expect(results).toEqual(expect.arrayContaining([hubResult, refResult]));
+    expect(vi.mocked(searchResourceHubs).mock.calls[0][0]).toMatchObject({ userId: "u1" });
+    expect(vi.mocked(searchResourceHubs).mock.calls[0][1]).toBe("design");
+  });
+
+  it("pages a single category", async () => {
+    const { results } = (await runSearchWithOverflow({ userId: "u1", roles: MEMBER, q: "design" })) as { results: unknown[] };
+    expect(results).toEqual(expect.arrayContaining([hubResult]));
+    expect(await runCategorySearch({ userId: "u1", roles: MEMBER, q: "design", category: "reference", skip: 0, limit: 5 })).toEqual([refResult]);
+    expect(vi.mocked(searchResourceHubs).mock.calls.length).toBe(1);
+  });
+
+  it("returns neither for a non-member session", async () => {
+    const results = await runSearch({ userId: "u1", roles: { ...MEMBER, isLabMemberOrAlum: false }, q: "design" });
+    expect(results).toEqual([]);
+    expect(searchResourceHubs).not.toHaveBeenCalled();
   });
 });

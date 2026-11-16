@@ -90,6 +90,7 @@ describe("buildUrl (route-param gotchas)", () => {
 
   it("maps a help article to its /help/<slug> page", () => {
     expect(buildUrl.helpArticle("getting-started")).toBe("/help/getting-started");
+    expect(buildUrl.resourceHub("h1")).toBe("/resource-hub/h1");
   });
 });
 

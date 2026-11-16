@@ -23,7 +23,9 @@ export type SearchResultType =
   | "partnerApplication"
   | "cycle"
   | "guide"
-  | "helpArticle";
+  | "helpArticle"
+  | "resourceHub"
+  | "reference";
 
 /** Types a search can return. `challenge` has a URL but no search source. */
 export const SEARCH_CATEGORIES: SearchResultType[] = [
@@ -43,6 +45,8 @@ export const SEARCH_CATEGORIES: SearchResultType[] = [
   "cycle",
   "guide",
   "helpArticle",
+  "resourceHub",
+  "reference",
 ];
 
 export interface SearchResult {
@@ -117,8 +121,8 @@ const GUIDE_PATH_BY_KEY = new Map(GUIDE_PAGES.map((g) => [g.pageKey, g.path]));
 // Canonical detail URLs. Centralized so the route-param gotchas live in one
 // place: members key on User.id, education on :offeringId, partners on :orgId,
 // applications on the DomainApplication id.
-// Tasks are absent: their URL needs the project id, so searchTasks builds it.
-export const buildUrl: Record<Exclude<SearchResultType, "task">, (id: string) => string> = {
+// Tasks and references are absent: their URLs need a parent id, so their searches build them.
+export const buildUrl: Record<Exclude<SearchResultType, "task" | "reference">, (id: string) => string> = {
   person: (id) => `/members/${id}`,
   // The groups page has no per-group deep link; land on the list (client filter).
   group: () => `/members/groups`,
@@ -143,6 +147,7 @@ export const buildUrl: Record<Exclude<SearchResultType, "task">, (id: string) =>
   },
   // Help-center articles are real pages; the id is the slug (see HELP_ARTICLES).
   helpArticle: (slug) => `/help/${slug}`,
+  resourceHub: (id) => `/resource-hub/${id}`,
 };
 
 // Lower is better; null means no match. exact(0) > prefix(1) > word-start(2) >

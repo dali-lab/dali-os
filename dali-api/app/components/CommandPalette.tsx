@@ -35,6 +35,8 @@ import {
   AppWindow,
   Download,
   Sparkles,
+  Library,
+  Bookmark,
 } from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { Avatar } from "~/components/ui/Avatar";
@@ -114,6 +116,8 @@ export const TYPE_META: Record<SearchResultType, { icon: LucideIcon; section: st
   partnerApplication: { icon: Handshake, section: "Partner applications" },
   guide: { icon: BookOpen, section: "Guides" },
   helpArticle: { icon: HelpCircle, section: "Help" },
+  resourceHub: { icon: Library, section: "Resource Hub" },
+  reference: { icon: Bookmark, section: "Resource Hub" },
 };
 
 const PAGE_KIND_ICON = { Folder, Whiteboard: Shapes, Notebook: NotebookPen, Slides: Presentation } as const;
@@ -137,6 +141,7 @@ const SECTION_ORDER = [
   "Hiring library",
   "Hiring cycles",
   "Partner applications",
+  "Resource Hub",
   "Guides",
   "Help",
 ];
