@@ -69,3 +69,17 @@ export async function notifyCritComment(args: { submissionId: string; commenterI
     recipients: [{ userId: post.authorId }],
   });
 }
+
+/** The user id whose comments this viewer must not see attributed: the author of an anonymous post, unless the viewer is that author or a moderator. */
+export async function critHiddenAuthorId(viewerId: string, submissionId: string, request?: Request): Promise<string | null> {
+  const post = await prisma.critSubmission.findUnique({ where: { id: submissionId }, select: { anonymous: true, authorId: true } });
+  if (!post?.anonymous || !post.authorId || post.authorId === viewerId) return null;
+  if ((await loadCritTarget(viewerId, submissionId, request))?.canModerate) return null;
+  return post.authorId;
+}
+
+/** True when this user is the author of an anonymous post, so notifications they cause must not carry their id. */
+export async function critActorIsAnonymous(submissionId: string, actorId: string): Promise<boolean> {
+  const post = await prisma.critSubmission.findUnique({ where: { id: submissionId }, select: { anonymous: true, authorId: true } });
+  return !!post?.anonymous && post.authorId === actorId;
+}

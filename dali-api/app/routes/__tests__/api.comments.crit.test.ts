@@ -25,7 +25,7 @@ vi.mock("~/lib/doc-comments.server", async () => {
   }
   return { CommentCreateError, createDocComment: vi.fn().mockResolvedValue({ id: "c1" }) };
 });
-vi.mock("~/lib/crit-comments.server", () => ({ loadCritTarget: vi.fn(), critThreadLink: vi.fn(async (s: string, t: string) => `/resource-hub/hub1/crit?post=${s}&thread=${t}`) }));
+vi.mock("~/lib/crit-comments.server", () => ({ loadCritTarget: vi.fn(), critHiddenAuthorId: vi.fn().mockResolvedValue(null), critActorIsAnonymous: vi.fn().mockResolvedValue(false), critThreadLink: vi.fn(async (s: string, t: string) => `/resource-hub/hub1/crit?post=${s}&thread=${t}`) }));
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
@@ -33,7 +33,7 @@ import { isCore } from "~/lib/roles";
 import { notifyMentions } from "~/lib/mentions.server";
 import { addReaction } from "~/lib/reactions.server";
 import { createDocComment } from "~/lib/doc-comments.server";
-import { loadCritTarget } from "~/lib/crit-comments.server";
+import { critActorIsAnonymous, loadCritTarget } from "~/lib/crit-comments.server";
 import { action, loader } from "~/routes/api.comments";
 import { action as itemAction } from "~/routes/api.comments.$id";
 
@@ -150,5 +150,49 @@ describe("editing and reacting on crit comments", () => {
     db.docComment.findUnique.mockResolvedValue({ id: "c1", authorId: "u1", targetType: "doc", targetId: "page1", parentId: null });
     expect((await item("POST", { intent: "set-anchor", anchor: { kind: "image", x: 0.1, y: 0.1 } })).status).toBe(400);
     expect(db.docComment.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("editing keeps @mention chips", () => {
+  const chip = { type: "mention", userId: "u3", label: "ada" };
+  const prev = [{ type: "text", text: "hi " }, chip];
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  beforeEach(() => {
+    db.docComment.findUnique.mockResolvedValue({ id: "c1", authorId: "u1", targetType: "crit", targetId: "s1", parentId: null, bodyJson: prev });
+    db.docComment.update.mockResolvedValue({});
+  });
+
+  it("stores the chips the editor sends and notifies only the newly mentioned", async () => {
+    const next = [{ type: "text", text: "hi " }, chip, { type: "text", text: " and " }, { type: "mention", userId: "u4", label: "leo" }];
+    expect((await item("POST", { intent: "edit", body: "hi @ada and @leo", bodyJson: next })).status).toBe(200);
+    await settle();
+    expect(db.docComment.update.mock.calls[0][0].data).toEqual({ body: "hi @ada and @leo", bodyJson: next });
+    expect(vi.mocked(notifyMentions).mock.calls).toHaveLength(1);
+    expect(vi.mocked(notifyMentions).mock.calls[0][0].recipientUserIds).toEqual(["u4"]);
+  });
+
+  it("does not notify anyone again when the chips are unchanged", async () => {
+    await item("POST", { intent: "edit", body: "hello @ada", bodyJson: [{ type: "text", text: "hello " }, chip] });
+    await settle();
+    expect(notifyMentions).not.toHaveBeenCalled();
+  });
+
+  it("keeps existing chips when the client sends no bodyJson", async () => {
+    await item("POST", { intent: "edit", body: "hello @ada" });
+    await settle();
+    expect(db.docComment.update.mock.calls[0][0].data.bodyJson).toEqual([{ type: "text", text: "hello " }, chip]);
+    expect(notifyMentions).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed bodyJson without writing", async () => {
+    expect((await item("POST", { intent: "edit", body: "x", bodyJson: [{ type: "mention", label: "ada" }] })).status).toBe(400);
+    expect(db.docComment.update).not.toHaveBeenCalled();
+  });
+
+  it("does not name an anonymous poster as the actor of a new mention", async () => {
+    vi.mocked(critActorIsAnonymous).mockResolvedValue(true);
+    await item("POST", { intent: "edit", body: "hi @leo", bodyJson: [{ type: "mention", userId: "u4", label: "leo" }] });
+    await settle();
+    expect(vi.mocked(notifyMentions).mock.calls[0][0]).toMatchObject({ actorId: "u1", anonymousActor: true });
   });
 });

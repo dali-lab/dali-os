@@ -7,7 +7,7 @@ import type { BodySegment } from "~/lib/comment-body";
 import { anchorSlideId, type commentAnchorSchema } from "~/lib/slide-comments";
 import type { z } from "zod";
 import { docCommentContext } from "~/lib/comment-links.server";
-import { critPostExists, critThreadLink, notifyCritComment } from "~/lib/crit-comments.server";
+import { critActorIsAnonymous, critPostExists, critThreadLink, notifyCritComment } from "~/lib/crit-comments.server";
 
 type CommentAnchor = z.infer<typeof commentAnchorSchema>;
 
@@ -179,6 +179,7 @@ export async function createDocComment(a: {
       link,
       copyKey: "mention.comment",
       preview: body,
+      anonymousActor: targetType === "crit" && (await critActorIsAnonymous(targetId, authorId)),
     });
   })().catch((err) => console.error(`comment ${created.id}: mention notify failed`, err));
 
@@ -241,9 +242,10 @@ async function notifyThreadReply(args: {
   }
   const preview = args.body.length > 200 ? `${args.body.slice(0, 200)}…` : args.body;
 
+  const anonymousActor = args.targetType === "crit" && (await critActorIsAnonymous(args.targetId, args.authorId));
   await notify({
     eventType: "collab.comment_reply",
-    createdByUserId: args.authorId,
+    createdByUserId: anonymousActor ? null : args.authorId,
     message: {
       vars: { itemTitle: title ?? "a document", itemDetail: preview },
       link,

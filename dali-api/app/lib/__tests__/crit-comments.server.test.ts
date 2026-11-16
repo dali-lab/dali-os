@@ -11,7 +11,7 @@ import { getUserRoles, isCore, isLabMember } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { canEditResourceHub, ledDomainIds } from "~/lib/resource-hub.server";
 import { notify } from "~/lib/notify.server";
-import { critThreadLink, loadCritTarget, notifyCritComment } from "../crit-comments.server";
+import { critActorIsAnonymous, critHiddenAuthorId, critThreadLink, loadCritTarget, notifyCritComment } from "../crit-comments.server";
 
 const db = vi.mocked(prisma, true);
 const post = (o: object = {}, hub: object | null = { id: "hub1", domainId: "d1", createdById: "u9", publishedAt: new Date(0) }) =>
@@ -111,5 +111,41 @@ describe("notifyCritComment", () => {
   it("shortens a long preview", async () => {
     await notifyCritComment({ ...args, body: "x".repeat(300) });
     expect((vi.mocked(notify).mock.calls[0][0].message as any).vars.itemDetail).toHaveLength(201);
+  });
+});
+
+describe("critHiddenAuthorId", () => {
+  const anon = (o: object = {}) => post({ anonymous: true, ...o });
+  it("hides the poster of an anonymous post from other members", async () => {
+    db.critSubmission.findUnique.mockResolvedValue(anon());
+    expect(await critHiddenAuthorId("u2", "s1")).toBe("u1");
+  });
+  it("shows the poster to themselves", async () => {
+    db.critSubmission.findUnique.mockResolvedValue(anon());
+    expect(await critHiddenAuthorId("u1", "s1")).toBeNull();
+  });
+  it("shows the poster to Core and to the domain's leads", async () => {
+    db.critSubmission.findUnique.mockResolvedValue(anon());
+    vi.mocked(isCore).mockResolvedValue(true);
+    expect(await critHiddenAuthorId("core", "s1")).toBeNull();
+    vi.mocked(isCore).mockResolvedValue(false);
+    vi.mocked(ledDomainIds).mockResolvedValue(["d1"]);
+    expect(await critHiddenAuthorId("lead", "s1")).toBeNull();
+    vi.mocked(ledDomainIds).mockResolvedValue(["other"]);
+    expect(await critHiddenAuthorId("lead2", "s1")).toBe("u1");
+  });
+  it("hides nobody on a named post", async () => {
+    db.critSubmission.findUnique.mockResolvedValue(post());
+    expect(await critHiddenAuthorId("u2", "s1")).toBeNull();
+  });
+});
+
+describe("critActorIsAnonymous", () => {
+  it("is true only for the author of an anonymous post", async () => {
+    db.critSubmission.findUnique.mockResolvedValue({ anonymous: true, authorId: "u1" } as any);
+    expect(await critActorIsAnonymous("s1", "u1")).toBe(true);
+    expect(await critActorIsAnonymous("s1", "u2")).toBe(false);
+    db.critSubmission.findUnique.mockResolvedValue({ anonymous: false, authorId: "u1" } as any);
+    expect(await critActorIsAnonymous("s1", "u1")).toBe(false);
   });
 });

@@ -5,7 +5,8 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { hydrateAuthors } from "~/lib/collabAuth.server";
-import { loadCritTarget } from "~/lib/crit-comments.server";
+import { critHiddenAuthorId, loadCritTarget } from "~/lib/crit-comments.server";
+import { maskAnonymousAuthor } from "~/lib/crit-comments";
 import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -138,5 +139,6 @@ export async function runListComments(callerId: string, input: Input) {
     reactions: r.reactions,
   }));
 
-  return { page, comments };
+  const hiddenAuthorId = input.targetType === "crit" ? await critHiddenAuthorId(callerId, input.targetId) : null;
+  return { page, comments: maskAnonymousAuthor(comments, hiddenAuthorId) };
 }

@@ -75,7 +75,7 @@ function CommentItem({ comment, isRoot, viewer, api }: { comment: SlideComment; 
         )}
       </div>
       {editing ? (
-        <CommentComposer autoFocus currentUserId={viewer.id} value={draft} onChange={setDraft} busy={busy} submitLabel="Save" onCancel={() => setEditing(false)} onSubmit={save} />
+        <CommentComposer autoFocus currentUserId={viewer.id} value={draft} onChange={setDraft} mentions={comment.bodyJson} busy={busy} submitLabel="Save" onCancel={() => setEditing(false)} onSubmit={save} />
       ) : (
         <>
           <RichCommentBody bodyJson={comment.bodyJson} body={comment.body} className="text-sm [overflow-wrap:anywhere]" />
