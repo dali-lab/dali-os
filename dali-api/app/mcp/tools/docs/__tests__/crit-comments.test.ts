@@ -22,7 +22,7 @@ vi.mock("~/lib/doc-comments.server", () => ({
   },
   createDocComment: vi.fn().mockResolvedValue({ id: "c1" }),
 }));
-vi.mock("~/lib/crit-comments.server", () => ({ loadCritTarget: vi.fn() }));
+vi.mock("~/lib/crit-comments.server", () => ({ loadCritTarget: vi.fn(), critHiddenAuthorId: vi.fn().mockResolvedValue(null), critActorIsAnonymous: vi.fn().mockResolvedValue(false) }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
@@ -90,5 +90,20 @@ describe("manage_comment on a crit post", () => {
     expect(addReaction).toHaveBeenCalledTimes(1);
     vi.mocked(loadCritTarget).mockResolvedValue(null);
     await expect(runManageComment("u2", { action: "react", commentId: "c1", emoji: "👍" })).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("manage_comment edit keeps @mention chips", () => {
+  const chip = { type: "mention", userId: "u3", label: "ada" };
+  it("rebuilds the chips for the new text", async () => {
+    db.docComment.findUnique.mockResolvedValue({ id: "c1", authorId: "u1", targetType: "crit", targetId: "s1", parentId: null, bodyJson: [{ type: "text", text: "hi " }, chip] });
+    db.docComment.update.mockResolvedValue({});
+    await runManageComment("u1", { action: "edit", commentId: "c1", body: "hello @ada" });
+    expect(db.docComment.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { body: "hello @ada", bodyJson: [{ type: "text", text: "hello " }, chip] } });
+  });
+  it("leaves a plain comment's bodyJson alone", async () => {
+    db.docComment.update.mockResolvedValue({});
+    await runManageComment("u1", { action: "edit", commentId: "c1", body: "hello" });
+    expect(db.docComment.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { body: "hello" } });
   });
 });

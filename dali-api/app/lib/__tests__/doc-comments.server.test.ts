@@ -161,8 +161,11 @@ describe("createDocComment", () => {
 describe("crit targets", () => {
   const crit = { targetType: "crit" as const, targetId: "s1", authorId: "u2", body: "Love the spacing" };
   const pin = { kind: "image" as const, x: 0.25, y: 0.75 };
+  let anonymousPost = false;
   beforeEach(() => {
+    anonymousPost = false;
     db.critSubmission.findUnique.mockImplementation(async (q: any) => {
+      if (q.select.anonymous) return { anonymous: anonymousPost, authorId: "u1" };
       if (q.select.kind) return { kind: "image" };
       if (q.select.title && q.select.authorId) return { authorId: "u1", title: "Logo" };
       if (q.select.title) return { title: "Logo" };
@@ -246,5 +249,33 @@ describe("crit targets", () => {
     await createDocComment({ ...crit, parentId: "c1", bodyJson: [{ type: "mention", userId: "u3", label: "ada" }] });
     await settle();
     expect(vi.mocked(notifyMentions).mock.calls[0]![0].link).toBe("/resource-hub/hub1/crit?post=s1&thread=c1");
+  });
+  describe("when the post is anonymous", () => {
+    beforeEach(() => {
+      anonymousPost = true;
+      db.docComment.findUnique.mockResolvedValue({ targetType: "crit", targetId: "s1", parentId: null });
+      db.docComment.findMany.mockResolvedValue([{ authorId: "u2" }]);
+    });
+    const poster = { ...crit, authorId: "u1", parentId: "c1" };
+
+    it("sends the poster's reply without naming them as its author", async () => {
+      await createDocComment(poster);
+      await settle();
+      const call = vi.mocked(notify).mock.calls[0]![0];
+      expect(call).toMatchObject({ eventType: "collab.comment_reply", recipients: [{ userId: "u2" }] });
+      expect(call.createdByUserId).toBeNull();
+    });
+    it("sends the poster's mentions without naming them as the actor", async () => {
+      await createDocComment({ ...poster, bodyJson: [{ type: "mention", userId: "u3", label: "ada" }] });
+      await settle();
+      expect(vi.mocked(notifyMentions).mock.calls[0]![0]).toMatchObject({ actorId: "u1", anonymousActor: true });
+    });
+    it("still names other commenters", async () => {
+      db.docComment.findMany.mockResolvedValue([{ authorId: "u1" }]);
+      await createDocComment({ ...crit, parentId: "c1", bodyJson: [{ type: "mention", userId: "u3", label: "ada" }] });
+      await settle();
+      expect(vi.mocked(notify).mock.calls[0]![0].createdByUserId).toBe("u2");
+      expect(vi.mocked(notifyMentions).mock.calls[0]![0].anonymousActor).toBe(false);
+    });
   });
 });

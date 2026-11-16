@@ -11,7 +11,9 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { createDocComment, CommentCreateError, type CommentTarget } from "~/lib/doc-comments.server";
 import type { BodySegment } from "~/lib/comment-body";
 import { commentAnchorSchema } from "~/lib/slide-comments";
-import { loadCritTarget } from "~/lib/crit-comments.server";
+import { bodySegmentsSchema } from "~/lib/comment-body-schema";
+import { critHiddenAuthorId, loadCritTarget } from "~/lib/crit-comments.server";
+import { maskAnonymousAuthor } from "~/lib/crit-comments";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
 //   GET  /api/comments?targetType=doc|file|pagedoc|crit&targetId=...   → threads (roots + replies)
@@ -31,18 +33,6 @@ import { loadCritTarget } from "~/lib/crit-comments.server";
 
 const AnchorSchema = commentAnchorSchema;
 
-// bodyJson segment schema — mirrors the BodySegment union from MentionTextInput.
-// We accept the raw JSON from the client and store it as-is; validation here
-// is permissive (array of objects) to avoid version skew issues.
-const BodySegmentSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string().max(5000) }),
-  z.object({
-    type: z.literal("mention"),
-    userId: z.string().min(1).max(256),
-    label: z.string().max(256),
-  }),
-]);
-
 const CreateSchema = z.object({
   targetType: z.enum(["doc", "file", "pagedoc", "crit"]),
   targetId: z.string().min(1),
@@ -50,7 +40,7 @@ const CreateSchema = z.object({
   /** Rich inline segments. When present, stored in DocComment.bodyJson and used
    * for mention notifications (userId-based, exact; supplement the handle-based
    * path which still runs for backward-compat). */
-  bodyJson: z.array(BodySegmentSchema).max(500).nullable().optional(),
+  bodyJson: bodySegmentsSchema.nullable().optional(),
   parentId: z.string().nullable().optional(),
   anchor: AnchorSchema,
   // Page-doc FAQ comments only: the page path, so @-mention notifications can
@@ -151,7 +141,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     reactions: r.reactions.map((x) => ({ ...x, name: nameById.get(x.userId) ?? "Unknown" })),
   }));
 
-  return withCors(request, Response.json({ comments: await withEmojiImages(comments) }));
+  const hiddenAuthorId = targetType === "crit" ? await critHiddenAuthorId(auth.user.sub, targetId, request) : null;
+  return withCors(request, Response.json({ comments: await withEmojiImages(maskAnonymousAuthor(comments, hiddenAuthorId)) }));
 }
 
 export async function action({ request }: Route.ActionArgs) {

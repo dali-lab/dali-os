@@ -76,6 +76,7 @@ export async function notifyMentions(args: {
   // The thing mentioned in, when the wording names it.
   itemTitle?: string;
   preview: string;
+  anonymousActor?: boolean;
 }): Promise<void> {
   const recipients = [...new Set(args.recipientUserIds)].filter(
     (id) => id !== args.actorId,
@@ -83,7 +84,7 @@ export async function notifyMentions(args: {
   if (recipients.length === 0) return;
   await notify({
     eventType: "pagedoc.mention",
-    createdByUserId: args.actorId,
+    createdByUserId: args.anonymousActor ? null : args.actorId,
     message: {
       copyKey: args.copyKey,
       vars: {

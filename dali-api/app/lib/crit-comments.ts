@@ -14,3 +14,17 @@ export function imageAnchorOf(anchor: unknown): ImageAnchor | null {
   const a = anchor as Partial<ImageAnchor> | null;
   return a && a.kind === "image" && typeof a.x === "number" && typeof a.y === "number" ? { kind: "image", x: a.x, y: a.y } : null;
 }
+
+const ANONYMOUS_ID = "anonymous";
+
+export function maskAnonymousAuthor<T extends { authorId: string; author: string; authorPhotoUrl: string | null; reactions: { userId: string }[] }>(
+  comments: T[],
+  hiddenId: string | null,
+): T[] {
+  if (!hiddenId) return comments;
+  return comments.map((c) => ({
+    ...c,
+    ...(c.authorId === hiddenId ? { authorId: ANONYMOUS_ID, author: "Anonymous", authorPhotoUrl: null } : {}),
+    reactions: c.reactions.map((r) => (r.userId === hiddenId ? { ...r, userId: ANONYMOUS_ID, ...("name" in r ? { name: "Anonymous" } : {}) } : r)),
+  }));
+}
