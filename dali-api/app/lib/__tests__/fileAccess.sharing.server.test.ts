@@ -4,12 +4,12 @@ vi.mock("~/lib/db.server", () => ({ prisma: {} }));
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
   isProjectMember: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
 }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
 vi.mock("~/lib/file-sharing.server", () => ({ sharePermissionForFile: vi.fn() }));
 
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { sharePermissionForFile } from "~/lib/file-sharing.server";
 import {
@@ -36,7 +36,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isProjectMember).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(false);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue(denied);
   vi.mocked(sharePermissionForFile).mockResolvedValue(null);
 });
@@ -74,7 +74,7 @@ describe("file access matrix: view", () => {
   it("link access for lab members opens the file to lab members only", async () => {
     const file = inFolder({ linkAccess: "LabMembers", linkPermission: "View" });
     expect(await canViewFile("outsider", file)).toBe(false);
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     expect(await canViewFile("labber", file)).toBe(true);
   });
 
@@ -135,7 +135,7 @@ describe("file access matrix: edit", () => {
   });
 
   it("link access at Edit lets lab members edit; at View it does not", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     expect(await canEditFile("labber", inFolder({ linkAccess: "LabMembers", linkPermission: "Edit" }))).toBe(true);
     expect(await canEditFile("labber", inFolder({ linkAccess: "LabMembers", linkPermission: "View" }))).toBe(false);
   });
@@ -148,7 +148,7 @@ describe("file access matrix: edit", () => {
   });
 
   it("a link at View never lowers a named Edit share", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(sharePermissionForFile).mockResolvedValue("Edit");
     expect(await canEditFile("labber", inFolder({ linkAccess: "LabMembers", linkPermission: "View" }))).toBe(true);
   });
@@ -175,7 +175,7 @@ describe("canManageFileSharing", () => {
 
   it("a project member can manage a loose project file; a lab member cannot", async () => {
     const file = { id: "f1", projectId: "p1", workspaceType: null, workspaceId: null, folderPageId: null };
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     expect(await canManageFileSharing("labber", file)).toBe(false);
     vi.mocked(isProjectMember).mockResolvedValue(true);
     expect(await canManageFileSharing("member", file)).toBe(true);
@@ -192,7 +192,7 @@ describe("canManageFileSharing", () => {
   });
 
   it("link access never lets anyone manage sharing", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     expect(await canManageFileSharing("labber", inFolder({ linkAccess: "LabMembers", linkPermission: "Edit" }))).toBe(
       false,
     );

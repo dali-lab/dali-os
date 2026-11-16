@@ -1,5 +1,5 @@
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditProject } from "~/mcp/tools/access";
 import { requireForAction } from "~/mcp/registry";
@@ -206,7 +206,7 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
       throw new ManagePageError("Document not found", 404);
     }
     if (page.workspaceType === "Lab") {
-      if (!(await isLabMember(callerId))) throw new ManagePageError("Forbidden", 403);
+      if (!(await isLabMemberOrAlum(callerId))) throw new ManagePageError("Forbidden", 403);
     } else {
       if (!(await canEditProject(callerId, page.workspaceId!))) throw new ManagePageError("Forbidden", 403);
     }
@@ -269,7 +269,7 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
   if (!sameWorkspace) {
     const canDest =
       dest.type === "Lab"
-        ? await isLabMember(callerId)
+        ? await isLabMemberOrAlum(callerId)
         : (await isCore(callerId)) || (await isProjectMember(callerId, dest.id!));
     if (!canDest) throw new ManagePageError("You can't move documents into that destination", 403);
   }

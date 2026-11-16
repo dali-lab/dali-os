@@ -39,6 +39,7 @@ COPY --from=runtime-deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/prisma.config.ts ./prisma.config.ts
+COPY --from=build /app/app/lib/places/cities5000.tsv.gz ./app/lib/places/cities5000.tsv.gz
 EXPOSE 3000
 CMD ["npm", "run", "start"]
 

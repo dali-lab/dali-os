@@ -16,7 +16,7 @@ import {
   type OccurrenceException,
 } from "~/calendar/lib/meeting-occurrences";
 import { CHECK_IN_GRACE_MIN } from "~/calendar/lib/meeting-occurrences";
-import { currentTerm, isCore } from "~/lib/roles";
+import { currentTerm, isCore, isLabMember } from "~/lib/roles";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import type { Prisma, RoomBookingSource } from "~/generated/prisma/client";
 
@@ -380,6 +380,8 @@ async function resolveBookingSeries(input: {
   return { ok: true, value: occurrences };
 }
 
+const NOT_CURRENT_MEMBER = { ok: false, error: "Only current lab members can book rooms", status: 403 } as const;
+
 export async function createRoomBooking(
   input: {
     roomId: string;
@@ -413,6 +415,7 @@ export async function createRoomBooking(
     if (start.getTime() > now + MAX_BOOKING_LEAD_DAYS * 24 * 60 * 60_000) {
       return { ok: false, error: `Bookings open ${MAX_BOOKING_LEAD_DAYS} days ahead`, status: 400 };
     }
+    if (!(await isLabMember(input.userId))) return NOT_CURRENT_MEMBER;
   }
 
   let series: Occurrence[] | null = null;
@@ -1127,11 +1130,13 @@ export async function assertMeetingRoomsFree(input: {
   roomIds: string[];
   newRoomIds?: string[];
   meetingId?: string;
+  bookerId?: string;
   selectedAt: Date;
   durationMinutes: number;
   recurrenceRule: string | null;
 }): Promise<RoomWriteResult<null>> {
   const adding = new Set(input.newRoomIds ?? input.roomIds);
+  if (input.bookerId && adding.size > 0 && !(await isLabMember(input.bookerId))) return NOT_CURRENT_MEMBER;
   const rooms = await prisma.room.findMany({
     where: { id: { in: input.roomIds } },
     select: { id: true, name: true, archivedAt: true },

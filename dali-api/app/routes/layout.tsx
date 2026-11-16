@@ -37,6 +37,8 @@ import {
   layoutRoles,
 } from '~/lib/layout-reads.server'
 import { resolveFeatureFlags } from '~/lib/feature-flags.server'
+import { prisma } from '~/lib/db.server'
+import { AlumniGameInvite } from '~/components/alumni-game/AlumniGameInvite'
 import { FeatureFlagsProvider } from '~/components/FeatureFlags'
 import { resolveActiveActivitiesForUser } from '~/lib/activities.server'
 import { ActivitiesProvider } from '~/components/activities/ActivitiesProvider'
@@ -109,6 +111,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (partnerRedirect) return (await publicDoc()) ?? partnerRedirect
 
   const {
+    isLabMemberOrAlum,
     isLabMember,
     isCore: core,
     isAdmin: admin,
@@ -125,10 +128,10 @@ export async function loader({ request }: Route.LoaderArgs) {
   // education management inside it — every other member-shell path sends them
   // back to their /portal home, with the education browsing surfaces mapped to
   // their /portal/education twin so a deep link keeps its offering. Members and
-  // Core are unaffected. Keyed on the DALIMember row (isLabMember), not auth
+  // Core are unaffected. Keyed on the DALIMember row (isLabMemberOrAlum), not auth
   // type, so a NetID-native member is never misfiled here. Partners/applicants
   // were already redirected above.
-  const instructorChrome = !isLabMember
+  const instructorChrome = !isLabMemberOrAlum
   if (instructorChrome) {
     const url = new URL(request.url)
     const twin = educationPortalTwin(url.pathname)
@@ -178,7 +181,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   // The roles read already ran the any-cycle interviewer lookup, so only the
   // reviewer half needs its own query here.
   let hasHiringAccess =
-    core || admin || domainLead || (isLabMember && isInterviewerAnyCycle)
+    core || admin || domainLead || (isLabMemberOrAlum && isInterviewerAnyCycle)
 
   // The nav-regroup gate is the same authority list, but the member half is
   // scoped to cycles that are live RIGHT NOW rather than any cycle ever — so a
@@ -188,18 +191,18 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const [isInterviewer, anyCycleReviewer, liveCycleRole, labMentor, photoUrl, flags, activeActivities] = await Promise.all([
     timed(request, 'hiringGate', () =>
-      isLabMember && liveCycleIds.length > 0
+      isLabMemberOrAlum && liveCycleIds.length > 0
         ? layoutIsLiveInterviewer(auth.user.sub, liveCycleIds)
         : Promise.resolve(false)),
-    !hasHiringAccess && isLabMember ? layoutIsAnyCycleReviewer(auth.user.sub) : false,
+    !hasHiringAccess && isLabMemberOrAlum ? layoutIsAnyCycleReviewer(auth.user.sub) : false,
     timed(request, 'liveCycleGate', () =>
-      isLabMember && !core && !admin && !domainLead && liveCycleIds.length > 0
+      isLabMemberOrAlum && !core && !admin && !domainLead && liveCycleIds.length > 0
         ? layoutHasLiveCycleRole(auth.user.sub, liveCycleIds)
         : Promise.resolve(false)),
     // Mentorship area gate: Core (with admin) + any active lab mentor. Hidden
     // from mentees and non-mentor members entirely.
     timed(request, 'mentorGate', () =>
-      isLabMember && !core ? layoutIsLabMentor(auth.user.sub, request) : Promise.resolve(false)),
+      isLabMemberOrAlum && !core ? layoutIsLabMentor(auth.user.sub, request) : Promise.resolve(false)),
     resolvePhotoUrl(me?.photoUrl),
     // Feature flags resolved once, plumbed to the client via FeatureFlagsProvider.
     timed(request, 'flags', () => resolveFeatureFlags(auth.user.sub, roles)),
@@ -211,19 +214,26 @@ export async function loader({ request }: Route.LoaderArgs) {
     ),
   ])
 
-  const [hasUnseenReleaseNotes, isNewMember] = await Promise.all([
-    flags['release-notes'] && isLabMember
+  const [hasUnseenReleaseNotes, isNewMember, promptAlumniGame] = await Promise.all([
+    flags['release-notes'] && isLabMemberOrAlum
       ? timed(request, 'releaseNotes', () => layoutHasUnseenReleaseNotes(auth.user.sub, core, request))
       : false,
     // Where Onboarding sits in the sidebar: pinned for the incoming cohort.
     flags['onboarding-journeys'] && isLabMember && !core
       ? timed(request, 'newMember', () => layoutIsNewMember(auth.user.sub))
       : false,
+    // Alumni onboarding game: invite until they've built their pixel avatar.
+    flags['alumni-game'] && isAlumni
+      ? timed(request, 'alumniGame', () =>
+          prisma.pixelAvatar
+            .findUnique({ where: { userId: auth.user.sub }, select: { userId: true } })
+            .then((row) => row === null))
+      : false,
   ])
 
-  if (!hasHiringAccess && isLabMember) hasHiringAccess = anyCycleReviewer
+  if (!hasHiringAccess && isLabMemberOrAlum) hasHiringAccess = anyCycleReviewer
   const hasActiveHiringAccess = core || admin || domainLead || liveCycleRole
-  const isLabMentorFlag = isLabMember ? core || labMentor : false
+  const isLabMentorFlag = isLabMemberOrAlum ? core || labMentor : false
   const hasCalendarLink = (me?.calendarLinks.length ?? 0) > 0
 
   // Auto-show the launch tour once per USER (server-driven, not browser
@@ -262,7 +272,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const __loaderTotal = performance.now() - __loaderStart
   if (__loaderTotal >= 400) console.log(`[perf-total] layout loader ${__loaderTotal.toFixed(0)}ms`)
 
-  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed: !!me?.desktopHintDismissedAt }
+  return { user: auth.user, photoUrl, hasCalendarLink, shouldShowTour, isCore: core, isAdmin: admin, isDomainLead: domainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, instructorChrome, favorites: sidebarPages.favorites, recents: sidebarPages.recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed: !!me?.desktopHintDismissedAt, promptAlumniGame }
 }
 
 // Layout data (roles, avatar, hiring access) changes rarely, but default
@@ -315,7 +325,7 @@ export default function AppLayoutRoute() {
 }
 
 function MemberLayoutRoute() {
-  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed } = useLoaderData<typeof loader>()
+  const { user, photoUrl, hasCalendarLink, shouldShowTour, isCore, isAdmin, isDomainLead, canViewForms, canViewStaffing, isInterviewer, hasHiringAccess, hasActiveHiringAccess, isInstructor, isLabMentor: isLabMentorFlag, isAlumni, isNewMember, favorites, recents, flags, impersonating, impersonationWrites, isEmbedded, tabStripHint, tabsSnapshot, focus, userTimeZone, userTimeZoneIsExplicit, tzDismissedZone, activeActivities, hasUnseenReleaseNotes, desktopHintDismissed, promptAlumniGame } = useLoaderData<typeof loader>()
 
   const [searchParams] = useSearchParams()
   const location = useLocation()
@@ -468,6 +478,7 @@ function MemberLayoutRoute() {
       <NavPreloader favorites={favorites} recents={recents} />
       <BannerHost scope="all" />
       <LaunchWelcome firstName={user.firstName || user.email.split('@')[0]} hasCalendarLink={hasCalendarLink} shouldShowTour={shouldShowTour} />
+      {promptAlumniGame ? <AlumniGameInvite firstName={user.firstName ?? ''} /> : null}
       <TimeZonePrompt userTimeZone={userTimeZone} userTimeZoneIsExplicit={userTimeZoneIsExplicit} dismissedZone={tzDismissedZone} />
       </ActivitiesProvider>
     </FeatureFlagsProvider>

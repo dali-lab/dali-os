@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "~/lib/db.server";
-import { isCore, isProjectMember, isLabMember } from "~/lib/roles";
+import { isCore, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
 import { isOfferingManager } from "~/lib/offering-manager.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
@@ -74,7 +74,7 @@ function fail(status: number, error: string): MovePageResult {
 }
 
 async function canEditDestination(userId: string, dest: { type: WorkspaceType; id: string | null }) {
-  if (dest.type === "Lab") return isLabMember(userId);
+  if (dest.type === "Lab") return isLabMemberOrAlum(userId);
   // Only instructors for this offering (or Core) may add docs to its Drive.
   if (dest.type === "EducationOffering") return isOfferingManager(userId, dest.id!);
   return (await isCore(userId)) || (await isProjectMember(userId, dest.id!));

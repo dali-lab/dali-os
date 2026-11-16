@@ -13,6 +13,7 @@ import { findHelpArticle, loadHelpArticles, shortcutsArticle, visibleHelpArticle
 import { parseHelpArticle, type HelpArticleDoc } from "../article-format";
 
 const NONE: UserRoles = {
+  isLabMemberOrAlum: false,
   isLabMember: false,
   isCore: false,
   isAdmin: false,
@@ -24,7 +25,7 @@ const NONE: UserRoles = {
   canViewForms: false,
   canViewStaffing: false,
 };
-const MEMBER = { ...NONE, isLabMember: true };
+const MEMBER = { ...NONE, isLabMemberOrAlum: true };
 const viewer = (roles: Partial<UserRoles> = {}) => ({ userId: "u1", roles: { ...MEMBER, ...roles } });
 
 const doc = (slug: string, header = "") => parseHelpArticle(slug, `---\ntitle: ${slug}\nsummary: s\n${header}\n---\nBody`);

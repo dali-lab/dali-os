@@ -36,7 +36,7 @@ export async function requireJourneyViewer(request: Request): Promise<JourneyVie
 /** The viewer for a signed-in user, or null when journeys are off for them or they aren't a lab member. */
 export async function resolveJourneyViewer(userId: string, request?: Request): Promise<JourneyViewer | null> {
   const roles = await getUserRoles(userId, request);
-  if (!roles.isLabMember) return null;
+  if (!roles.isLabMemberOrAlum) return null;
   if (!(await isFeatureEnabled("onboarding-journeys", userId, roles, request))) return null;
   const leads = roles.isDomainLead
     ? await prisma.domainLeadAssignment.findMany({

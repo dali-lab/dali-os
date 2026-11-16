@@ -689,6 +689,34 @@ describe("core-taskboard flag", () => {
   });
 });
 
+describe("alumni-game flag", () => {
+  const ALUM: RoleFlags = { ...NOBODY, isAlumni: true };
+  const GAME = { "alumni-game": true };
+
+  it("shows the pixel lab under Lab for alumni while the flag is on", () => {
+    const lab = visibleAreas(ALUM, GAME)[0];
+    expect(visibleSubtabs(lab, ALUM).map((t) => t.href)).toContain("/alumni/lab");
+  });
+
+  it("hides the pixel lab while the flag is off, and from members always", () => {
+    const alumLab = visibleAreas(ALUM, REGROUP)[0];
+    expect(visibleSubtabs(alumLab, ALUM).map((t) => t.href)).not.toContain("/alumni/lab");
+    const memberHrefs = visibleAreas(NOBODY, GAME).flatMap((a) =>
+      visibleSubtabs(a, NOBODY).map((t) => t.href),
+    );
+    expect(memberHrefs).not.toContain("/alumni/lab");
+  });
+
+  it("files the game pages under Lab for alumni, including the avatar creator", () => {
+    expect(areaForPath("/alumni/lab", GAME, ALUM)?.key).toBe("projects");
+    expect(areaForPath("/alumni/welcome", GAME, ALUM)?.key).toBe("projects");
+    expect(activeSubtabHref(areaForPath("/alumni/welcome", GAME, ALUM)!, "/alumni/welcome")).toBe(
+      "/alumni/lab",
+    );
+    expect(areaForPath("/alumni/lab", GAME, NOBODY)).toBeUndefined();
+  });
+});
+
 describe("LayoutOS nav flags", () => {
   it("passes every flag the nav reads to the sidebar", async () => {
     const { readFileSync } = await import("node:fs");

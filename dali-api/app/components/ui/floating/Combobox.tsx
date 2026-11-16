@@ -58,6 +58,8 @@ export function Combobox<T extends string = string>({
   onQueryChange,
   filterLocally = true,
   autoFocus,
+  displayValue,
+  renderLabel,
 }: {
   value: T;
   options: SelectOption<T>[];
@@ -74,6 +76,10 @@ export function Combobox<T extends string = string>({
   /** Off when `options` already hold only what matches the query. */
   filterLocally?: boolean;
   autoFocus?: boolean;
+  /** Text the closed input shows, when it differs from the selected option's row label. */
+  displayValue?: string;
+  /** Replaces the plain label in each row, given what is currently typed. */
+  renderLabel?: (option: SelectOption<T>, query: string) => ReactNode;
 }) {
   const panelClass = usePanelClass();
   const [open, setOpen] = useState(false);
@@ -83,7 +89,7 @@ export function Combobox<T extends string = string>({
   const listRef = useRef<Array<HTMLElement | null>>([]);
 
   const current = options.find((o) => o.value === value);
-  const selectedLabel = current?.label ?? "";
+  const selectedLabel = displayValue ?? current?.label ?? "";
 
   // Typing filters; opening without typing shows everything, so the control
   // still works as a plain dropdown for anyone who never touches the keyboard.
@@ -263,7 +269,7 @@ export function Combobox<T extends string = string>({
                       <span className="flex min-w-0 flex-col">
                         <span className="flex items-center gap-1.5 font-medium text-foreground">
                           {o.icon}
-                          {o.label}
+                          {renderLabel ? renderLabel(o, query.trim()) : o.label}
                         </span>
                         {o.description && (
                           <span className="text-xs text-muted-foreground">{o.description}</span>

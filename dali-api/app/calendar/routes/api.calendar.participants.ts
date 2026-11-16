@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.calendar.participants";
 import { requireAuth, forbidden } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { loadParticipantOptions } from "~/calendar/lib/calendar-participants.server";
 
 // GET /api/calendar/participants: the lab directory for the calendar's
@@ -9,6 +9,6 @@ import { loadParticipantOptions } from "~/calendar/lib/calendar-participants.ser
 export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
-  if (!(await isLabMember(auth.user.sub, request))) return forbidden(request);
+  if (!(await isLabMemberOrAlum(auth.user.sub, request))) return forbidden(request);
   return Response.json(await loadParticipantOptions(request, auth.user.sub));
 }

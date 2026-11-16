@@ -127,13 +127,15 @@ export default [
     // Partner CRM — the internal partner pipeline (board, directory, org and
     // application records), Core-only. The external portal at /partner/*
     // (singular) is a separate surface and does not move.
-    route("core/partners", "partners/routes/core.partners.tsx"),
-    route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
-    route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
-    route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
-    route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+    layout("partners/routes/partners-crm-layout.tsx", [
+      route("core/partners", "partners/routes/core.partners.tsx"),
+      route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
+      route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
+      route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+      route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+      route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
+    ]),
     route("core/partners/referrals/:id", "partners/routes/core.partners.referrals.$id.tsx"),
-    route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
     route("core/partners/applications/:id", "partners/routes/core.partners.applications.$id.tsx"),
@@ -386,6 +388,11 @@ export default [
   // anywhere yet — reachable by direct URL.
   route("download", "routes/download.tsx"),
 
+  // Alumni onboarding game (no layout — full-screen pixel lab). Flag-gated
+  // in each loader; see specs via app/components/alumni-game/.
+  route("alumni/welcome", "routes/alumni.welcome.tsx"),
+  route("alumni/lab", "routes/alumni.lab.tsx"),
+
   // Login / signup / onboarding (no layout)
   route("login", "routes/login.tsx"),
   route("signup", "routes/signup.tsx"),
@@ -458,6 +465,10 @@ export default [
   route("api/landing/tunnel-scores", "routes/api.landing.tunnel-scores.ts"),
   // High scores for the runner game on the error screens.
   route("api/dino-scores", "routes/api.dino-scores.ts"),
+  // Alumni onboarding game: pixel avatar save + Tim's profile quest chat.
+  route("api/alumni-game/avatar", "routes/api.alumni-game.avatar.ts"),
+  route("api/alumni-game/quest", "routes/api.alumni-game.quest.ts"),
+  route("api/alumni-game/presence", "routes/api.alumni-game.presence.ts"),
 
   // Activities (specs/archive/activities.md): the time-boxed "mode" layer — the
   // onboarding scavenger hunt is mechanic #1. This endpoint feeds the shell's
@@ -912,6 +923,7 @@ export default [
   route("api/email/attachment", "routes/api.email.attachment.ts"),
   // Core/Admin member search — manual applicant-email link in the Email tab.
   route("api/users/search", "routes/api.users.search.ts"),
+  route("api/places/search", "routes/api.places.search.ts"),
 
   // BetterAuth catch-all: all /api/auth/* requests (sign-in, sign-up, session,
   // callback, etc.) are forwarded to the BetterAuth handler. Phase 0 scaffolding

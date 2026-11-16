@@ -12,7 +12,7 @@
 //                  If folderPageId given, must have edit access to it.
 
 import { prisma } from "~/lib/db.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { logAuditEvent } from "~/lib/audit";
 
@@ -89,7 +89,7 @@ export async function runUploadDriveFile(callerId: string, input: Input) {
   }
 
   if (scope === "Lab") {
-    if (!(await isLabMember(callerId))) {
+    if (!(await isLabMemberOrAlum(callerId))) {
       throw new UploadDriveFileError("Forbidden", 403);
     }
   }

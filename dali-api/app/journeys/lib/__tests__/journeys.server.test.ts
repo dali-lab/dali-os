@@ -94,15 +94,15 @@ describe("who can do what", () => {
 
 describe("resolveJourneyViewer", () => {
   it("is null for non-members and when the flag is off", async () => {
-    roles.getUserRoles.mockResolvedValue({ isLabMember: false });
+    roles.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: false });
     expect(await resolveJourneyViewer("u")).toBeNull();
-    roles.getUserRoles.mockResolvedValue({ isLabMember: true, isCore: false, isDomainLead: false });
+    roles.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isCore: false, isDomainLead: false });
     flags.isFeatureEnabled.mockResolvedValue(false);
     expect(await resolveJourneyViewer("u")).toBeNull();
   });
 
   it("collects the domains a lead leads", async () => {
-    roles.getUserRoles.mockResolvedValue({ isLabMember: true, isCore: false, isDomainLead: true });
+    roles.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isCore: false, isDomainLead: true });
     flags.isFeatureEnabled.mockResolvedValue(true);
     db.domainLeadAssignment.findMany.mockResolvedValue([{ domainId: "d1" }, { domainId: "d2" }]);
     expect(await resolveJourneyViewer("u")).toEqual({ id: "u", isCore: false, leadDomainIds: ["d1", "d2"] });

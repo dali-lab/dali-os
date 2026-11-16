@@ -10,7 +10,7 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
-  return { ...real, isCore: vi.fn(), isLabMember: vi.fn(), isProjectMember: vi.fn() };
+  return { ...real, isCore: vi.fn(), isLabMemberOrAlum: vi.fn(), isProjectMember: vi.fn() };
 });
 vi.mock("~/lib/pageAccess.server", () => ({
   getPageAccess: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock("~/education/lib/access.server", () => ({ isOfferingManager: vi.fn() }))
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { isOfferingManager } from "~/education/lib/access.server";
 import { assertUniqueName, PageNameConflictError } from "~/drive/lib/page-names.server";
@@ -82,7 +82,7 @@ beforeEach(() => {
     user: { sub: "u1", email: "u@test.com", type: "user" },
   } as any);
   vi.mocked(isCore).mockResolvedValue(false);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(isProjectMember).mockResolvedValue(false);
   vi.mocked(isOfferingManager).mockResolvedValue(false);
   vi.mocked(getPageAccess).mockResolvedValue({
@@ -113,7 +113,7 @@ describe("POST /api/drive/files — Lab scope", () => {
   });
 
   it("returns 403 when the caller is not a lab member", async () => {
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     const res = await action({ request: makeRequest(VALID_LAB_BODY) });
     expect((res as Response).status).toBe(403);
   });

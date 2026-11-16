@@ -226,6 +226,7 @@ export function LayoutOS({
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
     'core-taskboard': useFeatureFlag('core-taskboard'),
+    'alumni-game': useFeatureFlag('alumni-game'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const askEnabled = useFeatureFlag('ask-dali')

@@ -72,7 +72,7 @@ beforeEach(() => {
   vi.mocked(getActiveCycles).mockResolvedValue([] as never);
   vi.mocked(layoutFavorites).mockResolvedValue({} as never);
   vi.mocked(loadShellUser).mockResolvedValue({ photoUrl: null } as never);
-  vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: true } as never);
+  vi.mocked(layoutRoles).mockResolvedValue({ isLabMemberOrAlum: true, isLabMember: true } as never);
   vi.mocked(layoutFormGate).mockResolvedValue(null as never);
   vi.mocked(layoutAppGate).mockResolvedValue({ bindingId: "b1" } as never);
 });
@@ -164,10 +164,21 @@ describe("layout loader gate order", () => {
     expect(location(response)).toBe(`/sign/b1?next=${encodeURIComponent("/projects?view=grid")}`);
   });
 
+  it("never sends an alum to the signing or form gates", async () => {
+    vi.mocked(layoutRoles).mockResolvedValue({ isLabMemberOrAlum: true, isLabMember: false, isAlumni: true } as never);
+    vi.mocked(loadShellUser).mockResolvedValue({ photoUrl: null, calendarLinks: [] } as never);
+    vi.mocked(resolveFeatureFlags).mockResolvedValue({} as never);
+    vi.mocked(resolveActiveActivitiesForUser).mockResolvedValue([] as never);
+    const data = await run().result;
+    expect(data).not.toBeInstanceOf(Response);
+    expect(layoutAppGate).not.toHaveBeenCalled();
+    expect(layoutFormGate).not.toHaveBeenCalled();
+  });
+
   describe("external instructors", () => {
     beforeEach(() => {
       vi.mocked(isNonMember).mockResolvedValue(true);
-      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: true } as never);
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMemberOrAlum: false, isInstructor: true } as never);
       vi.mocked(loadShellUser).mockResolvedValue({ photoUrl: null, calendarLinks: [] } as never);
       vi.mocked(resolveFeatureFlags).mockResolvedValue({} as never);
       vi.mocked(resolveActiveActivitiesForUser).mockResolvedValue([] as never);
@@ -223,7 +234,7 @@ describe("layout loader gate order", () => {
     "keeps a non-member who isn't an instructor out of %s",
     async (path) => {
       vi.mocked(isNonMember).mockResolvedValue(true);
-      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: false } as never);
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMemberOrAlum: false, isInstructor: false } as never);
       expect(location(await run(path).result)).toBe("/portal");
     },
   );
@@ -234,7 +245,7 @@ describe("layout loader gate order", () => {
     beforeEach(() => {
       vi.mocked(requireAuth).mockResolvedValue(student as never);
       vi.mocked(isNonMember).mockResolvedValue(true);
-      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: false } as never);
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMemberOrAlum: false, isInstructor: false } as never);
     });
 
     it.each([
@@ -250,7 +261,7 @@ describe("layout loader gate order", () => {
     });
 
     it("sends an external instructor's student links to the portal too", async () => {
-      vi.mocked(layoutRoles).mockResolvedValue({ isLabMember: false, isInstructor: true } as never);
+      vi.mocked(layoutRoles).mockResolvedValue({ isLabMemberOrAlum: false, isInstructor: true } as never);
       expect(location(await run("/education/o1").result)).toBe("/portal/education/o1");
     });
 

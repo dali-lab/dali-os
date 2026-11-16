@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn() }));
 vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(async (k: string) => `https://s3.example.edu/${k}`),
   isS3Configured: vi.fn(() => true),
@@ -17,7 +17,7 @@ vi.mock("~/lib/mentions.server", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
 import { isS3Configured } from "~/lib/s3.server";
 import { notify } from "~/lib/notify.server";
 import { notifyMentions } from "~/lib/mentions.server";
@@ -52,7 +52,7 @@ const EXISTING = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "ada" } } as never);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isS3Configured).mockReturnValue(true);
   m.pageDoc = {
@@ -75,7 +75,7 @@ describe("loader", () => {
       response: Response.json({ error: "Unauthorized" }, { status: 401 }),
     } as never);
     expect((await get()).status).toBe(401);
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect((await get()).status).toBe(403);
     expect(m.pageDoc.upsert).not.toHaveBeenCalled();
   });
@@ -149,7 +149,7 @@ describe("action access", () => {
     } as never);
     expect((await post({ title: "x" })).status).toBe(401);
     expect((await post({}, "GET")).status).toBe(405);
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect((await post({ title: "x" })).status).toBe(403);
     expect(m.pageDoc.update).not.toHaveBeenCalled();
   });
@@ -198,7 +198,7 @@ describe("action access", () => {
 
   it("Core may assign a maintainer, who must be a lab member", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(isLabMember).mockImplementation(async (id: string) => id !== "outsider");
+    vi.mocked(isLabMemberOrAlum).mockImplementation(async (id: string) => id !== "outsider");
     const bad = await post({ maintainerId: "outsider" });
     expect(bad.status).toBe(400);
     expect(m.pageDoc.update).not.toHaveBeenCalled();

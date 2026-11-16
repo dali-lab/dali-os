@@ -15,7 +15,7 @@ async function requireEmojiViewer(request: Request) {
   const auth = await requireAuth(request);
   if (!auth.ok) return { denied: auth.response } as const;
   const roles = await getUserRoles(auth.user.sub, request);
-  if (!roles.isLabMember && !roles.isCore) {
+  if (!roles.isLabMemberOrAlum && !roles.isCore) {
     return { denied: Response.json({ error: "Forbidden" }, { status: 403 }) } as const;
   }
   return { viewer: { userId: auth.user.sub, core: roles.isCore } } as const;

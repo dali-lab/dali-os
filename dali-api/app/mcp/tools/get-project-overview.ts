@@ -4,6 +4,7 @@
 // counts. Read access mirrors the project detail page: any authenticated DALI
 // OS member can load it. Requires the `mcp:read` scope.
 
+import { externalImageUrl } from "~/projects/lib/project-cover.server";
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
 import { fullName } from "~/lib/display";
@@ -130,7 +131,7 @@ export async function runGetProjectOverview(input: Input) {
     name: project.name,
     description: project.description,
     status: project.status,
-    imageUrl: project.imageUrl,
+    imageUrl: externalImageUrl(project.imageUrl),
     repoUrls: project.repoUrls,
     figmaUrls: project.figmaUrls,
     overviewPageId: project.overviewPageId,

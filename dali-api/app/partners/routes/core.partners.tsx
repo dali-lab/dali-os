@@ -8,7 +8,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { isCore, currentTerm } from "~/lib/roles";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PageRowControls } from "~/components/os-page";
 import { PartnerBoard } from "../components/PartnerBoard";
 import { PartnerApplicationModal } from "../components/PartnerApplicationModal";
 import {
@@ -16,27 +16,20 @@ import {
   columnFiltersFromParams,
   filterPartnerCards,
   boardPrefsFromParams,
-  writeBoardPrefsParams,
   partnerCardCells,
   partnerFiltersFromColumns,
   SOURCE_OPTIONS,
-  type PartnerBoardPrefs,
   type PartnerCardModel,
 } from "../lib/partner-board";
-import { SearchInput } from "~/components/ui/SearchInput";
 import { useRememberedSearch } from "~/hooks/useRememberedSearch";
 import {
   ColumnFilters,
   useColumnFilters,
   type FilterColumn,
 } from "~/projects/components/ColumnFilters";
-import { Activity, CalendarRange, Inbox, Plus, Settings, Shapes } from "lucide-react";
-import { IconButton } from "~/components/ui/IconButton";
-import { PartnerSettingsModal } from "../components/PartnerSettingsModal";
+import { Activity, CalendarRange, Inbox, ListFilter, Plus, Shapes } from "lucide-react";
 
-// areaSubnav: this page mounts PartnerCrmNav itself at the top, so the shell
-// must not add its own sub-nav row above it. fitViewport: the board's columns
-// scroll internally, so the page itself must never grow the document.
+// fitViewport: the board's columns scroll internally, so the page must never grow the document.
 export const handle = { hideBreadcrumbs: true, areaSubnav: true, fitViewport: true };
 
 export const meta: Route.MetaFunction = () => [
@@ -168,7 +161,6 @@ export default function PartnersApplications() {
       },
       { replace: true, preventScrollReset: true },
     );
-  const settingsOpen = searchParams.get("settings") === "1";
   const openId = searchParams.get("application");
   const openCard = openId ? cards.find((c) => c.id === openId) ?? null : null;
 
@@ -176,11 +168,6 @@ export default function PartnersApplications() {
   // Opening the board bare reopens its last filters and display options.
   useRememberedSearch("dali:partnerboard:view", { transient: ["application", "settings"] });
   const prefs = boardPrefsFromParams(searchParams);
-  const setPrefs = (next: PartnerBoardPrefs) =>
-    setSearchParams((prev) => writeBoardPrefsParams(prev, next), {
-      replace: true,
-      preventScrollReset: true,
-    });
 
   const columns = useMemo<FilterColumn[]>(
     () => [
@@ -212,43 +199,28 @@ export default function PartnersApplications() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav className="shrink-0" />
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search applications…"
-          aria-label="Search applications"
-          containerClassName="flex-1 min-w-[180px] max-w-[320px]"
-        />
-        <div className="min-w-[220px] flex-1">
-          <ColumnFilters
-            columns={columns}
-            rows={filterRows}
-            filters={columnFilters.filters}
-            onChange={columnFilters.setFilters}
-            shownCount={shownCount}
-            noun={["application", "applications"]}
-          />
-        </div>
-        <IconButton
-          label="Partner settings"
-          icon={Settings}
-          onClick={() => setParam("settings", "1")}
-          className="os-icon-btn"
-        />
-        <button type="button" onClick={() => setCreating(true)} className="os-btn-primary shrink-0 whitespace-nowrap">
-          <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-          New application
-        </button>
-      </div>
-
-      {settingsOpen && (
-        <PartnerSettingsModal
-          onClose={() => setParam("settings", null)}
-          board={{ prefs, onChange: setPrefs }}
-        />
-      )}
+      <PageRowControls
+        controls={[
+          { kind: "search", key: "search", label: "Search applications", value: query, onChange: setQuery },
+          {
+            kind: "custom",
+            key: "filters",
+            label: "Filters",
+            icon: ListFilter,
+            render: () => (
+              <ColumnFilters
+                columns={columns}
+                rows={filterRows}
+                filters={columnFilters.filters}
+                onChange={columnFilters.setFilters}
+                shownCount={shownCount}
+                noun={["application", "applications"]}
+              />
+            ),
+          },
+          { key: "new", label: "New application", icon: Plus, primary: true, onClick: () => setCreating(true) },
+        ]}
+      />
 
       <PartnerBoard
           cards={cards}

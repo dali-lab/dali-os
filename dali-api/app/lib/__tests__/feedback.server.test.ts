@@ -23,7 +23,7 @@ beforeEach(() => {
   requireAuth.mockResolvedValue({ ok: true, user });
   isNonMember.mockResolvedValue(false);
   redirectPartnerToPortal.mockResolvedValue(null);
-  getUserRoles.mockResolvedValue({ isLabMember: true, isCore: false });
+  getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true, isCore: false });
 });
 
 describe("requireFeedbackViewer", () => {
@@ -32,12 +32,12 @@ describe("requireFeedbackViewer", () => {
   });
 
   it("flags Core members", async () => {
-    getUserRoles.mockResolvedValue({ isLabMember: false, isCore: true });
+    getUserRoles.mockResolvedValue({ isLabMemberOrAlum: false, isCore: true });
     expect(await requireFeedbackViewer(request)).toEqual({ user, core: true });
   });
 
   it("404s a signed-in user who is neither a lab member nor Core", async () => {
-    getUserRoles.mockResolvedValue({ isLabMember: false, isCore: false });
+    getUserRoles.mockResolvedValue({ isLabMemberOrAlum: false, isCore: false });
     const thrown = await requireFeedbackViewer(request).catch((e) => e);
     expect(thrown).toBeInstanceOf(Response);
     expect((thrown as Response).status).toBe(404);

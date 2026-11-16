@@ -7,7 +7,8 @@ import { getStudentDashboard } from "~/education/lib/lms.server";
 import { OfferingCard } from "~/education/components/OfferingCard";
 import { OfferingCatalog } from "~/education/components/OfferingCatalog";
 import { StudentDashboard } from "~/education/components/StudentDashboard";
-import { OsTabBar } from "~/components/os-page";
+import { BookOpen, Compass } from "lucide-react";
+import { PageTabRow } from "~/components/os-page";
 import { useFeatureFlag } from "~/components/FeatureFlags";
 import { useUserTimeZone } from "~/hooks/useUserTimeZone";
 
@@ -29,10 +30,10 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 type EducationTab = "courses" | "browse";
-const TABS: { key: EducationTab; label: string }[] = [
-  { key: "courses", label: "My courses" },
-  { key: "browse", label: "Browse offerings" },
-];
+const TABS = [
+  { key: "courses", label: "My courses", icon: BookOpen },
+  { key: "browse", label: "Browse offerings", icon: Compass },
+] as const;
 
 export default function PortalEducation() {
   const { offerings, dashboard } = useLoaderData<typeof loader>();
@@ -61,11 +62,14 @@ export default function PortalEducation() {
         </h1>
       </header>
 
-      <OsTabBar
-        ariaLabel="Education sections"
-        tabs={TABS}
-        active={tab}
-        onSelect={(key) => setSearchParams({ tab: key }, { replace: true })}
+      <PageTabRow
+        label="Education sections"
+        tabs={TABS.map((t) => ({
+          label: t.label,
+          icon: t.icon,
+          active: tab === t.key,
+          onClick: () => setSearchParams({ tab: t.key }, { replace: true }),
+        }))}
       />
 
       {tab === "courses" &&

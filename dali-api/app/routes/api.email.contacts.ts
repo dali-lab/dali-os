@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.email.contacts";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { LAB_MEMBER_WHERE } from "~/lib/prisma-shapes";
 
 // GET /api/email/contacts?q=...
@@ -17,7 +17,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
-  if (!(await isLabMember(userId))) {
+  if (!(await isLabMemberOrAlum(userId))) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 

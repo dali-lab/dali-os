@@ -30,6 +30,9 @@ export function isAdminViaEnv(userId: string): boolean {
 // ─── Bulk check (parallel queries) ───────────────────────────────────────────
 
 export interface UserRoles {
+  /** Has a DALIMember row, alumni included: the gate for reaching the member app. */
+  isLabMemberOrAlum: boolean;
+  /** A current member: has a DALIMember row and hasn't graduated. Audiences and prompts use this. */
   isLabMember: boolean;
   /** Core (current Spring-anchored cycle) or Admin. */
   isCore: boolean;
@@ -104,7 +107,8 @@ async function computeGetUserRoles(userId: string, request?: Request): Promise<U
   const isInstructorVal = instructor !== null;
 
   return {
-    isLabMember: member !== null,
+    isLabMemberOrAlum: member !== null,
+    isLabMember: member !== null && userRow?.membershipStatus === "Active",
     // Admins are a superset of Core for access purposes.
     isCore: isAdminVal || isCoreVal,
     isAdmin: isAdminVal,
@@ -402,13 +406,29 @@ export async function getRoleLabel(
  * (e.g. seed hasn't run), Admin is the only path that passes.
  */
 /**
- * Lab member: has a DALIMember marker row. The broad "signed-in member" gate.
+ * Has a DALIMember row, alumni included. The broad "signed-in member" gate.
  *
  * Pass `request` to memoize the check for the duration of one navigation. This
  * gate is re-evaluated per page inside `getPageAccess`, so the sidebar
  * Favorites/Recents read (dozens of pages) otherwise fired the same identical
  * query dozens of times in series.
  */
+export async function isLabMemberOrAlum(userId: string, request?: Request): Promise<boolean> {
+  if (request) {
+    return cachedForRequest(request, `isLabMemberOrAlum:${userId}`, () => computeIsLabMemberOrAlum(userId));
+  }
+  return computeIsLabMemberOrAlum(userId);
+}
+
+async function computeIsLabMemberOrAlum(userId: string): Promise<boolean> {
+  const member = await prisma.dALIMember.findUnique({
+    where: { userId },
+    select: { id: true },
+  });
+  return member !== null;
+}
+
+/** A current member: has a DALIMember row and hasn't graduated. Pass `request` to memoize per navigation. */
 export async function isLabMember(userId: string, request?: Request): Promise<boolean> {
   if (request) {
     return cachedForRequest(request, `isLabMember:${userId}`, () => computeIsLabMember(userId));
@@ -417,14 +437,14 @@ export async function isLabMember(userId: string, request?: Request): Promise<bo
 }
 
 async function computeIsLabMember(userId: string): Promise<boolean> {
-  const member = await prisma.dALIMember.findUnique({
-    where: { userId },
+  const user = await prisma.user.findFirst({
+    where: { id: userId, ...ACTIVE_LAB_MEMBER_WHERE },
     select: { id: true },
   });
-  return member !== null;
+  return user !== null;
 }
 
-/** Core (or Admin). Pass `request` to memoize per navigation — see `isLabMember`. */
+/** Core (or Admin). Pass `request` to memoize per navigation — see `isLabMemberOrAlum`. */
 export async function isCore(userId: string, request?: Request): Promise<boolean> {
   if (request) {
     return cachedForRequest(request, `isCore:${userId}`, () => computeIsCore(userId, request));
@@ -916,7 +936,7 @@ async function computeIsLabMentor(
 export async function hasCycleAccess(userId: string, cycleId: string): Promise<boolean> {
   const roles = await getUserRoles(userId);
   if (roles.isAdmin) return true;
-  if (!roles.isLabMember) return false;
+  if (!roles.isLabMemberOrAlum) return false;
 
   // Non-Core cycles: hiring leads (Core) and domain leads see everything. Core
   // cycles skip this — they fall through to the assignment check below.

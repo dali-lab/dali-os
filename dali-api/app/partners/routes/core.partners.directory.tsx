@@ -18,10 +18,7 @@ import { prisma } from "~/lib/db.server";
 import { isCore } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { classifyPartnerEmail, normalizeEmail } from "../lib/magic-link.server";
-import { Building2, CircleDot, Download, Plus, Shapes, Tag, User } from "lucide-react";
-import { SearchInput } from "~/components/ui/SearchInput";
-import { IconButton } from "~/components/ui/IconButton";
-import { Menu, MenuItem } from "~/components/ui/floating";
+import { Building2, CircleDot, Download, ListFilter, Plus, Shapes, Tag, User } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import {
@@ -30,7 +27,7 @@ import {
   type FilterColumn,
 } from "~/projects/components/ColumnFilters";
 import { Modal, ModalHeader, ModalFooter } from "~/components/Modal";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PageRowControls } from "~/components/os-page";
 import { DirectoryTable } from "../components/PartnerDirectoryTables";
 import {
   DIRECTORY_KIND_OPTIONS,
@@ -52,8 +49,6 @@ import {
   PARTNER_RELATIONSHIP_STATUS_LABELS,
 } from "../lib/partner-org";
 
-// areaSubnav: this page mounts PartnerCrmNav itself, so the shell must not add
-// its own sub-nav row above it.
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
 export const meta: Route.MetaFunction = () => [{ title: "Partners · DALI OS" }];
@@ -350,7 +345,7 @@ export default function PartnersDirectory() {
   const columnFilters = useColumnFilters(FILTER_COLUMNS, [], { inUrl: true });
   const filterRows = useMemo(() => rows.map((r) => ({ cells: directoryRowCells(r) })), [rows]);
   // Opening the directory bare reopens its last search, filters and sort.
-  useRememberedSearch("dali:partners:directory:view");
+  useRememberedSearch("dali:partners:directory:view", { transient: ["settings"] });
   const [searchParams, setSearchParams] = useSearchParams();
   const sort = directorySortFromParams(searchParams);
 
@@ -373,8 +368,6 @@ export default function PartnersDirectory() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="sr-only">Partners</h1>
-
       <NewOrgModal
         open={creating === "org" || creating === "individual"}
         individual={creating === "individual"}
@@ -383,55 +376,45 @@ export default function PartnersDirectory() {
       />
       <NewContactModal open={creating === "contact"} onClose={() => setCreating(null)} />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav className="shrink-0" />
-        <SearchInput
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search partners and people…"
-          aria-label="Search the directory"
-          containerClassName="flex-1 min-w-[180px] max-w-[320px]"
-        />
-        <div className="min-w-[220px] flex-1">
-          <ColumnFilters
-            columns={FILTER_COLUMNS}
-            rows={filterRows}
-            filters={columnFilters.filters}
-            onChange={columnFilters.setFilters}
-            shownCount={filtered.length}
-            noun={["record", "records"]}
-          />
-        </div>
-        <IconButton
-          label="Export CSV"
-          icon={Download}
-          className="os-icon-btn"
-          onClick={() => window.location.assign(directoryExportHref(query, columnFilters.active))}
-        />
-        <Menu
-          align="right"
-          ariaLabel="Add to the directory"
-          trigger={
-            <button type="button" className="os-btn-primary shrink-0 whitespace-nowrap">
-              <Plus className="h-[17px] w-[17px]" strokeWidth={3} aria-hidden />
-              New
-            </button>
-          }
-        >
-          <MenuItem icon={<Building2 className="h-4 w-4" />} onSelect={() => setCreating("org")}>
-            Organization
-          </MenuItem>
-          <MenuItem
-            icon={<User className="h-4 w-4" />}
-            onSelect={() => setCreating("individual")}
-          >
-            Individual partner
-          </MenuItem>
-          <MenuItem icon={<User className="h-4 w-4" />} onSelect={() => setCreating("contact")}>
-            Contact
-          </MenuItem>
-        </Menu>
-      </div>
+      <PageRowControls
+        controls={[
+          { kind: "search", key: "search", label: "Search the directory", value: query, onChange: setQuery },
+          {
+            kind: "custom",
+            key: "filters",
+            label: "Filters",
+            icon: ListFilter,
+            render: () => (
+              <ColumnFilters
+                columns={FILTER_COLUMNS}
+                rows={filterRows}
+                filters={columnFilters.filters}
+                onChange={columnFilters.setFilters}
+                shownCount={filtered.length}
+                noun={["record", "records"]}
+              />
+            ),
+          },
+          {
+            key: "export",
+            label: "Export CSV",
+            icon: Download,
+            onClick: () => window.location.assign(directoryExportHref(query, columnFilters.active)),
+          },
+          {
+            kind: "menu",
+            key: "new",
+            label: "New",
+            icon: Plus,
+            primary: true,
+            items: [
+              { key: "org", label: "Organization", icon: Building2, onSelect: () => setCreating("org") },
+              { key: "individual", label: "Individual partner", icon: User, onSelect: () => setCreating("individual") },
+              { key: "contact", label: "Contact", icon: User, onSelect: () => setCreating("contact") },
+            ],
+          },
+        ]}
+      />
 
       <div className={cn(os.panel, "overflow-hidden pt-2")}>
         {filtered.length === 0 ? (

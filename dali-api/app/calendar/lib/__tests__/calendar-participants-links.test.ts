@@ -8,7 +8,7 @@ vi.mock("~/lib/auth", () => ({
   isImpersonating: vi.fn(),
 }));
 vi.mock("~/lib/roles", () => ({
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   canViewForms: vi.fn(),
   isCore: vi.fn(),
   currentTerm: vi.fn(),

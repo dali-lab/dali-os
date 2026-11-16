@@ -10,6 +10,6 @@ import { cachedForLayout } from "~/lib/layout-cache.server";
  */
 export function readOnlyRoles(userId: string, request: Request) {
   return cachedForLayout(userId, "roles", () => getUserRoles(userId, request), {
-    shouldCache: (roles) => roles.isLabMember,
+    shouldCache: (roles) => roles.isLabMemberOrAlum,
   });
 }

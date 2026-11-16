@@ -322,6 +322,7 @@ export default function ProjectPublicView() {
     project,
     showcase: s,
     heroPreviewUrl,
+    heroPattern,
     teamMembers,
     canEdit,
     canPublish,
@@ -406,6 +407,7 @@ export default function ProjectPublicView() {
               projectId={project.id}
               projectName={s?.displayName || project.name}
               initialPreviewUrl={heroPreviewUrl}
+              fallbackCover={heroPattern}
               canEdit={canEdit}
               intent="showcase-image"
               fieldName="heroImageUrl"

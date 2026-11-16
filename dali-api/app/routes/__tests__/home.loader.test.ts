@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("~/lib/db.server", () => ({ prisma: { user: { findMany: vi.fn(async () => []) } } }));
 vi.mock("~/lib/auth", () => ({
@@ -58,5 +58,47 @@ describe("home loader", () => {
     } as never);
     const res = await loader({ request: new Request("http://localhost/"), params: {}, context: {} } as never);
     expect(res).toMatchObject({ week: { term: "26F" } });
+  });
+
+  describe("week badge", () => {
+    const fall = { code: "26F", startDate: new Date(Date.UTC(2026, 8, 14)) };
+    const load = (url: string) =>
+      loader({ request: new Request(url), params: {}, context: {} } as never);
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-10T15:00:00Z"));
+      vi.mocked(currentTermStrict).mockResolvedValueOnce(fall as never);
+    });
+    afterEach(() => vi.useRealTimers());
+
+    it("shows this week without a preview", async () => {
+      expect(await load("http://localhost/")).toMatchObject({
+        background: "bug-hunt",
+        week: { index: 9, dates: "Nov 9 – 13" },
+      });
+    });
+
+    it("shows the previewed week's number and dates with its title", async () => {
+      expect(await load("http://localhost/?background=build")).toMatchObject({
+        background: "build",
+        milestoneTitle: "Build",
+        week: { index: 5, dates: "Oct 12 – 16" },
+      });
+    });
+
+    it("drops the badge for a previewed week from before the term", async () => {
+      expect(await load("http://localhost/?background=deep-space")).toMatchObject({
+        background: "deep-space",
+        week: null,
+      });
+    });
+
+    it("ignores an unknown preview", async () => {
+      expect(await load("http://localhost/?background=nope")).toMatchObject({
+        background: "bug-hunt",
+        week: { index: 9 },
+      });
+    });
   });
 });

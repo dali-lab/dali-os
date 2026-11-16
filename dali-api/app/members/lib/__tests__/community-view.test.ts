@@ -7,6 +7,9 @@ import {
   eventWhenShort,
   eventsAtPlace,
   goingText,
+  openToSummary,
+  peopleCountLabel,
+  placeSummary,
   plural,
   shortYear,
   splitEventsByPlace,
@@ -108,5 +111,30 @@ describe("host form", () => {
 
   it("reads an instant back as form fields", () => {
     expect(wallClockFields(START, NY)).toEqual({ date: "2026-11-12", time: "18:00" });
+  });
+});
+
+describe("place and count copy", () => {
+  it("summarises a place on the People tab with classmates", () => {
+    expect(placeSummary("people", { people: 31, events: 1, classmates: 4 })).toBe("31 people, 4 from your class");
+    expect(placeSummary("people", { people: 1, events: 0, classmates: 0 })).toBe("1 person, 0 from your class");
+  });
+
+  it("summarises a place on the Events tab, pluralising both halves", () => {
+    expect(placeSummary("events", { people: 31, events: 1, classmates: 0 })).toBe("1 upcoming event. 31 people are based here.");
+    expect(placeSummary("events", { people: 1, events: 2, classmates: 0 })).toBe("2 upcoming events. 1 person is based here.");
+    expect(placeSummary("events", { people: 3, events: 0, classmates: 0 })).toBe("No upcoming events. 3 people are based here.");
+  });
+
+  it("labels the people count by view or place", () => {
+    expect(peopleCountLabel(12, null)).toBe("12 in this view");
+    expect(peopleCountLabel(31, "Boston, MA")).toBe("31 in Boston, MA");
+  });
+
+  it("reads what the viewer is open to", () => {
+    expect(openToSummary({ coffeeChats: false, resumeReviews: false })).toBe("Nothing yet");
+    expect(openToSummary({ coffeeChats: true, resumeReviews: false })).toBe("Coffee chats");
+    expect(openToSummary({ coffeeChats: false, resumeReviews: true })).toBe("Resume reviews");
+    expect(openToSummary({ coffeeChats: true, resumeReviews: true })).toBe("Coffee chats, resume reviews");
   });
 });

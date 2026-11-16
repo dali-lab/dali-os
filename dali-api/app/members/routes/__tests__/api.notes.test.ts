@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 const h = vi.hoisted(() => ({
   requireAuth: vi.fn(),
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   listVisibleGroupsForUser: vi.fn(),
   userFindMany: vi.fn(),
   actions: {
@@ -26,7 +26,7 @@ vi.mock("~/lib/auth", async (importOriginal) => ({
   requireAuth: h.requireAuth,
 }));
 vi.mock("~/lib/cors", () => ({ withCors: (_r: Request, res: Response) => res, handlePreflight: () => null }));
-vi.mock("~/lib/roles", () => ({ isCore: h.isCore, isLabMember: h.isLabMember }));
+vi.mock("~/lib/roles", () => ({ isCore: h.isCore, isLabMemberOrAlum: h.isLabMemberOrAlum }));
 vi.mock("~/lib/groups.server", () => ({ listVisibleGroupsForUser: h.listVisibleGroupsForUser }));
 vi.mock("~/lib/db.server", () => ({ prisma: { user: { findMany: h.userFindMany } } }));
 vi.mock("~/members/lib/personal-notes.server", () => {
@@ -60,7 +60,7 @@ beforeEach(() => {
     sessionId: "s1",
   });
   h.isCore.mockResolvedValue(false);
-  h.isLabMember.mockResolvedValue(true);
+  h.isLabMemberOrAlum.mockResolvedValue(true);
   h.listVisibleGroupsForUser.mockResolvedValue([]);
   h.userFindMany.mockResolvedValue([]);
 });
@@ -178,7 +178,7 @@ describe("sharing intents", () => {
 
 describe("share-options (the share picker must not be a directory dump)", () => {
   it("403s a non-lab-member", async () => {
-    h.isLabMember.mockResolvedValue(false);
+    h.isLabMemberOrAlum.mockResolvedValue(false);
     const res = await post("share-options", { q: "gr" });
     expect(res.status).toBe(403);
     expect(h.userFindMany).not.toHaveBeenCalled();

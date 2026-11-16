@@ -21,7 +21,7 @@ The partner pipeline is where Core tracks outside organizations that want DALI t
 
 Drag a card to another column to change its stage, or drag within a column to reorder. Moving a card by hand does not email the partner. Use **Accept** or **Reject** on the application when the partner should be told.
 
-Use the search box and the filters for term, domain, source and activity. Source is how the application arrived: the application form, email, referral, a renewal, or added by Core. An open application with no activity for a while is marked stale. Applications put on hold show as paused. The **Partner settings** button (the gear) sets how many days make an application stale, who is on the interview panel, and whether paused and old rejected cards show. The same button also picks the forms partners fill out: the application form and the survey they get after a project ends.
+Use the search box and the filters for term, domain, source and activity. Source is how the application arrived: the application form, email, referral, a renewal, or added by Core. An open application with no activity for a while is marked stale. Applications put on hold show as paused. The gear at the right end of the tab row opens **Partner settings** from any Partners page. It sets how many days make an application stale, who is on the interview panel, and whether paused and old rejected cards show. The same button also picks the forms partners fill out: the application form and the survey they get after a project ends.
 
 ## Add an application
 
