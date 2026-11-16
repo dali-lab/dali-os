@@ -44,12 +44,9 @@ describe("loader", () => {
     expect(db.domainReference.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { domainId: "d1" }, orderBy: { createdAt: "desc" } }));
     expect(data.items[0]).toMatchObject({ id: "r1", daliMade: true, creatorName: "Ada Lovelace", mine: true });
   });
-  it("carries the hub's title, cover and published state so the header stays on this tab", async () => {
+  it("leaves the hub's title and cover to the layout", async () => {
     db.domainReference.findMany.mockResolvedValue([]);
-    expect((await get()).hub).toEqual({ title: "Design", coverUrl: "pattern:grid", published: true });
-    db.resourceHubPage.findUnique.mockResolvedValue({ id: "p1", domainId: "d1", title: "Design", coverUrl: null, publishedAt: null, domain: { displayName: "Design" } } as any);
-    vi.mocked(canEditResourceHub).mockResolvedValue(true);
-    expect((await get()).hub).toEqual({ title: "Design", coverUrl: null, published: false });
+    expect(Object.keys(await get()).sort()).toEqual(["items"]);
   });
   it("404s for a hub with no domain, so it has no gallery", async () => {
     db.resourceHubPage.findUnique.mockResolvedValue({ id: "p1", domainId: null, domain: null } as any);
@@ -70,7 +67,7 @@ describe("draft hub", () => {
     db.resourceHubPage.findUnique.mockResolvedValue(draft);
     vi.mocked(canEditResourceHub).mockResolvedValue(true);
     db.domainReference.findMany.mockResolvedValue([]);
-    expect((await get()).hub.published).toBe(false);
+    expect((await get()).items).toEqual([]);
   });
   it("does not check editing for a published hub", async () => {
     db.domainReference.findMany.mockResolvedValue([]);

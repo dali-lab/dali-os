@@ -1,5 +1,5 @@
-import { CoverTile, cardColorHex, coverGround, isPatternCover, parseCover } from "~/components/resource-hub/CoverPattern";
-import { CoverStudio } from "~/components/resource-hub/CoverStudio";
+import { CoverTile, cardColorHex, coverGround, isPatternCover, parseCover } from "~/components/cover/CoverPattern";
+import { HubCoverStudio } from "~/components/resource-hub/HubCoverStudio";
 import { useState } from "react";
 import { Link, redirect, useFetcher, useLoaderData } from "react-router";
 import { ArrowRight, Plus } from "lucide-react";
@@ -87,7 +87,7 @@ export default function ResourceHubIndex() {
       </header>
 
       {studio && (
-        <CoverStudio
+        <HubCoverStudio
           busy={fetcher.state !== "idle"}
           heading="Design the banner"
           submitLabel="Create and edit"

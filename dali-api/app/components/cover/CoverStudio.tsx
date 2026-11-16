@@ -19,6 +19,7 @@ export function CoverStudio({
   preview,
   children,
   serverError,
+  submitDisabled = false,
 }: {
   busy: boolean;
   heading: string;
@@ -32,6 +33,7 @@ export function CoverStudio({
   preview?: (cover: string) => ReactNode;
   children?: ReactNode;
   serverError?: string | null;
+  submitDisabled?: boolean;
 }) {
   const [cover, setCover] = useState(initialCover ?? DEFAULT_COVER);
   const [uploading, setUploading] = useState(false);
@@ -39,7 +41,7 @@ export function CoverStudio({
   const fileRef = useRef<HTMLInputElement>(null);
   const parsed = parseCover(cover);
   const working = busy || uploading;
-  const submit = () => !working && onSubmit(cover);
+  const submit = () => !working && !submitDisabled && onSubmit(cover);
 
   return (
     <Modal
@@ -163,7 +165,7 @@ export function CoverStudio({
         />
       </div>
       <ModalFooter onCancel={onClose} cancelDisabled={working} className="!mt-4">
-        <button type="button" disabled={working} onClick={submit} className="os-btn-primary os-btn-primary--sm">
+        <button type="button" disabled={working || submitDisabled} onClick={submit} className="os-btn-primary os-btn-primary--sm">
           {submitLabel}
         </button>
       </ModalFooter>

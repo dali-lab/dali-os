@@ -6,15 +6,13 @@ import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
 import { loadReferencesContext, parseReferenceEdit, parseReferenceForm, resolveReference, serializeReference } from "~/lib/references.server";
 import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
-import { HubBand } from "~/components/resource-hub/HubCard";
-import { ResourceHubTabs } from "~/components/resource-hub/ResourceHubTabs";
+import { PageRowControls } from "~/components/os-page";
 import { useDialog } from "~/components/ui/dialog";
 import { ReferenceModal, type ReferenceValues } from "~/components/resource-hub/references/ReferenceModal";
 import { ReferenceCard } from "~/components/resource-hub/references/ReferenceCard";
 import { ReferenceOverlay } from "~/components/resource-hub/references/ReferenceOverlay";
 
 export const meta: Route.MetaFunction = () => [{ title: "References · DALI OS" }];
-export const handle = { bleedPane: true };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const ctx = await loadReferencesContext(request, params.pageId!);
@@ -23,7 +21,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     include: { author: { select: { firstName: true, lastName: true } } },
     orderBy: { createdAt: "desc" },
   });
-  return { pageId: ctx.pageId, hub: ctx.hub, items: rows.map((r) => serializeReference(r, ctx.userId, ctx.canModerate)) };
+  return { items: rows.map((r) => serializeReference(r, ctx.userId, ctx.canModerate)) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -69,7 +67,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function References() {
-  const { pageId, items, hub } = useLoaderData<typeof loader>();
+  const { items } = useLoaderData<typeof loader>();
   const [params, setParams] = useSearchParams();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const dialog = useDialog();
@@ -118,20 +116,9 @@ export default function References() {
   };
 
   return (
-    <div className="min-h-dvh bg-card px-6 pb-[40vh] sm:px-10">
-      <HubBand cover={hub.coverUrl} title={hub.title} published={hub.published} />
-      <ResourceHubTabs pageId={pageId} className="mt-5" />
-
-      <header className="flex flex-wrap items-end justify-between gap-4 pb-8 pt-8">
-        <div>
-          <h1 className="font-heading text-4xl font-semibold tracking-tight text-foreground">References</h1>
-          <p className="mt-2 text-sm text-os-grey">A collection of work and inspiration shared by the domain.</p>
-        </div>
-        <button type="button" onClick={() => showForm(null)} className="os-btn-primary inline-flex items-center gap-1.5">
-          <Plus className="h-4 w-4" aria-hidden />
-          Add reference
-        </button>
-      </header>
+    <div className="pb-[40vh]">
+      <PageRowControls controls={[{ key: "add", label: "Add reference", icon: Plus, primary: true, onClick: () => showForm(null) }]} />
+      <p className="mb-6 text-sm text-os-grey">A collection of work and inspiration shared by the domain.</p>
 
       {items.length === 0 ? (
         <EmptyState title="Nothing here yet">Add the first reference.</EmptyState>

@@ -19,7 +19,7 @@ vi.mock("~/components/doc", () => ({ rawUploadUrl: (key: string) => key }));
 vi.mock("~/lib/upload-client", () => ({ uploadFileToS3: vi.fn() }));
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn(), alert: vi.fn(), prompt: vi.fn() }) }));
 
-import { CoverStudio } from "../CoverStudio";
+import { HubCoverStudio } from "../HubCoverStudio";
 import { ShareWorkModal } from "../crit/ShareWorkModal";
 import { SubmissionOverlay } from "../crit/SubmissionOverlay";
 import { CollectionView } from "~/components/doc/components/CollectionView";
@@ -51,7 +51,7 @@ const expectDefaultLayer = (labelledBy: string) => {
 
 describe("hub overlays use the default modal layer", () => {
   it("cover studio", () => {
-    mount(createElement(CoverStudio, { busy: false, heading: "New hub", submitLabel: "Create", initialTitle: "", initialCover: null, onClose: vi.fn(), onSubmit: vi.fn() }));
+    mount(createElement(HubCoverStudio, { busy: false, heading: "New hub", submitLabel: "Create", initialTitle: "", initialCover: null, onClose: vi.fn(), onSubmit: vi.fn() }));
     expectDefaultLayer("cover-studio-title");
   });
   it("share work", () => {
@@ -74,20 +74,20 @@ describe("hub overlays use the default modal layer", () => {
   });
 });
 
-describe("cover studio domain picker", () => {
+describe("hub cover studio domain picker", () => {
   const props = { busy: false, heading: "New hub", submitLabel: "Create", initialTitle: "", initialCover: null, onClose: vi.fn() };
   const submitButton = () => [...container.querySelectorAll("button")].find((b) => b.textContent === "Create") as HTMLButtonElement;
 
   it("submits the first free domain and skips ones that already have a hub", () => {
     const onSubmit = vi.fn();
-    mount(createElement(CoverStudio, { ...props, onSubmit, domainOptions: [{ value: "d1", label: "Design", disabled: true, description: "Has a hub" }, { value: "d2", label: "Fullstack" }] }));
+    mount(createElement(HubCoverStudio, { ...props, onSubmit, domainOptions: [{ value: "d1", label: "Design", disabled: true, description: "Has a hub" }, { value: "d2", label: "Fullstack" }] }));
     act(() => submitButton().click());
     expect(onSubmit).toHaveBeenCalledWith("", expect.any(String), "d2");
   });
 
   it("says so and blocks creating when no domain is available", () => {
     const onSubmit = vi.fn();
-    mount(createElement(CoverStudio, { ...props, onSubmit, domainOptions: [{ value: "d1", label: "Design", disabled: true }] }));
+    mount(createElement(HubCoverStudio, { ...props, onSubmit, domainOptions: [{ value: "d1", label: "Design", disabled: true }] }));
     expect(container.textContent).toContain("No domain is available");
     expect(submitButton().disabled).toBe(true);
     act(() => submitButton().click());
@@ -95,12 +95,12 @@ describe("cover studio domain picker", () => {
   });
 
   it("shows a server error", () => {
-    mount(createElement(CoverStudio, { ...props, onSubmit: vi.fn(), domainOptions: [{ value: "d2", label: "Fullstack" }], serverError: "That domain already has a hub." }));
+    mount(createElement(HubCoverStudio, { ...props, onSubmit: vi.fn(), domainOptions: [{ value: "d2", label: "Fullstack" }], serverError: "That domain already has a hub." }));
     expect(container.querySelector("[role='alert']")?.textContent).toBe("That domain already has a hub.");
   });
 
   it("leaves the picker out when editing an existing hub", () => {
-    mount(createElement(CoverStudio, { ...props, onSubmit: vi.fn() }));
+    mount(createElement(HubCoverStudio, { ...props, onSubmit: vi.fn() }));
     expect(container.textContent).not.toContain("Domain");
   });
 });

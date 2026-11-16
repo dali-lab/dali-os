@@ -14,7 +14,6 @@ export interface CritContext {
   domainName: string;
   pageId: string;
   canModerate: boolean;
-  hub: { title: string; coverUrl: string | null; published: boolean };
 }
 
 /** A Crit Wall belongs to the domain of a domain Resource Hub; a hub with no domain has none. */
@@ -22,7 +21,7 @@ export async function loadCritContext(request: Request, pageId: string): Promise
   const { user, core, userName } = await requireResourceHubViewer(request);
   const page = await prisma.resourceHubPage.findUnique({
     where: { id: pageId },
-    select: { id: true, domainId: true, createdById: true, title: true, coverUrl: true, publishedAt: true, domain: { select: { displayName: true } } },
+    select: { id: true, domainId: true, createdById: true, publishedAt: true, domain: { select: { displayName: true } } },
   });
   if (!page?.domainId) throw new Response("Not found", { status: 404 });
   if (!page.publishedAt && !(await canEditResourceHub(user.sub, page))) throw new Response("Not found", { status: 404 });
@@ -34,7 +33,6 @@ export async function loadCritContext(request: Request, pageId: string): Promise
     domainName: page.domain?.displayName ?? "",
     pageId: page.id,
     canModerate: core || led.includes(page.domainId),
-    hub: { title: page.title, coverUrl: page.coverUrl, published: !!page.publishedAt },
   };
 }
 
