@@ -32,6 +32,16 @@ export interface EditableReference {
 const stem = (name: string) => name.replace(/\.[^.]+$/, "");
 const isWebLink = (href: string | null | undefined) => !!href && /^https?:\/\//i.test(href);
 
+export function imagePreviewSrc(src: string | null): string | null {
+  if (!src) return null;
+  try {
+    const url = new URL(src);
+    return url.protocol === "https:" || url.protocol === "http:" || url.protocol === "blob:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export function ReferenceModal({
   reference,
   busy,
@@ -118,7 +128,7 @@ export function ReferenceModal({
     }
   };
 
-  const previewSrc = filePreview ?? linkPreview?.image ?? null;
+  const previewSrc = imagePreviewSrc(filePreview ?? linkPreview?.image ?? null);
 
   return (
     <Modal open onClose={onClose} labelledBy="reference-modal-title" disableEscape={working} containerClassName={modalCardClass("max-w-lg os-form")}>
