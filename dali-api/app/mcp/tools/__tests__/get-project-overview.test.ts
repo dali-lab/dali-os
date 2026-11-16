@@ -98,4 +98,20 @@ describe("get_project_overview", () => {
       runGetProjectOverview({ projectId: "nope" }),
     ).rejects.toBeInstanceOf(ProjectNotFoundError);
   });
+
+  it.each([
+    ["pattern:poster?c=plum", null],
+    ["uploads/a.webp", "uploads/a.webp"],
+  ])("returns imageUrl %s as %s", async (stored, expected) => {
+    vi.mocked(currentTerm).mockResolvedValue(null as never);
+    mockPrisma.project.findUnique.mockResolvedValue({
+      id: "p1", name: "Alpha", description: null, status: "Active", imageUrl: stored,
+      repoUrls: [], overviewPageId: null, prdPageId: null, projectTerms: [], partners: [],
+    });
+    mockPrisma.projectAssignment.findMany.mockResolvedValue([]);
+    mockPrisma.epic.findFirst.mockResolvedValue(null);
+    mockPrisma.task.groupBy.mockResolvedValue([]);
+    const out = await runGetProjectOverview({ projectId: "p1" });
+    expect(out.imageUrl).toBe(expected);
+  });
 });

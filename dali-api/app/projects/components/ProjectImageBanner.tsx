@@ -6,6 +6,7 @@ import {
   MAX_UPLOAD_LABEL,
   fileMatchesAccept,
 } from "~/lib/file-validation";
+import { CoverThumb } from "~/components/cover/CoverThumb";
 import { PhotoCropModal } from "~/components/PhotoCropModal";
 import { useDialog } from "~/components/ui/dialog";
 
@@ -38,6 +39,7 @@ export function ProjectImageBanner({
   // caller is unchanged; the dali.os project page passes the design's taller,
   // borderless hero.
   frameClassName = "h-48 rounded-lg border border-border",
+  fallbackCover = null,
 }: {
   projectId: string;
   projectName: string;
@@ -48,6 +50,7 @@ export function ProjectImageBanner({
   removeTitle?: string;
   removeDescription?: string;
   frameClassName?: string;
+  fallbackCover?: string | null;
 }) {
   const dialog = useDialog();
   const fetcher = useFetcher();
@@ -202,6 +205,8 @@ export function ProjectImageBanner({
         >
           {previewUrl ? (
             <img src={previewUrl} alt="" className="w-full h-full object-cover" />
+          ) : fallbackCover ? (
+            <CoverThumb url={fallbackCover} className="h-full w-full" />
           ) : (
             // Default banner: deterministic gradient + project initial.
             <div className="w-full h-full bg-gradient-to-br from-os-accent/30 via-os-accent/15 to-os-green/20 flex items-center justify-center">

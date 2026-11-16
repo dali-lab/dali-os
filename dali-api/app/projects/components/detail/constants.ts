@@ -1,3 +1,5 @@
+import { ChartGantt, Heart, HardDrive, Info, type LucideIcon } from "lucide-react";
+
 // "Scope" is no longer a public tab — its domain/term/challenge config moved
 // into a settings popup (gated to Core/Admin/Staff). Public tabs are just the
 // content views. Board and Planning are separate tabs (Linear-style: different
@@ -18,6 +20,12 @@ export const OS_TAB_LABELS: Record<OsTab, string> = {
   drive: "Drive",
   details: "Project details",
   mentorship: "Mentorship",
+};
+export const OS_TAB_ICONS: Record<OsTab, LucideIcon> = {
+  progress: ChartGantt,
+  drive: HardDrive,
+  details: Info,
+  mentorship: Heart,
 };
 export const ACTIVITY_LABELS: Record<string, string> = {
   "projectFile.create": "added a file",

@@ -4,7 +4,7 @@ import type { Route } from "./+types/partner.home";
 import { prisma } from "~/lib/db.server";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import { partnerProjectsWhereForOrgs } from "~/partners/lib/partner-access";
-import { resolvePhotoUrl } from "~/lib/photo";
+import { resolveProjectCover } from "~/projects/lib/project-cover.server";
 import { ProjectCoverImage } from "~/projects/components/ProjectCoverImage";
 import { buttonClasses } from "~/components/ui/Button";
 import {
@@ -59,7 +59,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         id: p.id,
         name: p.name,
         description: p.description,
-        imageUrl: await resolvePhotoUrl(p.imageUrl),
+        imageUrl: await resolveProjectCover(p.imageUrl),
       })),
     ),
   };

@@ -49,8 +49,9 @@ import {
   DetailEditRow,
   DetailRow,
   OS_DETAIL_ICON,
-  OsTabBar,
+  PageTabRow,
 } from "~/components/os-page";
+import { Activity, Heart, User as ProfileTabIcon } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { PersonalNotesRail } from "./PersonalNotesRail";
@@ -94,6 +95,8 @@ import { attendanceCopy } from "~/education/lib/session-time";
 
 const TABS = ["profile", "activity", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
+
+const TAB_ICONS = { profile: ProfileTabIcon, activity: Activity, mentorship: Heart } as const;
 
 const TAB_LABELS: Record<Tab, string> = {
   profile: "Profile",
@@ -228,13 +231,14 @@ export function MemberProfileView({
         showBirthday={showBirthday}
       />
 
-      <OsTabBar
-        ariaLabel="Profile sections"
-        tabs={TABS.filter((t) => t !== "mentorship" || mentorshipPanel).map(
-          (t) => ({ key: t, label: TAB_LABELS[t] }),
-        )}
-        active={tab}
-        onSelect={setTab}
+      <PageTabRow
+        label="Profile sections"
+        tabs={TABS.filter((t) => t !== "mentorship" || mentorshipPanel).map((t) => ({
+          label: TAB_LABELS[t],
+          icon: TAB_ICONS[t],
+          active: tab === t,
+          onClick: () => setTab(t),
+        }))}
       />
 
       {actionError && (

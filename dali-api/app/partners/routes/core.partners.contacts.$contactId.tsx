@@ -13,6 +13,9 @@ import {
   AtSign,
   Briefcase,
   Building2,
+  CalendarDays,
+  History,
+  Kanban,
   Landmark,
   Linkedin,
   Mail as MailIcon,
@@ -35,7 +38,7 @@ import {
   DetailRow,
   OS_DETAIL_CARD,
   OS_DETAIL_ICON,
-  OsTabBar,
+  PageTabRow,
 } from "~/components/os-page";
 import { EditableSection } from "~/components/EditableSection";
 import { PartnerActivityFeed } from "../components/PartnerActivityFeed";
@@ -317,6 +320,14 @@ function isContactTab(x: string | null): x is ContactTab {
   return !!x && (CONTACT_TAB_VALUES as readonly string[]).includes(x);
 }
 
+const CONTACT_TAB_ICONS = {
+  timeline: History,
+  applications: Kanban,
+  meetings: CalendarDays,
+  email: MailIcon,
+  details: User,
+} as const;
+
 const CONTACT_TAB_LABELS: Record<ContactTab, string> = {
   timeline: "Timeline",
   applications: "Applications",
@@ -423,11 +434,14 @@ export default function PartnerContactDetail() {
         </div>
       </header>
 
-      <OsTabBar
-        ariaLabel="Contact sections"
-        tabs={CONTACT_TAB_VALUES.map((t) => ({ key: t, label: CONTACT_TAB_LABELS[t] }))}
-        active={tab}
-        onSelect={setTab}
+      <PageTabRow
+        label="Contact sections"
+        tabs={CONTACT_TAB_VALUES.map((t) => ({
+          label: CONTACT_TAB_LABELS[t],
+          icon: CONTACT_TAB_ICONS[t],
+          active: tab === t,
+          onClick: () => setTab(t),
+        }))}
       />
 
       {error && (

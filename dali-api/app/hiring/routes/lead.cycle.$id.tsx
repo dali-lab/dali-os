@@ -16,9 +16,9 @@ import { releaseSlot, type TemplateSlot, type DecisionSlotType } from "~/hiring/
 import { loadLeadCycle } from "~/hiring/lib/lead-cycle.server";
 import { LEAD_CYCLE_ACTIONS, cycleRedirect } from "~/hiring/lib/lead-cycle-actions.server";
 import { useDialog } from "~/components/ui/dialog";
-import { AlertTriangle, ArrowRight, CheckCircle2, CircleDot, AlertCircle } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, CircleDot, AlertCircle, Circle } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
-import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
+import { PageTabRow } from "~/components/os-page";
 import { buttonClasses } from "~/components/ui/Button";
 import { OpenApplicationsConfirmModal } from "~/hiring/components/cycle-setup/OpenApplicationsConfirmModal";
 import { NavSection, SectionNavLayout } from "~/hiring/components/cycle-setup/SectionNav";
@@ -187,7 +187,7 @@ export default function HiringLeadCycleDetails() {
       </span>
     </Tooltip>
   )
-  const phaseIcon = { done: CheckCircle2, current: CircleDot, overdue: AlertCircle, upcoming: undefined } as const
+  const phaseIcon = { done: CheckCircle2, current: CircleDot, overdue: AlertCircle, upcoming: Circle } as const
 
   const page = (
     <div className="flex flex-col gap-6">
@@ -242,9 +242,9 @@ export default function HiringLeadCycleDetails() {
         </div>
       )}
 
-      <SegmentedTabButtons
+      <PageTabRow
         label="Phases"
-        items={phaseTabs.map(p => ({
+        tabs={phaseTabs.map(p => ({
           label: p.label,
           icon: phaseIcon[p.status],
           active: p.key === tab,

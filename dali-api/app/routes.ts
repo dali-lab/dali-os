@@ -127,13 +127,15 @@ export default [
     // Partner CRM — the internal partner pipeline (board, directory, org and
     // application records), Core-only. The external portal at /partner/*
     // (singular) is a separate surface and does not move.
-    route("core/partners", "partners/routes/core.partners.tsx"),
-    route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
-    route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
-    route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
-    route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+    layout("partners/routes/partners-crm-layout.tsx", [
+      route("core/partners", "partners/routes/core.partners.tsx"),
+      route("core/partners/renewals", "partners/routes/core.partners.renewals.tsx"),
+      route("core/partners/planning", "partners/routes/core.partners.planning.tsx"),
+      route("core/partners/directory", "partners/routes/core.partners.directory.tsx"),
+      route("core/partners/referrals", "partners/routes/core.partners.referrals.tsx"),
+      route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
+    ]),
     route("core/partners/referrals/:id", "partners/routes/core.partners.referrals.$id.tsx"),
-    route("core/partners/reports", "partners/routes/core.partners.reports.tsx"),
     route("core/partners/settings", "partners/routes/core.partners.settings.tsx"),
     // Literal segments above the param routes (repo route-ordering convention).
     route("core/partners/applications/:id", "partners/routes/core.partners.applications.$id.tsx"),

@@ -1,5 +1,6 @@
 import { prisma } from "~/lib/db.server";
 import { currentTerm } from "~/lib/roles";
+import { resolveProjectCover } from "~/projects/lib/project-cover.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { getDownloadUrl } from "~/lib/s3.server";
 import { downloadFileName } from "~/lib/file-download-name";
@@ -386,7 +387,7 @@ export async function loadPartnerProjectView(
       name: project.name,
       iconEmoji: project.iconEmoji,
       description: project.description,
-      imageUrl: await resolvePhotoUrl(project.imageUrl),
+      imageUrl: await resolveProjectCover(project.imageUrl),
       terms: [...project.projectTerms]
         .sort((a, b) => a.term.sortKey - b.term.sortKey)
         .map((t) => t.term.code),

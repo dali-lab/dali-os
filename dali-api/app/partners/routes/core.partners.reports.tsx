@@ -11,7 +11,8 @@ import { OS_PANEL_CLASS } from "~/components/ui/floating/styles";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { formatUsd } from "~/lib/money";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { PageRowControls } from "~/components/os-page";
+import { CalendarRange } from "lucide-react";
 import {
   resolveReportsTerm,
   loadFunnelSection,
@@ -252,12 +253,18 @@ export default function PartnerReports() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="sr-only">Reports</h1>
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav className="shrink-0" />
-        <div className="flex-1" />
-        <TermFilter terms={terms} selected={selectedTermId ?? ALL_TERMS} />
-      </div>
+      <h2 className="sr-only">Reports</h2>
+      <PageRowControls
+        controls={[
+          {
+            kind: "custom",
+            key: "term",
+            label: "Term",
+            icon: CalendarRange,
+            render: () => <TermFilter terms={terms} selected={selectedTermId ?? ALL_TERMS} />,
+          },
+        ]}
+      />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Funnel" caption="Percent is the share of the stage before.">
