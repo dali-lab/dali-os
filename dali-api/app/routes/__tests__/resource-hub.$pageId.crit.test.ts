@@ -54,11 +54,11 @@ describe("draft hub", () => {
   it("lets an editor through", async () => {
     db.resourceHubPage.findUnique.mockResolvedValue(page(null));
     vi.mocked(canEditResourceHub).mockResolvedValue(true);
-    expect((await get()).hub.published).toBe(false);
+    expect((await get()).items).toEqual([]);
   });
   it("lets any member into a published hub", async () => {
     db.resourceHubPage.findUnique.mockResolvedValue(page(new Date(0)));
-    expect((await get()).hub.published).toBe(true);
+    expect((await get()).items).toEqual([]);
     expect(canEditResourceHub).not.toHaveBeenCalled();
   });
 });

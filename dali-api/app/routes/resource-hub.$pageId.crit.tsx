@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFetcher, useLoaderData, useRevalidator, useSearchParams } from "react-router";
-import { FileText, Link2, MessageSquare, Plus } from "lucide-react";
+import { FileText, Link2, ListFilter, MessageSquare, Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub.$pageId.crit";
 import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
@@ -8,13 +8,12 @@ import { critCommentCounts, loadCritContext, parseSubmissionForm, resolveSubmiss
 import { parseCritLink } from "~/lib/crit-comments";
 import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { limitLinkPreviews } from "~/lib/link-preview-limit.server";
-import { HubBand } from "~/components/resource-hub/HubCard";
-import { ResourceHubTabs } from "~/components/resource-hub/ResourceHubTabs";
+import { PageRowControls, type PageRowControl } from "~/components/os-page";
+import { CRIT_FILTERS, type CritFilter } from "~/components/resource-hub/crit/filters";
 import { ShareWorkModal, type ShareValues } from "~/components/resource-hub/crit/ShareWorkModal";
 import { SubmissionOverlay, type CritSubmissionView } from "~/components/resource-hub/crit/SubmissionOverlay";
 
 export const meta: Route.MetaFunction = () => [{ title: "Crit Wall · DALI OS" }];
-export const handle = { bleedPane: true };
 
 const person = { select: { firstName: true, lastName: true } };
 
@@ -27,11 +26,9 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   });
   const [counts, [me]] = await Promise.all([critCommentCounts(rows.map((r) => r.id)), hydrateAuthors([ctx.userId])]);
   return {
-    pageId: ctx.pageId,
     viewer: { id: ctx.userId, name: ctx.userName, photoUrl: me?.photoUrl ?? null },
     userName: ctx.userName,
     domainName: ctx.domainName,
-    hub: ctx.hub,
     items: rows.map((r) => serializeSubmission(r, ctx.userId, ctx.canModerate, counts.get(r.id) ?? 0)),
   };
 }
@@ -107,7 +104,10 @@ function Thumb({ item }: { item: CritSubmissionView }) {
 }
 
 export default function CritWall() {
-  const { pageId, viewer, userName, domainName, items, hub } = useLoaderData<typeof loader>();
+  const { viewer, userName, domainName, items: all } = useLoaderData<typeof loader>();
+  const [filter, setFilter] = useState<CritFilter>("all");
+  const active = CRIT_FILTERS.find((f) => f.value === filter)!;
+  const items = all.filter(active.keep);
   const [params, setParams] = useSearchParams();
   const fetcher = useFetcher<{ ok?: boolean; error?: string }>();
   const revalidator = useRevalidator();
@@ -136,24 +136,26 @@ export default function CritWall() {
     fetcher.submit(data, { method: "post" });
   };
 
-  return (
-    <div className="min-h-dvh bg-card px-6 pb-[40vh] sm:px-10">
-      <HubBand cover={hub.coverUrl} title={hub.title} published={hub.published} />
-      <ResourceHubTabs pageId={pageId} className="mt-5" />
+  const controls: PageRowControl[] = [
+    {
+      kind: "menu",
+      key: "filter",
+      label: active.label,
+      icon: ListFilter,
+      items: CRIT_FILTERS.map((f) => ({ key: f.value, label: f.label, onSelect: () => setFilter(f.value) })),
+    },
+    { key: "share", label: "Share work", icon: Plus, primary: true, onClick: () => setSharing(true) },
+  ];
 
-      <header className="flex flex-wrap items-end justify-between gap-4 pb-8 pt-8">
-        <div>
-          <h1 className="font-heading text-4xl font-semibold tracking-tight text-foreground">Crit Wall</h1>
-          <p className="mt-2 text-sm text-os-grey">Share what you're working on and get feedback from your domain{domainName ? ` (${domainName})` : ""}.</p>
-        </div>
-        <button type="button" onClick={() => setSharing(true)} className="os-btn-primary inline-flex items-center gap-1.5">
-          <Plus className="h-4 w-4" aria-hidden />
-          Share work
-        </button>
-      </header>
+  return (
+    <div className="pb-[40vh]">
+      <PageRowControls controls={controls} />
+      <p className="mb-6 text-sm text-os-grey">Share what you're working on and get feedback from your domain{domainName ? ` (${domainName})` : ""}.</p>
 
       {items.length === 0 ? (
-        <EmptyState title="Nothing here yet">Be the first to share something you're working on.</EmptyState>
+        <EmptyState title="Nothing here yet">
+          {all.length === 0 ? "Be the first to share something you're working on." : "No work matches this filter."}
+        </EmptyState>
       ) : (
         <ul className="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((item) => {

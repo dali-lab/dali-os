@@ -75,3 +75,28 @@ export async function requireResourceHubViewer(request: Request) {
       [auth.user.firstName, auth.user.lastName].filter(Boolean).join(" ") || auth.user.email,
   };
 }
+
+/** The hub every tab shares. Old domain-code links redirect; a draft is a 404 to anyone who can't edit it. */
+export async function loadHubShell(request: Request, pageId: string) {
+  const viewer = await requireResourceHubViewer(request);
+  const page = await prisma.resourceHubPage.findUnique({
+    where: { id: pageId },
+    select: {
+      id: true,
+      title: true,
+      coverUrl: true,
+      publishedAt: true,
+      domainId: true,
+      createdById: true,
+      domain: { select: { displayName: true } },
+    },
+  });
+  if (!page) {
+    const old = await prisma.resourceHubPage.findFirst({ where: { domain: { code: pageId } }, select: { id: true } });
+    if (old) throw redirect(`/resource-hub/${old.id}`);
+    throw new Response("Not found", { status: 404 });
+  }
+  const canEdit = await canEditResourceHub(viewer.user.sub, page);
+  if (!page.publishedAt && !canEdit) throw new Response("Not found", { status: 404 });
+  return { viewer, page, canEdit };
+}
