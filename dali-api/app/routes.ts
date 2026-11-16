@@ -256,6 +256,7 @@ export default [
     // Hidden from mentees entirely; gated server-side by canViewMentorship.
     route("mentorship", "mentorship/routes/mentorship.tsx"),
     route("mentorship/browse", "mentorship/routes/mentorship.browse.tsx"),
+    route("mentorship/warnings", "mentorship/routes/mentorship.warnings.tsx"),
     route("mentorship/notes/:id", "mentorship/routes/mentorship.notes.$id.tsx"),
 
     // Forms. Browsing lives in the unified Drive (/drive); these are the
