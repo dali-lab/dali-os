@@ -115,8 +115,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <StaleBuildWatcher />
         <ScrollRestoration />
         <Scripts />
-        {/* Local-only DevStudio annotation overlay; stripped from prod builds. */}
-        {import.meta.env.DEV && <script src="/devstudio.js" />}
       </body>
     </html>
   );
