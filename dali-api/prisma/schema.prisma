@@ -374,8 +374,6 @@ model User {
   resourceHubPages       ResourceHubPage[]
   critSubmissions        CritSubmission[]    @relation("CritSubmissionAuthor")
   domainReferences       DomainReference[]   @relation("DomainReferenceAuthor")
-  mentorshipWarnings     MentorshipWarning[] @relation("WarningMember")
-  mentorshipWarningsMade MentorshipWarning[] @relation("WarningCreator")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -8349,27 +8347,6 @@ model BannerImpression {
   @@unique([bannerId, userId])
 }
 
-// A Core-entered participation concern about a member (missed mentorship
-// meeting, missed lab, other). Manual only; read and written exclusively
-// through the Core-gated /mentorship/warnings route. reason/status are
-// validated strings (see mentorship/lib/warnings.ts).
-model MentorshipWarning {
-  id          String   @id @default(cuid())
-  memberId    String
-  reason      String
-  notes       String   @default("")
-  occurredOn  DateTime @db.Date
-  status      String   @default("open")
-  createdById String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  member    User  @relation("WarningMember", fields: [memberId], references: [id], onDelete: Cascade)
-  createdBy User? @relation("WarningCreator", fields: [createdById], references: [id], onDelete: SetNull)
-
-  @@index([memberId])
-  @@index([status, occurredOn])
-}
 
 // Core's free-text status note for a project or partner application, shown
 // only in the Partners > Planning popup. Exactly one owner per row.
