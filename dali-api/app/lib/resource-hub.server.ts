@@ -50,6 +50,63 @@ export async function hubDomainOptions(userId: string, core: boolean): Promise<H
   return rows.map((d) => ({ id: d.id, name: d.displayName, taken: d.resourceHubPage !== null }));
 }
 
+/** Flag on and a lab member (or Core): who may open the Resource Hub at all. Null otherwise. */
+export async function resourceHubViewer(userId: string, request?: Request): Promise<{ core: boolean } | null> {
+  const roles = await getUserRoles(userId);
+  const [enabled, labMember, core] = await Promise.all([
+    isFeatureEnabled("resource-hub", userId, roles, request),
+    isLabMember(userId, request),
+    isCore(userId, request),
+  ]);
+  return enabled && (labMember || core) ? { core } : null;
+}
+
+export interface HubAccess {
+  hub: {
+    id: string;
+    title: string;
+    coverUrl: string | null;
+    publishedAt: Date | null;
+    domainId: string | null;
+    createdById: string | null;
+    domain: { displayName: string } | null;
+  };
+  viewerId: string;
+  core: boolean;
+  canEdit: boolean;
+  canModerate: boolean;
+}
+
+/** One hub for a caller outside the web session (MCP): null unless the flag is on, they are a member, and the hub is published or theirs to edit. */
+export async function loadHubAccess(
+  userId: string,
+  ref: { hubId?: string; domainId?: string },
+  request?: Request,
+): Promise<HubAccess | null> {
+  const viewer = await resourceHubViewer(userId, request);
+  if (!viewer) return null;
+  const where = ref.hubId ? { id: ref.hubId } : ref.domainId ? { domainId: ref.domainId } : null;
+  if (!where) return null;
+  const hub = await prisma.resourceHubPage.findFirst({
+    where,
+    select: {
+      id: true,
+      title: true,
+      coverUrl: true,
+      publishedAt: true,
+      domainId: true,
+      createdById: true,
+      domain: { select: { displayName: true } },
+    },
+  });
+  if (!hub) return null;
+  const canEdit = await canEditResourceHub(userId, hub);
+  if (!hub.publishedAt && !canEdit) return null;
+  const led = viewer.core ? [] : await ledDomainIds(userId);
+  const canModerate = viewer.core || (hub.domainId !== null && led.includes(hub.domainId));
+  return { hub, viewerId: userId, core: viewer.core, canEdit, canModerate };
+}
+
 // Behind the `resource-hub` flag, open to every lab member. 404 (not a
 // redirect) when off so the feature's existence isn't leaked.
 export async function requireResourceHubViewer(request: Request) {
@@ -59,14 +116,9 @@ export async function requireResourceHubViewer(request: Request) {
   const partnerRedirect = await redirectPartnerToPortal(auth);
   if (partnerRedirect) throw partnerRedirect;
 
-  const userId = auth.user.sub;
-  const roles = await getUserRoles(userId);
-  const [enabled, labMember, core] = await Promise.all([
-    isFeatureEnabled("resource-hub", userId, roles, request),
-    isLabMember(userId, request),
-    isCore(userId, request),
-  ]);
-  if (!enabled || !(labMember || core)) throw new Response("Not found", { status: 404 });
+  const viewer = await resourceHubViewer(auth.user.sub, request);
+  if (!viewer) throw new Response("Not found", { status: 404 });
+  const { core } = viewer;
 
   return {
     user: auth.user,

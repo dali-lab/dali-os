@@ -17,7 +17,7 @@ import type { McpCtx, McpTool } from "~/mcp/registry";
 export const MANAGE_COMMENT_TOOL_DEF = {
   name: "manage_comment",
   description:
-    "Create, edit, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core; deleting a Crit Wall comment requires being its author, Core, or a lead of the hub's domain.",
+    "Create, edit, react, unreact, or delete a comment on a document (Page), project file, page-doc, or Crit Wall post (targetType 'crit', targetId from list_crit_posts). Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core; deleting a Crit Wall comment requires being its author, Core, or a lead of the hub's domain.",
   inputSchema: {
     type: "object" as const,
     properties: {
