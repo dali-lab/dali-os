@@ -8,7 +8,7 @@ vi.mock("~/lib/auth", () => ({
   requireAuth: vi.fn(),
   forbidden: vi.fn(() => Response.json({ error: "Forbidden" }, { status: 403 })),
 }));
-vi.mock("~/lib/collabAuth", () => ({ authorizeCollabDoc: vi.fn(), hydrateAuthors: vi.fn() }));
+vi.mock("~/lib/collabAuth.server", () => ({ authorizeCollabDoc: vi.fn(), hydrateAuthors: vi.fn() }));
 vi.mock("~/collab/server", () => ({ getCollabServer: vi.fn() }));
 vi.mock("~/collab/persistence", () => ({ restoreVersion: vi.fn() }));
 vi.mock("~/collab/read", () => ({ stateToBlocks: vi.fn() }));
@@ -16,7 +16,7 @@ vi.mock("~/collab/blocknote-server", () => ({ blocksToHtml: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { getCollabServer } from "~/collab/server";
 import { restoreVersion } from "~/collab/persistence";
 import { logAuditEvent } from "~/lib/audit";

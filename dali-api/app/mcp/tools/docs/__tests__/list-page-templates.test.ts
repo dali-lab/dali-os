@@ -10,12 +10,12 @@ vi.mock("~/lib/db.server", () => ({
 
 vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
-  isLabMember: vi.fn(),
+  isLabMemberOrAlum: vi.fn(),
   isProjectMember: vi.fn(),
 }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import {
   LIST_PAGE_TEMPLATES_TOOL,
   runListPageTemplates,
@@ -43,7 +43,7 @@ describe("list_page_templates", () => {
 
   it("returns empty list when caller has no access", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     const out = await runListPageTemplates("u1", { workspaceType: "Lab" });
     expect(out).toEqual({ templates: [] });
     expect(mockPrisma.page.findMany).not.toHaveBeenCalled();
@@ -51,7 +51,7 @@ describe("list_page_templates", () => {
 
   it("returns templates for lab members", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
-    vi.mocked(isLabMember).mockResolvedValue(true);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     mockPrisma.page.findMany.mockResolvedValue([
       { id: "t1", title: "Project Charter", iconEmoji: "📋" },
     ]);

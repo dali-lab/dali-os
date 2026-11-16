@@ -64,7 +64,7 @@ async function events(res: Response) {
 beforeEach(() => {
   vi.resetAllMocks();
   h.requireAuth.mockResolvedValue({ ok: true, user: { sub: "u1" } });
-  h.getUserRoles.mockResolvedValue({ isLabMember: true });
+  h.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: true });
   h.isFeatureEnabled.mockResolvedValue(true);
   h.checkRateLimit.mockReturnValue(null);
   h.resolveAiProvider.mockReturnValue(PROVIDER);
@@ -92,7 +92,7 @@ describe("POST /api/ask gates", () => {
   });
 
   it("is closed to people who aren't lab members, even with the flag on", async () => {
-    h.getUserRoles.mockResolvedValue({ isLabMember: false, isAlumni: true });
+    h.getUserRoles.mockResolvedValue({ isLabMemberOrAlum: false, isAlumni: true });
     expect((await post({ question: "x" })).status).toBe(403);
     expect(h.claimAskQuota).not.toHaveBeenCalled();
   });
@@ -100,7 +100,7 @@ describe("POST /api/ask gates", () => {
   it("is closed while the ask-dali flag is off for the member", async () => {
     h.isFeatureEnabled.mockResolvedValue(false);
     expect((await post({ question: "x" })).status).toBe(403);
-    expect(h.isFeatureEnabled).toHaveBeenCalledWith("ask-dali", "u1", { isLabMember: true }, expect.any(Request));
+    expect(h.isFeatureEnabled).toHaveBeenCalledWith("ask-dali", "u1", { isLabMemberOrAlum: true }, expect.any(Request));
   });
 
   it("limits bursts per member", async () => {

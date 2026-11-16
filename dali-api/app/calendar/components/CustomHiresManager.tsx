@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { useRevalidator } from "react-router";
 import { Plus, X } from "lucide-react";
-import { AnchoredPopover } from "~/calendar/components/AnchoredPopover";
+import { AnchoredCard } from "~/components/ui/floating/AnchoredCard";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
 
@@ -102,7 +102,7 @@ export function CustomHiresManager({
       </button>
 
       {open && (
-        <AnchoredPopover
+        <AnchoredCard
           anchor={anchor}
           excludeRef={btnRef}
           onClose={close}
@@ -166,7 +166,7 @@ export function CustomHiresManager({
               <Plus className="h-3.5 w-3.5" /> Add
             </button>
           </form>
-        </AnchoredPopover>
+        </AnchoredCard>
       )}
     </>
   );

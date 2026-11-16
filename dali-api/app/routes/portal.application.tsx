@@ -246,15 +246,7 @@ function DomainSection({
 
 export default function PortalApplication() {
   const { cycleId, submittedAt, withdrawnAt, canWithdraw, generalQuestions, generalAnswers, domains } =
-    useLoaderData<typeof loader>() as {
-      cycleId: string;
-      submittedAt: string;
-      withdrawnAt: string | null;
-      canWithdraw: boolean;
-      generalQuestions: Question[];
-      generalAnswers: Record<string, string>;
-      domains: { id: string; name: string; questions: Question[]; answers: Record<string, string>; continuedInterest: ContinuedInterestView | null }[];
-    };
+    useLoaderData<typeof loader>();
 
   const isWithdrawn = withdrawnAt !== null;
   const dialog = useDialog();

@@ -23,6 +23,7 @@ export function ReviewsCard({
   selectedId,
   onSelect,
   footerSuffix,
+  renderRejectionRationale,
 }: {
   reviews: ReviewsCardReview[];
   criteria: Record<string, { label: string; maxScore?: number }>;
@@ -30,6 +31,8 @@ export function ReviewsCard({
   onSelect: (reviewId: string) => void;
   /** Appended to the "Submitted …" line under the selected review. */
   footerSuffix?: ReactNode;
+  /** Replaces the selected review's read-only rejection rationale. */
+  renderRejectionRationale?: (review: ReviewsCardReview) => ReactNode;
 }) {
   const { formTrigger } = useOsChrome();
   const selected = reviews.find((r) => r.id === selectedId) ?? reviews[0] ?? null;
@@ -59,6 +62,7 @@ export function ReviewsCard({
             criteria={criteria}
             feedback={selected.feedback}
             rejectionRationale={selected.rejectionRationale}
+            rejectionRationaleSlot={renderRejectionRationale?.(selected)}
             footerNote={
               selected.submittedAt ? (
                 <>

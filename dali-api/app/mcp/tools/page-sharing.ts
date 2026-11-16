@@ -2,7 +2,7 @@
 // actions. Same gate, audit and notify path as POST /api/pages/:id/share.
 
 import { listPageShares, addPageShare, removePageShare, SharePrincipalError } from "~/lib/page-sharing.server";
-import { describePageAudience } from "~/lib/page-audience.server";
+import { describePageAudience } from "~/drive/lib/page-audience.server";
 import {
   requirePageShareManager,
   setGeneralAccess,

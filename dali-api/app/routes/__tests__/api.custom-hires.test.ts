@@ -13,7 +13,7 @@ vi.mock("~/lib/db.server", () => ({
 }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMemberOrAlum: vi.fn() }));
 vi.mock("~/lib/cors", () => ({
   withCors: (_req: Request, res: Response) => res,
   handlePreflight: () => null,
@@ -21,7 +21,7 @@ vi.mock("~/lib/cors", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isLabMember } from "~/lib/roles";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { logAuditEvent } from "~/lib/audit";
 import { action } from "~/routes/api.custom-hires";
 
@@ -42,7 +42,7 @@ const logged = () => vi.mocked(logAuditEvent).mock.calls.map(([e]) => [e.action,
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "u1" } } as never);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   hire.findUnique.mockResolvedValue(null);
 });
 
@@ -80,8 +80,22 @@ describe("api.custom-hires audit trail", () => {
     expect((await post({ intent: "rename", id: "theirs", label: "New" })).status).toBe(404);
     expect((await post({ intent: "archive", id: "theirs" })).status).toBe(404);
     expect((await post({ intent: "create", label: "" })).status).toBe(400);
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect((await post({ intent: "create", label: "Tutor" })).status).toBe(403);
     expect(logAuditEvent).not.toHaveBeenCalled();
   });
 });
+
+describe("api.custom-hires create validation", () => {
+  it("keeps the exact messages for an empty, missing and over-long label", async () => {
+    const empty = await post({ intent: "create", label: "   " });
+    expect(empty.status).toBe(400);
+    expect(await empty.json()).toEqual({ error: "Give the role a name" });
+    expect(await (await post({ intent: "create" })).json()).toEqual({ error: "Give the role a name" });
+    const long = await post({ intent: "create", label: "x".repeat(81) });
+    expect(long.status).toBe(400);
+    expect(await long.json()).toEqual({ error: "Keep it under 80 characters" });
+    expect(hire.create).not.toHaveBeenCalled();
+  });
+});
+

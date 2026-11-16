@@ -5,12 +5,12 @@ vi.mock("~/lib/db.server", () => ({
 }));
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("../../lib/visibility", () => ({ canViewMentorship: vi.fn() }));
-vi.mock("../../lib/warnings.server", () => ({ canWarnMember: vi.fn() }));
+vi.mock("../../lib/warnings.server", () => ({ canWarnMember: vi.fn(), warningsFlagOn: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { canViewMentorship } from "../../lib/visibility";
-import { canWarnMember } from "../../lib/warnings.server";
+import { canWarnMember, warningsFlagOn } from "../../lib/warnings.server";
 import { action } from "../api.mentorship.warnings";
 
 const create = (prisma as any).mentorshipWarning.create as ReturnType<typeof vi.fn>;
@@ -31,6 +31,7 @@ beforeEach(() => {
   (requireAuth as any).mockResolvedValue({ ok: true, user: { sub: "mentor1" } });
   (canViewMentorship as any).mockResolvedValue(true);
   (canWarnMember as any).mockResolvedValue(true);
+  (warningsFlagOn as any).mockResolvedValue(true);
   create.mockResolvedValue({ id: "w1" });
 });
 
@@ -53,6 +54,12 @@ describe("POST /api/mentorship/warnings", () => {
 
   it("rejects non-POST methods", async () => {
     expect((await post(body, "PUT")).status).toBe(405);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("is not found while the warnings flag is off", async () => {
+    (warningsFlagOn as any).mockResolvedValue(false);
+    expect((await post(body)).status).toBe(404);
     expect(create).not.toHaveBeenCalled();
   });
 

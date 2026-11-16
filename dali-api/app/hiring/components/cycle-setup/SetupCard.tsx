@@ -34,58 +34,6 @@ export function SetupCard({
   );
 }
 
-const PILL_TONES = {
-  neutral: "bg-os-container text-os-grey",
-  accent: "bg-os-accent/15 text-os-accent",
-  // Real states that must stand out: something is set, or something is missing.
-  success: "bg-os-green/15 text-os-green",
-  warning: "bg-os-amber/15 text-os-amber",
-  danger: "bg-destructive/15 text-destructive",
-} as const;
-
-export type PillTone = keyof typeof PILL_TONES;
-
-// A state's colour as a dot instead of a whole tinted chip: rows that carry one
-// pill per item (a decision, a reviewer) stay quiet, and the dot does the work.
-// Dots draw from the mid-strength --os-status-*-edge ramp, not the text-ink
-// tokens: os-green/os-amber resolve to deep inks in light mode and os-accent
-// follows the section colour, so dots drawn from those swing between pastel
-// and near-black. The edge ramp holds one middle strength across hues in both
-// themes.
-const DOT_TONES: Record<PillTone, string> = {
-  neutral: "bg-os-grey",
-  accent: "bg-[var(--os-status-progress-edge)]",
-  success: "bg-[var(--os-status-done-edge)]",
-  warning: "bg-[var(--os-status-review-edge)]",
-  danger: "bg-os-red",
-};
-
-export function Pill({
-  tone = "neutral",
-  dot,
-  outline = false,
-  children,
-}: {
-  tone?: PillTone;
-  /** Colour the state as a leading dot and keep the chip neutral. */
-  dot?: PillTone;
-  /** No fill, just a hairline border: the applicant-facing dress. */
-  outline?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium",
-        outline ? "border border-os-container text-os-grey" : PILL_TONES[dot ? "neutral" : tone],
-      )}
-    >
-      {dot && <span className={cn("h-2 w-2 shrink-0 rounded-full", DOT_TONES[dot])} aria-hidden />}
-      {children}
-    </span>
-  );
-}
-
 /** A select sitting in a row with h-9 DateFields/buttons (see TermDatesCard):
  *  the trigger's padding is swapped for the row height, since cn() doesn't
  *  merge conflicting utilities. */

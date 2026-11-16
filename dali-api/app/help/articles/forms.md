@@ -35,7 +35,20 @@ Anyone who can edit the folder can create a form there. Outside a folder, any la
 - **Links and files**: GitHub link, Figma link, Drive link, File upload.
 - **Layout**: Text block (prose shown to respondents) and Page break. These aren't counted as questions and don't appear in responses.
 
-Multiple choice and Checkboxes can include an **Other** option. A Dropdown or Database list with more than 8 choices lets respondents type to search it. Checkboxes with more than 12 choices show as a searchable list where respondents pick several. Skills rating takes one skill per line. Each question can be shown only when an earlier answer matches, using **Show this question**.
+Multiple choice and Checkboxes can include an **Other** option. A Dropdown or Database list with more than 8 choices lets respondents type to search it. Checkboxes with more than 12 choices show as a searchable list where respondents pick several. Skills rating takes one skill per line. File upload takes up to 10 files per answer, up to 50 MB each. Under **Files per answer**, pick **Up to** or **Exactly** and a number. A required question needs at least one file, and **Exactly** means that many, so an optional **Exactly 3** takes three files or none. Anyone who can fill the form can upload, including people who aren't signed in when the form is open to anyone with the link. In Responses, each file opens from the response.
+
+### Show a question only sometimes
+
+Open a question and set **Show this question** to **Only when**, then pick an earlier question and what its answer has to be. A page break has **Show this page**, which shows or hides every question on that page at once.
+
+- Choices and Database lists: **is** or **is not**, with one or more answers. Pick **Other** to match a typed-in answer.
+- Checkboxes: **includes** or **doesn't include**, with one or more answers.
+- 1 to 5 scale: **is**, **is not**, **is at least** or **is at most**.
+- Number: **is at least** or **is at most**. Date: **is on or after** or **is on or before**.
+- Short answer, Long answer, Email and links: **contains** some text.
+- Any of these, and File upload: **is answered** or **is blank**.
+
+Select **Add condition** to check more than one answer, then choose whether **all** or **any** of them have to match. A hidden question is never required, and its answer isn't saved. Questions a staffing view reads, such as Project Bids columns, are always shown, so neither they nor their page can have a condition.
 
 ### Versions, preview and publish
 
@@ -58,12 +71,27 @@ Open the three-dot menu at the top and choose **Form settings**.
 
 ## Read responses
 
-Choose **Results** for a version. It has two views.
+Open a version and use the switch at the top to move between **Questions**, **Summary** and **Responses**. The count beside Responses is how many people answered.
 
 - **Summary** charts each question. Scale and number questions show count, average, lowest and highest. Choice questions show how many picked each option.
-- **Responses** lists each submission. Search by name or email, open a row to read the full answer, or use **Delete response** (this can't be undone). **Export CSV** downloads every response to that version.
+- **Responses** lists each submission. Search by name, email or answer, open a row to read the full answer, or use **Delete response** (this can't be undone). Deleting a response also removes what it fed: a project bids response takes the member's bids for that cycle with it, an intent to work response takes their intent, and an application response deletes the application. The confirm lists what goes. A response can't be deleted once its partner application became a project, or while its course application is approved, waitlisted or has attendance.
 
-Forms tied to staffing slots add a slot filter to both views.
+Forms tied to staffing slots add **Slot** to the filter bar in both views.
+
+In Responses, **Member columns** adds columns about each respondent's time in the lab: **Project history** (every project and the terms they worked on it), **Terms in lab** (the count and each term) and **Current role** (each domain and level, plus any Core title, from their latest term). They fill in only for members who were signed in when they responded, and they aren't part of **Export**.
+
+### Filter by answer
+
+Select **Filter** under the switch in Summary or Responses, pick a question, then choose what to match. Each active filter shows as a pill beside the button. Select the middle of a pill to change it, **×** to remove it, or **Clear all** to remove every filter. Filters stay when you switch between Summary and Responses, and they start over when you switch to another version.
+
+- Choice, scale and project questions: pick one or more options. A response matches if it has any of them. If the question has an Other choice, you can pick **Other** to find typed-in answers.
+- Text, email and link questions: **Contains** finds a word or phrase, ignoring capitals.
+- Number and date questions: **Min** and **Max** (or **From** and **To** for dates) take a lowest and highest value, and either can be left empty.
+- Any question: **Answered** or **No answer**. A question that was hidden for someone by a rule counts as **No answer** for them.
+
+Each question gets one filter, and a response has to match every filter you set. File and skills rating questions can't be filtered. The Summary counts and charts follow the filters. The search box looks for names, emails and answers, but not project names, because those answers are stored as ids.
+
+**Export** downloads the responses that match your search and filters, and reads **Export 12** when any are on. With nothing applied it downloads every response to that version.
 
 ## Follow up with people who haven't answered
 

@@ -4,7 +4,12 @@ const h = vi.hoisted(() => ({
   logMcpToolCall: vi.fn(),
   readRun: vi.fn(),
   writeRun: vi.fn(),
+  flaggedRun: vi.fn(),
+  isFeatureEnabled: vi.fn(),
+  getUserRoles: vi.fn(),
 }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: h.isFeatureEnabled }));
+vi.mock("~/lib/roles", () => ({ getUserRoles: h.getUserRoles }));
 
 vi.mock("~/mcp/audit.server", () => ({ logMcpToolCall: h.logMcpToolCall }));
 
@@ -28,10 +33,19 @@ vi.mock("~/mcp/registry", async () => {
       run: h.writeRun,
     },
   };
-  return { findRegistryTool: (n: string) => tools[n], mapToolError };
+  tools.flagged_tool = {
+    def: { name: "flagged_tool", description: "f", requiredScope: "mcp:read", inputSchema: schema },
+    run: h.flaggedRun,
+    featureFlag: "core-taskboard",
+  };
+  return {
+    findRegistryTool: (n: string) => tools[n],
+    registryToolDefs: () => Object.values(tools).map((t) => (t as { def: object }).def),
+    mapToolError,
+  };
 });
 
-import { dispatchTool, type ToolCaller } from "../dispatch.server";
+import { dispatchTool, visibleToolDefs, type ToolCaller } from "../dispatch.server";
 import { McpForbiddenError, McpNotFoundError } from "../errors";
 
 const USER = {
@@ -175,5 +189,49 @@ describe("dispatchTool", () => {
       message: "Tool execution failed",
     });
     expect(h.logMcpToolCall).toHaveBeenLastCalledWith(expect.objectContaining({ errorCode: -32000 }));
+  });
+});
+
+describe("feature-flagged tools", () => {
+  beforeEach(() => {
+    h.getUserRoles.mockResolvedValue({ isCore: true });
+  });
+
+  it("answers a flag-off tool like an unknown one and never runs it", async () => {
+    h.isFeatureEnabled.mockResolvedValue(false);
+    expect(await dispatchTool("flagged_tool", PAGE, MCP)).toEqual({
+      ok: false,
+      code: -32601,
+      message: "Unknown tool: flagged_tool",
+    });
+    expect(h.flaggedRun).not.toHaveBeenCalled();
+    expect(h.isFeatureEnabled).toHaveBeenCalledWith("core-taskboard", "u1", { isCore: true }, request);
+  });
+
+  it("runs a flag-on tool", async () => {
+    h.isFeatureEnabled.mockResolvedValue(true);
+    h.flaggedRun.mockResolvedValue({ ok: 1 });
+    expect(await dispatchTool("flagged_tool", PAGE, MCP)).toEqual({ ok: true, payload: { ok: 1 } });
+  });
+
+  it("does not look up a flag for an unflagged tool", async () => {
+    h.readRun.mockResolvedValue({});
+    await dispatchTool("read_page", PAGE, MCP);
+    expect(h.isFeatureEnabled).not.toHaveBeenCalled();
+  });
+
+  it("omits flag-off tools from the visible list and keeps scope filtering", async () => {
+    h.isFeatureEnabled.mockResolvedValue(false);
+    const names = (await visibleToolDefs(MCP)).map((d) => d.name);
+    expect(names).toEqual(["read_page", "set_page_content"]);
+    const readOnly = (await visibleToolDefs({ ...MCP, scopes: ["mcp:read"] })).map((d) => d.name);
+    expect(readOnly).toEqual(["read_page"]);
+  });
+
+  it("lists a flag-on tool and evaluates each flag once", async () => {
+    h.isFeatureEnabled.mockResolvedValue(true);
+    const names = (await visibleToolDefs(MCP)).map((d) => d.name);
+    expect(names).toContain("flagged_tool");
+    expect(h.isFeatureEnabled).toHaveBeenCalledTimes(1);
   });
 });

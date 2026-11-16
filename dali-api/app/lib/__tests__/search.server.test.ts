@@ -35,6 +35,7 @@ const mockPrisma = prisma as unknown as Record<
 
 // Plain lab member — no elevated flags, so only the ungated categories run.
 const MEMBER: UserRoles = {
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isCore: false,
   isAdmin: false,
@@ -68,7 +69,7 @@ describe("runSearch gating", () => {
   it("returns nothing for a non-member session without querying", async () => {
     const results = await runSearch({
       userId: "u1",
-      roles: { ...MEMBER, isLabMember: false },
+      roles: { ...MEMBER, isLabMemberOrAlum: false },
       q: "query",
     });
     expect(results).toEqual([]);
@@ -117,7 +118,7 @@ describe("runSearchWithOverflow", () => {
   });
 
   it("returns nothing for a non-member", async () => {
-    expect(await runSearchWithOverflow({ userId: "u1", roles: { ...MEMBER, isLabMember: false }, q: "atlas" })).toEqual({
+    expect(await runSearchWithOverflow({ userId: "u1", roles: { ...MEMBER, isLabMemberOrAlum: false }, q: "atlas" })).toEqual({
       results: [],
       categoriesWithMore: [],
     });
@@ -135,6 +136,46 @@ describe("people search", () => {
     expect(where.AND[0].OR).toContainEqual({ firstName: { contains: "lovelace", mode: "insensitive" } });
     expect(where.AND[1].OR).toContainEqual({ lastName: { contains: "ada", mode: "insensitive" } });
     expect(results.filter((r) => r.type === "person").map((r) => r.title)).toEqual(["Ada Lovelace"]);
+  });
+});
+
+describe("application search", () => {
+  const CORE: UserRoles = { ...MEMBER, isCore: true };
+  const adaApplication = {
+    id: "da1",
+    domain: { displayName: "Data Dev" },
+    application: { user: { firstName: "Ada", lastName: "Lovelace" } },
+  };
+
+  beforeEach(() => {
+    mockPrisma.applicationCycle.findMany.mockResolvedValue([{ id: "c1" }]);
+    mockPrisma.domainApplication.findMany.mockResolvedValue([adaApplication]);
+  });
+
+  const nameWhere = () =>
+    mockPrisma.domainApplication.findMany.mock.calls[0][0].where.application.user;
+
+  it.each(["ada l", "Ada Lovelace", "lovelace ada"])(
+    "finds an applicant when %j spans first and last name",
+    async (q) => {
+      const results = await runCategorySearch({ userId: "u1", roles: CORE, q, category: "application", skip: 0, limit: 5 });
+
+      expect(results.map((r) => r.title)).toEqual(["Ada Lovelace"]);
+      const words = q.toLowerCase().split(" ");
+      expect(nameWhere().AND).toHaveLength(words.length);
+      words.forEach((word, i) => {
+        expect(nameWhere().AND[i].OR).toEqual([
+          { firstName: { contains: word, mode: "insensitive" } },
+          { lastName: { contains: word, mode: "insensitive" } },
+        ]);
+      });
+    },
+  );
+
+  it("drops an applicant when a word matches neither name", async () => {
+    const results = await runCategorySearch({ userId: "u1", roles: CORE, q: "ada x", category: "application", skip: 0, limit: 5 });
+
+    expect(results).toEqual([]);
   });
 });
 
@@ -199,7 +240,7 @@ describe("runCategorySearch", () => {
   it("returns nothing for a non-member", async () => {
     const rows = await runCategorySearch({
       userId: "u1",
-      roles: { ...MEMBER, isLabMember: false },
+      roles: { ...MEMBER, isLabMemberOrAlum: false },
       q: "ada",
       category: "person",
       skip: 0,
@@ -579,7 +620,7 @@ describe("runSearch — guides", () => {
       id: "projects.staffing",
       title: "Staffing",
       subtitle: "Guide",
-      url: "/projects/staffing?doc=1",
+      url: "/core/staffing?doc=1",
     });
   });
 
@@ -588,7 +629,6 @@ describe("runSearch — guides", () => {
       {
         pageKey: "drive.mine",
         title: "My Drive",
-        body: null,
         sections: [
           {
             id: "s1",
@@ -618,7 +658,7 @@ describe("runSearch — guides", () => {
   it("does not run for a non-member session", async () => {
     const results = await runSearch({
       userId: "u1",
-      roles: { ...MEMBER, isLabMember: false },
+      roles: { ...MEMBER, isLabMemberOrAlum: false },
       q: "calendar",
     });
     expect(results).toEqual([]);

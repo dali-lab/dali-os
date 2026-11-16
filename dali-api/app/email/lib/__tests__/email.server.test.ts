@@ -19,7 +19,7 @@ vi.mock("~/lib/auth", () => ({
 }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
 vi.mock("~/lib/ai.server", () => ({ isAiEnabled: vi.fn(() => false) }));
-vi.mock("~/lib/s3", () => ({ deleteObject: vi.fn(), getObjectBytes: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ deleteObject: vi.fn(), getObjectBytes: vi.fn() }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn() }));
 vi.mock("~/email/lib/demo-data.server", () => ({
@@ -67,7 +67,7 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth, isImpersonating, isNonMember } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
-import { deleteObject, getObjectBytes } from "~/lib/s3";
+import { deleteObject, getObjectBytes } from "~/lib/s3.server";
 import { logAuditEvent } from "~/lib/audit";
 import { recordUserEmail } from "~/lib/user-email.server";
 import { PERSONAL_MAIL_NOTICE_VERSION } from "~/email/lib/personal-notice";

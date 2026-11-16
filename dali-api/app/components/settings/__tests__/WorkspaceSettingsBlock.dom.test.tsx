@@ -124,3 +124,44 @@ describe("WorkspaceSettingsBlock open links row", () => {
     expect(toggle()).toBeNull();
   });
 });
+
+describe("WorkspaceSettingsBlock Tab accepts suggestions row", () => {
+  const toggle = () => container.querySelector<HTMLInputElement>('input[aria-label="Tab accepts suggestions"]');
+  let store: Map<string, string>;
+
+  beforeEach(() => {
+    store = new Map();
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("is off by default and explains what Tab does", async () => {
+    await mount();
+    expect(toggle()!.checked).toBe(false);
+    expect(container.textContent).toContain(
+      "In a doc, Tab picks the highlighted / command or @ mention, like Enter. Saved on this device.",
+    );
+  });
+
+  it("saves the choice for this device when toggled on and off", async () => {
+    await mount();
+    await act(async () => toggle()!.click());
+    expect(store.get("dali:doc-tab-accepts-suggestion")).toBe("1");
+    expect(toggle()!.checked).toBe(true);
+    await act(async () => toggle()!.click());
+    expect(store.has("dali:doc-tab-accepts-suggestion")).toBe(false);
+  });
+
+  it("reflects a saved choice", async () => {
+    store.set("dali:doc-tab-accepts-suggestion", "1");
+    await mount();
+    expect(toggle()!.checked).toBe(true);
+  });
+});

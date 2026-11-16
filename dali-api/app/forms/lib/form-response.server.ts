@@ -12,6 +12,7 @@ import {
 import { formUsages, managingUsage } from "./form-usages.server";
 import {
   RESPONSE_LOCK_SELECT,
+  responseDeletePlan,
   responseLockReason,
 } from "./response-lock";
 
@@ -19,7 +20,8 @@ type Failure = { error: string; status: number };
 
 const NOT_FOUND: Failure = { error: "Response not found.", status: 404 };
 
-/** Owner delete of one response. A hard delete: the person can fill again. */
+/** Owner delete of one response, plus what it fed (bids, intent, the
+ *  application it carried). A hard delete: the person can fill again. */
 export async function deleteFormResponse(args: {
   formId: string;
   submissionId: string;
@@ -32,25 +34,48 @@ export async function deleteFormResponse(args: {
       id: true,
       userId: true,
       formVersionId: true,
-      form: { select: { name: true } },
       ...RESPONSE_LOCK_SELECT,
     },
   });
   if (!submission) return NOT_FOUND;
-  const locked = responseLockReason(submission, submission.form.name);
-  if (locked) {
-    return { error: `This response can't be deleted. ${locked}`, status: 409 };
+  const plan = responseDeletePlan(submission);
+  if (plan.blocked) {
+    return { error: `This response can't be deleted. ${plan.blocked}`, status: 409 };
   }
 
-  await prisma.formSubmission.delete({ where: { id: submission.id } });
+  const { userId, staffingCycleId, slot } = submission;
+  const partnerApplicationId = submission.partnerApplication?.id ?? null;
+  const educationApplicationId = submission.educationApplication?.id ?? null;
+  await prisma.$transaction(async (tx) => {
+    if (userId && staffingCycleId && slot === "project-bids") {
+      await tx.staffingPreference.deleteMany({ where: { userId, staffingCycleId } });
+    }
+    if (userId && staffingCycleId && slot === "intent-to-work") {
+      await tx.intentToWork.deleteMany({ where: { userId, staffingCycleId } });
+    }
+    if (partnerApplicationId) {
+      await tx.partnerApplication.delete({ where: { id: partnerApplicationId } });
+    }
+    if (educationApplicationId) {
+      await tx.educationApplicationAnswer.deleteMany({
+        where: { applicationId: educationApplicationId },
+      });
+      await tx.educationApplication.delete({ where: { id: educationApplicationId } });
+    }
+    await tx.formSubmission.delete({ where: { id: submission.id } });
+  });
   await logAuditEvent({
     action: "form.response.delete",
     userId: args.actorId,
     targetId: args.formId,
     metadata: {
       submissionId: submission.id,
-      respondentId: submission.userId,
+      respondentId: userId,
       formVersionId: submission.formVersionId,
+      staffingCycleId,
+      slot,
+      partnerApplicationId,
+      educationApplicationId,
     },
     request: args.request,
   });
@@ -113,7 +138,7 @@ export async function loadEditableResponse(args: {
     },
   });
   if (!submission) return NOT_FOUND;
-  if (responseLockReason(submission, form.name)) {
+  if (responseLockReason(submission)) {
     return { error: "This response can't be edited.", status: 409 };
   }
 
@@ -128,16 +153,14 @@ export async function loadEditableResponse(args: {
   };
 }
 
-/** Stored answers in the string-valued shape the fill UI keeps. Checkbox
- *  arrays go back to their JSON-string form; answers the screen can't show
- *  (files) are left out and survive the merge on save. */
+/** Stored answers in the string-valued shape the fill UI keeps. Arrays
+ *  (checkboxes, multi-file answers) go back to their JSON-string form. */
 export function answersToFillState(
   questions: Question[],
   answers: Record<string, unknown>,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const q of questions) {
-    if (q.type === "file") continue;
     const v = answers[q.key];
     if (typeof v === "string") out[q.key] = v;
     else if (typeof v === "number") out[q.key] = String(v);
@@ -162,9 +185,9 @@ export async function loadResponseForEditing(args: {
   };
 }
 
-/** Replace the respondent's own answers. Posted answers merge over stored ones
- *  (so file answers the screen can't show survive), then validate against the
- *  stored version. None of submitMemberForm's side effects run. */
+/** Replace the respondent's own answers. Posted answers merge over stored
+ *  ones, then validate against the stored version. None of submitMemberForm's
+ *  side effects run. */
 export async function editOwnResponse(args: {
   token: string;
   userId: string | null;
@@ -181,7 +204,7 @@ export async function editOwnResponse(args: {
   );
   const editable = new Set(
     questions
-      .filter((q) => q.type !== "file" && q.type !== "info" && q.type !== "pageBreak")
+      .filter((q) => q.type !== "info" && q.type !== "pageBreak")
       .map((q) => q.key),
   );
   const posted = Object.fromEntries(
@@ -190,14 +213,7 @@ export async function editOwnResponse(args: {
   const stored = loaded.submission.answers;
   const merged: Record<string, unknown> = { ...stored, ...posted };
 
-  // A required file question is satisfied by the stored upload, which this
-  // screen can't replace.
-  const toValidate = questions.map((q) =>
-    q.type === "file" && q.required && stored[q.key] != null
-      ? { ...q, required: false }
-      : q,
-  );
-  const bad = await validateAnswers(toValidate, merged, args.userId, stored);
+  const bad = await validateAnswers(questions, merged, args.userId, stored);
   if (bad) return bad;
 
   await prisma.formSubmission.update({

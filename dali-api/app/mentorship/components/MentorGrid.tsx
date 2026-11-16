@@ -36,8 +36,8 @@ const WEEK_COL = "2.5rem";
 const IDENTITY_COL = "17rem";
 // The check-in whose forms the Form pills open.
 const FORM_WEEK = 5;
-// The roomy white hover card used by the week circles and the check-in bubble.
-const POPUP = "!max-w-[320px] !rounded-2xl !border-os-container/60 !bg-white !p-4 !text-sm !text-neutral-900";
+// The roomy hover card used by the week circles and the check-in bubble.
+const POPUP = "!max-w-[320px] !rounded-2xl !border-os-container/60 !bg-os-card !p-4 !text-sm !text-os-fg";
 
 const noteTextCache = new Map<string, string>();
 
@@ -427,9 +427,9 @@ function FormBubble({
     <div className="flex items-center gap-3">
       <span className="flex min-w-0 flex-1 flex-col leading-tight">
         <span className="truncate font-medium">{name}</span>
-        <span className="text-xs text-neutral-500">{role}</span>
+        <span className="text-xs text-muted-foreground">{role}</span>
       </span>
-      <span className={cn("inline-flex items-center gap-1.5 text-xs", done ? "font-medium" : "text-neutral-500")}>
+      <span className={cn("inline-flex items-center gap-1.5 text-xs", done ? "font-medium" : "text-muted-foreground")}>
         {done ? "Submitted" : "Not submitted"}
         <FormStateBadge done={done} label={role} />
       </span>

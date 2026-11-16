@@ -11,6 +11,7 @@ import { prisma } from '~/lib/db.server'
 import { getApiBaseUrl } from '~/lib/app-env'
 import { exchangeGoogleCode, GoogleOAuthError } from '~/lib/google-oauth'
 import { EMAIL_PURPOSES, isEmailPurpose, type EmailPurposeKey } from '~/lib/email-identities'
+import { getEnv } from "~/lib/env.server";
 
 const GMAIL_STATE_COOKIE = '__dali_gmail_oauth_state'
 
@@ -56,8 +57,8 @@ export async function loader({ request }: { request: Request }) {
 
   const url = new URL(request.url)
   const apiBase = getApiBaseUrl()
-  const clientId = process.env.GMAIL_CLIENT_ID ?? process.env.GOOGLE_CLIENT_ID!
-  const clientSecret = process.env.GMAIL_CLIENT_SECRET ?? process.env.GOOGLE_CLIENT_SECRET!
+  const clientId = getEnv().GMAIL_CLIENT_ID ?? getEnv().GOOGLE_CLIENT_ID!
+  const clientSecret = getEnv().GMAIL_CLIENT_SECRET ?? getEnv().GOOGLE_CLIENT_SECRET!
 
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')

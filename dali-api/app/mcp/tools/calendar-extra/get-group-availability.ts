@@ -2,7 +2,7 @@
 // week window. Same output as api.calendar.group-availability.ts.
 // No extra role gate beyond `mcp:read`.
 
-import { computeUserFreeBusy } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import { buildAvailabilityDays } from "~/calendar/lib/availability-buckets.server";
 import { McpInvalidError } from "../../registry";
 

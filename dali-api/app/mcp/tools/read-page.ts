@@ -13,7 +13,7 @@ import { prisma } from "~/lib/db.server";
 import { readDocAsBlocks } from "~/collab/read";
 import { blocksToMarkdown } from "~/collab/blocknote-server";
 import { pageDocName } from "~/collab/roomName";
-import { authorizeCollabDoc } from "~/lib/collabAuth";
+import { authorizeCollabDoc } from "~/lib/collabAuth.server";
 import { announceAgent, pagePresenceRoom } from "~/collab/agent-presence.server";
 import { TEXT_PAGE_LIMITS, pageProps, pageText, type PageArgs } from "../pagination";
 

@@ -1,10 +1,10 @@
 // Custom drag-handle side menu for DocEditor (A8).
 //
-// Items, in order:
-//   1. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
-//   2. Duplicate     — deep-copies the block (new IDs) immediately after itself.
-//   2b. Keep/Revert change — only on a block carrying a reserved Enhance mark
-//       (specs/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
+// Notion-ordered items:
+//   1. Duplicate     — deep-copies the block (new IDs) immediately after itself.
+//   1b. Keep/Revert change — only on a block carrying a reserved Enhance mark
+//       (specs/archive/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
+//   2. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
 //   3. Delete        — BlockNote's RemoveBlockItem.
 //
 // Commenting starts from a text selection (the formatting toolbar), not here.
@@ -16,13 +16,13 @@ import { SideMenuExtension } from "@blocknote/core/extensions";
 import {
   BlockColorsItem,
   DragHandleMenu,
+  RemoveBlockItem,
   SideMenu,
   SideMenuController,
   useBlockNoteEditor,
   useComponentsContext,
   useExtensionState,
 } from "@blocknote/react";
-import { Copy, Trash2 } from "lucide-react";
 import { useCallback, useContext } from "react";
 import type { FC } from "react";
 import type { SideMenuProps } from "@blocknote/react";
@@ -63,29 +63,13 @@ function DuplicateBlockItem({ children }: { children: React.ReactNode }) {
   if (!block) return null;
 
   return (
-    <Components.Generic.Menu.Item className={"bn-menu-item"} icon={<Copy size={16} strokeWidth={1.5} />} onClick={onClick}>
+    <Components.Generic.Menu.Item className={"bn-menu-item"} onClick={onClick}>
       {children}
     </Components.Generic.Menu.Item>
   );
 }
 
-function DeleteBlockItem({ children }: { children: React.ReactNode }) {
-  const Components = useComponentsContext()!;
-  const editor = useBlockNoteEditor<any, any, any>();
-  const block = useExtensionState(SideMenuExtension, { editor, selector: (state) => state?.block });
-  if (!block) return null;
-  return (
-    <Components.Generic.Menu.Item
-      className="bn-menu-item"
-      icon={<Trash2 size={16} strokeWidth={1.5} />}
-      onClick={() => editor.removeBlocks([block])}
-    >
-      {children}
-    </Components.Generic.Menu.Item>
-  );
-}
-
-// ── 1b. Keep change / Revert change (specs/meeting-recording-rail.md Step 2) ─
+// ── 1b. Keep change / Revert change (specs/archive/meeting-recording-rail.md Step 2) ─
 // Shown only when the hovered block carries a reserved Enhance mark, and
 // only when a recording hook up the tree provided handlers (documents.
 // $pageId.tsx wraps the page in EnhanceReviewContext when one is mounted).
@@ -125,10 +109,10 @@ function EnhanceReviewMenuItems() {
 function DaliDragHandleMenu() {
   return (
     <DragHandleMenu>
-      <BlockColorsItem>Colors</BlockColorsItem>
       <DuplicateBlockItem>Duplicate</DuplicateBlockItem>
       <EnhanceReviewMenuItems />
-      <DeleteBlockItem>Delete</DeleteBlockItem>
+      <BlockColorsItem>Colors</BlockColorsItem>
+      <RemoveBlockItem>Delete</RemoveBlockItem>
     </DragHandleMenu>
   );
 }

@@ -10,7 +10,7 @@ import { deleteForm, setFormArchived } from "~/forms/lib/form-page.server";
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditFile } from "~/lib/fileAccess.server";
-import { isRoot, ROOT_DELETE_ERROR } from "~/lib/drive-roots";
+import { isRoot, ROOT_DELETE_ERROR } from "~/drive/lib/drive-roots";
 import { canManageFormPlacement } from "~/forms/lib/form-access.server";
 import { requireForAction } from "~/mcp/registry";
 import type { McpCtx, McpTool } from "~/mcp/registry";

@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.rooms";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { requireRoomBookingUser } from "~/rooms/lib/access.server";
-import { listBookableRooms, listRoomAvailability, parseWindow } from "~/lib/rooms.server";
+import { listBookableRooms, listRoomAvailability, parseWindow } from "~/rooms/lib/rooms.server";
 
 // GET /api/rooms — bookable rooms. With ?start&end (and optionally
 // recurrenceRule, excludeMeetingId), each carries its conflict in that window.

@@ -473,6 +473,27 @@ describe("validateMapping (intent-to-work)", () => {
     });
     expect(r).toEqual({ ok: true });
   });
+
+  it.each(["project-bids", "intent-to-work", "level-up"] as const)(
+    "accepts the project history, terms in lab and current role builtins on %s",
+    (slot) => {
+      const entries = (["projectHistory", "termsInLab", "currentRole"] as const).map((b, order) => ({
+        source: "builtin" as const, builtin: b, role: b, label: b, order,
+      }));
+      const r = validateMapping(slot, [], { version: 1, entries });
+      expect(r.ok ? "" : r.reason).not.toMatch(/Unknown column|can't be filled/);
+      expect(parseColumnMapping({ version: 1, entries })?.entries.map((e) => e.source === "builtin" && e.builtin))
+        .toEqual(["projectHistory", "termsInLab", "currentRole"]);
+    },
+  );
+
+  it("rejects a history builtin placed under a different role", () => {
+    const r = validateMapping("intent-to-work", qs, {
+      version: 1,
+      entries: [{ source: "builtin", builtin: "termsInLab", role: "submitter", label: "x", order: 0 }],
+    });
+    expect(r).toMatchObject({ ok: false });
+  });
 });
 
 describe("parseColumnMapping status map", () => {
@@ -509,6 +530,19 @@ describe("validateMapping with conditional questions", () => {
     );
     expect(r).toMatchObject({ ok: false });
     if (!r.ok) expect(r.reason).toMatch(/only shown sometimes/);
+  });
+
+  it("rejects a mapping to a question on a page that is only shown sometimes", () => {
+    const page = q("pb", "pageBreak", { showIf: { match: "all", conditions: [{ questionKey: "p", op: "answered", values: [] }] } });
+    const r = validateMapping(
+      "project-bids",
+      [projQ("p"), ...REQ_PROJ_QS, page, q("n", "textarea")],
+      withBidRequirements([
+        { source: "question", questionKey: "n", role: "display", label: "Notes", order: 0 },
+      ]),
+    );
+    expect(r).toMatchObject({ ok: false });
+    if (!r.ok) expect(r.reason).toMatch(/"n" is only shown sometimes/);
   });
 
   it("still accepts a mapping to an unconditional question", () => {

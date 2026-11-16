@@ -21,8 +21,8 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/availability", async (orig) => {
-  const real = await orig<typeof import("~/lib/availability")>();
+vi.mock("~/calendar/lib/availability.server", async (orig) => {
+  const real = await orig<typeof import("~/calendar/lib/availability.server")>();
   return { ...real, computeUserFreeBusy: vi.fn() };
 });
 vi.mock("~/lib/timezone", async (orig) => {
@@ -30,7 +30,7 @@ vi.mock("~/lib/timezone", async (orig) => {
   return { ...real };
 });
 
-import { computeUserFreeBusy } from "~/lib/availability";
+import { computeUserFreeBusy } from "~/calendar/lib/availability.server";
 import {
   runGetGroupAvailability,
   GET_GROUP_AVAILABILITY_DEF,

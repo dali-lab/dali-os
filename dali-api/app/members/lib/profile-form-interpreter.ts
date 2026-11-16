@@ -8,12 +8,6 @@
 // edits) that map 1:1 to User columns. Unknown keys are ignored; blank answers
 // are skipped (left unchanged on the user) rather than nulling existing data.
 
-// The form is identified by this exact name (created/published once via the
-// /forms builder). submitMemberForm matches on it to apply this interpreter.
-// This name is ALSO the heading the new member sees on the fill page, so it's
-// written as a welcome rather than an internal label.
-export const NEW_MEMBER_PROFILE_FORM_NAME = "Welcome to DALI! 👋";
-
 // Question key -> User string field. The onboarding form must use these keys.
 const STRING_FIELDS: Record<string, string> = {
   "profile.pronouns": "pronouns",

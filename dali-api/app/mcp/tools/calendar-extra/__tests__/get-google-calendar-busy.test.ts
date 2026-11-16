@@ -21,11 +21,11 @@ vi.mock("~/mcp/registry", () => {
   return { McpError, McpNotFoundError, McpForbiddenError, McpInvalidError };
 });
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/google-calendar", () => ({
+vi.mock("~/calendar/lib/google-calendar.server", () => ({
   fetchBusyEvents: vi.fn(),
 }));
 
-import { fetchBusyEvents } from "~/lib/google-calendar";
+import { fetchBusyEvents } from "~/calendar/lib/google-calendar.server";
 import {
   runGetGoogleCalendarBusy,
   GET_GOOGLE_CALENDAR_BUSY_DEF,

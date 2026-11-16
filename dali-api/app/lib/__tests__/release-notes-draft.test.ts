@@ -12,7 +12,7 @@ import {
   stripEmDashes,
   DRAFT_SYSTEM_PROMPT,
   type PullSummary,
-} from "../release-notes-draft";
+} from "../release-notes-draft.server";
 import { releaseNoteLine } from "../release-note-line";
 
 const pr = (n: number, o: Partial<PullSummary> = {}): PullSummary => ({

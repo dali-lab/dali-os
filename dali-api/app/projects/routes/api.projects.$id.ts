@@ -8,7 +8,7 @@ import { pageDocName } from "~/collab/roomName";
 // DELETE /api/projects/:id — permanently delete a project. Admin/Core only.
 //
 // Guardrailed rather than cascading. Most models that reference a project use
-// the default restrict rule, and four (StaffingPreference, EssentialityForm,
+// the default restrict rule, and three (StaffingPreference,
 // StaffingAssignment, MentorNote) carry a projectId with no foreign key at all,
 // so a blind delete would either fail on a constraint or silently orphan rows.
 // Worse, TimeEntry (payroll) and BudgetEntry/BudgetNote (finance) hang off a
@@ -41,7 +41,6 @@ const BLOCKERS: { label: string; count: (projectId: string) => Promise<number> }
   { label: "linked partners", count: (projectId) => prisma.projectPartner.count({ where: { projectId } }) },
   // No FK to Project — these would orphan rather than block, so check them too.
   { label: "staffing preferences", count: (projectId) => prisma.staffingPreference.count({ where: { projectId } }) },
-  { label: "essentiality forms", count: (projectId) => prisma.essentialityForm.count({ where: { projectId } }) },
   { label: "staffing-cycle assignments", count: (projectId) => prisma.staffingAssignment.count({ where: { projectId } }) },
   { label: "mentor notes", count: (projectId) => prisma.mentorNote.count({ where: { projectId } }) },
 ];

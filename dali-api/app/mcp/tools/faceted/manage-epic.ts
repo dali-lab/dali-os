@@ -3,9 +3,9 @@
 
 import type { McpTool, McpCtx } from "../../registry";
 import { McpInvalidError, requireForAction } from "../../errors";
-import { CREATE_EPIC_TOOL, runCreateEpic } from "../create-epic";
-import { UPDATE_EPIC_TOOL, runUpdateEpic } from "../update-epic";
-import { DELETE_EPIC_TOOL, runDeleteEpic } from "../delete-epic";
+import { CREATE_EPIC_PROPERTIES, CREATE_EPIC_REQUIRED, runCreateEpic } from "../create-epic";
+import { UPDATE_EPIC_PROPERTIES, UPDATE_EPIC_REQUIRED, runUpdateEpic } from "../update-epic";
+import { DELETE_EPIC_PROPERTIES, DELETE_EPIC_REQUIRED, runDeleteEpic } from "../delete-epic";
 
 const MANAGE_EPIC_DEF = {
   name: "manage_epic",
@@ -22,11 +22,11 @@ const MANAGE_EPIC_DEF = {
         description: "Operation to perform.",
       },
       // create fields
-      ...CREATE_EPIC_TOOL.inputSchema.properties,
+      ...CREATE_EPIC_PROPERTIES,
       // update fields
-      ...UPDATE_EPIC_TOOL.inputSchema.properties,
+      ...UPDATE_EPIC_PROPERTIES,
       // delete fields
-      ...DELETE_EPIC_TOOL.inputSchema.properties,
+      ...DELETE_EPIC_PROPERTIES,
     },
     required: ["action"],
     additionalProperties: false,
@@ -35,9 +35,9 @@ const MANAGE_EPIC_DEF = {
 };
 
 const ACTION_REQUIRED: Record<string, string[]> = {
-  create: CREATE_EPIC_TOOL.inputSchema.required,
-  update: UPDATE_EPIC_TOOL.inputSchema.required,
-  delete: DELETE_EPIC_TOOL.inputSchema.required,
+  create: CREATE_EPIC_REQUIRED,
+  update: UPDATE_EPIC_REQUIRED,
+  delete: DELETE_EPIC_REQUIRED,
 };
 
 async function run(ctx: McpCtx, args: Record<string, unknown>) {

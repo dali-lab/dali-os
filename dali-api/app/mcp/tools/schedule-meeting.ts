@@ -3,11 +3,11 @@
 // Core meetings, a note notebook, and SelfCheckIn attendance. Mirrors the web
 // api.scheduled-meetings.ts POST. Requires the `mcp:write` scope.
 
-import { createScheduledMeeting, type ScheduledMeetingScope } from "~/lib/scheduled-meeting";
+import { createScheduledMeeting, type ScheduledMeetingScope } from "~/calendar/lib/scheduled-meeting.server";
 import { isCore, canViewForms, isLabMember } from "~/lib/roles";
-import { isCoreGroup } from "~/lib/groups";
-import { notebookChoiceSchema } from "~/lib/notebook-choice";
-import { assertMeetingRoomsFree } from "~/lib/rooms.server";
+import { isCoreGroup } from "~/lib/groups.server";
+import { notebookChoiceSchema } from "~/calendar/lib/notebook-choice";
+import { assertMeetingRoomsFree } from "~/rooms/lib/rooms.server";
 
 export const SCHEDULE_MEETING_TOOL = {
   name: "schedule_meeting",
@@ -102,7 +102,7 @@ export const SCHEDULE_MEETING_TOOL = {
         properties: {
           existingId: { type: "string", minLength: 1 },
           title: { type: "string", minLength: 1, maxLength: 200 },
-          templatePageId: { type: "string", minLength: 1, nullable: true },
+          templatePageId: { type: ["string", "null"], minLength: 1 },
         },
         additionalProperties: false,
       },
@@ -215,7 +215,7 @@ export async function runScheduleMeeting(
     if (!input.startTime) throw new ScheduleMeetingError("roomIds requires startTime");
     const selectedAt = new Date(input.startTime);
     if (Number.isNaN(selectedAt.getTime())) throw new ScheduleMeetingError("startTime is not a valid time");
-    if (!(await isLabMember(user.id))) throw new ScheduleMeetingError("Booking a room requires lab membership");
+    if (!(await isLabMember(user.id))) throw new ScheduleMeetingError("Only current lab members can book rooms");
     const free = await assertMeetingRoomsFree({
       roomIds,
       selectedAt,

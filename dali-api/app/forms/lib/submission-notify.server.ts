@@ -6,7 +6,7 @@ import { renderEmailTemplate } from "~/email/lib/templates.server";
 import { emailTemplateDef } from "~/email/lib/registry";
 import { renderFramedEmail } from "~/email/lib/layout.server";
 import { htmlToPlainText } from "~/lib/email";
-import { EMAIL_PATTERN } from "~/lib/form-answers";
+import { EMAIL_PATTERN } from "~/forms/lib/form-answers";
 import { formatDateTime } from "~/lib/display";
 import type { Question } from "~/types";
 import { buildResponseGrid } from "./answer-rows.server";

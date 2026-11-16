@@ -1,4 +1,5 @@
 import { securityHeaders } from "~/lib/security-headers";
+import { getEnv } from "~/lib/env.server";
 
 const ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -6,7 +7,7 @@ const ALLOWED_ORIGINS = [
   // DALI from the JobX origin; allow it so the cross-origin response is
   // readable by the content script.
   "https://dartmouth.studentemployment.ngwebsolutions.com",
-  process.env.FRONTEND_URL,
+  getEnv().FRONTEND_URL,
 ].filter(Boolean) as string[];
 
 export function corsHeaders(request: Request): Record<string, string> {

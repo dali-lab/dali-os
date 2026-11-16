@@ -1,5 +1,6 @@
 import type { Route } from "./+types/portal.calendar";
-import { loadCalendarData, submitCalendarAction } from "~/calendar/routes/calendar.server";
+import { loadCalendarData } from "~/calendar/lib/calendar-loader.server";
+import { submitCalendarAction } from "~/calendar/lib/calendar-actions.server";
 
 // The non-member mount of the calendar. Same page, same features — linked
 // Google calendars, events, classes this term, the timesheet — read and written

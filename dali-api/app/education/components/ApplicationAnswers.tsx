@@ -1,5 +1,5 @@
 import type { Question } from "~/types";
-import { visibleQuestions } from "~/lib/form-logic";
+import { visibleQuestions } from "~/forms/lib/form-logic";
 
 // Read-only answer rendering for the manage review tab. Answers are shown
 // against the questions of the FormVersion the submission was made on, so a

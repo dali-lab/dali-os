@@ -2,16 +2,13 @@ import type { Route } from "./+types/api.files.$id.share";
 import { requireMemberSession } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { listFileShares } from "~/lib/file-sharing.server";
-import { SharePrincipalError } from "~/lib/page-sharing.server";
+import { errorResponse } from "~/lib/http-error.server";
 import { loadShareOptions, parsePermission, parseLinkAccess } from "~/lib/share-params.server";
 import {
   requireFileShareManager,
   setFileGeneralAccess,
   shareFileWith,
   unshareFile,
-  FileShareForbiddenError,
-  FileShareNotFoundError,
-  FileGeneralAccessError,
 } from "~/lib/file-share-access.server";
 
 // POST /api/files/:id/share — the file counterpart of /api/pages/:id/share,
@@ -79,11 +76,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         return json({ error: "Unknown action" }, 400);
     }
   } catch (err) {
-    if (err instanceof FileShareNotFoundError) return json({ error: err.message }, 404);
-    if (err instanceof FileShareForbiddenError) return json({ error: err.message }, 403);
-    if (err instanceof SharePrincipalError || err instanceof FileGeneralAccessError) {
-      return json({ error: err.message }, 400);
-    }
-    throw err;
+    return errorResponse(err, request);
   }
 }

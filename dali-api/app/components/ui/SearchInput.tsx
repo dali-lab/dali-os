@@ -1,4 +1,4 @@
-import { forwardRef, type InputHTMLAttributes, type ChangeEvent } from "react";
+import { forwardRef, type InputHTMLAttributes, type ChangeEvent, type ReactNode } from "react";
 import { Search } from "lucide-react";
 import { cn } from "~/lib/cn";
 
@@ -13,7 +13,10 @@ export interface SearchInputProps
   /** "md" is the roomy top-of-page filter; "sm" is the compact in-panel one
    *  (task boards, dropdown filters, dense table toolbars). Same pill either
    *  way — one control read at two scales. */
-  size?: "sm" | "md";
+  size?: "xs" | "sm" | "md";
+  /** Sits at the start of the field in place of the search glyph (a chip for
+   *  the scope the search runs inside). */
+  leading?: ReactNode;
 }
 
 // The one dali.os search field: a card surface with the design's 8px corner, a
@@ -26,15 +29,39 @@ const BASE =
 
 const SIZES = {
   md: { input: "h-9 pl-10 pr-4 text-sm", icon: "left-4 w-4 h-4" },
+  xs: { input: "h-7 pl-8 pr-2.5 text-[13px]", icon: "left-2.5 w-3.5 h-3.5" },
   sm: { input: "h-8 pl-9 pr-3 text-sm", icon: "left-3 w-3.5 h-3.5" },
 } as const;
 
 export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(
   function SearchInput(
-    { value, onChange, placeholder, className, containerClassName, size = "md", ...props },
+    { value, onChange, placeholder, className, containerClassName, size = "md", leading, ...props },
     ref,
   ) {
     const s = SIZES[size];
+    if (leading) {
+      return (
+        <div
+          className={cn(
+            BASE,
+            "flex items-center gap-1.5 pl-1.5 pr-3 focus-within:ring-2 focus-within:ring-os-accent/30",
+            size === "md" ? "h-9" : size === "xs" ? "h-7" : "h-8",
+            containerClassName,
+          )}
+        >
+          {leading}
+          <input
+            ref={ref}
+            type="search"
+            value={value}
+            onChange={onChange}
+            placeholder={placeholder}
+            className={cn("h-full min-w-0 flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none", className)}
+            {...props}
+          />
+        </div>
+      );
+    }
     return (
       <div className={cn("relative", containerClassName)}>
         <Search

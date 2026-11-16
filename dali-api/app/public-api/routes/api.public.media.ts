@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.public.media";
 import { requireShowcaseSecret } from "../lib/public-auth.server";
 import { isServableMediaKey } from "../lib/public-media";
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 
 // GET /api/public/media?key=uploads/... — resolve one public image.
 //

@@ -12,7 +12,7 @@
 // to reject or to evict them.
 
 import { prisma } from "~/lib/db.server";
-import { rruleUntilBasic } from "~/lib/meeting-occurrences";
+import { rruleUntilBasic } from "~/calendar/lib/meeting-occurrences";
 import { formatInTimeZone, zonedWallTimeUtc } from "~/lib/timezone";
 import {
   cancelRoomBooking,
@@ -21,7 +21,7 @@ import {
   previewBookingSeries,
   releaseCycleRoomBookings,
   type RoomScheduleItem,
-} from "~/lib/rooms.server";
+} from "~/rooms/lib/rooms.server";
 import { notify } from "~/lib/notify.server";
 
 export type HoldConfig = {

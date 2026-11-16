@@ -10,9 +10,9 @@
  *   3. Add `{ id, title, from: 'YYYY-MM-DD' }` below. It goes live that day (viewer's time zone)
  *      and stays until a later entry starts.
  *
- * Preview any background before its date with `/?background=<id>`.
+ * Preview any week, background and title, with `/?background=<id>`.
  */
-export const LANDING_BACKGROUND_IDS = ['deep-space', 'library', 'delta', 'demo-expo', 'build', 'bug-hunt'] as const
+export const LANDING_BACKGROUND_IDS = ['deep-space', 'library', 'delta', 'demo-expo', 'build', 'bug-hunt', 'technigala'] as const
 
 export type LandingBackgroundId = (typeof LANDING_BACKGROUND_IDS)[number]
 
@@ -25,6 +25,7 @@ export const LANDING_BACKGROUND_SCHEDULE: readonly LandingWeek[] = [
   { id: 'demo-expo', title: 'ProdTales', from: '2026-10-05' },
   { id: 'build', title: 'Build', from: '2026-10-12' },
   { id: 'bug-hunt', title: 'Bug Hunt', from: '2026-11-02' },
+  { id: 'technigala', title: 'Technigala', from: '2026-11-16' },
 ]
 
 export function isLandingBackgroundId(value: unknown): value is LandingBackgroundId {
@@ -38,4 +39,11 @@ export function scheduledLandingWeek(today: string): LandingWeek {
     if (entry.from <= today) current = entry
   }
   return current
+}
+
+/** The week Home shows: the `?background=` preview when it names a known background, else the live week. */
+export function landingWeek(today: string, preview: unknown): LandingWeek {
+  const scheduled = scheduledLandingWeek(today)
+  if (!isLandingBackgroundId(preview)) return scheduled
+  return LANDING_BACKGROUND_SCHEDULE.find((entry) => entry.id === preview) ?? scheduled
 }

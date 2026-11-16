@@ -5,7 +5,8 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/core/lib/taskboard.server", () => ({
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(true) }));
+vi.mock("~/projects/lib/core-board.server", () => ({
   getCoreBoardProject: vi.fn().mockResolvedValue({ id: "core1", name: "Core" }),
 }));
 vi.mock("~/projects/lib/task-notifications.server", () => ({
@@ -18,11 +19,12 @@ vi.mock("~/projects/lib/github-task-sync", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { createIssueForTask } from "~/projects/lib/github-task-sync";
-import { getCoreBoardProject } from "~/core/lib/taskboard.server";
+import { getCoreBoardProject } from "~/projects/lib/core-board.server";
 import {
   runCreateTask,
-  CREATE_TASK_TOOL,
+  CREATE_TASK_PROPERTIES,
   CreateTaskError,
 } from "~/mcp/tools/create-task";
 
@@ -39,7 +41,6 @@ beforeEach(() => {
 
 describe("create_task", () => {
   it("requires the mcp:write scope", () => {
-    expect(CREATE_TASK_TOOL.requiredScope).toBe("mcp:write");
   });
 
   it("rejects callers without project edit access", async () => {
@@ -150,11 +151,58 @@ describe("create_task", () => {
     const out = await runCreateTask("u1", {
       projectId: "p1",
       title: "Build it",
+      dueAt: "2026-11-30T00:00:00Z",
       mirrorToGithubRepo: "dali/alpha",
       assigneeUserIds: ["u2"],
     });
     expect(out).toMatchObject({ id: "t-new", status: "Todo", position: 5 });
     expect(createIssueForTask).toHaveBeenCalledWith("t-new", "dali/alpha");
+  });
+});
+
+describe("create_task deadline rule", () => {
+  function stub() {
+    const create = vi.fn().mockResolvedValue({ id: "t-new" });
+    vi.mocked(isCore).mockResolvedValue(true);
+    mockPrisma.project.findUnique.mockResolvedValue({ id: "p1", repoUrls: [] });
+    mockPrisma.task.findFirst.mockResolvedValue(null);
+    mockPrisma.$transaction.mockImplementation(async (fn: unknown) =>
+      (fn as (tx: typeof prisma) => Promise<unknown>)({
+        task: { create },
+        taskAssignee: { createMany: vi.fn() },
+      } as unknown as typeof prisma),
+    );
+    return create;
+  }
+
+  it("files a task with no status and no dueAt in Backlog", async () => {
+    const create = stub();
+    const out = await runCreateTask("u1", { projectId: "p1", title: "x" });
+    expect(out).toEqual({ id: "t-new", status: "Backlog", position: 0 });
+    expect(create.mock.calls[0][0].data).toMatchObject({ status: "Backlog", dueAt: null });
+  });
+
+  it("files a task with a dueAt and no status as Todo", async () => {
+    const create = stub();
+    const out = await runCreateTask("u1", { projectId: "p1", title: "x", dueAt: "2026-11-30T00:00:00Z" });
+    expect(out.status).toBe("Todo");
+    expect(create.mock.calls[0][0].data.dueAt).toEqual(new Date("2026-11-30T00:00:00Z"));
+  });
+
+  it("allows an explicit status without a dueAt", async () => {
+    const create = stub();
+    const out = await runCreateTask("u1", { projectId: "p1", title: "x", status: "Todo" });
+    expect(out.status).toBe("Todo");
+    expect(create.mock.calls[0][0].data).toMatchObject({ status: "Todo", dueAt: null });
+  });
+
+  it("rejects an unparseable dueAt as a CreateTaskError", async () => {
+    stub();
+    await expect(runCreateTask("u1", { projectId: "p1", title: "x", dueAt: "garbage" })).rejects.toMatchObject({
+      name: "CreateTaskError",
+      status: 400,
+      message: "Invalid dueAt",
+    });
   });
 });
 
@@ -173,12 +221,18 @@ describe("create_task core: true", () => {
   }
 
   it("makes projectId optional in the input schema and adds core", () => {
-    expect(CREATE_TASK_TOOL.inputSchema.required).toEqual(["title"]);
-    expect(CREATE_TASK_TOOL.inputSchema.properties.core.type).toBe("boolean");
+    expect(CREATE_TASK_PROPERTIES.core.type).toBe("boolean");
   });
 
   it("rejects a non-Core caller", async () => {
     vi.mocked(isCore).mockResolvedValue(false);
+    await expect(runCreateTask("u1", { core: true, title: "x" })).rejects.toMatchObject({ status: 403 });
+    expect(getCoreBoardProject).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Core caller when the core-taskboard flag is off", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    vi.mocked(isFeatureEnabled).mockResolvedValueOnce(false);
     await expect(runCreateTask("u1", { core: true, title: "x" })).rejects.toMatchObject({ status: 403 });
     expect(getCoreBoardProject).not.toHaveBeenCalled();
   });

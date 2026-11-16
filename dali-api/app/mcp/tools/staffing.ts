@@ -18,6 +18,8 @@ import { prisma } from "~/lib/db.server";
 import { canManageStaffing } from "~/lib/roles";
 import { fullName } from "~/lib/display";
 import type { Level } from "~/generated/prisma/client";
+import type { McpCtx } from "../registry";
+import { assignStaffing, setDomainEligibility, StaffingWriteError } from "~/projects/lib/staffing-assign.server";
 
 const LEVELS = ["P1", "P2", "P3"] as const;
 
@@ -246,107 +248,34 @@ type AssignInput = {
   domains?: { domainId: string; level: Level }[];
 };
 
+function asMcpError(err: unknown): never {
+  if (err instanceof StaffingWriteError) {
+    if (err.status === 404) throw new StaffingNotFoundError(err.message.replace(/ not found$/, ""));
+    throw new StaffingInvalidError(err.message);
+  }
+  throw err;
+}
+
 export async function runSetStaffingAssignment(
   callerId: string,
   input: AssignInput,
+  ctx?: Pick<McpCtx, "request">,
 ): Promise<{ ok: true; proposed: number; clearedProposed: number }> {
   await requireStaffingManager(callerId);
-
-  const cycle = await prisma.staffingCycle.findUnique({
-    where: { id: input.cycleId },
-    select: { id: true, termId: true },
-  });
-  if (!cycle) throw new StaffingNotFoundError("Staffing cycle");
-
-  const domains = input.domains ?? [];
-  if (input.projectId !== null && domains.length === 0) {
-    throw new StaffingInvalidError(
-      "domains is required when assigning to a project — pass at least one { domainId, level }",
-    );
+  try {
+    const result = await assignStaffing({
+      cycleId: input.cycleId,
+      userId: input.userId,
+      projectId: input.projectId,
+      fromProjectId: input.fromProjectId,
+      domains: input.domains ?? [],
+      actorId: callerId,
+      request: ctx?.request,
+    });
+    return { ok: true, ...result };
+  } catch (err) {
+    return asMcpError(err);
   }
-  if (input.projectId !== null) {
-    const project = await prisma.project.findUnique({
-      where: { id: input.projectId },
-      select: { id: true },
-    });
-    if (!project) throw new StaffingNotFoundError("Project");
-    const found = await prisma.domain.count({
-      where: { id: { in: domains.map((d) => d.domainId) } },
-    });
-    if (found !== new Set(domains.map((d) => d.domainId)).size) {
-      throw new StaffingInvalidError("One or more domainIds do not exist");
-    }
-  }
-
-  // Same project-scoped transaction shape as api.staffing.assign.ts.
-  return prisma.$transaction(async (tx) => {
-    if (input.projectId === null && !input.fromProjectId) {
-      const cleared = await tx.staffingAssignment.deleteMany({
-        where: { userId: input.userId, staffingCycleId: input.cycleId, status: "Proposed" },
-      });
-      return { ok: true as const, proposed: 0, clearedProposed: cleared.count };
-    }
-
-    const projectsToClear = new Set<string>();
-    if (input.projectId !== null) projectsToClear.add(input.projectId);
-    if (input.fromProjectId) projectsToClear.add(input.fromProjectId);
-
-    const cleared = await tx.staffingAssignment.deleteMany({
-      where: {
-        userId: input.userId,
-        staffingCycleId: input.cycleId,
-        projectId: { in: [...projectsToClear] },
-        status: "Proposed",
-      },
-    });
-
-    // Leaving a project (drag to Unassigned / × OR a move A→B — both send
-    // fromProjectId). Decline any Confirmed rows there so a finalized card
-    // leaves the column, AND delete the canonical ProjectAssignment for
-    // (userId, fromProjectId, term) so the member drops off payroll/jobx export
-    // and their profile immediately. Mirrors api.staffing.assign.ts (the
-    // PR #1533 roster-leak fix): finalize's drop-detector only sees still-
-    // Confirmed rows, so if we don't delete the roster row here nothing ever
-    // will. A plain "add to a second project" carries no fromProjectId.
-    if (input.fromProjectId) {
-      await tx.staffingAssignment.updateMany({
-        where: {
-          userId: input.userId,
-          staffingCycleId: input.cycleId,
-          projectId: input.fromProjectId,
-          status: "Confirmed",
-        },
-        data: { status: "Declined" },
-      });
-      await tx.projectAssignment.deleteMany({
-        where: {
-          userId: input.userId,
-          projectId: input.fromProjectId,
-          termId: cycle.termId,
-        },
-      });
-    }
-
-    let proposed = 0;
-    if (input.projectId !== null) {
-      for (const d of domains) {
-        await tx.staffingAssignment.create({
-          data: {
-            userId: input.userId,
-            staffingCycleId: input.cycleId,
-            projectId: input.projectId,
-            termId: cycle.termId,
-            domainId: d.domainId,
-            level: d.level,
-            status: "Proposed",
-            assignedById: callerId,
-          },
-        });
-        proposed++;
-      }
-    }
-    return { ok: true as const, proposed, clearedProposed: cleared.count };
-  });
 }
 
 // ─── set_domain_eligibility ──────────────────────────────────────────────────
@@ -375,30 +304,19 @@ export const SET_DOMAIN_ELIGIBILITY_TOOL = {
 export async function runSetDomainEligibility(
   callerId: string,
   input: { userId: string; domainId: string; level: Level },
+  ctx?: Pick<McpCtx, "request">,
 ): Promise<{ ok: true; created: boolean }> {
   await requireStaffingManager(callerId);
-
-  const [user, domain] = await Promise.all([
-    prisma.user.findUnique({ where: { id: input.userId }, select: { id: true } }),
-    prisma.domain.findUnique({ where: { id: input.domainId }, select: { id: true } }),
-  ]);
-  if (!user) throw new StaffingNotFoundError("User");
-  if (!domain) throw new StaffingNotFoundError("Domain");
-
-  const existing = await prisma.domainEligibility.findFirst({
-    where: { userId: input.userId, domainId: input.domainId },
-    select: { id: true },
-  });
-
-  if (existing) {
-    await prisma.domainEligibility.update({
-      where: { id: existing.id },
-      data: { level: input.level },
+  try {
+    const { created } = await setDomainEligibility({
+      userId: input.userId,
+      domainId: input.domainId,
+      level: input.level,
+      actorId: callerId,
+      request: ctx?.request,
     });
-    return { ok: true, created: false };
+    return { ok: true, created };
+  } catch (err) {
+    return asMcpError(err);
   }
-  await prisma.domainEligibility.create({
-    data: { userId: input.userId, domainId: input.domainId, level: input.level },
-  });
-  return { ok: true, created: true };
 }

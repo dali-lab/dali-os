@@ -4,7 +4,7 @@ const resolveHandles = vi.fn();
 const notifyMentions = vi.fn();
 const findReadableAccount = vi.fn();
 
-vi.mock("~/lib/mentions", () => ({
+vi.mock("~/lib/mentions.server", () => ({
   extractHandlesFromText: (text: string) => [...text.matchAll(/@([a-z0-9_]+)/gi)].map((m) => m[1]!.toLowerCase()),
   resolveHandles: (...a: unknown[]) => resolveHandles(...a),
   notifyMentions: (...a: unknown[]) => notifyMentions(...a),

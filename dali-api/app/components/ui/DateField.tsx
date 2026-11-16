@@ -4,6 +4,7 @@ import { Calendar, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 import { Button } from "~/components/ui/Button";
+import { Z } from "~/components/ui/z";
 
 // Custom date / datetime / time picker — a drop-in for the native inputs of the
 // same `type`, styled to match the app (trigger + portal calendar popover, like
@@ -458,7 +459,7 @@ export function DateField({
               width: POPOVER_WIDTH,
               visibility: pos ? "visible" : "hidden",
             }}
-            className={cn("z-[60] p-3", OS_SURFACE_CLASS)}
+            className={cn(`${Z.popover} p-3`, OS_SURFACE_CLASS)}
           >
             {showCalendar && (
               <>

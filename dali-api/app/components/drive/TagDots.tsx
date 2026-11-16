@@ -1,6 +1,6 @@
 import { Tooltip } from "~/components/ui/floating";
 import { cn } from "~/lib/cn";
-import { hexColor, visibleTagDots, type DriveItemTag } from "~/lib/drive-tags";
+import { hexColor, visibleTagDots, type DriveItemTag } from "~/drive/lib/drive-tags";
 
 function dotClass(color: string | null) {
   return cn("block h-2 w-2 rounded-full ring-1 ring-background", !hexColor(color) && "bg-muted-foreground/50");

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFetcher } from "react-router";
 import { ChevronRight, Plus, Settings2, Trash2, X } from "lucide-react";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { OsPageHeader } from "~/components/os-section";
 import { Avatar } from "~/components/ui/Avatar";
 import { Drawer } from "~/components/ui/Drawer";
@@ -16,7 +16,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { LoadMore } from "~/components/ui/Pager";
 import { useClientSlice } from "~/hooks/useClientSlice";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import type { Level } from "~/lib/level";
 import {
@@ -205,7 +205,16 @@ export function RolesDomainsPage({ data }: { data: Data }) {
                   <div className="flex items-center gap-3">
                     <Avatar photoUrl={m.photoUrl} name={m.name} size="sm" userId={m.id} />
                     <div className="min-w-0">
-                      <p className="font-semibold text-foreground">{m.name}</p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(m.id);
+                        }}
+                        className="text-left font-semibold text-foreground hover:underline"
+                      >
+                        {m.name}
+                      </button>
                       <p className="truncate text-xs text-os-muted">
                         {m.email ?? "No DALI email"}
                         {m.isAlumni && " · Alumni"}

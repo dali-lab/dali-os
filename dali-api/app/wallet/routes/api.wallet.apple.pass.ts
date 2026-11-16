@@ -1,6 +1,6 @@
 import type { Route } from "./+types/api.wallet.apple.pass";
 import { requireAuth, isNonMember } from "~/lib/auth";
-import { walletAppleConfigured, buildAppleWalletPass } from "~/lib/wallet-apple.server";
+import { walletAppleConfigured, buildAppleWalletPass } from "~/wallet/lib/wallet-apple.server";
 
 // Resource route: member downloads their own Apple Wallet membership pass.
 // Returns a signed .pkpass archive. Gated on walletAppleConfigured() so staging

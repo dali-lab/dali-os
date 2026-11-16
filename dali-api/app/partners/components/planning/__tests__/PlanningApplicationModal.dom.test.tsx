@@ -14,7 +14,18 @@ let posted: FormData[];
 
 async function mount(info: PlanningApplicationInfo, canEdit = true) {
   posted = [];
-  const Page = () => createElement(PlanningApplicationModal, { applicationId: "a1", info, canEdit, onClose: () => {} });
+  const Page = () =>
+    createElement(PlanningApplicationModal, {
+      applicationId: "a1",
+      info,
+      canEdit,
+      coreMembers: [{ userId: "c1", name: "Core Person" }],
+      domains: [
+        { id: "eng", name: "Engineering" },
+        { id: "des", name: "Design" },
+      ],
+      onClose: () => {},
+    });
   const Stub = createRoutesStub([
     { path: "/", Component: Page, loader: () => null },
     {
@@ -38,7 +49,16 @@ const info: PlanningApplicationInfo = {
   stage: "Interview",
   partnerName: "Acme",
   note: null,
+  continues: null,
+  summary: "A kiosk for the museum lobby",
+  pi: null,
+  targetTermCodes: ["27W", "27S"],
+  spots: [{ domainId: "eng", name: "Engineering", slots: 2 }],
 };
+
+const click = (el: Element) => act(async () => (el as HTMLElement).click());
+const buttonByText = (text: string) =>
+  Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent === text);
 
 afterEach(() => {
   act(() => root.unmount());
@@ -81,5 +101,63 @@ describe("PlanningApplicationModal", () => {
     expect(document.body.querySelector("textarea")).toBeNull();
     expect(document.body.textContent).toContain("Call Tuesday");
     expect(document.body.textContent).toContain("Last edited on Nov 5, 2026");
+  });
+
+  it("names the past project a return continues, with a link", async () => {
+    await mount({ ...info, continues: { projectId: "old", name: "Research Computing Dashboard", lastTermCode: "26S" } });
+    expect(document.body.textContent).toContain("Returning project");
+    expect(document.body.textContent).toContain("Return of Research Computing Dashboard (last ran 26S)");
+    const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent === "Research Computing Dashboard");
+    expect(link?.getAttribute("href")).toBe("/projects/old");
+  });
+
+  it("says nothing about a return for a fresh application", async () => {
+    await mount(info);
+    expect(document.body.textContent).toContain("Application");
+    expect(document.body.textContent).not.toContain("Return of");
+  });
+
+  it("shows the summary, target terms and expected spots like a confirmed project", async () => {
+    await mount(info);
+    expect(document.body.querySelector<HTMLTextAreaElement>("textarea[aria-label='Application summary']")!.value).toBe(
+      "A kiosk for the museum lobby",
+    );
+    expect(document.body.textContent).toContain("Wants 27W, 27S");
+    expect(document.body.textContent).toContain("2 spots");
+  });
+
+  it("posts a PI for the application", async () => {
+    await mount(info);
+    await click(document.body.querySelector("button[aria-label='PI for Application']")!);
+    await click(
+      Array.from(document.body.querySelectorAll("button[role='option']")).find((o) => o.textContent === "Core Person")!,
+    );
+    expect(Object.fromEntries(posted[0])).toEqual({ intent: "application-pi", applicationId: "a1", piUserId: "c1" });
+  });
+
+  it("posts edited expected spots", async () => {
+    await mount(info);
+    await click(document.body.querySelector("button[aria-label='Application: More Engineering']")!);
+    await click(buttonByText("Save spots")!);
+    expect(Object.fromEntries(posted[0])).toEqual({
+      intent: "application-spots",
+      applicationId: "a1",
+      roles: JSON.stringify([{ domainId: "eng", slots: 3 }]),
+    });
+  });
+
+  it("posts an edited summary", async () => {
+    await mount(info);
+    const textarea = document.body.querySelector<HTMLTextAreaElement>("textarea[aria-label='Application summary']")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(textarea, "A lobby kiosk");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click(buttonByText("Save summary")!);
+    expect(Object.fromEntries(posted[0])).toEqual({
+      intent: "application-summary",
+      applicationId: "a1",
+      summary: "A lobby kiosk",
+    });
   });
 });

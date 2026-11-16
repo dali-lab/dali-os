@@ -3,12 +3,13 @@
 // form-tracker.server.ts.
 
 export const ANNOUNCEMENT_SOURCE = "Announcement";
+export const BANNER_SOURCE = "Banner";
 export const REMINDER_COOLDOWN_MS = 24 * 60 * 60_000;
 export const REMINDER_MESSAGE_MAX = 1000;
 
 export type TrackerPerson = {
   userId: string;
-  /** Group names, plus "Announcement" when a to-do announcement reached them. */
+  /** Group names, plus "Announcement" or "Banner" when one reached them. */
   sources: string[];
   responded: boolean;
   /** Has a to-do for this form and every one of them is marked read, without a response. */
@@ -20,6 +21,7 @@ export type TrackerTodo = { userId: string; readAt: Date | null };
 export function buildTrackerPeople(args: {
   groups: { name: string; memberIds: string[] }[];
   todos: TrackerTodo[];
+  bannerViewerIds?: readonly string[];
   respondedIds: ReadonlySet<string>;
 }): TrackerPerson[] {
   const sources = new Map<string, string[]>();
@@ -35,6 +37,8 @@ export function buildTrackerPeople(args: {
     add(t.userId, ANNOUNCEMENT_SOURCE);
     openTodo.set(t.userId, (openTodo.get(t.userId) ?? false) || t.readAt === null);
   }
+
+  for (const id of args.bannerViewerIds ?? []) add(id, BANNER_SOURCE);
 
   return [...sources].map(([userId, userSources]) => {
     const responded = args.respondedIds.has(userId);

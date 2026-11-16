@@ -1,4 +1,4 @@
-import type { PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import type { PillTone } from "~/components/ui/Pill";
 
 // Per-domain hiring status as the applicant reads it on /portal and
 // /portal/applications: a short label and a dot tone.

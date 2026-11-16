@@ -14,8 +14,6 @@ import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
 import { loadAccess } from "~/core/lib/access.server";
 import { action, loader, INTENT_OWNER } from "~/core/routes/core.access";
-import { loader as rolesRedirect } from "~/core/routes/core.access.roles";
-import { loader as domainsRedirect } from "~/core/routes/core.access.domains";
 
 function post(fields: Record<string, string>) {
   const body = new FormData();
@@ -100,14 +98,5 @@ describe("core.access loader", () => {
     vi.mocked(loadAccess).mockResolvedValue({ members: [], domains: [], term: "Fall 2026" });
     const data = await loader({ request: new Request("http://localhost/core/access"), params: {}, context: {} } as never);
     expect(data).toMatchObject({ viewerIsAdmin: false, term: "Fall 2026" });
-  });
-});
-
-describe("old access URLs", () => {
-  it("redirect to the combined page and keep the query string", () => {
-    const r1 = rolesRedirect({ request: new Request("http://localhost/core/access/roles?q=maya") });
-    const r2 = domainsRedirect({ request: new Request("http://localhost/core/access/domains") });
-    expect(r1.headers.get("Location")).toBe("/core/access?q=maya");
-    expect(r2.headers.get("Location")).toBe("/core/access");
   });
 });

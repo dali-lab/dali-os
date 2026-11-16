@@ -14,7 +14,7 @@ Where it lives:
 |---|---|
 | `dali-api/app/app.css` | The tokens (`--color-os-*`, `--radius-os-*`, `--font-os`), the light-mode palette, the accent, and the `.os-*` component rules |
 | `dali-api/app/components/os-chrome.ts` | `useOsChrome()`, the page dress as class strings, and `modalCardClass(size)` |
-| `dali-api/app/components/os-page.tsx` | Hub-page parts: `OsTabBar`, `DetailRow`, `DetailEditRow`, `OS_DETAIL_CARD`, `HeroClusterLabel` |
+| `dali-api/app/components/os-page.tsx` | Hub-page parts: `PageTabRow`, `PageRowControls`, `DetailRow`, `DetailEditRow`, `OS_DETAIL_CARD`, `HeroClusterLabel` |
 | `dali-api/app/components/ui/floating/styles.ts` | Popover, menu, select and filter-pill dress (`OS_SURFACE_CLASS`, `OS_PANEL_CLASS`, `OS_FILTER_PILL_CLASS`) |
 | `dali-api/app/components/LayoutOS.tsx` | The member shell: rail, page bar, mobile top bar and drawer, and the per-page accent |
 | `dali-api/app/components/shell/` | `Rail`, `PageBar` (+ `page-bar-slot.tsx`), `AreaTile`, `RailEdgeHandle`, `rail-model.ts` |
@@ -63,6 +63,7 @@ and a card is a quiet cool step **darker** than it.
 | `os-bg` | `#ffffff` | `#282830` | Page ground, page bar |
 | `os-card` | `#f3f6f9` | `#2b2b36` | Cards, menus, dialogs |
 | `os-card-hover` | `#eaf3f8` | `#323240` | Hovered card |
+| `os-band` | `#1b2a47` | `#2f4d7d` | Project band header ground (a pattern cover swaps in its card color) |
 | `os-well` | `#eaeff5` | `#26262f` | Inputs, nested rows |
 | `os-container` | `#ccd7e2` | `#3f3f48` | Hairlines, chips, active fill |
 | `os-container-hi` | `#a9b9c9` | `#54545f` | Hover border |
@@ -116,6 +117,25 @@ the variables, not new hues:
   over the card, with an 8px stage dot before the title via
   `.os-board-title`). Hiring views that read the raw set keep solid bands.
 - Categorical chips (see `DomainChips`): `--os-role-{amber,teal,violet,pink,blue,green,orange,magenta,slate,cyan,red,lime,indigo,sand}-{fill,ink}`
+
+- Band header: `os-band` is the ground. Everything on it uses the on-band
+  tokens, the same in both modes: `os-on-band` (`#ffffff`, title and chip text,
+  14.3:1 on light, 8.5:1 on dark), `os-on-band-meta` (white at 78%, the
+  partner and terms line, 9.3:1 / 5.9:1), `os-band-line` (white at 28%, chip
+  borders) and `os-band-chip` (`#141822` at 50%, chip fill, 16:1 / 12.8:1
+  under chip text). Avatars on the band ring with `ring-os-band`.
+- Cover art (project and hub covers): `--art-*` hues (`--art-coral`, `-apricot`,
+  `-butter`, `-sage`, `-teal`, `-orchid`, `-mist`, `-navy`), `--art-ground-{lilac,mint,blush,sky,peach,sage}`
+  backgrounds, and `--art-{ink,charcoal,plum,forest,wine,slate}` card colors.
+  Art does not flip with the mode. Hues the brand palette already has
+  (`--color-accent-pink`, `--color-accent-coral-light`, `--color-navy`,
+  `--color-accent-teal-light`) are used directly, not repeated. Over art, use the
+  fixed dark chip `--os-on-art-chip` (hover `--os-on-art-chip-hover`) with
+  `--os-on-art-ink` text and `--os-on-art-line` borders, never `bg-white/*` or
+  `text-white`. Covers live in `app/components/cover/` (`CoverTile`,
+  `buildCoverUrl`, `parseCover`, `CoverStudio`); a pattern cover is the string
+  `pattern:<id>` or `pattern:<id>?c=<card color>`, stored wherever the surface
+  keeps its image.
 
 ### 2.5 Light and dark
 
@@ -189,7 +209,7 @@ section title above; use the `chrome` strings in new code.
 | `rounded-os-card` | 12px | Cards, panels, dialogs, popovers and menus (`OS_SURFACE_CLASS`) |
 | `rounded-os-item` | 8px | Nested wells, icon buttons |
 | `rounded-lg` / 8px | 8px | Buttons, fields, item rows, filter pills, rail rows, page-bar buttons |
-| 10px | 10px | The segmented control's track, the open `OsTabBar` tab |
+| 10px | 10px | The island's track |
 | 6px | 6px | Type badges, label chips |
 | `rounded-full` | pill | Status pills, avatars, toggles, count badges |
 
@@ -200,6 +220,23 @@ apart, with 8px between a caption and its field.
 Elevation: cards are flat. Popovers wear `OS_SURFACE_CLASS`
 (`shadow-[0_16px_40px_var(--color-os-shadow)]`); dialogs wear
 `0 24px 64px var(--color-os-shadow)`.
+
+### 4.1 Layers
+
+`Z` in `ui/z.ts` holds the stacking classes. Use it for anything that floats
+above the page instead of typing a `z-[NN]` value.
+
+| Key | Class | Use |
+|---|---|---|
+| `Z.sticky` | `z-10` | Sticky headers and in-flow lifts |
+| `Z.chrome` | `z-30` | Page chrome |
+| `Z.chromeTop` | `z-40` | Chrome that sits over other chrome |
+| `Z.takeover` | `z-[45]` | Full-screen editors that cover the shell |
+| `Z.takeoverTop` | `z-[46]` | A full-screen view opened over a takeover |
+| `Z.modal` | `z-50` | `Modal`, `Drawer`, toasts |
+| `Z.popover` | `z-[60]` | Floating panels (`OS_PANEL_CLASS`), date and time pickers, dialogs opened from a popover |
+| `Z.tooltip` | `z-[70]` | Tooltips and pickers that must clear a dialog |
+| `Z.top` | `z-[100]` | Navigation progress, the screenshot selector, lightboxes |
 
 ---
 
@@ -233,7 +270,7 @@ scrim.
 ### 5.3 Page layout
 
 - Open with the content. Hub pages (project detail, member profile) put
-  `chrome.pageTitle` on the ground under the bar, then `OsTabBar`,
+  `chrome.pageTitle` on the ground under the bar, then `PageTabRow`,
   `HeroClusterLabel` for labelled clusters, and `OS_DETAIL_CARD` with
   `DetailRow` / `DetailEditRow` for facts.
 - Use **a few deliberate cards**, not one per section and not none. Things
@@ -311,6 +348,12 @@ icon-only `IconButton`s in the card's top right. Choices the user must make
 - Furniture: `.os-modal-title`, `.os-modal-divider`, `.os-section-header`,
   `.os-modal-footer` (right-aligned, 12px gap), `.os-icon-btn` for close and
   edit.
+- Every dialog is `Modal` (`role="dialog"`, `aria-modal`, focus trap, Escape
+  closes the topmost). The scrim is `bg-os-overlay`; pass `placement="top"`
+  for tall cards and `layer={Z.popover}` to open over a popover. Don't
+  hand-roll a portal overlay.
+- A card anchored beside a clicked rect (calendar composer, booking detail)
+  is `AnchoredCard` (`ui/floating/AnchoredCard.tsx`), not a Modal.
 - Confirm, alert and prompt go through `useDialog()` / `useConfirmSubmit()`;
   feedback through `useToast()`. Never a hand-rolled `<Modal>` confirm, an
   inline "Delete → Confirm delete" button swap, or a two-click armed button.
@@ -350,11 +393,19 @@ in-progress work, and clearing a configured binding.
 `chrome.popover` (`OS_SURFACE_CLASS`). Page toolbar filters use
 `OS_FILTER_PILL_CLASS` plus a width.
 
+Picking a member is `PersonPicker` (`ui/PersonPicker.tsx`): `mode="multi"` is a searchable `MultiSelect` with removable chips, the default single mode is a `Combobox` that shows the chosen person and takes `onQueryChange` with `filterLocally={false}` when `people` comes from a search. Rows are an avatar, the name and a secondary line (email or handle). Don't hand-roll a member list; mixed pickers that add groups or typed addresses (the calendar `ParticipantPicker`) reuse `PersonLabel` for the member row.
+
+A row of per-column filters (Filter button with count badge, pills, Clear all,
+result count) is `FilterBar` in `app/components/FilterBar.tsx`. Pass it columns
+with a `renderPicker`; `ColumnFilters` (value lists over rows) and the form
+results bar (`ResultsFilterBar`) are built on it.
+
 ### 6.5 Status badges and chips
 
 - Status is **one neutral pill with a colored dot**: `Pill` from
-  `app/hiring/components/cycle-setup/SetupCard.tsx` with `dot={tone}`. Don't
-  tint the whole chip.
+  `app/components/ui/Pill.tsx` with `dot={tone}` (`size="sm"` for dense rows
+  and tables). Don't tint the whole chip. Existing tinted chips use
+  `tone={tone}` on the same `Pill` until the look is decided.
 - Tones: `success` (accepted, submitted, completed, open), `accent` (invited,
   scheduled, in review), `warning` (waitlisted, in progress, awaiting),
   `danger` (rejected, cancelled), `neutral` (draft, unknown).
@@ -365,14 +416,41 @@ in-progress work, and clearing a configured binding.
 ### 6.6 Lists, tabs and switches
 
 - Linked item rows: `.os-item-list` of `.os-item-row`.
-- Page tabs: `OsTabBar`. The open tab is a filled, top-rounded plate that
-  meets the rule below it, not an underline.
 - View switches: `Segmented` (`ui/Segmented.tsx`), a 10px track with 8px
-  segments and the container fill on the active one.
+  segments and a raised `bg-background shadow-sm` thumb on the active one.
+- **The island** is the one page switcher: `SegmentedTabButtons`
+  (`ui/SegmentedTabs.tsx`). A recessed `os-well` track (10px, 2px padding) with a
+  raised thumb on the open tab (`os-bg`, a 1px `os-container` ring and a soft
+  `os-shadow` drop, 8px corners). Every tab is 30px tall with a 16px lucide icon
+  and a 14px medium label; the open tab is `foreground`, the rest `os-grey`.
+  Tabs that are routes (Partner CRM) pass `href` and render real links with
+  `aria-current`, so cmd-click opens a browser tab. Tabs that are a `?tab=`
+  param are ARIA tabs with roving focus and arrow, Home and End keys. In-section
+  switchers (calendar views, a settings modal) wear the same island.
+- **Page row** (`PageTabRow` in `os-page.tsx`): one row under the header. The
+  island sits on the left, the open tab's own controls on the right, and a
+  settings gear (`IconButton`, label "Settings") pinned far right after a 1px
+  divider, outside the tablist, on every tab. Controls are secondary (ghost, 28px)
+  and at most one primary (an accent pill that keeps its label at every width).
+  Tab content can hand its own toolbar to the row with `PageRowControls` inside a
+  `PageRowControlsScope`. Nothing above the row changes when the tab changes.
+  The row measures its own width (not the viewport, so a side panel counts):
+  full labels from 921px, icons from 786px, a "⋯" `Menu` from 588px, and below
+  that the controls take their own row under the island. The island never folds
+  and the gear never moves.
+- **Band header** (projects, behind `project-band-header`): an `os-band` band
+  (navy) with the emoji, title, partner and terms, outlined role chips and team
+  avatars on the left, and the cover on the right at 342px by 128px with 12px
+  corners, hidden below `md`. A pattern cover paints the band in its card color
+  and draws `CoverTile`; an uploaded image fills the box; no cover shows the
+  generated art. Editors get a "Change cover" button on hover that opens
+  `CoverStudio` (style, card color, upload, remove). The compact header stays on
+  Partners and Admin pages.
 - `.os-subtab-active` (container fill with an accent stripe) marks the active
   item in page-doc outlines. The rail uses the sliding area pill instead (§6.7).
-- Empty states: `EmptyState` (`ui/EmptyState.tsx`), a small dashed card drawn
-  in CSS above one muted line, with optional actions below. Use it for an
+- Empty states: `EmptyState` (`ui/EmptyState.tsx`, the only one: admin and
+  mentorship use it too), a small dashed card drawn in CSS above an optional
+  bold `title` and one muted line, with optional actions below. Use it for an
   empty folder, board, list or filter result instead of a bare line of text.
 
 ### 6.7 Rail

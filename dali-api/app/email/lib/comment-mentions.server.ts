@@ -1,4 +1,4 @@
-import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions";
+import { extractHandlesFromText, notifyMentions, resolveHandles } from "~/lib/mentions.server";
 import { findReadableAccount, mailAccountLabel, type ReadableMailAccount } from "~/email/lib/access.server";
 
 /** Notify the members "@handle"-mentioned in a private thread comment. Comments

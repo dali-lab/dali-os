@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, redirect, useLoaderData, useSearchParams } from "react-router";
 import QRCode from "qrcode";
-import { pageOpenHref } from "~/lib/page-href";
+import { pageOpenHref } from "~/drive/lib/page-href";
 import { Shapes, Trash2 } from "lucide-react";
 import { Button } from "~/components/ui/Button";
 import { useToast } from "~/components/ui/toast";
@@ -10,24 +10,24 @@ import { PageBarMenuItems, usePageBarSlot } from "~/components/shell/page-bar-sl
 import { Menu } from "~/components/ui/floating";
 import type { Route } from "./+types/documents.$pageId";
 import { prisma } from "~/lib/db.server";
-import { ensureOccurrenceRoster } from "~/lib/scheduled-meeting";
-import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/lib/meeting-recording.server";
+import { ensureOccurrenceRoster } from "~/calendar/lib/meeting-roster.server";
+import { ACTIVE_RECORDING_STATUSES, latestRecordingFor } from "~/calendar/lib/meeting-recording.server";
 import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
 import { publicDocRedirectForPath } from "~/lib/public-doc.server";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { fullName } from "~/lib/display";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { PAGE_ACCESS_SELECT, getPageAccess, getPageAccessBulk } from "~/lib/pageAccess.server";
-import { isProjectMember } from "~/lib/roles";
+import { canEditProject } from "~/lib/project-access";
 import { readOnlyRoles } from "~/lib/read-only-roles.server";
 import type { MeetingType } from "~/generated/prisma/client";
 import { isFavorited, recordPageVisit } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { groupIdsForUser } from "~/lib/page-sharing.server";
 import { notebookItemLocation, pageItemLocation } from "~/lib/note-path.server";
-import { normalizePageTypography } from "~/lib/page-typography";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
-import { workspaceDriveScope } from "~/lib/drive-crumbs";
+import { normalizePageTypography } from "~/drive/lib/page-typography";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
+import { workspaceDriveScope } from "~/drive/lib/drive-crumbs";
 import type { ItemLocation } from "~/components/drive/location";
 import { DocumentEditor } from "~/components/DocumentEditor";
 import type { AttendanceRow } from "~/components/AttendanceChecklist";
@@ -45,15 +45,15 @@ import { RecordingMount } from "~/components/meeting-recorder/RecordingMount";
 import { useRecordingEditor } from "~/components/meeting-recorder/use-recording-editor";
 import { EnhanceReviewContext } from "~/components/doc";
 import { pageDocName } from "~/collab/roomName";
-import { canManageNotebook } from "~/lib/notebooks.server";
-import { nextNoteTargets } from "~/lib/notebook-series.server";
+import { canManageNotebook } from "~/calendar/lib/notebooks.server";
+import { nextNoteTargets } from "~/calendar/lib/notebook-series.server";
 import { NotebookRail, NoteLocationLine, type NotebookView } from "~/components/notebooks/NotebookRail";
 import { itemTrail, noteTabLabel, noteTrail, tabWeekLabels, withLeafEmoji } from "~/components/notebooks/note-trail";
 import { termWindows } from "~/lib/terms";
 import { APPLICATION_TZ, getZonedYMD } from "~/lib/timezone";
 import { EmptyNotebook } from "~/components/notebooks/EmptyNotebook";
 import { redirectToLogin } from "~/lib/login-next";
-import { walletTokensConfigured } from "~/lib/wallet-token";
+import { walletTokensConfigured } from "~/wallet/lib/wallet-token.server";
 
 export const meta: Route.MetaFunction = ({ data }) => {
   const t = (data as { title?: string } | undefined)?.title;
@@ -466,9 +466,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     | { scope: "lab"; current: MeetingType | null }
     | null = null;
   if (page.kind === "FreeForm" && page.isTemplate && page.workspaceType === "Project" && page.workspaceId) {
-    const canEditProjectSettings =
-      roles.isCore || (await isProjectMember(auth.user.sub, page.workspaceId, request));
-    if (canEditProjectSettings) {
+    if (await canEditProject(auth.user.sub, page.workspaceId, request)) {
       const owningProject = await prisma.project.findUnique({
         where: { id: page.workspaceId },
         select: { name: true, meetingNoteTemplateId: true },
@@ -673,7 +671,7 @@ function DocumentPage() {
   // DocumentEditor is the only component that measures the ≥ 1150px check;
   // the top-bar Record button needs it too, to answer a live recording with
   // a Popover instead of toggling the rail on a narrow canvas
-  // (specs/meeting-recording-rail.md "Wiring").
+  // (specs/archive/meeting-recording-rail.md "Wiring").
   const [containerWide, setContainerWide] = useState(false);
   const toast = useToast();
 
@@ -785,7 +783,7 @@ function DocumentPage() {
 
         // Lets DocSideMenu offer Keep change/Revert change on a marked block
         // without the generic side menu knowing anything about Enhance
-        // (specs/meeting-recording-rail.md Step 2). Null when the recording
+        // (specs/archive/meeting-recording-rail.md Step 2). Null when the recording
         // hook isn't mounted — the side menu then renders nothing extra.
         const enhanceReview = rec
           ? { keepBlock: rec.keepBlock, revertBlock: rec.revertBlock, priorBlocks: rec.enhanceNotes?.priorBlocks }

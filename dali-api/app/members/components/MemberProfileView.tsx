@@ -49,11 +49,13 @@ import {
   DetailEditRow,
   DetailRow,
   OS_DETAIL_ICON,
-  OsTabBar,
+  PageTabRow,
 } from "~/components/os-page";
+import { Activity, Heart, User as ProfileTabIcon } from "lucide-react";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { PersonalNotesRail } from "./PersonalNotesRail";
+import { BasedInField, structuredPlace } from "./BasedInField";
 import { ProfileRequestButtons } from "./ProfileRequestButtons";
 import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
@@ -95,6 +97,8 @@ import { WarningDot } from "~/mentorship/components/WarnedAvatar";
 
 const TABS = ["profile", "activity", "mentorship"] as const;
 type Tab = (typeof TABS)[number];
+
+const TAB_ICONS = { profile: ProfileTabIcon, activity: Activity, mentorship: Heart } as const;
 
 const TAB_LABELS: Record<Tab, string> = {
   profile: "Profile",
@@ -234,17 +238,15 @@ export function MemberProfileView({
 
       {editingAbout && <AboutEditor member={member} onClose={() => setEditingAbout(false)} />}
 
-      <OsTabBar
-        ariaLabel="Profile sections"
-        tabs={TABS.filter((t) => t !== "mentorship" || mentorshipPanel).map(
-          (t) => ({
-            key: t,
-            label: TAB_LABELS[t],
-            badge: t === "activity" && hasOpenWarning ? <WarningDot /> : undefined,
-          }),
-        )}
-        active={tab}
-        onSelect={setTab}
+      <PageTabRow
+        label="Profile sections"
+        tabs={TABS.filter((t) => t !== "mentorship" || mentorshipPanel).map((t) => ({
+          label: TAB_LABELS[t],
+          icon: TAB_ICONS[t],
+          badge: t === "activity" && hasOpenWarning ? <WarningDot /> : undefined,
+          active: tab === t,
+          onClick: () => setTab(t),
+        }))}
       />
 
       {actionError && (
@@ -705,13 +707,7 @@ function AboutEditor({ member, onClose }: { member: ProfileMember; onClose: () =
                 />
               </DetailEditRow>
               <DetailEditRow icon={<MapPinned className={ic} />} label="Based in">
-                <input
-                  name="currentLocation"
-                  type="text"
-                  placeholder="City, country"
-                  defaultValue={member.currentLocation ?? ""}
-                  className="w-full"
-                />
+                <BasedInField value={member} />
               </DetailEditRow>
               <DetailEditRow icon={<Cake className={ic} />} label="Birthday">
                 <DateField

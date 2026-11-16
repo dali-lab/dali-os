@@ -30,6 +30,7 @@ import {
 } from "~/journeys/lib/journey";
 import { domainPath, editPath, journeyPath, JOURNEYS_HOME, previewPath } from "~/journeys/lib/paths";
 import type { JourneyModule } from "~/journeys/lib/types";
+import { Z } from "~/components/ui/z";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data ? moduleTitle(data.module) : "Module"} · DALI OS` },
@@ -274,7 +275,7 @@ export default function ModuleDetail({ loaderData }: Route.ComponentProps) {
 
       {view === "lab" && hasLab(mod) && status !== "locked" && typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[45] bg-os-bg font-os text-foreground">
+          <div className={`fixed inset-0 ${Z.takeover} bg-os-bg font-os text-foreground`}>
             {mod.studio ? (
               <LearnerStudioLab
                 key={mod.id}

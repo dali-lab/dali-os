@@ -4,7 +4,6 @@ import { Menu, MenuItem, Popover, InfoTip } from "~/components/ui/floating";
 import { Archive, ChevronDown, MoreHorizontal, SlidersHorizontal, X } from "lucide-react";
 import { Confetti } from "~/components/Confetti";
 import { KanbanBoard } from "~/components/board/KanbanBoard";
-import { useOsChrome } from "~/components/os-chrome";
 import {
   FilterCountBadge,
   FilterField,
@@ -80,7 +79,7 @@ type Props = {
   // was opened from — the caller uses it to put back whatever it closed. Not
   // called for the board's own adds, which were opened from nothing.
   onCreateClosed?: (seed: TaskCreateSeed) => void;
-  // The board's people filter (os). Rendered beside the search input and
+  // The board's people filter. Rendered beside the search input and
   // applied only to the board's tasks. Empty = no people filter; the board's
   // own filters (epic/sprint/term/mine/search) still apply on top.
   filterPeopleIds?: string[];
@@ -157,7 +156,6 @@ export function TaskBoard({
   // epic/sprint/term filters: those are shareable slices set by a click, while
   // this changes on every keystroke — and a search-param change revalidates the
   // project loader, so `?q=` would refetch the whole board per character.
-  const { os } = useOsChrome();
   const [query, setQuery] = useState("");
 
   const epicFilter = searchParams.get("epic");
@@ -400,7 +398,6 @@ export function TaskBoard({
 
   const columns = buildStatusColumns({
     board,
-    os,
     canManage,
     hideEmptyCols,
     collapsedCols,
@@ -458,22 +455,21 @@ export function TaskBoard({
   }, [setSearchParams]);
 
   return (
-    <div className={cn("flex flex-col", os ? "gap-4" : "gap-3")}>
+    <div className={"flex flex-col gap-4"}>
       <Confetti trigger={celebrate} onFire={() => setCelebrate(false)} />
-      <div className={cn("flex min-w-0 items-center", os ? "gap-3" : "gap-2")}>
+      <div className={"flex min-w-0 items-center gap-3"}>
         <SearchInput
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search tasks…"
           aria-label="Search tasks on this board"
-          containerClassName={cn("shrink-0", os ? "w-56 sm:w-72" : "w-44 sm:w-56")}
+          containerClassName={"shrink-0 w-56 sm:w-72"}
         />
 
         {/* People filter sits right next to search — it slices the board's
-            tasks to the chosen assignees, alongside the search box. os only:
-            the control is styled for the os shell and the timeline is where the
-            options come from. */}
-        {os && onPeopleChange && peopleOptions.length > 0 && (
+            tasks to the chosen assignees, alongside the search box. The timeline is
+            where the options come from. */}
+        {onPeopleChange && peopleOptions.length > 0 && (
           <PeopleFilter
             options={peopleOptions}
             selected={filterPeopleIds}
@@ -490,24 +486,24 @@ export function TaskBoard({
           <Popover
             align="right"
             ariaLabel="Customize board"
-            panelClassName={filterPanelClass(os)}
+            panelClassName={filterPanelClass()}
             trigger={
               <button
                 type="button"
-                className={customizeButtonClass(os, activeFilterCount > 0)}
+                className={customizeButtonClass(activeFilterCount > 0)}
               >
                 <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
                 Customize
-                <FilterCountBadge os={os} count={activeFilterCount} />
+                <FilterCountBadge count={activeFilterCount} />
               </button>
             }
           >
             <div className="flex flex-col gap-4">
               <section className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                  <FilterSectionLabel os={os}>Filters</FilterSectionLabel>
+                  <FilterSectionLabel>Filters</FilterSectionLabel>
                   {activeFilterCount > 0 && (
-                    <FilterResetButton os={os} onClick={resetFilters} />
+                    <FilterResetButton onClick={resetFilters} />
                   )}
                 </div>
 
@@ -521,7 +517,6 @@ export function TaskBoard({
                     label="Sprint"
                     ariaLabel="Filter board by sprint"
                     placeholder={sprintEnabled ? "Search sprints…" : "Select a term first"}
-                    os={os}
                     options={sprintScopeOptions}
                     value={sprintScope === "all" ? null : sprintScope}
                     onChange={(next) => setParam("sprint", next)}
@@ -532,7 +527,6 @@ export function TaskBoard({
                 {termFilterEnabled && (
                   <FilterGroup
                     label="Term"
-                    os={os}
                     hint={
                       <InfoTip
                         content="Term code format: last two digits of the year + S (spring), F (fall), or X (summer). E.g. 26F = Fall 2026."
@@ -549,7 +543,6 @@ export function TaskBoard({
                     ).map((opt) => (
                       <FilterPill
                         key={opt.value}
-                        os={os}
                         selected={effectiveTerm === opt.value}
                         onClick={() => setTermFilter(opt.value)}
                       >
@@ -565,7 +558,6 @@ export function TaskBoard({
                     label="Epic"
                     ariaLabel="Filter board by epic"
                     placeholder="Search epics…"
-                    os={os}
                     options={epicOptions}
                     value={epicFilter}
                     onChange={setEpicFilter}
@@ -574,15 +566,11 @@ export function TaskBoard({
               </section>
 
               <section
-                className={cn(
-                  "flex flex-col gap-3 border-t pt-3",
-                  os ? "border-os-container" : "border-border",
-                )}
+                className="flex flex-col gap-3 border-t border-os-container pt-3"
               >
-                <FilterSectionLabel os={os}>Layout</FilterSectionLabel>
+                <FilterSectionLabel>Layout</FilterSectionLabel>
                 <FilterToggleRow
                   label="Hide empty Backlog / Cancelled"
-                  os={os}
                   checked={hideEmptyCols}
                   onChange={toggleHideEmpty}
                 />
@@ -590,10 +578,7 @@ export function TaskBoard({
                   <button
                     type="button"
                     onClick={() => persistCollapsed([])}
-                    className={cn(
-                      "self-start text-xs underline-offset-2 hover:underline",
-                      os ? "text-os-accent" : "text-os-accent",
-                    )}
+                    className="self-start text-xs text-os-accent underline-offset-2 hover:underline"
                   >
                     Expand {collapsedCols.length} collapsed column
                     {collapsedCols.length === 1 ? "" : "s"}
@@ -611,11 +596,7 @@ export function TaskBoard({
                 <button
                   type="button"
                   aria-label="Board actions"
-                  className={
-                    os
-                      ? "os-icon-btn"
-                      : "rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }
+                  className="os-icon-btn"
                 >
                   <MoreHorizontal className="h-4 w-4" aria-hidden />
                 </button>
@@ -751,7 +732,6 @@ export type ComboOption = { value: string | null; label: string };
 
 function FilterCombobox({
   label,
-  os,
   options,
   value,
   onChange,
@@ -761,7 +741,6 @@ function FilterCombobox({
   disabled = false,
 }: {
   label: string;
-  os: boolean;
   options: ComboOption[];
   value: string | null;
   onChange: (next: string | null) => void;
@@ -811,7 +790,7 @@ function FilterCombobox({
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) close();
       }}
     >
-      <FilterField label={label} os={os}>
+      <FilterField label={label}>
         <div className="relative">
           <input
             type="text"
@@ -854,15 +833,9 @@ function FilterCombobox({
             }}
             className={cn(
               "w-full rounded-full border py-1.5 pl-3 pr-8 text-xs transition-colors focus:outline-none",
-              os
-                ? "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent"
-                : "border-border bg-background text-foreground placeholder:text-muted-foreground focus:border-os-accent",
+              "border-os-container bg-os-well text-foreground placeholder:text-os-muted focus:border-os-accent",
               disabled && "cursor-not-allowed opacity-50",
-              !open &&
-                active &&
-                (os
-                  ? "border-os-accent bg-os-accent/15 text-os-accent"
-                  : "border-os-accent bg-os-accent/10 text-os-accent"),
+              !open && active && "border-os-accent bg-os-accent/15 text-os-accent",
             )}
           />
           {/* Without an end affordance the field reads as a text input someone
@@ -874,10 +847,7 @@ function FilterCombobox({
               type="button"
               aria-label={`Clear ${label.toLowerCase()} filter`}
               onClick={() => commit(null)}
-              className={cn(
-                "absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 transition-colors",
-                os ? "text-os-accent hover:bg-os-accent/20" : "text-os-accent hover:bg-os-accent/20",
-              )}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-os-accent transition-colors hover:bg-os-accent/20"
             >
               <X className="h-3 w-3" aria-hidden />
             </button>
@@ -893,10 +863,7 @@ function FilterCombobox({
                 e.preventDefault();
                 if (!disabled) setOpen((v) => !v);
               }}
-              className={cn(
-                "absolute right-2 top-1/2 -translate-y-1/2",
-                os ? "text-os-muted" : "text-muted-foreground",
-              )}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-os-muted"
             >
               <ChevronDown
                 className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
@@ -912,10 +879,7 @@ function FilterCombobox({
             // Nothing inside the list should move focus off the input — a blur
             // and re-focus between mousedown and click is exactly the flicker.
             onMouseDown={(e) => e.preventDefault()}
-            className={cn(
-              "max-h-40 w-full overflow-y-auto rounded-lg border p-1",
-              os ? "border-os-container bg-os-well" : "border-border bg-background",
-            )}
+            className="max-h-40 w-full overflow-y-auto rounded-lg border border-os-container bg-os-well p-1"
           >
             {matches.length === 0 && (
               <li className="px-2 py-1.5 text-xs text-muted-foreground">
@@ -934,12 +898,8 @@ function FilterCombobox({
                   onMouseEnter={() => setActiveIndex(i)}
                   className={cn(
                     "block w-full truncate rounded px-2 py-1.5 text-left text-xs transition-colors",
-                    i === activeIndex && (os ? "bg-os-container" : "bg-muted"),
-                    o.value === value
-                      ? os
-                        ? "text-os-accent"
-                        : "text-os-accent"
-                      : "text-foreground",
+                    i === activeIndex && "bg-os-container",
+                    o.value === value ? "text-os-accent" : "text-foreground",
                   )}
                 >
                   {o.label}

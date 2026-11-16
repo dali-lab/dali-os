@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Link,
   redirect,
   useLoaderData,
+  useLocation,
   useSearchParams,
 } from "react-router";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
@@ -30,13 +32,14 @@ import { isCore, currentTerm } from "~/lib/roles";
 import { TemplatesModal } from "../components/TemplatesModal";
 import { NudgeModal } from "../components/NudgeModal";
 import { MentorGridTable } from "../components/MentorGrid";
-import { EmptyState } from "../components/EmptyState";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { BackLink } from "../components/BackLink";
 import { Tooltip } from "~/components/ui/floating";
 import { TermFilter } from "~/components/TermFilter";
 import { browseTermId } from "../lib/browse-term";
 import { ALL_TERMS, type TermOption } from "~/lib/terms.shared";
-import { openWarningMemberIds } from "../lib/warnings.server";
+import { openWarningMemberIds, warningsEnabledFor } from "../lib/warnings.server";
+import { MentorshipTabRow } from "../components/MentorshipTabs";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useOsChrome } from "~/components/os-chrome";
 import { useToast } from "~/components/ui/toast";
@@ -99,6 +102,7 @@ type LoaderData = {
   termForms: TermForms | null;
   formOptions: { id: string; name: string }[];
   isCore: boolean;
+  warningsEnabled: boolean;
   warnedIds: string[];
   viewerId: string;
   collabToken: string | null;
@@ -272,10 +276,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     : [null, []];
   const termForms = mock ? { ...(realTermForms ?? {}), ...mock.termForms } : realTermForms;
 
-  const warnedIds = viewerIsCore ? await openWarningMemberIds() : [];
+  const warningsEnabled = await warningsEnabledFor(auth.user.sub, request);
+  const warnedIds = warningsEnabled ? await openWarningMemberIds() : [];
 
   const data: LoaderData = {
     warnedIds,
+    warningsEnabled,
     filters,
     initialFilters,
     options,
@@ -344,6 +350,7 @@ function searchGrid(
 export default function MentorshipBrowse() {
   const data = useLoaderData() as LoaderData;
   const { pageTitle } = useOsChrome();
+  const { pathname } = useLocation();
   const [params] = useSearchParams();
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [nudgeOpen, setNudgeOpen] = useState(false);
@@ -503,6 +510,8 @@ export default function MentorshipBrowse() {
         </div>
       </header>
 
+      {data.warningsEnabled && <MentorshipTabRow pathname={pathname} />}
+
       {data.isCore && (
         <TemplatesModal
           open={templatesOpen}
@@ -574,7 +583,7 @@ export default function MentorshipBrowse() {
           termId={data.filters.termId}
           highlightMissing={data.isCore}
           warnedIds={warnedIds}
-          canWarn={data.isCore}
+          canWarn={data.isCore && data.warningsEnabled}
           termForms={data.termForms ?? undefined}
           nudgeFor={
             canNudge

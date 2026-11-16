@@ -7,7 +7,7 @@ import { PartnerMeetingsSection } from "~/partners/components/PartnerMeetingsSec
 import type { Route } from "./+types/partner.applications.$id";
 import { prisma } from "~/lib/db.server";
 import { getCollabToken } from "~/lib/collab-token.server";
-import { getPresenceUser } from "~/lib/presence-user";
+import { getPresenceUser } from "~/lib/presence-user.server";
 import { termCodeLabel } from "~/lib/display";
 import { requirePartnerAccount } from "~/partners/lib/partner-auth.server";
 import {

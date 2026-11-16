@@ -35,37 +35,81 @@ export async function parseJson<T>(
   return result.data;
 }
 
+type ZodDef = { type?: string; shape?: Record<string, z.ZodType>; options?: z.ZodType[]; innerType?: z.ZodType; in?: z.ZodType; element?: z.ZodType };
+
+function defOf(schema: z.ZodType): ZodDef {
+  return (schema as unknown as { _zod: { def: ZodDef } })._zod.def;
+}
+
+function isArrayField(schema: z.ZodType): boolean {
+  const def = defOf(schema);
+  if (def.type === "array") return true;
+  const inner = def.innerType ?? def.in;
+  return inner ? isArrayField(inner) : false;
+}
+
+function collectArrayKeys(schema: z.ZodType, keys: Set<string>): Set<string> {
+  const def = defOf(schema);
+  if (def.shape) {
+    for (const [key, field] of Object.entries(def.shape)) if (isArrayField(field)) keys.add(key);
+  } else if (def.options) {
+    for (const option of def.options) collectArrayKeys(option, keys);
+  } else if (def.innerType ?? def.in) {
+    collectArrayKeys((def.innerType ?? def.in)!, keys);
+  }
+  return keys;
+}
+
+export type FormResult<T> = { ok: true; data: T } | { ok: false; error: string; details: unknown };
+
+export function readForm<T extends z.ZodType>(form: FormData, schema: T): FormResult<z.infer<T>> {
+  const arrayKeys = collectArrayKeys(schema, new Set());
+  const raw: Record<string, unknown> = {};
+  for (const key of new Set(form.keys())) {
+    raw[key] = arrayKeys.has(key) ? form.getAll(key) : form.get(key);
+  }
+  const result = schema.safeParse(raw);
+  if (!result.success) {
+    return {
+      ok: false,
+      error: result.error.issues[0]?.message ?? "Invalid form data",
+      details: result.error.flatten(),
+    };
+  }
+  return { ok: true, data: result.data };
+}
+
 export async function parseForm<T extends z.ZodType>(
-  request: Request,
+  source: Request | FormData,
   schema: T,
 ): Promise<z.infer<T> | Response> {
-  const contentType = request.headers.get("content-type") ?? "";
-  if (
-    !contentType.includes("application/x-www-form-urlencoded") &&
-    !contentType.includes("multipart/form-data")
-  ) {
-    return Response.json(
-      { error: "Invalid form data", details: "Unsupported content type" },
-      { status: 400 },
-    );
-  }
-
   let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return Response.json(
-      { error: "Invalid form data", details: "Malformed form body" },
-      { status: 400 },
-    );
+  if (source instanceof FormData) {
+    form = source;
+  } else {
+    const contentType = source.headers.get("content-type") ?? "";
+    if (
+      !contentType.includes("application/x-www-form-urlencoded") &&
+      !contentType.includes("multipart/form-data")
+    ) {
+      return Response.json(
+        { error: "Invalid form data", details: "Unsupported content type" },
+        { status: 400 },
+      );
+    }
+    try {
+      form = await source.formData();
+    } catch {
+      return Response.json(
+        { error: "Invalid form data", details: "Malformed form body" },
+        { status: 400 },
+      );
+    }
   }
 
-  const result = schema.safeParse(Object.fromEntries(form));
-  if (!result.success) {
-    return Response.json(
-      { error: "Invalid form data", details: result.error.flatten() },
-      { status: 400 },
-    );
+  const result = readForm(form, schema);
+  if (!result.ok) {
+    return Response.json({ error: result.error, details: result.details }, { status: 400 });
   }
   return result.data;
 }

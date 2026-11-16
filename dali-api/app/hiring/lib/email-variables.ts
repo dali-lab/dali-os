@@ -64,7 +64,16 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlot, readonly TemplateVariableN
   "decision:Rejected": ["firstName", "domain"],
   "decision:InvitedToInterview": ["firstName", "domain"],
   [LATER_INTERVIEW_INVITE_SLOT]: ["firstName", "domain"],
-  "decision:Accepted": ["firstName", "domain", "startTerm", "respondBy"],
+  "decision:Accepted": [
+    "firstName",
+    "domain",
+    "startTerm",
+    "respondBy",
+    "loginUrl",
+    "slackUrl",
+    "daliEmail",
+    "tempPassword",
+  ],
   "decision:Waitlisted": ["firstName", "domain", "respondBy"],
 
   // Waitlist removal — removeFromWaitlist passes firstName + domain.

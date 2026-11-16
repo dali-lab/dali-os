@@ -3,9 +3,9 @@ import { CalendarDays, Clock3, GraduationCap, X, type LucideIcon } from "lucide-
 import { cn } from "~/lib/cn";
 import { Modal } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 import { CalendarsPanel } from "~/calendar/components/CalendarsPanel";
-import { ClassesManagerBody } from "~/calendar/components/composer";
+import { ClassesManagerBody } from "~/calendar/components/ClassesManager";
 import { WorkingHoursCard } from "~/calendar/components/settings-cards";
 import type { LoaderData } from "~/calendar/lib/types";
 

@@ -50,6 +50,13 @@ describe("POST /api/tasks/:id/move", () => {
     expect(mockTask.update.mock.calls[0]![0].data).toMatchObject({ position: 2 });
   });
 
+  it("accepts the mobile body { status, position: 0 } and writes position 0", async () => {
+    const res = await move({ status: "Done", position: 0 });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(mockTask.update.mock.calls[0]![0].data).toMatchObject({ status: "Done", position: 0 });
+  });
+
   it("rejects a position that isn't a number", async () => {
     expect((await move({ status: "Done", position: "2" })).status).toBe(400);
   });

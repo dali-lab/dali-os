@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useFetcher, useLoaderData } from "react-router";
+import { useFetcher, useLoaderData, useLocation } from "react-router";
 import { Plus } from "lucide-react";
 import type { Route } from "./+types/mentorship.warnings";
 import { prisma } from "~/lib/db.server";
@@ -12,10 +12,9 @@ import { SearchInput } from "~/components/ui/SearchInput";
 import { Combobox, Select } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
-import { useOsChrome } from "~/components/os-chrome";
-import { modalCardClass } from "~/components/os-chrome";
+import { useOsChrome, modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { EmptyState } from "../components/EmptyState";
+import { EmptyState } from "~/components/ui/EmptyState";
 import {
   WARNING_REASONS,
   reasonLabel,
@@ -25,8 +24,9 @@ import {
 } from "../lib/warnings";
 import { requireWarningsAdmin } from "../lib/warnings.server";
 import { validateWarningCase, type WarningCaseInput } from "../lib/warnings";
+import { MentorshipTabRow } from "../components/MentorshipTabs";
 
-export const meta: Route.MetaFunction = () => [{ title: "Mentorship warnings · DALI OS" }];
+export const meta: Route.MetaFunction = () => [{ title: "Warnings · Mentorship · DALI OS" }];
 
 type Person = { id: string; name: string; photoUrl: string | null };
 type Warning = {
@@ -73,6 +73,10 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
   const id = String(form.get("id") ?? "");
+
+  if (intent !== "create" && !id && ["update", "status", "delete"].includes(intent)) {
+    return { ok: false, error: "Pick a warning." };
+  }
 
   if (intent === "create" || intent === "update") {
     const input = {
@@ -155,10 +159,10 @@ function StatusBadge({ status }: { status: WarningStatus }) {
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium",
-        status === "open" ? "bg-os-accent/10 text-os-accent" : "bg-muted text-muted-foreground",
+        status === "open" ? "bg-os-accent/10 text-os-accent" : "bg-os-well text-os-grey",
       )}
     >
-      <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", status === "open" ? "bg-os-accent" : "bg-muted-foreground/60")} />
+      <span aria-hidden className={cn("h-1.5 w-1.5 rounded-full", status === "open" ? "bg-os-accent" : "bg-os-muted")} />
       {status === "open" ? "Open" : "Resolved"}
     </span>
   );
@@ -166,7 +170,8 @@ function StatusBadge({ status }: { status: WarningStatus }) {
 
 export default function MentorshipWarnings() {
   const { warnings, members } = useLoaderData<typeof loader>();
-  const { pageTitle, panel } = useOsChrome();
+  const { pageTitle, bodyText, panel } = useOsChrome();
+  const { pathname } = useLocation();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | WarningStatus>("all");
   const [panelState, setPanelState] = useState<{ mode: "create" } | { mode: "view" | "edit"; id: string } | null>(null);
@@ -183,18 +188,16 @@ export default function MentorshipWarnings() {
   return (
     <main className="flex flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h1 className={pageTitle}>Mentorship warnings</h1>
-          <button type="button" className="os-btn-primary os-btn-primary--sm" onClick={() => setPanelState({ mode: "create" })}>
-            <Plus className="h-4 w-4" aria-hidden />
-            Add warning
-          </button>
-        </div>
-        <p className="text-sm text-muted-foreground">Track and manage participation concerns across the lab.</p>
-        <Link to="/mentorship/browse" className="mt-1 text-sm text-muted-foreground hover:underline self-start">
-          ← Mentorship notes
-        </Link>
+        <h1 className={pageTitle}>Mentorship</h1>
+        <p className={bodyText}>Track and manage participation concerns across the lab.</p>
       </header>
+
+      <MentorshipTabRow
+        pathname={pathname}
+        controls={[
+          { key: "add-warning", label: "Add warning", icon: Plus, primary: true, onClick: () => setPanelState({ mode: "create" }) },
+        ]}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <SearchInput
@@ -220,26 +223,26 @@ export default function MentorshipWarnings() {
       {shown.length === 0 ? (
         <EmptyState>{warnings.length === 0 ? "No warnings recorded." : "No warnings match."}</EmptyState>
       ) : (
-        <ul className={cn(panel, "divide-y divide-border overflow-hidden p-0")}>
+        <ul className={cn(panel, "divide-y divide-os-container overflow-hidden p-0")}>
           {shown.map((w) => (
             <li key={w.id}>
               <button
                 type="button"
                 onClick={() => setPanelState({ mode: "view", id: w.id })}
-                className="grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-0.5 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-os-accent/40 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_7rem_6.5rem]"
+                className="grid w-full grid-cols-[1fr_auto] items-center gap-x-4 gap-y-0.5 px-4 py-3 text-left transition-colors hover:bg-os-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-os-accent/40 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_7rem_6.5rem]"
               >
                 <span className="flex min-w-0 items-center gap-3">
                   <Avatar name={w.member.name} photoUrl={w.member.photoUrl} size="sm" />
                   <span className="truncate text-sm font-medium">{w.member.name}</span>
                 </span>
-                <span className="order-3 col-span-2 truncate pl-11 text-sm text-muted-foreground sm:order-none sm:col-span-1 sm:pl-0">
+                <span className="order-3 col-span-2 truncate pl-11 text-sm text-os-grey sm:order-none sm:col-span-1 sm:pl-0">
                   {reasonLabel(w.reason)}
                 </span>
-                <span className="order-4 hidden text-sm text-muted-foreground sm:block">{formatDate(w.occurredOn)}</span>
+                <span className="order-4 hidden text-sm text-os-grey sm:block">{formatDate(w.occurredOn)}</span>
                 <span className="justify-self-end sm:justify-self-start">
                   <StatusBadge status={w.status} />
                 </span>
-                <span className="order-5 col-span-2 pl-11 text-xs text-muted-foreground sm:hidden">{formatDate(w.occurredOn)}</span>
+                <span className="order-5 col-span-2 pl-11 text-xs text-os-grey sm:hidden">{formatDate(w.occurredOn)}</span>
               </button>
             </li>
           ))}
@@ -343,18 +346,18 @@ function WarningModal({
             </div>
           </div>
           <dl className="grid grid-cols-[5rem_1fr] gap-y-2 text-sm">
-            <dt className="text-muted-foreground">Reason</dt>
+            <dt className="text-os-grey">Reason</dt>
             <dd>{reasonLabel(warning.reason)}</dd>
-            <dt className="text-muted-foreground">Date</dt>
+            <dt className="text-os-grey">Date</dt>
             <dd>{formatDate(warning.occurredOn)}</dd>
-            <dt className="text-muted-foreground">Notes</dt>
-            <dd className="whitespace-pre-wrap">{warning.notes || <span className="text-muted-foreground">None</span>}</dd>
+            <dt className="text-os-grey">Notes</dt>
+            <dd className="whitespace-pre-wrap">{warning.notes || <span className="text-os-grey">None</span>}</dd>
           </dl>
-          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
+          {error && <p role="alert" className="text-sm text-os-red">{error}</p>}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              className="os-btn-ghost mr-auto text-red-600"
+              className="os-btn-ghost mr-auto text-os-red"
               disabled={busy}
               onClick={async () => {
                 const ok = await dialog.confirm({
@@ -414,21 +417,21 @@ function WarningModal({
               rows={4}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Describe the concern or relevant context..."
+              placeholder="Describe the concern or relevant context"
             />
           </Field>
           <Field label="Date">
             <DateField mode="date" value={date} onChange={setDate} ariaLabel="Date" />
           </Field>
           {mode === "create" && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-os-grey">
               Status: <span className="font-medium text-foreground">Open</span>
             </p>
           )}
-          {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-          <ModalFooter onCancel={mode === "edit" ? onClose : onClose} cancelDisabled={busy}>
+          {error && <p role="alert" className="text-sm text-os-red">{error}</p>}
+          <ModalFooter onCancel={onClose} cancelDisabled={busy}>
             <button type="submit" className="os-btn-primary os-btn-primary--sm" disabled={busy}>
-              {busy ? "Saving…" : "Save warning"}
+              {busy ? "Saving" : "Save warning"}
             </button>
           </ModalFooter>
         </form>

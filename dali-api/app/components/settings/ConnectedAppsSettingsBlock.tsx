@@ -1,7 +1,7 @@
 import { Form } from "react-router";
 import { Sparkles } from "lucide-react";
 import { useConfirmSubmit } from "~/components/ui/dialog";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import type { GrantRowDTO } from "~/lib/settings-page.server";
 import {
   SettingsEmptyRow,

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useRevalidator } from 'react-router'
 import type { DragEndEvent } from '@dnd-kit/core'
 import { KanbanBoard, type KanbanColumn } from '~/components/board/KanbanBoard'
-import { Pill } from '~/hiring/components/cycle-setup/SetupCard'
+import { Pill } from '~/components/ui/Pill'
 import { RECOMMENDATION_TONES } from '~/hiring/lib/labels'
 import { CheckCircle } from 'lucide-react'
 import { getReviewStatus, type ReviewStatus } from '~/hiring/lib/review-status'
@@ -29,7 +29,7 @@ export function ReviewsView({
 
   if (reviews.length === 0) {
     return (
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted-foreground">
         You don't have any assigned applications yet. You'll see them here
         once your Domain Lead assigns reviewers.
       </p>

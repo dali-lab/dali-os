@@ -2,14 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMember: vi.fn() }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isLabMemberOrAlum: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(async (k: string) => `https://s3.example.edu/${k}`),
   isS3Configured: vi.fn(() => true),
 }));
 vi.mock("~/collab/legacy/pm-to-blocknote", () => ({ ensureBlocks: (x: unknown) => x }));
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("~/lib/mentions", () => ({
+vi.mock("~/lib/mentions.server", () => ({
   extractMentionUserIds: (body: any) => (Array.isArray(body) ? body.flatMap((b: any) => b.mentions ?? []) : []),
   notifyMentions: vi.fn().mockResolvedValue(undefined),
   pageDocLink: (p?: string) => `link:${p ?? ""}`,
@@ -17,10 +17,10 @@ vi.mock("~/lib/mentions", () => ({
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { isCore, isLabMember } from "~/lib/roles";
-import { isS3Configured } from "~/lib/s3";
+import { isCore, isLabMemberOrAlum } from "~/lib/roles";
+import { isS3Configured } from "~/lib/s3.server";
 import { notify } from "~/lib/notify.server";
-import { notifyMentions } from "~/lib/mentions";
+import { notifyMentions } from "~/lib/mentions.server";
 import { action, loader } from "~/routes/api.page-docs.$key";
 
 const m = prisma as any;
@@ -52,16 +52,14 @@ const EXISTING = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(requireAuth).mockResolvedValue({ ok: true, user: { sub: "ada" } } as never);
-  vi.mocked(isLabMember).mockResolvedValue(true);
+  vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
   vi.mocked(isCore).mockResolvedValue(false);
   vi.mocked(isS3Configured).mockReturnValue(true);
   m.pageDoc = {
     upsert: vi.fn().mockResolvedValue({
       id: "doc1",
       title: "Tasks",
-      body: null,
-      videoKey: null,
-      sections: null,
+      sections: EXISTING.sections,
       maintainerId: "grace",
       maintainer: { id: "grace", firstName: "Grace", lastName: "Hopper", handle: "grace" },
     }),
@@ -77,7 +75,7 @@ describe("loader", () => {
       response: Response.json({ error: "Unauthorized" }, { status: 401 }),
     } as never);
     expect((await get()).status).toBe(401);
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect((await get()).status).toBe(403);
     expect(m.pageDoc.upsert).not.toHaveBeenCalled();
   });
@@ -88,7 +86,12 @@ describe("loader", () => {
       expect.objectContaining({
         where: { pageKey: "tasks" },
         update: {},
-        create: { pageKey: "tasks", title: "Task board", createdById: "ada" },
+        create: {
+          pageKey: "tasks",
+          title: "Task board",
+          createdById: "ada",
+          sections: [{ id: "overview", title: "Overview", body: null, videoKey: null }],
+        },
       }),
     );
     await get();
@@ -109,45 +112,27 @@ describe("loader", () => {
     expect(body).toMatchObject({ canEdit: true, canAssignMaintainer: true });
   });
 
-  it("falls back to a single Overview section from legacy columns and signs video urls", async () => {
-    m.pageDoc.upsert.mockResolvedValue({
-      id: "doc1",
-      title: "Tasks",
-      body: [{ t: 1 }],
-      videoKey: "vid/legacy",
-      sections: null,
-      maintainerId: null,
-      maintainer: null,
-    });
+  it("returns sections with signed video urls and no top-level body or video mirrors", async () => {
     const body = await (await get()).json();
-    expect(body.maintainer).toBeNull();
+    expect(body.doc).not.toHaveProperty("body");
+    expect(body.doc).not.toHaveProperty("videoUrl");
+    expect(body.doc).not.toHaveProperty("hasVideo");
     expect(body.doc.sections).toEqual([
       {
-        id: "overview",
-        title: "Overview",
-        body: [{ t: 1 }],
-        videoUrl: "https://s3.example.edu/vid/legacy",
+        id: "s1",
+        title: "Intro",
+        body: [{ mentions: ["old"] }],
+        videoUrl: "https://s3.example.edu/vid/1",
         hasVideo: true,
       },
     ]);
-    expect(body.doc.videoUrl).toBe("https://s3.example.edu/vid/legacy");
-    expect(body.doc.hasVideo).toBe(true);
   });
 
   it("omits video urls when S3 is not configured but still reports hasVideo", async () => {
     vi.mocked(isS3Configured).mockReturnValue(false);
-    m.pageDoc.upsert.mockResolvedValue({
-      id: "doc1",
-      title: "Tasks",
-      body: null,
-      videoKey: "vid/legacy",
-      sections: null,
-      maintainerId: null,
-      maintainer: null,
-    });
     const body = await (await get()).json();
-    expect(body.doc.videoUrl).toBeNull();
-    expect(body.doc.hasVideo).toBe(true);
+    expect(body.doc.sections[0].videoUrl).toBeNull();
+    expect(body.doc.sections[0].hasVideo).toBe(true);
   });
 
   it("names the maintainer", async () => {
@@ -164,8 +149,14 @@ describe("action access", () => {
     } as never);
     expect((await post({ title: "x" })).status).toBe(401);
     expect((await post({}, "GET")).status).toBe(405);
-    vi.mocked(isLabMember).mockResolvedValue(false);
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(false);
     expect((await post({ title: "x" })).status).toBe(403);
+    expect(m.pageDoc.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects the retired body and videoKey payload", async () => {
+    expect((await post({ body: [] })).status).toBe(400);
+    expect((await post({ videoKey: null })).status).toBe(400);
     expect(m.pageDoc.update).not.toHaveBeenCalled();
   });
 
@@ -183,8 +174,6 @@ describe("action access", () => {
   it("forbids content edits from a plain lab member", async () => {
     for (const body of [
       { title: "x" },
-      { body: [] },
-      { videoKey: null },
       { sections: [{ title: "A" }] },
     ]) {
       const res = await post(body);
@@ -209,7 +198,7 @@ describe("action access", () => {
 
   it("Core may assign a maintainer, who must be a lab member", async () => {
     vi.mocked(isCore).mockResolvedValue(true);
-    vi.mocked(isLabMember).mockImplementation(async (id: string) => id !== "outsider");
+    vi.mocked(isLabMemberOrAlum).mockImplementation(async (id: string) => id !== "outsider");
     const bad = await post({ maintainerId: "outsider" });
     expect(bad.status).toBe(400);
     expect(m.pageDoc.update).not.toHaveBeenCalled();
@@ -244,7 +233,7 @@ describe("action writes", () => {
     });
   });
 
-  it("sections payload replaces sections, keeps prior videoKey, and mirrors the first section to legacy columns", async () => {
+  it("sections payload replaces sections, keeps prior videoKey, and writes no legacy columns", async () => {
     await post({
       sections: [
         { id: "s1", title: "Intro v2", body: ["new"] },
@@ -256,8 +245,8 @@ describe("action writes", () => {
     expect(data.sections[0]).toEqual({ id: "s1", title: "Intro v2", body: ["new"], videoKey: "vid/1" });
     expect(data.sections[1]).toMatchObject({ title: "Extra", videoKey: null });
     expect(data.sections[1].id).toBeTruthy();
-    expect(data.body).toEqual(["new"]);
-    expect(data.videoKey).toBe("vid/1");
+    expect(data).not.toHaveProperty("body");
+    expect(data).not.toHaveProperty("videoKey");
   });
 
   it("returns 400 with the validation message for bad sections", async () => {
@@ -266,24 +255,6 @@ describe("action writes", () => {
     expect(await res.json()).toEqual({ error: "Add at least one section." });
     expect((await post({ sections: [{ title: "" }] })).status).toBe(400);
     expect(m.pageDoc.update).not.toHaveBeenCalled();
-  });
-
-  it("legacy body/videoKey edit patches only the first section", async () => {
-    m.pageDoc.findUnique.mockResolvedValue({
-      ...EXISTING,
-      sections: [
-        { id: "s1", title: "Intro", body: ["a"], videoKey: "vid/1" },
-        { id: "s2", title: "More", body: ["b"], videoKey: null },
-      ],
-    });
-    await post({ body: ["changed"], videoKey: null });
-    const data = m.pageDoc.update.mock.calls[0][0].data;
-    expect(data.sections).toEqual([
-      { id: "s1", title: "Intro", body: ["changed"], videoKey: null },
-      { id: "s2", title: "More", body: ["b"], videoKey: null },
-    ]);
-    expect(data.body).toEqual(["changed"]);
-    expect(data.videoKey).toBeNull();
   });
 
   it("notifies only newly mentioned users, deduped, with the page link", async () => {

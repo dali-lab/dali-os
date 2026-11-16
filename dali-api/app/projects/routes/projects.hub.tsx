@@ -21,10 +21,13 @@ import {
   instantiateProjectTemplate,
 } from "~/lib/project-templates.server";
 import { prisma } from "~/lib/db.server";
+import { CoverThumb } from "~/components/cover/CoverThumb";
+import { parseCover } from "~/components/cover/CoverPattern";
+import { resolveProjectCover } from "~/projects/lib/project-cover.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { timed } from "~/lib/server-timing";
 import { githubTeamSlug } from "~/lib/github-slug";
-import { ensureProjectGroup } from "~/lib/groups";
+import { ensureProjectGroup } from "~/lib/groups.server";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import {
   listProvisionTargets,
@@ -42,6 +45,7 @@ import { CalendarRange, CircleDot, Globe, Handshake, Plus } from "lucide-react";
 import { Modal, ModalFooter, ModalHeader } from "~/components/Modal";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
+import { Pill } from "~/components/ui/Pill";
 import { SearchInput } from "~/components/ui/SearchInput";
 import {
   ColumnFilters,
@@ -184,7 +188,7 @@ export async function loader({ request }: Route.LoaderArgs) {
         firstTermCode: p.projectTerms[0]?.term.code ?? null,
         termCodes: p.projectTerms.map((pt) => pt.term.code),
         // Uploaded images are stored as S3 keys; presign for display.
-        imageUrl: await resolvePhotoUrl(p.imageUrl),
+        imageUrl: await resolveProjectCover(p.imageUrl),
         partners: await Promise.all(
           p.partners.map(async (pp) => ({
             name: pp.partnerOrg.name,
@@ -723,9 +727,7 @@ function OsProjectCard({ project }: { project: ProjectRow }) {
         </span>
         {project.firstTermCode && (
           <span className="flex items-center gap-2">
-            <span className="rounded-full bg-os-container px-3 py-1 text-xs font-semibold text-foreground">
-              {project.firstTermCode}
-            </span>
+            <Pill size="sm">{project.firstTermCode}</Pill>
             <span className="text-xs text-os-grey">Start term</span>
           </span>
         )}
@@ -826,6 +828,9 @@ function ProjectThumb({
 }: {
   project: Pick<ProjectRow, "name" | "imageUrl">;
 }) {
+  if (parseCover(project.imageUrl)) {
+    return <CoverThumb url={project.imageUrl!} className="h-8 w-8 flex-shrink-0 rounded" />;
+  }
   if (project.imageUrl) {
     return (
       <img

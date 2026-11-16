@@ -5,7 +5,7 @@ vi.mock("~/lib/roles", () => ({
   getActiveCoreCycleTermIds: vi.fn(),
   getAdminUserIdsFromEnv: () => [],
 }));
-vi.mock("~/lib/groups", () => ({ resolveGroupMembers: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ resolveGroupMembers: vi.fn() }));
 vi.mock("~/activities/mechanics/registry.server", () => ({ mechanicServer: () => null }));
 vi.mock("~/lib/realtime-bus.server", () => ({ publish: vi.fn(), subscribe: vi.fn() }));
 

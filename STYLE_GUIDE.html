@@ -289,9 +289,14 @@
   .toggle.on::after { left: 18px; }
   .controls { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
 
-  .tabs { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--container); }
-  .tabs span { padding: 10px 20px; font-size: 16px; font-weight: 500; color: var(--grey); border-radius: 10px 10px 0 0; }
-  .tabs span.on { background: var(--container); color: var(--fg); }
+  .page-row { display: flex; align-items: center; gap: 12px; }
+  .island { display: inline-flex; gap: 2px; padding: 2px; background: var(--well); border-radius: 10px; }
+  .island span { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; font-size: 14px; font-weight: 500; color: var(--grey); border-radius: 8px; }
+  .island span.on { background: var(--bg); color: var(--fg); box-shadow: 0 0 0 1px var(--container), 0 1px 3px rgba(0, 0, 0, 0.3); }
+  .island svg { width: 16px; height: 16px; }
+  .page-row .controls { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--grey); }
+  .page-row .controls .primary { margin-left: 6px; padding: 5px 10px; border-radius: 999px; background: var(--accent); color: var(--bg); font-weight: 600; }
+  .page-row .sep { width: 1px; height: 18px; margin: 0 4px; background: var(--container); }
   .subtab { display: flex; flex-direction: column; gap: 6px; max-width: 220px; background: var(--nav); border-radius: 12px; padding: 10px; }
   .subtab span { position: relative; padding: 7px 13px; font-size: 14px; color: var(--grey); border-radius: 8px; }
   .subtab span.on { background: color-mix(in srgb, var(--accent-tint) var(--rail-pill-mix), transparent); color: var(--fg); font-weight: 600; }
@@ -455,6 +460,32 @@
       <p class="note">A header is a wash of the stage hue over the card, with an 8px stage dot before the title. Not a solid band.</p>
       <div class="eyebrow">Categorical chips (14 hues)</div>
       <div class="pills" id="roles"></div>
+      <div class="eyebrow">Band header (same in both modes)</div>
+      <div class="pills">
+        <span class="pill" style="background:#1b2a47;color:#fff">os-band (dark mode #2f4d7d)</span>
+        <span class="pill" style="background:#1b2a47;color:#fff">os-on-band #fff</span>
+        <span class="pill" style="background:#1b2a47;color:rgba(255,255,255,.78)">os-on-band-meta white 78%</span>
+        <span class="pill" style="background:#141822;color:#fff;border:1px solid rgba(255,255,255,.28)">os-band-chip, os-band-line</span>
+      </div>
+      <p class="note">On-band text is 14.3:1 on the light band and 8.5:1 on the dark one; the meta line is 9.3:1 and 5.9:1; chip text is at least 12.8:1. Covers use the --art-* tokens below and live in app/components/cover/.</p>
+      <div class="eyebrow">Cover art (does not flip with the mode)</div>
+      <div class="pills">
+        <span class="pill" style="background:#d45f6a;color:#1b2a47">--art-coral</span>
+        <span class="pill" style="background:#f1c885;color:#1b2a47">--art-apricot</span>
+        <span class="pill" style="background:#fcf3c2;color:#1b2a47">--art-butter</span>
+        <span class="pill" style="background:#7ab39a;color:#1b2a47">--art-sage</span>
+        <span class="pill" style="background:#5fb8b4;color:#1b2a47">--art-teal</span>
+        <span class="pill" style="background:#bd64a8;color:#1b2a47">--art-orchid</span>
+        <span class="pill" style="background:#d3dae0;color:#1b2a47">--art-mist</span>
+        <span class="pill" style="background:#214b76;color:#1b2a47">--art-navy</span>
+        <span class="pill" style="background:#1b2a47;color:#fff">--art-ink</span>
+        <span class="pill" style="background:#1c1f24;color:#fff">--art-charcoal</span>
+        <span class="pill" style="background:#3b2a4f;color:#fff">--art-plum</span>
+        <span class="pill" style="background:#1f3b34;color:#fff">--art-forest</span>
+        <span class="pill" style="background:#4a2430;color:#fff">--art-wine</span>
+        <span class="pill" style="background:#2d3948;color:#fff">--art-slate</span>
+      </div>
+      <p class="note">Grounds: --art-ground-lilac, -mint, -blush, -sky, -peach, -sage. Over art, use the fixed dark chip --os-on-art-chip (hover --os-on-art-chip-hover) with --os-on-art-ink text and --os-on-art-line borders.</p>
     </section>
 
     <section class="c6 l4">
@@ -463,7 +494,7 @@
       <div class="shapes">
         <div class="shape"><div class="box" style="border-radius:12px"></div><div class="lbl">12px<small>Cards, panels, dialogs, popovers, menus</small></div></div>
         <div class="shape"><div class="box" style="border-radius:8px"></div><div class="lbl">8px<small>Buttons, fields, item rows, filter pills, rail rows, icon buttons</small></div></div>
-        <div class="shape"><div class="box" style="border-radius:10px"></div><div class="lbl">10px<small>Segmented track, the open tab</small></div></div>
+        <div class="shape"><div class="box" style="border-radius:10px"></div><div class="lbl">10px<small>The island's track</small></div></div>
         <div class="shape"><div class="box" style="border-radius:6px"></div><div class="lbl">6px<small>Type badges, label chips</small></div></div>
         <div class="shape"><div class="box" style="border-radius:100px;height:44px;margin-top:14px"></div><div class="lbl">Pill<small>Status pills, avatars, toggles, count badges</small></div></div>
       </div>
@@ -476,6 +507,8 @@
         </div>
       </div>
       <p class="note">Three visible planes: the nav is recessed below the page, the card sits above it. The shadow color is a token and tints with the mode.</p>
+      <div class="eyebrow">Layers</div>
+      <p class="note">Stacking classes live in <code>Z</code> (<code>ui/z.ts</code>): sticky 10, chrome 30 and 40, takeover 45 and 46, modal 50, popover 60, tooltip 70, top 100. Use them instead of a raw <code>z-[NN]</code>.</p>
     </section>
 
     <section class="c6 l4">
@@ -491,7 +524,15 @@
       <div class="eyebrow">Page rhythm</div>
       <div class="card-demo">
         <div class="t-page">Projects</div>
-        <div class="tabs"><span class="on">Overview</span><span>Tasks</span><span>Files</span></div>
+        <div class="page-row">
+          <div class="island">
+            <span class="on"><svg class="i" viewBox="0 0 24 24"><path d="M10 6h8M12 16h6M3 3v16a2 2 0 0 0 2 2h16M8 11h7"/></svg>Progress</span>
+            <span><svg class="i" viewBox="0 0 24 24"><path d="M22 12H2M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11zM6 16h.01M10 16h.01"/></svg>Drive</span>
+            <span><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>Project details</span>
+          </div>
+          <div class="controls"><span>Edit</span><span>Fullscreen</span><span class="primary">New</span><i class="sep"></i><svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg></div>
+        </div>
+        <p class="note">The island is the one page switcher: a recessed well with a raised thumb on the open tab, an icon and a label on every tab. The page row holds the island, the open tab's controls and a settings gear after a divider. Below 921px of row width the controls drop to icons, below 786px into a "⋯" menu (the primary keeps its label), and below 588px onto their own row. Projects wear a navy band header above the row (emoji, title, partner and terms, chips and people left, pattern, image or generated cover right) behind the project-band-header flag.</p>
         <div class="os-card" style="padding:16px">
           <div class="ey"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>This term</div>
           <div class="item-list">
@@ -579,6 +620,15 @@
         <span class="check"><span class="toggle on"></span>On</span>
         <span class="check"><span class="toggle"></span>Off</span>
       </div>
+      <div class="eyebrow">Per-column filters</div>
+      <div class="controls">
+        <span class="filter" style="min-width:0">Filter · 2</span>
+        <span class="filter" style="min-width:0">Domain: Design<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        <span class="filter" style="min-width:0">Term: 26F<svg class="i" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></span>
+        <span style="font-size:12px;color:var(--grey)">Clear all</span>
+        <span style="font-size:12px;color:var(--grey)">14 results</span>
+      </div>
+      <p class="note">A row of per-column filters (Filter button with count badge, pills, Clear all, result count) is <code>FilterBar</code> in <code>app/components/FilterBar.tsx</code>. Pass it columns with a <code>renderPicker</code>; <code>ColumnFilters</code> (value lists over rows) and the form results bar (<code>ResultsFilterBar</code>) are built on it.</p>
       <p class="note">Fields wear the well fill, a container hairline and an 8px corner, 13px type, 8px 12px padding. Captions sit 8px above, fields 20px apart. Native selects and browser confirms are not used.</p>
     </section>
 
@@ -638,7 +688,7 @@
           <span style="font-size:14px;color:var(--muted)">No Core tasks yet.</span>
         </div>
       </div>
-      <p class="note">A detail card is an eyebrow over 17px-icon rows. A list card is item rows on the well fill with an 8px corner. Hovered cards wash toward the accent, not toward grey. An empty folder, board or list uses <code>EmptyState</code>: a dashed card drawn in CSS over one muted line, with optional actions below.</p>
+      <p class="note">A detail card is an eyebrow over 17px-icon rows. A list card is item rows on the well fill with an 8px corner. Hovered cards wash toward the accent, not toward grey. An empty folder, board or list uses <code>EmptyState</code> (the only one, admin and mentorship included): a dashed card drawn in CSS over an optional bold title and one muted line, with optional actions below. Dialogs are always <code>Modal</code> on the <code>os-overlay</code> scrim; a card anchored beside a clicked rect is <code>AnchoredCard</code>. Status is <code>Pill</code> from <code>ui/Pill</code>. A member is picked with <code>PersonPicker</code>: multi mode is a searchable <code>MultiSelect</code> with chips, single mode a <code>Combobox</code>, both with an avatar, the name and an email or handle line.</p>
     </section>
 
     <section class="c6 l4">
@@ -746,6 +796,7 @@
     ['os-bg', '#ffffff', '#282830', 'Page ground'],
     ['os-card', '#f3f6f9', '#2b2b36', 'Cards, menus, dialogs'],
     ['os-card-hover', '#eaf3f8', '#323240', 'Hovered card'],
+    ['os-band', '#1b2a47', '#2f4d7d', 'Project band header ground'],
     ['os-well', '#eaeff5', '#26262f', 'Inputs, nested rows'],
     ['os-container', '#ccd7e2', '#3f3f48', 'Hairlines, chips, active fill'],
     ['os-container-hi', '#a9b9c9', '#54545f', 'Hover border']

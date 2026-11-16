@@ -16,16 +16,17 @@ beforeEach(() => {
   for (const delegate of [
     "partnerApplicationFormBinding",
     "partnerSurveyFormBinding",
+    "onboardingProfileFormBinding",
     "applicationCycle",
     "cycleDomainForm",
     "educationOffering",
     "educationFormBinding",
+    "banner",
   ]) {
     mockPrisma[delegate].findMany?.mockResolvedValue([]);
     mockPrisma[delegate].findFirst?.mockResolvedValue(null);
   }
   mockPrisma.notification.count.mockResolvedValue(0);
-  mockPrisma.form.findUnique.mockResolvedValue({ name: "Intent to Work Form" });
 });
 
 describe("staffing usage", () => {

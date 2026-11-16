@@ -24,6 +24,7 @@ import {
 import { BlockNoteView } from "@blocknote/shadcn";
 import { forwardRef, useMemo, type ReactNode } from "react";
 import { MentionSpec, useMentionMenuItems } from "../schema/mention";
+import { useTabAcceptsSuggestion } from "../schema/suggestion-tab";
 
 // Same trims as BlockNote's default comment schema (one paragraph block, no
 // text or background colors), plus the member mention. Page mentions stay a
@@ -53,6 +54,7 @@ const CommentEditor = forwardRef<HTMLDivElement, ComponentProps["Comments"]["Edi
   ({ className, onFocus, onBlur, autoFocus, editor, editable }, ref) => {
     const blockNoteContext = useBlockNoteContext();
     const getMentionItems = useMentionMenuItems(editor as never, noPages);
+    useTabAcceptsSuggestion(editor as never);
     return (
       <BlockNoteView
         autoFocus={autoFocus}

@@ -1,5 +1,6 @@
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { enhancePasteHandler } from "./enhance-render";
+import { filesToUpload, insertMediaFiles, pasteTarget } from "./media-drop";
 import type { DocEditorInstance } from "./schema/build";
 
 export const PASTE_OFFER_EVENT = "dali:paste-offer";
@@ -38,6 +39,11 @@ export function docPasteHandler(context: {
   defaultPasteHandler: Parameters<typeof enhancePasteHandler>[0]["defaultPasteHandler"];
 }): boolean | undefined {
   const { event, editor } = context;
+  const files = filesToUpload(event.clipboardData);
+  if (files.length && editor.uploadFile) {
+    insertMediaFiles(editor, files, pasteTarget(editor));
+    return true;
+  }
   const url = pastedVideoUrl(event.clipboardData);
   if (!url || !canOffer(editor)) return enhancePasteHandler(context);
 

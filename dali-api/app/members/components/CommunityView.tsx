@@ -1,10 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { useFetcher, useNavigate, useSearchParams } from "react-router";
-import { Coffee, FileText, HeartHandshake } from "lucide-react";
+import { ChevronDown, Coffee, FileText } from "lucide-react";
 import { Popover } from "~/components/ui/floating";
-import { Toggle } from "~/components/ui/Toggle";
-import { Button } from "~/components/ui/Button";
-import { CommunityColumn, type CommunityTab, type PeopleSort } from "~/members/components/CommunityColumn";
+import { FilterToggleRow, filterPanelClass } from "~/components/ui/filter-panel";
+import { CommunityColumn, DEFAULT_EVENT_FILTERS, type CommunityTab, type PeopleSort } from "~/members/components/CommunityColumn";
 import { CommunityMap, type MapPlace } from "~/members/components/CommunityMap";
 import { EventPanel } from "~/members/components/EventPanel";
 import { HostEventModal } from "~/members/components/HostEventModal";
@@ -14,21 +13,18 @@ import {
   filterEvents,
   filterPeople,
   groupByPlace,
+  placesLabel,
   sortPeople,
-  type EventFilters,
   type MapBounds,
   type PeopleFilters,
 } from "~/members/lib/community";
 import type { CommunityData, CommunityEvent } from "~/members/lib/community.server";
-import { classmatesAt, eventsAtPlace, splitEventsByPlace } from "~/members/lib/community-view";
+import { classmatesAt, eventsAtPlace, openToSummary, splitEventsByPlace } from "~/members/lib/community-view";
 
 export type CommunityViewData = CommunityData & {
-  title: string;
   tz: string;
   openTo: { coffeeChats: boolean; resumeReviews: boolean };
 };
-
-const DEFAULT_EVENT_FILTERS: Omit<EventFilters, "query"> = { host: "all", mode: "all", withinDays: 90 };
 
 function OpenToSwitch({
   field,
@@ -45,17 +41,17 @@ function OpenToSwitch({
   const pending = fetcher.formData?.get("value");
   const on = pending != null ? pending === "on" : initial;
   return (
-    <div className="flex items-center gap-3 py-1.5">
+    <div className="flex items-center gap-2.5">
       <Icon className="h-4 w-4 shrink-0 text-os-grey" aria-hidden />
-      <span className="flex-1 text-sm text-foreground">{label}</span>
-      <Toggle
-        tone="os"
-        checked={on}
-        aria-label={label}
-        onChange={(e) =>
-          fetcher.submit({ intent: "open-to", field, value: e.target.checked ? "on" : "off" }, { method: "post" })
-        }
-      />
+      <div className="min-w-0 flex-1">
+        <FilterToggleRow
+          label={label}
+          checked={on}
+          onChange={(checked) =>
+            fetcher.submit({ intent: "open-to", field, value: checked ? "on" : "off" }, { method: "post" })
+          }
+        />
+      </div>
     </div>
   );
 }
@@ -66,22 +62,36 @@ function OpenToMenu({ openTo }: { openTo: CommunityViewData["openTo"] }) {
       align="right"
       ariaLabel="I'm open to"
       trigger={
-        <Button variant="secondary" size="sm">
-          <HeartHandshake className="h-4 w-4" aria-hidden />
-          I'm open to
-        </Button>
+        <button
+          type="button"
+          className="pointer-events-auto flex items-center gap-2 rounded-full bg-os-card py-1.5 pl-1.5 pr-3 text-xs shadow"
+        >
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-os-accent/15 text-os-accent">
+            <Coffee className="h-3.5 w-3.5" aria-hidden />
+          </span>
+          <span className="font-bold text-foreground">I'm open to</span>
+          <span className="text-os-grey">{openToSummary(openTo)}</span>
+          <ChevronDown className="h-3.5 w-3.5 text-os-grey" aria-hidden />
+        </button>
       }
-      panelClassName="w-64 p-3"
+      panelClassName={filterPanelClass()}
     >
-      <p className="mb-1 text-xs text-os-grey">Others can ask you for these. Both are off until you turn them on.</p>
-      <OpenToSwitch field="coffeeChats" label="Coffee chats" icon={Coffee} initial={openTo.coffeeChats} />
-      <OpenToSwitch field="resumeReviews" label="Resume reviews" icon={FileText} initial={openTo.resumeReviews} />
+      <div className="flex flex-col gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">I'm open to</h2>
+          <p className="mt-1 text-xs text-os-grey">
+            Others can ask you for these from your profile. Requests stay anonymous until you say yes.
+          </p>
+        </div>
+        <OpenToSwitch field="coffeeChats" label="Coffee chats" icon={Coffee} initial={openTo.coffeeChats} />
+        <OpenToSwitch field="resumeReviews" label="Resume reviews" icon={FileText} initial={openTo.resumeReviews} />
+      </div>
     </Popover>
   );
 }
 
 export function CommunityView({ data }: { data: CommunityViewData }) {
-  const { viewer, people, events, filterOptions, unplaced, tz, title, openTo } = data;
+  const { viewer, people, events, filterOptions, unplaced, tz, openTo } = data;
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [tab, setTab] = useState<CommunityTab>("people");
@@ -89,8 +99,8 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
   const [peopleFilters, setPeopleFilters] = useState<PeopleFilters>(NO_PEOPLE_FILTERS);
   const [eventFilters, setEventFilters] = useState(DEFAULT_EVENT_FILTERS);
   const [sort, setSort] = useState<PeopleSort>("match");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [listFollowsMap, setListFollowsMap] = useState(true);
+  const [selection, setSelection] = useState<{ keys: string[]; name: string | null } | null>(null);
+  const [fitRequest, setFitRequest] = useState<{ keys: string[]; id: number } | null>(null);
   const [bounds, setBounds] = useState<MapBounds | null>(null);
   const [hosting, setHosting] = useState<{ event: CommunityEvent | null } | null>(null);
 
@@ -130,7 +140,15 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
       return matches.length > 0 ? { ...place, people: matches } : { ...place, faded: true };
     });
   }, [allPlaces, filteredPeople]);
-  const selectedPlace = selectedKey ? (mapPlaces.find((p) => p.key === selectedKey) ?? null) : null;
+  const selectedKeys = selection?.keys ?? null;
+  const selectedPlaces = useMemo(
+    () => (selectedKeys ? mapPlaces.filter((p) => selectedKeys.includes(p.key)) : []),
+    [mapPlaces, selectedKeys],
+  );
+  const selectedPlace =
+    selectedPlaces.length > 0
+      ? { label: selection?.name ?? placesLabel(selectedPlaces), people: selectedPlaces.flatMap((p) => p.people) }
+      : null;
 
   const visibleEvents = useMemo(
     () => filterEvents(events, { ...eventFilters, query }),
@@ -140,22 +158,28 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
     () => splitEventsByPlace(visibleEvents),
     [visibleEvents],
   );
-  const inView = (items: CommunityEvent[]) => (listFollowsMap ? filterByBounds(items, bounds) : items);
-  const eventsOnMapInView = inView(eventsOnMap);
 
   const sorted = useMemo(() => sortPeople(filteredPeople, sort, viewer), [filteredPeople, sort, viewer]);
   const listPeople = selectedPlace
     ? sorted.filter((p) => selectedPlace.people.some((q) => q.id === p.id))
-    : listFollowsMap
-      ? filterByBounds(sorted, bounds)
-      : sorted;
-  const nextEvent = [...eventsOnMapInView, ...eventsOnline].sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0] ?? null;
+    : filterByBounds(sorted, bounds);
+  const placeEvents = selectedPlace ? selectedPlaces.flatMap((p) => eventsAtPlace(eventsOnMap, p)) : [];
+  const listEventsOnMap = selectedPlace ? placeEvents : filterByBounds(eventsOnMap, bounds);
+  const listEventsOnline = selectedPlace ? [] : eventsOnline;
 
-  const clearPlace = () => setSelectedKey(null);
+  const clearPlace = () => {
+    setSelection(null);
+    setFitRequest((r) => ({ keys: allPlaces.map((p) => p.key), id: (r?.id ?? 0) + 1 }));
+  };
+  const pickPlace = (keys: string[], name: string | null) => {
+    setSelection({ keys, name });
+    setFitRequest((r) => ({ keys, id: (r?.id ?? 0) + 1 }));
+  };
   const placeHead = selectedPlace
     ? {
         label: selectedPlace.label,
         peopleCount: listPeople.length,
+        eventsCount: placeEvents.length,
         classmates: classmatesAt({ people: listPeople }, viewer.classYear),
       }
     : null;
@@ -167,51 +191,35 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
         className="flex max-h-[55%] min-h-0 shrink-0 flex-col bg-os-card lg:max-h-none lg:w-[400px]"
       >
         <CommunityColumn
-          title={title}
+          title="Community"
           canHost={viewer.canHost}
           onHost={() => setHosting({ event: null })}
-          headerExtra={viewer.isAlumni ? <OpenToMenu openTo={openTo} /> : null}
           tab={tab}
           onTab={setTab}
-          peopleCount={filteredPeople.length}
-          eventsCount={visibleEvents.length}
+          peopleCount={placeHead ? placeHead.peopleCount : filteredPeople.length}
+          eventsCount={placeHead ? placeHead.eventsCount : visibleEvents.length}
           query={query}
-          onQuery={(q) => {
-            setQuery(q);
-            clearPlace();
-          }}
+          onQuery={setQuery}
+          searchPlaces={allPlaces}
+          searchPeople={people}
+          onPickPlace={pickPlace}
           viewer={viewer}
           tz={tz}
           filterOptions={filterOptions}
           peopleFilters={peopleFilters}
           onPeopleFilters={setPeopleFilters}
-          onClearPeopleFilters={() => setPeopleFilters(NO_PEOPLE_FILTERS)}
           eventFilters={eventFilters}
           onEventFilters={setEventFilters}
           sort={sort}
           onSort={setSort}
-          listFollowsMap={listFollowsMap}
-          onListFollowsMap={setListFollowsMap}
           people={listPeople}
           placeHead={placeHead}
           onClearPlace={clearPlace}
-          placeEvents={selectedPlace ? eventsAtPlace(eventsOnMap, selectedPlace) : []}
-          nextEvent={nextEvent}
-          eventsOnMap={eventsOnMapInView}
-          eventsOnline={eventsOnline}
-          onOpenEvent={(id) => {
-            openEventById(id);
-          }}
+          eventsOnMap={listEventsOnMap}
+          eventsOnline={listEventsOnline}
+          onOpenEvent={openEventById}
           unplaced={unplaced}
           hasLocation={viewer.hasLocation}
-          toggle={
-            <Toggle
-              tone="os"
-              label="List what's on the map"
-              checked={listFollowsMap}
-              onChange={(e) => setListFollowsMap(e.target.checked)}
-            />
-          }
         />
       </aside>
 
@@ -221,15 +229,18 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
             places={mapPlaces}
             events={eventsOnMap}
             tz={tz}
-            selectedKey={selectedPlace?.key ?? null}
+            home={viewer.lat != null && viewer.lng != null ? { lat: viewer.lat, lng: viewer.lng } : null}
+            selectedKeys={selectedKeys}
             selectedEventId={openEvent?.id ?? null}
-            onSelect={setSelectedKey}
+            onSelect={(keys) => setSelection(keys ? { keys, name: null } : null)}
             onSelectEvent={openEventById}
             onBoundsChange={setBounds}
+            fitRequest={fitRequest}
+            dimPeople={tab === "events"}
             className="h-full w-full"
           />
         </div>
-        <div className="pointer-events-none absolute bottom-3 left-3 z-10 flex items-center gap-3 rounded-full bg-os-card px-3 py-1.5 text-xs text-os-grey shadow">
+        <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-3 rounded-full bg-os-card px-3 py-1.5 text-xs text-os-grey shadow">
           <span>People</span>
           <span className="flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-sm bg-accent-yellow" aria-hidden />
@@ -240,6 +251,11 @@ export function CommunityView({ data }: { data: CommunityViewData }) {
             DALI events
           </span>
         </div>
+        {viewer.isAlumni && (
+          <div className="absolute right-3 top-3 z-10">
+            <OpenToMenu openTo={openTo} />
+          </div>
+        )}
         {openEvent && (
           <EventPanel
             key={openEvent.id}

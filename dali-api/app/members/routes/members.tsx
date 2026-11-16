@@ -13,7 +13,7 @@ import type { Route } from "./+types/members";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
-import { openWarningMemberIds } from "~/mentorship/lib/warnings.server";
+import { openWarningMemberIds, warningsEnabledFor } from "~/mentorship/lib/warnings.server";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { prisma } from "~/lib/db.server";
 import {
@@ -22,7 +22,7 @@ import {
   PROFILE_TEXT_FIELDS,
 } from "~/members/lib/membership.server";
 import { primaryEmail } from "~/lib/display";
-import { LAB_MEMBER_WHERE, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
+import { LAB_MEMBER_WHERE, LEGACY_DOMAIN_ID, MEMBER_LIST_ORDER_BY } from "~/lib/prisma-shapes";
 import { resolvePhotoUrl } from "~/lib/photo";
 import { deriveCoreTitles } from "~/lib/core-titles";
 import {
@@ -161,6 +161,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       },
       workExperiences: { where: { endDate: null }, select: { company: true } },
       domainEligibilities: {
+        where: { domainId: { not: LEGACY_DOMAIN_ID } },
         select: {
           level: true,
           domain: { select: { displayName: true } },
@@ -169,7 +170,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
-  const warnedIds = canEdit ? new Set(await openWarningMemberIds()) : new Set<string>();
+  const warnedIds = canEdit && (await warningsEnabledFor(auth.user.sub, request)) ? new Set(await openWarningMemberIds()) : new Set<string>();
 
   const rows: MemberRow[] = await Promise.all(users.map(async (u) => {
     const coreTitles = deriveCoreTitles(u.coreAssignments);

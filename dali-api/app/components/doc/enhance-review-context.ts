@@ -2,7 +2,7 @@
 // change on a marked block without depending on the meeting recorder
 // directly — the document route (documents.$pageId.tsx) provides this
 // whenever its recording hook is mounted; everywhere else it's null and the
-// side menu renders nothing extra (specs/meeting-recording-rail.md Step 2).
+// side menu renders nothing extra (specs/archive/meeting-recording-rail.md Step 2).
 
 import { createContext } from "react";
 

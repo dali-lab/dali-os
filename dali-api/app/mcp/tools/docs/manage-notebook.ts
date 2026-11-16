@@ -16,7 +16,7 @@ import {
   setNotebookTemplate,
   setSeriesNotebook,
   trashNotebook,
-} from "~/lib/notebooks.server";
+} from "~/calendar/lib/notebooks.server";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
 export const MANAGE_NOTEBOOK_TOOL_DEF = {

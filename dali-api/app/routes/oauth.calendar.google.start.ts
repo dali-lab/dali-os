@@ -8,6 +8,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { getApiBaseUrl } from "~/lib/app-env";
 import { buildGoogleAuthUrl, GOOGLE_CALENDAR_SCOPE } from "~/lib/google-oauth";
 import { randomBytes } from "node:crypto";
+import { getEnv } from "~/lib/env.server";
 
 export const CAL_STATE_COOKIE = "__dali_cal_oauth_state";
 
@@ -23,7 +24,7 @@ export async function loader({ request }: { request: Request }) {
   }
 
   const apiBase = getApiBaseUrl();
-  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientId = getEnv().GOOGLE_CLIENT_ID;
   if (!clientId) {
     return new Response("GOOGLE_CLIENT_ID not configured", { status: 500 });
   }

@@ -18,7 +18,7 @@ const { prismaMock, gcal, markCalendarChanged } = vi.hoisted(() => ({
 }));
 
 vi.mock("~/lib/db.server", () => ({ prisma: prismaMock }));
-vi.mock("~/lib/google-calendar", () => gcal);
+vi.mock("~/calendar/lib/google-calendar.server", () => gcal);
 vi.mock("~/calendar/lib/external-cache.server", () => ({ markCalendarChanged }));
 
 import {

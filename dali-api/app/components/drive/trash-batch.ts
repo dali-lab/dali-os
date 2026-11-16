@@ -1,4 +1,4 @@
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 import { ACTION_TOAST_MS, restoredToast, trashedToast } from "~/components/drive/action-toast";
 import { driveErrorFrom } from "~/components/drive/move-item";
 import type { MoveBatchToast } from "~/components/drive/move-batch";

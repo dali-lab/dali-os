@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { DriveItem } from "~/lib/drive.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 /** The slice of `useToast()` this needs, so the helper stays testable. */
 export type DownloadToast = {

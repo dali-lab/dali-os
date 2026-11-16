@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { Question } from "~/types";
 import { FormFieldList } from "~/forms/components/FormField";
 import { FormPageHeading } from "~/forms/components/FormPager";
-import { visiblePages } from "~/lib/form-logic";
+import { visiblePages } from "~/forms/lib/form-logic";
 import { Button } from "~/components/ui/Button";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";

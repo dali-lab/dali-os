@@ -4,7 +4,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { logAuditEvent } from "~/lib/audit";
-import { revokeAllForGrant } from "~/lib/session";
+import { revokeAllForGrant } from "~/lib/session.server";
 
 export const meta: Route.MetaFunction = () => [{ title: "Settings · DALI OS" }];
 

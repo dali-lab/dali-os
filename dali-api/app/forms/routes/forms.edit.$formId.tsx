@@ -3,13 +3,13 @@ import type { Route } from "./+types/forms.edit.$formId";
 import { requireAuth, forbidden, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { canBuildForm, canCreateForm, canSeeForm } from "~/forms/lib/form-access.server";
-import type { DriveNoticeKey } from "~/lib/drive-notices";
+import type { DriveNoticeKey } from "~/drive/lib/drive-notices";
 import { prisma } from "~/lib/db.server";
 import {
   loadFormForEdit,
   runFormsAction,
 } from "~/forms/lib/forms-data";
-import { driveFolderCrumbs } from "~/lib/drive-crumbs.server";
+import { driveFolderCrumbs } from "~/drive/lib/drive-crumbs.server";
 import { PageIcon } from "~/components/PageIcon";
 import { formUsages, managingUsage } from "~/forms/lib/form-usages.server";
 import { mappedQuestionFeatures } from "~/forms/lib/mapped-questions.server";
@@ -17,12 +17,25 @@ import { formFillers } from "~/forms/lib/prefill.server";
 import {
   loadFormHiringLinks,
   unlinkHiringForm,
-} from "~/hiring/lib/form-links.server";
+} from "~/forms/lib/form-links.server";
 import { FormDetail } from "~/forms/components/FormDetail";
 import { parsePageParam } from "~/lib/pagination";
 import { loadVersionResponses } from "~/forms/lib/version-responses.server";
+import { parseMemberColumns } from "~/projects/lib/member-history";
+import {
+  applyResultColumnOp,
+  parseResultColumns,
+  responseColumnId,
+} from "~/forms/lib/response-columns";
+import { parseColumnOp } from "~/forms/lib/column-ops";
+import { unionResponseColumns } from "~/forms/lib/answer-rows.server";
+import type { Question } from "~/types";
+import { parseFormDataJson } from "~/lib/safe-json";
+import { getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
-import { driveRootCrumbs } from "~/lib/drive-crumbs";
+import { parseAnswerFilters } from "~/forms/lib/answer-filters";
+import { driveRootCrumbs } from "~/drive/lib/drive-crumbs";
 import { getCollabToken } from "~/lib/collab-token.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import {
@@ -127,17 +140,34 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       : undefined;
   const summaryActive =
     resultsVersion != null && url.searchParams.get("show") !== "responses";
+  const answers = resultsVersion
+    ? parseAnswerFilters(url.searchParams, resultsVersion.questions)
+    : [];
   const summary =
     summaryActive && resultsVersion
       ? await loadVersionSummary(form.id, resultsVersion, {
           slot: url.searchParams.get("slot") ?? "",
+          answers,
         })
       : null;
+  const savedColumns =
+    resultsVersion != null &&
+    (await isFeatureEnabled(
+      "form-response-views",
+      auth.user.sub,
+      await getUserRoles(auth.user.sub, request),
+      request,
+    ));
   const results = resultsVersion && !summaryActive
     ? await loadVersionResponses(form.id, resultsVersion.id, {
         page: parsePageParam(url.searchParams.get("page")),
         q: url.searchParams.get("q") ?? "",
         slot: url.searchParams.get("slot") ?? "",
+        answers,
+        questions: resultsVersion.questions,
+        columns: savedColumns
+          ? form.responseColumns
+          : parseMemberColumns(url.searchParams).map((k) => ({ id: responseColumnId(k) })),
       })
     : null;
   const tracker = resultsVersion ? await loadTrackerCounts(params.formId) : null;
@@ -215,6 +245,38 @@ export async function action({ request, params }: Route.ActionArgs) {
     if ("error" in deleted)
       return Response.json({ error: deleted.error }, { status: deleted.status });
     return deleted;
+  }
+
+  if (intent === "response-column") {
+    const roles = await getUserRoles(auth.user.sub, request);
+    if (!(await isFeatureEnabled("form-response-views", auth.user.sub, roles, request)))
+      return forbidden(request);
+    const op = parseColumnOp(parseFormDataJson(formData.get("op")));
+    if (!op) return Response.json({ error: "Invalid input" }, { status: 400 });
+    const [form, versions] = await Promise.all([
+      prisma.form.findUnique({ where: { id: params.formId }, select: { responseColumns: true } }),
+      prisma.formVersion.findMany({
+        where: { formId: params.formId },
+        select: { versionNumber: true, questions: true },
+      }),
+    ]);
+    if (!form) return Response.json({ error: "Not found" }, { status: 404 });
+    const next = applyResultColumnOp(
+      parseResultColumns(form.responseColumns),
+      op,
+      unionResponseColumns(
+        versions.map((v) => ({
+          versionNumber: v.versionNumber,
+          questions: (v.questions as unknown as Question[]) ?? [],
+        })),
+      ),
+    );
+    if (!next) return Response.json({ error: "Unknown column" }, { status: 400 });
+    await prisma.form.update({
+      where: { id: params.formId },
+      data: { responseColumns: next },
+    });
+    return { ok: true };
   }
 
   if (intent === "send-form-reminder") {

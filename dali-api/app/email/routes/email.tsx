@@ -27,6 +27,7 @@ import { Tooltip } from "~/components/ui/floating";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useToast } from "~/components/ui/toast";
 import { cn } from "~/lib/cn";
+import { flagCodec, usePersistedState } from "~/hooks/usePersistedState";
 import { AccountsModal, connectHref } from "~/email/components/AccountsModal";
 import { PersonalInboxConsent } from "~/email/components/PersonalInboxConsent";
 import { UnreadBadge } from "~/email/components/UnreadBadge";
@@ -49,6 +50,7 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 const RAIL_COLLAPSED_KEY = "email.railCollapsed";
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
 
 const FOLDER_ICONS: Record<MailFolderKey, typeof Inbox> = {
   inbox: Inbox,
@@ -83,7 +85,7 @@ export default function EmailPage() {
   const [composing, setComposing] = useState<string | null>(null);
   const [search, setSearch] = useState(data.ask || data.query);
   const [searching, setSearching] = useState(false);
-  const [railCollapsed, setRailCollapsed] = useState(false);
+  const [railCollapsed, setRailCollapsed] = usePersistedState(RAIL_COLLAPSED_KEY, false, isBoolean, flagCodec);
   const [readerExpanded, setReaderExpanded] = useState(false);
   // Pages past the loader's first one, kept only while the list shows the same mail.
   const [older, setOlder] = useState<{ scope: string; threads: FeedThread[]; next: FeedCursor } | null>(null);
@@ -119,12 +121,6 @@ export default function EmailPage() {
       data.accounts.map((a) => a.address),
     );
   }, [threads, data.selected, data.drafts, data.accounts]);
-
-  useEffect(() => {
-    try {
-      setRailCollapsed(window.localStorage.getItem(RAIL_COLLAPSED_KEY) === "1");
-    } catch {}
-  }, []);
 
   const expandButton = (
     <IconButton
@@ -186,14 +182,7 @@ export default function EmailPage() {
     }
   };
 
-  const toggleRail = () => {
-    const next = !railCollapsed;
-    setRailCollapsed(next);
-    try {
-      if (next) window.localStorage.setItem(RAIL_COLLAPSED_KEY, "1");
-      else window.localStorage.removeItem(RAIL_COLLAPSED_KEY);
-    } catch {}
-  };
+  const toggleRail = () => setRailCollapsed((v) => !v);
 
   useEffect(() => {
     const error = params.get("mail_error");

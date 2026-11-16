@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getZonedYMD, APPLICATION_TZ } from "~/lib/timezone";
-import type { PillTone } from "~/hiring/components/cycle-setup/SetupCard";
+import type { PillTone } from "~/components/ui/Pill";
 
 // Client-safe: the listserv page and its server module share these.
 

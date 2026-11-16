@@ -10,7 +10,7 @@ import { Modal, ModalHeader } from "~/components/Modal";
 import { modalCardClass, useOsChrome } from "~/components/os-chrome";
 import { SearchInput } from "~/components/ui/SearchInput";
 import { useToast } from "~/components/ui/toast";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { cn } from "~/lib/cn";
 import {
   EMAIL_TEMPLATE_KEYS,
@@ -372,7 +372,7 @@ function EmailEditor({
   const [, setSearchParams] = useSearchParams();
   const def = emailTemplateDef(templateKey);
   const nav = useNavigation();
-  const fetcher = useFetcher<{ saved?: true }>();
+  const fetcher = useFetcher<{ saved?: true; error?: string }>();
   const inPlace = !!onClose;
   const EditorForm = inPlace ? fetcher.Form : Form;
   const formProps = inPlace ? { action: EDITOR_ROUTE } : {};
@@ -463,6 +463,9 @@ function EmailEditor({
             <p className="text-xs text-os-amber">
               Never filled for this email: {warnings.unfilled.map((t) => `{{${t}}}`).join(", ")}.
             </p>
+          ) : null}
+          {fetcher.state === "idle" && fetcher.data?.error ? (
+            <p className="text-xs text-os-red">{fetcher.data.error}</p>
           ) : null}
 
           <div className="flex items-center gap-2">

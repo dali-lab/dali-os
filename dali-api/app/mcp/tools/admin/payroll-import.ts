@@ -15,7 +15,7 @@ import {
   getUploadPost,
   headObject,
   isS3Configured,
-} from "~/lib/s3";
+} from "~/lib/s3.server";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_LABEL } from "~/lib/file-validation";
 import {
   importPayrollCsvs,

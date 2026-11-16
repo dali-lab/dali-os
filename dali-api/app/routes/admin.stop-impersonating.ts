@@ -9,38 +9,34 @@ import { redirect } from "react-router";
 import { getBetterAuthUser } from "~/lib/betterauth-compat.server";
 import { auth } from "~/lib/betterauth.server";
 import { logAuditEvent } from "~/lib/audit";
+import { clearAdminSessionCookieHeader, redirectRestoringAdmin } from "~/lib/impersonation-restore.server";
 
 export async function action({ request }: { request: Request }): Promise<Response> {
-  // 1. Require a valid BetterAuth session.
   const actor = await getBetterAuthUser(request);
-  if (!actor) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+  if (actor) {
+    try {
+      const { headers: baHeaders } = await auth.api.stopImpersonating({
+        headers: request.headers,
+        returnHeaders: true,
+      });
+      await logAuditEvent({
+        action: "admin.impersonate.stop",
+        userId: actor.sub,
+        request,
+      });
+      const responseHeaders = new Headers();
+      baHeaders.forEach((value, key) => {
+        if (key.toLowerCase() === "set-cookie") {
+          responseHeaders.append("Set-Cookie", value);
+        }
+      });
+      return redirect("/", { headers: responseHeaders });
+    } catch {
+      // Falls through to restoring from the admin_session cookie.
+    }
   }
 
-  // 2. Stop impersonating. returnHeaders: true gives us { headers, response }
-  //    where headers carries the restored session Set-Cookie.
-  const result = await auth.api.stopImpersonating({
-    headers: request.headers,
-    returnHeaders: true,
-  });
-  const baHeaders = result.headers;
-
-  // 3. Audit.
-  await logAuditEvent({
-    action: "admin.impersonate.stop",
-    userId: actor.sub,
-    request,
-  });
-
-  // 4. Forward the Set-Cookie header(s) onto the redirect.
-  const responseHeaders = new Headers();
-  baHeaders.forEach((value, key) => {
-    if (key.toLowerCase() === "set-cookie") {
-      responseHeaders.append("Set-Cookie", value);
-    }
-  });
-  return redirect("/", { headers: responseHeaders });
+  const restored = await redirectRestoringAdmin(request, "/");
+  if (restored) return restored;
+  return redirect("/", { headers: { "Set-Cookie": await clearAdminSessionCookieHeader() } });
 }

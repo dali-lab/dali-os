@@ -14,9 +14,18 @@ import {
   visibleColumns,
   type ColumnDescriptor,
 } from "./submission-columns";
+import {
+  EMPTY_MEMBER_HISTORY,
+  MEMBER_HISTORY_COLUMNS,
+  memberHistoryText,
+} from "./member-history";
+import { loadMemberHistories } from "./member-history.server";
 
 export type ResolvedRow = {
+  submissionId: string;
   userId: string;
+  // The staffing manager who added the response for the member, by name.
+  enteredBy: string | null;
   name: string;
   email: string | null;
   // Domain ids the member has eligibility in — used by the board's domain
@@ -108,9 +117,11 @@ export async function buildSubmissionView(args: {
     },
     orderBy: { createdAt: "desc" },
     select: {
+      id: true,
       userId: true,
       answers: true,
       user: { select: { firstName: true, lastName: true, daliEmail: true } },
+      enteredBy: { select: { firstName: true, lastName: true } },
     },
   });
   // One row per member: the most recent submission wins (createdAt desc, so
@@ -134,7 +145,8 @@ export async function buildSubmissionView(args: {
     }
   }
   const idList = [...refIds];
-  const [projects, domains, eligibilities] = await Promise.all([
+  const rowUserIds = rowsRaw.map((r) => r.userId!);
+  const [projects, domains, histories] = await Promise.all([
     idList.length
       ? prisma.project.findMany({
           where: { id: { in: idList } },
@@ -147,34 +159,12 @@ export async function buildSubmissionView(args: {
           select: { id: true, displayName: true },
         })
       : Promise.resolve([]),
-    prisma.domainEligibility.findMany({
-      where: { userId: { in: rowsRaw.map((r) => r.userId!) } },
-      select: {
-        userId: true,
-        level: true,
-        domainId: true,
-        domain: { select: { displayName: true } },
-      },
-    }),
+    loadMemberHistories(rowUserIds),
   ]);
+  const now = new Date();
   const refName = new Map<string, string>();
   for (const p of projects) refName.set(p.id, p.name);
   for (const d of domains) refName.set(d.id, d.displayName);
-  const hiredByUser = new Map<string, string>();
-  const domainIdsByUser = new Map<string, string[]>();
-  for (const e of eligibilities) {
-    const txt = `${e.domain.displayName} (${e.level})`;
-    hiredByUser.set(
-      e.userId,
-      hiredByUser.has(e.userId)
-        ? `${hiredByUser.get(e.userId)}, ${txt}`
-        : txt,
-    );
-    const ids = domainIdsByUser.get(e.userId) ?? [];
-    ids.push(e.domainId);
-    domainIdsByUser.set(e.userId, ids);
-  }
-
   // Which form-question keys / builtins the mapping covers — used to flag
   // each detail field as mapped vs not. The detail page renders both either
   // way, the flag is informational.
@@ -186,11 +176,9 @@ export async function buildSubmissionView(args: {
       else mappedBuiltins.add(e.builtin);
     }
   }
-  // Builtin labels for the detail view. Kept short; the mapping can rename
-  // them in the table without renaming them here.
   const BUILTIN_LABELS: Record<string, string> = {
     submitter: "Submitter",
-    hiredRoles: "Hired roles",
+    ...Object.fromEntries(MEMBER_HISTORY_COLUMNS.map((c) => [c.key, c.label])),
   };
 
   const rows: ResolvedRow[] = rowsRaw.map((s) => {
@@ -203,7 +191,7 @@ export async function buildSubmissionView(args: {
     }
     const builtinText: Record<string, string> = {
       submitter: `${s.user!.firstName} ${s.user!.lastName}`,
-      hiredRoles: hiredByUser.get(s.userId!) ?? "",
+      ...memberHistoryText(histories.get(s.userId!) ?? EMPTY_MEMBER_HISTORY, now),
     };
 
     // Detail-page field list: every question in form order, then builtins.
@@ -227,10 +215,12 @@ export async function buildSubmissionView(args: {
     ];
 
     return {
+      submissionId: s.id,
       userId: s.userId!,
+      enteredBy: s.enteredBy ? `${s.enteredBy.firstName} ${s.enteredBy.lastName}`.trim() : null,
       name: `${s.user!.firstName} ${s.user!.lastName}`,
       email: s.user!.daliEmail,
-      domainIds: domainIdsByUser.get(s.userId!) ?? [],
+      domainIds: (histories.get(s.userId!)?.eligibilities ?? []).map((e) => e.domainId),
       cells: rowCells(mapping, { answerText, builtinText }),
       detailFields,
     };

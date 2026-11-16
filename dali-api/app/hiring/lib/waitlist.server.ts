@@ -29,15 +29,19 @@ import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { promoteToMember } from "~/members/lib/membership.server";
 import {
   sendWelcome,
-  onboardingEmailHtml,
+  acceptanceEmailVars,
+  acceptanceLogoHtml,
 } from "~/members/lib/welcome.server";
 import {
   provisionNewMember,
   type ProvisionResult,
 } from "~/members/lib/provisioning.server";
 import type { Prisma } from "~/generated/prisma/client";
-import { getEmailTemplate } from "~/email/lib/templates.server";
-import { decisionEmailVars, decisionEmailVarsProblem } from "~/hiring/lib/decision-email-vars";
+import {
+  credentialTokensProblem,
+  decisionEmailVars,
+  decisionEmailVarsProblem,
+} from "~/hiring/lib/decision-email-vars";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
 import { compactRanks } from "~/hiring/lib/waitlist";
 
@@ -323,12 +327,9 @@ export async function acceptFromWaitlist(args: {
     offerRespondBy: cycle?.offerRespondBy ?? null,
     waitlistRespondBy: cycle?.waitlistRespondBy ?? null,
   };
-  const nextSteps = await getEmailTemplate("hiring:onboarding:NextSteps");
-  const problem = decisionEmailVarsProblem("Accepted", emailDates, [
-    binding.subject,
-    binding.body,
-    nextSteps?.body ?? "",
-  ]);
+  const problem =
+    decisionEmailVarsProblem("Accepted", emailDates, [binding.subject, binding.body]) ??
+    credentialTokensProblem([binding.body]);
   if (problem) return { ok: false, reason: "email-vars", message: problem };
   const dateVars = decisionEmailVars("Accepted", emailDates);
 
@@ -418,8 +419,8 @@ export async function acceptFromWaitlist(args: {
     console.error("waitlist accept: sendWelcome failed:", err);
   }
 
-  // Acceptance email — same template + onboarding block as the standard
-  // release path, so the recipient sees one combined message.
+  // Acceptance email — the same Accepted letter as the standard release path,
+  // with the credentials rendered from its own placeholders.
   let emailSent = false;
   let _waitlistEmailId: string | null = null;
   try {
@@ -433,12 +434,12 @@ export async function acceptFromWaitlist(args: {
       const { subject, html } = renderForSlot(
         decisionSlot("Accepted"),
         binding,
-        { firstName: user.firstName, domain: domainName, ...dateVars },
-      );
-      const onboarding = await onboardingEmailHtml(
-        provisionResult?.daliEmail ?? null,
-        provisionResult?.daliTempPassword ?? null,
-        dateVars,
+        {
+          firstName: user.firstName,
+          domain: domainName,
+          ...dateVars,
+          ...acceptanceEmailVars(provisionResult ?? null),
+        },
       );
       const { id, deduped } = await enqueueOutbound({
         channel: "email",
@@ -447,7 +448,7 @@ export async function acceptFromWaitlist(args: {
         target: to,
         recipientUserId: da.application.userId,
         subject,
-        bodyHtml: html + onboarding,
+        bodyHtml: html + acceptanceLogoHtml(),
         eventType: "hiring.waitlist.accept",
       });
       _waitlistEmailId = id;

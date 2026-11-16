@@ -23,11 +23,11 @@ import {
   tabActions,
 } from '~/lib/desktop-tabs-store'
 import type { DesktopTab, DesktopTabsState } from '~/lib/desktop-tabs'
-import { buildPageLink, writePageLink } from '~/lib/page-link'
+import { buildPageLink, writePageLink } from '~/drive/lib/page-link'
 import { modKey, tabCycleShortcut } from '~/lib/shortcuts'
 import { cn } from '~/lib/cn'
-import { scrollPageTo } from '~/lib/page-scroll'
-import { stripAppTitle } from '~/lib/page-title'
+import { scrollPageTo } from '~/drive/lib/page-scroll'
+import { stripAppTitle } from '~/drive/lib/page-title'
 import { fallbackPageLabel } from '~/components/shell/page-bar-model'
 import { usePageTrail } from '~/components/Breadcrumbs'
 import { tabIcon } from '~/lib/tab-icon'
@@ -55,7 +55,7 @@ function pageTitle(): string {
  * the first paint already has the strip's space; the client corrects it once
  * it knows whether it is inside the desktop app.
  */
-export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
+export function useDesktopTabs(enabled: boolean, hint: boolean, impersonating = false): boolean {
   const [show, setShow] = useState(enabled && hint)
   useEffect(() => {
     if (!enabled || desktopVersion() === null) {
@@ -80,10 +80,12 @@ export function useDesktopTabs(enabled: boolean, hint: boolean): boolean {
 
   useEffect(() => {
     if (!show) return
-    return startTabs({ url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' }, (to, opts) =>
-      navigateRef.current(to, { replace: true, state: opts }),
+    return startTabs(
+      { url: arrivalRef.current, label: pageTitle() || fallbackPageLabel(arrivalRef.current) || 'Home' },
+      (to, opts) => navigateRef.current(to, { replace: true, state: opts }),
+      { impersonating },
     )
-  }, [show])
+  }, [show, impersonating])
 
   useEffect(() => {
     if (!show) return

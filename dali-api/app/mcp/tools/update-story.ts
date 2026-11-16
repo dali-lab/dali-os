@@ -30,59 +30,50 @@ function parseDay(v: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-export const UPDATE_STORY_TOOL = {
-  name: "update_story",
-  description:
-    "Edit a user story (title, notes, status, dates, priority, successMetric, acceptanceCriteria, category, dependsOn). Requires Core or project-member access. Empty string clears nullable text fields; null clears date fields; omit a field to leave it unchanged.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      storyId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 500 },
-      notes: { type: "string", maxLength: 5000 },
-      status: {
-        type: "string",
-        enum: STORY_STATUSES as unknown as string[],
-      },
-      startsAt: {
-        type: "string",
-        description:
-          "Date-only string (YYYY-MM-DD) or empty string to clear. Stored as UTC midnight.",
-      },
-      endsAt: {
-        type: "string",
-        description: "Date-only string (YYYY-MM-DD) or empty string to clear.",
-      },
-      priority: {
-        type: "string",
-        enum: [...STORY_PRIORITIES, ""] as string[],
-        description:
-          "Story priority (Must/Should/Could/Wont). Empty string clears.",
-      },
-      successMetric: {
-        type: "string",
-        description: "Success metric text. Empty string clears.",
-      },
-      acceptanceCriteria: {
-        type: "string",
-        description: "Acceptance criteria text. Empty string clears.",
-      },
-      category: {
-        type: "string",
-        description: "Category label. Empty string clears.",
-      },
-      dependsOn: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "Full replacement set of story ids this story depends on (waits for). Omit to leave unchanged; empty array clears all dependencies.",
-      },
-    },
-    required: ["storyId"],
-    additionalProperties: false,
+export const UPDATE_STORY_PROPERTIES = {
+  storyId: { type: "string", minLength: 1 },
+  title: { type: "string", minLength: 1, maxLength: 500 },
+  notes: { type: "string", maxLength: 5000 },
+  status: {
+    type: "string",
+    enum: STORY_STATUSES as unknown as string[],
   },
-  requiredScope: "mcp:write" as const,
+  startsAt: {
+    type: "string",
+    description:
+      "Date-only string (YYYY-MM-DD) or empty string to clear. Stored as UTC midnight.",
+  },
+  endsAt: {
+    type: "string",
+    description: "Date-only string (YYYY-MM-DD) or empty string to clear.",
+  },
+  priority: {
+    type: "string",
+    enum: [...STORY_PRIORITIES, ""] as string[],
+    description:
+      "Story priority (Must/Should/Could/Wont). Empty string clears.",
+  },
+  successMetric: {
+    type: "string",
+    description: "Success metric text. Empty string clears.",
+  },
+  acceptanceCriteria: {
+    type: "string",
+    description: "Acceptance criteria text. Empty string clears.",
+  },
+  category: {
+    type: "string",
+    description: "Category label. Empty string clears.",
+  },
+  dependsOn: {
+    type: "array",
+    items: { type: "string" },
+    description:
+      "Full replacement set of story ids this story depends on (waits for). Omit to leave unchanged; empty array clears all dependencies.",
+  },
 };
+
+export const UPDATE_STORY_REQUIRED = ["storyId"];
 
 type Input = {
   storyId: string;

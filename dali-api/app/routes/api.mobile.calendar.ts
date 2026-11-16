@@ -1,7 +1,7 @@
 import type { Route } from "./+types/api.mobile.calendar";
 import { prisma } from "~/lib/db.server";
-import { listUpcomingMeetings } from "~/lib/upcoming-meetings";
-import { fetchCalendarEvents } from "~/lib/google-calendar";
+import { listUpcomingMeetings } from "~/calendar/lib/upcoming-meetings-list.server";
+import { fetchCalendarEvents } from "~/calendar/lib/google-calendar.server";
 import { expandClassOccurrences } from "~/calendar/lib/class-schedule";
 import type { PeriodMeeting } from "~/calendar/lib/dartmouth-periods";
 import {
@@ -15,7 +15,7 @@ import { mobileError, mobileJson, requireMobileUser } from "~/lib/mobile-auth.se
 import { listMemberSummaries } from "~/lib/mobile-members.server";
 import { z } from "zod";
 import { parseJson } from "~/lib/validate";
-import { createScheduledMeeting } from "~/lib/scheduled-meeting";
+import { createScheduledMeeting } from "~/calendar/lib/scheduled-meeting.server";
 
 const CreateEventSchema = z.object({
   title: z.string().trim().min(1).max(200),

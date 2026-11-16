@@ -2,21 +2,8 @@
 
 import { prisma } from "~/lib/db.server";
 import { canEditProject } from "./access";
-
-export const DELETE_TASK_TOOL = {
-  name: "delete_task",
-  description:
-    "Delete a project task (cascades to its assignees and comments). Requires Core or project-member access. Prefer setting status to Cancelled if the task should remain in history.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: { type: "string", minLength: 1 },
-    },
-    required: ["taskId"],
-    additionalProperties: false,
-  },
-  requiredScope: "mcp:write" as const,
-};
+import type { McpCtx } from "../registry";
+import { deleteTask } from "~/projects/lib/task-update.server";
 
 type Input = { taskId: string };
 
@@ -27,7 +14,7 @@ export class DeleteTaskError extends Error {
   }
 }
 
-export async function runDeleteTask(callerId: string, input: Input) {
+export async function runDeleteTask(callerId: string, input: Input, ctx?: Pick<McpCtx, "request">) {
   const task = await prisma.task.findUnique({
     where: { id: input.taskId },
     select: { id: true, projectId: true },
@@ -38,11 +25,7 @@ export async function runDeleteTask(callerId: string, input: Input) {
     throw new DeleteTaskError("Forbidden", 403);
   }
 
-  await prisma.$transaction([
-    prisma.taskAssignee.deleteMany({ where: { taskId: input.taskId } }),
-    prisma.taskComment.deleteMany({ where: { taskId: input.taskId } }),
-    prisma.task.delete({ where: { id: input.taskId } }),
-  ]);
+  await deleteTask({ taskId: input.taskId, actorId: callerId, request: ctx?.request });
 
   return { ok: true, taskId: input.taskId };
 }

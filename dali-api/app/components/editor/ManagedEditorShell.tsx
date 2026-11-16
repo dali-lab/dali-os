@@ -33,8 +33,8 @@ function SaveStateBadge({ state }: { state: SaveState }) {
     : "Save error";
   const cls =
     state === "saving" ? "text-muted-foreground"
-    : state === "saved" ? "text-green-600"
-    : "text-red-600";
+    : state === "saved" ? "text-os-green"
+    : "text-os-red";
   return (
     <span className={`text-xs font-medium ${cls} transition-colors`}>
       {label}

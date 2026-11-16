@@ -31,10 +31,6 @@ export default defineConfig({
       "@blocknote/shadcn",
       "@blocknote/code-block",
       "y-indexeddb",
-      // Only ever imported dynamically (ConnectMap defers it to the browser),
-      // so without pre-bundling Vite discovers it mid-session and the stale
-      // dep hash 504s — the import rejects and the map never initializes.
-      "leaflet",
     ],
   },
   ssr: {

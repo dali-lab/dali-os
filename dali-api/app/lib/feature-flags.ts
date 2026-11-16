@@ -11,7 +11,7 @@
 import type { UserRoles } from "~/lib/roles";
 
 // Role flags that a flag may target. A subset of UserRoles keys — the boolean
-// authority flags that make sense as an audience (excludes isLabMember, which
+// authority flags that make sense as an audience (excludes isLabMemberOrAlum, which
 // is "everyone signed in"). Must be keys of UserRoles, since evaluateFlag reads
 // them off the resolved roles object. The admin action constrains writes here.
 export const ROLE_TARGETS = [
@@ -158,6 +158,30 @@ export const FEATURE_FLAGS = [
     label: "Forms: fill in from records",
     description:
       "Form questions can start filled in from what DALI OS already knows about the person filling them (their name and email, and for partners their organization and project). The answer stays editable. Also adds a \"Partners\" option to a form's sharing. Ships off.",
+  },
+  {
+    key: "form-response-views",
+    label: "Forms: add columns to results",
+    description:
+      "A + button on a form's results table adds columns about each respondent (hired roles, project history, terms in lab, current role). Added columns are saved on the form for everyone who can edit it and are included in the CSV. Replaces the Member columns dropdown. Ships off.",
+  },
+  {
+    key: "alumni-home",
+    label: "Alumni: Baker tower Home",
+    description:
+      "Alumni see Baker tower over the Green on Home, in Hanover's current season, by day or night, with the clock showing Hanover time. Ships off.",
+  },
+  {
+    key: "project-band-header",
+    label: "Project band header",
+    description:
+      "Project pages show a band header: the emoji, title, partner and terms, roles and team on the left and the cover image on the right. Off keeps the current header. Ships off.",
+  },
+  {
+    key: "mentorship-warnings",
+    label: "Mentorship warnings",
+    description:
+      "Core sees a Warnings tab in Mentorship to record and resolve participation concerns about members, and open warnings show on the notes page. Ships off.",
   },
 ] as const satisfies readonly FeatureFlagDef[];
 

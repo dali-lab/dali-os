@@ -14,11 +14,11 @@ vi.mock("~/lib/login-next", () => ({ redirectToLogin: () => new Response(null, {
 vi.mock("~/lib/roles", () => ({ getUserRoles: vi.fn(), isCore: h.isCore }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/core/coreNav", () => ({ coreHandle: () => ({}) }));
-vi.mock("~/lib/drive-receivers.server", () => ({
+vi.mock("~/drive/lib/drive-receivers.server", () => ({
   resolveFilingFolder: h.resolveFilingFolder,
   singletonSlot: (processType: string, folderType: string) => ({ processType, folderType }),
 }));
-vi.mock("~/lib/drive-roots.server", () => ({ editableFolderInRoot: h.editableFolderInRoot }));
+vi.mock("~/drive/lib/drive-roots.server", () => ({ editableFolderInRoot: h.editableFolderInRoot }));
 vi.mock("~/signing/lib/console.server", () => ({ getAgreementsOverview: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 vi.mock("~/signing/lib/activate.server", () => ({ activateVersion: vi.fn() }));

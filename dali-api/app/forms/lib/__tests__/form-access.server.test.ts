@@ -2,11 +2,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/pageAccess.server", () => ({ PAGE_ACCESS_SELECT: { id: true }, getPageAccess: vi.fn() }));
-vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isLabMember: vi.fn(), isLabMemberOrAlum: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { isLabMember } from "~/lib/roles";
+import { isLabMember, isLabMemberOrAlum } from "~/lib/roles";
 import { canBuildForm, canSeeForm, fillAccessByPage } from "~/forms/lib/form-access.server";
 import { formFillAccess } from "~/forms/lib/public-form";
 
@@ -53,7 +53,7 @@ describe("the form's page decides", () => {
     expect(await fillAccessByPage("f1", "u1")).toBe("ok");
   });
 
-  it("a staffing-bound form admits any lab member whatever its sharing", async () => {
+  it("a staffing-bound form admits any current lab member whatever its sharing", async () => {
     vi.mocked(getPageAccess).mockResolvedValue(access({ canView: false }));
     (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue({ id: "b1" });
     vi.mocked(isLabMember).mockResolvedValue(true);
@@ -67,6 +67,14 @@ describe("the form's page decides", () => {
   it("a staffing-bound form still refuses someone outside the lab", async () => {
     vi.mocked(getPageAccess).mockResolvedValue(access({ canView: false }));
     (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue({ id: "b1" });
+    vi.mocked(isLabMember).mockResolvedValue(false);
+    expect(await fillAccessByPage("f1", "u1")).toBe("denied");
+  });
+
+  it("a staffing-bound form refuses an alum", async () => {
+    vi.mocked(getPageAccess).mockResolvedValue(access({ canView: false }));
+    (prisma as any).staffingCycleFormBinding.findFirst.mockResolvedValue({ id: "b1" });
+    vi.mocked(isLabMemberOrAlum).mockResolvedValue(true);
     vi.mocked(isLabMember).mockResolvedValue(false);
     expect(await fillAccessByPage("f1", "u1")).toBe("denied");
   });

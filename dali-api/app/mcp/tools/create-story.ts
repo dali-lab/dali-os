@@ -6,27 +6,18 @@ import { canEditProject } from "./access";
 const STORY_STATUSES = ["Todo", "InProgress", "Done"] as const;
 type StoryStatus = (typeof STORY_STATUSES)[number];
 
-export const CREATE_STORY_TOOL = {
-  name: "create_story",
-  description:
-    "Create a user story under an epic. Requires Core or project-member access.",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      epicId: { type: "string", minLength: 1 },
-      title: { type: "string", minLength: 1, maxLength: 500 },
-      notes: { type: "string", maxLength: 5000 },
-      status: {
-        type: "string",
-        enum: STORY_STATUSES as unknown as string[],
-        description: "Defaults to 'Todo'.",
-      },
-    },
-    required: ["epicId", "title"],
-    additionalProperties: false,
+export const CREATE_STORY_PROPERTIES = {
+  epicId: { type: "string", minLength: 1 },
+  title: { type: "string", minLength: 1, maxLength: 500 },
+  notes: { type: "string", maxLength: 5000 },
+  status: {
+    type: "string",
+    enum: STORY_STATUSES as unknown as string[],
+    description: "Defaults to 'Todo'.",
   },
-  requiredScope: "mcp:write" as const,
 };
+
+export const CREATE_STORY_REQUIRED = ["epicId", "title"];
 
 type Input = {
   epicId: string;

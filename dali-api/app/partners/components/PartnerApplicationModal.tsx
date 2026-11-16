@@ -1,6 +1,6 @@
 // Partner application record modal — follows TaskModal's conventions (record
 // mode with a pencil to edit, useDialog guarded close) but wide, with the
-// detail pages' OsTabBar over the content and the editable properties in a
+// detail pages' tab row over the content and the editable properties in a
 // persistent sidebar on the right. specs/partner-crm.md §5.
 //
 // Mounted from the board route (app/partners/components/PartnerBoard.tsx),
@@ -10,15 +10,26 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
-import { Maximize2, Pencil, X } from "lucide-react";
+import {
+  Activity,
+  CalendarDays,
+  ClipboardCheck,
+  FileText,
+  Mail,
+  Maximize2,
+  Pencil,
+  ScrollText,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Modal } from "~/components/Modal";
 import { MultiSelect, Select, Tooltip } from "~/components/ui/floating";
 import { Button, buttonClasses } from "~/components/ui/Button";
-import { OsTabBar } from "~/components/os-page";
+import { PageTabRow } from "~/components/os-page";
 import { useDialog } from "~/components/ui/dialog";
 import { modalCardClass } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { PARTNER_STAGE_LABELS } from "../lib/partner-application";
 import { postPartnerApplicationIntent } from "../lib/partner-detail-fetch";
 import type { PartnerCardModel } from "../lib/partner-board";
@@ -39,13 +50,13 @@ import { ProjectIconPicker } from "~/projects/components/ProjectIconPicker";
 const TAB_ROW_LIMIT = 8;
 
 type Tab = "activity" | "details" | "sow" | "meetings" | "evaluation" | "email";
-const TABS: { key: Tab; label: string }[] = [
-  { key: "activity", label: "Activity" },
-  { key: "details", label: "Details" },
-  { key: "sow", label: "Statement of work" },
-  { key: "meetings", label: "Meetings" },
-  { key: "evaluation", label: "Evaluation" },
-  { key: "email", label: "Email" },
+const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
+  { key: "activity", label: "Activity", icon: Activity },
+  { key: "details", label: "Details", icon: FileText },
+  { key: "sow", label: "Statement of work", icon: ScrollText },
+  { key: "meetings", label: "Meetings", icon: CalendarDays },
+  { key: "evaluation", label: "Evaluation", icon: ClipboardCheck },
+  { key: "email", label: "Email", icon: Mail },
 ];
 
 const CREATE_SOURCES: { value: string; label: string }[] = [
@@ -398,11 +409,14 @@ export function PartnerApplicationModal({
           ) : (
             <div className="min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-8">
               <div className="min-w-0">
-                <OsTabBar
-                  ariaLabel="Application sections"
-                  tabs={TABS}
-                  active={tab}
-                  onSelect={setTab}
+                <PageTabRow
+                  label="Application sections"
+                  tabs={TABS.map((t) => ({
+                    label: t.label,
+                    icon: t.icon,
+                    active: tab === t.key,
+                    onClick: () => setTab(t.key),
+                  }))}
                 />
                 <div className="mt-5">
                   {tab === "activity" && (

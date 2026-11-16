@@ -1,24 +1,21 @@
 import type { Route } from "./+types/api.pages.$id.share";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { isLabMember } from "~/lib/roles";
+import { errorResponse } from "~/lib/http-error.server";
+import { isLabMemberOrAlum } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
 import { loadShareOptions, parsePermission, parseLinkAccess } from "~/lib/share-params.server";
 import {
   addPageShare,
   listPageShares,
   removePageShare,
-  SharePrincipalError,
 } from "~/lib/page-sharing.server";
-import { describePageAudience } from "~/lib/page-audience.server";
+import { describePageAudience } from "~/drive/lib/page-audience.server";
 import {
   requirePageShareManager,
   setGeneralAccess,
   setFolderScope,
   notifyDocumentShared,
-  PageShareForbiddenError,
-  PageShareNotFoundError,
-  GeneralAccessError,
 } from "~/lib/page-share-access.server";
 import type { ScopeKind } from "~/generated/prisma/client";
 
@@ -86,7 +83,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         );
       }
       case "share-options": {
-        if (!(await isLabMember(me))) {
+        if (!(await isLabMemberOrAlum(me))) {
           return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
         }
         const q = (str("q") ?? "").trim();
@@ -145,15 +142,6 @@ export async function action({ request, params }: Route.ActionArgs) {
         return withCors(request, Response.json({ error: "Unknown action" }, { status: 400 }));
     }
   } catch (err) {
-    if (err instanceof PageShareNotFoundError) {
-      return withCors(request, Response.json({ error: err.message }, { status: 404 }));
-    }
-    if (err instanceof PageShareForbiddenError) {
-      return withCors(request, Response.json({ error: err.message }, { status: 403 }));
-    }
-    if (err instanceof SharePrincipalError || err instanceof GeneralAccessError) {
-      return withCors(request, Response.json({ error: err.message }, { status: 400 }));
-    }
-    throw err;
+    return errorResponse(err, request);
   }
 }

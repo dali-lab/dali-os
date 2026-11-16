@@ -79,6 +79,9 @@ export function applyGesture(g: Gesture, pointer: { x: number; y: number }, mods
 
 export const MOVE_SLOP = 3;
 
+export const inEditable = (target: EventTarget | null) =>
+  Boolean((target as HTMLElement | null)?.closest?.("[contenteditable='true'], input, textarea, select"));
+
 /** Whether a pointer has travelled far enough from where it went down to count as a drag, not a click. */
 export function isDrag(downPx: { x: number; y: number }, nowPx: { x: number; y: number }): boolean {
   return Math.hypot(nowPx.x - downPx.x, nowPx.y - downPx.y) > MOVE_SLOP;

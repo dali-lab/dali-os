@@ -1,15 +1,15 @@
 import { prisma } from "~/lib/db.server";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { canEditProject } from "~/mcp/tools/access";
 import { requireForAction } from "~/mcp/registry";
-import { duplicatePage } from "~/lib/page-copy.server";
+import { duplicatePage } from "~/drive/lib/page-copy.server";
 import { setFavorite } from "~/lib/user-pages.server";
 import { canManageSharing } from "~/lib/page-share-access.server";
 import { logAuditEvent } from "~/lib/audit";
-import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages";
-import { isRoot, ROOT_MOVE_ERROR } from "~/lib/drive-roots";
-import { clearTypeIfLeavingRoot } from "~/lib/drive-receivers.server";
+import { pageDepth, MAX_PAGE_DEPTH, isAncestorOf } from "~/lib/pages.server";
+import { isRoot, ROOT_MOVE_ERROR } from "~/drive/lib/drive-roots";
+import { clearTypeIfLeavingRoot } from "~/drive/lib/drive-receivers.server";
 import { runUpdatePage } from "~/mcp/tools/update-page";
 import { runSetPageVisibility } from "~/mcp/tools/projects-extra/set-page-visibility";
 import type { McpCtx, McpTool } from "~/mcp/registry";
@@ -42,8 +42,7 @@ export const MANAGE_PAGE_TOOL_DEF = {
       pinned: { type: "boolean", description: "For 'pin': true to pin, false to unpin." },
       // move
       parentPageId: {
-        type: "string",
-        nullable: true,
+        type: ["string", "null"],
         description: "For 'move': target parent folder id, or null for top-level.",
       },
       beforeId: { type: "string", description: "For 'move': place before this sibling's id." },
@@ -207,7 +206,7 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
       throw new ManagePageError("Document not found", 404);
     }
     if (page.workspaceType === "Lab") {
-      if (!(await isLabMember(callerId))) throw new ManagePageError("Forbidden", 403);
+      if (!(await isLabMemberOrAlum(callerId))) throw new ManagePageError("Forbidden", 403);
     } else {
       if (!(await canEditProject(callerId, page.workspaceId!))) throw new ManagePageError("Forbidden", 403);
     }
@@ -270,7 +269,7 @@ export async function runManagePage(callerId: string, input: ManagePageInput) {
   if (!sameWorkspace) {
     const canDest =
       dest.type === "Lab"
-        ? await isLabMember(callerId)
+        ? await isLabMemberOrAlum(callerId)
         : (await isCore(callerId)) || (await isProjectMember(callerId, dest.id!));
     if (!canDest) throw new ManagePageError("You can't move documents into that destination", 403);
   }

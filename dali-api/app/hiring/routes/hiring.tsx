@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { getMyWorkData, hasHiringAccess } from "~/hiring/lib/my-work.server";
 import { useOsChrome } from "~/components/os-chrome";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { PageTabRow } from "~/components/os-page";
 import { ConfidentialityGate } from "~/hiring/components/ConfidentialityGate";
 import { ReviewsView } from "~/hiring/components/my-work/ReviewsView";
 import { DelibsView } from "~/hiring/components/my-work/DelibsView";
@@ -98,9 +98,9 @@ export default function MyWork() {
       {title}
 
       {available.length > 1 && (
-        <SegmentedTabButtons
+        <PageTabRow
           label="My work"
-          items={available.map((v) => ({
+          tabs={available.map((v) => ({
             label: VIEWS[v].label,
             icon: VIEWS[v].icon,
             active: v === view,

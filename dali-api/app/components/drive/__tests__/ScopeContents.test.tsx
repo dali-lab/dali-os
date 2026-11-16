@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { DndContext } from "@dnd-kit/core";
-import { ScopeContents, SearchResults, searchAll } from "~/components/drive/DriveBrowser";
-import type { DriveTreeScope } from "~/lib/drive-scopes.server";
-import type { DriveItem } from "~/lib/drive.server";
+import { ScopeContents } from "~/components/drive/ScopeContents";
+import { SearchResults } from "~/components/drive/SearchResults";
+import { searchAll } from "~/components/drive/browser-items";
+import type { DriveTreeScope } from "~/drive/lib/drive-scopes.server";
+import type { DriveItem } from "~/drive/lib/drive.server";
 
 const at = new Date("2026-01-01T00:00:00Z");
 const folder = (id: string, itemCount?: number): DriveItem => ({

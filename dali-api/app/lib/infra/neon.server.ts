@@ -14,15 +14,16 @@ import type {
   NeonProject,
   NeonQuota,
 } from "./types";
+import { getEnv } from "~/lib/env.server";
 
 const NEON_API = "https://console.neon.tech/api/v2";
 
 export function neonConfigured(): boolean {
-  return Boolean(process.env.INFRA_NEON_API_KEY);
+  return Boolean(getEnv().INFRA_NEON_API_KEY);
 }
 
 function neonKey(): string {
-  const k = process.env.INFRA_NEON_API_KEY;
+  const k = getEnv().INFRA_NEON_API_KEY;
   if (!k) throw new Error("INFRA_NEON_API_KEY is not set");
   return k;
 }

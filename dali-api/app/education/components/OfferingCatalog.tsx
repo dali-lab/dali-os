@@ -219,39 +219,34 @@ export function OfferingCatalog({
             containerClassName="flex-1 min-w-[240px] max-w-[420px]"
           />
           <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter by type">
-            {/* Sized and toned to sit beside the search field as one filter
-                bar — see FilterPill's "md" size. */}
+            {/* Sized and filled to sit beside the search field as one filter bar. */}
             <FilterPill
-              os={false}
               size="md"
-              tone="blue"
+              variant="filled"
               selected={typeFilter === "all"}
               onClick={() => setTypeFilter("all")}
             >
               All
             </FilterPill>
             <FilterPill
-              os={false}
               size="md"
-              tone="blue"
+              variant="filled"
               selected={typeFilter === "Miniseries"}
               onClick={() => setTypeFilter("Miniseries")}
             >
               Miniseries
             </FilterPill>
             <FilterPill
-              os={false}
               size="md"
-              tone="blue"
+              variant="filled"
               selected={typeFilter === "Fellowship"}
               onClick={() => setTypeFilter("Fellowship")}
             >
               Fellowships
             </FilterPill>
             <FilterPill
-              os={false}
               size="md"
-              tone="blue"
+              variant="filled"
               selected={typeFilter === "Workshop"}
               onClick={() => setTypeFilter("Workshop")}
             >

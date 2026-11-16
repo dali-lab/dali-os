@@ -43,6 +43,7 @@ const namedCycle = { anonymizeReview: false, closeDate: null, timeline: null, do
 const coreRoles = {
   isCore: true,
   isDomainLead: false,
+  isLabMemberOrAlum: true,
   isLabMember: true,
   isAdmin: false,
   isInstructor: false,

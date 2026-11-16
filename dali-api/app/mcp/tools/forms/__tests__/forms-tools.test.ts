@@ -57,6 +57,7 @@ vi.mock("~/forms/lib/form-tracker.server", () => ({
   sendFormReminder: vi.fn(),
 }));
 vi.mock("~/forms/lib/version-summary.server", () => ({ loadVersionSummary: vi.fn() }));
+vi.mock("~/forms/lib/version-responses.server", () => ({ versionResponsesWhere: vi.fn() }));
 
 import { canSeeForm, canBuildForm, canCreateForm } from "~/forms/lib/form-access.server";
 import { loadFormForEdit, runFormsAction, type FormDetail } from "~/forms/lib/forms-data";
@@ -65,6 +66,7 @@ import { buildResponseGrid } from "~/forms/lib/answer-rows.server";
 import { deleteFormResponse } from "~/forms/lib/form-response.server";
 import { loadTrackerList, sendFormReminder } from "~/forms/lib/form-tracker.server";
 import { loadVersionSummary } from "~/forms/lib/version-summary.server";
+import { versionResponsesWhere } from "~/forms/lib/version-responses.server";
 import { prisma } from "~/lib/db.server";
 
 import { LIST_FORMS_TOOL, runListForms } from "../list-forms";
@@ -84,6 +86,7 @@ const mockPrisma = prisma as unknown as {
     findMany: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
   };
+  formVersion: { findFirst: ReturnType<typeof vi.fn> };
 };
 
 function ctx(id = "u1") {
@@ -186,14 +189,18 @@ describe("get_form", () => {
   });
 });
 
+const filterQuestions = [
+  { key: "k", type: "select", required: false, data: { label: "K", options: ["A", "B"] } },
+];
+
 // ─── get_form_summary ────────────────────────────────────────────────────────
 
 describe("get_form_summary", () => {
   const form = {
     id: "fm1",
     name: "Form",
-    versions: [{ versionNumber: 1 }, { versionNumber: 2 }],
-  } as FormDetail;
+    versions: [{ versionNumber: 1, questions: [] }, { versionNumber: 2, questions: [] }],
+  } as unknown as FormDetail;
 
   beforeEach(() => {
     vi.mocked(canBuildForm).mockResolvedValue(true);
@@ -201,6 +208,7 @@ describe("get_form_summary", () => {
     vi.mocked(loadVersionSummary).mockResolvedValue({
       versionId: "v",
       slotOptions: ["project-bids"],
+      filterQuestions: [],
       summary: { total: 3, questions: [] },
     });
   });
@@ -225,7 +233,39 @@ describe("get_form_summary", () => {
 
   it("reads the version and slot asked for", async () => {
     await runGetFormSummary(ctx(), { formId: "fm1", versionNumber: 1, slot: "project-bids" });
-    expect(loadVersionSummary).toHaveBeenCalledWith("fm1", form.versions[0], { slot: "project-bids" });
+    expect(loadVersionSummary).toHaveBeenCalledWith("fm1", form.versions[0], {
+      slot: "project-bids",
+      answers: [],
+    });
+  });
+
+  it("passes valid answer filters through", async () => {
+    vi.mocked(loadFormForEdit).mockResolvedValue({
+      ...form,
+      versions: [{ versionNumber: 1, questions: filterQuestions }],
+    } as never);
+    await runGetFormSummary(ctx(), {
+      formId: "fm1",
+      answers: [{ questionKey: "k", kind: "is", values: ["A"] }],
+    });
+    expect(loadVersionSummary).toHaveBeenCalledWith("fm1", expect.anything(), {
+      slot: undefined,
+      answers: [{ key: "k", kind: "is", values: ["A"] }],
+    });
+  });
+
+  it("names a bad filter instead of dropping it", async () => {
+    vi.mocked(loadFormForEdit).mockResolvedValue({
+      ...form,
+      versions: [{ versionNumber: 1, questions: filterQuestions }],
+    } as never);
+    const run = runGetFormSummary(ctx(), {
+      formId: "fm1",
+      answers: [{ questionKey: "k", kind: "is", values: ["Z"] }, { questionKey: "nope", kind: "blank" }],
+    });
+    await expect(run).rejects.toMatchObject({ name: "McpInvalidError", message: expect.stringContaining('"Z" is not an option') });
+    await expect(run).rejects.toMatchObject({ message: expect.stringContaining('"nope" is not a question') });
+    expect(loadVersionSummary).not.toHaveBeenCalled();
   });
 
   it("404s an unknown version", async () => {
@@ -383,6 +423,85 @@ describe("get_form_responses", () => {
     expect(JSON.stringify(mockPrisma.formSubmission.findMany.mock.calls[1][0].where.AND[1])).toContain("s2");
     expect(second.responses.map((r) => r.id)).toEqual(["s1"]);
     expect(second.page).toMatchObject({ hasMore: false, nextCursor: null });
+  });
+});
+
+describe("get_form_responses filters", () => {
+  beforeEach(() => {
+    vi.mocked(canBuildForm).mockResolvedValue(true);
+    mockPrisma.form.findUnique.mockResolvedValue({ id: "fm1", name: "App" });
+    mockPrisma.formVersion = { findFirst: vi.fn().mockResolvedValue({ id: "v2", questions: filterQuestions }) };
+    mockPrisma.formSubmission.count.mockResolvedValue(0);
+    mockPrisma.formSubmission.findMany.mockResolvedValue([]);
+    vi.mocked(buildResponseGrid).mockResolvedValue({ columns: [], rowsBySubmission: [] });
+    vi.mocked(versionResponsesWhere).mockResolvedValue({ formId: "fm1", formVersionId: "v2", id: { in: ["s1"] } });
+  });
+
+  it("needs versionNumber for answers and for q", async () => {
+    await expect(
+      runGetFormResponses(ctx(), { formId: "fm1", answers: [{ questionKey: "k", kind: "blank" }] }),
+    ).rejects.toMatchObject({ name: "McpInvalidError", message: expect.stringContaining("versionNumber") });
+    await expect(runGetFormResponses(ctx(), { formId: "fm1", q: "ada" })).rejects.toMatchObject({
+      name: "McpInvalidError",
+    });
+    expect(mockPrisma.formSubmission.findMany).not.toHaveBeenCalled();
+  });
+
+  it("reads the filters against that version and counts and pages only the matches", async () => {
+    const out = await runGetFormResponses(ctx(), {
+      formId: "fm1",
+      versionNumber: 2,
+      q: " ada ",
+      slot: "Tue",
+      answers: [{ questionKey: "k", kind: "is", values: ["A"] }],
+    });
+    expect(mockPrisma.formVersion.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { formId: "fm1", versionNumber: 2 } }),
+    );
+    expect(versionResponsesWhere).toHaveBeenCalledWith("fm1", "v2", {
+      q: "ada",
+      slot: "Tue",
+      answers: [{ key: "k", kind: "is", values: ["A"] }],
+      questions: filterQuestions,
+    });
+    expect(mockPrisma.formSubmission.count).toHaveBeenCalledWith({
+      where: { formId: "fm1", formVersionId: "v2", id: { in: ["s1"] } },
+    });
+    expect(out.page.total).toBe(0);
+  });
+
+  it("reports every invalid filter in one error", async () => {
+    await expect(
+      runGetFormResponses(ctx(), {
+        formId: "fm1",
+        versionNumber: 2,
+        answers: [{ questionKey: "k", kind: "range", min: 1 }, { questionKey: "nope", kind: "blank" }],
+      }),
+    ).rejects.toMatchObject({
+      name: "McpInvalidError",
+      message: expect.stringMatching(/supports kind is, answered, blank.*nope/),
+    });
+  });
+
+  it("404s a version that doesn't exist", async () => {
+    mockPrisma.formVersion.findFirst.mockResolvedValue(null);
+    await expect(
+      runGetFormResponses(ctx(), { formId: "fm1", versionNumber: 9, q: "ada" }),
+    ).rejects.toMatchObject({ name: "McpNotFoundError" });
+  });
+
+  it("applies slot on its own without a version", async () => {
+    await runGetFormResponses(ctx(), { formId: "fm1", slot: "Tue" });
+    expect(versionResponsesWhere).not.toHaveBeenCalled();
+    expect(mockPrisma.formSubmission.count).toHaveBeenCalledWith({ where: { formId: "fm1", slot: "Tue" } });
+  });
+
+  it("documents the new inputs", () => {
+    expect(Object.keys(GET_FORM_RESPONSES_TOOL.inputSchema.properties)).toEqual(
+      expect.arrayContaining(["q", "slot", "answers"]),
+    );
+    expect(Object.keys(GET_FORM_SUMMARY_TOOL.inputSchema.properties)).toContain("answers");
+    expect(GET_FORM_RESPONSES_TOOL.inputSchema.required).toEqual(["formId"]);
   });
 });
 

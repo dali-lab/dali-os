@@ -43,7 +43,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       termId: true,
       domainId: true,
       weekOf: true,
-      contentJson: true,
       pageId: true,
       vibe: true,
       updatedAt: true,

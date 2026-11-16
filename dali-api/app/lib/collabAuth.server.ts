@@ -1,0 +1,416 @@
+import { prisma } from "~/lib/db.server";
+import { isCore, isDomainLead, isProjectMember, isLabMemberOrAlum } from "~/lib/roles";
+import { confidentialityCleared, getCycleConfidentialityState } from "~/hiring/lib/confidentiality";
+import { partnerHasProjectAccess } from "~/partners/lib/partner-access";
+import { resolvePhotoUrl } from "~/lib/photo";
+import { COLLAB_SOURCES } from "~/collab/sources";
+import { canBuildForm } from "~/forms/lib/form-access.server";
+import { PAGE_ACCESS_SELECT, getPageAccess } from "~/lib/pageAccess.server";
+
+/** Hydrate author IDs into `{ id, name, photoUrl }` objects in a single IN
+ * query. `photoUrl` is resolved to a ready avatar src (null → initials). */
+export async function hydrateAuthors(
+  authorIds: string[],
+): Promise<{ id: string; name: string; photoUrl: string | null }[]> {
+  if (authorIds.length === 0) return [];
+  const users = await prisma.user.findMany({
+    where: { id: { in: authorIds } },
+    select: { id: true, firstName: true, lastName: true, photoUrl: true },
+  });
+  const byId = new Map(users.map((u) => [u.id, u]));
+  return Promise.all(
+    authorIds.map(async (id) => {
+      const u = byId.get(id);
+      return {
+        id,
+        name: u ? [u.firstName, u.lastName].filter(Boolean).join(" ") : "Unknown",
+        photoUrl: await resolvePhotoUrl(u?.photoUrl),
+      };
+    }),
+  );
+}
+
+export interface CollabAuthResult {
+  allowed: boolean;
+  /** When true the server should set connectionConfig.readOnly = true so the
+   *  user's writes are dropped. Callers that only need a binary gate can
+   *  ignore this field. */
+  readOnly: boolean;
+}
+
+/**
+ * Whether `userSub` is allowed to read/restore the collab doc named `name`,
+ * and whether the connection should be read-only.
+ *
+ * The `doc:{pageId}:body` branch now delegates to getPageAccess so the
+ * view-vs-edit distinction is expressed here:
+ *   canEdit → full read/write
+ *   canView only → allowed but readOnly = true
+ *   neither → denied
+ *
+ * All other entity types continue to require full edit rights (their surfaces
+ * don't have a viewer role), so readOnly is always false for them.
+ *
+ * Returns { allowed: false, readOnly: false } on malformed names, missing
+ * parents, etc.
+ */
+export async function authorizeCollabDoc(
+  userSub: string,
+  name: string,
+): Promise<CollabAuthResult> {
+  const deny: CollabAuthResult = { allowed: false, readOnly: false };
+  const allow: CollabAuthResult = { allowed: true, readOnly: false };
+
+  const parts = name.split(":");
+  if (parts.length !== 3) return deny;
+  const [entity, id, field] = parts;
+
+  if (entity === "review") {
+    const review = await prisma.applicationReview.findUnique({
+      where: { id },
+      include: { cycleReviewer: true },
+    });
+    if (!review) return deny;
+    const cycleId = review.cycleReviewer.applicationCycleId;
+    const confState = await getCycleConfidentialityState(userSub, cycleId);
+    if (!confidentialityCleared(confState)) return deny;
+    if (review.cycleReviewer.userId === userSub) return allow;
+    if (await isDomainLead(userSub)) return allow;
+    if (await isCore(userSub)) return allow;
+    if (field === "rejectionRationale") {
+      const interviewer = await prisma.interviewAssignment.findFirst({
+        where: {
+          status: "Active",
+          cycleInterviewer: { userId: userSub },
+          interview: { domainApplicationId: review.domainApplicationId },
+        },
+        select: { id: true },
+      });
+      if (interviewer) return allow;
+    }
+    return deny;
+  }
+
+  // domainApplication:{id}:prepNote — the free-form "things to bring up in the
+  // interview" note written during Initial delibs. Same gate as the delibs
+  // moves endpoint: signed confidentiality plus domain lead or hiring lead.
+  if (entity === "domainApplication") {
+    const da = await prisma.domainApplication.findUnique({
+      where: { id },
+      select: { application: { select: { applicationCycleId: true } } },
+    });
+    if (!da) return deny;
+    const cycleId = da.application.applicationCycleId;
+    const confState = await getCycleConfidentialityState(userSub, cycleId);
+    if (!confidentialityCleared(confState)) return deny;
+    if (await isDomainLead(userSub)) return allow;
+    if (await isCore(userSub)) return allow;
+    return deny;
+  }
+
+  if (entity === "interview") {
+    const interview = await prisma.interview.findUnique({
+      where: { id },
+      select: { applicationCycleId: true },
+    });
+    if (!interview) return deny;
+    const confState = await getCycleConfidentialityState(
+      userSub,
+      interview.applicationCycleId,
+    );
+    if (!confidentialityCleared(confState)) return deny;
+    const assignment = await prisma.interviewAssignment.findFirst({
+      where: {
+        interviewId: id,
+        cycleInterviewer: { userId: userSub },
+      },
+      select: { id: true },
+    });
+
+    // Per-interviewer private notes: `interview:{id}:rec-notes-{assignmentId}`.
+    const field = parts[2]!;
+    if (field.startsWith("rec-notes-")) {
+      const assignmentId = field.slice("rec-notes-".length);
+      return !!assignment && assignment.id === assignmentId ? allow : deny;
+    }
+
+    if (assignment) return allow;
+    if (await isCore(userSub)) return allow;
+    return deny;
+  }
+
+  // resources:{bookmarkId}:body — a Resources bookmark page. Core/Admin write
+  // it; every other lab member connects read-only so they see edits land live.
+  // Not a Page, so there is no share list to consult — the role IS the gate.
+  // The bookmark must exist, so a deleted or invented room can't be opened.
+  if (entity === "resources") {
+    if (field !== "body") return deny;
+    const bookmark = await prisma.resourceBookmark.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!bookmark) return deny;
+    if (await isCore(userSub)) return allow;
+    return (await isLabMemberOrAlum(userSub))
+      ? { allowed: true, readOnly: true }
+      : deny;
+  }
+
+  // doc:{pageId}:body — delegates to getPageAccess so viewer-only users
+  // connect with readOnly = true rather than being denied entirely.
+  // Member-workspace pages stay fully private (noteAccess enforces the gate).
+  // Partner users on partner-visible Project pages get readOnly = true here;
+  // the server.ts partner readOnly path is now superseded by this branch.
+  if (entity === "doc") {
+    const page = await prisma.page.findUnique({
+      where: { id },
+      select: {
+        ...PAGE_ACCESS_SELECT,
+        meetingNoteId: true,
+        studentEditable: true,
+      },
+    });
+    if (!page) return deny;
+    // A trashed page is closed, with one exception: a meeting note stays
+    // readable, because the meeting's "Open meeting note" link and its printed
+    // check-in QR both land on it and must keep working. documents.$pageId
+    // opens it read-only; without this the body would come up blank there.
+    if (page.archivedAt !== null) {
+      if (!page.meetingNoteId) return deny;
+      const noteAccess = await getPageAccess(userSub, page, undefined, { includeArchived: true });
+      return noteAccess.canView ? { allowed: true, readOnly: true } : deny;
+    }
+
+    const access = await getPageAccess(userSub, page);
+    if (access.canView) return { allowed: true, readOnly: !access.canEdit };
+
+    // Enrolled students co-edit a page explicitly marked studentEditable (a
+    // shared "workspace" doc), but only while the offering is live. Enrollment
+    // is the gate, not auth type, so this covers members and Dartmouth-portal
+    // students alike — and getPageAccess doesn't model it.
+    if (
+      page.workspaceType === "EducationOffering" &&
+      page.workspaceId &&
+      page.studentEditable
+    ) {
+      const offering = await prisma.educationOffering.findUnique({
+        where: { id: page.workspaceId },
+        select: { status: true, closedOutAt: true },
+      });
+      if (offering?.status === "Published" && offering.closedOutAt === null) {
+        const enrolled = await prisma.educationApplication.findFirst({
+          where: {
+            applicantUserId: userSub,
+            offeringId: page.workspaceId,
+            status: "Approved",
+          },
+          select: { id: true },
+        });
+        if (enrolled !== null) return { allowed: true, readOnly: false };
+      }
+    }
+    return deny;
+  }
+
+  // whiteboard:{pageId}:canvas — a Page (kind=Whiteboard) whose body is an
+  // Excalidraw scene. Same access model as doc:{pageId}:body: delegate to
+  // getPageAccess so viewer-only users connect read-only (live view) rather
+  // than being denied. Enrolled students co-edit a studentEditable offering
+  // whiteboard while the offering is live, mirroring the doc: branch.
+  // slides:{pageId}:deck — same access model, but only for a deck that has
+  // moved to live storage; a JSON deck has no room to open.
+  if (entity === "whiteboard" || (entity === "slides" && field === "deck")) {
+    const page = await prisma.page.findUnique({
+      where: { id },
+      select: {
+        ...PAGE_ACCESS_SELECT,
+        studentEditable: true,
+        kind: true,
+        slideDeck: { select: { storage: true } },
+      },
+    });
+    if (!page || page.archivedAt !== null) return deny;
+    if (entity === "slides" && (page.kind !== "Slides" || page.slideDeck?.storage !== "yjs")) return deny;
+
+    const access = await getPageAccess(userSub, page);
+    if (access.canView) return { allowed: true, readOnly: !access.canEdit };
+
+    if (
+      page.workspaceType === "EducationOffering" &&
+      page.workspaceId &&
+      page.studentEditable
+    ) {
+      const offering = await prisma.educationOffering.findUnique({
+        where: { id: page.workspaceId },
+        select: { status: true, closedOutAt: true },
+      });
+      if (offering?.status === "Published" && offering.closedOutAt === null) {
+        const enrolled = await prisma.educationApplication.findFirst({
+          where: {
+            applicantUserId: userSub,
+            offeringId: page.workspaceId,
+            status: "Approved",
+          },
+          select: { id: true },
+        });
+        if (enrolled !== null) return { allowed: true, readOnly: false };
+      }
+    }
+    return deny;
+  }
+
+  // eduassignment:{assignmentId}:instructions — edit gate = offering manager.
+  if (entity === "eduassignment") {
+    const assignment = await prisma.educationAssignment.findUnique({
+      where: { id },
+      select: { offeringId: true, session: { select: { offeringId: true } } },
+    });
+    if (!assignment) return deny;
+    const offeringId = assignment.offeringId ?? assignment.session?.offeringId;
+    if (!offeringId) return deny;
+    if (await isCore(userSub)) return allow;
+    const instructor = await prisma.instructorAssignment.findFirst({
+      where: { userId: userSub, offeringId },
+      select: { id: true },
+    });
+    return instructor !== null ? allow : deny;
+  }
+
+  // partnersow:{applicationId}:body — co-drafted SOW, intentionally editable
+  // by both Core and the owning partner. Authorized by ACCOUNT (the applicant
+  // contact) so the SOW can be co-drafted during courtship, before any org
+  // exists; once promoted, an org member also qualifies.
+  if (entity === "partnersow") {
+    const application = await prisma.partnerApplication.findUnique({
+      where: { id },
+      select: { applicantContactId: true, partnerOrgId: true },
+    });
+    if (!application) return deny;
+    if (await isCore(userSub)) return allow;
+    const contact = await prisma.partnerContact.findUnique({
+      where: { userId: userSub },
+      select: {
+        id: true,
+        memberships: { where: { endedAt: null }, select: { orgId: true } },
+      },
+    });
+    if (!contact) return deny;
+    if (application.applicantContactId === contact.id) return allow;
+    if (
+      application.partnerOrgId &&
+      contact.memberships.some((m) => m.orgId === application.partnerOrgId)
+    ) {
+      return allow;
+    }
+    return deny;
+  }
+
+  // task:{taskId}:description — same gate as the task's project.
+  if (entity === "task") {
+    const task = await prisma.task.findUnique({
+      where: { id },
+      select: { projectId: true },
+    });
+    if (!task) return deny;
+    if (await isCore(userSub)) return allow;
+    return (await isProjectMember(userSub, task.projectId)) ? allow : deny;
+  }
+
+  // epic:{descriptionDocId}:description — Core only.
+  if (entity === "epic") {
+    const epic = await prisma.epic.findFirst({
+      where: { descriptionDocId: id },
+      select: { id: true },
+    });
+    if (!epic) return deny;
+    return (await isCore(userSub)) ? allow : deny;
+  }
+
+  // eduoffering:{offeringId}:description — Core or instructor.
+  if (entity === "eduoffering") {
+    const offering = await prisma.educationOffering.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!offering) return deny;
+    if (await isCore(userSub)) return allow;
+    const instructor = await prisma.instructorAssignment.findFirst({
+      where: { userId: userSub, offeringId: id },
+      select: { id: true },
+    });
+    return instructor !== null ? allow : deny;
+  }
+
+  // edusubmission:{submissionId}:content|feedback — collaborative assignment
+  // submission (student-owned "content" doc) and instructor feedback
+  // ("feedback" doc). The field segment decides which side may edit: the
+  // student edits their own content and reads feedback via the hub; the
+  // instructor edits feedback and may open the content doc to review/annotate.
+  if (entity === "edusubmission") {
+    const submission = await prisma.educationSubmission.findUnique({
+      where: { id },
+      select: {
+        studentId: true,
+        assignment: {
+          select: { offeringId: true, session: { select: { offeringId: true } } },
+        },
+      },
+    });
+    if (!submission) return deny;
+    const offeringId =
+      submission.assignment.offeringId ?? submission.assignment.session?.offeringId;
+    if (!offeringId) return deny;
+    if (await isCore(userSub)) return allow;
+    const isInstructor =
+      (await prisma.instructorAssignment.findFirst({
+        where: { userId: userSub, offeringId },
+        select: { id: true },
+      })) !== null;
+    if (field === "feedback") return isInstructor ? allow : deny;
+    // content doc: the owning student, or an instructor reviewing it.
+    return submission.studentId === userSub || isInstructor ? allow : deny;
+  }
+
+  // signing:{documentId}:draft — prose draft for a SigningDocument body.
+  // Edit gate matches the core.agreements.$id loader: Core-only.
+  if (entity === "signing") {
+    const doc = await prisma.signingDocument.findUnique({
+      where: { id },
+      select: { id: true, archivedAt: true },
+    });
+    if (!doc || doc.archivedAt !== null) return deny;
+    return (await isCore(userSub)) ? allow : deny;
+  }
+
+  // form:{formId}:draft — structured draft for a Form's question list.
+  // Edit gate matches the forms.edit.$formId loader (canBuildForm).
+  if (entity === "form") {
+    const form = await prisma.form.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!form) return deny;
+    return (await canBuildForm(userSub, id)) ? allow : deny;
+  }
+
+  // rubric:{rubricId}:draft — structured draft for a Rubric's criteria list.
+  // Edit gate matches the rubrics.$id loader: requireCoreOrDomainLead.
+  if (entity === "rubric") {
+    const rubric = await prisma.rubric.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!rubric) return deny;
+    const [core, lead] = await Promise.all([isCore(userSub), isDomainLead(userSub)]);
+    return core || lead ? allow : deny;
+  }
+
+  // Registry-backed surfaces (mentorship notes/templates, …)
+  const source = COLLAB_SOURCES[entity];
+  if (source) {
+    const allowed = await source.authorize(userSub, id);
+    return { allowed, readOnly: false };
+  }
+
+  return deny;
+}

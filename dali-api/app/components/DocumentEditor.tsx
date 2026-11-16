@@ -30,7 +30,7 @@ import { PageCover } from "./doc-chrome/PageCover";
 import { DocToc } from "./doc-chrome/DocToc";
 import { relativeTime } from "~/lib/relative-time";
 import { Menu, Select, Tooltip } from "~/components/ui/floating";
-import { revealInDriveHref } from "~/lib/drive-crumbs";
+import { revealInDriveHref } from "~/drive/lib/drive-crumbs";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import { ShareDialog } from "~/components/sharing/ShareDialog";
@@ -38,6 +38,7 @@ import { FolderPicker } from "~/components/drive/FolderPicker";
 import { useDriveDestinations } from "~/components/drive/use-drive-destinations";
 import { useMovePage } from "~/components/drive/use-move-page";
 import { useToast } from "~/components/ui/toast";
+import { MARKDOWN_IMPORT_ACCEPT, importMarkdownFile } from "~/lib/markdown-import-client";
 import { createNotebookRequest, notebookRequest, sendJson } from "~/components/notebooks/notebook-requests";
 import { ImportTemplateDialog } from "./doc-chrome/ImportTemplateDialog";
 import { labMeetingNoteDefaultOptions, templateToggleLabel, type MeetingNoteType } from "./doc-chrome/template-menu";
@@ -45,12 +46,12 @@ import { FindReplaceBar } from "./doc/find";
 import {
   DEFAULT_TYPOGRAPHY,
   type PageTypography,
-} from "~/lib/page-typography";
+} from "~/drive/lib/page-typography";
 import { OS_SURFACE_CLASS } from "~/components/ui/floating/styles";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { Drawer } from "~/components/ui/Drawer";
 import { RECORDING_RAIL_TITLE_ID } from "~/components/meeting-recorder/RecordingRail";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
+import { SegmentedTabButtons } from "~/components/ui/SegmentedTabs";
 
 // Reusable, abstract document surface: a Notion-style large title, a
 // collaborative rich-text body, lab tags, doc-level comments, and PDF/Word
@@ -175,7 +176,7 @@ export function DocumentEditor({
     | { scope: "project"; projectName: string; active: boolean }
     | { scope: "lab"; current: MeetingNoteType | null }
     | null;
-  // The Recording rail's content (specs/meeting-recording-rail.md): sticky
+  // The Recording rail's content (specs/archive/meeting-recording-rail.md): sticky
   // in the wide comments column, or inside ui/Drawer on a narrow one. Omit
   // (or pass open: false) when there's nothing to show. `live` suppresses
   // the Drawer on a narrow canvas — recording/stopping never render in a
@@ -205,6 +206,7 @@ export function DocumentEditor({
   const editorRef = useRef<DocEditorInstance | null>(null);
   // Hidden file input for the Import Markdown menu action.
   const mdImportInputRef = useRef<HTMLInputElement | null>(null);
+  const [importingMarkdown, setImportingMarkdown] = useState(false);
   // FIX 5: title is uncontrolled — we never feed state back into the DOM while
   // the h1 is focused, which prevents caret-at-0 "backwards typing" caused by
   // React re-rendering contentEditable with the controlled value on every input.
@@ -376,7 +378,7 @@ export function DocumentEditor({
   const [commentsOpen, setCommentsOpen] = useState(true);
   const commentsWantColumn = commentsOpen && containerWide && hasComments;
 
-  // Recording rail (specs/meeting-recording-rail.md "Wiring"): the column
+  // Recording rail (specs/archive/meeting-recording-rail.md "Wiring"): the column
   // renders whenever comments want it OR the rail is open. While the rail is
   // open, a two-tab header switches the column between Comments and
   // Recording when both exist; Recording wins by default on open (it just
@@ -634,13 +636,18 @@ export function DocumentEditor({
     if (editorRef.current) appendBlocks(editorRef.current, newBlocks);
   }
 
-  // Import Markdown: reads the picked .md/.markdown/.txt file client-side and
-  // converts to blocks via editor.tryParseMarkdownToBlocks (BlockNote 0.52 API —
-  // synchronous).
   async function handleMarkdownImport(file: File) {
-    const editor = editorRef.current;
-    if (!editor) return;
-    insertImportedBlocks(editor.tryParseMarkdownToBlocks(await file.text()));
+    if (importingMarkdown) return;
+    setImportingMarkdown(true);
+    try {
+      await importMarkdownFile<Parameters<typeof insertImportedBlocks>[0][number]>(pageId, file, {
+        fetch: window.fetch.bind(window),
+        insert: (blocks) => insertImportedBlocks(stripBlockIds(blocks) as Parameters<typeof insertImportedBlocks>[0]),
+        toast,
+      });
+    } finally {
+      setImportingMarkdown(false);
+    }
   }
 
   // ⋯ More menu dismiss on outside click.
@@ -741,7 +748,7 @@ export function DocumentEditor({
         ),
       )}
       {row("print", <Printer className={smallIcon} />, "Print / Save as PDF", () => window.print())}
-      {canEdit && row("import-md", <Upload className={smallIcon} />, "Import Markdown", () => mdImportInputRef.current?.click())}
+      {canEdit && row("import-md", <Upload className={smallIcon} />, importingMarkdown ? "Importing…" : "Import Markdown", () => { if (!importingMarkdown) mdImportInputRef.current?.click(); })}
       {canEdit && row("import-template", <LayoutTemplate className={smallIcon} />, "Import template", () => setTemplateImportOpen(true))}
             {canEdit && (
               <>
@@ -1153,12 +1160,12 @@ export function DocumentEditor({
           </div>
 
           {/* Hidden file input for "Import Markdown" ⋯ menu action.
-              Accepts .md/.markdown/.txt; value is reset after each pick so
+              Accepts .md/.markdown/.txt/.zip; value is reset after each pick so
               selecting the same file twice still triggers onChange. */}
           <input
             ref={mdImportInputRef}
             type="file"
-            accept=".md,.markdown,.txt,text/plain,text/markdown"
+            accept={MARKDOWN_IMPORT_ACCEPT}
             className="hidden"
             onChange={(e) => {
               const file = e.currentTarget.files?.[0];
@@ -1233,7 +1240,7 @@ export function DocumentEditor({
       </div>
 
       {/* Right-hand rail — comments, Recording, or both behind a tab switch
-          when both exist (specs/meeting-recording-rail.md "Wiring"). Only
+          when both exist (specs/archive/meeting-recording-rail.md "Wiring"). Only
           rendered when the container is wide; a narrow canvas renders the
           Recording rail in a Drawer instead, below. */}
       {showColumn &&
@@ -1298,7 +1305,7 @@ export function DocumentEditor({
   // Narrow canvas: the Recording rail opens in a Drawer instead of the sticky
   // column — DocumentEditor is the only component that knows containerWide.
   // Live states (recording/stopping) never render here; the top-bar Popover
-  // carries those (specs/meeting-recording-rail.md "Wiring").
+  // carries those (specs/archive/meeting-recording-rail.md "Wiring").
   const recordingDrawer = rail && !containerWide && !rail.live && (
     <Drawer open={rail.open} onClose={rail.onClose} labelledBy={RECORDING_RAIL_TITLE_ID} width={360}>
       {rail.node}

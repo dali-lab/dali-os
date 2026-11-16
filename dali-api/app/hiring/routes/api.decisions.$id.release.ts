@@ -6,13 +6,16 @@ import { renderForSlot, releaseSlot } from "~/hiring/lib/email-variables";
 import { FIRST_INTERVIEW_ROUND_ID, findInterviewRound, parseTimeline } from "~/hiring/lib/cycle-timeline";
 import { logAuditEvent } from "~/lib/audit";
 import { requireApiSignedOrForbidden } from "~/hiring/lib/confidentiality";
-import { onboardingEmailHtml } from "~/members/lib/welcome.server";
+import { acceptanceEmailVars, acceptanceLogoHtml } from "~/members/lib/welcome.server";
 import type { ProvisionResult } from "~/members/lib/provisioning.server";
 import { applicantGroup, type AcceptContext } from "~/hiring/lib/applicant-groups.server";
 import { notify } from "~/lib/notify.server";
 import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
-import { getEmailTemplate } from "~/email/lib/templates.server";
-import { decisionEmailVars, decisionEmailVarsProblem } from "~/hiring/lib/decision-email-vars";
+import {
+  credentialTokensProblem,
+  decisionEmailVars,
+  decisionEmailVarsProblem,
+} from "~/hiring/lib/decision-email-vars";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -60,6 +63,7 @@ export async function action({ request, params }: Route.ActionArgs) {
             select: {
               firstName: true,
               dartmouthEmail: true,
+              daliEmail: true,
               netId: true,
             },
           },
@@ -130,17 +134,15 @@ export async function action({ request, params }: Route.ActionArgs) {
     waitlistRespondBy: cycle.waitlistRespondBy ?? null,
   };
   if (binding) {
-    // Students/Interns acceptances append the next-steps block, so its tokens count too.
-    const nextSteps =
-      decision.type === "Accepted" && decisionChannel === "email"
-        ? await getEmailTemplate("hiring:onboarding:NextSteps")
-        : null;
     const problem = decisionEmailVarsProblem(decision.type, emailDates, [
       binding.subject,
       binding.body,
-      nextSteps?.body ?? "",
     ]);
     if (problem) return Response.json({ error: problem }, { status: 409 });
+    if (decision.type === "Accepted" && decisionChannel === "email") {
+      const credsProblem = credentialTokensProblem([binding.body]);
+      if (credsProblem) return Response.json({ error: credsProblem }, { status: 409 });
+    }
   }
   const dateVars = decisionEmailVars(decision.type, emailDates);
 
@@ -212,6 +214,11 @@ export async function action({ request, params }: Route.ActionArgs) {
     const to = intendedEmail;
 
     if (binding && to && user) {
+      // The Accepted letter renders the login credentials itself. The temporary
+      // password is rendered ONLY into this email — never logged (see the audit
+      // metadata below, which omits it). Acceptances that didn't mint one (Lab
+      // members, re-releases, provisioning still running) get stand-in values
+      // from acceptanceEmailVars instead of blanks.
       const { subject, html } = renderForSlot(
         slot,
         binding,
@@ -219,22 +226,11 @@ export async function action({ request, params }: Route.ActionArgs) {
           firstName: user.firstName,
           domain: domainName,
           ...dateVars,
+          ...(decision.type === "Accepted"
+            ? acceptanceEmailVars(provisionResult, user.daliEmail ?? null)
+            : {}),
         },
       );
-
-      // For member-producing acceptances (Students/Interns), append the
-      // onboarding block (account details + login link + logo) so the new
-      // member gets a single email instead of a separate welcome message. The
-      // temporary password is rendered ONLY into this email — never logged
-      // (see the audit metadata below, which omits it). Lab members acceptances don't
-      // provision an account, so there's no onboarding block.
-      const onboarding = provisionResult
-        ? await onboardingEmailHtml(
-            provisionResult.daliEmail ?? null,
-            provisionResult.daliTempPassword ?? null,
-            dateVars,
-          )
-        : "";
 
       const { id, deduped } = await enqueueOutbound({
         channel: "email",
@@ -243,7 +239,7 @@ export async function action({ request, params }: Route.ActionArgs) {
         target: to,
         recipientUserId: domainApp.application.userId,
         subject,
-        bodyHtml: html + onboarding,
+        bodyHtml: html + (provisionResult ? acceptanceLogoHtml() : ""),
         eventType: "hiring.decision.release",
       });
       _releaseEmailId = id;

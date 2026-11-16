@@ -12,7 +12,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isAdmin: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({ redirectToLogin: vi.fn(() => new Response(null, { status: 302 })) }));
-vi.mock("~/lib/groups", () => ({ listAllGroups: vi.fn() }));
+vi.mock("~/lib/groups.server", () => ({ listAllGroups: vi.fn() }));
 vi.mock("~/lib/activities.server", () => ({
   cloneActivity: vi.fn(),
   createActivity: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock("~/lib/activities.server", () => ({
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isAdmin, isCore } from "~/lib/roles";
-import { listAllGroups } from "~/lib/groups";
+import { listAllGroups } from "~/lib/groups.server";
 import * as activities from "~/lib/activities.server";
 import { loader as listLoader, handle as listHandle } from "~/admin/routes/admin.activities";
 import { loader as detailLoader, handle as detailHandle } from "~/admin/routes/admin.activities.$id";

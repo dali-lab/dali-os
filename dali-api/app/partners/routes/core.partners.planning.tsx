@@ -1,29 +1,28 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
-import { Link, redirect, useLoaderData } from "react-router";
+import { Link, redirect, useLoaderData, useNavigate } from "react-router";
 import type { Route } from "./+types/core.partners.planning";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
 import { prisma } from "~/lib/db.server";
-import { setTermPi } from "../lib/partner-renewals.server";
-import { setTermSpots } from "../lib/planning-spots.server";
+import { setMaintenancePlan, setTermPi } from "../lib/partner-renewals.server";
+import { isMaintenancePlan } from "../lib/partner-renewals";
+import { setApplicationSpots, setTermSpots } from "../lib/planning-spots.server";
 import { PLANNING_NOTE_MAX, setPlanningNote } from "../lib/planning-notes.server";
-import { PartnerCrmNav } from "../components/PartnerCrmNav";
+import { startProjectReturn } from "../lib/partner-returns.server";
+import { PageRowControls, type PageRowControl } from "~/components/os-page";
 import { PlanningTable } from "../components/PlanningTable";
 import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
 import { PlanningApplicationModal } from "../components/planning/PlanningApplicationModal";
+import { StartReturnModal } from "../components/planning/StartReturnModal";
+import { CalendarRange, FolderKanban, Inbox, Layers, RefreshCcw, Sparkles, Users } from "lucide-react";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
-import { buildPlanningGap, buildPlanningProjects, type IntentSetup } from "../lib/planning-gap";
+import { buildPlanningGap, buildPlanningProjects, findPlanningProject, type IntentSetup } from "../lib/planning-gap";
 import { TermFilter } from "~/components/TermFilter";
-import { Toggle } from "~/components/ui/Toggle";
-import { Tooltip } from "~/components/ui/floating";
-import { SegmentedTabButtons } from "~/components/AreaPillNav";
-import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 
 export const handle = { hideBreadcrumbs: true, areaSubnav: true };
 
@@ -45,6 +44,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 const DESCRIPTION_MAX = 5000;
 
+const START_RETURN_ERRORS = {
+  "not-found": "That project no longer exists.",
+  "no-terms": "Pick at least one term for the return.",
+  "no-contact": "This project has no partner contact to carry over. Add one in the Directory first.",
+  "already-open": "This project already has an open return on the partner board.",
+} as const;
+
 export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
@@ -53,6 +59,16 @@ export async function action({ request }: Route.ActionArgs) {
   }
   const form = await request.formData();
   const intent = String(form.get("intent") ?? "");
+
+  if (intent === "start-return") {
+    const result = await startProjectReturn({
+      projectId: String(form.get("projectId") ?? ""),
+      targetTermIds: form.getAll("targetTermId").map(String),
+      actorUserId: auth.user.sub,
+    });
+    if (result.ok) return Response.json({ ok: true, applicationId: result.applicationId });
+    return Response.json({ error: START_RETURN_ERRORS[result.error] }, { status: result.error === "not-found" ? 404 : 400 });
+  }
 
   if (intent === "note") {
     const ownerKind = String(form.get("ownerKind") ?? "");
@@ -72,8 +88,57 @@ export async function action({ request }: Route.ActionArgs) {
     return Response.json({ ok: true });
   }
 
+  if (intent === "application-summary" || intent === "application-pi" || intent === "application-spots") {
+    const applicationId = String(form.get("applicationId") ?? "");
+    if (!applicationId) return Response.json({ error: "Missing application." }, { status: 400 });
+    const gone = Response.json({ error: "That application no longer exists." }, { status: 404 });
+
+    if (intent === "application-summary") {
+      const summary = String(form.get("summary") ?? "").trim();
+      if (summary.length > DESCRIPTION_MAX) {
+        return Response.json({ error: `Keep the summary under ${DESCRIPTION_MAX} characters.` }, { status: 400 });
+      }
+      const { count } = await prisma.partnerApplication.updateMany({
+        where: { id: applicationId },
+        data: { summary: summary || null },
+      });
+      return count === 0 ? gone : Response.json({ ok: true });
+    }
+
+    if (intent === "application-pi") {
+      const piUserId = String(form.get("piUserId") ?? "") || null;
+      if (piUserId && !(await isCore(piUserId, request))) {
+        return Response.json({ error: "A PI must be a Core member." }, { status: 400 });
+      }
+      const { count } = await prisma.partnerApplication.updateMany({
+        where: { id: applicationId },
+        data: { piUserId },
+      });
+      return count === 0 ? gone : Response.json({ ok: true });
+    }
+
+    const roles = parseRoles(form.get("roles"));
+    if (!roles) return Response.json({ error: "Spots were not readable. Try again." }, { status: 400 });
+    const result = await setApplicationSpots(prisma, { applicationId, roles });
+    if (result === "not-found") return gone;
+    if (result === "unknown-domain") {
+      return Response.json({ error: "One of those domains is no longer available." }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  }
+
   const projectId = String(form.get("projectId") ?? "");
   if (!projectId) return Response.json({ error: "Missing project." }, { status: 400 });
+
+  if (intent === "maintenance-plan") {
+    const plan = form.get("plan");
+    if (!isMaintenancePlan(plan)) return Response.json({ error: "Pick a maintenance plan." }, { status: 400 });
+    const result = await setMaintenancePlan(prisma, { projectId, plan });
+    if (result === "not-on-plan") {
+      return Response.json({ error: "This project is not on a maintenance plan." }, { status: 400 });
+    }
+    return Response.json({ ok: true });
+  }
 
   if (intent === "description") {
     const description = String(form.get("description") ?? "").trim();
@@ -140,8 +205,8 @@ const GROUP_BY = ["project", "domain"] as const;
 
 export default function PartnersPlanning() {
   const data = useLoaderData<typeof loader>();
-  const { os } = useOsChrome();
   const [view, setView] = useSearchParamChoice("group", GROUP_BY, "project");
+  const navigate = useNavigate();
   const [includePotential, setIncludePotential] = useState(false);
   const [includeBacklog, setIncludeBacklog] = useState(false);
   const [openRow, setOpenRow] = useState<{ kind: "project" | "application"; id: string } | null>(null);
@@ -149,18 +214,20 @@ export default function PartnersPlanning() {
   const openProjectId = openRow?.kind === "project" ? openRow.id : null;
   const openApplicationId = openRow?.kind === "application" ? openRow.id : null;
   const openApplication = openApplicationId ? data.applicationInfo[openApplicationId] ?? null : null;
+  const [startingReturn, setStartingReturn] = useState(false);
+  const pickedTermIndex = data.terms.findIndex((t) => t.id === data.termId);
+  const returnTerms = pickedTermIndex < 0 ? [] : data.terms.slice(0, pickedTermIndex + 1).reverse();
+  const onReturnCreated = useCallback((applicationId: string) => {
+    setStartingReturn(false);
+    setOpenRow({ kind: "application", id: applicationId });
+  }, []);
   const openProject = useMemo(() => {
     if (!openProjectId) return null;
-    const match = [...data.items, ...data.listOnlyItems].find(
-      (i) => i.kind === "project" && i.refId === openProjectId,
-    );
+    const match = findPlanningProject(openProjectId, [...data.items, ...data.listOnlyItems], data.maintaining);
     const info = data.projectInfo[openProjectId];
     if (!match || !info) return null;
-    return {
-      project: { id: match.refId, name: match.name, iconEmoji: match.iconEmoji ?? null },
-      info,
-    };
-  }, [openProjectId, data.items, data.listOnlyItems, data.projectInfo]);
+    return { project: match, info };
+  }, [openProjectId, data.items, data.listOnlyItems, data.maintaining, data.projectInfo]);
   const model = useMemo(
     () =>
       buildPlanningGap({
@@ -186,58 +253,47 @@ export default function PartnersPlanning() {
   const termCode = data.terms.find((t) => t.id === data.termId)?.code ?? "this term";
   const termHref = data.termId ? `/core/intent-to-work?term=${data.termId}` : "/core/intent-to-work";
 
+  const rowControls: PageRowControl[] = [
+    ...(view === "domain" && data.hasIntentData
+      ? [
+          {
+            key: "replied",
+            label: `${data.replied} of ${data.roster} replied`,
+            icon: Users,
+            onClick: () => navigate(termHref),
+          },
+        ]
+      : []),
+    {
+      kind: "toggle",
+      key: "group",
+      label: "Group by",
+      value: view,
+      onChange: (v) => setView(v as typeof view),
+      options: [
+        { value: "domain", label: "Group by domain", icon: Layers },
+        { value: "project", label: "Group by project", icon: FolderKanban },
+      ],
+    },
+    { key: "backlog", label: "Include backlog", icon: Inbox, pressed: includeBacklog, onClick: () => setIncludeBacklog(!includeBacklog) },
+    { key: "potential", label: "Include potential", icon: Sparkles, pressed: includePotential, onClick: () => setIncludePotential(!includePotential) },
+    ...(data.termId
+      ? [
+          {
+            kind: "custom" as const,
+            key: "term",
+            label: "Term",
+            icon: CalendarRange,
+            render: () => <TermFilter terms={data.terms} selected={data.termId!} includeAll={false} replace />,
+          },
+          { key: "return", label: "Start a return", icon: RefreshCcw, primary: true, onClick: () => setStartingReturn(true) },
+        ]
+      : []),
+  ];
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <PartnerCrmNav className="shrink-0" />
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          {view === "domain" && data.hasIntentData && (
-            <Link
-              to={termHref}
-              className={cn("shrink-0 whitespace-nowrap text-sm text-muted-foreground hover:text-foreground", !os && "underline")}
-            >
-              {data.replied} of {data.roster} replied
-            </Link>
-          )}
-          <SegmentedTabButtons
-            label="Group by"
-            size="toolbar"
-            className="shrink-0"
-            items={[
-              { label: "Domain", active: view === "domain", onClick: () => setView("domain") },
-              { label: "Project", active: view === "project", onClick: () => setView("project") },
-            ]}
-          />
-          <Tooltip content="Adds Backlog applications that target this term">
-            <span className="inline-flex h-9 shrink-0 items-center px-1">
-              <Toggle
-                tone="os"
-                label="Include backlog"
-                checked={includeBacklog}
-                onChange={(e) => setIncludeBacklog(e.target.checked)}
-              />
-            </span>
-          </Tooltip>
-          <Tooltip content="Adds New, Interview and Deciding applications and undecided renewals">
-            <span className="inline-flex h-9 shrink-0 items-center px-1">
-              <Toggle
-                tone="os"
-                label="Include potential"
-                checked={includePotential}
-                onChange={(e) => setIncludePotential(e.target.checked)}
-              />
-            </span>
-          </Tooltip>
-          {data.termId && (
-            <TermFilter
-              terms={data.terms}
-              selected={data.termId}
-              includeAll={false}
-              replace
-            />
-          )}
-        </div>
-      </div>
+      <PageRowControls controls={rowControls} />
 
       {!data.termId ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">No terms exist yet.</div>
@@ -246,6 +302,7 @@ export default function PartnersPlanning() {
           model={projectModel}
           termCode={termCode}
           onRowClick={openRowClick}
+          maintaining={data.maintaining}
         />
       ) : data.intentSetup.kind !== "ready" ? (
         <div className="rounded-os-card bg-os-card p-5 text-sm text-muted-foreground">
@@ -269,10 +326,21 @@ export default function PartnersPlanning() {
           onClose={() => setOpenRow(null)}
         />
       )}
+      {startingReturn && data.termId && (
+        <StartReturnModal
+          projects={data.returnableProjects}
+          terms={returnTerms}
+          defaultTermId={data.termId}
+          onCreated={onReturnCreated}
+          onClose={() => setStartingReturn(false)}
+        />
+      )}
       {openApplicationId && openApplication && (
         <PlanningApplicationModal
           applicationId={openApplicationId}
           info={openApplication}
+          coreMembers={data.coreMembers}
+          domains={data.spotDomains}
           canEdit
           onClose={() => setOpenRow(null)}
         />

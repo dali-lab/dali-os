@@ -14,7 +14,7 @@ import { APPLICATION_TZ, getZonedYMD } from "~/lib/timezone";
 import { cn } from "~/lib/cn";
 import { rowTrigger } from "./SetupCard";
 
-function toYmd(iso: string | null): string {
+function toYmd(iso: Date | string | null): string {
   if (!iso) return "";
   const { year, month, day } = getZonedYMD(new Date(iso), APPLICATION_TZ);
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -38,9 +38,9 @@ export function TermDatesCard({
 }: {
   termId: string | null;
   termOptions: TermOption[];
-  openDate: string | null;
+  openDate: Date | string | null;
   /** The intended close (the pre-extension date when an extension is active). */
-  closeDate: string | null;
+  closeDate: Date | string | null;
   cycleStatus: string;
   /** The start terms this cycle offers applicants. */
   startTermIds: string[];
@@ -48,8 +48,8 @@ export function TermDatesCard({
   startTermCandidates: StartTermOption[];
   /** Students cycles only: Fellowship/Core hires are already members. */
   showStartTerms?: boolean;
-  offerRespondBy?: string | null;
-  waitlistRespondBy?: string | null;
+  offerRespondBy?: Date | string | null;
+  waitlistRespondBy?: Date | string | null;
   /** Cycles whose decisions go out by email. */
   showRespondBy?: boolean;
 }) {

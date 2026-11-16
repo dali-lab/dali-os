@@ -23,6 +23,7 @@ export interface MilestoneHeroProps {
   milestoneTitle?: string
   greeting?: string
   userName: string
+  belowGreeting?: ReactNode
   recents?: RecentCard[]
   recentsHeading?: string
   /** The search control — the page owns its behavior; see `landing-search-*` for styling. */
@@ -38,6 +39,7 @@ export default function MilestoneHero({
   milestoneTitle,
   greeting = 'Good afternoon',
   userName,
+  belowGreeting,
   recents = [],
   recentsHeading = 'Favorites and Recently Visited',
   search,
@@ -70,6 +72,8 @@ export default function MilestoneHero({
           <p className="landing-greeting">
             {greeting}, <span className="landing-greeting-name">{userName}</span>
           </p>
+
+          {belowGreeting}
 
           {search}
 

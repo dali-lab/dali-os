@@ -1,4 +1,4 @@
-// Client-side mechanic registry (specs/activities.md §5). Keyed by
+// Client-side mechanic registry (specs/archive/activities.md §5). Keyed by
 // Activity.kind. Holds the React pieces a mechanic renders: the scattered
 // on-page Overlay, the Surface page, the admin config editor, plus small bits of
 // copy/defaults. The mirrored SERVER registry (registry.server.ts) holds the

@@ -44,7 +44,7 @@ import {
   type SigningFieldType,
 } from "~/lib/signing-fields";
 import { sanitizeRichEmailHtml, htmlToPlainText, NOTIFICATION_BODY_MAX } from "~/lib/email";
-import { createMediaImageSpec, createMediaVideoSpec } from "~/components/doc/schema/media";
+import { createMediaImageSpec, createMediaVideoSpec, markdownImageTag, MD_URL_MARKS, MD_WIDTH_MARK } from "~/components/doc/schema/media";
 import { categorize } from "~/lib/file-type";
 import { parseVideoEmbed } from "~/lib/video-embed";
 import { parseComponentData } from "~/components/doc/components/kinds";
@@ -379,6 +379,18 @@ function prepareInlines(inlines: DocInline[], kind: InlineArrayKind, options: Ma
   });
 }
 
+const MARKED_IMAGE = new RegExp(`!\\[(?:${MD_WIDTH_MARK}(\\d+)${MD_WIDTH_MARK})?([^\\]\\n]*)\\]\\(([^()\\s]*)\\)`, "g");
+const UNMARK_URL = new RegExp(`[${Object.values(MD_URL_MARKS).join("")}]`, "g");
+const MARK_CHARS = Object.fromEntries(Object.entries(MD_URL_MARKS).map(([char, mark]) => [mark, char]));
+
+function writeMarkedImages(markdown: string): string {
+  return markdown.replace(MARKED_IMAGE, (whole, width: string | undefined, alt: string, url: string) => {
+    const plain = url.replace(UNMARK_URL, (mark) => MARK_CHARS[mark]!);
+    if (width) return markdownImageTag(plain, alt, width);
+    return plain === url ? whole : `![${alt}](<${plain}>)`;
+  });
+}
+
 /** Blocks → Markdown. Custom inline nodes serialize as their plain-text form
  * unless `inlineRefs` is set, which writes user, page and task mentions as
  * links that `markdownToBlocks(md, { inlineRefs: true })` turns back into chips. */
@@ -386,7 +398,7 @@ export function blocksToMarkdown(blocks: DocBlock[], options: MarkdownOptions = 
   if (blocks.length === 0) return Promise.resolve("");
   const prepared = mapInlineArrays(blocks, (inlines, kind) => prepareInlines(inlines, kind, options));
   return serialized(() => getMarkdownEditor().blocksToMarkdownLossy(prepared as any)).then((markdown) =>
-    markdown.replaceAll(CELL_BREAK, "<br>"),
+    writeMarkedImages(markdown.replaceAll(CELL_BREAK, "<br>")),
   );
 }
 

@@ -10,16 +10,12 @@ export function PageCover({
   coverImageUrl,
   canEdit,
   onChange,
-  // Legacy compat
-  editing,
 }: {
   coverImageUrl: string | null;
   canEdit?: boolean;
   onChange: (url: string | null) => void;
-  /** @deprecated use canEdit */
-  editing?: boolean;
 }) {
-  const editable = canEdit ?? editing ?? false;
+  const editable = canEdit ?? false;
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const toast = useToast();

@@ -9,6 +9,7 @@ import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { prisma } from "~/lib/db.server";
 import { isCore, currentTermPhase } from "~/lib/roles";
+import { warningsFlagOn } from "../lib/warnings.server";
 import { interimLabel } from "~/lib/terms.shared";
 import { canViewMentorship } from "../lib/visibility";
 import { weekNumberInTerm, weekStartForNumber } from "../lib/week";
@@ -20,7 +21,7 @@ import {
 import { MentorGrid } from "../components/MentorGrid";
 import type { TermForms } from "../lib/term-forms";
 import { loadTermForms } from "../lib/term-forms.server";
-import { EmptyState } from "../components/EmptyState";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 
@@ -33,6 +34,7 @@ export const handle = {
 
 type LoaderData = {
   isCore: boolean;
+  warningsEnabled: boolean;
   // Where the term calendar sits now — drives whether note nudges apply.
   phase: "in-term" | "break" | "no-terms";
   // The term the grid below is drawn for: the active term, or a preview of the
@@ -104,6 +106,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const data: LoaderData = {
     isCore: userIsCore,
+    warningsEnabled: await warningsFlagOn(auth.user.sub, request),
     phase: phase.state,
     termId: gridTerm?.id ?? null,
     termCode: gridTerm?.code ?? null,
@@ -215,7 +218,7 @@ export default function MentorshipHub() {
           termId={data.termId ?? ""}
           highlightMissing={data.isCore && data.phase === "in-term"}
           heading="My mentees"
-          canWarn
+          canWarn={data.warningsEnabled}
           termForms={data.termForms ?? undefined}
         />
       )}

@@ -8,8 +8,8 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), isProjectMember: vi.fn() }));
 vi.mock("~/lib/pageAccess.server", () => ({ getPageAccess: vi.fn() }));
-vi.mock("~/lib/drive-receivers.server", async () => {
-  const actual = await vi.importActual<typeof import("~/lib/drive-receivers.server")>("~/lib/drive-receivers.server");
+vi.mock("~/drive/lib/drive-receivers.server", async () => {
+  const actual = await vi.importActual<typeof import("~/drive/lib/drive-receivers.server")>("~/drive/lib/drive-receivers.server");
   return {
     ...actual,
     setReceiver: vi.fn(),
@@ -28,7 +28,7 @@ import {
   findReceiver,
   folderPath,
   setReceiver,
-} from "~/lib/drive-receivers.server";
+} from "~/drive/lib/drive-receivers.server";
 import { loader, action } from "~/routes/api.folder-receivers";
 
 function get(query: string) {

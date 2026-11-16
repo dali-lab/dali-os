@@ -51,7 +51,7 @@ You can edit your own profile. Admins can edit anyone's.
 2. Change the fields and click **Save**, or **Cancel** to discard.
 3. To add a job, click **Add** on **Work experience**. Use **Edit** or **Remove** on an existing job.
 
-The photo is changed by clicking it on a profile you can edit. "Based in" feeds the Community map for alumni, so keep it current. See [Community](/help/articles/community-map).
+The photo is changed by clicking it on a profile you can edit. "Based in" feeds the Community map for alumni, so keep it current. Pick a city from the list, or use **Use "your text"** for anything else. See [Community](/help/articles/community-map).
 
 ## Ask for a resume review
 

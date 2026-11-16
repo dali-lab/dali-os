@@ -15,7 +15,9 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: superfly/flyctl-actions/setup-flyctl@fc53c09e1bc3be6f54706524e3b82c4f462f77be # 1.5
+        with:
+          version: 0.5.8
 
       - name: Build set of open PR numbers
         id: open

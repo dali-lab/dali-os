@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
-vi.mock("~/lib/s3", () => ({ getObjectBytes: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ getObjectBytes: vi.fn() }));
 
 import { requireAuth } from "~/lib/auth";
-import { getObjectBytes } from "~/lib/s3";
+import { getObjectBytes } from "~/lib/s3.server";
 import { loader } from "~/routes/api.whiteboard.image";
 
 function get(key: string) {

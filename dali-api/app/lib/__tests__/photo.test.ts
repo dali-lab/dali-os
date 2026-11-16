@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(),
   isS3Configured: vi.fn(),
 }));
 
-import { getDownloadUrl, isS3Configured } from "~/lib/s3";
+import { getDownloadUrl, isS3Configured } from "~/lib/s3.server";
 import { resolvePhotoUrl } from "~/lib/photo";
 
 describe("resolvePhotoUrl", () => {
@@ -19,6 +19,11 @@ describe("resolvePhotoUrl", () => {
     expect(await resolvePhotoUrl(null)).toBeNull();
     expect(await resolvePhotoUrl(undefined)).toBeNull();
     expect(await resolvePhotoUrl("")).toBeNull();
+    expect(getDownloadUrl).not.toHaveBeenCalled();
+  });
+
+  it("returns null for a pattern cover, which is not an image", async () => {
+    expect(await resolvePhotoUrl("pattern:poster?c=plum")).toBeNull();
     expect(getDownloadUrl).not.toHaveBeenCalled();
   });
 

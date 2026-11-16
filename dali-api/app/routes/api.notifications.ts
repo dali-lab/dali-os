@@ -6,16 +6,17 @@ import {
   listOpenTasksPage,
   listMyProjectTasksPage,
   openTasksTotal,
+  generalTasksTotal,
   projectTasksTotal,
   listNotificationHistory,
   SELF_CLEARING_FORM_TODO,
-} from "~/lib/tasks";
+} from "~/lib/tasks.server";
 import {
   listMyNotifications,
   annotateDesktopFeed,
   annotateRecordPromptFeed,
   listRetiredMeetingPingIds,
-} from "~/lib/notifications";
+} from "~/lib/notifications.server";
 import { publishNotificationChange } from "~/lib/notify-stream.server";
 import { ONBOARDING_EVENT_TYPE } from "~/members/lib/welcome.server";
 
@@ -90,8 +91,9 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // A count query runs only when the first page was full, so the common poll
   // costs nothing extra.
-  const [taskCount, projectTaskCount, withRecordPrompt] = await Promise.all([
+  const [taskCount, generalTaskCount, projectTaskCount, withRecordPrompt] = await Promise.all([
     openTasksTotal(userId, taskPage),
+    generalTasksTotal(userId, taskPage),
     projectTasksTotal(userId, projectPage),
     annotateRecordPromptFeed(items),
   ]);
@@ -102,6 +104,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       items: annotateDesktopFeed(withRecordPrompt, desktopPrefs),
       unreadCount,
       taskCount,
+      generalTaskCount,
       tasks: taskPage.items,
       // Rows that went stale unread rather than being read, so the desktop
       // shell can retire banners it already delivered for them. Web clients

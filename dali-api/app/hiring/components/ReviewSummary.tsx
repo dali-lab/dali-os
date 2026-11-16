@@ -4,7 +4,7 @@
 // dashboard, and the interviewer page, which each wrap it in their own chrome.
 
 import { Avatar } from "~/components/ui/Avatar";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import { RECOMMENDATION_TONES } from "~/hiring/lib/labels";
 
 export interface ReviewSummaryProps {
@@ -19,6 +19,8 @@ export interface ReviewSummaryProps {
   criteria?: Record<string, { label: string; maxScore?: number }>;
   feedback?: string | null;
   rejectionRationale?: string | null;
+  // Replaces the read-only rejection rationale, e.g. with an editor.
+  rejectionRationaleSlot?: React.ReactNode;
   // Rendered at the bottom (e.g. the applications page's "submitted on …"
   // note). Kept generic so each page controls its own footer copy.
   footerNote?: React.ReactNode;
@@ -34,6 +36,7 @@ export function ReviewSummary({
   criteria = {},
   feedback,
   rejectionRationale,
+  rejectionRationaleSlot,
   footerNote,
 }: ReviewSummaryProps) {
   const scoreEntries = Object.entries(scores ?? {});
@@ -108,12 +111,14 @@ export function ReviewSummary({
         </div>
       )}
 
-      {rejectionRationale?.trim() && (
+      {(rejectionRationaleSlot || rejectionRationale?.trim()) && (
         <div>
           <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
             Rejection Rationale
           </h3>
-          <p className="text-sm text-foreground whitespace-pre-wrap">{rejectionRationale}</p>
+          {rejectionRationaleSlot ?? (
+            <p className="text-sm text-foreground whitespace-pre-wrap">{rejectionRationale}</p>
+          )}
         </div>
       )}
 

@@ -28,9 +28,10 @@ import {
   type StatusAccent,
 } from "~/components/board/status-accent";
 import { BoardCard, BoardCardMeta, BoardCardMetaRow, BoardCardChip } from "~/components/board/BoardCard";
-import { modalCardClass, useOsChrome } from "~/components/os-chrome";
+import { modalCardClass } from "~/components/os-chrome";
 import { useOptimisticBoardMove } from "~/components/board/useOptimisticBoardMove";
 import { cn } from "~/lib/cn";
+import { isList, listCodec, usePersistedState, type PersistCodec } from "~/hooks/usePersistedState";
 import {
   buildTaskBoard,
   moveTaskInBoard,
@@ -45,9 +46,9 @@ import {
 import { utcDayOf, localTodayUtcDay } from "../lib/timeline-days";
 import type { NewTaskValues } from "./TaskModal";
 
-export const META_TEXT = (os: boolean) => (os ? "text-xs" : "text-[11px]");
+export const META_TEXT = "text-xs";
 
-const STATUS_ACCENT_OS: Record<TaskStatus, StatusAccent> = {
+const STATUS_ACCENT: Record<TaskStatus, StatusAccent> = {
   Backlog: osStatusAccent("backlog"),
   Todo: osStatusAccent("todo"),
   InProgress: osStatusAccent("progress"),
@@ -56,79 +57,28 @@ const STATUS_ACCENT_OS: Record<TaskStatus, StatusAccent> = {
   Cancelled: osStatusAccent("cancelled"),
 };
 
-const STATUS_ACCENT_CLASSIC: Record<TaskStatus, StatusAccent> = {
-  Backlog: {
-    fill: "var(--color-muted)",
-    ink: "var(--color-foreground)",
-    edge: "var(--color-brand-gray)",
-  },
-  Todo: {
-    fill: "color-mix(in srgb, #7c5ce0 22%, transparent)",
-    ink: "#5734b8",
-    edge: "#7c5ce0",
-  },
-  InProgress: {
-    fill: "color-mix(in srgb, var(--color-accent-teal) 22%, transparent)",
-    ink: "#00706f",
-    edge: "var(--color-accent-teal)",
-  },
-  InReview: {
-    fill: "color-mix(in srgb, var(--color-accent-yellow) 30%, transparent)",
-    ink: "#8a5300",
-    edge: "var(--color-accent-yellow)",
-  },
-  Done: {
-    fill: "color-mix(in srgb, var(--color-accent-green) 30%, transparent)",
-    ink: "#166a41",
-    edge: "var(--color-accent-green)",
-  },
-  Cancelled: {
-    fill: "color-mix(in srgb, var(--color-muted) 50%, transparent)",
-    ink: "var(--color-muted-foreground)",
-    edge: "var(--color-border)",
-  },
-};
-
-export const statusAccent = (status: TaskStatus, os: boolean): StatusAccent =>
-  (os ? STATUS_ACCENT_OS : STATUS_ACCENT_CLASSIC)[status];
+export const statusAccent = (status: TaskStatus): StatusAccent => STATUS_ACCENT[status];
 
 const COLLAPSIBLE_EMPTY_STATUSES: TaskStatus[] = ["Backlog", "Cancelled"];
 const HIDE_EMPTY_KEY = "taskboard:hideEmptyCols";
 const COLLAPSED_KEY = "taskboard:collapsedCols";
 
+const hideEmptyCodec: PersistCodec<boolean> = {
+  parse: (raw) => raw !== "0",
+  serialize: (value) => (value ? "1" : "0"),
+};
+const collapsedCodec = listCodec<TaskStatus>((v): v is TaskStatus => typeof v === "string" && isTaskStatus(v));
+const isBoolean = (v: unknown): v is boolean => typeof v === "boolean";
+
 export function useColumnLayout() {
-  const [hideEmptyCols, setHideEmptyCols] = useState(true);
-  useEffect(() => {
-    setHideEmptyCols(window.localStorage.getItem(HIDE_EMPTY_KEY) !== "0");
-  }, []);
-  const toggleHideEmpty = useCallback(() => {
-    setHideEmptyCols((v) => {
-      const next = !v;
-      try {
-        window.localStorage.setItem(HIDE_EMPTY_KEY, next ? "1" : "0");
-      } catch {
-        /* private-mode / storage-disabled: fall back to in-memory only */
-      }
-      return next;
-    });
-  }, []);
-  const [collapsedCols, setCollapsedCols] = useState<TaskStatus[]>([]);
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(COLLAPSED_KEY);
-      if (raw) setCollapsedCols((JSON.parse(raw) as string[]).filter(isTaskStatus));
-    } catch {
-      /* unreadable / malformed: start expanded */
-    }
-  }, []);
-  const persistCollapsed = useCallback((next: TaskStatus[]) => {
-    setCollapsedCols(next);
-    try {
-      window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(next));
-    } catch {
-      /* private-mode / storage-disabled: fall back to in-memory only */
-    }
-  }, []);
+  const [hideEmptyCols, setHideEmptyCols] = usePersistedState(HIDE_EMPTY_KEY, true, isBoolean, hideEmptyCodec);
+  const toggleHideEmpty = useCallback(() => setHideEmptyCols((v) => !v), [setHideEmptyCols]);
+  const [collapsedCols, persistCollapsed] = usePersistedState<TaskStatus[]>(
+    COLLAPSED_KEY,
+    [],
+    isList<TaskStatus>,
+    collapsedCodec,
+  );
   const toggleCollapsed = useCallback(
     (status: TaskStatus) =>
       persistCollapsed(
@@ -143,7 +93,6 @@ export function useColumnLayout() {
 
 export function buildStatusColumns({
   board,
-  os,
   canManage,
   hideEmptyCols,
   collapsedCols,
@@ -151,7 +100,6 @@ export function buildStatusColumns({
   onAddTask,
 }: {
   board: Record<TaskStatus, TaskCardModel[]>;
-  os: boolean;
   canManage: boolean;
   hideEmptyCols: boolean;
   collapsedCols: TaskStatus[];
@@ -166,14 +114,12 @@ export function buildStatusColumns({
         (board[status]?.length ?? 0) === 0
       ),
   ).map((status) => {
-    const accent = statusAccent(status, os);
+    const accent = statusAccent(status);
     const label = TASK_STATUS_LABELS[status];
     const cards = board[status] ?? [];
     const collapsed = collapsedCols.includes(status);
-    const roundedTop = os ? "rounded-t-os-item" : "rounded-t-lg";
-    const shell = os
-      ? "flex-shrink-0 border border-transparent rounded-os-item bg-os-card flex flex-col"
-      : "flex-shrink-0 border rounded-lg border-border bg-card flex flex-col";
+    const roundedTop = "rounded-t-os-item";
+    const shell = "flex-shrink-0 border border-transparent rounded-os-item bg-os-card flex flex-col";
 
     if (collapsed) {
       return {
@@ -203,9 +149,9 @@ export function buildStatusColumns({
             onClick={() => onToggleCollapsed(status)}
             className="flex flex-1 flex-col items-center gap-2 text-muted-foreground hover:text-foreground"
           >
-            <span className={cn(META_TEXT(os), "font-medium")}>{cards.length}</span>
+            <span className={cn(META_TEXT, "font-medium")}>{cards.length}</span>
             <span
-              className={cn("whitespace-nowrap", os ? "text-sm" : "text-xs")}
+              className="whitespace-nowrap text-sm"
               style={{ writingMode: "vertical-rl" }}
             >
               {label}
@@ -229,9 +175,8 @@ export function buildStatusColumns({
         <div className="flex shrink-0 items-center gap-1 text-current">
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 font-medium tabular-nums text-foreground",
-              os ? "bg-os-bg" : "bg-background",
-              META_TEXT(os),
+              "rounded-full bg-os-bg px-2 py-0.5 font-medium tabular-nums text-foreground",
+              META_TEXT,
             )}
           >
             {cards.length}
@@ -275,10 +220,8 @@ export function buildStatusColumns({
           onClick={() => onAddTask(status)}
           className={cn(
             "mb-2 flex w-full items-center justify-center gap-1.5 border border-dashed transition-colors",
-            META_TEXT(os),
-            os
-              ? "rounded-os-item border-os-container py-2 text-os-grey hover:border-os-container-hi hover:bg-os-container/30 hover:text-foreground"
-              : "rounded-md border-border py-1.5 text-muted-foreground hover:bg-muted/30 hover:text-foreground",
+            META_TEXT,
+            "rounded-os-item border-os-container py-2 text-os-grey hover:border-os-container-hi hover:bg-os-container/30 hover:text-foreground",
           )}
         >
           <Plus className="h-3.5 w-3.5" aria-hidden />
@@ -589,7 +532,6 @@ export function ArchivedTasksModal({
   projectId: string;
   onClose: () => void;
 }) {
-  const { os } = useOsChrome();
   const [first, setFirst] = useState<{ tasks: ArchivedTask[]; nextCursor: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -631,11 +573,7 @@ export function ArchivedTasksModal({
         <button
           type="button"
           onClick={onClose}
-          className={
-            os
-              ? "os-icon-btn"
-              : "text-muted-foreground/70 hover:text-foreground rounded p-1 hover:bg-muted"
-          }
+          className="os-icon-btn"
           aria-label="Close"
         >
           <X className="w-5 h-5" aria-hidden />
@@ -658,23 +596,18 @@ export function ArchivedTasksModal({
           {tasks.map((t) => (
             <li
               key={t.id}
-              className={cn(
-                "border p-2.5",
-                os
-                  ? "rounded-os-item border-transparent bg-os-well text-[15px]"
-                  : "rounded-md border-border bg-background text-sm",
-              )}
+              className="rounded-os-item border border-transparent bg-os-well p-2.5 text-[15px]"
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-foreground min-w-0 truncate">{t.title}</span>
-                <span className={cn(META_TEXT(os), "text-muted-foreground flex-shrink-0")}>
+                <span className={cn(META_TEXT, "text-muted-foreground flex-shrink-0")}>
                   {TASK_STATUS_LABELS[t.status]}
                 </span>
               </div>
               <div
                 className={cn(
                   "mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground",
-                  META_TEXT(os),
+                  META_TEXT,
                 )}
               >
                 {t.domain && <span>{t.domain.name}</span>}
@@ -710,7 +643,6 @@ export function TaskCard({
   isDragging: boolean;
   onOpen: () => void;
 }) {
-  const { os } = useOsChrome();
   const overdue =
     card.dueAt != null &&
     card.status !== "Done" &&
@@ -723,7 +655,7 @@ export function TaskCard({
 
   return (
     <BoardCard
-      accentEdge={statusAccent(card.status, os).edge}
+      accentEdge={statusAccent(card.status).edge}
       dragHandleProps={dragHandleProps}
       isDragging={isDragging}
       onOpen={onOpen}
@@ -737,10 +669,7 @@ export function TaskCard({
             >
               <Bell
                 aria-label={`Updated ${formatSince(card.activityAt)} ago — you haven't opened it since`}
-                className={cn(
-                  "mt-0.5 h-3.5 w-3.5 shrink-0",
-                  os ? "text-os-accent" : "text-os-accent",
-                )}
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 text-os-accent"
               />
             </Tooltip>
           )}
@@ -752,7 +681,7 @@ export function TaskCard({
             <div
               className={cn(
                 "mt-1 truncate text-muted-foreground",
-                META_TEXT(os),
+                META_TEXT,
               )}
             >
               {card.assignees.map((a) => a.name).join(", ")}
@@ -777,7 +706,7 @@ export function TaskCard({
                   aria-hidden
                   className={cn(
                     "w-3.5 h-3.5",
-                    overdue && (os ? "text-os-amber" : "text-os-accent"),
+                    overdue && "text-os-amber",
                   )}
                 />
               }
@@ -820,12 +749,7 @@ export function TaskCard({
           )}
           {card.domain && (
             <span
-              className={cn(
-                "px-1.5 py-0.5 border",
-                os
-                  ? "rounded-full border-transparent bg-os-accent/15 text-os-accent"
-                  : "rounded-md border-blue-100 bg-blue-50 text-blue-700",
-              )}
+              className="rounded-full border border-transparent bg-os-accent/15 px-1.5 py-0.5 text-os-accent"
             >
               {card.domain.name}
             </span>

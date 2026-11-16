@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   fileMatchesAccept,
+  formUploadKeyPrefix,
+  isFormUploadKeyFor,
   isReservedUploadKey,
   MAX_FILE_STORE_BYTES,
   MAX_FORM_UPLOAD_BYTES,
@@ -135,4 +137,25 @@ describe("isReservedUploadKey", () => {
       expect(isReservedUploadKey(key)).toBe(false);
     },
   );
+});
+
+describe("isFormUploadKeyFor", () => {
+  it("accepts a key under the question's prefix, scoped or not", () => {
+    expect(formUploadKeyPrefix("shots")).toBe("applications/shots/");
+    expect(isFormUploadKeyFor("uploads/applications/shots/abc-a.png", "shots")).toBe(true);
+    expect(isFormUploadKeyFor("applications/shots/abc-a.png", "shots")).toBe(true);
+  });
+
+  it("rejects another question's key, other prefixes and nested or empty names", () => {
+    expect(isFormUploadKeyFor("uploads/applications/cv/abc-a.png", "shots")).toBe(false);
+    expect(isFormUploadKeyFor("uploads/avatars/abc-a.png", "shots")).toBe(false);
+    expect(isFormUploadKeyFor("uploads/applications/shots/", "shots")).toBe(false);
+    expect(isFormUploadKeyFor("uploads/applications/shots/x/a.png", "shots")).toBe(false);
+  });
+
+  it("rejects path tricks", () => {
+    expect(isFormUploadKeyFor("uploads/applications/shots/../../resumes/a.pdf", "shots")).toBe(false);
+    expect(isFormUploadKeyFor("uploads/applications/shots/./a.png", "shots")).toBe(false);
+    expect(isFormUploadKeyFor("uploads/applications/x/y/a.png", "x/y")).toBe(false);
+  });
 });

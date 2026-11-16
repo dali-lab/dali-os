@@ -4,7 +4,8 @@ import { Form, redirect, useLoaderData, useSearchParams, useSubmit } from "react
 import type { Route } from "./+types/admin.site-users";
 import type { Prisma } from "~/generated/prisma/client";
 import { AdminSectionHeader, adminHandle } from "~/admin/adminNav";
-import { EmptyState, Pill, adminTable } from "~/admin/components/console-ui";
+import { Pill, adminTable } from "~/admin/components/console-ui";
+import { EmptyState } from "~/components/ui/EmptyState";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -19,6 +20,7 @@ import { Tooltip } from "~/components/ui/floating";
 import { PagerLinks } from "~/components/ui/Pager";
 import { offsetPage, offsetWindow, parsePageParam } from "~/lib/pagination";
 import { ImpersonateButton } from "~/admin/components/admin-shared";
+import { useImpersonateErrorToast } from "~/admin/components/useImpersonateErrorToast";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 
@@ -189,6 +191,7 @@ export default function AdminSiteUsers() {
   const submit = useSubmit();
   const [, setSearchParams] = useSearchParams();
   const formRef = useRef<HTMLFormElement>(null);
+  useImpersonateErrorToast();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Replace so the back button isn't buried under every keystroke.

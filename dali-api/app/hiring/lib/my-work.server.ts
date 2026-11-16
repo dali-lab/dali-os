@@ -18,7 +18,7 @@ import { inReviewPipelineFilter } from "./application-pipeline-filter";
 export async function hasHiringAccess(userId: string): Promise<boolean> {
   const roles = await getUserRoles(userId);
   if (roles.isCore || roles.isDomainLead) return true;
-  if (!roles.isLabMember) return false;
+  if (!roles.isLabMemberOrAlum) return false;
   const [reviewer, interviewer] = await Promise.all([
     prisma.cycleReviewer.findFirst({ where: { userId }, select: { id: true } }),
     prisma.cycleInterviewer.findFirst({ where: { userId }, select: { id: true } }),

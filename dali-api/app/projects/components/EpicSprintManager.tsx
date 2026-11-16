@@ -16,6 +16,7 @@ import {
   Minimize2,
 } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { PageRowControls, usePageRowScoped, type PageMenuItem, type PageRowControl } from "~/components/os-page";
 import { Checkbox } from "~/components/ui/Checkbox";
 import { Modal } from "~/components/Modal";
 import { sprintBandsForSpan } from "../lib/timeline-days";
@@ -545,8 +546,55 @@ export function EpicSprintManager({
     </div>
   );
 
+  const inRow = usePageRowScoped() && !fullscreen;
+  const newItems: PageMenuItem[] = [
+    ...(onAddTask ? [{ key: "task", label: "Task", icon: CheckSquare, onSelect: () => onAddTask() }] : []),
+    {
+      key: "story",
+      label: "User story",
+      icon: FileText,
+      disabled: epics.length === 0,
+      items: epics.map((e) => ({
+        key: e.id,
+        label: e.title,
+        onSelect: () => {
+          setAutoNewStoryEpicId(e.id);
+          openEpic(e.id);
+        },
+      })),
+    },
+    { key: "epic", label: "Epic", icon: Zap, onSelect: () => setNewEpicOpen(true) },
+    {
+      key: "meeting",
+      label: "Meeting",
+      icon: Calendar,
+      onSelect: () => navigate(`/calendar?compose=meeting&project=${projectId}`),
+    },
+  ];
+  const rowControls: PageRowControl[] = [
+    ...(canManage && view === "timeline"
+      ? [{ key: "edit", label: editMode ? "Done" : "Edit", icon: Pencil, pressed: editMode, onClick: () => setEditMode((v) => !v) }]
+      : []),
+    ...(view === "timeline"
+      ? [{ key: "fullscreen", label: "Fullscreen", icon: Maximize2, onClick: () => setFullscreen(true) }]
+      : []),
+    {
+      kind: "toggle" as const,
+      key: "view",
+      label: "Plan view",
+      value: view,
+      onChange: (v) => setView(v as EpicView),
+      options: [
+        { value: "timeline", label: "Timeline view", icon: GanttChart },
+        { value: "list", label: "List view", icon: List },
+      ],
+    },
+    ...(canManage ? [{ kind: "menu" as const, key: "new", label: "New", icon: Plus, primary: true, items: newItems }] : []),
+  ];
+
   return (
     <div className="flex flex-col gap-4">
+      {inRow && <PageRowControls controls={rowControls} />}
       {errorBanner}
 
       {/* New epic. On save we immediately reopen as the real detail modal for
@@ -561,10 +609,8 @@ export function EpicSprintManager({
         containerClassName="w-full max-w-[560px] my-auto os-modal-card os-form"
       >
         {/* Eyebrow rather than a heading: the form's own name field is the
-            prominent title, exactly as in the detail modal. Under os the
-            level moves onto the design's type badge and the heading names the
-            dialog, so the epic's own name can be a field with a required mark
-            on it. */}
+            prominent title, exactly as in the detail modal. The level sits
+            on the type badge and the heading names the dialog. */}
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex min-w-0 items-center gap-2">
               <span className="os-type-badge os-type-badge--epic flex-shrink-0">Epic</span>
@@ -653,8 +699,8 @@ export function EpicSprintManager({
 
       {/* Clicking an epic or story bar opens the detail/edit modal; a task bar
           defers to the caller, which opens the board's task modal via ?task=.
-          The Edit/New controls (os) and the classic "+ Add epic" button ride in
-          the timeline's own header row, right of the level legend. */}
+          The Edit/New controls ride in the timeline's own header row, right of
+          the level legend. */}
       {view === "timeline" ? (
         // Fullscreen keeps the same timeline mounted inside a fixed shell, so
         // the legend toggles, scroll position and any drag in flight survive
@@ -671,7 +717,7 @@ export function EpicSprintManager({
             storyDependencies={storyDependencies}
             epicDependencies={epicDependencies}
             taskDependencies={taskDependencies}
-            actions={progressActions}
+            actions={inRow ? undefined : progressActions}
             editMode={editMode}
             fillHeight={fullscreen}
             onReschedule={canManage ? reschedule : undefined}
@@ -689,7 +735,7 @@ export function EpicSprintManager({
           epicDependencies={epicDependencies}
           storyDependencies={storyDependencies}
           taskDependencies={taskDependencies}
-          actions={progressActions}
+          actions={inRow ? undefined : progressActions}
           onEpicClick={canManage ? (id) => openEpic(id) : undefined}
           onStoryClick={canManage ? (epicId) => openEpic(epicId) : undefined}
           onTaskClick={onTaskClick}

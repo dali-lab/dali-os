@@ -5,7 +5,7 @@ vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/login-next", () => ({
   redirectToLogin: vi.fn(() => new Response(null, { status: 302 })),
 }));
-vi.mock("~/lib/session", () => ({
+vi.mock("~/lib/session.server", () => ({
   revokeAllForGrant: vi.fn(),
   revokeSession: vi.fn(),
   hashSessionId: (raw: string) => `h:${raw}`,
@@ -14,7 +14,7 @@ vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
-import { revokeAllForGrant, revokeSession } from "~/lib/session";
+import { revokeAllForGrant, revokeSession } from "~/lib/session.server";
 import { logAuditEvent } from "~/lib/audit";
 import { action as sessionsAction } from "~/routes/settings.sessions";
 import { action as connectedAppsAction } from "~/routes/settings.connected-apps";

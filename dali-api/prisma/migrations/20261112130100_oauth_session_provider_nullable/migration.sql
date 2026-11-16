@@ -1,0 +1,1 @@
+ALTER TABLE "OAuthSession" ALTER COLUMN "provider" DROP NOT NULL;

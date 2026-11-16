@@ -1,24 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("~/lib/room-display.server", () => ({
+vi.mock("~/rooms/lib/room-display.server", () => ({
   requireRoomDisplay: vi.fn(),
   displayUnauthorized: vi.fn(() => Response.json({ error: "Display not paired" }, { status: 401 })),
 }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => u) }));
-vi.mock("~/lib/rooms.server", () => ({
+vi.mock("~/rooms/lib/rooms.server", () => ({
   getRoomSchedule: vi.fn(),
   currentEvent: vi.fn(),
   parseWindow: vi.fn(),
   serializeScheduleItem: vi.fn((i: unknown) => i),
 }));
 vi.mock("~/lib/display-scan.server", () => ({ getActiveDisplayScan: vi.fn() }));
-vi.mock("~/hiring/lib/hiring-events.server", () => ({ getBroadcastEvent: vi.fn() }));
+vi.mock("~/lib/display-broadcast.server", () => ({ getBroadcastEvent: vi.fn() }));
 vi.mock("~/lib/display-check-ins.server", () => ({ getDisplayCheckIns: vi.fn() }));
 
-import { requireRoomDisplay } from "~/lib/room-display.server";
-import { currentEvent, getRoomSchedule, parseWindow } from "~/lib/rooms.server";
+import { requireRoomDisplay } from "~/rooms/lib/room-display.server";
+import { currentEvent, getRoomSchedule, parseWindow } from "~/rooms/lib/rooms.server";
 import { getActiveDisplayScan } from "~/lib/display-scan.server";
-import { getBroadcastEvent } from "~/hiring/lib/hiring-events.server";
+import { getBroadcastEvent } from "~/lib/display-broadcast.server";
 import { getDisplayCheckIns } from "~/lib/display-check-ins.server";
 import { loader } from "~/rooms/routes/api.room-display.schedule";
 

@@ -4,7 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
 import { RailUpcoming, UPCOMING_REFRESH_MS, UPCOMING_TICK_MS, useUpcomingMeetings } from "~/components/shell/RailUpcoming";
-import type { UpcomingMeeting } from "~/lib/upcoming-meetings.server";
+import type { UpcomingMeeting } from "~/calendar/lib/upcoming-meetings.server";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

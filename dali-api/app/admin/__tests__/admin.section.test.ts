@@ -9,7 +9,6 @@ import { requireAuth } from "~/lib/auth";
 import { getUserRoles } from "~/lib/roles";
 import { resolveFeatureFlags } from "~/lib/feature-flags.server";
 import { loader } from "~/admin/routes/admin.section";
-import { loader as legacyLoader } from "~/admin/routes/admin.legacy-redirect";
 
 const run = (url: string) =>
   loader({ request: new Request(`http://localhost${url}`), params: {}, context: {} } as never) as Promise<Response>;
@@ -42,17 +41,5 @@ describe("admin section URL", () => {
   it("sends non-Core members home", async () => {
     as({ isCore: false, isAdmin: false });
     expect((await run("/admin/messaging")).headers.get("Location")).toBe("/");
-  });
-});
-
-describe("legacy admin redirect", () => {
-  it("permanently forwards with the query and hash", async () => {
-    const res = (await legacyLoader({
-      request: new Request("http://localhost/admin/outbound-messages?status=Dead&q=x#top"),
-      params: {},
-      context: {},
-    } as never)) as Response;
-    expect(res.status).toBe(301);
-    expect(res.headers.get("Location")).toBe("/admin/messaging/outbox?status=Dead&q=x#top");
   });
 });

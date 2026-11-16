@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("~/lib/auth", () => ({ requireAuth: vi.fn() }));
 vi.mock("~/lib/db.server");
-vi.mock("~/lib/meeting-recording.server", () => ({
+vi.mock("~/calendar/lib/meeting-recording.server", () => ({
   canRecordInto: vi.fn(),
   formatRecordingTranscript: vi.fn().mockResolvedValue("[00:01] You: we shipped it"),
   storedLines: vi.fn(),
@@ -18,7 +18,7 @@ vi.mock("~/lib/ai.server", async (importOriginal) => ({
 
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
-import { canRecordInto, storedLines } from "~/lib/meeting-recording.server";
+import { canRecordInto, storedLines } from "~/calendar/lib/meeting-recording.server";
 import { generateShortText, resolveAiProvider } from "~/lib/ai.server";
 import { _resetForTests as resetRateLimits } from "~/lib/rate-limit";
 import { action } from "~/routes/api.ai.meeting-notes.enhance";

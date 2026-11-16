@@ -12,7 +12,7 @@ vi.mock("~/lib/app-env", async (importOriginal) => ({
   getApiBaseUrl: () => "https://os.example",
 }));
 
-import { hashCode, HANDOFF_TTL_MS } from "~/lib/pairing";
+import { hashCode, HANDOFF_TTL_MS } from "~/lib/pairing.server";
 import { action } from "../api.mobile.webview";
 
 const post = (body: unknown, method = "POST") =>

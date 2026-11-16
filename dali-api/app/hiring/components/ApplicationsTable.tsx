@@ -1,9 +1,9 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { LoadMore } from "~/components/ui/Pager";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { cn } from "~/lib/cn";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 import type { ApplicationSort, ApplicationSortKey } from "~/hiring/lib/application-filters";
 
 function formatDate(iso: string): string {
@@ -104,7 +104,9 @@ export function ApplicationsTable({
               className="border-t border-os-container hover:bg-os-card-hover cursor-pointer transition-colors"
             >
               <td className="px-6 py-3.5 font-medium text-foreground">
-                {r.name}
+                <Link to={`/hiring/applications/${r.id}`} onClick={(e) => e.stopPropagation()} className="hover:underline">
+                  {r.name}
+                </Link>
               </td>
               <td className="px-6 py-3.5 text-foreground">{r.domain}</td>
               <td className="px-6 py-3.5">

@@ -1,30 +1,25 @@
-// A DomainApplicationStatus as a labelled pill. The applicant-facing summary of
-// one domain's outcome — used by the portal home's DALI application section and
-// the combined /portal/applications history. Deliberately not the interactive
+import { Pill, type PillTone } from "~/components/ui/Pill";
+
+// The applicant-facing summary of one domain's outcome. Deliberately not the interactive
 // StageIndicator, which belongs to the /portal/hiring tracker.
-const HIRING_STATUS: Record<string, { label: string; className: string }> = {
-  ApplicationOpen: { label: "Not submitted", className: "bg-muted text-muted-foreground" },
-  Pending: { label: "Under review", className: "bg-os-amber/15 text-os-amber" },
-  InvitedToInterview: { label: "Interview invite", className: "bg-blue-100 text-blue-800" },
-  InterviewScheduled: { label: "Interview scheduled", className: "bg-blue-100 text-blue-800" },
-  PostInterviewPending: { label: "Decision pending", className: "bg-blue-100 text-blue-800" },
-  Accepted: { label: "Accepted", className: "bg-os-green/15 text-os-green" },
-  AcceptedElsewhere: { label: "Placed elsewhere", className: "bg-muted text-muted-foreground" },
-  Waitlisted: { label: "Waitlisted", className: "bg-os-amber/15 text-os-amber" },
-  Rejected: { label: "Not accepted", className: "bg-muted text-muted-foreground" },
-  Withdrawn: { label: "Withdrawn", className: "bg-muted text-muted-foreground" },
+export const HIRING_STATUS: Record<string, { label: string; tone: PillTone }> = {
+  ApplicationOpen: { label: "Not submitted", tone: "neutral" },
+  Pending: { label: "Under review", tone: "warning" },
+  InvitedToInterview: { label: "Interview invite", tone: "accent" },
+  InterviewScheduled: { label: "Interview scheduled", tone: "accent" },
+  PostInterviewPending: { label: "Decision pending", tone: "accent" },
+  Accepted: { label: "Accepted", tone: "success" },
+  AcceptedElsewhere: { label: "Placed elsewhere", tone: "neutral" },
+  Waitlisted: { label: "Waitlisted", tone: "warning" },
+  Rejected: { label: "Not accepted", tone: "neutral" },
+  Withdrawn: { label: "Withdrawn", tone: "neutral" },
 };
 
 export function HiringStatusPill({ status }: { status: string }) {
-  const s = HIRING_STATUS[status] ?? {
-    label: status,
-    className: "bg-muted text-muted-foreground",
-  };
+  const s = HIRING_STATUS[status] ?? { label: status, tone: "neutral" as const };
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${s.className}`}
-    >
+    <Pill size="sm" tone={s.tone}>
       {s.label}
-    </span>
+    </Pill>
   );
 }

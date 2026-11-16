@@ -3,8 +3,8 @@ import { z } from "zod";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { parseJson } from "~/lib/validate";
-import { listPageTemplates } from "~/lib/page-templates.server";
-import { duplicatePage } from "~/lib/page-copy.server";
+import { listPageTemplates } from "~/drive/lib/page-templates.server";
+import { duplicatePage } from "~/drive/lib/page-copy.server";
 import type { WorkspaceType } from "~/generated/prisma/client";
 
 // GET  /api/page-templates?workspaceType=Lab&workspaceId=<id>

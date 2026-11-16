@@ -1,6 +1,5 @@
 import { redirect } from "react-router";
-import { requireAuth, redirectPartnerToPortal, isNonMember } from "~/lib/auth";
-import { redirectToLogin } from "~/lib/login-next";
+import { requireLabViewer } from "~/lib/lab-viewer.server";
 import type { Route } from "./+types/profile";
 
 // /profile is just an alias for /members/<self>. The two pages render the
@@ -9,11 +8,7 @@ import type { Route } from "./+types/profile";
 // nobody ever sees anyone else when both viewers are on /profile.
 // Redirecting consolidates everything onto the canonical member URL.
 export async function loader({ request }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-  if (await isNonMember(auth, request)) return redirect("/portal");
-  const partnerRedirect = await redirectPartnerToPortal(auth);
-  if (partnerRedirect) return partnerRedirect;
+  const { auth } = await requireLabViewer(request);
   return redirect(`/members/${auth.user.sub}`);
 }
 

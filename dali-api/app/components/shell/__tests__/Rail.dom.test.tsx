@@ -6,7 +6,7 @@ import { createRoutesStub } from "react-router";
 import { Rail, type RailProps } from "~/components/shell/Rail";
 import { ToastProvider } from "~/components/ui/toast";
 import { Settings } from "lucide-react";
-import { homeNavItem, pinnedNavItems } from "~/lib/nav-areas";
+import { HOME_NAV_ITEM, pinnedNavItems } from "~/lib/nav-areas";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -20,7 +20,7 @@ const base: RailProps = {
   path: "/",
   navFlags: {},
   isAlumni: false,
-  home: homeNavItem({ isAlumni: false }),
+  home: HOME_NAV_ITEM,
   pinned: pinnedNavItems(),
   tabClickProps: () => ({ onClick: vi.fn() }),
   emailUnread: 0,
@@ -114,19 +114,17 @@ describe("Rail", () => {
     expect(q("button[aria-label='DALI OS home']")).not.toBeNull();
   });
 
-  it("hides Email and Drive for alumni and sends Home to Community", async () => {
+  it("hides Email and Drive for alumni and sends Home to /", async () => {
     const tabClickProps = vi.fn(() => ({ onClick: vi.fn() }));
     await mount({
       isAlumni: true,
-      home: homeNavItem({ isAlumni: true }),
       pinned: pinnedNavItems({ isAlumni: true }),
       path: "/community",
       tabClickProps,
     });
     expect(q("button[aria-label='Email']")).toBeNull();
     expect(q("button[aria-label='Drive']")).toBeNull();
-    // The wordmark carries the alumni home (Community).
-    expect(tabClickProps).toHaveBeenCalledWith({ url: "/community", label: "Home" });
+    expect(tabClickProps).toHaveBeenCalledWith({ url: "/", label: "Home" });
   });
 
   it("shows the pinned items it is given", async () => {

@@ -2,11 +2,11 @@ import { z } from "zod";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { isCore, isLabMember, isProjectMember } from "~/lib/roles";
+import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { parseJson } from "~/lib/validate";
 import { logAuditEvent } from "~/lib/audit";
 import { getPageAccess } from "~/lib/pageAccess.server";
-import { assertUniqueName, nameConflictResponse } from "~/lib/page-names.server";
+import { assertUniqueName, nameConflictResponse } from "~/drive/lib/page-names.server";
 
 // POST /api/drive/files
 //
@@ -148,7 +148,7 @@ async function registerFile(request: Request) {
 
   if (scope.kind === "Lab") {
     // Lab scope: caller must be a lab member.
-    const member = await isLabMember(userId, request);
+    const member = await isLabMemberOrAlum(userId, request);
     if (!member) {
       return withCors(request, Response.json({ error: "Forbidden" }, { status: 403 }));
     }

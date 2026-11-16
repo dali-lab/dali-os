@@ -6,7 +6,7 @@ import { cachedForTtl, clearTtlCache } from "~/lib/ttl-cache";
 import { requireAuth, isImpersonating, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isAiEnabled } from "~/lib/ai.server";
-import { deleteObject, getObjectBytes } from "~/lib/s3";
+import { deleteObject, getObjectBytes } from "~/lib/s3.server";
 import { isBlockedUpload } from "~/lib/file-validation";
 import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { getUserRoles, type UserRoles } from "~/lib/roles";

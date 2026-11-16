@@ -57,6 +57,30 @@ describe("registry integrity", () => {
       expect(def.description.endsWith("."), `${key}: ${def.description}`).toBe(true);
     }
   });
+
+  it("declares required variables that the key lists and its defaults use", () => {
+    for (const key of EMAIL_TEMPLATE_KEYS) {
+      const def = emailTemplateDef(key);
+      for (const v of def.requiredVariables ?? []) {
+        expect(def.variables, `${key} requires undeclared {{${v}}}`).toContain(v);
+        // A required variable the fallback copy itself omits would make the
+        // default unsaveable and the send broken.
+        if (def.whenMissing === "default") {
+          expect(def.defaults?.body ?? "", `${key} defaults are missing {{${v}}}`).toContain(
+            `{{${v}}}`,
+          );
+        }
+      }
+    }
+  });
+
+  it("guards the Accepted letter so a save can't drop the login details", () => {
+    const def = emailTemplateDef("hiring:decision:Accepted");
+    expect(def.requiredVariables).toEqual(["daliEmail", "tempPassword"]);
+    expect(def.variables).toEqual(
+      expect.arrayContaining(["loginUrl", "slackUrl", "daliEmail", "tempPassword"]),
+    );
+  });
 });
 
 describe("registry covers both pre-collapse slot vocabularies", () => {
@@ -126,17 +150,16 @@ describe("isEmailTemplateKey", () => {
 });
 
 describe("the collapse covered what the old stores held", () => {
-  it("counts the feature templates: 18 hiring slots, 1 onboarding block, 5 education", () => {
+  it("counts the feature templates: 19 hiring slots, 5 education, no appended blocks", () => {
     const hiringSlots = EMAIL_TEMPLATE_KEYS.filter(
       (k) => k.startsWith("hiring:decision:") || k.startsWith("hiring:notification:"),
     );
     const onboarding = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("hiring:onboarding:"));
     const education = EMAIL_TEMPLATE_KEYS.filter((k) => k.startsWith("education:"));
     expect(hiringSlots).toHaveLength(19);
-    // Not a slot: appended to the Accepted letter, so it has no NotificationType
-    // of its own. It exists so the acceptance deadline and sign-off stop living
-    // in library code where they went stale silently.
-    expect(onboarding).toEqual(["hiring:onboarding:NextSteps"]);
+    // The Accepted letter carries its credentials and next steps itself, so
+    // there are no appended hiring:onboarding:* templates anymore.
+    expect(onboarding).toEqual([]);
     // The 4 statuses plus decision:Promoted.
     expect(education).toHaveLength(5);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { coreBoardPathFor, filterCoreTasks, parseAssigneeParam } from "~/core/lib/taskboard";
+import { filterCoreTasks, parseAssigneeParam } from "~/core/lib/taskboard";
 import type { TaskCardModel } from "~/projects/lib/task-board";
 
 const task = (id: string, title: string, assigneeIds: string[]) =>
@@ -42,12 +42,3 @@ describe("filterCoreTasks", () => {
   });
 });
 
-describe("coreBoardPathFor", () => {
-  it("carries the open task over to the Core board", () => {
-    expect(coreBoardPathFor("https://os.test/projects/core1?tab=board&task=t1")).toBe("/core?task=t1");
-  });
-
-  it("lands on the board when no task is open", () => {
-    expect(coreBoardPathFor("https://os.test/projects/core1?tab=drive")).toBe("/core");
-  });
-});

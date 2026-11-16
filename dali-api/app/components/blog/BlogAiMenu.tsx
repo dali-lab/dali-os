@@ -7,7 +7,7 @@ import { Menu, MenuItem } from "~/components/ui/floating";
 import { useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import type { WritingTask } from "~/email/lib/ai-prompts";
-import { aiPassages } from "~/lib/blog-ai";
+import { aiPassages } from "~/blog/lib/blog-ai";
 
 const DRAFT_CONTEXT_CHARS = 6000;
 const FAILED = "AI couldn't help with that one.";

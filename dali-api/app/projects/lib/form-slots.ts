@@ -1,6 +1,12 @@
 import { prisma } from "~/lib/db.server";
 import type { SigningAudience } from "~/generated/prisma/enums";
-import { parseColumnMapping, type ColumnMapping } from "./slot-roles";
+import {
+  applyBoardColumnOp,
+  parseColumnMapping,
+  type ColumnMapping,
+} from "./slot-roles";
+import type { ColumnOp } from "~/forms/lib/column-ops";
+import type { Question } from "~/types";
 import { setFormPublished } from "~/forms/lib/form-publish.server";
 
 // Audiences an operator can lock a bound form to (a subset of the signing
@@ -172,6 +178,43 @@ export async function setSlotColumnMapping(
     data: { columnMapping: mapping as object, updatedById: userId },
   });
   return { ok: true };
+}
+
+// One column change from the board's table, saved on the binding's mapping.
+// Skips the completeness check the full mapper runs, so a board whose mapping
+// is still missing roles can change its columns.
+export async function applySlotColumnOp(
+  staffingCycleId: string,
+  slot: Slot,
+  op: ColumnOp,
+  userId: string,
+): Promise<{ ok: true; mapping: ColumnMapping } | { ok: false; error: string }> {
+  const binding = await prisma.staffingCycleFormBinding.findUnique({
+    where: { staffingCycleId_slot: { staffingCycleId, slot } },
+    select: { id: true, formId: true, columnMapping: true },
+  });
+  if (!binding) return { ok: false, error: "Connect a form before changing columns." };
+  const [latest, term] = await Promise.all([
+    prisma.formVersion.findFirst({
+      where: { formId: binding.formId },
+      orderBy: { versionNumber: "desc" },
+      select: { questions: true },
+    }),
+    op.op === "role" && op.termId
+      ? prisma.term.findUnique({ where: { id: op.termId }, select: { id: true, code: true } })
+      : null,
+  ]);
+  const result = applyBoardColumnOp(parseColumnMapping(binding.columnMapping), op, {
+    slot,
+    questions: (latest?.questions as unknown as Question[]) ?? [],
+    termCodes: new Map(term ? [[term.id, term.code]] : []),
+  });
+  if (!result.ok) return { ok: false, error: result.reason };
+  await prisma.staffingCycleFormBinding.update({
+    where: { id: binding.id },
+    data: { columnMapping: result.mapping as object, updatedById: userId },
+  });
+  return { ok: true, mapping: result.mapping };
 }
 
 // Upsert the binding for (cycle, slot). `formId` is validated against an

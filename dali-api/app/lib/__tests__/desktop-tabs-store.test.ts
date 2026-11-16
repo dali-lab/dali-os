@@ -167,4 +167,52 @@ describe("desktop tabs store", () => {
     store.tabActions.reopenClosed();
     expect(store.getTabsSnapshot().tabs.map((t) => t.url)).toEqual(["/a", "/b"]);
   });
+
+  describe("while impersonating", () => {
+    function seedAdminTabs() {
+      window.localStorage.setItem(
+        "dali:desktop-tabs:v1",
+        JSON.stringify({
+          tabs: [{ id: "a1", url: "/admin/site-users", label: "Site users" }, { id: "a2", url: "/calendar", label: "Calendar" }],
+          activeId: "a1",
+        }),
+      );
+    }
+
+    it("starts a fresh set on the arrival url instead of returning to the admin's tab", async () => {
+      seedAdminTabs();
+      const store = await freshStore();
+      const navigate = vi.fn();
+      store.startTabs({ url: "/", label: "Home" }, navigate, { impersonating: true });
+      expect(store.getTabsSnapshot().tabs.map((t) => t.url)).toEqual(["/"]);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it("leaves the admin's saved tabs and snapshot cookie untouched", async () => {
+      seedAdminTabs();
+      const before = window.localStorage.getItem("dali:desktop-tabs:v1");
+      document.cookie = "dali_tabs=admin; Path=/";
+      const store = await freshStore();
+      store.startTabs({ url: "/", label: "Home" }, vi.fn(), { impersonating: true });
+      store.tabActions.record("/projects", "PUSH");
+      store.tabActions.open({ url: "/notes/n1", label: "Their note" });
+      store.tabActions.label("/notes/n1", "Their note");
+      expect(window.localStorage.getItem("dali:desktop-tabs:v1")).toBe(before);
+      expect(document.cookie).toContain("dali_tabs=admin");
+    });
+
+    it("gives the admin their own tabs back once impersonation ends", async () => {
+      seedAdminTabs();
+      const store = await freshStore();
+      const stop = store.startTabs({ url: "/", label: "Home" }, vi.fn(), { impersonating: true });
+      store.tabActions.open({ url: "/notes/n1", label: "Their note" });
+      stop();
+      const navigate = vi.fn();
+      store.startTabs({ url: "/", label: "Home" }, navigate);
+      expect(store.getTabsSnapshot().tabs.map((t) => t.url)).toEqual(["/admin/site-users", "/calendar"]);
+      expect(navigate).toHaveBeenCalledWith("/admin/site-users");
+      store.tabActions.record("/admin/site-users", "REPLACE");
+      expect(saved(store).tabs).toHaveLength(2);
+    });
+  });
 });

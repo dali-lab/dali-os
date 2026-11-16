@@ -25,18 +25,11 @@ vi.mock("~/lib/roles", async (orig) => {
   const real = await orig<typeof import("~/lib/roles")>();
   return { ...real, isCore: vi.fn(), isProjectMember: vi.fn() };
 });
-vi.mock("~/lib/scheduled-meeting", async (importOriginal) => {
-  const real = await importOriginal<typeof import("~/lib/scheduled-meeting")>();
-  return {
-    parseOccurrenceParam: real.parseOccurrenceParam,
-    tracksAttendance: real.tracksAttendance,
-    markMeetingAttendance: vi.fn(),
-  };
-});
+vi.mock("~/calendar/lib/meeting-roster.server", () => ({ markMeetingAttendance: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
 import { isCore, isProjectMember } from "~/lib/roles";
-import { markMeetingAttendance } from "~/lib/scheduled-meeting";
+import { markMeetingAttendance } from "~/calendar/lib/meeting-roster.server";
 import {
   runMarkMeetingAttendance,
   MARK_MEETING_ATTENDANCE_DEF,

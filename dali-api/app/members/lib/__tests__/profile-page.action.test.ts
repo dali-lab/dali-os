@@ -12,8 +12,8 @@ vi.mock("~/lib/roles", () => ({
   isCore: vi.fn(),
 }));
 vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn() }));
-vi.mock("~/lib/wallet-token", () => ({ rotateWalletSecret: vi.fn() }));
-vi.mock("~/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-token.server", () => ({ rotateWalletSecret: vi.fn() }));
+vi.mock("~/wallet/lib/wallet-apns.server", () => ({ pushWalletPassUpdate: vi.fn() }));
 vi.mock("~/lib/geocode.server", () => ({ geocodePlace: vi.fn() }));
 vi.mock("~/members/lib/coffee-chat.server", () => ({ sendCoffeeChatInvite: vi.fn(), hasOutgoingCoffeeChat: vi.fn() }));
 vi.mock("~/admin/lib/eligibility.server", () => ({
@@ -24,8 +24,8 @@ vi.mock("~/admin/lib/eligibility.server", () => ({
 import { requireAuth } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { isAdmin, isCore } from "~/lib/roles";
-import { rotateWalletSecret } from "~/lib/wallet-token";
-import { pushWalletPassUpdate } from "~/lib/wallet-apns.server";
+import { rotateWalletSecret } from "~/wallet/lib/wallet-token.server";
+import { pushWalletPassUpdate } from "~/wallet/lib/wallet-apns.server";
 import { geocodePlace } from "~/lib/geocode.server";
 import { sendCoffeeChatInvite } from "~/members/lib/coffee-chat.server";
 import { applyEligibilityWithNotify, removeEligibility } from "~/admin/lib/eligibility.server";
@@ -189,6 +189,14 @@ describe("Community map pin", () => {
 describe("unique-constraint failures", () => {
   it("names a taken handle", async () => {
     db.user.update.mockRejectedValue({ code: "P2002", meta: { target: ["handle"] } });
+    expect(await run(profile({ handle: "ada" }))).toEqual({ error: "That handle is already taken — pick another." });
+  });
+
+  it("names a taken handle when the pg adapter reports only the constraint index", async () => {
+    db.user.update.mockRejectedValue({
+      code: "P2002",
+      meta: { modelName: "User", driverAdapterError: { cause: { constraint: { index: "User_handle_key" } } } },
+    });
     expect(await run(profile({ handle: "ada" }))).toEqual({ error: "That handle is already taken — pick another." });
   });
 

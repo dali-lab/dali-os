@@ -5,7 +5,7 @@ import { requireAuth } from "~/lib/auth";
 import { logAuditEvent } from "~/lib/audit";
 import { withCors, handlePreflight } from "~/lib/cors";
 import { idSchema, parseJson } from "~/lib/validate";
-// import { deprovisionZoomMeeting } from "~/lib/zoom"; // S2S Zoom not configured yet
+// import { deprovisionZoomMeeting } from "~/lib/zoom.server"; // S2S Zoom not configured yet
 import { deprovisionInterviewMeet } from "~/hiring/lib/interview-meet";
 import { getInterviewerRecipients, sendInterviewCancelEmails } from "~/hiring/lib/interview-emails";
 import { getActiveInterviewerUserIds, notifyInterviewCancelled } from "~/hiring/lib/interview-notifications";

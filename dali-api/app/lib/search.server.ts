@@ -19,7 +19,7 @@ import {
   type SearchResultType,
 } from "~/lib/search";
 import { searchPageContent } from "~/lib/doc-search.server";
-import { resolveSections } from "~/lib/page-doc-sections";
+import { parseStoredSections } from "~/drive/lib/page-doc-sections.server";
 import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
 import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
@@ -65,7 +65,7 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
     { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(opts, q, b) },
     { type: "document", enabled: true, run: (b) => searchProjectFiles(opts.userId, q, like, b, opts.request) },
-    { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, like, b) },
+    { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
     { type: "form", enabled: true, run: (b) => searchFormPages(opts.userId, q, like, b, opts.request) },
     // Hiring library (reusable artifacts) — Core or Domain Lead, mirroring the
@@ -92,7 +92,7 @@ function normalizedQuery(opts: SearchOpts): string | null {
   if (q.length < MIN_QUERY_LENGTH) return null;
   // Not a lab member (e.g. an applicant who reached the endpoint directly) —
   // nothing to surface. The palette itself only mounts in the member shell.
-  if (!opts.roles.isLabMember) return null;
+  if (!opts.roles.isLabMemberOrAlum) return null;
   return q;
 }
 
@@ -430,8 +430,8 @@ async function searchDocuments(
 
 // Flatten a guide's authored content into one searchable string: each section's
 // title plus its body text (legacy ProseMirror bodies convert to blocks first).
-function guideContentText(row: { body: unknown; sections: unknown }): string {
-  return resolveSections({ body: row.body, videoKey: null, sections: row.sections })
+function guideContentText(row: { sections: unknown }): string {
+  return parseStoredSections(row.sections)
     .map((s) => `${s.title} ${blocksToPlainText(ensureBlocks(s.body))}`)
     .join(" ");
 }
@@ -442,7 +442,7 @@ async function searchGuides(q: string, b: SearchBudget): Promise<SearchResult[]>
   // anyone has opened it to create its PageDoc row.
   const rows = await prisma.pageDoc.findMany({
     where: { pageKey: { in: GUIDE_PAGES.map((g) => g.pageKey) } },
-    select: { pageKey: true, title: true, body: true, sections: true },
+    select: { pageKey: true, title: true, sections: true },
   });
   const byKey = new Map(rows.map((r) => [r.pageKey, r]));
 
@@ -588,7 +588,6 @@ async function searchApplications(
   userId: string,
   roles: UserRoles,
   q: string,
-  like: Like,
   b: SearchBudget,
 ): Promise<SearchResult[]> {
   const reviewerRows = await prisma.cycleReviewer.findMany({
@@ -618,7 +617,7 @@ async function searchApplications(
       ).filter((id): id is string => id !== null);
   if (signedCycleIds.length === 0) return [];
 
-  const nameMatch = { user: { OR: [{ firstName: like }, { lastName: like }] } };
+  const nameMatch = { user: userTextWhere(q, ["firstName", "lastName"]) };
   let where: Prisma.DomainApplicationWhereInput;
   if (visibility.all) {
     where = {

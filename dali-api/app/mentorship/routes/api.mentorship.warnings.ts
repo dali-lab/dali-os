@@ -2,7 +2,7 @@ import type { Route } from "./+types/api.mentorship.warnings";
 import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { canViewMentorship } from "../lib/visibility";
-import { canWarnMember } from "../lib/warnings.server";
+import { canWarnMember, warningsFlagOn } from "../lib/warnings.server";
 import { validateWarning, type WarningReason } from "../lib/warnings";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -10,6 +10,7 @@ export async function action({ request }: Route.ActionArgs) {
   const auth = await requireAuth(request);
   if (!auth.ok) return auth.response;
   const userId = auth.user.sub;
+  if (!(await warningsFlagOn(userId, request))) return Response.json({ error: "Not found" }, { status: 404 });
   if (!(await canViewMentorship(userId))) return Response.json({ error: "Forbidden" }, { status: 403 });
 
   const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;

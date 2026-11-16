@@ -5,10 +5,9 @@
 
 import type { ReactNode } from "react";
 import { Tooltip } from "~/components/ui/floating";
-import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 
-export const boardMetaText = (os: boolean) => (os ? "text-xs" : "text-[11px]");
+const BOARD_META_TEXT = "text-xs";
 
 export function BoardCard({
   accentEdge,
@@ -26,18 +25,14 @@ export function BoardCard({
   testId?: string;
   children: ReactNode;
 }) {
-  const { os } = useOsChrome();
   return (
     <div
       {...dragHandleProps}
       data-testid={testId}
       style={{ borderLeftColor: accentEdge }}
       className={cn(
-        "relative border border-l-4 flex focus-within:ring-2",
-        os
-          ? "rounded-os-item border-transparent bg-os-bg text-[15px] focus-within:ring-os-accent/40"
-          : "rounded-md border-border bg-background text-sm focus-within:ring-os-accent/30",
-        isDragging ? "opacity-40" : os ? "hover:bg-os-container/60" : "hover:bg-muted/20",
+        "relative flex rounded-os-item border border-l-4 border-transparent bg-os-bg text-[15px] focus-within:ring-2 focus-within:ring-os-accent/40",
+        isDragging ? "opacity-40" : "hover:bg-os-container/60",
       )}
     >
       <div
@@ -50,10 +45,7 @@ export function BoardCard({
             onOpen();
           }
         }}
-        className={cn(
-          "flex-1 min-w-0 text-left cursor-pointer focus:outline-none",
-          os ? "p-3" : "p-2.5",
-        )}
+        className="flex-1 min-w-0 cursor-pointer p-3 text-left focus:outline-none"
       >
         {children}
       </div>
@@ -87,12 +79,11 @@ export function BoardCardMeta({
 
 // The meta row container under a card title.
 export function BoardCardMetaRow({ children }: { children: ReactNode }) {
-  const { os } = useOsChrome();
   return (
     <div
       className={cn(
         "mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-muted-foreground",
-        boardMetaText(os),
+        BOARD_META_TEXT,
       )}
     >
       {children}
@@ -112,28 +103,18 @@ export function BoardCardChip({
   title?: string;
   children: ReactNode;
 }) {
-  const { os } = useOsChrome();
-  const toneClass = os
-    ? {
-        neutral: "border-transparent bg-os-container text-muted-foreground",
-        accent: "border-transparent bg-os-accent/15 text-os-accent",
-        warn: "border-transparent bg-os-amber/15 text-os-amber",
-        good: "border-transparent bg-os-green/15 text-os-green",
-        bad: "border-transparent bg-destructive/10 text-destructive",
-      }[tone]
-    : {
-        neutral: "border-border bg-muted text-muted-foreground",
-        accent: "border-blue-100 bg-blue-50 text-blue-700",
-        warn: "border-os-amber/40 bg-os-amber/10 text-os-amber",
-        good: "border-emerald-200 bg-emerald-50 text-emerald-800",
-        bad: "border-red-200 bg-red-50 text-red-700",
-      }[tone];
+  const toneClass = {
+    neutral: "border-transparent bg-os-container text-muted-foreground",
+    accent: "border-transparent bg-os-accent/15 text-os-accent",
+    warn: "border-transparent bg-os-amber/15 text-os-amber",
+    good: "border-transparent bg-os-green/15 text-os-green",
+    bad: "border-transparent bg-destructive/10 text-destructive",
+  }[tone];
   return (
     <Tooltip content={title ?? null}>
       <span
         className={cn(
-          "inline-flex items-center gap-1 px-1.5 py-0.5 border font-medium",
-          os ? "rounded-full" : "rounded-md",
+          "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 border font-medium",
           toneClass,
         )}
       >

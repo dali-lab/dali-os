@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("~/lib/db.server", () => ({
   prisma: { feedbackPost: { findMany: vi.fn() }, customEmoji: { findMany: vi.fn() } },
 }));
-vi.mock("~/lib/s3", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
+vi.mock("~/lib/s3.server", () => ({ isS3Configured: () => false, getDownloadUrl: vi.fn() }));
 vi.mock("~/lib/photo", () => ({ resolvePhotoUrl: vi.fn(async (u: string | null) => (u ? `signed:${u}` : null)) }));
 
 import { prisma } from "~/lib/db.server";

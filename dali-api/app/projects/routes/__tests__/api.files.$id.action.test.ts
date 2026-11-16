@@ -12,17 +12,17 @@ vi.mock("~/lib/cors", () => ({
   handlePreflight: () => null,
 }));
 vi.mock("~/lib/fileAccess.server", () => ({ canViewFile: vi.fn(), canEditFile: vi.fn() }));
-vi.mock("~/lib/s3", () => ({
+vi.mock("~/lib/s3.server", () => ({
   getDownloadUrl: vi.fn(async (key: string, o?: { fileName?: string }) => `url:${key}:${o?.fileName ?? ""}`),
 }));
-vi.mock("~/lib/collabAuth", () => ({ hydrateAuthors: vi.fn() }));
+vi.mock("~/lib/collabAuth.server", () => ({ hydrateAuthors: vi.fn() }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("../../lib/file-notifications.server", () => ({ notifyFileNewVersion: vi.fn() }));
 
 import { requireAuth, requireMemberSession, isNonMember, redirectPartnerToPortal } from "~/lib/auth";
 import { prisma } from "~/lib/db.server";
 import { canViewFile, canEditFile } from "~/lib/fileAccess.server";
-import { hydrateAuthors } from "~/lib/collabAuth";
+import { hydrateAuthors } from "~/lib/collabAuth.server";
 import { logAuditEvent } from "~/lib/audit";
 import { notifyFileNewVersion } from "../../lib/file-notifications.server";
 import { loader, action } from "~/projects/routes/api.files.$id";

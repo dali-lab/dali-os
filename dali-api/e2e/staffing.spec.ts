@@ -23,7 +23,7 @@ test.describe('Staffing board and finalize', () => {
 
   test('non-manager cannot open the board or finalize', async ({ page, loginAs }) => {
     await loginAs({ daliEmail: f.email });
-    await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
+    await page.goto('/core/staffing', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/staffing/);
 
     const res = await page.request.post('/api/staffing/finalize', {
@@ -35,7 +35,7 @@ test.describe('Staffing board and finalize', () => {
 
   test('manager proposes a member, finalizes, and the roster persists', async ({ page, loginAs }) => {
     await loginAs({ daliEmail: MANAGER });
-    await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
+    await page.goto('/core/staffing', { waitUntil: 'domcontentloaded' });
 
     await openDialog(page, `View ${f.fullName}'s bid`);
     const dialog = page.getByRole('dialog');
@@ -83,7 +83,7 @@ test.describe('Staffing board and finalize', () => {
 
   test('taking a confirmed member off the project removes them from the roster', async ({ page, loginAs }) => {
     await loginAs({ daliEmail: MANAGER });
-    await page.goto('/projects/staffing', { waitUntil: 'domcontentloaded' });
+    await page.goto('/core/staffing', { waitUntil: 'domcontentloaded' });
     await openDialog(page, `Remove ${f.fullName} from project`);
     const assign = page.waitForResponse(
       (r) => r.url().includes('/api/staffing/assign') && r.request().method() === 'POST',

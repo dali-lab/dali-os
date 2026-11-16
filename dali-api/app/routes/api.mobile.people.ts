@@ -1,5 +1,5 @@
 import type { Route } from "./+types/api.mobile.people";
-import { runSearchDirectory } from "~/mcp/tools/search-directory";
+import { searchDirectory } from "~/members/lib/directory-search.server";
 import { listMemberSummaries } from "~/lib/mobile-members.server";
 import { mobileJson, requireMobileUser } from "~/lib/mobile-auth.server";
 
@@ -13,6 +13,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (!guard.ok) return guard.response;
   const q = (new URL(request.url).searchParams.get("q") ?? "").trim().slice(0, 100);
   if (q.length < 2) return mobileJson({ people: [] });
-  const { results } = await runSearchDirectory({ query: q, limit: MAX_RESULTS });
-  return mobileJson({ people: await listMemberSummaries(results.map((r) => r.id)) });
+  const rows = await searchDirectory({ query: q, take: MAX_RESULTS });
+  return mobileJson({ people: await listMemberSummaries(rows.map((r) => r.id)) });
 }

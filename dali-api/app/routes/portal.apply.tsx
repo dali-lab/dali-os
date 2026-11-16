@@ -1,1270 +1,56 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Link, redirect, useLoaderData, useFetcher } from "react-router";
+import { useState, useRef, useEffect } from "react";
+import { useLoaderData, useFetcher } from "react-router";
 import type { Route } from "./+types/portal.apply";
-import { prisma } from "~/lib/db.server";
-import { requireAuth } from "~/lib/auth";
-import { logAuditEvent } from "~/lib/audit";
-import { redirectToLogin } from "~/lib/login-next";
-import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
-import { renderForSlot, notificationSlot } from "~/hiring/lib/email-variables";
-import { getActiveCycleById, getOpenCycles, type ActiveCycle } from "~/hiring/lib/cycles";
-import { applicantPortalPath } from "~/hiring/lib/applicant-groups";
-import { loadHiringForm } from "~/hiring/lib/application-form.server";
-import {
-  listWaitlistedApplications,
-  reuseWaitlistedApplication,
-  stopUsingWaitlistedApplication,
-  type WaitlistedApplicationOption,
-} from "~/hiring/lib/continued-interest.server";
-import {
-  impliedStartTermId,
-  isOfferedStartTerm,
-  loadOfferedStartTerms,
-  offersStartTermChoice,
-} from "~/hiring/lib/start-terms.server";
-import { safeParseJsonString } from "~/forms/lib/forms-data";
-import { reconcileDomainApplications } from "~/hiring/lib/domain-application";
-import { applicantDeadline, domainCloseDate } from "~/hiring/lib/domain-windows";
-import {
-  applicationLock,
-  closedDomainIdSet,
-  closedDomainIdsForCycle,
-  frozenSelection,
-} from "~/hiring/lib/application-lock.server";
+import { loadPortalApply } from "~/hiring/lib/portal-apply.server";
+import { runPortalApplyAction } from "~/hiring/lib/portal-apply-actions.server";
+import { ApplyReviewModal } from "~/components/portal/apply/ApplyReviewModal";
+import { UrlWarningModal } from "~/components/portal/apply/UrlWarningModal";
+import { ChallengeSwitchModal } from "~/components/portal/apply/ChallengeSwitchModal";
+import { WaitlistedModal } from "~/components/portal/apply/WaitlistedModal";
+import { DomainQuestionsCard } from "~/components/portal/apply/DomainQuestionsCard";
+import { useApplyUrlChecks } from "~/components/portal/apply/use-apply-url-checks";
+import { CycleChooser } from "~/components/portal/apply/CycleChooser";
+import { SectionNavMobile, SectionNavDesktop, BackToTopButton } from "~/components/portal/apply/SectionNav";
+import { getDomainColor, formatShortDate, computeRequiredProgress, buildSections, visibleGeneralParts, type DomainShape, type ContinuedProgress } from "~/hiring/lib/apply-sections";
+import type { WaitlistedApplicationOption } from "~/hiring/lib/continued-interest.server";
 import { formatDeadline } from "~/hiring/components/ApplicationTracker";
 import { APPLICATION_TZ } from "~/lib/timezone";
 import { Tooltip } from "~/components/ui/floating";
-import { checkGitHubUrl, checkFigmaUrl, checkDriveUrl } from "~/lib/submission-check";
 import type { SubmissionCheckResult } from "~/lib/submission-check";
-import { validateWordLimits } from "~/lib/word-count";
 import type { WordCountViolation } from "~/lib/word-count";
-import { countRequired, dropHiddenAnswers, visibleKeys, visibleQuestions } from "~/lib/form-logic";
-import { isAnswered, normalizeAnswerFormats, validateAnswerFormats } from "~/lib/form-answers";
+import { countRequired, visibleQuestions } from "~/forms/lib/form-logic";
 import { termCodeLabel } from "~/lib/display";
 import type { Question } from "~/types";
 import { ApplicantErrorBoundary } from "~/components/ApplicantErrorBoundary";
-import { Modal } from "~/components/Modal";
-import { modalCardClass } from "~/components/os-chrome";
 import { QuestionList } from "~/hiring/components/ApplicationAnswers";
 import { DocEditor } from "~/components/doc";
 import { isEmptyBlocks } from "~/lib/blocks";
-import { ensureBlocks } from "~/collab/legacy/pm-to-blocknote";
-import { normalizeQuestionBodies } from "~/lib/question-blocks.server";
-import { type UrlCheckState } from "~/components/form-builder/QuestionField";
 import { FormField } from "~/forms/components/FormField";
 import { useToast } from "~/components/ui/toast";
 import { useDialog } from "~/components/ui/dialog";
-import { getHiringEmail } from "~/hiring/lib/hiring-emails.server";
-import { Radio } from "~/components/ui/Radio";
 import { buttonClasses } from "~/components/ui/Button";
-import { Pill } from "~/hiring/components/cycle-setup/SetupCard";
+import { Pill } from "~/components/ui/Pill";
 
 export const meta: Route.MetaFunction = () => [{ title: "Apply · DALI OS" }];
 
-
-// ─── Loader ──────────────────────────────────────────────────────────────────
-
-// The Open Students cycle a request is about. An id names one; without one (or
-// with an id that isn't an Open Students cycle) the only open cycle is used, or
-// the caller offers a choice when several are open.
-async function resolveApplyCycle(
-  cycleId: string | undefined,
-): Promise<{ cycle: ActiveCycle } | { choices: ActiveCycle[] }> {
-  if (cycleId) {
-    const cycle = await openStudentsCycle(cycleId);
-    if (cycle) return { cycle };
-  }
-  const open = await getOpenCycles({ applicants: "Students" });
-  return open.length === 1 ? { cycle: open[0] } : { choices: open };
-}
-
-async function openStudentsCycle(cycleId: string): Promise<ActiveCycle | null> {
-  const cycle = await getActiveCycleById(cycleId);
-  return cycle?.applicants === "Students" && cycle.currentStatus === "Open" ? cycle : null;
-}
-
 export async function loader({ request, params }: Route.LoaderArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return redirectToLogin(request);
-
-  const resolved = await resolveApplyCycle(params.cycleId);
-  if ("choices" in resolved) {
-    if (resolved.choices.length === 0) return redirect("/portal");
-    return {
-      choose: resolved.choices.map((c) => ({
-        id: c.id,
-        name: c.name,
-        closeDate: c.closeDate ? c.closeDate.toISOString() : null,
-        href: applicantPortalPath("Students", c.id),
-      })),
-    };
-  }
-  const active = resolved.cycle;
-
-  // Load cycle with its hiring domains + per-domain challenge Forms. A domain
-  // staged into an Open cycle (not yet ready) is invisible until its lead
-  // marks it ready.
-  const cycle = await prisma.applicationCycle.findUnique({
-    where: { id: active.id },
-    include: {
-      domains: {
-        where: { isReady: true },
-        include: { domain: true },
-      },
-      domainChallengeForms: {
-        include: {
-          form: {
-            include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } },
-          },
-        },
-      },
-    },
-  });
-
-  if (!cycle) return redirect("/portal");
-
-  // General form: the cycle's bound Drive Form (applicationFormId).
-  const form = cycle.applicationFormId
-    ? await loadHiringForm(cycle.applicationFormId, auth.user.sub)
-    : null;
-  if (!form) return redirect("/portal");
-
-  // The FormVersion the applicant's Application pins for the general form.
-  const applicationFormVersionId = form.versionId;
-
-  // Check for existing draft
-  const draft = await prisma.application.findFirst({
-    where: {
-      userId: auth.user.sub,
-      applicationCycleId: active.id,
-    },
-    include: {
-      statusUpdates: { orderBy: { createdAt: "desc" }, take: 1 },
-      applicationFormVersion: { select: { questions: true, intro: true } },
-      domainApplications: {
-        include: {
-          challengeFormVersion: {
-            select: { formId: true, questions: true, intro: true, form: { select: { name: true } } },
-          },
-          continuedFrom: {
-            select: { application: { select: { applicationCycle: { select: { name: true } } } } },
-          },
-        },
-      },
-    },
-  });
-
-  // Domains reusing a waitlisted application. Their answers, and with them the
-  // general answers, are frozen copies pinned to the forms they were written
-  // against, so those are the questions shown, not this cycle's.
-  const continuedDas = (draft?.domainApplications ?? []).filter(da => da.continuedFromId);
-  const pinnedGeneral = continuedDas.length > 0 ? draft?.applicationFormVersion : null;
-  const formQuestions = normalizeQuestionBodies(
-    pinnedGeneral ? ((pinnedGeneral.questions as unknown) as Question[]) ?? [] : form.questions,
-  );
-  const generalDescription = ensureBlocks(
-    pinnedGeneral ? safeParseJsonString(pinnedGeneral.intro) : form.description,
-  );
-
-  // Reuse is offered only when the cycle binds a continued interest form.
-  const continuedInterestForm = cycle.continuedInterestFormId
-    ? await loadHiringForm(cycle.continuedInterestFormId, auth.user.sub)
-    : null;
-  const waitlistedApplications = continuedInterestForm
-    ? await listWaitlistedApplications(auth.user.sub, active.id)
-    : [];
-
-  // Per-domain application windows: a domain can close before or after the
-  // cycle's own close date (DomainApplicationCycle.closeDate overrides it).
-  // Read off the freshly-fetched `cycle` row above, not the 30s-cached
-  // `active`, so a domain right at its deadline gets an accurate answer.
-  const closedDomainIds = closedDomainIdSet(cycle.domains, cycle);
-  const selectedDas = (draft?.domainApplications ?? [])
-    .filter(da => da.selected)
-    .map(da => ({ id: da.id, domainId: da.domainId }));
-  const { generalFrozen } = frozenSelection(closedDomainIds, selectedDas);
-  const closedSelectedDomainIds = selectedDas
-    .filter(da => closedDomainIds.has(da.domainId))
-    .map(da => da.domainId);
-  const deadline = applicantDeadline(cycle.domains, cycle, selectedDas.map(da => da.domainId));
-
-  // Build domain info with each domain's challenge Forms (applicant picks one).
-  // Each option carries an opaque "form:<formId>" id. A cycle without
-  // challenges offers bare domains. A domain reusing a waitlisted application
-  // offers only that application's own challenge.
-  const domains = cycle.domains.map(dac => {
-    const closeDateIso = domainCloseDate(dac, cycle)?.toISOString() ?? null;
-    const closed = closedDomainIds.has(dac.domainId);
-    const continued = continuedDas.find(da => da.domainId === dac.domainId);
-    if (continued) {
-      const version = continued.challengeFormVersion;
-      return {
-        id: dac.domainId,
-        name: dac.domain.name,
-        closeDate: closeDateIso,
-        closed,
-        challenges: [
-          {
-            challengeVersionId: WAITLISTED_PICK,
-            challengeName: version?.form.name ?? "",
-            description: ensureBlocks(safeParseJsonString(version?.intro ?? null)),
-            questions: normalizeQuestionBodies(((version?.questions as unknown) as Question[]) ?? []),
-          },
-        ],
-      };
-    }
-    const formChallenges = (cycle.hasChallenges ? cycle.domainChallengeForms : [])
-      .filter(cdf => cdf.domainId === dac.domainId && cdf.form.versions[0])
-      .map(cdf => ({
-        challengeVersionId: `form:${cdf.formId}`,
-        challengeName: cdf.form.name,
-        description: ensureBlocks(safeParseJsonString(cdf.form.versions[0]!.intro)),
-        questions: normalizeQuestionBodies(
-          ((cdf.form.versions[0]!.questions as unknown) as Question[]) ?? [],
-        ),
-      }));
-    return {
-      id: dac.domainId,
-      name: dac.domain.name,
-      closeDate: closeDateIso,
-      closed,
-      challenges: formChallenges,
-    };
-  });
-
-  const draftStatus = draft?.statusUpdates[0]?.newStatus ?? null;
-
-  const startTermOptions = offersStartTermChoice(cycle.startTermIds)
-    ? await loadOfferedStartTerms(cycle.startTermIds)
-    : [];
-
-  return {
-      cycleId: active.id,
-      cycleName: active.name,
-      hasChallenges: cycle.hasChallenges,
-      closeDate: active.closeDate ? active.closeDate.toISOString() : null,
-      applicationFormVersionId,
-      formQuestions,
-      generalDescription,
-      domains,
-      generalFrozen,
-      closedSelectedDomainIds,
-      deadline: deadline ? deadline.toISOString() : null,
-      startTermOptions,
-      waitlistedApplications,
-      continuedInterest: continuedInterestForm
-        ? {
-            description: ensureBlocks(continuedInterestForm.description),
-            questions: normalizeQuestionBodies(continuedInterestForm.questions),
-          }
-        : null,
-      // domainId → the cycle its reused application was waitlisted in.
-      continuedFrom: Object.fromEntries(
-        continuedDas.map(da => [da.domainId, da.continuedFrom!.application.applicationCycle.name]),
-      ),
-      continuedInterestAnswers: Object.fromEntries(
-        continuedDas.map(da => [da.domainId, (da.continuedInterestAnswers ?? {}) as Record<string, string>]),
-      ),
-      // ApplyForm seeds its state from the loader once, so it remounts when
-      // reuse changes what the form is made of.
-      formKey: continuedDas.map(da => `${da.domainId}:${da.continuedFromId}`).join(","),
-      isAlreadySubmitted: draftStatus === "Submitted",
-      draft: draft
-        ? {
-            id: draft.id,
-            answers: draft.answers as Record<string, string>,
-            startTermId: draft.startTermId,
-            selectedDomainIds: draft.domainApplications
-              .filter(da => da.selected)
-              .map(da => da.domainId),
-            domainApplications: draft.domainApplications.map(da => ({
-              id: da.id,
-              domainId: da.domainId,
-              challengeVersionId: pickerId(da),
-              answers: da.answers as Record<string, string>,
-              submittedAt: da.submittedAt ? da.submittedAt.toISOString() : null,
-            })),
-          }
-        : null,
-    };
+  return loadPortalApply(request, params.cycleId);
 }
-
-// The picker id of a reused waitlisted application's challenge. It is pinned to
-// whatever that application answered, which this cycle may not offer at all.
-const WAITLISTED_PICK = "waitlisted";
-
-// The opaque picker id for a DA's picked challenge Form.
-function pickerId(da: {
-  continuedFromId: string | null;
-  challengeFormVersion: { formId: string } | null;
-}): string | null {
-  if (da.continuedFromId) return WAITLISTED_PICK;
-  return da.challengeFormVersion ? `form:${da.challengeFormVersion.formId}` : null;
-}
-
-// Continued interest questions per DA that reuses a waitlisted application.
-// Presence in the map is what marks a DA's answers (and with any entry at all,
-// the general answers) as frozen: nothing posted may overwrite them.
-async function loadContinued(applicationId: string): Promise<Map<string, Question[]>> {
-  const das = await prisma.domainApplication.findMany({
-    where: { applicationId },
-    select: {
-      id: true,
-      continuedFromId: true,
-      continuedInterestFormVersion: { select: { questions: true } },
-    },
-  });
-  return new Map(
-    das
-      .filter(da => da.continuedFromId)
-      .map(da => [da.id, ((da.continuedInterestFormVersion?.questions ?? []) as unknown) as Question[]]),
-  );
-}
-
-type PostedDomainAnswers = {
-  domainApplicationId: string;
-  answers: Record<string, string>;
-  continuedInterestAnswers?: Record<string, string>;
-};
-
-async function saveAnswers(args: {
-  applicationId: string;
-  answers: unknown;
-  // Caller has already dropped any entry for a frozen (closed-domain) DA.
-  domainAnswers: PostedDomainAnswers[];
-  startTermId: string | null | undefined;
-  continued: Map<string, Question[]>;
-  // A selected domain has closed: the shared general answers are under
-  // review and stop accepting writes, same as a reused waitlisted answer.
-  generalFrozen?: boolean;
-}) {
-  const { applicationId, answers, domainAnswers, startTermId, continued, generalFrozen = false } = args;
-  await prisma.application.update({
-    where: { id: applicationId },
-    data: {
-      ...(continued.size === 0 && !generalFrozen && { answers: answers as object }),
-      ...(startTermId !== undefined && { startTermId }),
-    },
-  });
-  for (const da of domainAnswers) {
-    await prisma.domainApplication.updateMany({
-      where: { id: da.domainApplicationId, applicationId },
-      data: continued.has(da.domainApplicationId)
-        ? { continuedInterestAnswers: da.continuedInterestAnswers ?? {} }
-        : { answers: da.answers },
-    });
-  }
-}
-
-// Resolve + validate applicant challenge selections against the challenge Forms
-// linked to the cycle. Each selection's `challengeVersionId` is an opaque
-// "form:<formId>" id. Returns one pin per valid selection: {domainId,
-// challengeFormVersionId} (the picked Form's latest version). A cycle without
-// challenges pins every selected domain of the cycle with no challenge.
-type ResolvedPin = { domainId: string; challengeFormVersionId: string | null };
-async function resolveChallengeSelections(
-  cycle: ActiveCycle,
-  selections: { domainId: string; challengeVersionId: string }[],
-): Promise<ResolvedPin[]> {
-  const cycleDomains = await prisma.domainApplicationCycle.findMany({
-    where: { applicationCycleId: cycle.id, isReady: true },
-    select: { domainId: true },
-  });
-  const allowed = new Set(cycleDomains.map(d => d.domainId));
-  if (!cycle.hasChallenges) {
-    return [...new Set(selections.map(s => s.domainId))]
-      .filter(id => allowed.has(id))
-      .map(domainId => ({ domainId, challengeFormVersionId: null }));
-  }
-  const cycleId = cycle.id;
-  const cdfs = await prisma.cycleDomainForm.findMany({
-    where: { applicationCycleId: cycleId, domainId: { in: [...allowed] } },
-    include: { form: { include: { versions: { orderBy: { versionNumber: "desc" }, take: 1 } } } },
-  });
-  const formVersionByPair = new Map(
-    cdfs.map(c => [`${c.domainId}:${c.formId}`, c.form.versions[0]?.id]),
-  );
-
-  const out: ResolvedPin[] = [];
-  for (const s of selections) {
-    if (!s.challengeVersionId.startsWith("form:")) continue;
-    const formId = s.challengeVersionId.slice("form:".length);
-    const versionId = formVersionByPair.get(`${s.domainId}:${formId}`);
-    if (versionId) out.push({ domainId: s.domainId, challengeFormVersionId: versionId });
-  }
-  return out;
-}
-
-// ─── Action ──────────────────────────────────────────────────────────────────
 
 export async function action({ request }: Route.ActionArgs) {
-  const auth = await requireAuth(request);
-  if (!auth.ok) return auth.response;
-
-  const formData = await request.formData();
-  const intent = formData.get("intent") as string;
-
-  // Every write lands on an Open Students cycle. Intents that name an
-  // application must also name one of the caller's own.
-  let cycle: ActiveCycle | null;
-  let applicationId: string | null = null;
-  if (intent === "create-draft" || intent === "use-waitlisted") {
-    cycle = await openStudentsCycle(formData.get("cycleId") as string);
-  } else {
-    const owned = await prisma.application.findFirst({
-      where: { id: formData.get("applicationId") as string, userId: auth.user.sub },
-      select: { id: true, applicationCycleId: true },
-    });
-    applicationId = owned?.id ?? null;
-    cycle = owned ? await openStudentsCycle(owned.applicationCycleId) : null;
-  }
-  if (!cycle) {
-    return Response.json({ error: "This cycle isn't open for applications." }, { status: 409 });
-  }
-
-  // Start terms, resolved once for every intent below.
-  const offeredStartTermIds = cycle.startTermIds ?? [];
-  const startTermIsAsked = offersStartTermChoice(offeredStartTermIds);
-
-  // A posted start term, trusted only if the cycle actually offers it:
-  //   string    the pick to store
-  //   null      explicitly cleared
-  //   undefined not posted, or not on offer — leave the stored value alone
-  const readStartTerm = (raw: FormDataEntryValue | null): string | null | undefined => {
-    if (!startTermIsAsked || typeof raw !== "string") return undefined;
-    if (raw === "") return null;
-    return isOfferedStartTerm(offeredStartTermIds, raw) ? raw : undefined;
-  };
-
-  if (intent === "use-waitlisted") {
-    const failed = await reuseWaitlistedApplication({
-      userId: auth.user.sub,
-      cycle,
-      waitlistedDomainApplicationId: formData.get("waitlistedDomainApplicationId") as string,
-      startTermId: impliedStartTermId(offeredStartTermIds),
-    });
-    if (failed) return { error: "That application can't be used for this cycle." };
-    return { reused: true };
-  }
-
-  if (intent === "stop-using-waitlisted" && applicationId) {
-    await stopUsingWaitlistedApplication({
-      applicationId,
-      domainId: formData.get("domainId") as string,
-      cycle,
-    });
-    return { reused: false };
-  }
-
-  if (intent === "create-draft") {
-    const cycleId = cycle.id;
-    const applicationFormVersionId = (formData.get("applicationFormVersionId") as string) || null;
-    const selectedDomains = JSON.parse(formData.get("selectedDomains") as string) as {
-      domainId: string;
-      challengeVersionId: string;
-    }[];
-
-    // A closed domain is never created on a fresh draft, even if the client
-    // still posted it (e.g. a stale tab).
-    const closedDomainIds = await closedDomainIdsForCycle(cycleId, cycle);
-    const openSelections = selectedDomains.filter(s => !closedDomainIds.has(s.domainId));
-
-    // Validate every chosen challenge Form is linked to this cycle for the
-    // claimed domain, and resolve the pinned FormVersion.
-    const resolved = await resolveChallengeSelections(cycle, openSelections);
-
-    // Upsert keyed on the (userId, applicationCycleId) unique constraint so
-    // that two concurrent "Start Application" clicks (e.g. from two open tabs)
-    // converge on a single draft instead of creating duplicates. For an
-    // existing row the update is a no-op — domain selection is reconciled
-    // separately via the `update-domains` intent.
-    const application = await prisma.application.upsert({
-      where: {
-        userId_applicationCycleId: {
-          userId: auth.user.sub,
-          applicationCycleId: cycleId,
-        },
-      },
-      update: {},
-      create: {
-        userId: auth.user.sub,
-        applicationCycleId: cycleId,
-        applicationFormVersionId,
-        answers: {},
-        // A cycle offering exactly one start term records it rather than asking
-        // (see offersStartTermChoice), so the board has the structured value
-        // even when the applicant was never shown a choice.
-        startTermId: impliedStartTermId(offeredStartTermIds),
-        statusUpdates: {
-          create: { newStatus: "Draft", userId: auth.user.sub },
-        },
-        domainApplications: {
-          create: resolved.map(r => ({
-            domainId: r.domainId,
-            ...(r.challengeFormVersionId && { challengeFormVersionId: r.challengeFormVersionId }),
-            answers: {},
-          })),
-        },
-      },
-      include: {
-        domainApplications: {
-          include: {
-            challengeFormVersion: { select: { formId: true } },
-          },
-        },
-      },
-    });
-
-    return {
-          draft: {
-            id: application.id,
-            answers: application.answers,
-            selectedDomainIds: application.domainApplications.map(
-              (da) => da.domainId,
-            ),
-            domainApplications: application.domainApplications.map((da) => ({
-              id: da.id,
-              domainId: da.domainId,
-              challengeVersionId: pickerId(da),
-              answers: da.answers,
-            })),
-          },
-        };
-  }
-
-  if (intent === "update-domains" && applicationId) {
-    const newSelections = JSON.parse(formData.get("selectedDomains") as string) as {
-      domainId: string;
-      challengeVersionId: string;
-    }[];
-
-    const existingDas = await prisma.domainApplication.findMany({
-      where: { applicationId },
-      select: { domainId: true, challengeFormVersionId: true, continuedFromId: true, selected: true },
-    });
-
-    // A domain reusing a waitlisted application keeps the challenge it is
-    // pinned to, whatever was posted; that one isn't this cycle's to validate.
-    const pinned = new Map(
-      existingDas.filter(da => da.continuedFromId).map(da => [da.domainId, da.challengeFormVersionId]),
-    );
-    // A closed domain can't be added or removed by the applicant, even by
-    // replaying the form: drop it from what was posted, then force-keep
-    // whatever is already selected there with its existing (frozen) pick.
-    const closedDomainIds = await closedDomainIdsForCycle(cycle.id, cycle);
-    const closedSelected = new Map(
-      existingDas
-        .filter(da => da.domainId && da.selected && closedDomainIds.has(da.domainId))
-        .map(da => [da.domainId!, da.challengeFormVersionId]),
-    );
-    const openPosted = newSelections.filter(s => !closedDomainIds.has(s.domainId));
-
-    // Validate + resolve every other chosen challenge.
-    const resolved = [
-      ...(await resolveChallengeSelections(
-        cycle,
-        openPosted.filter(s => !pinned.has(s.domainId)),
-      )),
-      ...openPosted
-        .filter(s => pinned.has(s.domainId))
-        .map(s => ({ domainId: s.domainId, challengeFormVersionId: pinned.get(s.domainId) ?? null })),
-      ...[...closedSelected.entries()].map(([domainId, challengeFormVersionId]) => ({
-        domainId,
-        challengeFormVersionId,
-      })),
-    ];
-    const newDomainIds = resolved.map(r => r.domainId);
-    const desiredFormByDomain = new Map(
-      resolved.flatMap(r => (r.challengeFormVersionId ? [[r.domainId, r.challengeFormVersionId] as const] : [])),
-    );
-
-    await reconcileDomainApplications({
-      applicationId,
-      domainIds: newDomainIds,
-      challengeFormVersionByDomain: desiredFormByDomain,
-    });
-
-    // Return full updated draft
-    const updatedApp = await prisma.application.findUnique({
-      where: { id: applicationId },
-      include: {
-        domainApplications: {
-          include: {
-            challengeFormVersion: { select: { formId: true } },
-          },
-        },
-      },
-    });
-
-    return {
-          draft: updatedApp ? {
-            id: updatedApp.id,
-            answers: updatedApp.answers,
-            selectedDomainIds: newDomainIds,
-            domainApplications: updatedApp.domainApplications.map((da) => ({
-              id: da.id,
-              domainId: da.domainId,
-              challengeVersionId: pickerId(da),
-              answers: da.answers,
-            })),
-          } : null,
-        };
-  }
-
-  if (intent === "save-draft" && applicationId) {
-    const answers = JSON.parse(formData.get("answers") as string);
-    const domainAnswers = JSON.parse(formData.get("domainAnswers") as string) as PostedDomainAnswers[];
-    const selectedDas = await prisma.domainApplication.findMany({
-      where: { applicationId, selected: true },
-      select: { id: true, domainId: true },
-    });
-    const { frozenDaIds, generalFrozen } = await applicationLock(cycle.id, cycle, selectedDas);
-    await saveAnswers({
-      applicationId,
-      answers,
-      domainAnswers: domainAnswers.filter(da => !frozenDaIds.has(da.domainApplicationId)),
-      startTermId: readStartTerm(formData.get("startTermId")),
-      continued: await loadContinued(applicationId),
-      generalFrozen,
-    });
-
-    return { saved: true };
-  }
-
-  if (intent === "submit" && applicationId) {
-    const answers = JSON.parse(formData.get("answers") as string);
-    const domainAnswersRaw = JSON.parse(formData.get("domainAnswers") as string) as PostedDomainAnswers[];
-    const urlQuestions = JSON.parse(formData.get("urlQuestions") as string ?? "[]") as {
-      key: string;
-      url: string;
-      type: "github_url" | "figma_url" | "drive_url";
-    }[];
-    const postedSelectedDomainIds = JSON.parse(formData.get("selectedDomainIds") as string) as string[];
-
-    // Validate server-side before any writes. Trust the questions from the
-    // ChallengeVersion record, not anything in the request payload.
-    const application = await prisma.application.findUnique({
-      where: { id: applicationId },
-      select: {
-        applicationCycleId: true,
-        applicationFormVersion: { select: { questions: true } },
-      },
-    });
-    if (!application) {
-      return Response.json({ error: "Application not found" }, { status: 404 });
-    }
-
-    const allDas = await prisma.domainApplication.findMany({
-      where: { applicationId },
-      include: {
-        challengeFormVersion: { select: { questions: true } },
-      },
-    });
-
-    // A closed domain can neither be added nor removed here either, same
-    // rule as update-domains: force-keep whatever is already selected there,
-    // drop any closed domain the client tried to add.
-    const closedDomainIds = await closedDomainIdsForCycle(cycle.id, cycle);
-    const currentlySelected = allDas
-      .filter(da => da.selected)
-      .map(da => ({ id: da.id, domainId: da.domainId }));
-    const { frozenDaIds, generalFrozen } = frozenSelection(closedDomainIds, currentlySelected);
-    const existingSelectedClosedDomainIds = currentlySelected
-      .filter(da => closedDomainIds.has(da.domainId))
-      .map(da => da.domainId);
-    const selectedDomainIds = [
-      ...new Set([
-        ...postedSelectedDomainIds.filter(id => !closedDomainIds.has(id)),
-        ...existingSelectedClosedDomainIds,
-      ]),
-    ];
-    const domainAnswers = domainAnswersRaw.filter(da => !frozenDaIds.has(da.domainApplicationId));
-
-    // With only closed domains selected, a submit would mark the application
-    // Submitted and send the confirmation while stamping no domain, so no
-    // reviewer ever sees it.
-    if (selectedDomainIds.length > 0 && selectedDomainIds.every(id => closedDomainIds.has(id))) {
-      return { error: "Every domain you picked has closed. Add an open domain to submit." };
-    }
-
-    // Reused waitlisted answers were validated when they were first submitted
-    // and can't be edited now; what gets checked for those DAs is the continued
-    // interest form.
-    const continued = await loadContinued(applicationId);
-    const generalQuestions =
-      continued.size > 0 || generalFrozen
-        ? []
-        : ((application.applicationFormVersion?.questions as unknown as Question[]) ?? []);
-    const postedAnswers = (da: PostedDomainAnswers | undefined): Record<string, string> =>
-      (da && continued.has(da.domainApplicationId) ? da.continuedInterestAnswers : da?.answers) ?? {};
-
-    // Per-DA challenge questions: the picked challenge Form's version.
-    const daQuestions = (dbDa: (typeof allDas)[number]): Question[] =>
-      continued.get(dbDa.id) ??
-      ((dbDa.challengeFormVersion?.questions ?? []) as unknown as Question[]);
-
-    // Answers to questions a rule hid are dropped from the posted objects (the
-    // same ones saved below) before any check, so a hidden question can't fail
-    // one or reach storage. Each form is evaluated on its own answers.
-    const visibleGeneral = dropHiddenAnswers(generalQuestions, answers);
-    const visibleByDa = new Map<string, Question[]>();
-    for (const dbDa of allDas) {
-      const posted = domainAnswers.find(da => da.domainApplicationId === dbDa.id);
-      visibleByDa.set(dbDa.id, dropHiddenAnswers(daQuestions(dbDa), postedAnswers(posted)));
-    }
-
-    const wordCountErrors: Record<string, WordCountViolation> = {
-      ...validateWordLimits(visibleGeneral, answers),
-    };
-    for (const da of domainAnswers) {
-      const dbDa = allDas.find(d => d.id === da.domainApplicationId);
-      if (!dbDa) continue;
-      Object.assign(wordCountErrors, validateWordLimits(visibleByDa.get(dbDa.id) ?? [], postedAnswers(da)));
-    }
-    if (Object.keys(wordCountErrors).length > 0) {
-      return { wordCountErrors };
-    }
-
-    // Required-question validation. Client gates the review modal on this, but
-    // we re-check server-side so the DB cannot end up with a submitted-but-empty
-    // domain via a stale state, manual replay, or future refactor that loosens
-    // the client gate. A frozen (closed-domain) answer can no longer be fixed,
-    // so it's skipped — otherwise an incomplete closed challenge would block
-    // submitting an open one forever.
-    const missingRequired: string[] = [];
-    if (!generalFrozen) {
-      for (const q of visibleGeneral) {
-        if (q.required && !isAnswered(answers[q.key], q)) {
-          missingRequired.push(q.data.label || q.key);
-        }
-      }
-    }
-    for (const domainId of selectedDomainIds) {
-      if (closedDomainIds.has(domainId)) continue;
-      const dbDa = allDas.find(d => d.domainId === domainId);
-      if (!dbDa) {
-        missingRequired.push(`selected domain has no application record`);
-        continue;
-      }
-      const questions = visibleByDa.get(dbDa.id) ?? [];
-      const submitted = postedAnswers(domainAnswers.find(da => da.domainApplicationId === dbDa.id));
-      for (const q of questions) {
-        if (q.required && !isAnswered(submitted[q.key], q)) {
-          missingRequired.push(q.data.label || q.key);
-        }
-      }
-    }
-    if (missingRequired.length > 0) {
-      return {
-        error: `Please answer all required questions before submitting (${missingRequired.length} unanswered).`,
-      };
-    }
-
-    const answerSets: { questions: Question[]; answers: Record<string, string> }[] = [
-      { questions: visibleGeneral, answers },
-    ];
-    for (const domainId of selectedDomainIds) {
-      if (closedDomainIds.has(domainId)) continue;
-      const dbDa = allDas.find(d => d.domainId === domainId);
-      if (!dbDa) continue;
-      answerSets.push({
-        questions: visibleByDa.get(dbDa.id) ?? [],
-        answers: postedAnswers(domainAnswers.find(da => da.domainApplicationId === dbDa.id)),
-      });
-    }
-    for (const set of answerSets) {
-      const formatErrors = validateAnswerFormats(set.questions, set.answers);
-      if (formatErrors.length > 0) return { error: formatErrors[0].message };
-      normalizeAnswerFormats(set.questions, set.answers);
-    }
-
-    // The start term is required whenever the cycle offers a choice. Re-checked
-    // here rather than trusting the client gate, for the same reason the
-    // required questions above are: a stale state or a replayed request must not
-    // land a submitted application with no start term. Falls back to what is
-    // already stored so a resubmit without the field keeps the earlier pick.
-    let startTermId: string | null | undefined;
-    if (startTermIsAsked) {
-      startTermId = readStartTerm(formData.get("startTermId"));
-      const effective =
-        startTermId !== undefined
-          ? startTermId
-          : (
-              await prisma.application.findUnique({
-                where: { id: applicationId },
-                select: { startTermId: true },
-              })
-            )?.startTermId ?? null;
-      if (!isOfferedStartTerm(offeredStartTermIds, effective)) {
-        return { error: "Choose the term you'd start in before submitting." };
-      }
-      startTermId = effective;
-    }
-
-    // Save final answers
-    await saveAnswers({ applicationId, answers, domainAnswers, startTermId, continued, generalFrozen });
-
-    // Persist final domain selection state
-    const toSelect = allDas.filter(da => selectedDomainIds.includes(da.domainId) && !da.selected);
-    const toDeselect = allDas.filter(da => !selectedDomainIds.includes(da.domainId) && da.selected);
-    if (toSelect.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: toSelect.map(da => da.id) } },
-        data: { selected: true },
-      });
-    }
-    if (toDeselect.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: toDeselect.map(da => da.id) } },
-        data: { selected: false },
-      });
-    }
-
-    // Stamp the submission time on every selected DA whose domain is open.
-    // A closed (frozen) one is left untouched, submitted or not.
-    const openSelectedDaIds = allDas
-      .filter(da => selectedDomainIds.includes(da.domainId) && !closedDomainIds.has(da.domainId))
-      .map(da => da.id);
-    if (openSelectedDaIds.length > 0) {
-      await prisma.domainApplication.updateMany({
-        where: { id: { in: openSelectedDaIds } },
-        data: { submittedAt: new Date() },
-      });
-    }
-
-    // Run server-side URL checks (non-blocking — warnings only)
-    const urlWarnings: Record<string, SubmissionCheckResult> = {};
-    const urlCheckResults = await Promise.all(
-      urlQuestions
-        .filter(q => q.url.trim())
-        .map(async q => ({
-          key: q.key,
-          result: await (
-            q.type === "figma_url"
-              ? checkFigmaUrl(q.url)
-              : q.type === "drive_url"
-                ? checkDriveUrl(q.url)
-                : checkGitHubUrl(q.url)
-          ),
-        })),
-    );
-    for (const { key, result } of urlCheckResults) {
-      if (result.status !== "valid") {
-        urlWarnings[key] = result;
-      }
-    }
-
-    if (Object.keys(urlWarnings).length > 0) {
-      return { urlWarnings };
-    }
-
-    // Create Submitted status update only on first submission
-    const existingSubmitted = await prisma.applicationStatusUpdate.findFirst({
-      where: { applicationId, newStatus: "Submitted" },
-    });
-    if (!existingSubmitted) {
-      await prisma.applicationStatusUpdate.create({
-        data: {
-          newStatus: "Submitted",
-          applicationId,
-          userId: auth.user.sub,
-        },
-      });
-      await logAuditEvent({
-        action: "application.submit",
-        userId: auth.user.sub,
-        targetId: applicationId,
-        metadata: { cycleId: application.applicationCycleId, domainIds: selectedDomainIds },
-        request,
-      });
-
-      // Best-effort confirmation email — enqueued to the outbox (keyed per
-      // application so a resubmit/retry can't double-send).
-      try {
-        const user = await prisma.user.findUnique({ where: { id: auth.user.sub } });
-        if (user) {
-          const to = user.dartmouthEmail ?? user.daliEmail ?? "";
-          if (to) {
-            const binding = await getHiringEmail(notificationSlot("ApplicationReceived"));
-            if (binding) {
-              // ApplicationReceived isn't tied to a single domain (an applicant
-              // may apply to multiple), so {{domain}} is intentionally not passed
-              // here — the registry reflects this and the editor warns leads who
-              // try to use {{domain}} in this slot.
-              const { subject, html } = renderForSlot(
-                notificationSlot("ApplicationReceived"),
-                binding,
-                { firstName: user.firstName },
-              );
-              const { id } = await enqueueOutbound({
-                channel: "email",
-                purpose: "Hiring",
-                dedupKey: `hiring.apply.confirmation:${application.applicationCycleId}:${auth.user.sub}`,
-                target: to,
-                subject,
-                bodyHtml: html,
-                recipientUserId: auth.user.sub,
-                eventType: "hiring.apply.confirmation",
-              });
-              await drainNow([id]);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Failed to send application confirmation email:", err);
-      }
-    }
-
-    // Signal first-time submission so the tracker can play a one-shot confetti.
-    // Subsequent edit-saves keep the plain redirect so the animation does not replay.
-    const tracker = `/portal/hiring?cycle=${cycle.id}`;
-    return redirect(existingSubmitted ? tracker : `${tracker}&just-submitted=1`);
-  }
-
-  return { error: "Unknown intent" };
+  return runPortalApplyAction(request);
 }
-
-// ─── Domain Colors ──────────────────────────────────────────────────────────
-
-const DOMAIN_COLORS = [
-  { border: "border-l-accent-pink", text: "text-accent-pink", bg: "bg-accent-pink", pillText: "text-white", cardBg: "bg-accent-pink/20" },
-  { border: "border-l-accent-teal", text: "text-accent-teal", bg: "bg-accent-teal", pillText: "text-white", cardBg: "bg-accent-teal/20" },
-  { border: "border-l-accent-yellow", text: "text-os-amber", bg: "bg-accent-yellow", pillText: "text-foreground", cardBg: "bg-accent-yellow/30" },
-  { border: "border-l-os-accent", text: "text-os-accent", bg: "bg-os-accent", pillText: "text-white", cardBg: "bg-os-accent/20" },
-  { border: "border-l-accent-green", text: "text-os-green", bg: "bg-accent-green", pillText: "text-foreground", cardBg: "bg-accent-green/30" },
-];
-
-function getDomainColor(index: number) {
-  return DOMAIN_COLORS[index % DOMAIN_COLORS.length];
-}
-
-// "Nov 13" — for the domain pill's secondary close-date label and its tooltip.
-function formatShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-// ─── Section Progress Helpers ───────────────────────────────────────────────
-
-type DomainColor = ReturnType<typeof getDomainColor>;
-
-type Section = {
-  id: string;
-  label: string;
-  color?: DomainColor;
-  requiredCount: number;
-  answeredRequiredCount: number;
-};
-
-type DomainShape = {
-  id: string;
-  name: string;
-  closeDate?: string | null;
-  closed?: boolean;
-  challenges: { challengeVersionId: string; challengeName: string; description: any; questions: Question[] }[];
-};
-
-function getPickedQuestions(
-  domain: DomainShape,
-  pickedCvId: string | null | undefined,
-): Question[] {
-  if (!pickedCvId) return [];
-  const picked = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
-  return picked?.questions ?? [];
-}
-
-// Required continued interest questions per domain reusing a waitlisted
-// application: how many there are and how many are answered.
-type ContinuedProgress = Record<string, { required: number; answered: number }>;
-
-// The general form is one form split around the domains step, so a rule may
-// point across the split: visibility is settled on the whole list, then divided.
-function visibleGeneralParts(formQuestions: Question[], answers: Record<string, string>) {
-  const visible = visibleKeys(formQuestions, answers);
-  const shown = formQuestions.filter(q => visible.has(q.key));
-  return {
-    before: shown.filter(q => !q.data.afterDomains),
-    after: shown.filter(q => q.data.afterDomains),
-  };
-}
-
-export function computeRequiredProgress(
-  formQuestions: Question[],
-  domains: DomainShape[],
-  selectedDomainIds: string[],
-  pickedChallengeByDomain: Record<string, string>,
-  answers: Record<string, string>,
-  domainAnswers: Record<string, Record<string, string>>,
-  continuedProgress: ContinuedProgress,
-  closedDomainIds: Set<string>,
-  generalFrozen: boolean,
-) {
-  let totalRequired = 0;
-  let totalAnswered = 0;
-
-  if (!generalFrozen) {
-    const { before, after } = visibleGeneralParts(formQuestions, answers);
-    const general = countRequired([...before, ...after], answers);
-    totalRequired += general.required;
-    totalAnswered += general.answered;
-  }
-
-  for (const domainId of selectedDomainIds) {
-    if (closedDomainIds.has(domainId)) continue;
-    const domain = domains.find(d => d.id === domainId);
-    if (!domain) continue;
-    const questions = visibleQuestions(
-      getPickedQuestions(domain, pickedChallengeByDomain[domainId]),
-      domainAnswers[domainId] ?? {},
-    );
-    const counted = countRequired(questions, domainAnswers[domainId]);
-    totalRequired += counted.required;
-    totalAnswered += counted.answered;
-    totalRequired += continuedProgress[domainId]?.required ?? 0;
-    totalAnswered += continuedProgress[domainId]?.answered ?? 0;
-  }
-
-  return { totalRequired, totalAnswered };
-}
-
-export function buildSections(
-  formQuestions: Question[],
-  domains: DomainShape[],
-  selectedDomainIds: string[],
-  pickedChallengeByDomain: Record<string, string>,
-  answers: Record<string, string>,
-  domainAnswers: Record<string, Record<string, string>>,
-  continuedProgress: ContinuedProgress,
-  closedDomainIds: Set<string>,
-  generalFrozen: boolean,
-): Section[] {
-  const sections: Section[] = [];
-  const { before: beforeQuestions, after: afterQuestions } = visibleGeneralParts(
-    formQuestions,
-    answers,
-  );
-
-  if (beforeQuestions.length > 0) {
-    const counted = generalFrozen
-      ? { required: 0, answered: 0 }
-      : countRequired(beforeQuestions, answers);
-    sections.push({
-      id: "general-before",
-      label: "General",
-      requiredCount: counted.required,
-      answeredRequiredCount: counted.answered,
-    });
-  }
-
-  for (const domainId of selectedDomainIds) {
-    const idx = domains.findIndex(d => d.id === domainId);
-    if (idx < 0) continue;
-    const domain = domains[idx];
-    if (domain.challenges.length === 0) continue;
-    const frozen = closedDomainIds.has(domainId);
-    const questions = visibleQuestions(
-      getPickedQuestions(domain, pickedChallengeByDomain[domainId]),
-      domainAnswers[domainId] ?? {},
-    );
-    const counted = frozen
-      ? { required: 0, answered: 0 }
-      : countRequired(questions, domainAnswers[domainId]);
-    sections.push({
-      id: `domain-${domainId}`,
-      label: domain.name,
-      color: getDomainColor(idx),
-      requiredCount: counted.required + (frozen ? 0 : continuedProgress[domainId]?.required ?? 0),
-      answeredRequiredCount:
-        counted.answered + (frozen ? 0 : continuedProgress[domainId]?.answered ?? 0),
-    });
-  }
-
-  if (afterQuestions.length > 0) {
-    const counted = generalFrozen
-      ? { required: 0, answered: 0 }
-      : countRequired(afterQuestions, answers);
-    sections.push({
-      id: "general-after",
-      label: "Anything Else",
-      requiredCount: counted.required,
-      answeredRequiredCount: counted.answered,
-    });
-  }
-
-  return sections;
-}
-
-// ─── SectionNav Component ───────────────────────────────────────────────────
-
-function scrollToSection(id: string) {
-  const el = document.getElementById(`section-${id}`);
-  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function SectionNavMobile({
-  sections,
-  activeSection,
-}: {
-  sections: Section[];
-  activeSection: string | null;
-}) {
-  if (sections.length === 0) return null;
-  return (
-    <div className="lg:hidden flex gap-2 overflow-x-auto pb-2">
-      {sections.map(s => {
-        const isActive = s.id === activeSection;
-        const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
-        const dotColor = s.color?.bg ?? "bg-os-accent";
-        return (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => scrollToSection(s.id)}
-            className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-              isActive
-                ? "bg-os-accent text-os-bg border-os-accent"
-                : "bg-card text-foreground border-border hover:border-os-accent"
-            }`}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
-            <span>{s.label}</span>
-            {s.requiredCount > 0 && (
-              isComplete ? (
-                <svg className="w-3.5 h-3.5 text-os-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : (
-                <span className={isActive ? "text-white/80" : "text-muted-foreground"}>
-                  {s.answeredRequiredCount}/{s.requiredCount}
-                </span>
-              )
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-function SectionNavDesktop({
-  sections,
-  activeSection,
-}: {
-  sections: Section[];
-  activeSection: string | null;
-}) {
-  if (sections.length === 0) return null;
-  return (
-    <aside className="hidden lg:block">
-      <div className="sticky top-24 space-y-1">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-2">
-          Sections
-        </p>
-        {sections.map(s => {
-          const isActive = s.id === activeSection;
-          const isComplete = s.requiredCount > 0 && s.answeredRequiredCount === s.requiredCount;
-          const dotColor = s.color?.bg ?? "bg-os-accent";
-          return (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => scrollToSection(s.id)}
-              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm transition text-left ${
-                isActive
-                  ? "bg-os-container text-foreground font-semibold"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
-              <span className="flex-1 truncate">{s.label}</span>
-              {s.requiredCount > 0 && (
-                isComplete ? (
-                  <svg className="w-4 h-4 text-os-green shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
-                    {s.answeredRequiredCount}/{s.requiredCount}
-                  </span>
-                )
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </aside>
-  );
-}
-
-// ─── BackToTopButton Component ──────────────────────────────────────────────
-
-function BackToTopButton() {
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    function onScroll() {
-      setVisible(window.scrollY > 600);
-    }
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
-
-  if (!visible) return null;
-
-  return (
-    <button
-      type="button"
-      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-      aria-label="Back to top"
-      className="fixed bottom-6 right-6 z-30 w-11 h-11 rounded-full bg-os-accent text-os-bg shadow-lg hover:bg-os-accent-hover transition flex items-center justify-center"
-    >
-      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
-      </svg>
-    </button>
-  );
-}
-
-// ─── Main Component ──────────────────────────────────────────────────────────
-
-type CycleChoice = { id: string; name: string; closeDate: string | null; href: string };
 
 export default function PortalApply() {
-  const loaderData = useLoaderData<typeof loader>() as any;
-  if (loaderData.choose) return <CycleChooser cycles={loaderData.choose as CycleChoice[]} />;
-  return <ApplyForm key={loaderData.formKey} />;
+  const loaderData = useLoaderData<typeof loader>();
+  if (loaderData.kind === "choose") return <CycleChooser cycles={loaderData.choose} />;
+  return <ApplyForm key={loaderData.formKey} loaderData={loaderData} />;
 }
 
-// Several Students cycles open at once: pick which one to apply to.
-function CycleChooser({ cycles }: { cycles: CycleChoice[] }) {
-  return (
-    <div className="py-10 px-6">
-      <h1 className="font-heading text-4xl font-medium text-foreground mb-6">Pick a cycle</h1>
-      <ul className="flex flex-col gap-3">
-        {cycles.map((c) => (
-          <li key={c.id}>
-            <Link
-              to={c.href}
-              className="flex items-center justify-between gap-4 rounded-os-card bg-os-card px-5 py-4 hover:border-os-accent/50 transition"
-            >
-              <span className="font-medium text-foreground">{c.name}</span>
-              {c.closeDate && (
-                <span className="text-sm text-muted-foreground">
-                  Closes{" "}
-                  {new Date(c.closeDate).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                </span>
-              )}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
+type ApplyLoaderData = Extract<ReturnType<typeof useLoaderData<typeof loader>>, { kind: "apply" }>;
 
-function ApplyForm() {
+function ApplyForm({ loaderData }: { loaderData: ApplyLoaderData }) {
   const toast = useToast();
-  const loaderData = useLoaderData<typeof loader>() as any;
   const { cycleId, cycleName, applicationFormVersionId, formQuestions, generalDescription, domains, isAlreadySubmitted, hasChallenges } = loaderData;
   // Empty unless the cycle offers a real choice (two or more) and the flag is on.
   const startTermOptions: { id: string; code: string }[] = loaderData.startTermOptions ?? [];
@@ -1341,7 +127,6 @@ function ApplyForm() {
   const [error, setError] = useState<string | null>(null);
   const [urlWarnings, setUrlWarnings] = useState<Record<string, string>>({});
   const [wordCountErrors, setWordCountErrors] = useState<Record<string, WordCountViolation>>({});
-  const [urlChecks, setUrlChecks] = useState<Record<string, UrlCheckState>>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1377,7 +162,7 @@ function ApplyForm() {
   }
 
   function buildDomainAnswersPayload() {
-    return (draft.domainApplications ?? [])
+    return (draft?.domainApplications ?? [])
       .filter((da: any) => selectedDomainIds.includes(da.domainId))
       .map((da: any) => ({
         domainApplicationId: da.id,
@@ -1417,7 +202,7 @@ function ApplyForm() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     await doSave();
     reuseFetcher.submit(
-      { intent: "stop-using-waitlisted", applicationId: draft.id, domainId },
+      { intent: "stop-using-waitlisted", applicationId: draft?.id ?? "", domainId },
       { method: "post" },
     );
   }
@@ -1456,41 +241,6 @@ function ApplyForm() {
       setSaving(false);
     }
   }
-
-  const checkUrlField = useCallback(async (key: string, url: string, type: "github_url" | "figma_url" | "drive_url") => {
-    if (!url.trim()) {
-      setUrlChecks(prev => ({ ...prev, [key]: { status: "idle" } }));
-      return;
-    }
-    setUrlChecks(prev => ({ ...prev, [key]: { status: "checking" } }));
-    try {
-      const res = await fetch("/api/check-url", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, type }),
-      });
-      if (!res.ok) {
-        const errorBody = await res.json().catch(() => ({}));
-        const message =
-          res.status === 429
-            ? "Too many checks — please wait a moment and try again"
-            : errorBody.error ?? `Unexpected error (${res.status})`;
-        setUrlChecks(prev => ({
-          ...prev,
-          [key]: { status: "done", result: { status: "error" as const, url, message } },
-        }));
-        return;
-      }
-      const result: SubmissionCheckResult = await res.json();
-      setUrlChecks(prev => ({ ...prev, [key]: { status: "done", result } }));
-    } catch {
-      setUrlChecks(prev => ({
-        ...prev,
-        [key]: { status: "done", result: { status: "error", url, message: "Failed to check URL" } },
-      }));
-    }
-  }, []);
 
   function buildSelectedDomainsPayload(
     ids: string[],
@@ -1663,90 +413,18 @@ function ApplyForm() {
     return null;
   }
 
-  // Collect every non-empty github_url / figma_url / drive_url answer across the
-  // general form and each picked domain challenge. Used by both the pre-review
-  // check and the final submit payload.
-  type UrlQuestionType = "github_url" | "figma_url" | "drive_url";
-  function isUrlType(t: string): t is UrlQuestionType {
-    return t === "github_url" || t === "figma_url" || t === "drive_url";
-  }
-  function collectUrlQuestions(): { key: string; url: string; type: UrlQuestionType }[] {
-    const urlQuestions: { key: string; url: string; type: UrlQuestionType }[] = [];
-    // Frozen waitlisted answers aren't re-checked: the applicant can't fix them.
-    for (const q of generalLocked ? [] : visibleQuestions(formQuestions as Question[], answers)) {
-      if (isUrlType(q.type) && answers[q.key]?.trim()) {
-        urlQuestions.push({ key: q.key, url: answers[q.key], type: q.type });
-      }
-    }
-    for (const domainId of selectedDomainIds) {
-      const domain = (domains as DomainShape[]).find((d: DomainShape) => d.id === domainId);
-      if (!domain) continue;
-      const [questions, source] = continuedFrom[domainId]
-        ? [continuedInterest?.questions ?? [], continuedAnswers[domainId]]
-        : [getPickedQuestions(domain, pickedChallengeByDomain[domainId]), domainAnswers[domainId]];
-      for (const q of visibleQuestions(questions, source ?? {})) {
-        if (isUrlType(q.type) && source?.[q.key]?.trim()) {
-          urlQuestions.push({ key: q.key, url: source[q.key], type: q.type });
-        }
-      }
-    }
-    return urlQuestions;
-  }
-
-  // Re-check every URL answer before opening the review modal so the applicant
-  // can react to a private/empty link *before* the "last look" preview rather
-  // than after they've already clicked Confirm. Reuses cached `urlChecks`
-  // results when the value hasn't changed since the on-blur check.
-  async function runUrlChecksForReview(): Promise<Record<string, string>> {
-    const urlQuestions = collectUrlQuestions();
-    if (urlQuestions.length === 0) return {};
-
-    const results = await Promise.all(
-      urlQuestions.map(async q => {
-        const cached = urlChecks[q.key];
-        if (cached?.status === "done" && cached.result && cached.result.url === q.url) {
-          return { key: q.key, result: cached.result };
-        }
-        try {
-          const res = await fetch("/api/check-url", {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: q.url, type: q.type }),
-          });
-          if (!res.ok) {
-            const errorBody = await res.json().catch(() => ({}));
-            const message =
-              res.status === 429
-                ? "Too many checks — please wait a moment and try again"
-                : errorBody.error ?? `Unexpected error (${res.status})`;
-            return { key: q.key, result: { status: "error" as const, url: q.url, message } };
-          }
-          const result: SubmissionCheckResult = await res.json();
-          return { key: q.key, result };
-        } catch {
-          return {
-            key: q.key,
-            result: { status: "error" as const, url: q.url, message: "Failed to check URL" },
-          };
-        }
-      }),
-    );
-
-    setUrlChecks(prev => {
-      const next = { ...prev };
-      for (const { key, result } of results) {
-        next[key] = { status: "done", result };
-      }
-      return next;
-    });
-
-    const warnings: Record<string, string> = {};
-    for (const { key, result } of results) {
-      if (result.status !== "valid") warnings[key] = result.message;
-    }
-    return warnings;
-  }
+  const { urlChecks, checkUrlField, collectUrlQuestions, runUrlChecksForReview } = useApplyUrlChecks({
+    formQuestions: formQuestions as Question[],
+    answers,
+    generalLocked,
+    domains: domains as DomainShape[],
+    selectedDomainIds,
+    continuedFrom,
+    continuedInterest,
+    continuedAnswers,
+    domainAnswers,
+    pickedChallengeByDomain,
+  });
 
   async function openReviewIfValid() {
     setError(null);
@@ -2026,60 +704,14 @@ function ApplyForm() {
     </button>
   );
   const waitlistedModal = (
-    <Modal
+    <WaitlistedModal
       open={showWaitlistedModal}
       onClose={() => setShowWaitlistedModal(false)}
-      labelledBy="waitlisted-modal-title"
-      disableEscape={reusing}
-    >
-      <h3 id="waitlisted-modal-title" className="font-heading text-base font-bold text-foreground mb-1">
-        Use a waitlisted application
-      </h3>
-      <p className="text-sm text-muted-foreground mb-4">
-        Pick one to apply with it again. It replaces your general answers and that domain's answers
-        here, and you fill out a short continued interest form.
-      </p>
-      <ul className="flex flex-col gap-2">
-        {waitlistedApplications.map(option => {
-          const inUse = !!continuedFrom[option.domainId];
-          return (
-            <li key={option.domainApplicationId}>
-              <button
-                type="button"
-                disabled={reusing || inUse}
-                onClick={() => reuseWaitlisted(option)}
-                className="flex w-full items-center justify-between gap-4 rounded-os-item bg-os-well px-4 py-3 text-left transition-colors hover:bg-os-card-hover disabled:opacity-60 disabled:hover:bg-os-well"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {option.domainName}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {option.cycleName} · Waitlisted{" "}
-                    {new Date(option.waitlistedAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </span>
-                </span>
-                {inUse && <Pill outline>In use</Pill>}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="flex justify-end pt-5">
-        <button
-          type="button"
-          onClick={() => setShowWaitlistedModal(false)}
-          disabled={reusing}
-          className={buttonClasses("secondary")}
-        >
-          Cancel
-        </button>
-      </div>
-    </Modal>
+      reusing={reusing}
+      options={waitlistedApplications}
+      continuedFrom={continuedFrom}
+      onReuse={reuseWaitlisted}
+    />
   );
 
   // No draft yet — show domain selector + start button
@@ -2215,205 +847,30 @@ function ApplyForm() {
         })()}
 
         {/* Domain-specific questions — colored left border cards */}
-        {selectedDomainIds.map(domainId => {
-          const domainIndex = (domains as DomainShape[]).findIndex((d: DomainShape) => d.id === domainId);
-          const domain = (domains as DomainShape[])[domainIndex];
-          const waitlistedCycle = continuedFrom[domainId];
-          // No challenges, no per-domain questions: the domain pick is enough.
-          if (!domain || (!hasChallenges && !waitlistedCycle)) return null;
-          const color = getDomainColor(domainIndex);
-          const pickedCvId = pickedChallengeByDomain[domainId] ?? null;
-          const pickedQuestions = getPickedQuestions(domain, pickedCvId);
-          const showPicker = domain.challenges.length > 1;
-
-          // Reusing a waitlisted application: its answers read-only, then the
-          // continued interest form.
-          if (waitlistedCycle) {
-            return (
-              <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-os-card ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
-                    {domain.name} Questions
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => stopReusing(domainId, domain.name)}
-                    disabled={reusing}
-                    className={buttonClasses("secondary", "sm")}
-                  >
-                    Start a new application
-                  </button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Your waitlisted application from {waitlistedCycle}. These answers can't be edited.
-                </p>
-                {pickedQuestions.length > 0 && (
-                  <QuestionList
-                    questions={pickedQuestions}
-                    answers={domainAnswers[domainId] ?? {}}
-                    presigned={false}
-                  />
-                )}
-                <div className="border-t border-border pt-6 space-y-6">
-                  <h4 className="font-heading text-sm font-bold text-foreground uppercase tracking-wider">
-                    Continued Interest
-                  </h4>
-                  {!isEmptyBlocks(continuedInterest?.description) && (
-                    <div className="text-foreground">
-                      <DocEditor
-                        features="notes"
-                        density="compact"
-                        editable={false}
-                        initialContent={continuedInterest!.description}
-                      />
-                    </div>
-                  )}
-                  {visibleQuestions(continuedInterest?.questions ?? [], continuedAnswers[domainId] ?? {}).map(q => (
-                    <FormField
-                      key={q.key}
-                      id={`question-${q.key}`}
-                      question={q}
-                      labelClassName="font-semibold"
-                      value={continuedAnswers[domainId]?.[q.key] ?? ""}
-                      onChange={v => setContinuedAnswer(domainId, q.key, v)}
-                      urlCheckState={urlChecks[q.key]}
-                      onUrlBlur={() => checkUrlField(q.key, continuedAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
-                      belowField={
-                        <>
-                          {urlWarnings[q.key] && (
-                            <p className="text-xs text-os-amber mt-1">{urlWarnings[q.key]}</p>
-                          )}
-                          {wordCountErrors[q.key] && (
-                            <p className="text-xs text-destructive mt-1">
-                              Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
-                            </p>
-                          )}
-                        </>
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-            );
-          }
-
-          const frozen = closedDomainIds.has(domainId);
-
-          if (frozen) {
-            return (
-              <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-os-card ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
-                <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
-                  {domain.name} Questions
-                </h3>
-                <p className="text-xs text-muted-foreground">
-                  Closed {domain.closeDate ? formatShortDate(domain.closeDate) : ""}. This part is under
-                  review and can't be changed.
-                </p>
-                {pickedQuestions.length > 0 && (
-                  <QuestionList
-                    questions={pickedQuestions}
-                    answers={domainAnswers[domainId] ?? {}}
-                    presigned={false}
-                  />
-                )}
-              </div>
-            );
-          }
-
-          return (
-            <div key={domainId} id={`section-domain-${domainId}`} className={`rounded-os-card ${color.cardBg} px-6 py-5 space-y-6 scroll-mt-24`}>
-              <div className="flex items-center justify-between">
-                <h3 className={`font-heading text-sm font-bold uppercase tracking-wider ${color.text}`}>
-                  {domain.name} Questions
-                </h3>
-                <button
-                  onClick={() => toggleDomain(domainId)}
-                  aria-label={`Remove ${domain.name}`}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {showPicker && (
-                <div>
-                  <p className="text-xs font-semibold text-foreground mb-2">
-                    Choose your {domain.name} challenge <span className="os-required-mark">*</span>
-                  </p>
-                  <div className="space-y-2">
-                    {domain.challenges.map(c => (
-                      <Radio
-                        key={c.challengeVersionId}
-                        name={`challenge-${domainId}`}
-                        value={c.challengeVersionId}
-                        checked={pickedCvId === c.challengeVersionId}
-                        onChange={() => handleChallengePick(domainId, c.challengeVersionId)}
-                        label={<span className="text-foreground">{c.challengeName}</span>}
-                        className="text-sm"
-                      />
-                    ))}
-                  </div>
-                  {pickedCvId && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Switching to a different challenge will clear your answers for this domain.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {pickedCvId ? (
-                <>
-                  {(() => {
-                    const pickedChallenge = domain.challenges.find(c => c.challengeVersionId === pickedCvId);
-                    return !isEmptyBlocks(pickedChallenge?.description) ? (
-                      <div className="text-foreground">
-                        {/* Keyed per picked challenge: DocEditor reads
-                            initialContent once, so switching must remount. */}
-                        <DocEditor
-                          key={pickedCvId}
-                          features="notes"
-                          density="compact"
-                          editable={false}
-                          initialContent={pickedChallenge!.description}
-                        />
-                      </div>
-                    ) : null;
-                  })()}
-                  {visibleQuestions(pickedQuestions, domainAnswers[domainId] ?? {}).map((q: Question) => (
-                    <FormField
-                      key={q.key}
-                      id={`question-${q.key}`}
-                      question={q}
-                      labelClassName="font-semibold"
-                      value={domainAnswers[domainId]?.[q.key] ?? ""}
-                      onChange={v => setDomainAnswer(domainId, q.key, v)}
-                      urlCheckState={urlChecks[q.key]}
-                      onUrlBlur={() => checkUrlField(q.key, domainAnswers[domainId]?.[q.key] ?? "", q.type as "github_url" | "figma_url" | "drive_url")}
-                      belowField={
-                        <>
-                          {urlWarnings[q.key] && (
-                            <p className="text-xs text-os-amber mt-1">{urlWarnings[q.key]}</p>
-                          )}
-                          {wordCountErrors[q.key] && (
-                            <p className="text-xs text-destructive mt-1">
-                              Over the {wordCountErrors[q.key].maxWords}-word limit ({wordCountErrors[q.key].wordCount} words).
-                            </p>
-                          )}
-                        </>
-                      }
-                    />
-                  ))}
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  Pick a challenge above to see this domain's questions.
-                </p>
-              )}
-            </div>
-          );
-        })}
+        {selectedDomainIds.map(domainId => (
+          <DomainQuestionsCard
+            key={domainId}
+            domainId={domainId}
+            domains={domains as DomainShape[]}
+            hasChallenges={hasChallenges}
+            continuedFrom={continuedFrom}
+            continuedInterest={continuedInterest}
+            continuedAnswers={continuedAnswers}
+            domainAnswers={domainAnswers}
+            pickedChallengeByDomain={pickedChallengeByDomain}
+            closedDomainIds={closedDomainIds}
+            urlChecks={urlChecks}
+            urlWarnings={urlWarnings}
+            wordCountErrors={wordCountErrors}
+            reusing={reusing}
+            stopReusing={stopReusing}
+            toggleDomain={toggleDomain}
+            handleChallengePick={handleChallengePick}
+            setDomainAnswer={setDomainAnswer}
+            setContinuedAnswer={setContinuedAnswer}
+            checkUrlField={checkUrlField}
+          />
+        ))}
 
         {/* General questions (after domains — "anything else") */}
         {(() => {
@@ -2520,245 +977,58 @@ function ApplyForm() {
 
       <BackToTopButton />
 
-      {/* Pre-submit review modal */}
-      <Modal
+      <ApplyReviewModal
         open={showReviewModal}
         onClose={() => setShowReviewModal(false)}
-        labelledBy="review-modal-title"
-        disableEscape={submitting}
-        containerClassName={modalCardClass("max-w-2xl")}
-      >
-        <h3 id="review-modal-title" className="font-heading text-base font-bold text-foreground mb-1">
-          {isAlreadySubmitted ? "Review your changes" : "Review your application"}
-        </h3>
-        <p className="text-sm text-muted-foreground mb-5">
-          Take one last look at your answers before {isAlreadySubmitted ? "updating" : "submitting"}. You can still go back to edit.
-        </p>
+        onConfirm={() => {
+          setShowReviewModal(false);
+          doSubmit(acceptedUrlWarnings);
+        }}
+        submitting={submitting}
+        isAlreadySubmitted={isAlreadySubmitted}
+        startTermOptions={startTermOptions}
+        startTermId={startTermId}
+        selectedDomainIds={selectedDomainIds}
+        domains={domains as DomainShape[]}
+        closedDomainIds={closedDomainIds}
+        formQuestions={formQuestions as Question[]}
+        answers={answers}
+        domainAnswers={domainAnswers}
+        pickedChallengeByDomain={pickedChallengeByDomain}
+        continuedFrom={continuedFrom}
+        continuedInterest={continuedInterest}
+        continuedAnswers={continuedAnswers}
+      />
 
-        <div className="space-y-5">
-          {/* Start term is a first-class field, not an answer, so it is not
-              in any QuestionList below. validateForReview guarantees one is
-              picked whenever the cycle offers a choice. */}
-          {startTermOptions.length > 0 && (
-            <div className="rounded-os-card bg-os-card px-5 py-4">
-              <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-1">
-                Start term
-              </h4>
-              <p className="text-sm text-foreground">
-                {(() => {
-                  const picked = startTermOptions.find(t => t.id === startTermId);
-                  return picked ? termCodeLabel(picked.code) : "Not selected";
-                })()}
-              </p>
-            </div>
-          )}
-
-          {/* The per-domain cards below only appear for domains with
-              questions, so list the picks themselves here. */}
-          <div className="rounded-os-card bg-os-card px-5 py-4">
-            <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-1">
-              Domains
-            </h4>
-            <p className="text-sm text-foreground">
-              {selectedDomainIds
-                .map(id => (domains as DomainShape[]).find(d => d.id === id)?.name)
-                .filter(Boolean)
-                .join(", ") || "None selected"}
-            </p>
-            {(() => {
-              const closedSelected = selectedDomainIds.filter(id => closedDomainIds.has(id));
-              if (closedSelected.length === 0) return null;
-              const openNames = selectedDomainIds
-                .filter(id => !closedDomainIds.has(id))
-                .map(id => (domains as DomainShape[]).find(d => d.id === id)?.name)
-                .filter(Boolean);
-              const closedNames = closedSelected
-                .map(id => (domains as DomainShape[]).find(d => d.id === id)?.name)
-                .filter(Boolean);
-              return (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Submitting now: {openNames.join(", ") || "none"}. {closedNames.join(", ")}{" "}
-                  {closedNames.length === 1 ? "is" : "are"} closed and under review, not resubmitted.
-                </p>
-              );
-            })()}
-          </div>
-
-          {(() => {
-            const { before: beforeQuestions } = visibleGeneralParts(formQuestions as Question[], answers);
-            return beforeQuestions.length > 0 ? (
-              <div className="rounded-os-card bg-os-card px-5 py-4">
-                <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-4">
-                  General Questions
-                </h4>
-                {/* Apply page only has S3 keys, not presigned URLs — show filenames only */}
-                <QuestionList questions={beforeQuestions} answers={answers} presigned={false} />
-              </div>
-            ) : null;
-          })()}
-
-          {selectedDomainIds.map(domainId => {
-            const domainIndex = (domains as DomainShape[]).findIndex((d: DomainShape) => d.id === domainId);
-            const domain = (domains as DomainShape[])[domainIndex];
-            if (!domain) return null;
-            const pickedCvId = pickedChallengeByDomain[domainId] ?? null;
-            const pickedQuestions = getPickedQuestions(domain, pickedCvId);
-            const continuedQuestions = continuedFrom[domainId] ? (continuedInterest?.questions ?? []) : [];
-            if (pickedQuestions.length === 0 && continuedQuestions.length === 0) return null;
-            const pickedName = domain.challenges.find(c => c.challengeVersionId === pickedCvId)?.challengeName;
-            const color = getDomainColor(domainIndex);
-            return (
-              <div key={domainId} className={`rounded-os-card ${color.cardBg} px-5 py-4`}>
-                <h4 className={`font-heading text-xs font-bold uppercase tracking-wider mb-1 ${color.text}`}>
-                  {domain.name}
-                </h4>
-                {pickedName && domain.challenges.length > 1 && (
-                  <p className="text-xs text-muted-foreground mb-3">Challenge: {pickedName}</p>
-                )}
-                {pickedQuestions.length > 0 && (
-                  <QuestionList
-                    questions={pickedQuestions}
-                    answers={domainAnswers[domainId] ?? {}}
-                    presigned={false}
-                  />
-                )}
-                {continuedQuestions.length > 0 && (
-                  <div className={pickedQuestions.length > 0 ? "mt-5 border-t border-border pt-4" : undefined}>
-                    <p className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">
-                      Continued Interest
-                    </p>
-                    <QuestionList
-                      questions={continuedQuestions}
-                      answers={continuedAnswers[domainId] ?? {}}
-                      presigned={false}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {(() => {
-            const { after: afterQuestions } = visibleGeneralParts(formQuestions as Question[], answers);
-            return afterQuestions.length > 0 ? (
-              <div className="rounded-os-card bg-os-card px-5 py-4">
-                <h4 className="font-heading text-xs font-bold text-foreground uppercase tracking-wider mb-4">
-                  Anything Else
-                </h4>
-                <QuestionList questions={afterQuestions} answers={answers} presigned={false} />
-              </div>
-            ) : null;
-          })()}
-        </div>
-
-        <div className="flex gap-3 justify-end pt-5 mt-5 border-t border-border">
-          <button
-            type="button"
-            onClick={() => setShowReviewModal(false)}
-            disabled={submitting}
-            className={buttonClasses("secondary")}
-          >
-            Go Back and Edit
-          </button>
-          <button
-            type="button"
-            onClick={() => { setShowReviewModal(false); doSubmit(acceptedUrlWarnings); }}
-            disabled={submitting}
-            className={buttonClasses("primary")}
-          >
-            {submitting ? "Submitting..." : "Confirm Submission"}
-          </button>
-        </div>
-      </Modal>
-
-      {/* URL warning modal */}
-      <Modal
+      <UrlWarningModal
         open={showWarningModal}
-        onClose={() => {
+        onFix={() => {
           setShowWarningModal(false);
           scrollToFirstWarning();
         }}
-        labelledBy="url-warning-modal-title"
-      >
-        <h3 id="url-warning-modal-title" className="font-heading text-base font-bold text-foreground mb-2">Some links may be inaccessible</h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          One or more URLs appear to be private or inaccessible. Reviewers may not be able to view them.
-        </p>
-        <ul className="space-y-2 mb-5">
-          {Object.entries(urlWarnings).map(([key, message]) => {
-            const allQuestions = [
-              ...(formQuestions as Question[]),
-              ...(domains as DomainShape[]).flatMap((d: DomainShape) =>
-                d.challenges.flatMap(c => c.questions),
-              ),
-            ];
-            const q = allQuestions.find(q => q.key === key);
-            return (
-              <li key={key} className="text-sm text-os-amber bg-os-amber/15 rounded-lg px-3 py-2">
-                <span className="font-semibold">{q?.data.label ?? key}:</span> {message}
-              </li>
-            );
-          })}
-        </ul>
-        <div className="flex gap-3 justify-end">
-          <button
-            onClick={() => {
-              setShowWarningModal(false);
-              scrollToFirstWarning();
-            }}
-            className={buttonClasses("secondary")}
-          >
-            Go Back and Fix
-          </button>
-          <button
-            onClick={() => {
-              setAcceptedUrlWarnings(true);
-              setShowWarningModal(false);
-              setShowReviewModal(true);
-            }}
-            disabled={submitting}
-            className={buttonClasses("primary")}
-          >
-            Submit Anyway
-          </button>
-        </div>
-      </Modal>
+        onSubmitAnyway={() => {
+          setAcceptedUrlWarnings(true);
+          setShowWarningModal(false);
+          setShowReviewModal(true);
+        }}
+        submitting={submitting}
+        urlWarnings={urlWarnings}
+        formQuestions={formQuestions as Question[]}
+        domains={domains as DomainShape[]}
+      />
 
       {waitlistedModal}
 
-      {/* Confirm challenge switch — wipes domain answers */}
-      <Modal
+      <ChallengeSwitchModal
         open={pendingChallengeChange !== null}
-        onClose={() => setPendingChallengeChange(null)}
-        labelledBy="challenge-switch-title"
-      >
-        <h3 id="challenge-switch-title" className="font-heading text-base font-bold text-foreground mb-2">
-          Switch challenge?
-        </h3>
-        <p className="text-sm text-muted-foreground mb-4">
-          Switching to a different challenge will clear the answers you've already written
-          for this domain, since each challenge has its own questions. This can't be undone.
-        </p>
-        <div className="flex gap-3 justify-end">
-          <button
-            onClick={() => setPendingChallengeChange(null)}
-            className={buttonClasses("secondary")}
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => {
-              if (pendingChallengeChange) {
-                applyChallengePick(pendingChallengeChange.domainId, pendingChallengeChange.toCvId);
-              }
-              setPendingChallengeChange(null);
-            }}
-            className={buttonClasses("primary")}
-          >
-            Switch and Clear Answers
-          </button>
-        </div>
-      </Modal>
+        onCancel={() => setPendingChallengeChange(null)}
+        onConfirm={() => {
+          if (pendingChallengeChange) {
+            applyChallengePick(pendingChallengeChange.domainId, pendingChallengeChange.toCvId);
+          }
+          setPendingChallengeChange(null);
+        }}
+      />
     </div>
   );
 }

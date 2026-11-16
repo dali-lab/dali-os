@@ -11,9 +11,9 @@ vi.mock("~/lib/cors", () => ({
 }));
 vi.mock("~/lib/outbound.server", () => ({ enqueueOutbound: vi.fn(), drainNow: vi.fn() }));
 vi.mock("~/slack/lib/slack-client", () => ({ slackConfigured: vi.fn() }));
+vi.mock("~/slack/lib/send-gate", () => ({ slackSendAllowed: vi.fn() }));
 vi.mock("~/lib/notify.server", () => ({
   notify: vi.fn(),
-  slackDmAllowed: vi.fn(),
   absoluteLink: vi.fn((l: string) => `https://os.example.edu${l}`),
 }));
 vi.mock("../../lib/visibility", () => ({
@@ -31,7 +31,8 @@ import { isCore } from "~/lib/roles";
 import { handlePreflight } from "~/lib/cors";
 import { enqueueOutbound, drainNow } from "~/lib/outbound.server";
 import { slackConfigured } from "~/slack/lib/slack-client";
-import { notify, slackDmAllowed } from "~/lib/notify.server";
+import { notify } from "~/lib/notify.server";
+import { slackSendAllowed } from "~/slack/lib/send-gate";
 import { mentorshipPairWhere, mentorNoteWhere } from "../../lib/visibility";
 import { buildGrid } from "../../lib/mentor-grid.server";
 import { action } from "../api.mentorship.nudge";
@@ -89,7 +90,7 @@ beforeEach(() => {
     { id: "m2", firstName: "Katherine", lastName: "Johnson", slackUserId: null },
   ]);
   vi.mocked(slackConfigured).mockReturnValue(true);
-  vi.mocked(slackDmAllowed).mockReturnValue(true);
+  vi.mocked(slackSendAllowed).mockReturnValue(true);
   vi.mocked(enqueueOutbound).mockResolvedValue({ id: "ob1", deduped: false } as any);
 });
 
@@ -231,7 +232,7 @@ describe("Slack delivery", () => {
 
   it.each([
     ["Slack not configured", () => vi.mocked(slackConfigured).mockReturnValue(false)],
-    ["Slack DMs not allowed in this environment", () => vi.mocked(slackDmAllowed).mockReturnValue(false)],
+    ["Slack DMs not allowed in this environment", () => vi.mocked(slackSendAllowed).mockReturnValue(false)],
   ])("sends nothing when %s but reports who would be messaged", async (_n, setup) => {
     setup();
     const res = await post({ termId: "term1" });
@@ -260,7 +261,7 @@ describe("in-app notification", () => {
   });
 
   it("still records the in-app trail when Slack is gated off", async () => {
-    vi.mocked(slackDmAllowed).mockReturnValue(false);
+    vi.mocked(slackSendAllowed).mockReturnValue(false);
     await post({ termId: "term1", mentorId: "m2" });
     expect((vi.mocked(notify).mock.calls[0][0] as any).recipients.map((r: any) => r.userId)).toEqual(["m2"]);
   });

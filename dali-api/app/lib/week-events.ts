@@ -1,4 +1,4 @@
-import type { GeneralCalendarEvent } from "~/lib/general-calendar";
+import type { GeneralCalendarEvent } from "~/calendar/lib/general-calendar";
 import type {
   WeekDayDTO,
   WeekEvent,

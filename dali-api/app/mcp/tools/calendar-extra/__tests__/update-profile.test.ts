@@ -77,6 +77,25 @@ describe("update_profile", () => {
     ).rejects.toMatchObject({ name: "McpInvalidError", message: "That handle is already taken" });
   });
 
+  it("names a taken handle when the pg adapter reports only the constraint index", async () => {
+    mockPrisma.user.update.mockRejectedValue({
+      code: "P2002",
+      meta: { modelName: "User", driverAdapterError: { cause: { constraint: { index: "User_handle_key" } } } },
+    });
+    await expect(
+      runUpdateProfile("u1", { handle: "taken" }),
+    ).rejects.toMatchObject({ name: "McpInvalidError", message: "That handle is already taken" });
+  });
+
+  it("never writes a netId even if one is passed", async () => {
+    mockPrisma.user.update.mockResolvedValue({});
+    const out = await runUpdateProfile("u1", { major: "Math", netId: "f00ada" } as never);
+    expect(out.updated).toEqual({ major: "Math" });
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { major: "Math" } }),
+    );
+  });
+
   // ── Happy path: original fields ───────────────────────────────────────────
 
   it("updates fields including the display timezone", async () => {

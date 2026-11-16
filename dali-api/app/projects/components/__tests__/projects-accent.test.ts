@@ -8,7 +8,7 @@ const FILES = [
   "routes/projects.$id.tsx",
   "routes/projects.hub.tsx",
   "routes/projects.$id.public-view.tsx",
-  "routes/projects.level-up.tsx",
+  "../core/routes/core.level-up.tsx",
   "components/ShowcaseDetailList.tsx",
   "components/ShowcaseMediaEditor.tsx",
   "components/ProjectImageBanner.tsx",

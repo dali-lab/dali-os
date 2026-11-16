@@ -15,6 +15,7 @@ export function PeopleFilter({
   disabled = false,
   emptyLabel = "All people",
   clearLabel = "Clear filter",
+  ariaLabel = "People",
 }: {
   options: PersonOption[];
   selected: string[];
@@ -25,6 +26,7 @@ export function PeopleFilter({
   emptyLabel?: string;
   /** Footer action label — "Clear filter" vs "Clear". */
   clearLabel?: string;
+  ariaLabel?: string;
 }) {
   const people = new Map(options.map((o) => [o.id, o]));
   const hasChosen = selected.some((id) => people.has(id));
@@ -34,6 +36,7 @@ export function PeopleFilter({
       values={selected}
       onChange={onChange}
       disabled={disabled}
+      ariaLabel={ariaLabel}
       chips={false}
       clearLabel={clearLabel}
       searchPlaceholder="Search people"

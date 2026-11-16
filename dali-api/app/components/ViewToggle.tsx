@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { LayoutGrid, List } from "lucide-react";
 import { cn } from "~/lib/cn";
+import { readStorage, writeStorage } from "~/lib/safe-storage";
 
 export type ListView = "list" | "card";
 
@@ -12,14 +13,13 @@ export function useViewPreference(storageKey: string, fallback: ListView = "list
   const [view, setView] = useState<ListView>(fallback);
   // Hydrate from localStorage on the client only — guards against SSR mismatch.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem(storageKey);
+    const stored = readStorage(storageKey);
     if (stored === "list" || stored === "card") setView(stored);
   }, [storageKey]);
 
   const set = (next: ListView) => {
     setView(next);
-    if (typeof window !== "undefined") window.localStorage.setItem(storageKey, next);
+    writeStorage(storageKey, next);
   };
 
   return [view, set];

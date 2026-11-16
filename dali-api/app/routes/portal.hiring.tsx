@@ -126,7 +126,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function Portal() {
-  const data = useLoaderData<typeof loader>() as any;
+  const data = useLoaderData<typeof loader>();
   const {
     cycleName,
     cycleId,
@@ -167,7 +167,7 @@ export default function Portal() {
     }, { replace: true });
   }, [setSearchParams]);
 
-  if (!cycleId) {
+  if (!cycleId || !cycleName) {
     return (
       <div className="max-w-2xl mx-auto py-16 text-center px-6">
         <h2 className="font-heading text-2xl font-bold text-foreground mb-3">No Active Cycle</h2>

@@ -84,3 +84,16 @@ describe("RolesDomainsPage domain cards", () => {
     expect(container.textContent).not.toContain("Ada Lovelace");
   });
 });
+
+describe("RolesDomainsPage member rows", () => {
+  it("puts each member's name in a button that opens their access drawer", async () => {
+    const names = [...container.querySelectorAll<HTMLButtonElement>("tbody tr td:first-child button")].map(
+      (b) => b.textContent,
+    );
+    expect(names).toEqual(["Ada Lovelace", "Grace Hopper"]);
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("tbody button")].find((b) => b.textContent === "Ada Lovelace")!.click(),
+    );
+    expect(document.body.textContent).toContain("Ada Lovelace");
+  });
+});

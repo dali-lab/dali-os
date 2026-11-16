@@ -1,36 +1,11 @@
 import type { Route } from "./+types/api.staffing.assign";
-import { prisma } from "~/lib/db.server";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { canManageStaffing } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { logAuditEvent } from "~/lib/audit";
 import { isLevel, type Level } from "~/lib/level";
-import { publishCycleChange } from "../lib/staffing-events.server";
+import { assignStaffing, StaffingWriteError } from "../lib/staffing-assign.server";
 
 // POST /api/staffing/assign
-//
-// A member can be staffed on multiple projects at once, so writes are scoped to
-// a single project — they never touch the member's rows on other projects.
-//
-// Body: { userId, cycleId, projectId | null, fromProjectId?, domainId?, level?, domains? }
-//   - projectId set → replace this member's Proposed rows ON THAT PROJECT with
-//     one Proposed StaffingAssignment per domain. Pass `domains: [{ domainId,
-//     level }, ...]` for multi-domain staffing, or the legacy single `domainId`
-//     + `level`. Other projects are untouched (this is the additive "add to a
-//     second project" path).
-//   - fromProjectId set → the member is LEAVING that project: their Proposed
-//     rows there are dropped, any Confirmed row is Declined, and the canonical
-//     ProjectAssignment for (userId, fromProjectId, term) is deleted so they
-//     stop counting as staffed in payroll/jobx export and on their profile right
-//     away. Covers both a drag MOVE A→B (projectId=B, fromProjectId=A) and a drag
-//     to Unassigned / × (projectId=null, fromProjectId=A).
-//   - projectId set + no fromProjectId → additive "add to a second project": the
-//     member's rows on every other project are left intact.
-//   - projectId === null + no fromProjectId → full unassign: drop every Proposed
-//     row for (userId, cycle) (legacy behaviour, still used by MCP callers).
-//
-// The schema has no (userId, staffingCycleId) unique constraint — multiple
-// proposals across history and across projects are fine.
 
 type DomainLevelBody = { domainId: string; level: Level };
 
@@ -102,110 +77,22 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  const cycle = await prisma.staffingCycle.findUnique({
-    where: { id: body.cycleId },
-    select: { id: true, termId: true },
-  });
-  if (!cycle) {
-    return withCors(request, Response.json({ error: "Cycle not found" }, { status: 404 }));
-  }
-
-  const assignerId = auth.user.sub;
-  const domains = body.domains ?? [];
-
-  await prisma.$transaction(async (tx) => {
-    if (body.projectId === null && !body.fromProjectId) {
-      // Full unassign: drop every Proposed row for this (userId, cycle).
-      await tx.staffingAssignment.deleteMany({
-        where: {
-          userId: body.userId,
-          staffingCycleId: body.cycleId,
-          status: "Proposed",
-        },
-      });
-      return;
-    }
-
-    // Project-scoped write/move/remove. Clear the Proposed rows on the project
-    // we're rewriting (projectId) and/or the project we moved away from
-    // (fromProjectId); rows on every other project are left intact.
-    const projectsToClear = new Set<string>();
-    if (body.projectId !== null) projectsToClear.add(body.projectId);
-    if (body.fromProjectId) projectsToClear.add(body.fromProjectId);
-
-    await tx.staffingAssignment.deleteMany({
-      where: {
-        userId: body.userId,
-        staffingCycleId: body.cycleId,
-        projectId: { in: [...projectsToClear] },
-        status: "Proposed",
-      },
-    });
-
-    // Leaving a project (drag to Unassigned / × OR a move A→B — both send
-    // fromProjectId). Decline any Confirmed staffing rows there so a finalized
-    // card leaves the column, AND delete the canonical ProjectAssignment for that
-    // project so the member drops off payroll/jobx export and their profile
-    // immediately. We can't defer this to re-finalize: finalize's drop-detector
-    // only sees rows still marked Confirmed, but we just flipped this one to
-    // Declined, so it would never clean the roster row up. A plain "add to a
-    // second project" carries no fromProjectId, so multi-project staffing stays.
-    if (body.fromProjectId) {
-      await tx.staffingAssignment.updateMany({
-        where: {
-          userId: body.userId,
-          staffingCycleId: body.cycleId,
-          projectId: body.fromProjectId,
-          status: "Confirmed",
-        },
-        data: { status: "Declined" },
-      });
-      await tx.projectAssignment.deleteMany({
-        where: {
-          userId: body.userId,
-          projectId: body.fromProjectId,
-          termId: cycle.termId,
-        },
-      });
-    }
-
-    if (body.projectId !== null) {
-      for (const d of domains) {
-        await tx.staffingAssignment.create({
-          data: {
-            userId: body.userId,
-            staffingCycleId: body.cycleId,
-            projectId: body.projectId,
-            termId: cycle.termId,
-            domainId: d.domainId,
-            level: d.level,
-            status: "Proposed",
-            assignedById: assignerId,
-          },
-        });
-      }
-    }
-  });
-
-  await logAuditEvent({
-    action: "staffing.assign",
-    userId: assignerId,
-    targetId: body.userId,
-    metadata: {
+  try {
+    await assignStaffing({
       cycleId: body.cycleId,
+      userId: body.userId,
       projectId: body.projectId,
-      fromProjectId: body.fromProjectId ?? null,
-      domains:
-        body.projectId === null
-          ? null
-          : domains.map((d) => ({ domainId: d.domainId, level: d.level })),
-      domainId: domains[0]?.domainId ?? null,
-      level: domains[0]?.level ?? null,
-    },
-    request,
-  });
-
-  publishCycleChange(body.cycleId);
+      fromProjectId: body.fromProjectId,
+      domains: body.domains ?? [],
+      actorId: auth.user.sub,
+      request,
+    });
+  } catch (err) {
+    if (err instanceof StaffingWriteError) {
+      return withCors(request, Response.json({ error: err.message }, { status: err.status }));
+    }
+    throw err;
+  }
 
   return withCors(request, Response.json({ ok: true }));
 }

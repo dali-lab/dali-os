@@ -2,7 +2,7 @@
 // segments into the lines a MeetingRecording stores. See
 // specs/meeting-transcription.md "dali-api" and "Data model".
 
-import type { TranscriptLine } from "~/lib/meeting-transcript";
+import type { TranscriptLine } from "~/calendar/lib/meeting-transcript";
 
 export type Word = { s: number; e: number; w: string; sp?: number };
 export type DiarizationSegment = { s: number; e: number; speaker: number };

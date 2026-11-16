@@ -16,7 +16,7 @@ const mockAuthSessionFindUnique = vi.hoisted(() => vi.fn());
 const mockSessionDeleteMany = vi.hoisted(() => vi.fn());
 
 
-vi.mock("~/lib/session", () => ({
+vi.mock("~/lib/session.server", () => ({
   lookupSession: mockLookupSession,
   rollSession: mockRollSession,
 }));
@@ -50,7 +50,7 @@ vi.mock("~/lib/cookies", () => ({
 
 // ── Import subjects after mocks ───────────────────────────────────────────────
 
-import { authenticateMcpRequest } from "~/lib/mcp-auth";
+import { authenticateMcpRequest } from "~/lib/mcp-auth.server";
 import { mintBetterAuthSession } from "~/lib/betterauth-session.server";
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────

@@ -3,7 +3,11 @@ import { prisma } from "~/lib/db.server";
 import { requireAuth } from "~/lib/auth";
 import { isCore } from "~/lib/roles";
 import { withCors, handlePreflight } from "~/lib/cors";
-import { logAuditEvent } from "~/lib/audit";
+import {
+  deleteMentorshipPairs,
+  reassignMentorshipPair,
+  upsertMentorshipPair,
+} from "../lib/pairs.server";
 import { canViewMentorship, mentorshipPairWhere } from "../lib/visibility";
 
 // GET    /api/mentorship/pairs — list pairs. Every lab mentor (and Core/Admin)
@@ -137,15 +141,8 @@ export async function action({ request }: Route.ActionArgs) {
     if (ids.length === 0) {
       return withCors(request, Response.json({ error: "No ids provided" }, { status: 400 }));
     }
-    const result = await prisma.mentorshipPair.deleteMany({ where: { id: { in: ids } } });
-    await logAuditEvent({
-      action: "mentorship.pair.delete",
-      userId: actorId,
-      targetId: ids[0],
-      metadata: { ids, deleted: result.count },
-      request,
-    });
-    return withCors(request, Response.json({ deleted: result.count }));
+    const result = await deleteMentorshipPairs({ ids, actorId, request });
+    return withCors(request, Response.json({ deleted: result.deleted }));
   }
 
   if (request.method === "PATCH") {
@@ -158,59 +155,16 @@ export async function action({ request }: Route.ActionArgs) {
     if (!isPatchBody(patch)) {
       return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
     }
-    const pair = await prisma.mentorshipPair.findUnique({
-      where: { id: patch.id },
-      select: { menteeUserId: true, mentorUserId: true, projectId: true, termId: true, domainId: true },
-    });
-    if (!pair) {
-      return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
-    }
-    // Reassigning onto an existing (mentee, mentor, project, term, domain) pair
-    // would duplicate it (no unique constraint). Merge instead: drop this row
-    // and hand back the one already there.
-    const existing = await prisma.mentorshipPair.findFirst({
-      where: {
-        menteeUserId: pair.menteeUserId,
-        mentorUserId: patch.mentorUserId,
-        projectId: pair.projectId,
-        termId: pair.termId,
-        domainId: pair.domainId,
-      },
-      select: { id: true },
-    });
-    if (existing && existing.id !== patch.id) {
-      await prisma.mentorshipPair.delete({ where: { id: patch.id } });
-      await logAuditEvent({
-        action: "mentorship.pair.update",
-        userId: actorId,
-        targetId: existing.id,
-        metadata: {
-          menteeUserId: pair.menteeUserId,
-          fromMentorUserId: pair.mentorUserId,
-          toMentorUserId: patch.mentorUserId,
-          mergedFromPairId: patch.id,
-        },
-        request,
-      });
-      return withCors(request, Response.json({ id: existing.id, merged: true }));
-    }
-    const updated = await prisma.mentorshipPair.update({
-      where: { id: patch.id },
-      data: { mentorUserId: patch.mentorUserId, manual: true },
-      select: { id: true },
-    });
-    await logAuditEvent({
-      action: "mentorship.pair.update",
-      userId: actorId,
-      targetId: updated.id,
-      metadata: {
-        menteeUserId: pair.menteeUserId,
-        fromMentorUserId: pair.mentorUserId,
-        toMentorUserId: patch.mentorUserId,
-      },
+    const result = await reassignMentorshipPair({
+      id: patch.id,
+      mentorUserId: patch.mentorUserId,
+      actorId,
       request,
     });
-    return withCors(request, Response.json({ id: updated.id, merged: false }));
+    if (!result) {
+      return withCors(request, Response.json({ error: "Not found" }, { status: 404 }));
+    }
+    return withCors(request, Response.json(result));
   }
 
   if (request.method !== "POST") {
@@ -227,70 +181,14 @@ export async function action({ request }: Route.ActionArgs) {
     return withCors(request, Response.json({ error: "Invalid body" }, { status: 400 }));
   }
 
-  // One mentor per mentee per (project, term, domain). If the mentee is already
-  // paired in this domain, reassign that row to the new mentor and collapse any
-  // stray extras — never add a second mentor.
-  const existing = await prisma.mentorshipPair.findMany({
-    where: {
-      menteeUserId: body.menteeUserId,
-      projectId: body.projectId,
-      termId: body.termId,
-      domainId: body.domainId,
-    },
-    select: { id: true, mentorUserId: true },
-  });
-  if (existing.length > 0) {
-    const [keep, ...extra] = existing;
-    if (extra.length > 0) {
-      await prisma.mentorshipPair.deleteMany({
-        where: { id: { in: extra.map((e) => e.id) } },
-      });
-    }
-    const updated = await prisma.mentorshipPair.update({
-      where: { id: keep.id },
-      data: { mentorUserId: body.mentorUserId, manual: true },
-      select: { id: true },
-    });
-    await logAuditEvent({
-      action: "mentorship.pair.update",
-      userId: actorId,
-      targetId: updated.id,
-      metadata: {
-        menteeUserId: body.menteeUserId,
-        fromMentorUserId: keep.mentorUserId,
-        toMentorUserId: body.mentorUserId,
-        projectId: body.projectId,
-        termId: body.termId,
-        domainId: body.domainId,
-        collapsedExtras: extra.length,
-      },
-      request,
-    });
-    return withCors(request, Response.json({ id: updated.id, created: false }));
-  }
-  const created = await prisma.mentorshipPair.create({
-    data: {
-      menteeUserId: body.menteeUserId,
-      mentorUserId: body.mentorUserId,
-      projectId: body.projectId,
-      termId: body.termId,
-      domainId: body.domainId,
-      manual: true,
-    },
-    select: { id: true },
-  });
-  await logAuditEvent({
-    action: "mentorship.pair.create",
-    userId: actorId,
-    targetId: created.id,
-    metadata: {
-      menteeUserId: body.menteeUserId,
-      mentorUserId: body.mentorUserId,
-      projectId: body.projectId,
-      termId: body.termId,
-      domainId: body.domainId,
-    },
+  const result = await upsertMentorshipPair({
+    menteeUserId: body.menteeUserId,
+    mentorUserId: body.mentorUserId,
+    projectId: body.projectId,
+    termId: body.termId,
+    domainId: body.domainId,
+    actorId,
     request,
   });
-  return withCors(request, Response.json({ id: created.id, created: true }));
+  return withCors(request, Response.json(result));
 }

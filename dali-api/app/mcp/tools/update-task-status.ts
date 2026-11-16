@@ -1,7 +1,3 @@
-// MCP `update_task_status` — move a project Task to a different status. Lands
-// the task at the end of the target column (same "append" semantics as the
-// drag-to-end of board).
-//
 // Permission: the web board endpoint (`api.tasks.$id.move.ts`) gates moves to
 // project editors (Core or a project member). MCP matches that and additionally
 // allows a task's own assignees to update status — the "list my tasks, mark
@@ -9,6 +5,7 @@
 // else is rejected. Requires the `mcp:write` scope.
 
 import { prisma } from "~/lib/db.server";
+import { moveTask, TaskMoveError } from "~/projects/lib/task-status.server";
 import { canEditProject } from "./access";
 import {
   TASK_STATUSES,
@@ -16,28 +13,17 @@ import {
   isTaskStatus,
 } from "~/projects/lib/task-board";
 
-export const UPDATE_TASK_STATUS_TOOL = {
-  name: "update_task_status",
-  description:
-    "Move a project task to a different status column (e.g. mark a task Done). Allowed for the task's assignees and for project editors (Core or project members).",
-  inputSchema: {
-    type: "object" as const,
-    properties: {
-      taskId: {
-        type: "string",
-        minLength: 1,
-        description: "Task.id, as returned by `list_my_tasks`.",
-      },
-      status: {
-        type: "string",
-        enum: TASK_STATUSES as unknown as string[],
-        description: "Target status column.",
-      },
-    },
-    required: ["taskId", "status"],
-    additionalProperties: false,
+export const UPDATE_TASK_STATUS_PROPERTIES = {
+  taskId: {
+    type: "string",
+    minLength: 1,
+    description: "Task.id, as returned by `list_my_tasks`.",
   },
-  requiredScope: "mcp:write" as const,
+  status: {
+    type: "string",
+    enum: TASK_STATUSES as unknown as string[],
+    description: "Target status column.",
+  },
 };
 
 type Input = { taskId: string; status: string };
@@ -73,18 +59,12 @@ export async function runUpdateTaskStatus(callerId: string, input: Input) {
     throw new UpdateTaskStatusError("Forbidden", 403);
   }
 
-  // Append to the end of the target column (same project, same status). Mirrors
-  // the web `nextPositionInColumn` helper without round-tripping the whole board.
-  const maxInCol = await prisma.task.aggregate({
-    where: { projectId: task.projectId, status: newStatus },
-    _max: { position: true },
-  });
-  const nextPosition = (maxInCol._max.position ?? -1) + 1;
-
-  await prisma.task.update({
-    where: { id: input.taskId },
-    data: { status: newStatus, position: nextPosition },
-  });
+  try {
+    await moveTask({ taskId: input.taskId, actorId: callerId, status: newStatus });
+  } catch (err) {
+    if (err instanceof TaskMoveError) throw new UpdateTaskStatusError(err.message, err.status);
+    throw err;
+  }
 
   return {
     ok: true,
