@@ -215,6 +215,7 @@ export default function MentorshipHub() {
           termId={data.termId ?? ""}
           highlightMissing={data.isCore && data.phase === "in-term"}
           heading="My mentees"
+          canWarn
           termForms={data.termForms ?? undefined}
         />
       )}

@@ -22,6 +22,7 @@ const member = (n: number): MemberRow => ({
   createdAt: "2020-01-01T00:00:00Z",
   onboardedAt: null,
   birthday: null,
+  hasWarning: false,
   cells: {},
 });
 const many = (count: number) => Array.from({ length: count }, (_, i) => member(i));

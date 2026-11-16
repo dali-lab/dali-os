@@ -13,6 +13,7 @@ import type { Route } from "./+types/members";
 import { requireAuth, redirectNonMemberToPortal } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
 import { isCore } from "~/lib/roles";
+import { openWarningMemberIds } from "~/mentorship/lib/warnings.server";
 import { graduateProgramLabel } from "~/lib/dartmouth-people";
 import { prisma } from "~/lib/db.server";
 import {
@@ -168,6 +169,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     },
   });
 
+  const warnedIds = canEdit ? new Set(await openWarningMemberIds()) : new Set<string>();
+
   const rows: MemberRow[] = await Promise.all(users.map(async (u) => {
     const coreTitles = deriveCoreTitles(u.coreAssignments);
     const isStaff = u.adminMembership?.isStaff === true;
@@ -184,6 +187,7 @@ export async function loader({ request }: Route.LoaderArgs) {
       createdAt: u.createdAt.toISOString(),
       onboardedAt: u.daliMember?.onboardedAt?.toISOString() ?? null,
       birthday: u.birthday ? u.birthday.toISOString() : null,
+      hasWarning: warnedIds.has(u.id),
       // Core pills: one per distinct lead title (deduped across terms — a
       // "Hiring Lead" who held the title for three terms shows one chip). A Core
       // member with assignments but no title set still gets a plain "Core" pill

@@ -1,7 +1,9 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 
-import { FileText, Frown, Meh, Plus, Send, Smile, Trash2 } from "lucide-react";
-import { Avatar } from "~/components/ui/Avatar";
+import { FileText, Flag, Plus, Send, Trash2 } from "lucide-react";
+import { WarnedAvatar } from "./WarnedAvatar";
+import { SubmitWarningModal } from "./SubmitWarningModal";
+import { blocksToPlainText } from "../lib/note-preview";
 import { Select, Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
@@ -37,7 +39,41 @@ const FORM_WEEK = 5;
 // The roomy white hover card used by the week circles and the check-in bubble.
 const POPUP = "!max-w-[320px] !rounded-2xl !border-os-container/60 !bg-white !p-4 !text-sm !text-neutral-900";
 
-const VIBE_ICON = { Good: Smile, Ok: Meh, Bad: Frown } as const;
+const noteTextCache = new Map<string, string>();
+
+function NotePreview({ noteId, week }: { noteId: string; week: number }) {
+  const [text, setText] = useState<string | null>(noteTextCache.get(noteId) ?? null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (noteTextCache.has(noteId)) return;
+    let live = true;
+    fetch(`/api/mentorship/notes/${noteId}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((d: { contentJson: unknown }) => {
+        const t = blocksToPlainText(d.contentJson);
+        noteTextCache.set(noteId, t);
+        if (live) setText(t);
+      })
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [noteId]);
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-xs text-neutral-500">Week {week}</span>
+      {text ? (
+        <span className="whitespace-pre-wrap">{text}</span>
+      ) : failed ? (
+        <span className="italic text-neutral-500">Couldn't load this note</span>
+      ) : text === null ? (
+        <span className="italic text-neutral-500">Loading…</span>
+      ) : (
+        <span className="italic text-neutral-500">Nothing written yet</span>
+      )}
+    </div>
+  );
+}
 
 // An unfilled week (no note, or a note with no rating): the upcoming-week ring, but solid.
 const UNFILLED = "border border-border text-muted-foreground/70";
@@ -64,6 +100,8 @@ type GridProps = {
   heading?: string;
   edit?: MentorGridEdit;
   termForms?: TermForms;
+  warnedIds?: ReadonlySet<string>;
+  canWarn?: boolean;
 };
 
 // One mentor on their own — the hub's "My mentees".
@@ -88,6 +126,8 @@ export function MentorGridTable({
   heading,
   edit,
   termForms,
+  warnedIds,
+  canWarn,
 }: GridProps & {
   groups: GridMentorGroup[];
   nudgeFor?: (group: GridMentorGroup) => MentorGridNudge | undefined;
@@ -101,6 +141,7 @@ export function MentorGridTable({
   );
   // The note open in the overlay; the cards stay mounted behind it.
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
+  const [warnTarget, setWarnTarget] = useState<{ id: string; name: string } | null>(null);
   // One template for every row of every card: identity, exactly ten equal
   // compact week columns, then (when forms are linked) a rightmost column for
   // the Form pills that takes the remaining width.
@@ -131,6 +172,8 @@ export function MentorGridTable({
           edit={edit}
           formsFor={formsFor}
           showForms={showForms}
+          warnedIds={warnedIds}
+          onWarn={canWarn ? setWarnTarget : undefined}
           onOpenNote={(id) => {
             // Dev-preview notes have nothing to load.
             if (!id.startsWith("mock-")) setOpenNoteId(id);
@@ -138,6 +181,9 @@ export function MentorGridTable({
         />
       ))}
       <MentorNoteOverlay noteId={openNoteId} onClose={() => setOpenNoteId(null)} />
+      {warnTarget && (
+        <SubmitWarningModal key={warnTarget.id} member={warnTarget} onClose={() => setWarnTarget(null)} />
+      )}
     </div>
   );
 }
@@ -154,6 +200,8 @@ function MentorGroup({
   edit,
   formsFor,
   showForms,
+  warnedIds,
+  onWarn,
   onOpenNote,
 }: {
   group: GridMentorGroup;
@@ -167,6 +215,8 @@ function MentorGroup({
   edit?: MentorGridEdit;
   formsFor: (domainId: string) => DomainTermForms | null;
   showForms: boolean;
+  warnedIds?: ReadonlySet<string>;
+  onWarn?: (member: { id: string; name: string }) => void;
   onOpenNote: (noteId: string) => void;
 }) {
   const { panel } = useOsChrome();
@@ -203,7 +253,7 @@ function MentorGroup({
 
   return (
     <section className={cn(panel, "flex flex-col px-5 py-3")}>
-      <div className="flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-2 border-b border-os-container/40 pb-3">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -211,11 +261,11 @@ function MentorGroup({
           className="flex min-w-0 items-center gap-2 text-left"
         >
           {heading ? (
-            <span className="font-medium text-foreground">{heading}</span>
+            <span className="text-sm font-medium text-foreground">{heading}</span>
           ) : (
             <>
-              <Avatar photoUrl={group.mentor.photoUrl} name={mentorName} size="sm" userId={group.mentor.id} />
-              <span className="truncate font-medium text-foreground">{mentorName}</span>
+              <WarnedAvatar photoUrl={group.mentor.photoUrl} name={mentorName} size="compact" warned={warnedIds?.has(group.mentor.id) ?? false} />
+              <span className="truncate text-sm font-medium text-foreground">{mentorName}</span>
             </>
           )}
         </button>
@@ -265,8 +315,8 @@ function MentorGroup({
                   style={{ gridTemplateColumns: columns }}
                 >
                   <div role="cell" className="flex min-w-0 items-center gap-3 pr-3">
-                    <Avatar photoUrl={row.mentee.photoUrl} name={fullName(row.mentee)} size="sm" className="shrink-0" />
-                    <div className="flex min-w-0 flex-col leading-tight">
+                    <WarnedAvatar photoUrl={row.mentee.photoUrl} name={fullName(row.mentee)} size="sm" className="shrink-0" warned={warnedIds?.has(row.menteeId) ?? false} />
+                    <div className="flex min-w-0 flex-1 flex-col leading-tight">
                       <span className="truncate font-medium text-foreground" title={fullName(row.mentee)}>
                         {fullName(row.mentee)}
                       </span>
@@ -274,6 +324,18 @@ function MentorGroup({
                         {row.projectName} · {row.domainCode}
                       </span>
                     </div>
+                    {onWarn && (
+                      <Tooltip content={`Submit a warning for ${fullName(row.mentee)}`}>
+                        <button
+                          type="button"
+                          onClick={() => onWarn({ id: row.menteeId, name: fullName(row.mentee) })}
+                          className="shrink-0 rounded-full p-1.5 text-muted-foreground transition hover:bg-muted/60 hover:text-foreground"
+                        >
+                          <Flag className="h-3.5 w-3.5" aria-hidden />
+                          <span className="sr-only">Submit a warning for {fullName(row.mentee)}</span>
+                        </button>
+                      </Tooltip>
+                    )}
                   </div>
                   {row.cells.map((cell) => (
                     <Fragment key={cell.week}>
@@ -437,44 +499,8 @@ function GridCellView({
     const cls = cell.vibe
       ? `${VIBE_META[cell.vibe].dot} text-black/35`
       : UNFILLED;
-    const VibeIcon = cell.vibe ? VIBE_ICON[cell.vibe] : FileText;
-    const vibeLabel = cell.vibe ? VIBE_META[cell.vibe].label : "";
-    const vibeDesc = cell.vibe === "Good"
-      ? "Mentor marked this week as going well."
-      : cell.vibe === "Ok"
-      ? "Mentor flagged some areas to work on."
-      : cell.vibe === "Bad"
-      ? "Mentor flagged something concerning — follow up."
-      : "This week's note has no rating yet.";
     return (
-      <Tooltip
-        variant="rich"
-        className={POPUP}
-        content={
-          <div className="flex items-start gap-3">
-            <span
-              className={cn(
-                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-                cell.vibe ? cn(VIBE_META[cell.vibe].dot, "text-black/60") : "border border-neutral-300 text-neutral-400",
-              )}
-            >
-              <VibeIcon className="h-5 w-5" aria-hidden />
-            </span>
-            <span className="flex flex-col gap-0.5">
-              <span className="text-xs text-neutral-500">Week {cell.week}</span>
-              {cell.vibe ? (
-                <>
-                  <span className="font-semibold">{vibeLabel}</span>
-                  <span className="text-neutral-600">{vibeDesc}</span>
-                </>
-              ) : (
-                // One quiet line instead of a title plus a restatement.
-                <span className="italic text-neutral-500">Not filled in</span>
-              )}
-            </span>
-          </div>
-        }
-      >
+      <Tooltip variant="rich" className={POPUP} content={<NotePreview noteId={cell.noteId ?? ""} week={cell.week} />}>
         {/* A real link (new tab / copy address still work); a plain click opens
             the overlay instead of navigating. */}
         <a

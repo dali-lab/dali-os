@@ -4,6 +4,7 @@ import { Avatar } from "~/components/ui/Avatar";
 import { LoadMore } from "~/components/ui/Pager";
 import { useClientSlice } from "~/hooks/useClientSlice";
 import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
+import { WarnedAvatar } from "~/mentorship/components/WarnedAvatar";
 import { NewDot, BirthdayBadge } from "~/members/components/WarmthBadges";
 import { MoreHorizontal } from "lucide-react";
 import { Menu, MenuItem } from "~/components/ui/floating";
@@ -31,6 +32,7 @@ export type MemberRow = {
   createdAt: string;
   onboardedAt: string | null;
   birthday: string | null;
+  hasWarning: boolean;
   // What the filter builder matches against, keyed by FILTER_COLUMNS.
   cells: Record<string, string | string[]>;
 };
@@ -62,7 +64,7 @@ export function MembersTable({
   const showClass = status === "alumni";
   const open = (m: MemberRow) => navigate(`/members/${m.id}`);
   return (
-    <div className="relative max-w-5xl overflow-x-auto">
+    <div className="relative -mx-3 overflow-x-auto">
       <table className="w-full min-w-[520px] table-fixed text-sm">
         <colgroup>
           <col className="w-[46%]" />
@@ -98,7 +100,7 @@ export function MembersTable({
               >
                 <td className="px-3 py-1.5">
                   <div className="flex items-center gap-3">
-                    <Avatar photoUrl={m.photoUrl} name={name} size="sm" userId={m.id} className="flex-shrink-0" />
+                    <WarnedAvatar photoUrl={m.photoUrl} name={name} size="sm" userId={m.id} className="flex-shrink-0" warned={m.hasWarning} />
                     <div className="flex min-w-0 flex-col leading-tight">
                       <span className="flex items-center gap-1.5">
                         <span className="truncate text-sm font-medium text-foreground">

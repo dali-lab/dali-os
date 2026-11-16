@@ -1,6 +1,6 @@
-import { Check, FileSignature, GraduationCap, Shield, TriangleAlert, UserCheck } from "lucide-react";
+import type { ReactNode } from "react";
+import { Check, GraduationCap } from "lucide-react";
 import { Link } from "react-router";
-import { InfoTip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
 import { cn } from "~/lib/cn";
 import type { ProfilePageData } from "~/members/lib/profile-page.server";
@@ -14,18 +14,12 @@ import type { ProfilePageData } from "~/members/lib/profile-page.server";
 // look. It sits under Profile with the other facts about this member, with an
 // action attached when a requirement is unmet.
 
-const AGREEMENT_ROW =
-  "flex items-baseline justify-between gap-2 rounded-os-item bg-os-well px-2.5 py-1.5";
-
 export function ComplianceBlock({
   compliance,
   isSelf,
-  asCard = false,
 }: {
   compliance: ProfilePageData["compliance"];
   isSelf: boolean;
-  /** When true, renders as a self-contained card (for 2-column profile grid). */
-  asCard?: boolean;
 }) {
   const { panel, sectionShell, sectionTitle } = useOsChrome();
   if (!compliance) return null;
@@ -37,142 +31,87 @@ export function ComplianceBlock({
   // Nothing to say: not staffed this term, never signed anything, nothing filed.
   if (!ce && agreements.length === 0 && staffingForms.length === 0) return null;
 
+  type Item = { key: string; done: boolean; title: ReactNode; note: ReactNode };
+  const dateOf = (iso: string) =>
+    new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  const items: Item[] = [];
+  if (ce) {
+    items.push({
+      key: "ce",
+      done: ce.compliant,
+      title: `CE credit for ${ce.termCode}`,
+      note: ce.compliant ? (
+        `Earned ${ce.credits} of 1 required.`
+      ) : (
+        <>
+          {ce.credits} of 1 required.{" "}
+          <a href="/education" className="not-italic text-os-accent hover:underline">
+            Find a course or workshop
+          </a>
+        </>
+      ),
+    });
+  }
+  for (const a of agreements) {
+    const title = isSelf ? (
+      <Link to={`/sign/${a.bindingId}`} className="hover:underline">
+        {a.documentName}
+      </Link>
+    ) : (
+      a.documentName
+    );
+    items.push({
+      key: a.signatureId,
+      done: true,
+      title,
+      note: `Signed ${dateOf(a.signedAt)} · ${a.context}`,
+    });
+  }
+  for (const f of staffingForms) {
+    items.push({
+      key: f.slot,
+      done: true,
+      title: f.slotLabel,
+      note: (
+        <>
+          {f.submittedAt ? `Submitted ${dateOf(f.submittedAt)}` : "Submitted"}
+          {isSelf && (
+            <>
+              {" · "}
+              <a href={f.fillLink} className="not-italic text-os-accent hover:underline">
+                View / update
+              </a>
+            </>
+          )}
+        </>
+      ),
+    });
+  }
+  items.sort((x, y) => Number(y.done) - Number(x.done));
+
   const content = (
     <>
-      {ce && (
-        <div
-          className={`flex items-start gap-2.5 rounded-os-item border px-3 py-2.5 ${
-            ce.compliant
-              ? "border-os-green/40 bg-os-green/10"
-              : "border-os-amber/40 bg-os-amber/10"
-          }`}
-        >
-          <span className="mt-0.5 shrink-0">
-            {ce.compliant ? (
-              <Check className="h-4 w-4 text-os-green" aria-hidden />
-            ) : (
-              <TriangleAlert className="h-4 w-4 text-os-amber" aria-hidden />
-            )}
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground inline-flex items-center gap-1">
-              {ce.compliant
-                ? `CE credit met for ${ce.termCode}`
-                : `CE credit outstanding for ${ce.termCode}`}
-              <InfoTip content="DALI requires 1 Continuing Education credit per term for all staffed members. Attend a course or workshop in the Education section to earn it." />
-            </p>
-            <p className="text-xs text-os-grey">
-              {ce.credits} of 1 required ·{" "}
-              {ce.compliant ? (
-                "Nothing more needed this term."
-              ) : (
-                <a href="/education" className="text-os-accent hover:underline">
-                  Find a course or workshop
-                </a>
+      <ul className="flex flex-col gap-3">
+        {items.map((i) => (
+          <li key={i.key} className="flex items-start gap-3">
+            <span
+              aria-hidden
+              className={cn(
+                "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                i.done ? "border-os-green bg-os-green text-os-bg" : "border-os-container-hi",
               )}
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="flex flex-col gap-1.5">
-        <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-os-grey">
-          <FileSignature className="h-3 w-3" aria-hidden />
-          Agreements signed
-        </p>
-        {agreements.length === 0 ? (
-          <p className="text-sm text-os-muted italic">Nothing signed yet.</p>
-        ) : (
-          <ul className="flex flex-col gap-1">
-            {agreements.map((a) => {
-              const body = (
-                <>
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm text-foreground">
-                      {a.documentName}
-                    </span>
-                    <span className="block truncate text-[11px] text-os-grey">
-                      {a.context}
-                    </span>
-                  </span>
-                  <time
-                    dateTime={a.signedAt}
-                    className="shrink-0 text-[11px] tabular-nums text-os-grey"
-                  >
-                    {new Date(a.signedAt).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                  </time>
-                </>
-              );
-              return (
-                <li key={a.signatureId}>
-                  {/* /sign/:bindingId shows the signed copy — but of the
-                      *viewer's* signature, so it is only a link on your own
-                      profile. Core reading someone else's sees the record. */}
-                  {isSelf ? (
-                    <Link
-                      to={`/sign/${a.bindingId}`}
-                      className={`${AGREEMENT_ROW} transition-colors hover:bg-os-container`}
-                    >
-                      {body}
-                    </Link>
-                  ) : (
-                    <span className={AGREEMENT_ROW}>{body}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-
-      {staffingForms.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <p className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-os-grey">
-            <UserCheck className="h-3 w-3" aria-hidden />
-            Staffing forms
-          </p>
-          <ul className="flex flex-col gap-1">
-            {staffingForms.map((f) => (
-              <li
-                key={f.slot}
-                className="flex items-baseline justify-between gap-2 rounded-os-item bg-os-well px-2.5 py-1.5"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate text-sm text-foreground">{f.slotLabel}</span>
-                  <span className="block truncate text-[11px] text-os-grey">
-                    {f.submitted && f.submittedAt
-                      ? `Submitted ${new Date(f.submittedAt).toLocaleDateString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}`
-                      : "Not submitted"}
-                  </span>
-                </span>
-                {/* The fill link submits as whoever clicks it, so it is only
-                    ever offered on your own profile; Core reading someone
-                    else's sees the status alone. */}
-                {isSelf && (
-                  <a
-                    href={f.fillLink}
-                    className="shrink-0 rounded-full border border-os-container px-3 py-1 text-[11px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground"
-                  >
-                    {f.submitted ? "View / update" : "Open form"}
-                  </a>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
+            >
+              {i.done && <Check className="h-3 w-3" strokeWidth={3} />}
+            </span>
+            <span className="sr-only">{i.done ? "Complete:" : "Incomplete:"}</span>
+            <div className="min-w-0">
+              <p className="text-sm text-foreground">{i.title}</p>
+              <p className="text-xs italic text-os-grey">{i.note}</p>
+            </div>
+          </li>
+        ))}
+      </ul>
       {!ce && (
-        // Staffed members get the CE line; everyone else gets a word on why
-        // it's absent, so its absence doesn't read as "you're fine".
         <p className="inline-flex items-center gap-1.5 text-[11px] text-os-grey">
           <GraduationCap className="h-3 w-3 shrink-0" aria-hidden />
           No CE credit required — not staffed on a project this term.
@@ -181,29 +120,12 @@ export function ComplianceBlock({
     </>
   );
 
-  if (asCard) {
-    return (
-      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
-        <div className="flex items-center gap-3 px-5 pt-4 pb-3">
-          <span
-            className="w-[34px] h-[34px] rounded-[10px] flex items-center justify-center shrink-0"
-            style={{ background: "rgba(232,181,101,0.14)", color: "#e8b565" }}
-          >
-            <Shield className="w-[17px] h-[17px]" />
-          </span>
-          <h3 className="text-[15px] font-bold text-foreground flex-1">Standing</h3>
-          {ce?.termCode && (
-            <span className="text-xs text-os-muted">{ce.termCode}</span>
-          )}
-        </div>
-        <div className="px-5 pb-5 flex flex-col gap-4">{content}</div>
-      </article>
-    );
-  }
-
   return (
     <section className={sectionShell}>
-      <h2 className={sectionTitle}>Standing</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className={sectionTitle}>Standing</h2>
+        {ce?.termCode && <span className="text-xs text-os-muted">{ce.termCode}</span>}
+      </div>
       <div className={cn(panel, "p-5 flex flex-col gap-4")}>{content}</div>
     </section>
   );

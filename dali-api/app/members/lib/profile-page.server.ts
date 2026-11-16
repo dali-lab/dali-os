@@ -4,6 +4,7 @@
 // resolve.
 
 import { redirect } from "react-router";
+import { loadMemberWarnings, type MemberWarningCase } from "~/mentorship/lib/warnings.server";
 import { prisma } from "~/lib/db.server";
 import { requireAuth, redirectNonMemberToPortal, isImpersonating } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -188,6 +189,7 @@ export type ProfilePageData = {
    *  the VIEWER is a lab mentor or Core AND they are not looking at their
    *  own profile — mentees never see anything about notes written about
    *  them. Null in every other case. */
+  warningCase: { warnings: MemberWarningCase[]; people: { id: string; name: string }[] } | null;
   mentorshipPanel: {
     pairs: Array<{
       id: string;
@@ -711,6 +713,7 @@ export async function loadProfilePage({
     canSeeGroups,
 
     mentorshipPanel,
+    warningCase: canManageEligibility && !isSelf ? await loadMemberWarnings(targetId) : null,
   };
 }
 

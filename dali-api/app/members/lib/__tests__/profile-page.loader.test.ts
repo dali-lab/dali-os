@@ -4,7 +4,9 @@ const prisma = vi.hoisted(() => ({
   dALIMember: { findUnique: vi.fn() },
   form: { findFirst: vi.fn() },
   formSubmission: { count: vi.fn() },
-  user: { findUnique: vi.fn() },
+  user: { findUnique: vi.fn(), findMany: vi.fn(async () => []) },
+  mentorshipWarning: { findMany: vi.fn(async () => []) },
+  term: { findMany: vi.fn(async () => []) },
   domain: { findMany: vi.fn() },
   projectAssignment: { findMany: vi.fn(), findFirst: vi.fn() },
   mentorshipPair: { findMany: vi.fn(), groupBy: vi.fn() },
@@ -168,6 +170,19 @@ describe("loadProfilePage", () => {
     expect(data.education).not.toBeNull();
     expect(data.mentorshipPanel).toEqual({ pairs: [], recentNoteCount: 0 });
     expect(prisma.mentorshipPair.groupBy).not.toHaveBeenCalled();
+  });
+
+  it("loads warning cases for Core on someone else's profile only", async () => {
+    vi.mocked(isCore).mockResolvedValue(true);
+    expect((await run()).warningCase).toEqual({ warnings: [], people: [] });
+    prisma.user.findUnique.mockResolvedValue({ ...MEMBER, id: "u1" });
+    prisma.dALIMember.findUnique.mockResolvedValue({ onboardedAt: new Date() });
+    expect((await run("u1")).warningCase).toBeNull();
+  });
+
+  it("hides warning cases from a lab mentor who is not Core", async () => {
+    vi.mocked(isLabMentor).mockResolvedValue(true);
+    expect((await run()).warningCase).toBeNull();
   });
 
   it("shows the mentorship panel to a lab mentor who is not Core", async () => {

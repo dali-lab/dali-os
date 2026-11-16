@@ -955,6 +955,7 @@ export default [
   // Mentorship API — weekly notes, templates, mentor↔mentee pairs.
   route("api/mentorship/notes", "mentorship/routes/api.mentorship.notes.ts"),
   route("api/mentorship/notes/:id", "mentorship/routes/api.mentorship.notes.$id.ts"),
+  route("api/mentorship/warnings", "mentorship/routes/api.mentorship.warnings.ts"),
   route("api/mentorship/nudge", "mentorship/routes/api.mentorship.nudge.ts"),
   route("api/mentorship/templates", "mentorship/routes/api.mentorship.templates.ts"),
   route("api/mentorship/templates/:id", "mentorship/routes/api.mentorship.templates.$id.ts"),

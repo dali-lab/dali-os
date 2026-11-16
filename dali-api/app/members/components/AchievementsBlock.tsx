@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { Tooltip } from "~/components/ui/floating";
 import { useOsChrome } from "~/components/os-chrome";
-import { cn } from "~/lib/cn";
 import type { Achievement, AchievementKey } from "~/members/lib/achievements.server";
 
 // Medals for the profile's Activity tab. Each milestone gets its own shape and
@@ -112,13 +111,13 @@ export function AchievementsBlock({ achievements }: { achievements: Achievement[
   // the tab keeps its shape and the first medal appears in a place the member
   // has already seen.
   const earned = achievements.filter((a) => a.earned);
-  const { panel, sectionShell, sectionTitle } = useOsChrome();
+  const { sectionShell, sectionTitle } = useOsChrome();
 
   return (
     <section className={sectionShell}>
       <h2 className={sectionTitle}>Achievements</h2>
 
-      <div className={cn(panel, "p-5")}>
+      <div>
         {earned.length === 0 && (
           <p className="text-sm text-os-muted italic">No achievements yet.</p>
         )}

@@ -8,7 +8,7 @@ describe("status meanings use the os status tokens", () => {
   it.each([
     ["education/components/RosterMatrix.tsx", "text-os-green"],
     ["education/routes/education.tsx", 'success: "bg-os-green"'],
-    ["members/components/ComplianceBlock.tsx", "bg-os-green/10"],
+    ["members/components/ComplianceBlock.tsx", "bg-os-green text-os-bg"],
     ["members/components/MemberProfileView.tsx", '"bg-os-green"'],
     ["admin/components/PayrollUploadModal.tsx", "text-os-green"],
     ["projects/components/FinalizeModal.tsx", 'text-os-green">{savedNote}'],

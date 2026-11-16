@@ -24,6 +24,7 @@ import {
   type WarningStatus,
 } from "../lib/warnings";
 import { requireWarningsAdmin } from "../lib/warnings.server";
+import { validateWarningCase, type WarningCaseInput } from "../lib/warnings";
 
 export const meta: Route.MetaFunction = () => [{ title: "Mentorship warnings · DALI OS" }];
 
@@ -94,6 +95,34 @@ export async function action({ request }: Route.ActionArgs): Promise<ActionResul
       await prisma.mentorshipWarning.create({ data: { ...data, createdById: userId } });
       return { ok: true, intent, message: "Warning saved." };
     }
+    await prisma.mentorshipWarning.update({ where: { id }, data });
+    return { ok: true, intent, message: "Warning updated." };
+  }
+
+  if (intent === "case") {
+    const text = (k: string) => (form.has(k) ? String(form.get(k) ?? "").trim() : undefined);
+    const input: Partial<WarningCaseInput> = {
+      investigatorId: text("investigatorId"),
+      linkUrl: text("linkUrl"),
+      willAcceptReapp: text("willAcceptReapp") as WarningCaseInput["willAcceptReapp"] | undefined,
+      stage: text("stage") as WarningCaseInput["stage"] | undefined,
+      meeting1On: text("meeting1On"),
+      meeting1Notes: text("meeting1Notes"),
+      meeting2On: text("meeting2On"),
+      meeting2Notes: text("meeting2Notes"),
+    };
+    const invalid = validateWarningCase(input);
+    if (invalid) return { ok: false, error: invalid };
+    const day = (v: string) => (v ? new Date(`${v}T00:00:00.000Z`) : null);
+    const data: Record<string, unknown> = {};
+    if (input.investigatorId !== undefined) data.investigatorId = input.investigatorId || null;
+    if (input.linkUrl !== undefined) data.linkUrl = input.linkUrl;
+    if (input.willAcceptReapp !== undefined) data.willAcceptReapp = input.willAcceptReapp ? input.willAcceptReapp === "yes" : null;
+    if (input.stage !== undefined) data.stage = input.stage;
+    if (input.meeting1On !== undefined) data.meeting1On = day(input.meeting1On);
+    if (input.meeting1Notes !== undefined) data.meeting1Notes = input.meeting1Notes;
+    if (input.meeting2On !== undefined) data.meeting2On = day(input.meeting2On);
+    if (input.meeting2Notes !== undefined) data.meeting2Notes = input.meeting2Notes;
     await prisma.mentorshipWarning.update({ where: { id }, data });
     return { ok: true, intent, message: "Warning updated." };
   }

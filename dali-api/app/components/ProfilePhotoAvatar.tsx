@@ -189,7 +189,7 @@ export function ProfilePhotoAvatar({
             onClick={() => fileRef.current?.click()}
             aria-label={previewUrl ? "Replace profile photo" : "Upload profile photo"}
             title={previewUrl ? "Replace photo" : "Upload photo"}
-            className="absolute -bottom-1.5 -right-1.5 w-9 h-9 rounded-full bg-os-accent text-os-bg border-2 border-os-bg shadow-sm flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-60"
+            className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-os-accent text-os-bg border-2 border-os-bg shadow-sm flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-60"
           >
             <Camera className="w-4 h-4" />
           </button>

@@ -372,6 +372,7 @@ model User {
   domainReferences       DomainReference[]   @relation("DomainReferenceAuthor")
   mentorshipWarnings     MentorshipWarning[] @relation("WarningMember")
   mentorshipWarningsMade MentorshipWarning[] @relation("WarningCreator")
+  mentorshipWarningsInvestigating MentorshipWarning[] @relation("WarningInvestigator")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -8301,8 +8302,18 @@ model MentorshipWarning {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  member    User  @relation("WarningMember", fields: [memberId], references: [id], onDelete: Cascade)
-  createdBy User? @relation("WarningCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  investigatorId  String?
+  linkUrl         String   @default("")
+  willAcceptReapp Boolean?
+  stage           String   @default("pending")
+  meeting1On      DateTime? @db.Date
+  meeting1Notes   String   @default("")
+  meeting2On      DateTime? @db.Date
+  meeting2Notes   String   @default("")
+
+  member       User  @relation("WarningMember", fields: [memberId], references: [id], onDelete: Cascade)
+  createdBy    User? @relation("WarningCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  investigator User? @relation("WarningInvestigator", fields: [investigatorId], references: [id], onDelete: SetNull)
 
   @@index([memberId])
   @@index([status, occurredOn])

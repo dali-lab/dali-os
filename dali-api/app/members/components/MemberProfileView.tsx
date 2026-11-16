@@ -85,6 +85,8 @@ import { formatLastActive } from "~/lib/presence";
 import { isNewMember, isBirthdayToday } from "~/members/lib/warmth";
 import { NewBadge, BirthdayBadge } from "~/members/components/WarmthBadges";
 import { attendanceCopy } from "~/education/lib/session-time";
+import { WarningCaseSection } from "~/mentorship/components/WarningCaseSection";
+import { WarningDot } from "~/mentorship/components/WarnedAvatar";
 
 // A member reads as a project does: the same hero (the photo as this page's
 // icon, the name at 32px, its labelled clusters to the right), the same tab
@@ -204,6 +206,8 @@ export function MemberProfileView({
       },
       new Date(),
     );
+  const [editingAbout, setEditingAbout] = useState(false);
+  const hasOpenWarning = data.warningCase?.warnings.some((w) => w.status === "open") ?? false;
   const showBirthday =
     !!member.birthday && isBirthdayToday(new Date(member.birthday), new Date());
 
@@ -225,12 +229,19 @@ export function MemberProfileView({
         presenceLabel={presenceLabel}
         showNewBadge={showNewBadge}
         showBirthday={showBirthday}
+        onEditAbout={canEdit ? () => setEditingAbout(true) : undefined}
       />
+
+      {editingAbout && <AboutEditor member={member} onClose={() => setEditingAbout(false)} />}
 
       <OsTabBar
         ariaLabel="Profile sections"
         tabs={TABS.filter((t) => t !== "mentorship" || mentorshipPanel).map(
-          (t) => ({ key: t, label: TAB_LABELS[t] }),
+          (t) => ({
+            key: t,
+            label: TAB_LABELS[t],
+            badge: t === "activity" && hasOpenWarning ? <WarningDot /> : undefined,
+          }),
         )}
         active={tab}
         onSelect={setTab}
@@ -248,8 +259,6 @@ export function MemberProfileView({
       <div className="flex flex-col gap-6 min-h-[25vh]">
         {tab === "profile" && (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <AboutCard member={member} canEdit={canEdit} />
-            <ContactCard member={member} canEdit={canEdit} />
             <DomainsCard
               roleLabels={roleLabels}
               eligibilities={member.domainEligibilities}
@@ -258,13 +267,6 @@ export function MemberProfileView({
               allowedLevels={allowedLevels}
             />
             {canSeeGroups && <GroupsCard groups={groups} />}
-            <WorkExperienceCard
-              memberId={member.id}
-              experiences={member.workExperiences}
-              canEdit={canEdit}
-              isSelf={isSelf}
-              resume={resume}
-            />
             {!isSelf && canRevokeWalletPass && (
               <WalletCard
                 wallet={wallet}
@@ -272,11 +274,22 @@ export function MemberProfileView({
                 canRevoke={canRevokeWalletPass}
               />
             )}
+            <WorkExperienceCard
+              memberId={member.id}
+              experiences={member.workExperiences}
+              canEdit={canEdit}
+              isSelf={isSelf}
+              resume={resume}
+            />
           </div>
         )}
 
         {tab === "activity" && (
           <>
+            {data.warningCase && (
+              <WarningCaseSection warnings={data.warningCase.warnings} people={data.warningCase.people} />
+            )}
+
             <AchievementsBlock achievements={achievements} />
 
             <ActivitySection
@@ -291,7 +304,7 @@ export function MemberProfileView({
               <EducationSection education={data.education} />
             )}
 
-            <ComplianceBlock compliance={compliance} isSelf={isSelf} asCard />
+            <ComplianceBlock compliance={compliance} isSelf={isSelf} />
           </>
         )}
 
@@ -337,6 +350,7 @@ function MemberHeader({
   presenceLabel,
   showNewBadge,
   showBirthday,
+  onEditAbout,
 }: {
   member: ProfileMember;
   photoUrlResolved: string | null;
@@ -351,7 +365,9 @@ function MemberHeader({
   presenceLabel: string | null;
   showNewBadge: boolean;
   showBirthday: boolean;
+  onEditAbout?: () => void;
 }) {
+  const details = aboutDetails(member);
   return (
     <header className="flex items-center gap-7">
       <ProfilePhotoAvatar
@@ -363,28 +379,56 @@ function MemberHeader({
       />
 
       <div className="min-w-0 flex flex-col gap-3 flex-1">
-        {/* Name row */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex flex-col gap-1">
-            <h1 className="font-heading text-[32px] font-medium text-foreground leading-none">
-              {member.firstName} {member.lastName}
-            </h1>
-            {member.handle && (
-              <span className="text-[13px] text-os-grey">@{member.handle}</span>
+          <div className="min-w-0 flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="font-heading text-[32px] font-medium text-foreground leading-none">
+                {member.firstName} {member.lastName}
+              </h1>
+              {showNewBadge && <NewBadge />}
+              {showBirthday && <BirthdayBadge />}
+            </div>
+            {details.length > 0 && (
+              <dl className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-os-grey">
+                {details.map((d) => (
+                  <div key={`${d.label}-${d.value}`} className="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                    <dt className="sr-only">{d.label}</dt>
+                    {d.icon && <span aria-hidden>{d.icon}</span>}
+                    <dd className="min-w-0 break-all text-foreground">
+                      {"href" in d && d.href ? (
+                        <a href={d.href} target="_blank" rel="noreferrer" className="text-os-accent hover:underline">
+                          {d.value}
+                        </a>
+                      ) : (
+                        d.value
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
             )}
           </div>
-          <ProfileRequestButtons
-            isSelf={isSelf}
-            openTo={openTo}
-            firstName={member.firstName}
-            coffeeChatSent={coffeeChatSent}
-            resumeReviewSent={resumeReviewSent}
-          />
+          {onEditAbout && (
+            <button
+              type="button"
+              onClick={onEditAbout}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-os-container px-3 py-1 text-[12px] font-semibold text-os-grey transition-colors hover:border-os-container-hi hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          )}
         </div>
 
-        {/* Status / warmth badges + presence */}
-        {(isStaff || isAlumni || member.gradProgram || showNewBadge || showBirthday || presenceLabel) && (
+        {(isStaff || isAlumni || member.gradProgram || presenceLabel || openTo.coffeeChats || openTo.resumeReviews) && (
           <div className="flex flex-wrap items-center gap-2">
+            <ProfileRequestButtons
+              isSelf={isSelf}
+              openTo={openTo}
+              firstName={member.firstName}
+              coffeeChatSent={coffeeChatSent}
+              resumeReviewSent={resumeReviewSent}
+            />
             {isStaff && (
               <span className={cn(HERO_PILL, "bg-os-accent/15 text-os-accent")}>
                 Staff
@@ -400,8 +444,6 @@ function MemberHeader({
                 {member.gradProgram}
               </span>
             )}
-            {showNewBadge && <NewBadge />}
-            {showBirthday && <BirthdayBadge />}
             {presenceLabel && (
               <p className="flex items-center gap-1.5 text-xs text-os-grey">
                 <Tooltip
@@ -562,55 +604,51 @@ const ABOUT_FIELDS = new Set([
   "dietaryRestrictions",
 ]);
 
-function AboutCard({
-  member,
-  canEdit,
-}: {
-  member: ProfileMember;
-  canEdit: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [resetKey, setResetKey] = useState(0);
+function aboutDetails(member: ProfileMember) {
+  const ic = "h-3.5 w-3.5";
+  return [
+    { label: "Handle", icon: null, value: member.handle ? `@${member.handle}` : null },
+    { label: "Pronouns", icon: <UserIcon className={ic} />, value: member.pronouns },
+    { label: "NetID", icon: <Fingerprint className={ic} />, value: member.netId },
+    { label: "Major", icon: <GraduationCap className={ic} />, value: member.major },
+    { label: "Class year", icon: <GraduationCap className={ic} />, value: member.classYear ? `Class of ${member.classYear}` : null },
+    { label: "Hometown", icon: <MapPin className={ic} />, value: member.hometown },
+    { label: "Based in", icon: <MapPinned className={ic} />, value: member.currentLocation },
+    { label: "Birthday", icon: <Cake className={ic} />, value: formatBirthday(member.birthday) },
+    { label: "Dietary", icon: <Utensils className={ic} />, value: member.dietaryRestrictions },
+    ...memberEmails(member).map((e) => ({ label: "Email", icon: <Mail className={ic} />, value: e })),
+    { label: "Phone", icon: <Phone className={ic} />, value: member.phoneNumber },
+    { label: "Personal site", icon: <Globe className={ic} />, value: member.personalSite ? member.personalSite.replace(/^https?:\/\//, "").replace(/\/$/, "") : null, href: member.personalSite },
+    { label: "GitHub", icon: <Github className={ic} />, value: member.githubUsername, href: member.githubUsername ? `https://github.com/${member.githubUsername}` : null },
+    { label: "LinkedIn", icon: <Linkedin className={ic} />, value: member.linkedinUrl ? member.linkedinUrl.replace(/^https?:\/\//, "").replace(/\/$/, "") : null, href: member.linkedinUrl },
+    { label: "Time zone", icon: <Clock className={ic} />, value: member.timeZone ? formatZoneLabel(member.timeZone) : null },
+  ].filter((r): r is typeof r & { value: string; href?: string | null } => Boolean(r.value));
+}
+
+function AboutEditor({ member, onClose }: { member: ProfileMember; onClose: () => void }) {
   const submit = useSubmit();
   const formRef = useRef<HTMLFormElement | null>(null);
   const { formClass } = useOsChrome();
   const ic = OS_DETAIL_ICON;
-  const dash = <span className="text-os-muted">—</span>;
-
-  function cancel() {
-    setResetKey((k) => k + 1);
-    setEditing(false);
-  }
 
   function save() {
     if (formRef.current) submit(formRef.current);
-    setEditing(false);
+    onClose();
   }
 
   return (
-    <Form method="post" ref={formRef} className="h-full">
+    <Form method="post" ref={formRef}>
       <input type="hidden" name="intent" value="profile" />
-      <PersonalHiddenFields member={member} exclude={ABOUT_FIELDS} />
-      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+      <PersonalHiddenFields member={member} exclude={EDITOR_FIELDS} />
+      <article className="rounded-os-card bg-os-card overflow-hidden">
         <CardHeader
           icon={<UserIcon className="w-[17px] h-[17px]" />}
           iconBg="rgba(185,162,242,0.14)"
           iconColor="#b9a2f2"
-          title="About"
-          trailing={
-            canEdit && (
-              <CardEditControls
-                editing={editing}
-                onEdit={() => setEditing(true)}
-                onCancel={cancel}
-                onSave={save}
-              />
-            )
-          }
+          title="Edit profile"
+          trailing={<CardEditControls editing onEdit={() => {}} onCancel={onClose} onSave={save} />}
         />
-        <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "grid grid-cols-[max-content_1fr]"))}>
-          {editing ? (
-            <>
+        <div className={cn("px-5 pb-5", formClass, "grid grid-cols-[max-content_1fr]")}>
               <DetailEditRow icon={<UserIcon className={ic} />} label="Pronouns">
                 <input
                   name="pronouns"
@@ -695,108 +733,6 @@ function AboutCard({
                   className="w-full resize-y"
                 />
               </DetailEditRow>
-            </>
-          ) : (
-            <>
-              <DetailRow icon={<UserIcon className={ic} />} label="Pronouns">
-                {member.pronouns ?? dash}
-              </DetailRow>
-              <DetailRow icon={<AtSign className={ic} />} label="Handle">
-                {member.handle ? `@${member.handle}` : dash}
-              </DetailRow>
-              <DetailRow icon={<Fingerprint className={ic} />} label="NetID">
-                {member.netId ?? dash}
-              </DetailRow>
-              <DetailRow icon={<GraduationCap className={ic} />} label="Major">
-                {member.major ?? dash}
-              </DetailRow>
-              <DetailRow
-                icon={<GraduationCap className={ic} />}
-                label="Class year"
-              >
-                {member.classYear?.toString() ?? dash}
-              </DetailRow>
-              <DetailRow icon={<MapPin className={ic} />} label="Hometown">
-                {member.hometown ?? dash}
-              </DetailRow>
-              <DetailRow icon={<MapPinned className={ic} />} label="Based in">
-                {member.currentLocation ?? dash}
-              </DetailRow>
-              <DetailRow icon={<Cake className={ic} />} label="Birthday">
-                {formatBirthday(member.birthday) ?? dash}
-              </DetailRow>
-              <DetailRow icon={<Utensils className={ic} />} label="Dietary">
-                {member.dietaryRestrictions ?? dash}
-              </DetailRow>
-            </>
-          )}
-        </div>
-      </article>
-    </Form>
-  );
-}
-
-// ─── Contact card ────────────────────────────────────────────────────────────
-
-const CONTACT_FIELDS = new Set([
-  "phoneNumber",
-  "personalEmail",
-  "githubUsername",
-  "linkedinUrl",
-  "personalSite",
-  "timeZone",
-]);
-
-function ContactCard({
-  member,
-  canEdit,
-}: {
-  member: ProfileMember;
-  canEdit: boolean;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [resetKey, setResetKey] = useState(0);
-  const submit = useSubmit();
-  const formRef = useRef<HTMLFormElement | null>(null);
-  const { formClass } = useOsChrome();
-  const ic = OS_DETAIL_ICON;
-  const dash = <span className="text-os-muted">—</span>;
-  const emails = memberEmails(member);
-
-  function cancel() {
-    setResetKey((k) => k + 1);
-    setEditing(false);
-  }
-
-  function save() {
-    if (formRef.current) submit(formRef.current);
-    setEditing(false);
-  }
-
-  return (
-    <Form method="post" ref={formRef} className="h-full">
-      <input type="hidden" name="intent" value="profile" />
-      <PersonalHiddenFields member={member} exclude={CONTACT_FIELDS} />
-      <article className="rounded-os-card bg-os-card overflow-hidden h-full">
-        <CardHeader
-          icon={<Mail className="w-[17px] h-[17px]" />}
-          iconBg="rgba(121,211,195,0.13)"
-          iconColor="#79d3c3"
-          title="Contact"
-          trailing={
-            canEdit && (
-              <CardEditControls
-                editing={editing}
-                onEdit={() => setEditing(true)}
-                onCancel={cancel}
-                onSave={save}
-              />
-            )
-          }
-        />
-        <div key={resetKey} className={cn("px-5 pb-5", editing && cn(formClass, "grid grid-cols-[max-content_1fr]"))}>
-          {editing ? (
-            <>
               <DetailEditRow
                 icon={<Mail className={ic} />}
                 label="Email"
@@ -856,81 +792,24 @@ function ContactCard({
                   className="w-full"
                 />
               </DetailEditRow>
-            </>
-          ) : (
-            <>
-              <DetailRow icon={<Mail className={ic} />} label="Email">
-                {emails.length === 0 ? (
-                  dash
-                ) : (
-                  <span className="flex flex-col items-end gap-0.5">
-                    {emails.map((e) => (
-                      <span key={e} className="break-all">
-                        {e}
-                      </span>
-                    ))}
-                  </span>
-                )}
-              </DetailRow>
-              <DetailRow icon={<Phone className={ic} />} label="Phone">
-                {member.phoneNumber ?? dash}
-              </DetailRow>
-              <DetailRow icon={<Globe className={ic} />} label="Personal site">
-                {member.personalSite ? (
-                  <a
-                    href={member.personalSite}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-os-accent hover:underline break-all"
-                  >
-                    {member.personalSite
-                      .replace(/^https?:\/\//, "")
-                      .replace(/\/$/, "")}
-                  </a>
-                ) : (
-                  dash
-                )}
-              </DetailRow>
-              <DetailRow icon={<Clock className={ic} />} label="Time zone">
-                {member.timeZone ? formatZoneLabel(member.timeZone) : dash}
-              </DetailRow>
-              <DetailRow icon={<Github className={ic} />} label="GitHub">
-                {member.githubUsername ? (
-                  <a
-                    href={`https://github.com/${member.githubUsername}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-os-accent hover:underline break-all"
-                  >
-                    {member.githubUsername}
-                  </a>
-                ) : (
-                  dash
-                )}
-              </DetailRow>
-              <DetailRow icon={<Linkedin className={ic} />} label="LinkedIn">
-                {member.linkedinUrl ? (
-                  <a
-                    href={member.linkedinUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-os-accent hover:underline break-all"
-                  >
-                    {member.linkedinUrl
-                      .replace(/^https?:\/\//, "")
-                      .replace(/\/$/, "")}
-                  </a>
-                ) : (
-                  dash
-                )}
-              </DetailRow>
-            </>
-          )}
         </div>
       </article>
     </Form>
   );
 }
+
+// ─── Contact card ────────────────────────────────────────────────────────────
+
+const CONTACT_FIELDS = new Set([
+  "phoneNumber",
+  "personalEmail",
+  "githubUsername",
+  "linkedinUrl",
+  "personalSite",
+  "timeZone",
+]);
+
+const EDITOR_FIELDS = new Set([...ABOUT_FIELDS, ...CONTACT_FIELDS]);
 
 // ─── Domains card ────────────────────────────────────────────────────────────
 
@@ -964,18 +843,11 @@ function DomainsCard({
         }
       />
       <div className="px-5 pb-5 flex flex-col gap-2">
-        {roleLabels.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-1">
-            {roleLabels.map((r) => (
-              <span
-                key={r}
-                className="inline-flex items-center rounded-full bg-os-accent/15 px-3.5 py-[5px] text-[13px] font-semibold text-os-accent"
-              >
-                {r}
-              </span>
-            ))}
+        {roleLabels.map((r) => (
+          <div key={r} className={LIST_ROW}>
+            <span className="text-sm font-medium text-foreground">{r}</span>
           </div>
-        )}
+        ))}
         {eligibilities.length === 0 && !canManage && (
           <p className="text-sm text-os-muted italic">
             No domain eligibilities yet.
@@ -1507,7 +1379,7 @@ function ActivitySection({
   showReviewsRow: boolean;
   canEditLevel: boolean;
 }) {
-  const { panel, sectionShell, sectionTitle } = useOsChrome();
+  const { sectionShell, sectionTitle } = useOsChrome();
   const location = useLocation();
   const cardRef = useRef<HTMLDivElement>(null);
   const [highlight, setHighlight] = useState(false);
@@ -1528,72 +1400,76 @@ function ActivitySection({
 
   return (
     <section id="project-assignments" ref={cardRef} className={sectionShell}>
-      <h2 className={sectionTitle}>
-        {isSelf ? "My activity" : "Activity"}
-      </h2>
+      <div className="flex items-center gap-1.5">
+        <h2 className={sectionTitle}>Projects</h2>
+        <InfoTip content="P1 = entry level, P2 = intermediate, P3 = senior. Levels are set by Core and reflect eligibility in each domain. Increasing a level requires the member's eligibility to be promoted first." />
+      </div>
 
       <div
         className={cn(
-          panel,
-          "p-5 flex flex-col gap-3 transition-shadow",
+          "flex flex-col gap-3 rounded-os-card transition-shadow",
           highlight &&
             "ring-2 ring-os-accent ring-offset-2 ring-offset-background",
         )}
       >
-        <SubHeading>
-          Projects
-          <InfoTip content="P1 = entry level, P2 = intermediate, P3 = senior. Levels are set by Core and reflect eligibility in each domain. Increasing a level requires the member's eligibility to be promoted first." />
-        </SubHeading>
         {projectHistory.length === 0 ? (
           <p className="text-sm text-os-muted italic">
             No project assignments yet.
           </p>
         ) : (
-          projectHistory.map((g) => (
-            <div key={g.termCode} className="flex flex-col gap-1.5">
-              <p className="text-xs font-medium text-os-grey">
-                {g.termCode}
-                {g.isCurrent && " · This term"}
-              </p>
-              <ul className="flex flex-col gap-1.5">
-                {g.assignments.map((a) =>
-                  canEditLevel && g.isCurrent ? (
-                    <li key={a.id} className={LIST_ROW}>
-                      <Link
-                        to={`/projects/${a.project.id}`}
-                        className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground hover:underline"
-                      >
-                        <ProjectIcon iconEmoji={a.project.iconEmoji} />
-                        <span className="truncate">{a.project.name}</span>
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {projectHistory.flatMap((g) =>
+              g.assignments.map((a) => {
+                const term = g.isCurrent ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-os-green/15 px-2.5 py-0.5 text-[11px] font-semibold text-os-green">
+                    <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-os-green" />
+                    Current term
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded-full bg-os-container px-2.5 py-0.5 text-[11px] font-semibold text-os-grey">
+                    {g.termCode}
+                  </span>
+                );
+                const title = (
+                  <span className="flex min-w-0 items-center gap-1.5 text-base font-semibold text-foreground">
+                    <ProjectIcon iconEmoji={a.project.iconEmoji} />
+                    <span className="truncate">{a.project.name}</span>
+                  </span>
+                );
+                const cardClass =
+                  "relative flex min-h-[88px] flex-col justify-between gap-3 rounded-os-card bg-os-card p-4";
+                return canEditLevel && g.isCurrent ? (
+                  <li key={a.id} className={cardClass}>
+                    <div className="flex items-start justify-between gap-2">
+                      <Link to={`/projects/${a.project.id}`} className="min-w-0 hover:underline">
+                        {title}
                       </Link>
-                      <span className="flex items-center gap-1.5 text-xs text-os-grey whitespace-nowrap">
-                        {a.domain.name}
-                        <ProfileLevelEditor assignment={a} />
+                      {term}
+                    </div>
+                    <span className="flex items-center gap-1.5 text-xs text-os-grey">
+                      {a.domain.name}
+                      <ProfileLevelEditor assignment={a} />
+                    </span>
+                  </li>
+                ) : (
+                  <li key={a.id}>
+                    <Link
+                      to={`/projects/${a.project.id}`}
+                      className={cn(cardClass, "h-full transition-colors hover:bg-os-container")}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        {title}
+                        {term}
+                      </div>
+                      <span className="text-xs text-os-grey">
+                        {a.domain.name} · {a.level}
                       </span>
-                    </li>
-                  ) : (
-                    <li key={a.id}>
-                      <Link
-                        to={`/projects/${a.project.id}`}
-                        className={cn(
-                          LIST_ROW,
-                          "hover:bg-os-container transition-colors",
-                        )}
-                      >
-                        <span className="flex items-center gap-1.5 min-w-0 text-sm font-medium text-foreground">
-                          <ProjectIcon iconEmoji={a.project.iconEmoji} />
-                          <span className="truncate">{a.project.name}</span>
-                        </span>
-                        <span className="text-xs text-os-grey whitespace-nowrap">
-                          {a.domain.name} · {a.level}
-                        </span>
-                      </Link>
-                    </li>
-                  ),
-                )}
-              </ul>
-            </div>
-          ))
+                    </Link>
+                  </li>
+                );
+              }),
+            )}
+          </ul>
         )}
 
         {showReviewsRow && (
@@ -1707,7 +1583,7 @@ function EducationSection({
   }
   return (
     <Section title="Education">
-      <div className={cn(panel, "p-5 flex flex-col gap-4")}>
+      <div className={cn(panel, "grid grid-cols-1 gap-x-8 gap-y-5 p-5 md:grid-cols-2 lg:grid-cols-3")}>
         {education.taught.length > 0 && (
           <div className="flex flex-col gap-1.5">
             <SubHeading>Taught</SubHeading>
@@ -1731,19 +1607,7 @@ function EducationSection({
           </div>
         )}
 
-        {education.ceCredits.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <SubHeading>CE credits</SubHeading>
-            {education.ceCredits.map((c) => (
-              <span
-                key={c.termCode}
-                className="inline-flex items-center rounded-full bg-os-container px-3 py-[5px] text-[13px] font-semibold text-foreground"
-              >
-                {c.termCode}: {c.count}
-              </span>
-            ))}
-          </div>
-        )}
+        {education.ceCredits.length > 0 && <CeCredits credits={education.ceCredits} />}
 
         {education.attended.length > 0 && (
           <div className="flex flex-col gap-1.5">
@@ -1767,6 +1631,41 @@ function EducationSection({
         )}
       </div>
     </Section>
+  );
+}
+
+function CeCredits({ credits }: { credits: Array<{ termCode: string; count: number }> }) {
+  const [showPast, setShowPast] = useState(false);
+  const [current, ...past] = credits;
+  return (
+    <div className="flex flex-col gap-2">
+      <SubHeading>CE credits</SubHeading>
+      <div className="flex items-baseline gap-2">
+        <span className="text-3xl font-semibold leading-none text-foreground">{current.count}</span>
+      </div>
+      {past.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setShowPast((v) => !v)}
+            aria-expanded={showPast}
+            className="self-start text-xs font-medium text-os-grey hover:text-foreground"
+          >
+            {showPast ? "Hide past CE credits" : "Show past CE credits"}
+          </button>
+          {showPast && (
+            <ul className="flex flex-col gap-1">
+              {past.map((c) => (
+                <li key={c.termCode} className="flex items-center justify-between gap-6 text-sm">
+                  <span className="text-os-grey">{c.termCode}</span>
+                  <span className="font-medium text-foreground">{c.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -1881,7 +1780,7 @@ function AddEligibility({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={cn(quietBtn, "self-start")}
+        className={cn(quietBtn, "self-start !font-medium")}
       >
         <Plus className="w-3 h-3" />
         Add domain

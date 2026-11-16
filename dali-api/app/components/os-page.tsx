@@ -95,7 +95,7 @@ export function OsTabBar<T extends string>({
   trailing,
   ariaLabel,
 }: {
-  tabs: { key: T; label: string }[];
+  tabs: { key: T; label: string; badge?: ReactNode }[];
   active: T;
   onSelect: (key: T) => void;
   /** Pinned to the far right of the row — a settings gear, an action. */
@@ -123,7 +123,10 @@ export function OsTabBar<T extends string>({
                 : "text-muted-foreground hover:bg-os-hover hover:text-foreground",
             )}
           >
-            {t.label}
+            <span className="inline-flex items-center gap-1.5">
+              {t.label}
+              {t.badge}
+            </span>
           </button>
         ))}
       </div>
