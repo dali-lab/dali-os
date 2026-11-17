@@ -27,9 +27,10 @@ export interface DrawerProps {
   /** Pinned below the scrollable body — action rows, not more content. */
   footer?: ReactNode;
   width?: 360 | 480;
+  disableEscape?: boolean;
 }
 
-export function Drawer({ open, onClose, title, headerActions, labelledBy, children, footer, width = 480 }: DrawerProps) {
+export function Drawer({ open, onClose, title, headerActions, labelledBy, children, footer, width = 480, disableEscape }: DrawerProps) {
   const generatedId = useId();
   const titleId = title !== undefined ? generatedId : labelledBy ?? generatedId;
   return (
@@ -37,6 +38,7 @@ export function Drawer({ open, onClose, title, headerActions, labelledBy, childr
       open={open}
       onClose={onClose}
       labelledBy={titleId}
+      disableEscape={disableEscape}
       className={`fixed inset-0 ${Z.modal} flex justify-end bg-os-overlay`}
       containerClassName={cn(
         "flex h-full w-full flex-col border-l border-os-container bg-os-card shadow-[-24px_0_60px_var(--color-os-shadow)] outline-none motion-safe:animate-detail-panel",

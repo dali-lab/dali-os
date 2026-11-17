@@ -385,6 +385,9 @@ model User {
   blogComments       BlogComment[]
   pageDocsCreated    PageDoc[]  @relation("PageDocCreatedBy")
   pageDocsLastEdited PageDoc[]  @relation("PageDocLastEditedBy")
+  resourceHubPages   ResourceHubPage[]
+  critSubmissions    CritSubmission[]  @relation("CritSubmissionAuthor")
+  domainReferences   DomainReference[] @relation("DomainReferenceAuthor")
 
   // ─── Payroll: Reconcile back-relation ─────────────────────────────────────
   timesheetImports     TimesheetImport[]
@@ -883,6 +886,9 @@ model Domain {
 
   applicationCycles     DomainApplicationCycle[]
   domainLeadAssignments DomainLeadAssignment[]
+  resourceHubPage       ResourceHubPage?
+  critSubmissions       CritSubmission[]
+  domainReferences      DomainReference[]
   cycleReviewers        CycleReviewer[]
   cycleInterviewers     CycleInterviewer[]
   delibsSessions        DelibsSession[]
@@ -1786,6 +1792,8 @@ enum DocCommentTarget {
   // modal are DocComments with this target — reuses the doc-comment pipeline
   // rather than a second comment table.
   pagedoc
+  // A Crit Wall post (CritSubmission.id). Pinned comments carry an image anchor.
+  crit
 }
 
 // Per-page documentation / guide surfaced in a "Docs" modal on hard-to-navigate
@@ -7964,6 +7972,76 @@ model BlogPost {
   updatedAt DateTime @updatedAt
 
   @@index([publishedAt])
+  @@index([authorId])
+}
+
+// A Resource Hub page: a card on /resource-hub that opens a blank canvas its
+// owners lay out with the editor's "/" blocks. Created from the hub's Add
+// button; a draft until published. Owned by the creator and, when set, the
+// leads of `domainId`. The body is the collab room `resourceHub:{id}:body`,
+// synced back to contentJson (see COLLAB_SOURCES).
+model ResourceHubPage {
+  id          String    @id @default(cuid())
+  title       String    @default("Untitled hub")
+  coverUrl    String?
+  publishedAt DateTime?
+  contentJson Json?
+  domainId    String?   @unique
+  domain      Domain?   @relation(fields: [domainId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([createdById])
+}
+
+// A domain's Crit Wall: work members share for feedback. One wall per domain.
+// `authorId` is kept even when `anonymous` is set (ownership and moderation);
+// the serializers in app/lib/crit.server.ts never expose it for those posts.
+model CritSubmission {
+  id         String   @id @default(cuid())
+  domainId   String
+  domain     Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  authorId   String?
+  author     User?    @relation("CritSubmissionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  anonymous  Boolean  @default(false)
+  // "image" | "file" (uploads) | "link" (external)
+  kind       String
+  url        String
+  previewUrl String?
+  fileName   String?
+  title      String
+  question   String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([domainId, createdAt])
+  @@index([authorId])
+}
+
+// A domain's References gallery: work and inspiration members share. One gallery per domain.
+// `daliMade` records authorship (the submitter made it); `creatorName` is the
+// optional credit for someone else's work. `authorId` is always the submitter.
+model DomainReference {
+  id          String   @id @default(cuid())
+  domainId    String
+  domain      Domain   @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  authorId    String?
+  author      User?    @relation("DomainReferenceAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  // "image" | "file" (uploads) | "link" (external)
+  kind        String
+  url         String
+  previewUrl  String?
+  fileName    String?
+  title       String
+  creatorName String?
+  daliMade    Boolean  @default(false)
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([domainId, createdAt])
   @@index([authorId])
 }
 

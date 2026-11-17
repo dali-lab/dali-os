@@ -416,6 +416,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "project.sprint_closed",
           "collab.comment_reply",
           "file.comment",
+          "crit.comment",
           "file.new_version",
           "pagedoc.mention",
           "pagedoc.maintainer_assigned",
@@ -3294,7 +3295,9 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
           "partnerApplication",
           "cycle",
           "guide",
-          "helpArticle"
+          "helpArticle",
+          "resourceHub",
+          "reference"
         ],
         "description": "Return only this category and page through it with limit and cursor."
       },
@@ -3318,7 +3321,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "list_comments",
-  "description": "List comment threads on a document (Page), project file, or page-doc FAQ. Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership.",
+  "description": "List comment threads on a document (Page), project file, page-doc FAQ, or Crit Wall post (targetType 'crit', targetId from list_crit_posts; an anonymous poster's comments read as Anonymous). Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership; Crit Wall posts require the Resource Hub to be on for you and visible.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3327,9 +3330,10 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "enum": [
           "doc",
           "file",
-          "pagedoc"
+          "pagedoc",
+          "crit"
         ],
-        "description": "The kind of target: 'doc' (Page), 'file' (ProjectFile), or 'pagedoc' (page-doc FAQ)."
+        "description": "The kind of target: 'doc' (Page), 'file' (ProjectFile), 'pagedoc' (page-doc FAQ), or 'crit' (Crit Wall post). Crit pins carry anchor {kind: 'image', x, y}."
       },
       "targetId": {
         "type": "string",
@@ -3743,7 +3747,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
 }
 {
   "name": "manage_comment",
-  "description": "Create, edit, react, unreact, or delete a comment on a document (Page), project file, or page-doc. Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core.",
+  "description": "Create, edit, react, unreact, or delete a comment on a document (Page), project file, page-doc, or Crit Wall post (targetType 'crit', targetId from list_crit_posts). Permissions mirror the web: creating/reacting requires comment access; editing is author-only; deleting a file comment requires Core; deleting a Crit Wall comment requires being its author, Core, or a lead of the hub's domain.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -3762,7 +3766,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "enum": [
           "doc",
           "file",
-          "pagedoc"
+          "pagedoc",
+          "crit"
         ],
         "description": "Required for 'create'."
       },
@@ -3792,7 +3797,8 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
             "type": "string",
             "enum": [
               "slide",
-              "blocknote"
+              "blocknote",
+              "image"
             ]
           },
           "slideId": {
@@ -3812,7 +3818,7 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
             "maximum": 1
           }
         },
-        "description": "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide)."
+        "description": "For 'create' on doc targets: an inline marker ({kind: 'blocknote'}), or on a slide deck a pin ({kind: 'slide', slideId, elementId?, x?, y?} with x and y as 0-1 fractions of the slide). On crit targets: an image pin ({kind: 'image', x, y} as 0-1 fractions of the image) on a top-level comment on an image post."
       },
       "versionId": {
         "type": "string",
@@ -10519,6 +10525,179 @@ exports[`MCP registered tool definitions > keeps every tool name, description, s
         "items": {
           "type": "string"
         }
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:write"
+}
+{
+  "name": "list_resource_hubs",
+  "description": "List the Resource Hubs you can open, one per domain: id, domain, title, whether it is published, whether you can edit it, and its URL. Everyone sees published hubs; drafts show only to Core, the hub's creator and the leads of its domain.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "get_resource_hub",
+  "description": "One Resource Hub: title, domain, published state and its page as Markdown, plus how many Crit Wall posts and references its domain has. Pass hubId or domainId. A draft hub is not found unless you can edit it. Long pages come back in chunks of limit characters: pass page.nextCursor as cursor until page.hasMore is false.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "hubId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A hub id from list_resource_hubs."
+      },
+      "domainId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A domain id from list_domains. Used when hubId is not given."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 200000,
+        "description": "Page size (default 50000, max 200000)."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Pass page.nextCursor from the previous response to get the next page."
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "list_crit_posts",
+  "description": "List the Crit Wall posts for a hub or domain, newest first, with comment counts. Pass hubId or domainId. An anonymous post shows no author unless you posted it. Read or write a post's comments with list_comments and manage_comment (targetType 'crit', targetId the post id).",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "hubId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A hub id from list_resource_hubs."
+      },
+      "domainId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A domain id from list_domains. Used when hubId is not given."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "description": "Page size (default 25, max 100)."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Pass page.nextCursor from the previous response to get the next page."
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "list_domain_references",
+  "description": "List a domain's References, newest first: work and inspiration members share, with title, link or file, creator credit and note. Pass hubId or domainId. DALI-made references are credited to the member who shared them.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "hubId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A hub id from list_resource_hubs."
+      },
+      "domainId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A domain id from list_domains. Used when hubId is not given."
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "description": "Page size (default 25, max 100)."
+      },
+      "cursor": {
+        "type": "string",
+        "description": "Pass page.nextCursor from the previous response to get the next page."
+      }
+    },
+    "additionalProperties": false
+  },
+  "requiredScope": "mcp:read"
+}
+{
+  "name": "manage_domain_reference",
+  "description": "Add or delete a Reference on a domain's hub, as the References tab does. Actions: 'add' (kind 'link' with an http(s) url, or 'image'/'file' with an upload url from this app; title optional for links, which fall back to the page title; daliMade true credits the member the reference is shared as, otherwise creatorName credits someone else; note up to 400 characters) and 'delete' (your own reference, or any as Core or a lead of the domain). Pass hubId or domainId.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "add",
+          "delete"
+        ]
+      },
+      "hubId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A hub id from list_resource_hubs."
+      },
+      "domainId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "A domain id from list_domains. Used when hubId is not given."
+      },
+      "kind": {
+        "type": "string",
+        "enum": [
+          "link",
+          "image",
+          "file"
+        ]
+      },
+      "url": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      },
+      "fileName": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "title": {
+        "type": "string",
+        "maxLength": 120
+      },
+      "daliMade": {
+        "type": "boolean",
+        "description": "True when the work was made at DALI."
+      },
+      "creatorName": {
+        "type": "string",
+        "maxLength": 120,
+        "description": "Credit for someone else's work. Ignored when daliMade is true."
+      },
+      "note": {
+        "type": "string",
+        "maxLength": 400
+      },
+      "referenceId": {
+        "type": "string",
+        "minLength": 1,
+        "description": "For 'delete'."
       }
     },
     "required": [

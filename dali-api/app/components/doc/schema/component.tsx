@@ -4,102 +4,23 @@
 // opens one generic form built from the kind's field definitions.
 
 import { createReactBlockSpec } from "@blocknote/react";
-import { ArrowDown, ArrowUp, ImagePlus, Pencil, Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
-import { Modal } from "~/components/Modal";
-import { modalCardClass } from "~/components/os-chrome";
+import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { IconButton } from "~/components/ui/IconButton";
-import {
-  TONES,
-  kindDef,
-  parseComponentData,
-  type ComponentData,
-  type FieldDef,
-  type KindDef,
-} from "../components/kinds";
+import { kindDef, parseComponentData, type ComponentData, type KindDef } from "../components/kinds";
 import { ComponentView } from "../components/views";
-import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../upload";
+import { CardsEditor } from "../components/editors/CardsEditor";
+import { ChipsEditor } from "../components/editors/ChipsEditor";
+import { CollectionEditor } from "../components/editors/CollectionEditor";
+import { FeatureEditor } from "../components/editors/FeatureEditor";
+import { Field } from "../components/editors/Field";
+import { GalleryEditor } from "../components/editors/GalleryEditor";
+import { LinksEditor } from "../components/editors/LinksEditor";
+import { StatsEditor } from "../components/editors/StatsEditor";
+import { TimelineEditor } from "../components/editors/TimelineEditor";
+import { startItemDrag } from "../components/editors/reorder";
 import { componentConfig } from "./configs";
-
-function Field({
-  def,
-  value,
-  onChange,
-}: {
-  def: FieldDef;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  if (def.type === "tone") {
-    return (
-      <div className="flex flex-col gap-1.5">
-        <span className="os-field-label">{def.label}</span>
-        <div className="flex gap-1.5" role="radiogroup" aria-label={def.label}>
-          {TONES.map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="radio"
-              aria-checked={value === t}
-              aria-label={t}
-              onClick={() => onChange(t)}
-              className={`dali-cmp-swatch dali-cmp-tone--${t}`}
-            />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <label className="flex min-w-0 flex-1 flex-col gap-1.5">
-      <span>{def.label}</span>
-      {def.type === "textarea" || def.type === "code" ? (
-        <textarea
-          rows={def.type === "code" ? 16 : 3}
-          value={value}
-          placeholder={def.placeholder}
-          spellCheck={def.type !== "code"}
-          onChange={(e) => onChange(e.target.value)}
-          className={def.type === "code" ? "font-mono text-xs" : undefined}
-        />
-      ) : (
-        <span className="flex items-center gap-1">
-          <input
-            type="text"
-            value={value}
-            placeholder={def.type === "image" ? "Image link" : def.placeholder}
-            onChange={(e) => onChange(e.target.value)}
-            className="min-w-0 flex-1"
-          />
-          {def.type === "image" && (
-            <>
-              <IconButton
-                label="Upload image"
-                icon={ImagePlus}
-                onClick={() => fileRef.current?.click()}
-              />
-              <input
-                ref={fileRef}
-                type="file"
-                accept={IMAGE_UPLOAD_ACCEPT}
-                className="hidden"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = "";
-                  if (file) onChange(await uploadEditorImage(file));
-                }}
-              />
-            </>
-          )}
-        </span>
-      )}
-    </label>
-  );
-}
+import { onFreshComponent, takeFreshComponent } from "./fresh-components";
 
 function ComponentForm({
   def,
@@ -123,23 +44,40 @@ function ComponentForm({
     setItems(items);
   };
 
+  if (def.kind === "timeline") {
+    return <TimelineEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "links") {
+    return <LinksEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "stats") {
+    return <StatsEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "cards") {
+    return <CardsEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "gallery") {
+    return <GalleryEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "collection") {
+    return <CollectionEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "feature") {
+    return <FeatureEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+  if (def.kind === "chips") {
+    return <ChipsEditor draft={draft} setDraft={setDraft} onSave={onSave} onClose={onClose} />;
+  }
+
   return (
-    <Modal
-      open
-      onClose={onClose}
-      labelledBy="dali-cmp-form-title"
-      containerClassName={modalCardClass(def.kind === "code" ? "max-w-3xl" : "max-w-2xl")}
-    >
       <form
-        className="os-form flex flex-col gap-4"
+        className="dali-cmp-panel dali-cmp-inline"
         onSubmit={(e) => {
           e.preventDefault();
           onSave(draft);
         }}
       >
-        <h2 id="dali-cmp-form-title" className="font-heading text-lg font-bold text-foreground">
-          {def.title}
-        </h2>
+        <span className="dali-cmp-eyebrow">{def.title}</span>
         {def.fields.map((f) => (
           <Field
             key={f.key}
@@ -151,7 +89,7 @@ function ComponentForm({
         {itemFields.length > 0 && (
           <div className="flex flex-col gap-3">
             {draft.items.map((item, i) => (
-              <div key={i} className="flex flex-col gap-3 rounded-os-item bg-os-well p-3">
+              <div key={i} className="flex flex-col gap-3 rounded-os-item bg-card/50 p-3">
                 <div className="flex items-center gap-1">
                   <span className="os-field-label mr-auto">
                     {def.itemLabel} {i + 1}
@@ -195,32 +133,102 @@ function ComponentForm({
           </div>
         )}
         <div className="flex justify-end gap-2">
-          <button type="button" className="os-btn-ghost" onClick={onClose}>
+          <button type="button" className="dali-cmp-mini dali-cmp-cancel" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="os-btn-primary os-btn-primary--sm">
-            Save
+          <button type="submit" className="os-btn-primary os-btn-primary--sm dali-cmp-done">
+            Done
           </button>
         </div>
       </form>
-    </Modal>
   );
 }
 
-function ComponentBlock({
+export function ComponentBlock({
+  blockId,
   kind,
   data,
   editable,
   onSave,
+  onRemove,
 }: {
+  blockId: string;
   kind: string;
   data: string;
   editable: boolean;
   onSave: (data: ComponentData) => void;
+  onRemove?: () => void;
 }) {
   const def = kindDef(kind);
-  const parsed = parseComponentData(kind, data);
+  const parsedData = parseComponentData(kind, data);
+  const { _new: _legacy, ...savedFields } = parsedData.fields;
+  const saved: ComponentData = { ...parsedData, fields: savedFields };
+  const [isNew, setIsNew] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [live, setLive] = useState<ComponentData["items"] | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const dragIdx = useRef<number | null>(null);
+  const parsed = live ? { ...saved, items: live } : saved;
+  const reorderable = editable && !editing && kind === "cards";
+
+  useEffect(() => {
+    if (!editable) return;
+    const open = () => {
+      if (!takeFreshComponent(blockId)) return;
+      setIsNew(true);
+      setEditing(true);
+    };
+    open();
+    return onFreshComponent(open);
+  }, [blockId, editable]);
+
+  // Pinned cards can be dragged in place: the order updates live under the
+  // pointer and is saved when the drag ends.
+  useEffect(() => {
+    if (!reorderable) return;
+    const cards = Array.from(wrapRef.current?.querySelectorAll<HTMLElement>(".dali-cmp-grid > *") ?? []);
+    cards.forEach((c, i) => {
+      c.draggable = true;
+      c.classList.toggle("dali-cmp-card--dragging", dragIdx.current === i);
+    });
+  });
+  const cardIndex = (t: EventTarget) => {
+    const grid = wrapRef.current?.querySelector(".dali-cmp-grid");
+    const card = (t as Element).closest?.(".dali-cmp-grid > *");
+    return grid && card ? Array.from(grid.children).indexOf(card) : -1;
+  };
+  const dragHandlers = reorderable
+    ? {
+        onDragStart: (e: React.DragEvent) => {
+          const i = cardIndex(e.target);
+          if (i < 0) return;
+          dragIdx.current = i;
+          startItemDrag(e, i);
+          setLive([...saved.items]);
+        },
+        onDragOver: (e: React.DragEvent) => {
+          if (dragIdx.current === null) return;
+          e.preventDefault();
+          const to = cardIndex(e.target);
+          const from = dragIdx.current;
+          if (to < 0 || to === from) return;
+          dragIdx.current = to;
+          setLive((cur) => {
+            const items = [...(cur ?? saved.items)];
+            const [it] = items.splice(from, 1);
+            items.splice(to, 0, it!);
+            return items;
+          });
+        },
+        onDrop: (e: React.DragEvent) => e.preventDefault(),
+        onDragEnd: () => {
+          const items = live;
+          dragIdx.current = null;
+          setLive(null);
+          if (items && JSON.stringify(items) !== JSON.stringify(saved.items)) onSave({ ...saved, items });
+        },
+      }
+    : {};
 
   if (!def) {
     return (
@@ -231,35 +239,38 @@ function ComponentBlock({
   }
 
   return (
-    <div className="dali-cmp" data-component={kind} contentEditable={false}>
-      <ComponentView kind={kind} data={parsed} />
-      {editable && (
-        <button
-          type="button"
-          className="dali-cmp-edit"
-          aria-label={`Edit ${def.title}`}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => setEditing(true)}
-        >
-          <Pencil className="h-3.5 w-3.5" aria-hidden />
-          Edit
-        </button>
+    <div ref={wrapRef} className="dali-cmp" data-component={kind} contentEditable={false} {...dragHandlers}>
+      {editing ? (
+        <ComponentForm
+          def={def}
+          initial={parsed}
+          onClose={() => {
+            if (isNew) onRemove?.();
+            else setEditing(false);
+          }}
+          onSave={(next) => {
+            const { _new: _flag, ...fields } = next.fields;
+            onSave({ ...next, fields });
+            setIsNew(false);
+            setEditing(false);
+          }}
+        />
+      ) : (
+        <>
+          <ComponentView kind={kind} data={parsed} />
+          {editable && (
+            <button
+              type="button"
+              className="dali-cmp-edit"
+              aria-label={`Edit ${def.title}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setEditing(true)}
+            >
+              Edit
+            </button>
+          )}
+        </>
       )}
-      {/* Portaled: the form must not live inside the editor's own DOM, where
-          ProseMirror would handle its keystrokes and selection. */}
-      {editing &&
-        createPortal(
-          <ComponentForm
-            def={def}
-            initial={parsed}
-            onClose={() => setEditing(false)}
-            onSave={(next) => {
-              onSave(next);
-              setEditing(false);
-            }}
-          />,
-          document.body,
-        )}
     </div>
   );
 }
@@ -267,12 +278,14 @@ function ComponentBlock({
 const createComponentBlock = createReactBlockSpec(componentConfig, {
   render: (props) => (
     <ComponentBlock
+      blockId={props.block.id}
       kind={props.block.props.kind}
       data={props.block.props.data}
       editable={props.editor.isEditable}
       onSave={(next) =>
         props.editor.updateBlock(props.block, { props: { data: JSON.stringify(next) } })
       }
+      onRemove={() => props.editor.removeBlocks([props.block])}
     />
   ),
 });

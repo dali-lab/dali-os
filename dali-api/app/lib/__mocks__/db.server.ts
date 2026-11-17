@@ -497,6 +497,9 @@ export const prisma = {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
+  critSubmission: {
+    findUnique: vi.fn(),
+  },
   taskFileLink: {
     createMany: vi.fn().mockResolvedValue({ count: 1 }),
     deleteMany: vi.fn().mockResolvedValue({ count: 1 }),

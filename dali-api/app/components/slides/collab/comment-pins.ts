@@ -11,6 +11,7 @@ export interface CommentPin {
   author: string;
   authorPhotoUrl: string | null;
   replies: number;
+  preview?: string;
 }
 
 const SLIDE_CORNER = { x: 0.02, y: 0.03 };

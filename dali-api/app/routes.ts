@@ -163,7 +163,18 @@ export default [
     // The writing page sits outside the Resources layout: no masthead or
     // bookmark tabs, just the post and its settings.
     route("resources/write/:postId", "routes/resources.write.$postId.tsx"),
+    // Resource Hub: a card per domain, each a blank page its leads lay out
+    // with the editor's "/" blocks.
+    route("resource-hub", "routes/resource-hub.tsx"),
+    route("resource-hub/:pageId", "routes/resource-hub-layout.tsx", [
+      index("routes/resource-hub.$pageId.tsx"),
+      route("crit", "routes/resource-hub.$pageId.crit.tsx"),
+      route("references", "routes/resource-hub.$pageId.references.tsx"),
+    ]),
     route("api/resources/blog-posts", "routes/api.resources.blog-posts.ts"),
+    route("api/resource-hub/:pageId/crit", "routes/api.resource-hub.$pageId.crit.ts"),
+    route("api/resource-hub/:pageId/references", "routes/api.resource-hub.$pageId.references.ts"),
+    route("api/link-preview", "routes/api.link-preview.ts"),
     // DALI OS feedback: the feature request feed the shell's feedback button posts to.
     route("feedback", "routes/feedback.tsx"),
 

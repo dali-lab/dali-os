@@ -11,9 +11,12 @@ import { getPageAccess } from "~/lib/pageAccess.server";
 import { createDocComment, CommentCreateError, type CommentTarget } from "~/lib/doc-comments.server";
 import type { BodySegment } from "~/lib/comment-body";
 import { commentAnchorSchema } from "~/lib/slide-comments";
+import { bodySegmentsSchema } from "~/lib/comment-body-schema";
+import { critHiddenAuthorId, loadCritTarget } from "~/lib/crit-comments.server";
+import { maskAnonymousAuthor } from "~/lib/crit-comments";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
-//   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
+//   GET  /api/comments?targetType=doc|file|pagedoc|crit&targetId=...   → threads (roots + replies)
 //   POST /api/comments  { targetType, targetId, body, parentId?, anchor? }
 //
 // `anchor` (doc only) carries a Yjs relative-position range so an inline
@@ -26,29 +29,18 @@ import { commentAnchorSchema } from "~/lib/slide-comments";
 //   doc target   — read/create/reply: canView (any member, partner-visible partner)
 //   file target  — read/create/reply: Core or project member of owning project
 //   pagedoc      — read/create/reply: any lab member (open FAQ threads)
+//   crit         — read/create/reply: loadCritTarget (flag on, member, hub published or editable)
 
 const AnchorSchema = commentAnchorSchema;
 
-// bodyJson segment schema — mirrors the BodySegment union from MentionTextInput.
-// We accept the raw JSON from the client and store it as-is; validation here
-// is permissive (array of objects) to avoid version skew issues.
-const BodySegmentSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string().max(5000) }),
-  z.object({
-    type: z.literal("mention"),
-    userId: z.string().min(1).max(256),
-    label: z.string().max(256),
-  }),
-]);
-
 const CreateSchema = z.object({
-  targetType: z.enum(["doc", "file", "pagedoc"]),
+  targetType: z.enum(["doc", "file", "pagedoc", "crit"]),
   targetId: z.string().min(1),
   body: z.string().trim().min(1).max(5000),
   /** Rich inline segments. When present, stored in DocComment.bodyJson and used
    * for mention notifications (userId-based, exact; supplement the handle-based
    * path which still runs for backward-compat). */
-  bodyJson: z.array(BodySegmentSchema).max(500).nullable().optional(),
+  bodyJson: bodySegmentsSchema.nullable().optional(),
   parentId: z.string().nullable().optional(),
   anchor: AnchorSchema,
   // Page-doc FAQ comments only: the page path, so @-mention notifications can
@@ -70,6 +62,7 @@ async function canReadTarget(
   request?: Request,
 ): Promise<boolean> {
   if (targetType === "pagedoc") return isLabMemberOrAlum(auth.user.sub, request);
+  if (targetType === "crit") return (await loadCritTarget(auth.user.sub, targetId, request)) !== null;
   if (targetType === "doc") {
     const access = await getPageAccess(auth.user.sub, targetId, request);
     return access.canComment;
@@ -96,7 +89,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const targetType = url.searchParams.get("targetType");
   const targetId = url.searchParams.get("targetId");
   if (
-    (targetType !== "doc" && targetType !== "file" && targetType !== "pagedoc") ||
+    (targetType !== "doc" && targetType !== "file" && targetType !== "pagedoc" && targetType !== "crit") ||
     !targetId
   ) {
     return withCors(request, Response.json({ error: "Invalid target" }, { status: 400 }));
@@ -148,7 +141,8 @@ export async function loader({ request }: Route.LoaderArgs) {
     reactions: r.reactions.map((x) => ({ ...x, name: nameById.get(x.userId) ?? "Unknown" })),
   }));
 
-  return withCors(request, Response.json({ comments: await withEmojiImages(comments) }));
+  const hiddenAuthorId = targetType === "crit" ? await critHiddenAuthorId(auth.user.sub, targetId, request) : null;
+  return withCors(request, Response.json({ comments: await withEmojiImages(maskAnonymousAuthor(comments, hiddenAuthorId)) }));
 }
 
 export async function action({ request }: Route.ActionArgs) {

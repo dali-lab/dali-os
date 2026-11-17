@@ -35,6 +35,7 @@ const db = prisma as unknown as {
   projectFile: { findUnique: Fn };
   projectFileVersion: { findFirst: Fn };
   docComment: { findUnique: Fn; findMany: Fn; create: Fn };
+  critSubmission: { findUnique: Fn };
 };
 
 const settle = () => new Promise((r) => setTimeout(r, 0));
@@ -154,5 +155,127 @@ describe("createDocComment", () => {
     });
     await settle();
     expect(vi.mocked(notifyMentions).mock.calls[0]![0].recipientUserIds).toEqual(["u3"]);
+  });
+});
+
+describe("crit targets", () => {
+  const crit = { targetType: "crit" as const, targetId: "s1", authorId: "u2", body: "Love the spacing" };
+  const pin = { kind: "image" as const, x: 0.25, y: 0.75 };
+  let anonymousPost = false;
+  beforeEach(() => {
+    anonymousPost = false;
+    db.critSubmission.findUnique.mockImplementation(async (q: any) => {
+      if (q.select.anonymous) return { anonymous: anonymousPost, authorId: "u1" };
+      if (q.select.kind) return { kind: "image" };
+      if (q.select.title && q.select.authorId) return { authorId: "u1", title: "Logo" };
+      if (q.select.title) return { title: "Logo" };
+      return { domain: { resourceHubPage: { id: "hub1" } } };
+    });
+  });
+
+  it("404s a post that is gone", async () => {
+    db.critSubmission.findUnique.mockResolvedValue(null);
+    await expect(createDocComment(crit)).rejects.toMatchObject({ status: 404 });
+    expect(db.docComment.create).not.toHaveBeenCalled();
+  });
+
+  it("stores an image pin on a top-level comment on an image post", async () => {
+    await createDocComment({ ...crit, anchor: pin });
+    expect(db.docComment.create.mock.calls[0]![0].data).toMatchObject({ targetType: "crit", targetId: "s1", anchor: pin });
+  });
+
+  it("stores a whole-post comment with no anchor", async () => {
+    await createDocComment(crit);
+    expect(db.docComment.create.mock.calls[0]![0].data.anchor).toBeUndefined();
+  });
+
+  it("rejects an image pin on a file or link post", async () => {
+    for (const kind of ["file", "link"]) {
+      db.critSubmission.findUnique.mockResolvedValue({ kind });
+      await expect(createDocComment({ ...crit, anchor: pin })).rejects.toMatchObject({ status: 400, message: "Pins only apply to images" });
+    }
+    expect(db.docComment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a pinned reply and a non-image anchor", async () => {
+    db.docComment.findUnique.mockResolvedValue({ targetType: "crit", targetId: "s1", parentId: null });
+    await expect(createDocComment({ ...crit, parentId: "c1", anchor: pin })).rejects.toMatchObject({ status: 400 });
+    await expect(createDocComment({ ...crit, anchor: { kind: "slide", slideId: "a" } as never })).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("rejects an image pin on a document and drops it on a file", async () => {
+    await expect(createDocComment({ ...doc, anchor: pin })).rejects.toMatchObject({ status: 400 });
+    await createDocComment({ ...doc, targetType: "file", targetId: "f1", anchor: pin });
+    expect(db.docComment.create.mock.calls[0]![0].data.anchor).toBeUndefined();
+  });
+
+  it("tells the person who shared the work about a top-level comment, not a reply", async () => {
+    await createDocComment(crit);
+    await settle();
+    expect(vi.mocked(notify).mock.calls.map((c) => c[0])).toEqual([
+      expect.objectContaining({ eventType: "crit.comment", recipients: [{ userId: "u1" }], message: expect.objectContaining({ link: "/resource-hub/hub1/crit?post=s1&thread=c9" }) }),
+    ]);
+    vi.mocked(notify).mockClear();
+    db.docComment.findUnique.mockResolvedValue({ targetType: "crit", targetId: "s1", parentId: null });
+    db.docComment.findMany.mockResolvedValue([{ authorId: "u1" }]);
+    await createDocComment({ ...crit, parentId: "c1" });
+    await settle();
+    expect(vi.mocked(notify).mock.calls.map((c) => c[0].eventType)).toEqual(["collab.comment_reply"]);
+  });
+
+  it("does not notify when the author comments on their own post", async () => {
+    await createDocComment({ ...crit, authorId: "u1" });
+    await settle();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("links reply notifications to the thread on the crit page", async () => {
+    db.docComment.findUnique.mockResolvedValue({ targetType: "crit", targetId: "s1", parentId: null });
+    db.docComment.findMany.mockResolvedValue([{ authorId: "u1" }]);
+    await createDocComment({ ...crit, parentId: "c1" });
+    await settle();
+    expect(vi.mocked(notify).mock.calls[0]![0]).toMatchObject({
+      eventType: "collab.comment_reply",
+      message: { link: "/resource-hub/hub1/crit?post=s1&thread=c1", vars: { itemTitle: "Logo" } },
+    });
+  });
+
+  it("links mention notifications to the new thread, or to the thread being replied in", async () => {
+    await createDocComment({ ...crit, bodyJson: [{ type: "mention", userId: "u3", label: "ada" }] });
+    await settle();
+    expect(vi.mocked(notifyMentions).mock.calls[0]![0]).toMatchObject({ recipientUserIds: ["u3"], link: "/resource-hub/hub1/crit?post=s1&thread=c9" });
+    vi.mocked(notifyMentions).mockClear();
+    db.docComment.findUnique.mockResolvedValue({ targetType: "crit", targetId: "s1", parentId: null });
+    await createDocComment({ ...crit, parentId: "c1", bodyJson: [{ type: "mention", userId: "u3", label: "ada" }] });
+    await settle();
+    expect(vi.mocked(notifyMentions).mock.calls[0]![0].link).toBe("/resource-hub/hub1/crit?post=s1&thread=c1");
+  });
+  describe("when the post is anonymous", () => {
+    beforeEach(() => {
+      anonymousPost = true;
+      db.docComment.findUnique.mockResolvedValue({ targetType: "crit", targetId: "s1", parentId: null });
+      db.docComment.findMany.mockResolvedValue([{ authorId: "u2" }]);
+    });
+    const poster = { ...crit, authorId: "u1", parentId: "c1" };
+
+    it("sends the poster's reply without naming them as its author", async () => {
+      await createDocComment(poster);
+      await settle();
+      const call = vi.mocked(notify).mock.calls[0]![0];
+      expect(call).toMatchObject({ eventType: "collab.comment_reply", recipients: [{ userId: "u2" }] });
+      expect(call.createdByUserId).toBeNull();
+    });
+    it("sends the poster's mentions without naming them as the actor", async () => {
+      await createDocComment({ ...poster, bodyJson: [{ type: "mention", userId: "u3", label: "ada" }] });
+      await settle();
+      expect(vi.mocked(notifyMentions).mock.calls[0]![0]).toMatchObject({ actorId: "u1", anonymousActor: true });
+    });
+    it("still names other commenters", async () => {
+      db.docComment.findMany.mockResolvedValue([{ authorId: "u1" }]);
+      await createDocComment({ ...crit, parentId: "c1", bodyJson: [{ type: "mention", userId: "u3", label: "ada" }] });
+      await settle();
+      expect(vi.mocked(notify).mock.calls[0]![0].createdByUserId).toBe("u2");
+      expect(vi.mocked(notifyMentions).mock.calls[0]![0].anonymousActor).toBe(false);
+    });
   });
 });

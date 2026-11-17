@@ -5,6 +5,8 @@ import { prisma } from "~/lib/db.server";
 import { isCore, isLabMemberOrAlum, isProjectMember } from "~/lib/roles";
 import { getPageAccess } from "~/lib/pageAccess.server";
 import { hydrateAuthors } from "~/lib/collabAuth.server";
+import { critHiddenAuthorId, loadCritTarget } from "~/lib/crit-comments.server";
+import { maskAnonymousAuthor } from "~/lib/crit-comments";
 import { keysetPage, keysetWindow, pageProps, type PageArgs } from "../../pagination";
 
 const PAGE_LIMITS = { defaultLimit: 50, maxLimit: 200 };
@@ -27,15 +29,15 @@ const COMMENT_SELECT = {
 export const LIST_COMMENTS_TOOL = {
   name: "list_comments",
   description:
-    "List comment threads on a document (Page), project file, or page-doc FAQ. Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership.",
+    "List comment threads on a document (Page), project file, page-doc FAQ, or Crit Wall post (targetType 'crit', targetId from list_crit_posts; an anonymous poster's comments read as Anonymous). Pages by root comment, oldest first, and each root is followed by all of its replies. limit counts root comments. Pass page.nextCursor as cursor to read the next page until page.hasMore is false. Permissions: docs require view access; files require Core or project membership; page-docs require lab membership; Crit Wall posts require the Resource Hub to be on for you and visible.",
   inputSchema: {
     type: "object" as const,
     properties: {
       targetType: {
         type: "string",
-        enum: ["doc", "file", "pagedoc"],
+        enum: ["doc", "file", "pagedoc", "crit"],
         description:
-          "The kind of target: 'doc' (Page), 'file' (ProjectFile), or 'pagedoc' (page-doc FAQ).",
+          "The kind of target: 'doc' (Page), 'file' (ProjectFile), 'pagedoc' (page-doc FAQ), or 'crit' (Crit Wall post). Crit pins carry anchor {kind: 'image', x, y}.",
       },
       targetId: { type: "string", minLength: 1, description: "ID of the target." },
       slideId: {
@@ -51,7 +53,7 @@ export const LIST_COMMENTS_TOOL = {
   requiredScope: "mcp:read" as const,
 };
 
-type CommentTarget = "doc" | "file" | "pagedoc";
+type CommentTarget = "doc" | "file" | "pagedoc" | "crit";
 
 type Input = PageArgs & { targetType: CommentTarget; targetId: string; slideId?: string };
 
@@ -68,6 +70,7 @@ async function canRead(
   targetId: string,
 ): Promise<boolean> {
   if (targetType === "pagedoc") return isLabMemberOrAlum(callerId);
+  if (targetType === "crit") return (await loadCritTarget(callerId, targetId)) !== null;
   if (targetType === "doc") {
     const access = await getPageAccess(callerId, targetId);
     return access.canComment;
@@ -136,5 +139,6 @@ export async function runListComments(callerId: string, input: Input) {
     reactions: r.reactions,
   }));
 
-  return { page, comments };
+  const hiddenAuthorId = input.targetType === "crit" ? await critHiddenAuthorId(callerId, input.targetId) : null;
+  return { page, comments: maskAnonymousAuthor(comments, hiddenAuthorId) };
 }
