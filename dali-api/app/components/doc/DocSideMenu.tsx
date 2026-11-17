@@ -5,7 +5,7 @@
 //   1b. Keep/Revert change — only on a block carrying a reserved Enhance mark
 //       (specs/archive/meeting-recording-rail.md Step 2); see EnhanceReviewMenuItems.
 //   2. Colors        — BlockNote's BlockColorsItem (text + background sub-menu).
-//   3. Delete        — BlockNote's RemoveBlockItem.
+//   3. Delete        — removes the block.
 //
 // Commenting starts from a text selection (the formatting toolbar), not here.
 //
