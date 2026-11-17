@@ -560,11 +560,9 @@ export function PageTabRow({
       data-density={density}
       className={cn("flex flex-wrap items-center gap-x-3 gap-y-2", className)}
     >
-      {tabs.length > 0 && (
-        <div ref={islandRef} data-slot="island" className="shrink-0">
-          <SegmentedTabButtons items={tabs} label={label} />
-        </div>
-      )}
+      <div ref={islandRef} data-slot="island" className="shrink-0">
+        <SegmentedTabButtons items={tabs} label={label} />
+      </div>
       <div
         ref={clusterRef}
         data-slot="controls"

@@ -25,7 +25,7 @@ import { blocksToPlainText } from "~/components/doc/schema/configs";
 import { PAGE_ACCESS_SELECT, getPageAccessBulk } from "~/lib/pageAccess.server";
 import { HELP_ARTICLES } from "~/lib/help-articles";
 import { visibleHelpArticles } from "~/help/library.server";
-import { searchResourceHubs } from "~/lib/resource-hub-search.server";
+import { searchDomainReferences, searchResourceHubs } from "~/lib/resource-hub-search.server";
 import { categorize } from "~/lib/file-type";
 import { filterViewableFiles } from "~/lib/fileAccess.server";
 
@@ -66,6 +66,7 @@ function searchSources(opts: SearchOpts, q: string): SearchSource[] {
     { type: "guide", enabled: true, run: (b) => searchGuides(q, b) },
     { type: "helpArticle", enabled: true, run: (b) => searchHelpArticles(opts, q, b) },
     { type: "resourceHub", enabled: true, run: (b) => searchResourceHubs(opts, q, like, b) },
+    { type: "reference", enabled: true, run: (b) => searchDomainReferences(opts, q, like, b) },
     { type: "document", enabled: true, run: (b) => searchProjectFiles(opts.userId, q, like, b, opts.request) },
     { type: "application", enabled: true, run: (b) => searchApplications(opts.userId, roles, q, b) },
     { type: "group", enabled: roles.canViewForms, run: (b) => searchGroups(q, like, b) },
@@ -145,7 +146,7 @@ export async function runCategorySearch(
 // Map a set of {id, label} rows of a single type to ranked results. Used by the
 // simple name/title categories; richer ones (people, partner apps) inline it.
 function simpleResults(
-  type: Exclude<SearchResultType, "task">,
+  type: Exclude<SearchResultType, "task" | "reference">,
   subtitle: string,
   rows: { id: string; label: string | null; iconEmoji?: string | null }[],
   q: string,

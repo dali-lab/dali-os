@@ -46,3 +46,43 @@ export async function searchResourceHubs(opts: Opts, q: string, like: Like, b: B
     b.cap,
   );
 }
+
+export async function searchDomainReferences(opts: Opts, q: string, like: Like, b: Budget): Promise<SearchResult[]> {
+  const visible = await visibleHubWhere(opts);
+  if (!visible) return [];
+  const rows = await prisma.domainReference.findMany({
+    where: {
+      domain: { resourceHubPage: { is: visible } },
+      OR: [{ title: like }, { creatorName: like }, { note: like }],
+    },
+    select: {
+      id: true,
+      title: true,
+      creatorName: true,
+      note: true,
+      domain: { select: { displayName: true, resourceHubPage: { select: { id: true } } } },
+    },
+    take: b.rawTake,
+    orderBy: b.ordered ? { id: "asc" } : undefined,
+  });
+  return rankResults(
+    rows.flatMap((r) => {
+      const hubId = r.domain.resourceHubPage?.id;
+      if (!hubId) return [];
+      return [
+        {
+          result: {
+            type: "reference" as const,
+            id: r.id,
+            title: r.title,
+            subtitle: `Reference · ${r.domain.displayName}`,
+            url: `/resource-hub/${hubId}/references?r=${r.id}`,
+          },
+          text: [r.title, r.creatorName ?? "", r.note ?? ""],
+        },
+      ];
+    }),
+    q,
+    b.cap,
+  );
+}

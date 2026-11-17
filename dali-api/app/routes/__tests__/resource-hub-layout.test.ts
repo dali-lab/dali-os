@@ -53,9 +53,9 @@ beforeEach(() => {
 });
 
 describe("loader", () => {
-  it("hands the hub page the hub's title, cover, domain and whether the viewer can edit", async () => {
+  it("hands every tab the hub's title, cover, domain and whether the viewer can edit", async () => {
     expect(await get()).toEqual({
-      hub: { id: "p1", title: "Design", coverUrl: "pattern:petal-ledger?d=frame&c=plum", published: true, domainName: "Design" },
+      hub: { id: "p1", title: "Design", coverUrl: "pattern:petal-ledger?d=frame&c=plum", published: true, hasDomain: true, domainName: "Design" },
       canEdit: false,
     });
   });
