@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ToastProvider } from "~/components/ui/toast";
@@ -47,14 +47,33 @@ const type = (el: HTMLInputElement, value: string) =>
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
 const select = (i: number) => act(() => all(".dali-cmp-piece--edit")[i]!.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
+beforeAll(() => {
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
+const pop = () => document.querySelector<HTMLElement>("[role='dialog']");
+const mousedown = (el: Element) => act(() => el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, composed: true, button: 0 })));
+const escape = (el: Element = document.body) => act(() => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
 const titles = () => all(".dali-cmp-row__title.dali-cmp-piece__titlefield").map((i) => (i as HTMLInputElement).value);
-const linkInput = () => q<HTMLInputElement>('.dali-cmp-piece__pop input[aria-label="Opens"], .dali-cmp-piece__pop label input[placeholder="https://..."]');
+function otherLayer() {
+  const layer = document.createElement("div");
+  layer.setAttribute("data-floating-ui-portal", "");
+  const btn = document.createElement("button");
+  layer.appendChild(btn);
+  document.body.appendChild(layer);
+  return { btn, remove: () => layer.remove() };
+}
+const popButton = (text: string) => [...document.querySelectorAll<HTMLElement>('[role="dialog"] button')].find((b) => b.textContent?.trim() === text)!;
+const linkInput = () => document.querySelector<HTMLInputElement>('[role="dialog"] input[placeholder="https://..."]')!;
 
 describe("GalleryEditor", () => {
   it("keeps the gallery visible with one editable title per tile and no form rows", () => {
     mount();
     expect(titles()).toEqual(["One", "Two"]);
-    expect(container.querySelector(".dali-cmp-piece__pop")).toBeNull();
+    expect(pop()).toBeNull();
     expect(container.textContent).toContain("Add piece");
   });
 
@@ -67,10 +86,10 @@ describe("GalleryEditor", () => {
   it("selects one tile at a time and reveals its controls", () => {
     mount();
     select(0);
-    expect(all(".dali-cmp-piece__pop")).toHaveLength(1);
+    expect(document.querySelectorAll("[role='dialog']")).toHaveLength(1);
     expect(all(".dali-cmp-piece--selected")).toHaveLength(1);
     select(1);
-    expect(all(".dali-cmp-piece__pop")).toHaveLength(1);
+    expect(document.querySelectorAll("[role='dialog']")).toHaveLength(1);
     expect(all(".dali-cmp-piece--selected")[0]).toBe(all(".dali-cmp-piece--edit")[1]);
   });
 
@@ -78,20 +97,20 @@ describe("GalleryEditor", () => {
     mount();
     select(0);
     type(q<HTMLInputElement>('input[aria-label="Piece 1 credit"]'), "Grace");
-    click(q('.dali-cmp-piece__pop [aria-label="danger"]'));
-    expect(q('.dali-cmp-piece__pop [aria-label="danger"]').getAttribute("aria-checked")).toBe("true");
+    click(document.querySelector('[role="dialog"] [aria-label="danger"]')!);
+    expect(document.querySelector('[role="dialog"] [aria-label="danger"]')!.getAttribute("aria-checked")).toBe("true");
     expect(q<HTMLInputElement>('input[aria-label="Piece 1 credit"]').value).toBe("Grace");
   });
 
   it("offers an Upload and a Link tab for the image, with no credit field in the popover", () => {
     mount();
     select(0);
-    const tabs = all('.dali-cmp-piece__pop [role="tab"]').map((t) => t.textContent);
+    const tabs = [...document.querySelectorAll<HTMLElement>('[role="dialog"] [role="tab"]')].map((t) => t.textContent);
     expect(tabs).toEqual(["Upload", "Link"]);
-    expect(container.querySelector('.dali-cmp-piece__pop input[aria-label="Image link"]')).toBeNull();
-    click(all('.dali-cmp-piece__pop [role="tab"]')[1]!);
-    type(q<HTMLInputElement>('.dali-cmp-piece__pop input[aria-label="Image link"]'), "https://example.com/a.png");
-    expect(container.querySelector('.dali-cmp-piece__pop input[placeholder="Who made this?"]')).toBeNull();
+    expect(document.querySelector('[role="dialog"] input[placeholder="Paste an image link"]')).toBeNull();
+    click([...document.querySelectorAll<HTMLElement>('[role="dialog"] [role="tab"]')][1]!);
+    type(document.querySelector<HTMLInputElement>('[role="dialog"] input[placeholder="Paste an image link"]')!, "https://example.com/a.png");
+    expect(document.querySelector('[role="dialog"] input[placeholder="Who made this?"]')).toBeNull();
   });
 
   it("adds a piece as a new selected tile", () => {
@@ -104,7 +123,7 @@ describe("GalleryEditor", () => {
   it("deletes the selected tile", () => {
     mount();
     select(0);
-    click(q(".dali-cmp-pop-delete"));
+    click(popButton("Delete"));
     expect(titles()).toEqual(["Two"]);
   });
 
@@ -120,7 +139,7 @@ describe("GalleryEditor", () => {
     type(linkInput(), "javascript:alert(1)");
     click(q(".dali-cmp-done"));
     expect(onSave).not.toHaveBeenCalled();
-    expect(q('[role="alert"]').textContent).toContain("valid link");
+    expect(document.querySelector('[role="alert"]')!.textContent).toContain("valid link");
   });
 
   it("saves a good link and drops empty pieces", () => {
@@ -138,9 +157,40 @@ describe("GalleryEditor", () => {
     mount();
     select(0);
     act(() => all(".dali-cmp-piece--edit")[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
-    expect(container.querySelector(".dali-cmp-piece__pop")).toBeNull();
+    expect(pop()).toBeNull();
     click(q(".dali-cmp-cancel"));
     expect(onClose).toHaveBeenCalled();
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("opens the piece popover portaled outside the block, named for the piece", () => {
+    mount();
+    select(0);
+    expect(container.contains(pop())).toBe(false);
+    expect(pop()!.getAttribute("aria-label")).toBe("Edit One");
+  });
+
+  it("keeps the piece selected on a press inside its popover or another floating layer, and deselects on an outside press", () => {
+    mount();
+    select(0);
+    mousedown(pop()!.querySelector("[role=tab]")!);
+    expect(all(".dali-cmp-piece--selected")).toHaveLength(1);
+    const layer = otherLayer();
+    mousedown(layer.btn);
+    expect(pop()).not.toBeNull();
+    layer.remove();
+    mousedown(document.body);
+    expect(pop()).toBeNull();
+    expect(all(".dali-cmp-piece--selected")).toHaveLength(0);
+  });
+
+  it("closes the popover on Escape from outside the piece and Done closes it too", () => {
+    mount();
+    select(0);
+    escape();
+    expect(pop()).toBeNull();
+    select(1);
+    click(popButton("Done"));
+    expect(pop()).toBeNull();
   });
 });

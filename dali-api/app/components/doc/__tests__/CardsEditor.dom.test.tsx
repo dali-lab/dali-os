@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { ToastProvider } from "~/components/ui/toast";
@@ -41,6 +41,29 @@ const q = <T extends Element>(sel: string) => container.querySelector<T>(sel)!;
 const all = (sel: string) => [...container.querySelectorAll<HTMLElement>(sel)];
 const click = (el: Element) => act(() => (el as HTMLElement).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
 const select = (i: number) => click(all(".dali-cmp-card--edit")[i]!);
+beforeAll(() => {
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
+const pop = () => document.querySelector<HTMLElement>("[role='dialog']");
+const mousedown = (el: Element) => act(() => el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, composed: true, button: 0 })));
+const escape = (el: Element = document.body) => act(() => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+const typeInto = (el: HTMLInputElement, value: string) =>
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+function otherLayer() {
+  const layer = document.createElement("div");
+  layer.setAttribute("data-floating-ui-portal", "");
+  const btn = document.createElement("button");
+  layer.appendChild(btn);
+  document.body.appendChild(layer);
+  return { btn, remove: () => layer.remove() };
+}
 const titles = () => all(".dali-cmp-card__title").map((i) => (i as HTMLInputElement).value);
 
 describe("CardsEditor", () => {
@@ -51,24 +74,78 @@ describe("CardsEditor", () => {
     expect(container.querySelector(".dali-cmp-swatch")).toBeNull();
   });
 
-  it("opens a compact color popover from the palette icon and marks the current color", () => {
+  it("opens the color palette in a portaled, named popover and marks the current color", () => {
     mount();
     select(0);
     click(q('[aria-label="Card 1 color"]'));
-    const swatches = all(".dali-cmp-card__palette [role=radio]");
+    expect(container.contains(pop())).toBe(false);
+    expect(pop()!.getAttribute("aria-label")).toBe("Card 1 color");
+    const swatches = [...pop()!.querySelectorAll<HTMLElement>("[role=radio]")];
     expect(swatches).toHaveLength(5);
     expect(swatches.filter((s) => s.getAttribute("aria-checked") === "true").map((s) => s.getAttribute("aria-label"))).toEqual(["accent"]);
-    click(q('.dali-cmp-card__palette [aria-label="danger"]'));
-    expect(container.querySelector(".dali-cmp-card__palette")).toBeNull();
+    click(pop()!.querySelector('[aria-label="danger"]')!);
+    expect(pop()).toBeNull();
     expect(all(".dali-cmp-card--edit")[0]!.className).toContain("dali-cmp-tone--danger");
   });
 
-  it("keeps the link behind an icon and edits it inline", () => {
+  it("opens the link field in a portaled, named popover", () => {
     mount();
     select(0);
-    expect(container.querySelector('input[aria-label="Card 1 link"]')).toBeNull();
+    expect(pop()).toBeNull();
     click(q('[aria-label="Add link to card 1"]'));
-    expect(q<HTMLInputElement>('input[aria-label="Card 1 link"]').placeholder).toBe("https://...");
+    expect(container.contains(pop())).toBe(false);
+    expect(pop()!.getAttribute("aria-label")).toBe("Card 1 link");
+    expect(pop()!.querySelector<HTMLInputElement>("input")!.placeholder).toBe("https://...");
+  });
+
+  it("keeps the link popover open with an error on a bad link, and closes on a good one", () => {
+    mount();
+    select(0);
+    click(q('[aria-label="Add link to card 1"]'));
+    typeInto(pop()!.querySelector("input")!, "javascript:alert(1)");
+    mousedown(document.body);
+    expect(pop()!.querySelector('[role="alert"]')!.textContent).toContain("valid link");
+    expect(pop()!.querySelector("input")!.getAttribute("aria-invalid")).toBe("true");
+    typeInto(pop()!.querySelector("input")!, "https://example.com");
+    mousedown(document.body);
+    expect(pop()).toBeNull();
+    expect(q<HTMLInputElement>('[aria-label="Edit link for card 1"]')).not.toBeNull();
+  });
+
+  it("closes the link popover on Escape", () => {
+    mount();
+    select(0);
+    click(q('[aria-label="Add link to card 1"]'));
+    escape(pop()!.querySelector("input")!);
+    expect(pop()).toBeNull();
+  });
+
+  it("keeps the card selected on a press inside its popover and when another floating layer is used", () => {
+    mount();
+    select(0);
+    click(q('[aria-label="Card 1 color"]'));
+    mousedown(pop()!.querySelector("[role=radio]")!);
+    expect(all(".dali-cmp-card--selected")).toHaveLength(1);
+    const layer = otherLayer();
+    mousedown(layer.btn);
+    expect(pop()).not.toBeNull();
+    expect(all(".dali-cmp-card--selected")).toHaveLength(1);
+    layer.remove();
+    mousedown(document.body);
+    expect(all(".dali-cmp-card--selected")).toHaveLength(0);
+  });
+
+  it("opens one popover at a time and the trigger toggles it without an outside press", () => {
+    mount();
+    select(0);
+    click(q('[aria-label="Card 1 color"]'));
+    click(q('[aria-label="Add link to card 1"]'));
+    expect(document.querySelectorAll("[role='dialog']")).toHaveLength(1);
+    expect(pop()!.getAttribute("aria-label")).toBe("Card 1 link");
+    mousedown(q('[aria-label="Add link to card 1"]'));
+    expect(pop()).not.toBeNull();
+    click(q('[aria-label="Add link to card 1"]'));
+    expect(pop()).toBeNull();
   });
 
   it("adds a card with a pastel color, selects it and focuses its title", () => {

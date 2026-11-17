@@ -1,7 +1,8 @@
-import { Check, ImagePlus, Plus, Trash2, X } from "lucide-react";
+import { Check, ImagePlus, Plus, X } from "lucide-react";
 import { useRef, useState } from "react";
-import { useOutsideDismiss } from "~/components/ui/floating";
+import { FormField } from "~/components/ui/FormField";
 import { TONES, safeHref, type ComponentData } from "../kinds";
+import { EditPopover, PopoverActions, PopoverError, useTriggerAnchor } from "./EditPopover";
 import { IMAGE_UPLOAD_ACCEPT, uploadEditorImage } from "../../upload";
 
 export function FeatureEditor({
@@ -17,11 +18,11 @@ export function FeatureEditor({
 }) {
   const f = draft.fields;
   const fileRef = useRef<HTMLInputElement>(null);
-  const ctaRef = useRef<HTMLDivElement>(null);
   const [uploading, setUploading] = useState(false);
   const [popOpen, setPopOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasButton = !!(f.cta || f.href);
+  const { ref: ctaRef, anchor } = useTriggerAnchor<HTMLDivElement>(popOpen && hasButton);
   const set = (patch: Record<string, string>) => {
     if ("href" in patch) setError(null);
     setDraft((d) => ({ ...d, fields: { ...d.fields, ...patch } }));
@@ -50,8 +51,6 @@ export function FeatureEditor({
       setUploading(false);
     }
   };
-
-  useOutsideDismiss(popOpen, ".dali-cmp-feature-edit__cta", closePop);
 
   return (
     <div
@@ -142,7 +141,7 @@ export function FeatureEditor({
             onChange={(e) => set({ body: e.target.value })}
             className="dali-cmp-sub dali-cmp-feature-edit__field"
           />
-          <div className="dali-cmp-feature-edit__cta" onMouseEnter={() => hasButton && setPopOpen(true)}>
+          <div ref={ctaRef} className="dali-cmp-feature-edit__cta" onMouseEnter={() => hasButton && setPopOpen(true)}>
             {hasButton ? (
               <button type="button" className="dali-cmp-cta" aria-expanded={popOpen} onClick={() => (popOpen ? closePop() : setPopOpen(true))}>
                 {f.cta || "Button"}
@@ -161,49 +160,34 @@ export function FeatureEditor({
               </button>
             )}
             {popOpen && hasButton && (
-              <div className="dali-cmp-feature-edit__pop" role="dialog" aria-label="Button">
-                <label className="dali-cmp-pop-field">
-                  <span>Button text</span>
-                  <input autoFocus value={f.cta ?? ""} placeholder="Open" onChange={(e) => set({ cta: e.target.value })} />
-                </label>
-                <label className="dali-cmp-pop-field">
-                  <span>URL</span>
-                  <input
-                    value={f.href ?? ""}
-                    placeholder="https://..."
-                    inputMode="url"
-                    aria-invalid={!!error}
-                    onChange={(e) => set({ href: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        closePop();
-                      }
-                    }}
-                  />
-                </label>
-                {error && (
-                  <p role="alert" className="dali-cmp-pop-error">
-                    {error}
-                  </p>
-                )}
-                <div className="dali-cmp-pop-actions">
-                  <button
-                    type="button"
-                    className="dali-cmp-pop-delete"
-                    onClick={() => {
-                      set({ cta: "", href: "" });
-                      setPopOpen(false);
-                    }}
-                  >
-                    <Trash2 className="dali-cmp-ico" size={12} strokeWidth={1.5} aria-hidden />
-                    Remove
-                  </button>
-                  <button type="button" className="dali-cmp-pop-save" onClick={closePop}>
-                    Save
-                  </button>
-                </div>
-              </div>
+              <EditPopover anchor={anchor} excludeRef={ctaRef} ariaLabel="Button" onClose={closePop}>
+                <FormField label="Button text" autoFocus value={f.cta ?? ""} placeholder="Open" onChange={(v) => set({ cta: v })} />
+                <FormField
+                  label="URL"
+                  type="url"
+                  inputMode="url"
+                  value={f.href ?? ""}
+                  placeholder="https://..."
+                  invalid={!!error}
+                  onChange={(v) => set({ href: v })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      closePop();
+                    }
+                  }}
+                />
+                {error && <PopoverError>{error}</PopoverError>}
+                <PopoverActions
+                  deleteLabel="Remove"
+                  saveLabel="Save"
+                  onSave={closePop}
+                  onDelete={() => {
+                    set({ cta: "", href: "" });
+                    setPopOpen(false);
+                  }}
+                />
+              </EditPopover>
             )}
           </div>
         </div>
