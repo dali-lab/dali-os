@@ -11,12 +11,22 @@ export const Prisma = {
 export const prisma = {
   user: {
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
     update: vi.fn(),
     updateMany: vi.fn(),
     upsert: vi.fn(),
     delete: vi.fn(),
+  },
+  pixelAvatar: {
+    findUnique: vi.fn(),
+    upsert: vi.fn(),
+    updateMany: vi.fn(),
+  },
+  alumniChatMessage: {
+    createMany: vi.fn(),
+    findMany: vi.fn(),
   },
   userEmail: {
     findUnique: vi.fn().mockResolvedValue(null),
@@ -486,9 +496,6 @@ export const prisma = {
     findUnique: vi.fn(),
     findMany: vi.fn().mockResolvedValue([]),
   },
-  critSubmission: {
-    findUnique: vi.fn(),
-  },
   taskFileLink: {
     createMany: vi.fn().mockResolvedValue({ count: 1 }),
     deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -909,6 +916,7 @@ export const prisma = {
   workExperience: {
     createMany: vi.fn(),
     create: vi.fn(),
+    count: vi.fn(),
     updateMany: vi.fn(),
     deleteMany: vi.fn(),
   },

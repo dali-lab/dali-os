@@ -235,13 +235,6 @@ export const EVENT_TYPES = {
     coalesceNoun: "comment",
     defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
   },
-  "crit.comment": {
-    kind: "General",
-    area: "Community",
-    label: "Crit Wall comments",
-    description: "New comments on work you shared on a Crit Wall, including anonymous posts.",
-    defaults: { inApp: true, desktop: true, slackDm: false, email: "Off" },
-  },
   "file.new_version": {
     kind: "General",
     area: "Documents",

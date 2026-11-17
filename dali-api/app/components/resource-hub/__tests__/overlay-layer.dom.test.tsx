@@ -20,8 +20,6 @@ vi.mock("~/lib/upload-client", () => ({ uploadFileToS3: vi.fn() }));
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn(), alert: vi.fn(), prompt: vi.fn() }) }));
 
 import { HubCoverStudio } from "../HubCoverStudio";
-import { ShareWorkModal } from "../crit/ShareWorkModal";
-import { SubmissionOverlay } from "../crit/SubmissionOverlay";
 import { CollectionView } from "~/components/doc/components/CollectionView";
 
 let container: HTMLDivElement;
@@ -53,17 +51,6 @@ describe("hub overlays use the default modal layer", () => {
   it("cover studio", () => {
     mount(createElement(HubCoverStudio, { busy: false, heading: "New hub", submitLabel: "Create", initialTitle: "", initialCover: null, onClose: vi.fn(), onSubmit: vi.fn() }));
     expectDefaultLayer("cover-studio-title");
-  });
-  it("share work", () => {
-    mount(createElement(ShareWorkModal, { userName: "Ada", busy: false, serverError: null, onClose: vi.fn(), onSubmit: vi.fn() }));
-    expectDefaultLayer("share-work-title");
-  });
-  it("crit submission", () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ comments: [] }) })));
-    vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
-    const submission = { id: "s1", title: "Logo", question: null, kind: "image", url: "/a.png", previewUrl: null, fileName: "a.png", anonymous: false, authorName: "Ada", mine: true, canDelete: true, canModerate: false, commentCount: 0, createdAt: new Date(0).toISOString() };
-    mount(createElement(SubmissionOverlay, { viewer: { id: "u1", name: "Ada", photoUrl: null }, submission, onClose: vi.fn(), onChanged: vi.fn() }));
-    expectDefaultLayer("crit-overlay-title");
   });
   it("resource component", () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => ({}) })));

@@ -12,11 +12,9 @@ import { createDocComment, CommentCreateError, type CommentTarget } from "~/lib/
 import type { BodySegment } from "~/lib/comment-body";
 import { commentAnchorSchema } from "~/lib/slide-comments";
 import { bodySegmentsSchema } from "~/lib/comment-body-schema";
-import { critHiddenAuthorId, loadCritTarget } from "~/lib/crit-comments.server";
-import { maskAnonymousAuthor } from "~/lib/crit-comments";
 
 // Comments + inline annotations on documents (Pages) and files (ProjectFile).
-//   GET  /api/comments?targetType=doc|file|pagedoc|crit&targetId=...   → threads (roots + replies)
+//   GET  /api/comments?targetType=doc|file|pagedoc&targetId=...   → threads (roots + replies)
 //   POST /api/comments  { targetType, targetId, body, parentId?, anchor? }
 //
 // `anchor` (doc only) carries a Yjs relative-position range so an inline
@@ -29,12 +27,11 @@ import { maskAnonymousAuthor } from "~/lib/crit-comments";
 //   doc target   — read/create/reply: canView (any member, partner-visible partner)
 //   file target  — read/create/reply: Core or project member of owning project
 //   pagedoc      — read/create/reply: any lab member (open FAQ threads)
-//   crit         — read/create/reply: loadCritTarget (flag on, member, hub published or editable)
 
 const AnchorSchema = commentAnchorSchema;
 
 const CreateSchema = z.object({
-  targetType: z.enum(["doc", "file", "pagedoc", "crit"]),
+  targetType: z.enum(["doc", "file", "pagedoc"]),
   targetId: z.string().min(1),
   body: z.string().trim().min(1).max(5000),
   /** Rich inline segments. When present, stored in DocComment.bodyJson and used
@@ -62,7 +59,6 @@ async function canReadTarget(
   request?: Request,
 ): Promise<boolean> {
   if (targetType === "pagedoc") return isLabMemberOrAlum(auth.user.sub, request);
-  if (targetType === "crit") return (await loadCritTarget(auth.user.sub, targetId, request)) !== null;
   if (targetType === "doc") {
     const access = await getPageAccess(auth.user.sub, targetId, request);
     return access.canComment;
@@ -89,7 +85,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const targetType = url.searchParams.get("targetType");
   const targetId = url.searchParams.get("targetId");
   if (
-    (targetType !== "doc" && targetType !== "file" && targetType !== "pagedoc" && targetType !== "crit") ||
+    (targetType !== "doc" && targetType !== "file" && targetType !== "pagedoc") ||
     !targetId
   ) {
     return withCors(request, Response.json({ error: "Invalid target" }, { status: 400 }));
@@ -141,8 +137,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     reactions: r.reactions.map((x) => ({ ...x, name: nameById.get(x.userId) ?? "Unknown" })),
   }));
 
-  const hiddenAuthorId = targetType === "crit" ? await critHiddenAuthorId(auth.user.sub, targetId, request) : null;
-  return withCors(request, Response.json({ comments: await withEmojiImages(maskAnonymousAuthor(comments, hiddenAuthorId)) }));
+  return withCors(request, Response.json({ comments: await withEmojiImages(comments) }));
 }
 
 export async function action({ request }: Route.ActionArgs) {

@@ -6,9 +6,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("~/lib/db.server");
 vi.mock("~/lib/notify.server", () => ({ notify: vi.fn() }));
 
-import { notify } from "~/lib/notify.server";
 import {
-  notifyMentions,
   extractHandlesFromText,
   extractMentionUserIds,
   pageDocLink,
@@ -70,17 +68,5 @@ describe("pageDocLink", () => {
     expect(pageDocLink("https://evil.com")).toBe("/");
     expect(pageDocLink("//evil.com")).toBe("/");
     expect(pageDocLink(undefined)).toBe("/");
-  });
-});
-
-describe("notifyMentions actor", () => {
-  const base = { recipientUserIds: ["u2", "u1"], actorId: "u1", link: "/x", copyKey: "mention.comment" as const, preview: "hi" };
-  it("names the actor and skips them as a recipient", async () => {
-    await notifyMentions(base);
-    expect(vi.mocked(notify).mock.calls.at(-1)![0]).toMatchObject({ createdByUserId: "u1", recipients: [{ userId: "u2" }] });
-  });
-  it("leaves the actor off the notification when asked, still skipping them", async () => {
-    await notifyMentions({ ...base, anonymousActor: true });
-    expect(vi.mocked(notify).mock.calls.at(-1)![0]).toMatchObject({ createdByUserId: null, recipients: [{ userId: "u2" }] });
   });
 });

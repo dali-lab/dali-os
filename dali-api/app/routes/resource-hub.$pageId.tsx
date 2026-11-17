@@ -13,7 +13,7 @@ import { getCollabToken } from "~/lib/collab-token.server";
 import { isAiEnabled } from "~/lib/ai.server";
 import { loadHubShell } from "~/lib/resource-hub.server";
 import { PageRowControls, type PageRowControl } from "~/components/os-page";
-import type { HubOutletContext } from "~/components/resource-hub/hub-tabs";
+import type { HubOutletContext } from "./resource-hub-layout";
 import { useDialog } from "~/components/ui/dialog";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";

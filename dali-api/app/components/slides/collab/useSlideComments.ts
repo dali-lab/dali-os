@@ -12,36 +12,30 @@ export interface NewSlideComment {
 
 export interface SlideCommentsApi {
   comments: SlideComment[];
-  loaded: boolean;
   error: string | null;
   post: (input: NewSlideComment) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
-  edit: (id: string, body: string, bodyJson: BodySegment[]) => Promise<boolean>;
-  react: (id: string, emoji: string, on: boolean) => Promise<boolean>;
 }
 
-export type CommentTargetType = "doc" | "crit";
-
-/** Every comment on a target (a deck by default), kept fresh by the page's comment stream. */
-export function useSlideComments(pageId: string, enabled: boolean, targetType: CommentTargetType = "doc"): SlideCommentsApi {
+/** Every comment on the deck, kept fresh by the page's comment stream. */
+export function useSlideComments(pageId: string, enabled: boolean): SlideCommentsApi {
   const [comments, setComments] = useState<SlideComment[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
   const alive = useRef(true);
 
   const refetch = useCallback(async () => {
     try {
-      const res = await fetch(`/api/comments?targetType=${targetType}&targetId=${encodeURIComponent(pageId)}`, { credentials: "include" });
+      const res = await fetch(`/api/comments?targetType=doc&targetId=${encodeURIComponent(pageId)}`, { credentials: "include" });
       if (!res.ok) {
         if (alive.current) setError(res.status === 403 ? "You don't have access to comments here." : "Comments didn't load.");
         return;
       }
       const data = (await res.json()) as { comments: SlideComment[] };
-      if (alive.current) (setError(null), setComments(data.comments), setLoaded(true));
+      if (alive.current) (setError(null), setComments(data.comments));
     } catch {
       return;
     }
-  }, [pageId, targetType]);
+  }, [pageId]);
 
   useEffect(() => {
     alive.current = true;
@@ -65,7 +59,7 @@ export function useSlideComments(pageId: string, enabled: boolean, targetType: C
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ targetType, targetId: pageId, ...input }),
+        body: JSON.stringify({ targetType: "doc", targetId: pageId, ...input }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -76,7 +70,7 @@ export function useSlideComments(pageId: string, enabled: boolean, targetType: C
       await refetch();
       return true;
     },
-    [pageId, targetType, refetch],
+    [pageId, refetch],
   );
 
   const remove = useCallback(
@@ -92,32 +86,5 @@ export function useSlideComments(pageId: string, enabled: boolean, targetType: C
     [refetch],
   );
 
-  const patch = useCallback(
-    async (id: string, payload: object, failure: string) => {
-      const res = await fetch(`/api/comments/${id}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        setError(failure);
-        return false;
-      }
-      setError(null);
-      await refetch();
-      return true;
-    },
-    [refetch],
-  );
-  const edit = useCallback(
-    (id: string, body: string, bodyJson: BodySegment[]) => patch(id, { intent: "edit", body, bodyJson }, "That edit didn't save."),
-    [patch],
-  );
-  const react = useCallback(
-    (id: string, emoji: string, on: boolean) => patch(id, { intent: on ? "react" : "unreact", emoji }, "That reaction didn't save."),
-    [patch],
-  );
-
-  return { comments, loaded, error, post, remove, edit, react };
+  return { comments, error, post, remove };
 }

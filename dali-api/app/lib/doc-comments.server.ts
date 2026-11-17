@@ -7,11 +7,10 @@ import type { BodySegment } from "~/lib/comment-body";
 import { anchorSlideId, type commentAnchorSchema } from "~/lib/slide-comments";
 import type { z } from "zod";
 import { docCommentContext } from "~/lib/comment-links.server";
-import { critActorIsAnonymous, critPostExists, critThreadLink, notifyCritComment } from "~/lib/crit-comments.server";
 
 type CommentAnchor = z.infer<typeof commentAnchorSchema>;
 
-export type CommentTarget = "doc" | "file" | "pagedoc" | "crit";
+export type CommentTarget = "doc" | "file" | "pagedoc";
 
 export class CommentCreateError extends Error {
   constructor(
@@ -33,7 +32,6 @@ async function targetExists(targetType: CommentTarget, targetId: string): Promis
     });
     return !!page && page.archivedAt === null;
   }
-  if (targetType === "crit") return (await critPostExists(targetId)) !== null;
   if (targetType === "pagedoc") {
     const doc = await prisma.pageDoc.findUnique({
       where: { id: targetId },
@@ -78,18 +76,8 @@ export async function createDocComment(a: {
       throw new CommentCreateError("Invalid parent comment", 400);
     }
   }
-  const anchor = targetType === "doc" || targetType === "crit" ? (a.anchor ?? null) : null;
-  const anchorKind = (anchor as { kind?: string } | null)?.kind;
-  if (anchorKind === "image" || targetType === "crit") {
-    if (targetType !== "crit") throw new CommentCreateError("Image pins only apply to Crit Wall posts", 400);
-    if (anchor !== null) {
-      if (anchorKind !== "image") throw new CommentCreateError("Crit Wall comments only take image pins", 400);
-      if (parentId) throw new CommentCreateError("Replies can't be pinned", 400);
-      if ((await critPostExists(targetId))?.kind !== "image") {
-        throw new CommentCreateError("Pins only apply to images", 400);
-      }
-    }
-  } else if (anchorSlideId(anchor) !== null || anchorKind === "slide") {
+  const anchor = targetType === "doc" ? (a.anchor ?? null) : null;
+  if (anchorSlideId(anchor) !== null || (anchor as { kind?: string } | null)?.kind === "slide") {
     const page = await prisma.page.findUnique({ where: { id: targetId }, select: { kind: true } });
     if (page?.kind !== "Slides") {
       throw new CommentCreateError("Slide anchors only apply to slide decks", 400);
@@ -139,12 +127,6 @@ export async function createDocComment(a: {
     );
   }
 
-  if (targetType === "crit" && !parentId) {
-    void notifyCritComment({ submissionId: targetId, commenterId: authorId, commentId: created.id, body }).catch((err) =>
-      console.error(`comment ${created.id}: crit notify failed`, err),
-    );
-  }
-
   if (parentId) {
     void notifyThreadReply({ targetType, targetId, rootId: parentId, authorId, body, path }).catch((err) =>
       console.error(`comment ${created.id}: reply notify failed`, err),
@@ -167,8 +149,6 @@ export async function createDocComment(a: {
     let link: string;
     if (targetType === "doc") {
       link = (await docCommentContext(targetId, parentId ?? created.id, created.id, parentId ? undefined : (anchor))).link;
-    } else if (targetType === "crit") {
-      link = await critThreadLink(targetId, parentId ?? created.id);
     } else {
       const base = targetType === "pagedoc" ? pageDocLink(path) : `/documents/file/${targetId}`;
       link = `${base}${base.includes("?") ? "&" : "?"}comment=${created.id}`;
@@ -179,7 +159,6 @@ export async function createDocComment(a: {
       link,
       copyKey: "mention.comment",
       preview: body,
-      anonymousActor: targetType === "crit" && (await critActorIsAnonymous(targetId, authorId)),
     });
   })().catch((err) => console.error(`comment ${created.id}: mention notify failed`, err));
 
@@ -223,14 +202,6 @@ async function notifyThreadReply(args: {
       })
     )?.title;
     link = pageDocLink(args.path);
-  } else if (args.targetType === "crit") {
-    title = (
-      await prisma.critSubmission.findUnique({
-        where: { id: args.targetId },
-        select: { title: true },
-      })
-    )?.title;
-    link = await critThreadLink(args.targetId, args.rootId);
   } else {
     title = (
       await prisma.projectFile.findUnique({
@@ -242,10 +213,9 @@ async function notifyThreadReply(args: {
   }
   const preview = args.body.length > 200 ? `${args.body.slice(0, 200)}…` : args.body;
 
-  const anonymousActor = args.targetType === "crit" && (await critActorIsAnonymous(args.targetId, args.authorId));
   await notify({
     eventType: "collab.comment_reply",
-    createdByUserId: anonymousActor ? null : args.authorId,
+    createdByUserId: args.authorId,
     message: {
       vars: { itemTitle: title ?? "a document", itemDetail: preview },
       link,

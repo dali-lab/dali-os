@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Outlet, useFetcher, useLoaderData, useLocation } from "react-router";
+import { Outlet, useFetcher, useLoaderData } from "react-router";
 import type { Route } from "./+types/resource-hub-layout";
 import { uploadEditorImage } from "~/components/doc";
 import { PageRowControlsScope, PageTabRow } from "~/components/os-page";
 import { isPatternCover } from "~/components/cover/CoverPattern";
-import { hubTabs, type HubOutletContext } from "~/components/resource-hub/hub-tabs";
 import { HubHeader } from "~/components/resource-hub/HubHeader";
 import { HubCoverStudio } from "~/components/resource-hub/HubCoverStudio";
 import { prisma } from "~/lib/db.server";
 import { loadHubShell } from "~/lib/resource-hub.server";
+
+export type HubOutletContext = { leaveGuard: { current: (() => boolean) | null } };
 
 export async function loader({ request, params }: Route.LoaderArgs) {
   const { page, canEdit } = await loadHubShell(request, params.pageId!);
@@ -18,7 +19,6 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       title: page.title,
       coverUrl: page.coverUrl,
       published: page.publishedAt !== null,
-      hasDomain: page.domainId !== null,
       domainName: page.domain?.displayName ?? null,
     },
     canEdit,
@@ -44,7 +44,6 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 export default function ResourceHubLayout() {
   const { hub, canEdit } = useLoaderData<typeof loader>();
-  const { pathname } = useLocation();
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const [editing, setEditing] = useState(false);
   const leaveGuard = useRef<(() => boolean) | null>(null);
@@ -66,8 +65,8 @@ export default function ResourceHubLayout() {
           }}
         />
         <PageTabRow
-          label="Hub sections"
-          tabs={hubTabs(hub.id, hub.hasDomain, pathname)}
+          label="Hub"
+          tabs={[]}
           onSettings={canEdit ? () => setEditing(true) : undefined}
           settingsLabel="Edit title and cover"
           settingsActive={editing}

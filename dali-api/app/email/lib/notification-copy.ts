@@ -216,14 +216,6 @@ export const NOTIFICATION_COPY = {
     subject: "New feedback on: {{itemTitle}}",
     body: "{{itemDetail}}",
   },
-  "crit.comment": {
-    eventType: "crit.comment",
-    label: "Comment on your Crit Wall post",
-    description: "Sent when someone comments on work you shared on a Crit Wall.",
-    variables: ["itemTitle", "itemDetail"],
-    subject: "New comment on: {{itemTitle}}",
-    body: "{{itemDetail}}",
-  },
   "file.new_version": {
     eventType: "file.new_version",
     label: "New file version",
