@@ -7,6 +7,12 @@ export const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t)
 }
 
+/**
+ * How much a repeating pattern strobes, 0 to 1, when it moves `step` per frame. Under the tunnel's
+ * 1/z projection both the motion and the pitch on screen scale by 1/z², so depth drops out.
+ */
+export const strobe = (step: number, pitch: number) => smooth(0.15, 0.35, step / pitch)
+
 export function seededRandom(seed: number) {
   return () => {
     seed = (seed + 0x6d2b79f5) | 0
