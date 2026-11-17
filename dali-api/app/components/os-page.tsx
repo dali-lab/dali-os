@@ -190,6 +190,17 @@ export function PageRowControlsScope({ children }: { children: ReactNode }) {
   );
 }
 
+const UNSCOPED = { scoped: false, register: () => {} };
+
+/** Cuts a subtree (a dialog) off from the page's row so its own tab rows don't show the page's controls. */
+export function PageRowControlsBoundary({ children }: { children: ReactNode }) {
+  return (
+    <RegisterContext.Provider value={UNSCOPED}>
+      <RegisteredControlsContext.Provider value={[]}>{children}</RegisteredControlsContext.Provider>
+    </RegisterContext.Provider>
+  );
+}
+
 /** True when a page row is listening, so a tab renders its controls there instead of in its own toolbar. */
 export function usePageRowScoped() {
   return useContext(RegisterContext).scoped;

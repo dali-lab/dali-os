@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { cn } from "~/lib/cn";
 import { modalCardClass } from "~/components/os-chrome";
 import { Z } from "~/components/ui/z";
+import { PageRowControlsBoundary } from "~/components/os-page";
 
 const FOCUSABLE_SELECTOR = [
   "a[href]",
@@ -172,7 +173,8 @@ export function Modal({
     </div>
   );
 
-  return mounted ? createPortal(overlay, document.body) : overlay;
+  const isolated = <PageRowControlsBoundary>{overlay}</PageRowControlsBoundary>;
+  return mounted ? createPortal(isolated, document.body) : isolated;
 }
 
 export const MODAL_TITLE_CLASS = "font-heading text-xl font-medium text-foreground";

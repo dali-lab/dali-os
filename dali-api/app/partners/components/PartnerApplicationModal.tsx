@@ -435,18 +435,19 @@ export function PartnerApplicationModal({
           ) : !detail ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
           ) : (
-            <div className="min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-8">
+            <>
+            <PageTabRow
+              label="Application sections"
+              tabs={tabs.map((t) => ({
+                label: t.label,
+                icon: t.icon,
+                active: tab === t.key,
+                onClick: () => setTab(t.key),
+              }))}
+            />
+            <div className="mt-5 min-w-0 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:gap-8">
               <div className="min-w-0">
-                <PageTabRow
-                  label="Application sections"
-                  tabs={tabs.map((t) => ({
-                    label: t.label,
-                    icon: t.icon,
-                    active: tab === t.key,
-                    onClick: () => setTab(t.key),
-                  }))}
-                />
-                <div className="mt-5">
+                <div>
                   {tab === "planning" && planningTab}
                   {tab === "activity" && (
                     <ActivityTab
@@ -540,6 +541,7 @@ export function PartnerApplicationModal({
                 />
               </aside>
             </div>
+            </>
           )}
         </div>
 
