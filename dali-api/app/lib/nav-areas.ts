@@ -3,6 +3,7 @@ import {
   Award,
   Bell,
   BookOpen,
+  Library,
   Calendar,
   Briefcase,
   ClipboardCheck,
@@ -386,6 +387,8 @@ export function areasFor(flags: Partial<FeatureFlagMap> = {}): NavArea[] {
   );
 }
 
+const RESOURCE_HUB_NAV_ITEM: SubTab = { label: "Resource Hub", href: "/resource-hub", icon: Library };
+
 /** The nav items pinned above the area dropdown, after Home / My Tasks / Calendar. */
 export function pinnedNavItems(
   r: Pick<RoleFlags, "isAlumni" | "isNewMember"> = { isAlumni: false },
@@ -393,7 +396,10 @@ export function pinnedNavItems(
 ): SubTab[] {
   if (r.isAlumni) return [];
   const drive: SubTab = { label: "Drive", href: "/drive", icon: HardDrive };
-  return r.isNewMember && flags["onboarding-journeys"] ? [drive, ONBOARDING_NAV_ITEM] : [drive];
+  const hub: SubTab[] = flags["resource-hub"] ? [RESOURCE_HUB_NAV_ITEM] : [];
+  return r.isNewMember && flags["onboarding-journeys"]
+    ? [drive, ...hub, ONBOARDING_NAV_ITEM]
+    : [drive, ...hub];
 }
 
 /** Where the wordmark and the workspace's first tab land. */

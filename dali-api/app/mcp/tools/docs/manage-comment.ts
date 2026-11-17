@@ -10,6 +10,7 @@ import { publishCommentChange } from "~/lib/comment-events.server";
 import { requireForAction } from "~/mcp/registry";
 import { commentAnchorSchema } from "~/lib/slide-comments";
 import { createDocComment, CommentCreateError } from "~/lib/doc-comments.server";
+import { keepMentionChips, type BodySegment } from "~/lib/comment-body";
 import type { McpCtx, McpTool } from "~/mcp/registry";
 
 export const MANAGE_COMMENT_TOOL_DEF = {
@@ -102,7 +103,7 @@ async function canCommentOnTarget(callerId: string, targetType: CommentTarget, t
 async function requireComment(commentId: string) {
   const comment = await prisma.docComment.findUnique({
     where: { id: commentId },
-    select: { id: true, authorId: true, targetType: true, targetId: true, parentId: true },
+    select: { id: true, authorId: true, targetType: true, targetId: true, parentId: true, bodyJson: true },
   });
   if (!comment) throw new ManageCommentError("Comment not found", 404);
   return comment;
@@ -149,7 +150,11 @@ export async function runManageComment(callerId: string, input: ManageCommentInp
     if (!isAuthor) throw new ManageCommentError("Only the comment author can edit it", 403);
     const body = input.body!.trim();
     if (!body) throw new ManageCommentError("Body is required", 400);
-    await prisma.docComment.update({ where: { id: comment.id }, data: { body } });
+    const prevSegments = Array.isArray(comment.bodyJson) ? (comment.bodyJson as BodySegment[]) : [];
+    await prisma.docComment.update({
+      where: { id: comment.id },
+      data: { body, ...(prevSegments.length > 0 ? { bodyJson: keepMentionChips(body, prevSegments) } : {}) },
+    });
     if (comment.targetType === "doc") publishCommentChange(comment.targetId);
     return { ok: true };
   }

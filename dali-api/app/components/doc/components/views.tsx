@@ -4,6 +4,8 @@
 // Styling is plain `dali-cmp-*` CSS in ../theme.css, not utility classes, so
 // that markup stays stylable wherever it lands.
 
+import { ChevronRight } from "lucide-react";
+import { CollectionView } from "./CollectionView";
 import type { ReactNode } from "react";
 import {
   CODE_SANDBOX,
@@ -20,7 +22,7 @@ type Item = Record<string, string>;
 function LinkOrDiv({ href, className, children }: { href?: string; className: string; children: ReactNode }) {
   const safe = safeHref(href);
   if (!safe) return <div className={className}>{children}</div>;
-  const external = !safe.startsWith("/");
+  const external = /^(https?:|mailto:)/i.test(safe);
   return (
     <a
       className={className}
@@ -46,13 +48,15 @@ function Heading({ title, subtitle }: { title?: string; subtitle?: string }) {
 
 function Chips({ fields, items }: ComponentData) {
   return (
-    <div className="dali-cmp-chips">
+    <div className={`dali-cmp-chips${fields.layout === "inline" ? "" : " dali-cmp-chips--stacked"}`}>
       {fields.label && <span className="dali-cmp-eyebrow">{fields.label}</span>}
-      {items.map((it, i) => (
-        <LinkOrDiv key={i} href={it.href} className="dali-cmp-chip">
-          {it.label}
-        </LinkOrDiv>
-      ))}
+      <div className="dali-cmp-chips__row">
+        {items.filter((it) => (it.label ?? "").trim()).map((it, i) => (
+          <LinkOrDiv key={i} href={it.href} className={`dali-cmp-chip${it.tone ? ` ${tone(it)}` : ""}`}>
+            {it.label}
+          </LinkOrDiv>
+        ))}
+      </div>
     </div>
   );
 }
@@ -84,9 +88,13 @@ function Timeline({ fields, items }: ComponentData) {
           const n = i + 1;
           const state = n < current ? "done" : n === current ? "current" : "next";
           return (
-            <li key={i} className={`dali-cmp-step dali-cmp-step--${state}`}>
+            <li
+              key={i}
+              className={`dali-cmp-step dali-cmp-step--${state}${it.tone ? ` dali-cmp-step--toned ${tone(it)}` : ""}`}
+            >
               <span className="dali-cmp-step__num">{n}</span>
               <span className="dali-cmp-step__label">{it.label}</span>
+              {it.details?.trim() && <span className="dali-cmp-sub dali-cmp-step__detail">{it.details}</span>}
             </li>
           );
         })}
@@ -100,12 +108,16 @@ function Links({ fields, items }: ComponentData) {
     <div className="dali-cmp-panel dali-cmp-panel--flush">
       <Heading title={fields.title} subtitle={fields.subtitle} />
       {items.map((it, i) => (
-        <LinkOrDiv key={i} href={it.href} className="dali-cmp-row">
+        <LinkOrDiv key={i} href={it.href} className="dali-cmp-row dali-cmp-row--media">
+          <span className={`dali-cmp-row__thumb ${tone({ tone: it.tone || "accent" })}`}>
+            {it.image && <img src={it.image} alt="" loading="lazy" referrerPolicy="no-referrer" onError={(e) => (e.currentTarget.style.display = "none")} />}
+          </span>
           <span className="dali-cmp-row__main">
             <span className="dali-cmp-row__title">{it.title}</span>
             {it.description && <span className="dali-cmp-sub">{it.description}</span>}
           </span>
           {it.meta && <span className="dali-cmp-meta">{it.meta}</span>}
+          {safeHref(it.href) && <ChevronRight className="dali-cmp-row__arrow" size={22} strokeWidth={1.75} aria-hidden />}
         </LinkOrDiv>
       ))}
     </div>
@@ -212,6 +224,7 @@ const VIEWS: Record<string, (data: ComponentData) => ReactNode> = {
   cards: Cards,
   timeline: Timeline,
   links: Links,
+  collection: CollectionView,
   stats: Stats,
   bars: Bars,
   gallery: Gallery,

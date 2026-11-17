@@ -34,7 +34,7 @@ export type DesktopLinkAction =
 /** Schemes the shell passes to the OS on navigation, the same as an off-site
  *  link. `javascript:`, `blob:` and `data:` are deliberately absent: those are
  *  the page's own business and a hand-off would break them. */
-const HAND_OFF_SCHEMES = new Set(["mailto:", "tel:", "sms:", "facetime:"]);
+const HAND_OFF_SCHEMES = new Set(["mailto:", "tel:", "sms:", "facetime:", "slack:"]);
 
 /**
  * What the shell should do with a link that asked for a new tab. Pure, so the

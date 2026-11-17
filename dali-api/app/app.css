@@ -950,6 +950,7 @@ select:not(:disabled) {
  * dark palette instead of this one, while the shell div — where `.os-shell` is
  * the nearest ancestor — rendered correctly. Matching the arms ties the
  * specificity, and later wins. */
+
 /* The three record levels, as one set of variables rather than three sets of
    literals. Epic / story / task are named in CSS (the badge, the timeline bar)
    *and* in JS (the level filter chips, the inline row borders in
@@ -1592,6 +1593,10 @@ html.os-shell > body::-webkit-scrollbar-track {
 .os-shell .os-form textarea:focus {
   outline: none;
   border-color: var(--color-os-accent);
+}
+.os-shell .os-form input[aria-invalid="true"],
+.os-shell .os-form textarea[aria-invalid="true"] {
+  border-color: var(--color-destructive);
 }
 .os-shell .os-form input::placeholder,
 .os-shell .os-form textarea::placeholder {

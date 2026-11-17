@@ -224,6 +224,7 @@ export function LayoutOS({
   const navFlags = {
     community: useFeatureFlag('community'),
     'onboarding-journeys': useFeatureFlag('onboarding-journeys'),
+    'resource-hub': useFeatureFlag('resource-hub'),
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
     'core-taskboard': useFeatureFlag('core-taskboard'),
     'alumni-game': useFeatureFlag('alumni-game'),
@@ -241,7 +242,7 @@ export function LayoutOS({
   // follows the rail's selected mode (home keeps the default accent).
   const accentArea =
     routeArea ??
-    (['/calendar', '/email', '/drive'].some((p) => path.startsWith(p)) ? activeArea : undefined)
+    (['/calendar', '/email', '/drive', '/resource-hub'].some((p) => path.startsWith(p)) ? activeArea : undefined)
   const adminAttention = useAdminAttention(activeArea?.key === 'admin', path)
   const activeSubtabs = activeArea ? visibleSubtabs(activeArea, roleFlags) : []
   const activeHref = activeArea ? activeSubtabHref(activeArea, path) : undefined
