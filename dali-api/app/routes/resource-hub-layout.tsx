@@ -47,6 +47,7 @@ export default function ResourceHubLayout() {
   const { pathname } = useLocation();
   const fetcher = useFetcher<{ error?: string; ok?: boolean }>();
   const [editing, setEditing] = useState(false);
+  const [staleResult, setStaleResult] = useState<unknown>(null);
   const leaveGuard = useRef<(() => boolean) | null>(null);
   const context = useMemo<HubOutletContext>(() => ({ leaveGuard }), []);
   useEffect(() => {
@@ -68,7 +69,14 @@ export default function ResourceHubLayout() {
         <PageTabRow
           label="Hub sections"
           tabs={hubTabs(hub.id, hub.hasDomain, pathname)}
-          onSettings={canEdit ? () => setEditing(true) : undefined}
+          onSettings={
+            canEdit
+              ? () => {
+                  setStaleResult(fetcher.data);
+                  setEditing(true);
+                }
+              : undefined
+          }
           settingsLabel="Edit title and cover"
           settingsActive={editing}
         />
@@ -81,7 +89,7 @@ export default function ResourceHubLayout() {
             initialTitle={hub.title}
             initialCover={hub.coverUrl}
             uploadImage={uploadEditorImage}
-            serverError={fetcher.data?.error ?? null}
+            serverError={fetcher.data === staleResult ? null : (fetcher.data?.error ?? null)}
             onClose={() => setEditing(false)}
             onSubmit={(title, url) => {
               if (!title.trim()) return;

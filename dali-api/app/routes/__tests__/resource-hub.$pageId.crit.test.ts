@@ -100,7 +100,7 @@ describe("loader paging", () => {
     expect(db.critSubmission.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { domainId: "d1" }, take: CRIT_PAGE_SIZE + 1, orderBy: [{ createdAt: "desc" }, { id: "desc" }] }));
     expect(out.items).toHaveLength(CRIT_PAGE_SIZE);
     expect(out.nextCursor).toBe(`${row(CRIT_PAGE_SIZE - 1).createdAt.toISOString()}|s${CRIT_PAGE_SIZE - 1}`);
-    expect(db.docComment.groupBy.mock.calls[0][0].where.targetId.in).toHaveLength(CRIT_PAGE_SIZE);
+    expect((db.docComment.groupBy.mock.calls[0]![0] as { where: { targetId: { in: string[] } } }).where.targetId.in).toHaveLength(CRIT_PAGE_SIZE);
   });
 
   it("has no cursor on the last page", async () => {

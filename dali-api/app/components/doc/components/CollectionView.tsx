@@ -147,7 +147,7 @@ function ResourceOverlay({ item, onClose }: { item: Record<string, string>; onCl
           className="h-[65vh] w-full rounded-xl border border-os-container bg-os-card"
         />
       ) : video ? (
-        <div className="aspect-video w-full overflow-hidden rounded-xl border border-os-container bg-black">
+        <div className="aspect-video w-full overflow-hidden rounded-xl border border-os-container bg-os-well">
           <iframe
             title={item.title || "Video"}
             src={video.embedUrl}

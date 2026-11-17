@@ -22,7 +22,7 @@ let container: HTMLDivElement;
 let root: Root;
 const onSubmit = vi.fn<(v: ShareValues) => void>();
 
-const props = { userName: "Ada Lovelace", busy: false, serverError: null, onClose: vi.fn(), onSubmit };
+const props = { userName: "Ada Lovelace", busy: false, serverError: null as string | null, onClose: vi.fn(), onSubmit };
 const render = (over: Partial<typeof props> = {}) => act(() => root.render(createElement(ShareWorkModal, { ...props, ...over })));
 const q = <T extends Element>(sel: string) => container.querySelector(sel) as T;
 const type = (el: HTMLInputElement | HTMLTextAreaElement, value: string) =>

@@ -41,6 +41,9 @@ describe("component library", () => {
     expect(safeHref("slack://channel?team=T1&id=C1")).toBe("slack://channel?team=T1&id=C1");
     expect(safeHref("#section")).toBe("#section");
     expect(safeHref("dali.dev/docs")).toBe("https://dali.dev/docs");
+    expect(safeHref("dali.dartmouth.edu")).toBe("https://dali.dartmouth.edu");
+    expect(safeHref("example.com/path?q=1")).toBe("https://example.com/path?q=1");
+    for (const text of ["v1.2", "1.5", "e.g.", "about.", "hello world.com", "a.b1"]) expect(safeHref(text), text).toBeUndefined();
     expect(safeHref("JavaScript:alert(1)")).toBeUndefined();
     expect(safeHref("data:text/html,x")).toBeUndefined();
     for (const bad of ["ms-msdt:/id PCWDiagnostic", "intent://scan#Intent;end", "vbscript:x", "file:///etc/passwd", "myapp://open"]) {

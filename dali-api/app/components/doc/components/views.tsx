@@ -22,7 +22,7 @@ type Item = Record<string, string>;
 function LinkOrDiv({ href, className, children }: { href?: string; className: string; children: ReactNode }) {
   const safe = safeHref(href);
   if (!safe) return <div className={className}>{children}</div>;
-  const external = /^https?:/i.test(safe);
+  const external = /^(https?:|mailto:)/i.test(safe);
   return (
     <a
       className={className}
@@ -192,7 +192,7 @@ function Feature({ fields }: ComponentData) {
         {fields.eyebrow && <span className="dali-cmp-eyebrow">{fields.eyebrow}</span>}
         <div className="dali-cmp-feature__title">{fields.title}</div>
         {fields.body && <p className="dali-cmp-sub">{fields.body}</p>}
-        {fields.cta && (
+        {cta && fields.cta && (
           <LinkOrDiv href={cta} className="dali-cmp-cta">
             {fields.cta}
           </LinkOrDiv>

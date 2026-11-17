@@ -36,6 +36,38 @@ describe("loader", () => {
   });
 });
 
+describe("loader draft visibility", () => {
+  const run = () => loader({ request: new Request("http://localhost/resource-hub"), params: {}, context: {} } as any);
+  const where = () => db.resourceHubPage.findMany.mock.calls[0]![0]!.where;
+
+  it("shows a member published hubs and their own drafts", async () => {
+    await run();
+    expect(where()).toEqual({ OR: [{ publishedAt: { not: null } }, { createdById: "u1" }] });
+  });
+
+  it("adds drafts of the domains a member leads this term", async () => {
+    vi.mocked(ledDomainIds).mockResolvedValue(["d2"]);
+    await run();
+    expect(where()).toEqual({ OR: [{ publishedAt: { not: null } }, { createdById: "u1" }, { domainId: { in: ["d2"] } }] });
+  });
+
+  it("shows Core every hub without looking up led domains", async () => {
+    vi.mocked(requireResourceHubViewer).mockResolvedValue({ user: { sub: "u1" }, core: true, userName: "Ada" } as any);
+    await run();
+    expect(where()).toEqual({});
+    expect(ledDomainIds).not.toHaveBeenCalled();
+  });
+
+  it("marks drafts in the cards it returns", async () => {
+    db.resourceHubPage.findMany.mockResolvedValue([
+      { id: "a", title: "A", coverUrl: null, publishedAt: new Date(0) },
+      { id: "b", title: "B", coverUrl: null, publishedAt: null },
+    ] as any);
+    const data = (await run()) as any;
+    expect(data.cards.map((c: any) => [c.id, c.published])).toEqual([["a", true], ["b", false]]);
+  });
+});
+
 describe("create", () => {
   it("writes the chosen domain and redirects to the new hub", async () => {
     const res = await post({ intent: "create", domainId: "d2", title: "Fullstack", cover: "" });

@@ -1,7 +1,6 @@
 ---
 title: Resource Hub
 summary: Find your domain's hub, read or edit it, share work on the Crit Wall for feedback, and add references.
-audience: [member]
 flag: resource-hub
 paths: [/resource-hub, /resource-hub/:pageId, /resource-hub/:pageId/crit, /resource-hub/:pageId/references]
 keywords: [resource hub, hub, domain, crit, crit wall, feedback, anonymous, references, inspiration, publish, draft, cover]
@@ -18,7 +17,7 @@ Open [Resource Hub](/resource-hub) in the sidebar. Each card is one domain's hub
 The **Resources** tab is a page you read like any document. You can edit it if you are Core, a lead of the hub's domain this term, or the member who created the hub. Everyone else sees it read-only.
 
 - A new hub starts as a draft. Select **Publish** to let all members see it.
-- After that the button reads **Update**. Your changes save as you type, and **Update** marks the hub as updated for members.
+- After that the button reads **Update**. Your changes save as you type, and **Update** publishes the current version.
 - Select **Preview** to see the page as members see it, and **Back to editing** to return.
 - Select **Delete** to remove the whole hub.
 
