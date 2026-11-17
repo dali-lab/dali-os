@@ -1,9 +1,9 @@
 import { Link } from "react-router";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { PlanningApplicationInfo } from "../../lib/planning-gap.server";
-import { applicationHref } from "./DomainBreakdown";
 import { PlanBlock, spotsKey, type CoreMember, type DomainOption } from "./PlanBlock";
 import { noteMeta, SavedTextField } from "./SavedTextField";
 
@@ -14,6 +14,7 @@ export function PlanningApplicationModal({
   domains,
   canEdit,
   onClose,
+  onOpenApplication,
 }: {
   applicationId: string;
   info: PlanningApplicationInfo;
@@ -21,10 +22,11 @@ export function PlanningApplicationModal({
   domains: DomainOption[];
   canEdit: boolean;
   onClose: () => void;
+  onOpenApplication: (applicationId: string) => void;
 }) {
   const terms = info.targetTermCodes;
   return (
-    <Modal open onClose={onClose} labelledBy="planning-application-title">
+    <Modal open onClose={onClose} labelledBy="planning-application-title" containerClassName={modalCardClass("max-w-2xl")}>
       <ModalHeader
         titleId="planning-application-title"
         title={
@@ -99,12 +101,12 @@ export function PlanningApplicationModal({
           />
         </section>
 
-        <div className="flex items-center justify-between pt-2">
-          <Link to={applicationHref(applicationId)} className="text-sm font-medium text-os-accent hover:underline">
-            Open on the Partners board →
-          </Link>
+        <div className="flex items-center justify-end gap-2 pt-2">
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => onOpenApplication(applicationId)}>
+            Open application
           </Button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useFetcher } from "react-router";
 import { Button } from "~/components/ui/Button";
 import { useOsChrome } from "~/components/os-chrome";
@@ -42,6 +42,13 @@ export function SavedTextField({
   const { formClass } = useOsChrome();
   const fetcher = useFetcher();
   const [draft, setDraft] = useState(value ?? "");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
   const busy = fetcher.state !== "idle";
   const error = fetcherError(fetcher.data);
   const dirty = draft.trim() !== (value ?? "").trim();
@@ -69,12 +76,13 @@ export function SavedTextField({
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       <div className={formClass}>
         <textarea
+          ref={textareaRef}
           aria-label={label}
           rows={4}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={placeholder}
-          className="w-full resize-y"
+          className="max-h-[50vh] w-full resize-y"
         />
       </div>
       <div className="flex items-center justify-end gap-2">
