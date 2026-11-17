@@ -29,6 +29,7 @@ type ResolvedLink = {
   jobType: string | null;
   logoKey: string | null;
   logoUrl: string | null;
+  logoDataUrl?: string | null;
 };
 type ResolveResult = { ok: true; link: ResolvedLink } | { ok: false };
 
@@ -43,7 +44,7 @@ function JobFields({ onFields }: { onFields: (fields: Record<string, string>) =>
   const [jobType, setJobType] = useState("");
   const [willRefer, setWillRefer] = useState(false);
   const [body, setBody] = useState("");
-  const [logo, setLogo] = useState<{ key: string; url: string; domain: string } | null>(null);
+  const [logo, setLogo] = useState<{ key: string; url: string; domain: string; dataUrl: string | null } | null>(null);
   const [color, setColor] = useState<string | null>(null);
   const resolved = useRef<string>("");
 
@@ -63,7 +64,7 @@ function JobFields({ onFields }: { onFields: (fields: Record<string, string>) =>
     setLocation(link.location ?? "");
     setJobType(link.jobType ?? "");
     setColor(null);
-    setLogo(link.logoKey && link.logoUrl ? { key: link.logoKey, url: link.logoUrl, domain: link.companyDomain ?? "" } : null);
+    setLogo(link.logoKey && link.logoUrl ? { key: link.logoKey, url: link.logoUrl, domain: link.companyDomain ?? "", dataUrl: link.logoDataUrl ?? null } : null);
   }, [resolver.state, result]);
 
   useEffect(() => {
@@ -96,9 +97,9 @@ function JobFields({ onFields }: { onFields: (fields: Record<string, string>) =>
       {(logo || company) && (
         <div className="flex items-center gap-3">
           <LogoBlock name={company || "?"} logoUrl={logo?.url} color={color} size={48} drop={Boolean(logo)} />
-          {logo && (
+          {logo?.dataUrl && (
             <img
-              src={logo.url}
+              src={logo.dataUrl}
               alt=""
               aria-hidden
               className="sr-only"

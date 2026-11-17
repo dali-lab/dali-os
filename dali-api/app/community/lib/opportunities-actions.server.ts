@@ -311,7 +311,7 @@ export async function runOpportunityAction(
     case "keep-open":
       await prisma.opportunityPost.updateMany({
         where: { id: postId, authorId: viewer.userId, kind: "Job", stillOpenAskedAt: { not: null } },
-        data: { stillOpenAskedAt: null, confirmedOpenAt: new Date() } as { stillOpenAskedAt: null },
+        data: { stillOpenAskedAt: null, confirmedOpenAt: new Date() },
       });
       return ok;
     case "interested":

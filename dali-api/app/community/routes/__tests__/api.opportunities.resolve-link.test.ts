@@ -5,7 +5,8 @@ const mocks = vi.hoisted(() => ({
   requireLabViewer: vi.fn(),
   checkRateLimit: vi.fn(),
   resolveJobLink: vi.fn(),
-  copyLogoToS3: vi.fn(),
+  storeLogo: vi.fn(),
+  inlineLogoDataUrl: vi.fn(),
 }));
 
 vi.mock("~/community/lib/community.server", () => ({ requireCommunityViewer: mocks.requireCommunityViewer }));
@@ -13,7 +14,8 @@ vi.mock("~/lib/lab-viewer.server", () => ({ requireLabViewer: mocks.requireLabVi
 vi.mock("~/lib/rate-limit", () => ({ checkRateLimit: mocks.checkRateLimit }));
 vi.mock("~/community/lib/job-link.server", async () => ({
   resolveJobLink: mocks.resolveJobLink,
-  copyLogoToS3: mocks.copyLogoToS3,
+  storeLogo: mocks.storeLogo,
+  inlineLogoDataUrl: mocks.inlineLogoDataUrl,
   logoUrlForKey: (k: string | null) => (k ? `/api/upload/raw?key=${encodeURIComponent(k)}` : null),
 }));
 
@@ -77,7 +79,9 @@ describe("POST resolve-link", () => {
       jobType: "Full time",
       logoSourceUrl: "https://cdn.acme.com/logo.png",
     });
-    mocks.copyLogoToS3.mockResolvedValue("uploads/opportunities/logos/a.png");
+    const stored = { key: "uploads/opportunities/logos/a.png", bytes: new Uint8Array([1]), contentType: "image/png" };
+    mocks.storeLogo.mockResolvedValue(stored);
+    mocks.inlineLogoDataUrl.mockReturnValue("data:image/png;base64,AQ==");
     const res = await action({ request: req("https://jobs.ashbyhq.com/acme/1") });
     expect(await res.json()).toEqual({
       ok: true,
@@ -90,8 +94,10 @@ describe("POST resolve-link", () => {
         jobType: "Full time",
         logoKey: "uploads/opportunities/logos/a.png",
         logoUrl: "/api/upload/raw?key=uploads%2Fopportunities%2Flogos%2Fa.png",
+        logoDataUrl: "data:image/png;base64,AQ==",
       },
     });
+    expect(mocks.inlineLogoDataUrl).toHaveBeenCalledWith(stored);
   });
 
   it("returns null logo fields when there is no logo", async () => {
@@ -107,6 +113,7 @@ describe("POST resolve-link", () => {
     const body = await (await action({ request: req("https://linkedin.com/jobs/1") })).json();
     expect(body.link.logoKey).toBeNull();
     expect(body.link.logoUrl).toBeNull();
-    expect(mocks.copyLogoToS3).not.toHaveBeenCalled();
+    expect(body.link.logoDataUrl).toBeNull();
+    expect(mocks.storeLogo).not.toHaveBeenCalled();
   });
 });

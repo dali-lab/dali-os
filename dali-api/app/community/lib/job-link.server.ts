@@ -409,7 +409,9 @@ export async function resolveJobLink(rawUrl: string, deps: JobLinkDeps = {}): Pr
   };
 }
 
-export async function copyLogoToS3(logoSourceUrl: string, deps: CopyLogoDeps = {}): Promise<string | null> {
+export type StoredLogo = { key: string; bytes: Uint8Array; contentType: string };
+
+export async function storeLogo(logoSourceUrl: string, deps: CopyLogoDeps = {}): Promise<StoredLogo | null> {
   const res = await safeFetch(logoSourceUrl, deps, { maxBytes: MAX_IMAGE_BYTES, truncate: false, accept: "image/*" });
   if (!res || res.status >= 400 || res.bytes.length === 0) return null;
   const ext = IMAGE_EXT[res.contentType];
@@ -420,7 +422,20 @@ export async function copyLogoToS3(logoSourceUrl: string, deps: CopyLogoDeps = {
   } catch {
     return null;
   }
-  return key;
+  return { key, bytes: res.bytes, contentType: res.contentType };
+}
+
+export async function copyLogoToS3(logoSourceUrl: string, deps: CopyLogoDeps = {}): Promise<string | null> {
+  return (await storeLogo(logoSourceUrl, deps))?.key ?? null;
+}
+
+export const INLINE_LOGO_MAX_BYTES = 200 * 1024;
+
+// The composer reads the block color from this same-origin copy; the stored
+// logo redirects to S3, where the canvas can't read pixels.
+export function inlineLogoDataUrl(logo: StoredLogo): string | null {
+  if (logo.bytes.length > INLINE_LOGO_MAX_BYTES || logo.contentType === "image/svg+xml") return null;
+  return `data:${logo.contentType};base64,${Buffer.from(logo.bytes).toString("base64")}`;
 }
 
 export async function checkJobLinkAlive(url: string, deps: JobLinkDeps = {}): Promise<LinkStatus> {

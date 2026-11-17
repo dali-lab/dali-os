@@ -6,6 +6,8 @@ import {
   checkJobLinkAlive,
   cleanLegalName,
   copyLogoToS3,
+  INLINE_LOGO_MAX_BYTES,
+  inlineLogoDataUrl,
   mapJobType,
   registrableDomain,
   resolveJobLink,
@@ -243,6 +245,19 @@ describe("copyLogoToS3", () => {
       throw new Error("s3 down");
     });
     expect(await copyLogoToS3("https://cdn.acme.com/l.png", { fetch: img("image/png"), lookup: publicLookup, putObject: put })).toBeNull();
+  });
+});
+
+describe("inlineLogoDataUrl", () => {
+  const logo = (contentType: string, size: number) => ({ key: "k", bytes: new Uint8Array(size).fill(1), contentType });
+
+  it("inlines a small raster logo as a data URL", () => {
+    expect(inlineLogoDataUrl(logo("image/png", 3))).toBe("data:image/png;base64,AQEB");
+  });
+
+  it("skips logos over the inline cap and SVGs", () => {
+    expect(inlineLogoDataUrl(logo("image/png", INLINE_LOGO_MAX_BYTES + 1))).toBeNull();
+    expect(inlineLogoDataUrl(logo("image/svg+xml", 3))).toBeNull();
   });
 });
 
