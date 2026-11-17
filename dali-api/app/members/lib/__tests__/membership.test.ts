@@ -75,6 +75,7 @@ describe("createOrPromoteMember validation", () => {
 
 const EXISTING = {
   id: "existing",
+  email: "ada@example.com",
   daliEmail: null,
   dartmouthEmail: null,
   personalEmail: "ada@example.com",
@@ -175,12 +176,13 @@ describe("createOrPromoteMember identity backfill", () => {
     expect(mockPrisma.user.create.mock.calls[0][0].data.dartmouthEmail).toBe("other@dartmouth.edu");
   });
 
-  it("matches each email against all three email columns and netId only against netId", async () => {
+  it("matches each email against every email column and netId only against netId", async () => {
     await createOrPromoteMember({ ...OK, netId: "F001ABC" }, "actor");
     expect(lookupWhere()).toEqual([
       { daliEmail: "ada@example.com" },
       { dartmouthEmail: "ada@example.com" },
       { personalEmail: "ada@example.com" },
+      { email: "ada@example.com" },
       { netId: "f001abc" },
     ]);
   });
@@ -290,6 +292,7 @@ describe("createOrPromoteMember identity backfill", () => {
     expect(mockPrisma.user.create.mock.calls[0][0].data).toEqual({
       firstName: "Ada",
       lastName: "Lovelace",
+      email: "ada@dali.dartmouth.edu",
       personalEmail: "ada@example.com",
       daliEmail: "ada@dali.dartmouth.edu",
       netId: "f001",
@@ -300,5 +303,55 @@ describe("createOrPromoteMember identity backfill", () => {
       classYear: undefined,
       daliMember: { create: {} },
     });
+  });
+});
+
+describe("createOrPromoteMember login email", () => {
+  it("gives a new member a login email so their first sign-in finds this account", async () => {
+    await createOrPromoteMember(OK, "actor");
+    expect(mockPrisma.user.create.mock.calls[0][0].data.email).toBe("ada@example.com");
+  });
+
+  it("prefers the DALI address, then Dartmouth, then personal", async () => {
+    await createOrPromoteMember(
+      { ...OK, dartmouthEmail: "ada@dartmouth.edu", daliEmail: "ada@dali.dartmouth.edu" },
+      "actor",
+    );
+    expect(mockPrisma.user.create.mock.calls[0][0].data.email).toBe("ada@dali.dartmouth.edu");
+  });
+
+  it("leaves a netId-only member without a login email", async () => {
+    await createOrPromoteMember({ firstName: "Ada", lastName: "Lovelace", netId: "f001" }, "actor", {
+      allowMissingEmail: true,
+    });
+    expect(mockPrisma.user.create.mock.calls[0][0].data).not.toHaveProperty("email");
+  });
+
+  it("fills the login email on an existing user who has none", async () => {
+    mockLookup({ ...EXISTING, email: null, daliMember: { id: "m1" } });
+    await createOrPromoteMember(OK, "actor");
+    expect(mockPrisma.user.update).toHaveBeenCalledWith({
+      where: { id: "existing" },
+      data: { email: "ada@example.com" },
+    });
+  });
+
+  it("never overwrites an existing login email", async () => {
+    mockLookup({ ...EXISTING, email: "old@example.com", daliMember: { id: "m1" } });
+    await createOrPromoteMember(OK, "actor");
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("skips the login email when another account already signs in with it", async () => {
+    mockLookup({ ...EXISTING, email: null, daliMember: { id: "m1" } }, ["email"]);
+    await createOrPromoteMember(OK, "actor");
+    expect(mockPrisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("promotes a user who signed up with only a login email instead of duplicating them", async () => {
+    mockLookup({ ...EXISTING, personalEmail: null });
+    const out = await createOrPromoteMember(OK, "actor");
+    expect(out).toEqual({ id: "existing", created: false });
+    expect(mockPrisma.user.create).not.toHaveBeenCalled();
   });
 });
