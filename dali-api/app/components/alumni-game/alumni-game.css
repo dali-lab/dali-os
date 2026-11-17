@@ -427,6 +427,7 @@
   border-radius: 10px;
   border: 2px solid #0e0c15;
   overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 
 .ag-msg[data-from="tim"] {
@@ -495,6 +496,35 @@
   display: flex;
   gap: 8px;
   margin-top: 4px;
+}
+
+.ag-phone-done {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 14px;
+  border-top: 2px solid #0e0c15;
+}
+
+.ag-phone-done p {
+  margin: 0;
+  font-family: var(--font-arcade);
+  font-size: 8px;
+  color: #6f6889;
+}
+
+.ag-phone-view-profile {
+  font-family: var(--font-arcade);
+  font-size: 9px;
+  text-align: center;
+  text-decoration: none;
+  color: #17141f;
+  background: #8ee6c2;
+  border: 2px solid #0e0c15;
+  border-radius: 8px;
+  padding: 9px 10px;
 }
 
 /* ── Avatar creator ──────────────────────────────────────────────────────── */

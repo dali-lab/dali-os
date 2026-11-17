@@ -17,9 +17,11 @@ const baseUser = {
   firstName: "Ada",
   lastName: "Lovelace",
   personalEmail: null,
+  preferredEmail: null,
   classYear: null,
   currentLocation: null,
   hometown: null,
+  birthday: null,
   major: null,
   minors: null,
   funFact: null,
@@ -57,6 +59,7 @@ describe("quest fields", () => {
       "major",
       "minors",
       "hometown",
+      "birthday",
       "dietaryRestrictions",
       "linkedinUrl",
       "personalSite",
@@ -90,6 +93,17 @@ describe("renderQuestion", () => {
     expect(renderQuestion(name)).not.toContain("{name}");
     const email = QUEST_FIELDS.find((f) => f.key === "email")!;
     expect(renderQuestion(email)).not.toContain("{emails}");
+  });
+
+  it("lists the stored DALI history in the history question", () => {
+    const history = QUEST_FIELDS.find((f) => f.key === "history")!;
+    const rendered = renderQuestion(history, {
+      historyLines: ["21F: Gund Gallery (Design P1)", "22W: Core, Operations"],
+    });
+    expect(rendered).toContain("• 21F: Gund Gallery (Design P1)");
+    expect(rendered).toContain("• 22W: Core, Operations");
+    expect(rendered).not.toContain("{history}");
+    expect(renderQuestion(history)).toContain("nothing on file yet");
   });
 });
 
@@ -157,6 +171,28 @@ describe("toQuestProfile", () => {
     expect(after.email).toBe("ada@x.com");
     expect(after.history).toBe("confirmed");
     expect(after.openTo).toBe("confirmed");
+  });
+
+  it("shows the preferred email over the personal one once confirmed", () => {
+    const profile = toQuestProfile({
+      user: {
+        ...baseUser,
+        personalEmail: "ada@x.com",
+        preferredEmail: "ada@dartmouth.edu",
+      },
+      confirmed: ["email"],
+      hasWork: false,
+    });
+    expect(profile.email).toBe("ada@dartmouth.edu");
+  });
+
+  it("passes birthday through as a text field", () => {
+    const profile = toQuestProfile({
+      user: { ...baseUser, birthday: "2001-06-05" },
+      confirmed: [],
+      hasWork: false,
+    });
+    expect(profile.birthday).toBe("2001-06-05");
   });
 
   it("counts work filled from a confirmation or an existing work experience row", () => {

@@ -78,12 +78,16 @@ export type ProfileMember = {
   daliEmail: string | null;
   dartmouthEmail: string | null;
   personalEmail: string | null;
+  /** The address this member prefers to be reached at ("Primary"). */
+  preferredEmail: string | null;
   pronouns: string | null;
   classYear: number | null;
   /** Grad/professional school label ("Thayer" | "Guarini" | "Geisel" | "Tuck")
    *  for enrolled grad students; null for undergrads and employees. */
   gradProgram: string | null;
   major: string | null;
+  minors: string | null;
+  funFact: string | null;
   hometown: string | null;
   /** Where they live now ("Based in"); pins them on the Community map. */
   currentLocation: string | null;
@@ -152,7 +156,7 @@ export type ProfilePageData = {
   coffeeChatSent: boolean;
   resumeReviewSent: boolean;
   /** Which request buttons this member takes (their "I'm open to"). */
-  openTo: { coffeeChats: boolean; resumeReviews: boolean };
+  openTo: { coffeeChats: boolean; resumeReviews: boolean; portfolioReviews: boolean };
   canEdit: boolean;
   canManageEligibility: boolean;
   /** Personal notes shown in the profile's right-hand rail. On someone else's
@@ -276,6 +280,9 @@ const TEXT_FIELDS = [
   "netId",
   "handle",
   "personalEmail",
+  "preferredEmail",
+  "minors",
+  "funFact",
 ] as const;
 
 async function loadProjectAssignments(
@@ -497,10 +504,13 @@ export async function loadProfilePage({
       daliEmail: true,
       dartmouthEmail: true,
       personalEmail: true,
+      preferredEmail: true,
       pronouns: true,
       classYear: true,
       dartmouthDepartmentClass: true,
       major: true,
+      minors: true,
+      funFact: true,
       hometown: true,
       currentLocation: true,
       currentLocationCity: true,
@@ -510,6 +520,7 @@ export async function loadProfilePage({
       currentLocationLat: true,
       openToCoffeeChats: true,
       openToResumeReviews: true,
+      openToPortfolioReviews: true,
       workExperiences: {
         // Current jobs first, then most recent.
         orderBy: [{ endDate: { sort: "desc", nulls: "first" } }, { startDate: "desc" }],
@@ -674,6 +685,7 @@ export async function loadProfilePage({
     resumeUploadedAt,
     openToCoffeeChats,
     openToResumeReviews,
+    openToPortfolioReviews,
     ...memberFields
   } = member;
 
@@ -711,7 +723,11 @@ export async function loadProfilePage({
         : null,
     coffeeChatSent,
     resumeReviewSent,
-    openTo: { coffeeChats: openToCoffeeChats, resumeReviews: openToResumeReviews },
+    openTo: {
+      coffeeChats: openToCoffeeChats,
+      resumeReviews: openToResumeReviews,
+      portfolioReviews: openToPortfolioReviews,
+    },
     canEdit,
     canManageEligibility,
     notes,
@@ -860,6 +876,21 @@ export async function runProfileAction({
   const admin = await isAdmin(auth.user.sub);
   if (!admin && auth.user.sub !== targetId) {
     return { error: "You don't have permission to edit this member." };
+  }
+
+  if (intent === "open-to") {
+    const OPEN_TO_COLUMNS = {
+      coffeeChats: "openToCoffeeChats",
+      resumeReviews: "openToResumeReviews",
+      portfolioReviews: "openToPortfolioReviews",
+    } as const;
+    const column = OPEN_TO_COLUMNS[String(form.get("field")) as keyof typeof OPEN_TO_COLUMNS];
+    if (!column) return { error: "Unknown open-to field." };
+    await prisma.user.update({
+      where: { id: targetId },
+      data: { [column]: form.get("value") === "on" },
+    });
+    return null;
   }
 
   if (intent === "save-experience") {

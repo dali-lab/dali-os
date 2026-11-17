@@ -64,7 +64,7 @@ export const QUEST_FIELDS = [
     required: false,
     label: "DALI history",
     question:
-      "your DALI roles and projects are listed on your profile page.  mind giving them a quick look and telling me if they look right?",
+      "here's what I have from your DALI days:\n{history}\ndoes that look right?  if anything's off just tell me and I'll flag it for the team",
     done: "haha those were good times!",
     placeholder: "Looks right! / what's off",
   },
@@ -103,6 +103,15 @@ export const QUEST_FIELDS = [
     question: "and where's home originally?",
     done: "nice!",
     placeholder: "Hometown",
+  },
+  {
+    key: "birthday",
+    kind: "text",
+    required: false,
+    label: "Birthday",
+    question: "when's your birthday?  so we can celebrate you",
+    done: "noted!!",
+    placeholder: "June 5, 2001",
   },
   {
     key: "dietaryRestrictions",
@@ -149,7 +158,11 @@ export type QuestFieldKind = QuestField["kind"];
 
 export type QuestProfile = Record<QuestFieldKey, string | null>;
 
-export type QuestionContext = { fullName?: string | null; emails?: string[] };
+export type QuestionContext = {
+  fullName?: string | null;
+  emails?: string[];
+  historyLines?: string[];
+};
 
 export function isQuestFieldKey(value: unknown): value is QuestFieldKey {
   return QUEST_FIELDS.some((f) => f.key === value);
@@ -161,6 +174,12 @@ export function renderQuestion(field: QuestField, ctx: QuestionContext = {}): st
     .replace(
       "{emails}",
       ctx.emails && ctx.emails.length > 0 ? ctx.emails.join(", ") : "a couple of addresses",
+    )
+    .replace(
+      "{history}",
+      ctx.historyLines && ctx.historyLines.length > 0
+        ? ctx.historyLines.map((l) => `• ${l}`).join("\n")
+        : "• hmm, nothing on file yet",
     );
 }
 
@@ -174,9 +193,11 @@ export function toQuestProfile(input: {
     firstName: string;
     lastName: string;
     personalEmail: string | null;
+    preferredEmail: string | null;
     classYear: number | null;
     currentLocation: string | null;
     hometown: string | null;
+    birthday: string | null;
     major: string | null;
     minors: string | null;
     funFact: string | null;
@@ -196,7 +217,9 @@ export function toQuestProfile(input: {
         profile.name = has("name") ? `${user.firstName} ${user.lastName}`.trim() : null;
         break;
       case "email":
-        profile.email = has("email") ? (user.personalEmail ?? "confirmed") : null;
+        profile.email = has("email")
+          ? (user.preferredEmail ?? user.personalEmail ?? "confirmed")
+          : null;
         break;
       case "classYear":
         profile.classYear = user.classYear === null ? null : String(user.classYear);

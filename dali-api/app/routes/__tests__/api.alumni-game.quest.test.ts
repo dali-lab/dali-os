@@ -57,9 +57,11 @@ const emptyUser = {
   daliEmail: "ada@dali.dartmouth.edu",
   dartmouthEmail: null,
   personalEmail: null,
+  preferredEmail: null,
   classYear: null,
   currentLocation: null,
   hometown: null,
+  birthday: null,
   major: null,
   minors: null,
   funFact: null,
@@ -74,6 +76,7 @@ const fullUser = {
   classYear: 2019,
   currentLocation: "Brooklyn, New York, United States",
   hometown: "Austin",
+  birthday: new Date("2001-06-05T00:00:00Z"),
   major: "Computer Science",
   minors: "Studio Art",
   funFact: "Ask me about analog synths",
@@ -88,6 +91,9 @@ function mockState(user: object, confirmed: string[], workCount = 0) {
   db.user.findUniqueOrThrow.mockResolvedValue(user as never);
   db.pixelAvatar.findUnique.mockResolvedValue({ userId: "u1", confirmedFields: confirmed } as never);
   db.workExperience.count.mockResolvedValue(workCount as never);
+  db.projectAssignment.findMany.mockResolvedValue([] as never);
+  db.coreAssignment.findMany.mockResolvedValue([] as never);
+  db.domainLeadAssignment.findMany.mockResolvedValue([] as never);
 }
 
 function aiReply(json: string) {
@@ -227,15 +233,28 @@ describe("POST /api/alumni-game/quest", () => {
       expect(body.say).toContain("full name");
     });
 
-    it("saves a pasted address as the preferred email", async () => {
+    it("saves a pasted address as the preferred and personal email", async () => {
       const res = await post({ intent: "answer", field: "email", value: "use ada@new.com please" });
       const body = await res.json();
       expect(body.savedField).toBe("email");
-      expect(updateProfileFields).toHaveBeenCalledWith(
-        "u1",
-        { personalEmail: "ada@new.com" },
-        { allowNetId: false },
-      );
+      expect(db.user.update).toHaveBeenCalledWith({
+        where: { id: "u1" },
+        data: { preferredEmail: "ada@new.com", personalEmail: "ada@new.com" },
+      });
+    });
+
+    it("keeps personalEmail untouched when they pick an institutional address", async () => {
+      const res = await post({
+        intent: "answer",
+        field: "email",
+        value: "ada@dali.dartmouth.edu works",
+      });
+      const body = await res.json();
+      expect(body.savedField).toBe("email");
+      expect(db.user.update).toHaveBeenCalledWith({
+        where: { id: "u1" },
+        data: { preferredEmail: "ada@dali.dartmouth.edu" },
+      });
     });
 
     it("probes when an email answer contains no address or confirmation", async () => {
@@ -266,7 +285,7 @@ describe("POST /api/alumni-game/quest", () => {
       expect(db.workExperience.create).not.toHaveBeenCalled();
     });
 
-    it("confirms the DALI history on any review answer", async () => {
+    it("confirms the DALI history on a yes without storing a note", async () => {
       const res = await post({ intent: "answer", field: "history", value: "looks right to me" });
       const body = await res.json();
       expect(body.savedField).toBe("history");
@@ -274,6 +293,72 @@ describe("POST /api/alumni-game/quest", () => {
         where: { userId: "u1", NOT: { confirmedFields: { has: "history" } } },
         data: { confirmedFields: { push: "history" } },
       });
+      expect(db.pixelAvatar.updateMany).not.toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ historyNote: expect.anything() }) }),
+      );
+    });
+
+    it("stores a history correction as a note, flags it, and still confirms", async () => {
+      const res = await post({
+        intent: "answer",
+        field: "history",
+        value: "I was never on the kiosk project",
+      });
+      const body = await res.json();
+      expect(body.savedField).toBe("history");
+      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
+        where: { userId: "u1" },
+        data: { historyNote: "I was never on the kiosk project" },
+      });
+      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
+        where: { userId: "u1", NOT: { confirmedFields: { has: "history" } } },
+        data: { confirmedFields: { push: "history" } },
+      });
+      expect(body.say).toContain("flagged");
+    });
+
+    it("appends a second history correction under the first", async () => {
+      db.pixelAvatar.findUnique.mockResolvedValue({
+        userId: "u1",
+        confirmedFields: [],
+        historyNote: "first note",
+      } as never);
+      await post({ intent: "answer", field: "history", value: "also the terms are wrong" });
+      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
+        where: { userId: "u1" },
+        data: { historyNote: "first note\nalso the terms are wrong" },
+      });
+    });
+
+    it("saves the model's history note when it reports a correction", async () => {
+      aiReply(
+        '{"field":"history","value":"confirmed","work":null,"openTo":null,"note":"missing the robotics project","reply":"aah noted, I flagged that for the team!"}',
+      );
+      const res = await post({ intent: "answer", field: "history", value: "the robotics one is missing" });
+      const body = await res.json();
+      expect(body.savedField).toBe("history");
+      expect(db.pixelAvatar.updateMany).toHaveBeenCalledWith({
+        where: { userId: "u1" },
+        data: { historyNote: "missing the robotics project" },
+      });
+    });
+
+    it("saves a parsed birthday as YYYY-MM-DD through the profile updater", async () => {
+      const res = await post({ intent: "answer", field: "birthday", value: "June 5, 2001" });
+      const body = await res.json();
+      expect(body.savedField).toBe("birthday");
+      expect(updateProfileFields).toHaveBeenCalledWith(
+        "u1",
+        { birthday: "2001-06-05" },
+        { allowNetId: false },
+      );
+    });
+
+    it("probes instead of saving an unparseable birthday", async () => {
+      const res = await post({ intent: "answer", field: "birthday", value: "in the summer sometime" });
+      const body = await res.json();
+      expect(body.savedField).toBeNull();
+      expect(updateProfileFields).not.toHaveBeenCalled();
     });
 
     it("sets the open-to toggles from the named reviews", async () => {

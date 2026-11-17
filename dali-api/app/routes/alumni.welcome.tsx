@@ -109,9 +109,9 @@ export default function AlumniWelcome() {
                 <em className="ag-door-time">~5 min</em>
               </Link>
             </div>
-            <Link to="/profile" className="ag-door ag-door--muted">
+            <Link to="/alumni/form" className="ag-door ag-door--muted">
               <strong>Fill in my profile</strong>
-              <span>The classic way, on your profile page</span>
+              <span>The classic way, one quick form</span>
               <em className="ag-door-time">&lt;2 min</em>
             </Link>
           </div>

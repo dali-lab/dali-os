@@ -45,6 +45,17 @@ describe("validation", () => {
     });
   });
 
+  it("lowercases the preferred email, rejects malformed, clears on empty", async () => {
+    await updateProfileFields("u1", { preferredEmail: " Ada@Example.EDU " }, opts);
+    expect(written()).toEqual({ preferredEmail: "ada@example.edu" });
+    await expect(
+      updateProfileFields("u1", { preferredEmail: "ada.example.edu" }, opts),
+    ).rejects.toMatchObject({ status: 400 });
+    db.user.update.mockClear();
+    await updateProfileFields("u1", { preferredEmail: "" }, opts);
+    expect(written()).toEqual({ preferredEmail: null });
+  });
+
   it("accepts class years 1900 to 2100 as numbers or strings", async () => {
     for (const bad of ["1899", 2101, "20x8", 2020.5]) {
       await expect(updateProfileFields("u1", { classYear: bad }, opts)).rejects.toMatchObject({

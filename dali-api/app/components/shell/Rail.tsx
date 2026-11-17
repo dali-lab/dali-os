@@ -370,13 +370,15 @@ export function Rail({
 
         {/* No Home quick item: the wordmark is the home button. */}
         <div className={cn('flex shrink-0 gap-1', compact && 'flex-col items-center')}>
-          <QuickItem
-            label="Calendar"
-            icon={Calendar}
-            active={activeQuick === 'calendar'}
-            compact={compact}
-            tabProps={tabClickProps({ url: '/calendar', label: 'Calendar' })}
-          />
+          {!isAlumni && (
+            <QuickItem
+              label="Calendar"
+              icon={Calendar}
+              active={activeQuick === 'calendar'}
+              compact={compact}
+              tabProps={tabClickProps({ url: '/calendar', label: 'Calendar' })}
+            />
+          )}
           {!isAlumni && (
             <QuickItem
               label="Email"
@@ -419,7 +421,8 @@ export function Rail({
           <>
             <RailDivider />
             <div className="flex min-h-0 flex-col gap-2">
-              <div ref={areaMenuRef} className={cn('shrink-0', compact && 'flex justify-center')}>
+              {/* Alumni get one flat list, no section header. */}
+              <div ref={areaMenuRef} className={cn('shrink-0', compact && 'flex justify-center', isAlumni && 'hidden')}>
                 {singleArea ? (
                   compact ? (
                     <Tooltip content={activeArea.label} placement="right">

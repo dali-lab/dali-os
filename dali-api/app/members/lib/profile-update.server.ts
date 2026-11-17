@@ -59,6 +59,7 @@ export type ProfilePatch = Partial<
     | "handle"
     | "netId"
     | "personalEmail"
+    | "preferredEmail"
     | "birthday"
     | "currentLocationGeonameId"
     | (typeof NULLABLE_TEXT)[number],
@@ -161,6 +162,14 @@ export async function updateProfileFields(
       throw new ProfileValidationError("personalEmail", "Personal email looks malformed.");
     }
     data.personalEmail = updated.personalEmail = val === "" ? null : val;
+  }
+
+  if (patch.preferredEmail !== undefined) {
+    const val = trimmed(patch.preferredEmail).toLowerCase();
+    if (val !== "" && !val.includes("@")) {
+      throw new ProfileValidationError("personalEmail", "Primary email looks malformed.");
+    }
+    data.preferredEmail = updated.preferredEmail = val === "" ? null : val;
   }
 
   if (patch.timeZone !== undefined) {

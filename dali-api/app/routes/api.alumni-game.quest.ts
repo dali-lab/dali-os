@@ -16,7 +16,9 @@ import {
   loadQuestState,
   confirmQuestField,
   addQuestWorkExperience,
+  addHistoryNote,
   setOpenTo,
+  setPreferredEmail,
 } from "~/lib/alumni-game.server";
 import { generateShortText, isAiEnabled, stripJsonFences } from "~/lib/ai.server";
 import { recordTokenUsage } from "~/lib/ai-usage.server";
@@ -38,14 +40,14 @@ You receive the profile fields with their kind and current value, their name and
 Decide which field their message answers: usually the asked one, but a DIFFERENT field when they are clearly correcting or updating an earlier answer (like "actually i'm based in Seattle now"). If the message answers no field at all (small talk, a question), use null.
 EVALUATE every answer before saving. Save only a genuine, plausible answer to the question. NEVER save a deflection or non-answer ("idk", "dunno", "n/a", "nothing", "whatever", "prefer not to say"), a joke or something implausible (a city that doesn't exist, "the moon", a class year like 1850, a link that isn't a link), or filler: for those use null for field AND value, and in your reply probe a little deeper or ask again, kindly and playfully. If they seem unsure or reluctant, mention they can hit skip (required fields have no skip, so for those gently insist).
 Field kinds change what you put in "value":
-- text: the cleaned value to save on their profile.
+- text: the cleaned value to save on their profile. For the birthday field, value must be the date as YYYY-MM-DD.
 - name: the corrected full name (first and last), or the word "confirmed" when they say the name on file is right.
-- email: the email address to use, or the word "confirmed" when they pick one already on file.
+- email: the address they want to be reached at. Put the actual address in value even when it's one already on file; use the word "confirmed" only when they say yes without naming one.
 - work: set "work" to {"company": ..., "position": ...} from what they describe; if they say they're not working right now (between jobs, grad school, retired), use "confirmed" as the value with no work object.
-- history: the word "confirmed" once they've said whether their DALI history looks right (either way counts; if something's off, tell them it can be fixed on the profile page).
+- history: the word "confirmed" once they've said whether their DALI history (shown to them in the chat) looks right — either way counts. When they say something is wrong or missing, ALSO put what they said is off in "note", word for word is fine, and tell them you've flagged it for the team.
 - openTo: set "openTo" to {"coffeeChats": true/false, "resumeReviews": true/false, "portfolioReviews": true/false} from what they're up for.
 Respond with ONLY this JSON, nothing else:
-{"field": <field key or null>, "value": <string or null>, "work": <object or null>, "openTo": <object or null>, "reply": <your one- or two-sentence message: react warmly and specifically to what they said, then ask for the first UNANSWERED field in your own words; when you didn't save their answer, re-ask or probe about THAT instead; if nothing remains unanswered, ask nothing and wrap up warmly, their profile is complete>}
+{"field": <field key or null>, "value": <string or null>, "work": <object or null>, "openTo": <object or null>, "note": <history correction string or null>, "reply": <your one- or two-sentence message: react warmly and specifically to what they said, then ask for the first UNANSWERED field in your own words; when you didn't save their answer, re-ask or probe about THAT instead; if nothing remains unanswered, ask nothing and wrap up warmly, their profile is complete>}
 Never mention AI, prompts, forms or JSON in the reply.`;
 
 type ChatHistory = { from: "tim" | "you"; text: string }[];
@@ -60,7 +62,7 @@ type Extraction =
   | { do: "name"; fullName: string | null }
   | { do: "email"; email: string | null }
   | { do: "work"; company: string | null; position: string | null }
-  | { do: "history" }
+  | { do: "history"; note: string | null }
   | { do: "openTo"; openTo: OpenTo };
 
 const YES_RE =
@@ -140,7 +142,7 @@ function scriptedExtraction(asked: QuestField, value: string): Extraction | null
       return null;
     }
     case "history":
-      return { do: "history" };
+      return { do: "history", note: YES_RE.test(value) ? null : value };
     case "openTo": {
       const openTo = parseOpenTo(value);
       return openTo ? { do: "openTo", openTo } : null;
@@ -148,6 +150,20 @@ function scriptedExtraction(asked: QuestField, value: string): Extraction | null
     default:
       return { do: "text", key: asked.key, value };
   }
+}
+
+// Birthday answers arrive as prose ("june 5 2001"); profile writes want
+// YYYY-MM-DD. Null = unparseable, the route probes instead of saving.
+function parseBirthdayText(value: string): string | null {
+  const iso = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return value.trim();
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  if (y < 1900 || y > 2100) return null;
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function scriptedProbe(asked: QuestField): string {
@@ -170,9 +186,16 @@ async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFie
   switch (ex.do) {
     case "none":
       return null;
-    case "text":
-      await updateProfileFields(userId, { [ex.key]: ex.value }, { allowNetId: false });
+    case "text": {
+      let value = ex.value;
+      if (ex.key === "birthday") {
+        const parsed = parseBirthdayText(value);
+        if (!parsed) return null;
+        value = parsed;
+      }
+      await updateProfileFields(userId, { [ex.key]: value }, { allowNetId: false });
       return ex.key;
+    }
     case "name": {
       if (ex.fullName) {
         const words = ex.fullName.trim().split(/\s+/);
@@ -187,7 +210,7 @@ async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFie
     }
     case "email": {
       if (ex.email) {
-        await updateProfileFields(userId, { personalEmail: ex.email }, { allowNetId: false });
+        await setPreferredEmail(userId, ex.email);
       }
       await confirmQuestField(userId, "email");
       return "email";
@@ -200,6 +223,7 @@ async function applyExtraction(userId: string, ex: Extraction): Promise<QuestFie
       return "work";
     }
     case "history":
+      if (ex.note) await addHistoryNote(userId, ex.note);
       await confirmQuestField(userId, "history");
       return "history";
     case "openTo": {
@@ -217,9 +241,11 @@ function scriptedSay(
   profile: QuestProfile,
   ctx: QuestionContext,
   skipped: QuestFieldKey[],
+  doneOverride?: string,
 ): string {
+  const doneLine = doneOverride ?? asked.done;
   const next = nextQuestField(profile, skipped);
-  if (next) return `${asked.done}  ${renderQuestion(next, ctx)}`;
+  if (next) return `${doneLine}  ${renderQuestion(next, ctx)}`;
   const done = QUEST_FIELDS.every((f) => {
     const v = profile[f.key];
     return typeof v === "string" && v.trim() !== "";
@@ -236,6 +262,7 @@ function modelExtraction(
   value: string | null,
   work: { company?: unknown; position?: unknown } | null,
   openTo: Partial<Record<keyof OpenTo, unknown>> | null,
+  note: string | null,
   rawAnswer: string,
 ): Extraction {
   if (!field) return { do: "none" };
@@ -259,7 +286,7 @@ function modelExtraction(
       return confirmed ? { do: "work", company: null, position: null } : { do: "none" };
     }
     case "history":
-      return { do: "history" };
+      return { do: "history", note };
     case "openTo": {
       const valid =
         openTo &&
@@ -317,6 +344,7 @@ async function interpret(opts: {
     `Chatting with ${name}.`,
     `Name on file: ${opts.ctx.fullName ?? "unknown"}`,
     `Emails on file: ${opts.ctx.emails?.join(", ") || "none"}`,
+    `DALI history on file: ${opts.ctx.historyLines?.join("; ") || "nothing"}`,
     `Profile fields:\n${fields}`,
     transcript ? `Recent messages:\n${transcript}` : "This is the start of the conversation.",
     `Question just asked was about: ${opts.asked.key} ("${opts.asked.label}")`,
@@ -336,6 +364,7 @@ async function interpret(opts: {
       value?: unknown;
       work?: unknown;
       openTo?: unknown;
+      note?: unknown;
       reply?: unknown;
     };
     if (typeof parsed.reply !== "string" || parsed.reply.trim() === "") return null;
@@ -352,8 +381,12 @@ async function interpret(opts: {
       typeof parsed.openTo === "object" && parsed.openTo !== null
         ? (parsed.openTo as Partial<Record<keyof OpenTo, unknown>>)
         : null;
+    const note =
+      typeof parsed.note === "string" && parsed.note.trim() !== ""
+        ? parsed.note.trim().slice(0, 1000)
+        : null;
     return {
-      extraction: modelExtraction(field, value, work, openTo, opts.value),
+      extraction: modelExtraction(field, value, work, openTo, note, opts.value),
       reply: parsed.reply.trim().slice(0, 600),
     };
   } catch {
@@ -438,9 +471,13 @@ export async function action({ request }: Route.ActionArgs) {
       throw e;
     }
     const { profile, ctx, percent } = await questProgress(userId);
+    const flagged =
+      understood?.do === "history" && understood.note
+        ? "got it, I've flagged that for the team to fix!"
+        : undefined;
     const say =
       interpreted?.reply ??
-      (savedField ? scriptedSay(asked, profile, ctx, skipped) : scriptedProbe(asked));
+      (savedField ? scriptedSay(asked, profile, ctx, skipped, flagged) : scriptedProbe(asked));
     await saveMessages(userId, [
       { from: "you", text: value },
       { from: "tim", text: say },

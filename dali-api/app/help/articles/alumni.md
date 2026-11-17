@@ -26,14 +26,14 @@ Set **Based in** on your profile to appear on the map. Others see **Active today
 
 ## What's in the sidebar
 
-Alumni get one section, **Lab**, with:
+Alumni get one flat list in the sidebar, with no section switcher:
 
 - **Projects**
 - **Community**
 - **Opportunities**, **Gallery** and **Stories**, when your workspace has the Community area
 - **Refer a partner**: see [Refer a partner](/help/articles/refer-a-partner).
 
-Alumni don't see Mentorship, Attendance, Education or Drive in the sidebar.
+Alumni don't see Calendar, Email, Mentorship, Attendance, Education or Drive in the sidebar.
 
 ## What alumni can do
 

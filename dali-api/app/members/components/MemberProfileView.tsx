@@ -20,6 +20,7 @@ import {
   Github,
   Globe,
   GraduationCap,
+  Handshake,
   Layers,
   Linkedin,
   Lock,
@@ -61,6 +62,8 @@ import { AchievementsBlock } from "./AchievementsBlock";
 import { ComplianceBlock } from "./ComplianceBlock";
 import { buttonClasses } from "~/components/ui/Button";
 import { DateField } from "~/components/ui/DateField";
+import { Radio } from "~/components/ui/Radio";
+import { Toggle } from "~/components/ui/Toggle";
 import { useConfirmSubmit, useDialog } from "~/components/ui/dialog";
 import { useToast } from "~/components/ui/toast";
 import { useFeatureFlag } from "~/components/FeatureFlags";
@@ -262,6 +265,7 @@ export function MemberProfileView({
               canManage={canManageEligibility}
               allowedLevels={allowedLevels}
             />
+            <OpenToCard openTo={openTo} canEdit={canEdit} firstName={member.firstName} isSelf={isSelf} />
             {canSeeGroups && <GroupsCard groups={groups} />}
             <WorkExperienceCard
               memberId={member.id}
@@ -528,6 +532,8 @@ function PersonalHiddenFields({
     ["lastName", member.lastName],
     ["pronouns", member.pronouns ?? ""],
     ["major", member.major ?? ""],
+    ["minors", member.minors ?? ""],
+    ["funFact", member.funFact ?? ""],
     ["classYear", member.classYear?.toString() ?? ""],
     ["hometown", member.hometown ?? ""],
     ["currentLocation", member.currentLocation ?? ""],
@@ -535,6 +541,7 @@ function PersonalHiddenFields({
     ["dietaryRestrictions", member.dietaryRestrictions ?? ""],
     ["phoneNumber", member.phoneNumber ?? ""],
     ["personalEmail", member.personalEmail ?? ""],
+    ["preferredEmail", member.preferredEmail ?? ""],
     ["githubUsername", member.githubUsername ?? ""],
     ["linkedinUrl", member.linkedinUrl ?? ""],
     ["personalSite", member.personalSite ?? ""],
@@ -560,6 +567,8 @@ const ABOUT_FIELDS = new Set([
   "handle",
   "netId",
   "major",
+  "minors",
+  "funFact",
   "classYear",
   "hometown",
   "currentLocation",
@@ -652,6 +661,14 @@ function AboutCard({
                   className="w-full"
                 />
               </DetailEditRow>
+              <DetailEditRow icon={<GraduationCap className={ic} />} label="Minors">
+                <input
+                  name="minors"
+                  type="text"
+                  defaultValue={member.minors ?? ""}
+                  className="w-full"
+                />
+              </DetailEditRow>
               <DetailEditRow
                 icon={<GraduationCap className={ic} />}
                 label="Class year"
@@ -694,6 +711,17 @@ function AboutCard({
                   className="w-full resize-y"
                 />
               </DetailEditRow>
+              <DetailEditRow
+                icon={<MessageSquare className={ic} />}
+                label="Ask me about"
+              >
+                <textarea
+                  name="funFact"
+                  rows={2}
+                  defaultValue={member.funFact ?? ""}
+                  className="w-full resize-y"
+                />
+              </DetailEditRow>
             </>
           ) : (
             <>
@@ -708,6 +736,9 @@ function AboutCard({
               </DetailRow>
               <DetailRow icon={<GraduationCap className={ic} />} label="Major">
                 {member.major ?? dash}
+              </DetailRow>
+              <DetailRow icon={<GraduationCap className={ic} />} label="Minors">
+                {member.minors ?? dash}
               </DetailRow>
               <DetailRow
                 icon={<GraduationCap className={ic} />}
@@ -727,6 +758,9 @@ function AboutCard({
               <DetailRow icon={<Utensils className={ic} />} label="Dietary">
                 {member.dietaryRestrictions ?? dash}
               </DetailRow>
+              <DetailRow icon={<MessageSquare className={ic} />} label="Ask me about">
+                {member.funFact ?? dash}
+              </DetailRow>
             </>
           )}
         </div>
@@ -740,6 +774,7 @@ function AboutCard({
 const CONTACT_FIELDS = new Set([
   "phoneNumber",
   "personalEmail",
+  "preferredEmail",
   "githubUsername",
   "linkedinUrl",
   "personalSite",
@@ -805,6 +840,7 @@ function ContactCard({
                   daliEmail={member.daliEmail}
                   dartmouthEmail={member.dartmouthEmail}
                   personalEmail={member.personalEmail}
+                  preferredEmail={member.preferredEmail}
                 />
               </DetailEditRow>
               <DetailEditRow icon={<Phone className={ic} />} label="Phone">
@@ -864,8 +900,13 @@ function ContactCard({
                 ) : (
                   <span className="flex flex-col items-end gap-0.5">
                     {emails.map((e) => (
-                      <span key={e} className="break-all">
+                      <span key={e} className="flex items-center gap-1.5 break-all">
                         {e}
+                        {member.preferredEmail?.toLowerCase() === e.toLowerCase() && (
+                          <span className="shrink-0 inline-flex items-center rounded-full bg-os-accent/15 px-2 py-px text-[11px] font-semibold text-os-accent">
+                            Primary
+                          </span>
+                        )}
                       </span>
                     ))}
                   </span>
@@ -1274,6 +1315,82 @@ function WorkExperienceModal({
         </div>
       </fetcher.Form>
     </Modal>
+  );
+}
+
+// ─── Open to card ────────────────────────────────────────────────────────────
+
+const OPEN_TO_ROWS = [
+  { field: "coffeeChats", label: "Coffee chats" },
+  { field: "resumeReviews", label: "Resume reviews" },
+  { field: "portfolioReviews", label: "Portfolio reviews" },
+] as const;
+
+function OpenToCard({
+  openTo,
+  canEdit,
+  firstName,
+  isSelf,
+}: {
+  openTo: ProfilePageData["openTo"];
+  canEdit: boolean;
+  firstName: string;
+  isSelf: boolean;
+}) {
+  const fetcher = useFetcher();
+
+  return (
+    <article className="rounded-os-card bg-os-card overflow-hidden h-full">
+      <CardHeader
+        icon={<Handshake className="w-[17px] h-[17px]" />}
+        iconBg="rgba(142,230,194,0.14)"
+        iconColor="#8ee6c2"
+        title="Open to"
+      />
+      <div className="px-5 pb-5 flex flex-col gap-2.5">
+        <p className="text-sm text-os-grey">
+          {isSelf
+            ? "What current members can ask you for."
+            : `What ${firstName} is up for.`}
+        </p>
+        {OPEN_TO_ROWS.map(({ field, label }) => {
+          const pendingValue =
+            fetcher.formData?.get("field") === field
+              ? fetcher.formData.get("value") === "on"
+              : null;
+          const on = pendingValue ?? openTo[field];
+          if (!canEdit) {
+            return (
+              <div key={field} className="flex items-center gap-2 text-sm text-foreground">
+                <span
+                  aria-hidden
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full",
+                    on ? "bg-os-green" : "bg-os-container-hi",
+                  )}
+                />
+                {label}
+                {!on && <span className="text-os-muted">— not right now</span>}
+              </div>
+            );
+          }
+          return (
+            <Toggle
+              key={field}
+              tone="os"
+              label={label}
+              checked={on}
+              onChange={(e) =>
+                fetcher.submit(
+                  { intent: "open-to", field, value: e.target.checked ? "on" : "off" },
+                  { method: "post" },
+                )
+              }
+            />
+          );
+        })}
+      </div>
+    </article>
   );
 }
 
@@ -1945,14 +2062,34 @@ function EmailListEdit({
   daliEmail,
   dartmouthEmail,
   personalEmail,
+  preferredEmail,
 }: {
   daliEmail: string | null;
   dartmouthEmail: string | null;
   personalEmail: string | null;
+  preferredEmail: string | null;
 }) {
+  const locked = [daliEmail, dartmouthEmail].filter(Boolean) as string[];
   const [entries, setEntries] = useState<string[]>(
     personalEmail ? [personalEmail] : [],
   );
+  // The primary pick tracks a row ("locked:<i>" / "entry:<i>"), not an address,
+  // so it follows the text while a personal email is being typed.
+  const [primary, setPrimary] = useState<string>(() => {
+    const wanted = preferredEmail?.toLowerCase();
+    if (!wanted) return "";
+    const li = locked.findIndex((e) => e.toLowerCase() === wanted);
+    if (li >= 0) return `locked:${li}`;
+    const ei = (personalEmail ? [personalEmail] : []).findIndex(
+      (e) => e.toLowerCase() === wanted,
+    );
+    return ei >= 0 ? `entry:${ei}` : "";
+  });
+  const primaryValue = primary.startsWith("locked:")
+    ? (locked[Number(primary.slice(7))] ?? "")
+    : primary.startsWith("entry:")
+      ? (entries[Number(primary.slice(6))] ?? "")
+      : "";
 
   function add() {
     setEntries((prev) => [...prev, ""]);
@@ -1960,27 +2097,45 @@ function EmailListEdit({
 
   function remove(i: number) {
     setEntries((prev) => prev.filter((_, idx) => idx !== i));
+    setPrimary((p) => {
+      if (!p.startsWith("entry:")) return p;
+      const sel = Number(p.slice(6));
+      if (sel === i) return "";
+      return sel > i ? `entry:${sel - 1}` : p;
+    });
   }
 
   function update(i: number, val: string) {
     setEntries((prev) => prev.map((e, idx) => (idx === i ? val : e)));
   }
 
-  const locked = [daliEmail, dartmouthEmail].filter(Boolean) as string[];
+  const primaryRadio = (key: string, email: string) => (
+    <Tooltip content="Primary email — where we reach you">
+      <Radio
+        aria-label={`Make ${email || "this email"} primary`}
+        checked={primary === key}
+        onChange={() => setPrimary(key)}
+        className="shrink-0"
+      />
+    </Tooltip>
+  );
 
   return (
     <div className="flex flex-col gap-1.5">
-      {locked.map((email) => (
+      <input type="hidden" name="preferredEmail" value={primaryValue} />
+      {locked.map((email, i) => (
         <div
           key={email}
           className="flex items-center gap-2 rounded-os-item bg-os-well px-3 py-1.5 text-sm text-os-grey"
         >
+          {primaryRadio(`locked:${i}`, email)}
           <Lock className="w-3 h-3 shrink-0" />
           <span className="truncate">{email}</span>
         </div>
       ))}
       {entries.map((email, i) => (
         <div key={i} className="flex items-center gap-1.5">
+          {primaryRadio(`entry:${i}`, email)}
           <input
             name="personalEmail"
             type="email"
@@ -2006,6 +2161,7 @@ function EmailListEdit({
         <Plus className="w-3.5 h-3.5" />
         Add email
       </button>
+      <p className="text-[11px] text-os-muted">Pick the dot next to your primary email.</p>
     </div>
   );
 }
