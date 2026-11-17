@@ -22,6 +22,7 @@ export function FormField({
   disabled,
   inputMode,
   invalid,
+  onBlur,
 }: {
   label: string;
   labelHidden?: boolean;
@@ -42,6 +43,7 @@ export function FormField({
   disabled?: boolean;
   inputMode?: "url" | "text";
   invalid?: boolean;
+  onBlur?: () => void;
 }) {
   const { fieldLabel } = useOsChrome();
   const control = cn("w-full", mono && "font-mono text-[13px]", multiline && "resize-y leading-6");
@@ -55,6 +57,7 @@ export function FormField({
     onKeyDown,
     "aria-invalid": invalid || undefined,
     className: control,
+    onBlur,
     ...(onChange ? { value: value ?? "", onChange: (e: { target: { value: string } }) => onChange(e.target.value) } : { defaultValue }),
   };
   return (
