@@ -222,7 +222,7 @@ describe("resourceHub source", () => {
     expect(await source.seed("p1")).toEqual([{ id: "b" }]);
     mockPrisma.resourceHubPage.findUnique.mockResolvedValue(null);
     expect(await source.seed("p1")).toBeNull();
-    await source.syncBack("p1", [{ id: "c" }] as any);
+    await source.syncBack!("p1", [{ id: "c" }] as any);
     expect(mockPrisma.resourceHubPage.updateMany).toHaveBeenCalledWith({ where: { id: "p1" }, data: { contentJson: [{ id: "c" }] } });
   });
 });
