@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ROW, START_SPEED, SPEED_GAIN } from './course'
-import { strobe } from './paint'
+import { blurSamples, strobe } from './paint'
 
 const TOP_SPEED = START_SPEED + SPEED_GAIN
 
@@ -26,5 +26,19 @@ describe('strobe', () => {
 
   it('is zero while paused', () => {
     expect(strobe(0, ROW / 2)).toBe(0)
+  })
+})
+
+describe('blurSamples', () => {
+  it('blurs lightly at the starting speed', () => {
+    expect(blurSamples(START_SPEED / 60, ROW / 2)).toBe(2)
+  })
+
+  it('averages four positions at top speed on a 60Hz screen', () => {
+    expect(blurSamples(TOP_SPEED / 60, ROW / 2)).toBe(4)
+  })
+
+  it('draws the floor once while paused', () => {
+    expect(blurSamples(0, ROW / 2)).toBe(1)
   })
 })
