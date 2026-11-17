@@ -228,6 +228,7 @@ export function LayoutOS({
     'refer-a-partner': useFeatureFlag('refer-a-partner'),
     'core-taskboard': useFeatureFlag('core-taskboard'),
     'alumni-game': useFeatureFlag('alumni-game'),
+    expenses: useFeatureFlag('expenses'),
   }
   const releaseNotesEnabled = useFeatureFlag('release-notes')
   const askEnabled = useFeatureFlag('ask-dali')

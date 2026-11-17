@@ -2,7 +2,8 @@ import type { Route } from "./+types/admin.payroll.budget";
 import { z } from "zod";
 import { requireAuth, forbidden } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
-import { isAdmin } from "~/lib/roles";
+import { isAdmin, getUserRoles } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { logAuditEvent, type AuditAction } from "~/lib/audit";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -40,7 +41,13 @@ export async function loader({ request }: Route.LoaderArgs) {
     });
   }
 
-  const budget = await getBudgetData(termId);
+  const purchases = await isFeatureEnabled(
+    "expenses",
+    auth.user.sub,
+    await getUserRoles(auth.user.sub, request),
+    request,
+  );
+  const budget = await getBudgetData(termId, { purchases });
   return Response.json({ ok: true, budget, termId } satisfies BudgetLoaderData);
 }
 

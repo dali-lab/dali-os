@@ -74,6 +74,7 @@ import { COMMUNITY_TOOLS } from "./tools/community";
 import { HELP_TOOLS } from "./tools/help";
 import { CORE_MILESTONE_TOOLS } from "./tools/core-milestones";
 import { RESOURCE_HUB_TOOLS } from "./tools/resource-hub";
+import { EXPENSES_TOOLS } from "./tools/expenses";
 
 export const REGISTRY_TOOLS: McpTool[] = [
   ...BASE_TOOLS,
@@ -94,6 +95,7 @@ export const REGISTRY_TOOLS: McpTool[] = [
   ...HELP_TOOLS,
   ...CORE_MILESTONE_TOOLS,
   ...RESOURCE_HUB_TOOLS,
+  ...EXPENSES_TOOLS,
 ];
 
 const BY_NAME = new Map<string, McpTool>(REGISTRY_TOOLS.map((t) => [t.def.name, t]));

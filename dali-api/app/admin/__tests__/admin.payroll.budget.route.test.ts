@@ -6,7 +6,8 @@ vi.mock("~/lib/auth", () => ({
     Response.json({ error: "Forbidden" }, { status: 403 }),
   ),
 }));
-vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isAdmin: vi.fn(), getUserRoles: vi.fn().mockResolvedValue({}) }));
+vi.mock("~/lib/feature-flags.server", () => ({ isFeatureEnabled: vi.fn().mockResolvedValue(false) }));
 vi.mock("~/lib/audit", () => ({ logAuditEvent: vi.fn() }));
 vi.mock("~/lib/terms", () => ({ resolveTermFilter: vi.fn() }));
 // Mutation helpers + the loader's data source are stubbed so this stays a pure
@@ -25,6 +26,7 @@ vi.mock("~/admin/lib/budget", () => ({
 
 import { requireAuth } from "~/lib/auth";
 import { isAdmin } from "~/lib/roles";
+import { isFeatureEnabled } from "~/lib/feature-flags.server";
 import { logAuditEvent } from "~/lib/audit";
 import { resolveTermFilter } from "~/lib/terms";
 import {
@@ -47,6 +49,7 @@ const EMPTY_BUDGET = {
   grandTotalRevenue: 0,
   grandTotalAdjustedRevenue: 0,
   grandTotalExpense: 0,
+  grandTotalPurchases: 0,
   grandTotalNet: 0,
 };
 
@@ -120,7 +123,15 @@ describe("budget loader — auth gate", () => {
     const body = await res.json();
     expect(body.ok).toBe(true);
     expect(body.termId).toBe("term-25f");
-    expect(getBudgetData).toHaveBeenCalledWith("term-25f");
+    expect(getBudgetData).toHaveBeenCalledWith("term-25f", { purchases: false });
+  });
+
+  it("asks for purchases only when the expenses flag is on for the admin", async () => {
+    asAdmin();
+    vi.mocked(isFeatureEnabled).mockResolvedValueOnce(true);
+    await loader({ request: getReq(), params: {}, context: {} } as any);
+    expect(isFeatureEnabled).toHaveBeenCalledWith("expenses", ADMIN_ID, expect.anything(), expect.anything());
+    expect(getBudgetData).toHaveBeenCalledWith("term-25f", { purchases: true });
   });
 });
 
