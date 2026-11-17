@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
@@ -11,9 +11,11 @@ import type { PlanningApplicationInfo } from "~/partners/lib/planning-gap.server
 let container: HTMLDivElement;
 let root: Root;
 let posted: FormData[];
+const onOpenApplication = vi.fn();
 
 async function mount(info: PlanningApplicationInfo, canEdit = true) {
   posted = [];
+  onOpenApplication.mockClear();
   const Page = () =>
     createElement(PlanningApplicationModal, {
       applicationId: "a1",
@@ -25,6 +27,7 @@ async function mount(info: PlanningApplicationInfo, canEdit = true) {
         { id: "des", name: "Design" },
       ],
       onClose: () => {},
+      onOpenApplication,
     });
   const Stub = createRoutesStub([
     { path: "/", Component: Page, loader: () => null },
@@ -66,13 +69,14 @@ afterEach(() => {
 });
 
 describe("PlanningApplicationModal", () => {
-  it("shows the stage and partner, and links to the board card", async () => {
+  it("shows the stage and partner, and opens the full application in place", async () => {
     await mount(info);
     expect(document.body.textContent).toContain("Beacon");
     expect(document.body.textContent).toContain("Acme");
     expect(document.body.textContent).toContain("Interview");
-    const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent?.includes("Partners board"));
-    expect(link?.getAttribute("href")).toBe("/core/partners?application=a1");
+    await click(buttonByText("Open application")!);
+    expect(onOpenApplication).toHaveBeenCalledWith("a1");
+    expect(Array.from(document.body.querySelectorAll("a")).some((a) => a.textContent?.includes("Partners board"))).toBe(false);
   });
 
   it("posts a new note for the application", async () => {

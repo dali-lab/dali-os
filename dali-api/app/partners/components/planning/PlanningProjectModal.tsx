@@ -3,6 +3,7 @@ import { Select } from "~/components/ui/floating";
 import type { MaintenancePlan } from "~/generated/prisma/enums";
 import { centsToDollars, MAINTENANCE_PLANS, maintenanceLabel } from "../../lib/partner-renewals";
 import { Modal, ModalHeader } from "~/components/Modal";
+import { modalCardClass } from "~/components/os-chrome";
 import { Button } from "~/components/ui/Button";
 import { ProjectIcon } from "~/components/ProjectIcon";
 import type { PlanningProjectInfo } from "../../lib/planning-gap.server";
@@ -19,6 +20,7 @@ export function PlanningProjectModal({
   currentTermId,
   canEdit,
   onClose,
+  onOpenApplication,
 }: {
   project: { id: string; name: string; iconEmoji: string | null };
   info: PlanningProjectInfo;
@@ -27,10 +29,11 @@ export function PlanningProjectModal({
   currentTermId: string | null;
   canEdit: boolean;
   onClose: () => void;
+  onOpenApplication: (applicationId: string) => void;
 }) {
   const last = info.plannedTerms.length === 0 ? info.lastTerm : null;
   return (
-    <Modal open onClose={onClose} labelledBy="planning-project-title">
+    <Modal open onClose={onClose} labelledBy="planning-project-title" containerClassName={modalCardClass("max-w-2xl")}>
       <ModalHeader
         titleId="planning-project-title"
         title={
@@ -140,13 +143,20 @@ export function PlanningProjectModal({
           )}
         </section>
 
-        <div className="flex items-center justify-between pt-2">
+        <div className="flex items-center justify-between gap-2 pt-2">
           <Link to={`/projects/${project.id}`} className="text-sm font-medium text-os-accent hover:underline">
             Open project →
           </Link>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+            {info.applicationId && (
+              <Button variant="secondary" size="sm" onClick={() => onOpenApplication(info.applicationId!)}>
+                Open application
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </Modal>

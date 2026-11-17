@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { ShouldRevalidateFunctionArgs } from "react-router";
 import { skipClientOnlySearchChange } from "~/lib/should-revalidate";
 import { useSearchParamChoice } from "~/hooks/useSearchParamState";
-import { Link, redirect, useLoaderData, useNavigate } from "react-router";
+import { Link, redirect, useLoaderData, useNavigate, useRevalidator } from "react-router";
 import type { Route } from "./+types/core.partners.planning";
 import { requireAuth, isNonMember } from "~/lib/auth";
 import { redirectToLogin } from "~/lib/login-next";
@@ -18,6 +18,7 @@ import { PlanningTable } from "../components/PlanningTable";
 import { PlanningProjectModal } from "../components/planning/PlanningProjectModal";
 import { PlanningApplicationModal } from "../components/planning/PlanningApplicationModal";
 import { StartReturnModal } from "../components/planning/StartReturnModal";
+import { PartnerApplicationModal } from "../components/PartnerApplicationModal";
 import { CalendarRange, FolderKanban, Inbox, Layers, RefreshCcw, Sparkles, Users } from "lucide-react";
 import { ProjectPlanningTable } from "../components/ProjectPlanningTable";
 import { loadPlanningData } from "../lib/planning-gap.server";
@@ -215,6 +216,12 @@ export default function PartnersPlanning() {
   const openApplicationId = openRow?.kind === "application" ? openRow.id : null;
   const openApplication = openApplicationId ? data.applicationInfo[openApplicationId] ?? null : null;
   const [startingReturn, setStartingReturn] = useState(false);
+  const [fullApplicationId, setFullApplicationId] = useState<string | null>(null);
+  const revalidator = useRevalidator();
+  const openFullApplication = useCallback((applicationId: string) => {
+    setOpenRow(null);
+    setFullApplicationId(applicationId);
+  }, []);
   const pickedTermIndex = data.terms.findIndex((t) => t.id === data.termId);
   const returnTerms = pickedTermIndex < 0 ? [] : data.terms.slice(0, pickedTermIndex + 1).reverse();
   const onReturnCreated = useCallback((applicationId: string) => {
@@ -324,6 +331,7 @@ export default function PartnersPlanning() {
           currentTermId={data.termId}
           canEdit
           onClose={() => setOpenRow(null)}
+          onOpenApplication={openFullApplication}
         />
       )}
       {startingReturn && data.termId && (
@@ -343,6 +351,19 @@ export default function PartnersPlanning() {
           domains={data.spotDomains}
           canEdit
           onClose={() => setOpenRow(null)}
+          onOpenApplication={openFullApplication}
+        />
+      )}
+      {fullApplicationId && (
+        <PartnerApplicationModal
+          card={{ id: fullApplicationId }}
+          canEdit
+          domainOptions={data.spotDomains}
+          termOptions={data.terms}
+          onClose={() => setFullApplicationId(null)}
+          onChanged={() => {
+            if (revalidator.state === "idle") void revalidator.revalidate();
+          }}
         />
       )}
     </div>

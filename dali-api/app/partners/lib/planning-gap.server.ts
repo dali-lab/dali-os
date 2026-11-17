@@ -36,6 +36,7 @@ export type PlanningProjectInfo = {
   // still show and assign the PI that carries forward if it continues.
   lastTerm: { id: string; code: string; pi: PlanningPerson | null; spots: PlanningSpot[] } | null;
   maintenance: { plan: MaintenancePlan; feeCents: number | null } | null;
+  applicationId: string | null;
 };
 
 export type PlanningMaintainingRow = {
@@ -264,12 +265,22 @@ export async function loadPlanningData(
       note: toPlanningNoteView(p.planningNote),
       lastTerm: last ? { id: last.id, code: last.code, pi: piAt(last.sortKey), spots: spotsIn(last.id) } : null,
       maintenance: p.maintenancePlans[0] ?? null,
+      applicationId: null,
     };
   }
-  const [coreMembers, returnableProjects] = await Promise.all([
+  const [coreMembers, returnableProjects, projectApplications] = await Promise.all([
     request ? listActiveCoreMembers(request) : Promise.resolve([]),
     listReturnableProjects(term.sortKey),
+    prisma.partnerApplication.findMany({
+      where: { resultingProjectId: { in: projects.map((p) => p.id) } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, resultingProjectId: true },
+    }),
   ]);
+  for (const a of projectApplications) {
+    const info = a.resultingProjectId ? projectInfo[a.resultingProjectId] : undefined;
+    if (info && !info.applicationId) info.applicationId = a.id;
+  }
 
   const items: PlanningItem[] = [];
   const listOnlyItems: PlanningItem[] = [];

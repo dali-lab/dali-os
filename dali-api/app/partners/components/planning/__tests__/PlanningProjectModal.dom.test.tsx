@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { createRoutesStub } from "react-router";
@@ -18,7 +18,10 @@ const info: PlanningProjectInfo = {
   note: { body: "Waiting on budget", updatedAt: "2026-11-05T15:00:00.000Z", updatedByName: "Ada Lovelace" },
   lastTerm: null,
   maintenance: null,
+  applicationId: null,
 };
+
+const onOpenApplication = vi.fn();
 
 const domains = [
   { id: "eng", name: "Engineering" },
@@ -31,6 +34,7 @@ let posted: FormData[];
 
 async function mount(canEdit = true, projectInfo: PlanningProjectInfo = info) {
   posted = [];
+  onOpenApplication.mockClear();
   const Page = () =>
     createElement(PlanningProjectModal, {
       project: { id: "p1", name: "Example", iconEmoji: null },
@@ -40,6 +44,7 @@ async function mount(canEdit = true, projectInfo: PlanningProjectInfo = info) {
       currentTermId: "t26s",
       canEdit,
       onClose: () => {},
+      onOpenApplication,
     });
   const Stub = createRoutesStub([
     { path: "/", Component: Page, loader: () => null },
@@ -67,6 +72,31 @@ const click = (label: string) => act(async () => button(label)!.click());
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+});
+
+describe("PlanningProjectModal partner application", () => {
+  it("opens the project's partner application in place", async () => {
+    await mount(true, { ...info, applicationId: "app-7" });
+    await click("Open application");
+    expect(onOpenApplication).toHaveBeenCalledWith("app-7");
+    const projectLink = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent?.includes("Open project"));
+    expect(projectLink?.getAttribute("href")).toBe("/projects/p1");
+  });
+
+  it("offers no application button for a project that never came from one", async () => {
+    await mount(true, info);
+    expect(button("Open application")).toBeUndefined();
+  });
+});
+
+describe("PlanningProjectModal description box", () => {
+  it("grows the text box to fit a long description instead of scrolling inside four rows", async () => {
+    const spy = vi.spyOn(HTMLTextAreaElement.prototype, "scrollHeight", "get").mockReturnValue(320);
+    await mount(true, { ...info, description: "A long description.\n".repeat(20) });
+    const textarea = document.body.querySelector<HTMLTextAreaElement>("textarea[aria-label='Project description']")!;
+    expect(textarea.style.height).toBe("320px");
+    spy.mockRestore();
+  });
 });
 
 describe("PlanningProjectModal spots", () => {

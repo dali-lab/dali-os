@@ -76,7 +76,7 @@ export function PartnerApplicationModal({
   onChanged,
 }: {
   /** null = create mode. */
-  card: PartnerCardModel | null;
+  card: Pick<PartnerCardModel, "id"> | null;
   canEdit: boolean;
   domainOptions: { id: string; name: string }[];
   termOptions: { id: string; code: string }[];
