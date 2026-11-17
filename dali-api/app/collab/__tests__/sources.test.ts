@@ -6,13 +6,15 @@ vi.mock("~/lib/db.server", () => {
   const mock: any = {
     blogPost: { findUnique: vi.fn(), updateMany: vi.fn() },
     mentorNoteTemplate: { findUnique: vi.fn(), update: vi.fn() },
+    resourceHubPage: { findUnique: vi.fn(), updateMany: vi.fn() },
+    domainLeadAssignment: { findFirst: vi.fn() },
   };
   return { prisma: mock };
 });
-vi.mock("~/lib/roles", () => ({ isCore: vi.fn() }));
+vi.mock("~/lib/roles", () => ({ isCore: vi.fn(), currentTerm: vi.fn() }));
 
 import { prisma } from "~/lib/db.server";
-import { isCore } from "~/lib/roles";
+import { currentTerm, isCore } from "~/lib/roles";
 import { COLLAB_SOURCES, isStructuredRoom, seedRegistryDoc, syncRegistryDocBack } from "../sources";
 import { BLOCKNOTE_FRAGMENT, blocksToFragment, plainTextToBlocks } from "../blocknote-server";
 import { ydocToBlocks } from "../read";
@@ -180,5 +182,47 @@ describe("syncRegistryDocBack leaves the live doc alone", () => {
 
   it("reports an unregistered entity as not handled", async () => {
     await expect(syncRegistryDocBack("nope", "x1", new Y.Doc())).resolves.toBe(false);
+  });
+});
+
+
+describe("resourceHub source", () => {
+  const source = COLLAB_SOURCES.resourceHub!;
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mockIsCore.mockResolvedValue(false);
+    (currentTerm as any).mockResolvedValue({ id: "t1" });
+    mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue(null);
+  });
+
+  it("lets Core and the page's creator edit", async () => {
+    mockPrisma.resourceHubPage.findUnique.mockResolvedValue({ domainId: "d1", createdById: "u9" });
+    expect(await source.authorize("u9", "p1")).toBe(true);
+    mockIsCore.mockResolvedValue(true);
+    expect(await source.authorize("u2", "p1")).toBe(true);
+  });
+
+  it("lets a lead of the page's domain edit this term", async () => {
+    mockPrisma.resourceHubPage.findUnique.mockResolvedValue({ domainId: "d1", createdById: "u9" });
+    mockPrisma.domainLeadAssignment.findFirst.mockResolvedValue({ id: "l1" });
+    expect(await source.authorize("u2", "p1")).toBe(true);
+    expect(mockPrisma.domainLeadAssignment.findFirst.mock.calls[0][0].where).toEqual({ userId: "u2", domainId: "d1", termId: "t1" });
+  });
+
+  it("refuses anyone else and a page that doesn't exist", async () => {
+    mockPrisma.resourceHubPage.findUnique.mockResolvedValue({ domainId: "d1", createdById: "u9" });
+    expect(await source.authorize("u2", "p1")).toBe(false);
+    mockPrisma.resourceHubPage.findUnique.mockResolvedValue(null);
+    expect(await source.authorize("u2", "missing")).toBe(false);
+  });
+
+  it("seeds from contentJson and writes synced blocks back to it", async () => {
+    mockPrisma.resourceHubPage.findUnique.mockResolvedValue({ contentJson: [{ id: "b" }] });
+    expect(await source.seed("p1")).toEqual([{ id: "b" }]);
+    mockPrisma.resourceHubPage.findUnique.mockResolvedValue(null);
+    expect(await source.seed("p1")).toBeNull();
+    await source.syncBack("p1", [{ id: "c" }] as any);
+    expect(mockPrisma.resourceHubPage.updateMany).toHaveBeenCalledWith({ where: { id: "p1" }, data: { contentJson: [{ id: "c" }] } });
   });
 });

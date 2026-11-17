@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { renderDom, click } from "~/test-utils/render";
@@ -12,7 +12,8 @@ vi.mock("~/lib/collab-token.server", () => ({}));
 vi.mock("~/lib/ai.server", () => ({ isAiEnabled: () => false }));
 vi.mock("~/components/doc", () => ({ DocEditor: () => <div data-testid="editor" />, uploadEditorImage: vi.fn() }));
 vi.mock("~/components/ui/dialog", () => ({ useDialog: () => ({ confirm: vi.fn(), alert: vi.fn(), prompt: vi.fn() }) }));
-vi.mock("~/components/ui/toast", () => ({ useToast: () => ({ success: vi.fn(), error: vi.fn() }) }));
+const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("~/components/ui/toast", () => ({ useToast: () => toast }));
 
 import Layout from "../resource-hub-layout";
 import Resources from "../resource-hub.$pageId";
@@ -20,15 +21,20 @@ import Resources from "../resource-hub.$pageId";
 const hub = { id: "p1", title: "Design", coverUrl: "pattern:petal-ledger?d=frame,seal&c=plum", published: true, domainName: "Design" };
 const resources = { page: { id: "p1", title: "Design", published: true, contentJson: [] }, canEdit: true, aiEnabled: false, collabToken: "t", currentUserId: "u1", userName: "Ada" };
 
-function mount(path: string, over: { canEdit?: boolean; hub?: Partial<typeof hub>; collabToken?: string | null } = {}) {
+type Result = Record<string, unknown>;
+function mount(
+  path: string,
+  over: { canEdit?: boolean; hub?: Partial<typeof hub>; collabToken?: string | null; layoutAction?: () => Result; pageAction?: () => Result } = {},
+) {
   const router = createMemoryRouter(
     [
       {
         path: "/resource-hub/:pageId",
         Component: Layout,
         loader: () => ({ hub: { ...hub, ...over.hub }, canEdit: over.canEdit ?? true }),
+        action: over.layoutAction,
         children: [
-          { index: true, Component: Resources, loader: () => ({ ...resources, canEdit: over.canEdit ?? true, collabToken: over.collabToken === undefined ? "t" : over.collabToken }) },
+          { index: true, Component: Resources, action: over.pageAction, loader: () => ({ ...resources, canEdit: over.canEdit ?? true, collabToken: over.collabToken === undefined ? "t" : over.collabToken }) },
         ],
       },
     ],
@@ -41,6 +47,11 @@ function mount(path: string, over: { canEdit?: boolean; hub?: Partial<typeof hub
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 0)); });
 const row = (c: HTMLElement) => c.querySelector<HTMLElement>("[data-density]")!;
 const rowButtons = (c: HTMLElement) => [...row(c).querySelectorAll("button")].map((b) => b.getAttribute("aria-label") ?? b.textContent?.trim());
+
+beforeEach(() => {
+  toast.success.mockReset();
+  toast.error.mockReset();
+});
 
 describe("Resource Hub layout", () => {
   it("puts the title, domain and cover in the band", async () => {
@@ -96,5 +107,37 @@ describe("Resource Hub layout", () => {
     const { container } = mount("/resource-hub/p1", { hub: { published: false } });
     await settle();
     expect(container.querySelector('[data-testid="hub-band"]')?.textContent).toContain("Draft");
+  });
+
+  it("does not show an old save error when the editor is opened again", async () => {
+    const { container } = mount("/resource-hub/p1", { layoutAction: () => ({ error: "Title is taken." }) });
+    await settle();
+    const gear = () => container.querySelector<HTMLElement>('[aria-label="Edit title and cover"]')!;
+    click(gear());
+    click([...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Save")!);
+    await settle();
+    expect(document.body.textContent).toContain("Title is taken.");
+    click([...document.body.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Cancel")!);
+    await settle();
+    click(gear());
+    expect(document.body.textContent).not.toContain("Title is taken.");
+  });
+
+  it("says the hub was updated only after the update succeeds", async () => {
+    const { container } = mount("/resource-hub/p1", { pageAction: () => ({ ok: true }) });
+    await settle();
+    click(container.querySelector('[aria-label="Update"]') ?? [...row(container).querySelectorAll("button")].find((b) => b.textContent?.trim() === "Update")!);
+    expect(toast.success).not.toHaveBeenCalled();
+    await settle();
+    expect(toast.success).toHaveBeenCalledWith("Hub updated.");
+  });
+
+  it("shows an error when the update fails", async () => {
+    const { container } = mount("/resource-hub/p1", { pageAction: () => ({ error: "x" }) });
+    await settle();
+    click([...row(container).querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Update" || b.textContent?.trim() === "Update")!);
+    await settle();
+    expect(toast.error).toHaveBeenCalledWith("Couldn't publish. Try again.");
+    expect(toast.success).not.toHaveBeenCalled();
   });
 });

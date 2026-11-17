@@ -1,8 +1,9 @@
-import { CoverTile, cardColorHex, coverGround, isPatternCover, parseCover } from "~/components/cover/CoverPattern";
+import { isPatternCover } from "~/components/cover/CoverPattern";
+import { HubCard } from "~/components/resource-hub/HubCard";
 import { HubCoverStudio } from "~/components/resource-hub/HubCoverStudio";
 import { useState } from "react";
-import { Link, redirect, useFetcher, useLoaderData } from "react-router";
-import { ArrowRight, Plus } from "lucide-react";
+import { redirect, useFetcher, useLoaderData } from "react-router";
+import { Plus } from "lucide-react";
 import type { Route } from "./+types/resource-hub";
 import { prisma } from "~/lib/db.server";
 import { hubDomainOptions, ledDomainIds, requireResourceHubViewer } from "~/lib/resource-hub.server";
@@ -77,6 +78,11 @@ export default function ResourceHubIndex() {
   const { cards, domains } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<{ error?: string }>();
   const [studio, setStudio] = useState(false);
+  const [staleResult, setStaleResult] = useState<unknown>(null);
+  const openStudio = () => {
+    setStaleResult(fetcher.data);
+    setStudio(true);
+  };
 
   return (
     <div className="min-h-dvh bg-card px-6 pb-16 sm:px-10">
@@ -95,7 +101,7 @@ export default function ResourceHubIndex() {
           initialCover={null}
           onClose={() => setStudio(false)}
           domainOptions={domains.map((d) => ({ value: d.id, label: d.name, disabled: d.taken, description: d.taken ? "Has a hub" : undefined }))}
-          serverError={fetcher.data?.error ?? null}
+          serverError={fetcher.data === staleResult ? null : (fetcher.data?.error ?? null)}
           onSubmit={(title, cover, domainId) => fetcher.submit({ intent: "create", title, cover, domainId: domainId ?? "" }, { method: "post" })}
         />
       )}
@@ -104,7 +110,7 @@ export default function ResourceHubIndex() {
         <li>
           <button
             type="button"
-            onClick={() => setStudio(true)}
+            onClick={openStudio}
             disabled={fetcher.state !== "idle"}
             aria-label="Add a hub"
             className="group flex h-full min-h-[13rem] w-full flex-col items-center justify-center gap-2 rounded-os-card border border-dashed border-os-container-hi bg-os-hover text-os-grey outline-none transition-[border-color,color,transform] duration-150 ease-out hover:text-foreground active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-os-accent/60 disabled:opacity-50"
@@ -115,35 +121,7 @@ export default function ResourceHubIndex() {
         </li>
         {cards.map((card) => (
           <li key={card.id}>
-            <Link
-              to={`/resource-hub/${card.id}`}
-              style={{ backgroundColor: cardColorHex(parseCover(card.coverUrl)?.card) }}
-              className="group flex h-full min-h-[13rem] gap-4 overflow-hidden rounded-os-card p-4 text-white outline-none transition-[filter,transform] duration-150 ease-out hover:brightness-110 active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-os-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-os-card"
-            >
-              <div className="flex min-w-0 flex-1 flex-col justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 className="font-heading text-xl font-semibold leading-tight [overflow-wrap:anywhere]">{card.title}</h2>
-                  {!card.published && <p className="mt-1 text-xs text-white/60">Draft</p>}
-                </div>
-                <span
-                  aria-hidden
-                  className="grid h-9 w-9 place-items-center rounded-full border border-white/50 transition-colors duration-150 group-hover:bg-white/10"
-                >
-                  <ArrowRight className="h-4 w-4 transition-transform duration-150 ease-out group-hover:translate-x-0.5" />
-                </span>
-              </div>
-              <div className="w-[44%] shrink-0 self-stretch overflow-hidden rounded-xl" style={{ background: isPatternCover(card.coverUrl) ? coverGround(card.coverUrl) : undefined }}>
-                {isPatternCover(card.coverUrl) ? (
-                  <CoverTile url={card.coverUrl} />
-                ) : (
-                  <div
-                    className="h-full min-h-[8rem] w-full bg-os-hover bg-cover bg-center"
-                    style={{ backgroundImage: card.coverUrl ? `url(${card.coverUrl})` : undefined }}
-                    aria-hidden
-                  />
-                )}
-              </div>
-            </Link>
+            <HubCard cover={card.coverUrl} title={card.title} href={`/resource-hub/${card.id}`} draft={!card.published} />
           </li>
         ))}
       </ul>

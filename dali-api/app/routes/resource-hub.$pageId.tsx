@@ -17,6 +17,7 @@ import type { HubOutletContext } from "./resource-hub-layout";
 import { useDialog } from "~/components/ui/dialog";
 import { Modal, ModalHeader } from "~/components/Modal";
 import { useToast } from "~/components/ui/toast";
+import { Button } from "~/components/ui/Button";
 
 export const meta: Route.MetaFunction = ({ data }) => [
   { title: `${data?.page.title ?? "Resource Hub"} · DALI OS` },
@@ -90,14 +91,24 @@ export default function ResourceHubPage() {
   const [snapshot, setSnapshot] = useState<unknown[] | null>(null);
 
   const submit = (data: Record<string, string>) => fetcher.submit(data, { method: "post" });
+  const announce = useRef<string | null>(null);
+  const leaveRef = useRef(leave);
+  leaveRef.current = leave;
+  const handled = useRef<unknown>(null);
   useEffect(() => {
-    if (leave !== "publishing" || fetcher.state !== "idle") return;
-    if (fetcher.data?.ok) navigate("/resource-hub");
-    else {
-      setLeave("asking");
+    if (fetcher.state !== "idle" || !fetcher.data || handled.current === fetcher.data) return;
+    handled.current = fetcher.data;
+    const message = announce.current;
+    announce.current = null;
+    if (fetcher.data.ok) {
+      setDirty(false);
+      if (message) toast.success(message);
+      if (leaveRef.current === "publishing") navigate("/resource-hub");
+    } else {
       toast.error("Couldn't publish. Try again.");
+      if (leaveRef.current === "publishing") setLeave("asking");
     }
-  }, [leave, fetcher.state, fetcher.data, navigate, toast]);
+  }, [fetcher.state, fetcher.data, navigate, toast]);
   const live = canEdit && !!collabToken;
   const editing = live && !preview;
 
@@ -144,8 +155,8 @@ export default function ResourceHubPage() {
           primary: true,
           disabled: fetcher.state !== "idle",
           onClick: () => {
+            announce.current = page.published ? "Hub updated." : null;
             submit({ intent: "publish", published: "1" });
-            if (page.published) toast.success("Hub updated.");
           },
         },
       ]
@@ -207,30 +218,24 @@ export default function ResourceHubPage() {
         <ModalHeader
           titleId="leave-hub-title"
           title={page.published ? "Update this hub?" : "Publish this hub?"}
-          subtitle={page.published ? "Your changes are already saved. Updating marks the hub as updated for members." : "Members can see it once it's published. Otherwise it stays a draft that only you and editors can open."}
+          subtitle={page.published ? "Your changes are saved as you type. Updating publishes the current version for members." : "Members can see it once it's published. Otherwise it stays a draft that only you and editors can open."}
           onClose={() => setLeave("closed")}
           hideClose={leave === "publishing"}
         />
         <div className="flex items-center justify-end gap-2">
-          <button
-            type="button"
-            disabled={leave === "publishing"}
-            onClick={() => navigate("/resource-hub")}
-            className="os-btn-ghost disabled:cursor-not-allowed disabled:opacity-60"
-          >
+          <Button variant="ghost" size="sm" disabled={leave === "publishing"} onClick={() => navigate("/resource-hub")}>
             {page.published ? "No, leave as is" : "No, save as draft"}
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            size="sm"
             disabled={leave === "publishing"}
             onClick={() => {
               setLeave("publishing");
               submit({ intent: "publish", published: "1" });
             }}
-            className="os-btn-primary os-btn-primary--sm"
           >
             {page.published ? "Update" : "Publish"}
-          </button>
+          </Button>
         </div>
       </Modal>
     </div>
