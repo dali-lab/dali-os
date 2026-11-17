@@ -29,15 +29,6 @@ export const prisma = {
     createMany: vi.fn(),
     findMany: vi.fn(),
   },
-  pixelAvatar: {
-    findUnique: vi.fn(),
-    upsert: vi.fn(),
-    updateMany: vi.fn(),
-  },
-  alumniChatMessage: {
-    createMany: vi.fn(),
-    findMany: vi.fn(),
-  },
   userEmail: {
     findUnique: vi.fn().mockResolvedValue(null),
     findMany: vi.fn().mockResolvedValue([]),
