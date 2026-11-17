@@ -66,7 +66,7 @@ describe("uploadReceiptFiles", () => {
   const files = [file("a.jpg", "image/jpeg"), file("b.pdf", "application/pdf")];
 
   it("presigns once, posts each file to storage and returns the keys in order", async () => {
-    const fetchFn = vi.fn(async (url: string) =>
+    const fetchFn = vi.fn(async (url: string, _init?: RequestInit) =>
       url === "/expenses/upload" ? Response.json({ ok: true, uploads }) : new Response(null, { status: 204 }),
     );
     const keys = await uploadReceiptFiles(files, fetchFn as never);

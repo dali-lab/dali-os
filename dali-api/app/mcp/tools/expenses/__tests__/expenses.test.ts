@@ -97,13 +97,15 @@ describe("tool definitions", () => {
   });
 
   it("rejects bad input at the schema", () => {
-    const schema = (n: string) => tool(n).def.inputSchema;
-    expect(validateInput(schema("manage_expense"), { action: "explode" })).toBeTruthy();
-    expect(validateInput(schema("manage_expense"), { action: "submit", extra: 1 })).toBeTruthy();
-    expect(validateInput(schema("decide_expense"), { expenseId: "e1", decision: "maybe" })).toBeTruthy();
-    expect(validateInput(schema("list_expenses"), { scope: "everyone" })).toBeTruthy();
-    expect(validateInput(schema("import_card_statement"), { cardId: "c", key: "k", mapping: { date: "d" } })).toBeTruthy();
-    expect(validateInput(schema("manage_expense_card"), { action: "create", last4: "12345" })).toBeTruthy();
+    const ok = (n: string, input: Record<string, unknown>) => validateInput(input, tool(n).def.inputSchema).ok;
+    expect(ok("manage_expense", { action: "submit", expenseId: "e1" })).toBe(true);
+    expect(ok("manage_expense", { action: "explode" })).toBe(false);
+    expect(ok("manage_expense", { action: "submit", extra: 1 })).toBe(false);
+    expect(ok("decide_expense", { expenseId: "e1", decision: "approve" })).toBe(true);
+    expect(ok("decide_expense", { expenseId: "e1", decision: "maybe" })).toBe(false);
+    expect(ok("list_expenses", { scope: "everyone" })).toBe(false);
+    expect(ok("import_card_statement", { cardId: "c", key: "k", mapping: { date: "d" } })).toBe(false);
+    expect(ok("manage_expense_card", { action: "create", last4: "12345" })).toBe(false);
   });
 });
 
